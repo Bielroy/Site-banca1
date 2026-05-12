@@ -299,14 +299,88 @@
     </div>
 
     <script>
-    const VERSAO = 'v8'; 
+    const VERSAO = 'v13'; 
     const SENHA_HASH = '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4'; // "1234"
 
     const PADRAO = [
-        { id:1, nome:"Maçã Gala", preco:8.50, cat:"frutas", estoque:15, emoji:"🍎", unidade:"kg", foto:null },
-        { id:2, nome:"Banana da Terra", preco:12.00, cat:"frutas", estoque:20, emoji:"🍌", unidade:"kg", foto:null },
-        { id:3, nome:"Tomate Carmem", preco:6.00, cat:"verduras", estoque:30, emoji:"🍅", unidade:"kg", foto:null },
-        { id:4, nome:"Alface Crespa", preco:3.50, cat:"folhas", estoque:10, emoji:"🥬", unidade:"maço", foto:null }
+        // --- TUBÉRCULOS E RAÍZES ---
+        { id: 1, nome: "Batata Inglesa", preco: 6.50, cat: "verduras", estoque: 100, emoji: "🥔", unidade: "kg", foto: null },
+        { id: 2, nome: "Batata Doce", preco: 5.50, cat: "verduras", estoque: 40, emoji: "🍠", unidade: "kg", foto: null },
+        { id: 3, nome: "Mandioca Descascada", preco: 10.00, cat: "verduras", estoque: 30, emoji: "🪵", unidade: "kg", foto: null },
+        { id: 4, nome: "Cenoura", preco: 6.00, cat: "verduras", estoque: 40, emoji: "🥕", unidade: "kg", foto: null },
+        { id: 5, nome: "Beterraba", preco: 5.50, cat: "verduras", estoque: 30, emoji: "🟣", unidade: "kg", foto: null },
+        { id: 6, nome: "Inhame", preco: 9.50, cat: "verduras", estoque: 20, emoji: "🥔", unidade: "kg", foto: null },
+        { id: 7, nome: "Cará", preco: 8.90, cat: "verduras", estoque: 20, emoji: "🥔", unidade: "kg", foto: null },
+        { id: 8, nome: "Gengibre", preco: 15.00, cat: "verduras", estoque: 10, emoji: "🫚", unidade: "kg", foto: null },
+
+        // --- LEGUMES E FRUTOS ---
+        { id: 9, nome: "Cebola Branca", preco: 5.50, cat: "verduras", estoque: 50, emoji: "🧅", unidade: "kg", foto: null },
+        { id: 10, nome: "Cebola Roxa", preco: 8.00, cat: "verduras", estoque: 30, emoji: "🧅", unidade: "kg", foto: null },
+        { id: 11, nome: "Alho Inteiro", preco: 25.00, cat: "verduras", estoque: 15, emoji: "🧄", unidade: "kg", foto: null },
+        { id: 12, nome: "Tomate Saladete", preco: 7.50, cat: "verduras", estoque: 50, emoji: "🍅", unidade: "kg", foto: null },
+        { id: 13, nome: "Tomatinho Cereja", preco: 5.00, cat: "verduras", estoque: 20, emoji: "🍅", unidade: "caixa", foto: null },
+        { id: 14, nome: "Abobrinha Italiana", preco: 5.00, cat: "verduras", estoque: 25, emoji: "🥒", unidade: "kg", foto: null },
+        { id: 15, nome: "Pepino Japonês", preco: 6.00, cat: "verduras", estoque: 20, emoji: "🥒", unidade: "kg", foto: null },
+        { id: 16, nome: "Chuchu", preco: 4.00, cat: "verduras", estoque: 30, emoji: "🍐", unidade: "kg", foto: null },
+        { id: 17, nome: "Quiabo", preco: 8.50, cat: "verduras", estoque: 20, emoji: "🌵", unidade: "kg", foto: null },
+        { id: 18, nome: "Jiló", preco: 7.00, cat: "verduras", estoque: 20, emoji: "🟢", unidade: "kg", foto: null },
+        { id: 19, nome: "Vagem", preco: 12.00, cat: "verduras", estoque: 15, emoji: "🎋", unidade: "kg", foto: null },
+        { id: 20, nome: "Milho Verde", preco: 2.50, cat: "verduras", estoque: 60, emoji: "🌽", unidade: "un", foto: null },
+        { id: 21, nome: "Pimentão Verde", preco: 8.00, cat: "verduras", estoque: 15, emoji: "🫑", unidade: "kg", foto: null },
+        { id: 22, nome: "Pimentão Vermelho", preco: 15.00, cat: "verduras", estoque: 10, emoji: "🫑", unidade: "kg", foto: null },
+        { id: 23, nome: "Pimentão Amarelo", preco: 15.00, cat: "verduras", estoque: 10, emoji: "🫑", unidade: "kg", foto: null },
+        { id: 24, nome: "Abóbora Cabotiá", preco: 4.50, cat: "verduras", estoque: 20, emoji: "🎃", unidade: "kg", foto: null },
+        { id: 25, nome: "Brócolis Ninja", preco: 8.00, cat: "verduras", estoque: 10, emoji: "🥦", unidade: "un", foto: null },
+        { id: 26, nome: "Couve-Flor", preco: 9.00, cat: "verduras", estoque: 10, emoji: "🥦", unidade: "un", foto: null },
+        { id: 27, nome: "Beringela", preco: 6.00, cat: "verduras", estoque: 15, emoji: "🍆", unidade: "kg", foto: null },
+
+        // --- PIMENTAS ---
+        { id: 28, nome: "Pimenta de Cheiro", preco: 15.00, cat: "verduras", estoque: 10, emoji: "🌶️", unidade: "kg", foto: null },
+        { id: 29, nome: "Pimenta Bode", preco: 18.00, cat: "verduras", estoque: 10, emoji: "🔥", unidade: "kg", foto: null },
+        { id: 30, nome: "Pimenta Cumari", preco: 25.00, cat: "verduras", estoque: 5, emoji: "🟢", unidade: "kg", foto: null },
+
+        // --- FOLHAS ---
+        { id: 31, nome: "Alface Crespa", preco: 3.50, cat: "folhas", estoque: 20, emoji: "🥬", unidade: "maço", foto: null },
+        { id: 32, nome: "Alface Americana", preco: 5.00, cat: "folhas", estoque: 15, emoji: "🥬", unidade: "un", foto: null },
+        { id: 33, nome: "Couve Manteiga", preco: 3.00, cat: "folhas", estoque: 25, emoji: "🌿", unidade: "maço", foto: null },
+        { id: 34, nome: "Rúcula", preco: 4.50, cat: "folhas", estoque: 10, emoji: "🥗", unidade: "maço", foto: null },
+        { id: 35, nome: "Cheiro Verde", preco: 2.50, cat: "folhas", estoque: 40, emoji: "🌱", unidade: "maço", foto: null },
+        { id: 36, nome: "Repolho Verde", preco: 5.00, cat: "folhas", estoque: 15, emoji: "🥬", unidade: "un", foto: null },
+        { id: 37, nome: "Repolho Roxo", preco: 7.00, cat: "folhas", estoque: 10, emoji: "🟣", unidade: "un", foto: null },
+        { id: 38, nome: "Espinafre", preco: 4.50, cat: "folhas", estoque: 10, emoji: "🍃", unidade: "maço", foto: null },
+
+        // --- FRUTAS ---
+        { id: 39, nome: "Banana Prata", preco: 7.00, cat: "frutas", estoque: 30, emoji: "🍌", unidade: "kg", foto: null },
+        { id: 40, nome: "Banana Nanica", preco: 6.00, cat: "frutas", estoque: 30, emoji: "🍌", unidade: "kg", foto: null },
+        { id: 41, nome: "Maçã Gala", preco: 9.00, cat: "frutas", estoque: 40, emoji: "🍎", unidade: "kg", foto: null },
+        { id: 42, nome: "Mamão Papaia", preco: 6.00, cat: "frutas", estoque: 15, emoji: "🍈", unidade: "un", foto: null },
+        { id: 43, nome: "Laranja Pera", preco: 5.00, cat: "frutas", estoque: 100, emoji: "🍊", unidade: "kg", foto: null },
+        { id: 44, nome: "Limão Taiti", preco: 4.00, cat: "frutas", estoque: 50, emoji: "🍋", unidade: "kg", foto: null },
+        { id: 45, nome: "Abacaxi Pérola", preco: 8.00, cat: "frutas", estoque: 15, emoji: "🍍", unidade: "un", foto: null },
+        { id: 46, nome: "Melancia", preco: 2.50, cat: "frutas", estoque: 10, emoji: "🍉", unidade: "kg", foto: null },
+
+        // --- TEMPEROS ---
+        { id: 47, nome: "Alho Frito", preco: 8.50, cat: "temperos", estoque: 20, emoji: "🧄", unidade: "g", foto: null },
+        { id: 48, nome: "Açafrão", preco: 6.00, cat: "temperos", estoque: 25, emoji: "🟠", unidade: "g", foto: null },
+        { id: 49, nome: "Lemon Pepper", preco: 9.50, cat: "temperos", estoque: 20, emoji: "🍋", unidade: "g", foto: null },
+        { id: 50, nome: "Edu Guedes", preco: 10.00, cat: "temperos", estoque: 15, emoji: "👨‍🍳", unidade: "g", foto: null },
+        { id: 51, nome: "Ana Maria", preco: 10.00, cat: "temperos", estoque: 15, emoji: "👩‍🍳", unidade: "g", foto: null },
+        { id: 52, nome: "Chimichurri", preco: 9.00, cat: "temperos", estoque: 20, emoji: "🌿", unidade: "g", foto: null },
+        { id: 53, nome: "Páprica Doce", preco: 7.50, cat: "temperos", estoque: 20, emoji: "🔴", unidade: "g", foto: null },
+        { id: 54, nome: "Páprica Defumada", preco: 8.50, cat: "temperos", estoque: 20, emoji: "💨", unidade: "g", foto: null },
+        { id: 55, nome: "Páprica Picante", preco: 8.50, cat: "temperos", estoque: 20, emoji: "🔥", unidade: "g", foto: null },
+        { id: 56, nome: "Pimenta do Reino Pó", preco: 11.00, cat: "temperos", estoque: 30, emoji: "⚫", unidade: "g", foto: null },
+        { id: 57, nome: "Pimenta Reino Grão", preco: 13.00, cat: "temperos", estoque: 15, emoji: "🔘", unidade: "g", foto: null },
+        { id: 58, nome: "Pimenta Calabresa", preco: 7.00, cat: "temperos", estoque: 25, emoji: "🌶️", unidade: "g", foto: null },
+        { id: 59, nome: "Colorau", preco: 5.00, cat: "temperos", estoque: 30, emoji: "🍂", unidade: "g", foto: null },
+        { id: 60, nome: "Orégano", preco: 8.00, cat: "temperos", estoque: 20, emoji: "🌿", unidade: "g", foto: null },
+        { id: 61, nome: "Cominho em Pó", preco: 7.00, cat: "temperos", estoque: 15, emoji: "🤎", unidade: "g", foto: null },
+        { id: 62, nome: "Manjericão Seco", preco: 6.00, cat: "temperos", estoque: 15, emoji: "🌿", unidade: "g", foto: null },
+
+        // --- EXTRAS ---
+        { id: 63, nome: "Ovos Brancos", preco: 18.00, cat: "verduras", estoque: 30, emoji: "🥚", unidade: "dúzia", foto: null },
+        { id: 64, nome: "Ovos Caipira", preco: 22.00, cat: "verduras", estoque: 20, emoji: "🥚", unidade: "dúzia", foto: null },
+        { id: 65, nome: "Mel Puro 500ml", preco: 35.00, cat: "frutas", estoque: 10, emoji: "🍯", unidade: "un", foto: null }
     ];
 
     function carregar() {
@@ -490,14 +564,10 @@
         document.getElementById('carrinho-overlay').classList.toggle('aberto');
     }
 
-    // --- FUNÇÃO ABRIR CHECKOUT CORRIGIDA ---
     function abrirCheckout() {
         if (carrinho.length === 0) { toast('Adicione produtos primeiro! 🛒'); return; }
-        
-        // Esconde o carrinho mobile para não sobrepor o modal de checkout
         document.getElementById('carrinho').classList.remove('aberto');
         document.getElementById('carrinho-overlay').classList.remove('aberto');
-        
         abrirModal('overlay-checkout');
     }
 
@@ -506,7 +576,6 @@
         document.getElementById('troco-group').style.display = v === 'Dinheiro' ? 'block' : 'none';
     }
 
-    // --- FUNÇÃO ENVIAR WHATSAPP CORRIGIDA ---
     function enviarWhatsApp() {
         const nome = document.getElementById('cli-nome').value.trim();
         const end = document.getElementById('cli-endereco').value.trim();
@@ -540,16 +609,13 @@
 
         window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
         
-        // Força todos os modais e overlays a fechar
         fecharModal('overlay-checkout');
         document.getElementById('carrinho').classList.remove('aberto');
         document.getElementById('carrinho-overlay').classList.remove('aberto');
         
-        // Zera o carrinho e atualiza visualmente
         carrinho = [];
         atualizarEstadoCarrinho();
         
-        // Limpa os campos do formulário para o próximo pedido
         document.getElementById('cli-nome').value = '';
         document.getElementById('cli-endereco').value = '';
         document.getElementById('cli-troco').value = '';
@@ -646,7 +712,6 @@
     function carregarFoto(event) {
         const file = event.target.files[0];
         if (!file) return;
-        
         const reader = new FileReader();
         reader.onload = e => {
             const img = new Image();
@@ -654,16 +719,12 @@
                 const canvas = document.createElement('canvas');
                 const MAX_SIZE = 400; 
                 let width = img.width; let height = img.height;
-
                 if (width > height && width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; } 
                 else if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
-
                 canvas.width = width; canvas.height = height;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, width, height);
-
                 fotoBase64 = canvas.toDataURL('image/jpeg', 0.6);
-                
                 document.getElementById('foto-preview').src = fotoBase64;
                 document.getElementById('foto-preview').style.display = 'block';
                 document.getElementById('upload-text').style.display = 'none';
@@ -680,9 +741,7 @@
         const cat = document.getElementById('edit-cat').value;
         const unidade = document.getElementById('edit-unidade').value;
         const emoji = document.getElementById('edit-emoji').value.trim() || '📦';
-
         if (!nome || isNaN(preco) || preco <= 0 || isNaN(estoque) || estoque < 0) { toast('⚠️ Preencha tudo!'); return; }
-
         if (editandoId) {
             const p = produtos.find(x => x.id === editandoId);
             Object.assign(p, { nome, preco, estoque, cat, unidade, emoji });
@@ -691,7 +750,6 @@
             const novoId = produtos.length ? Math.max(...produtos.map(x => x.id)) + 1 : 1;
             produtos.push({ id: novoId, nome, preco, estoque, cat, unidade, emoji, foto: fotoBase64 || null });
         }
-
         localStorage.setItem('banca_produtos', JSON.stringify(produtos));
         renderLoja(); mudarAba('produtos'); toast('✅ Produto salvo!');
     }
@@ -707,7 +765,6 @@
     function renderAbaHistorico(body, filtro = '') {
         const hist = JSON.parse(localStorage.getItem('banca_historico') || '[]');
         const filtrado = filtro ? hist.filter(h => h.nome.toLowerCase().includes(filtro.toLowerCase())) : hist;
-
         body.innerHTML = `
             <input type="text" placeholder="Buscar cliente..." value="${filtro}" oninput="renderAbaHistorico(document.getElementById('admin-body'), this.value)" style="width:100%; padding:10px; margin-bottom:15px; border-radius:8px; border:1px solid #ccc;">
             ${filtrado.map(h => `
