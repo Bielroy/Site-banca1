@@ -299,7 +299,8 @@
     </div>
 
     <script>
-    const VERSAO = 'v13'; 
+    // VERSÃO ATUALIZADA PARA v14
+    const VERSAO = 'v14'; 
     const SENHA_HASH = '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4'; // "1234"
 
     const PADRAO = [
@@ -675,6 +676,7 @@
         </div>`;
     }
 
+    // FUNÇÃO EDITOR ATUALIZADA COM CAMPO DE LINK
     function abrirEditor(id) {
         editandoId = id; fotoBase64 = null;
         const body = document.getElementById('admin-body');
@@ -688,7 +690,16 @@
                     <img class="foto-preview" id="foto-preview" src="${p?.foto||''}" style="${p?.foto?'display:block':''}">
                     <div style="${p?.foto?'display:none':''}" id="upload-text">📷<br>Toque para escolher foto</div>
                 </div>
+                
+                <!-- CAMPO PARA LINK EXTERNO -->
+                <div style="margin-top:15px; border-top:1px dashed #ccc; padding-top:10px;">
+                    <label style="font-size:0.75rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:5px;">OU COLE O LINK DA FOTO:</label>
+                    <input type="text" id="edit-link-foto" placeholder="https://site.com/imagem.jpg" 
+                           value="${p?.foto && p.foto.startsWith('http') ? p.foto : ''}" 
+                           style="width:100%; padding:8px; border-radius:8px; border:1.5px solid #e5e7eb; font-family: 'DM Sans', sans-serif;">
+                </div>
             </div>
+            
             <div class="editor-section">
                 <div class="form-group"><label>Emoji</label><input type="text" id="edit-emoji" value="${p?.emoji||'📦'}" maxlength="2"></div>
                 <div class="form-group"><label>Nome</label><input type="text" id="edit-nome" value="${p?.nome||''}"></div>
@@ -724,16 +735,19 @@
                 canvas.width = width; canvas.height = height;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, width, height);
-                fotoBase64 = canvas.toDataURL('image/jpeg', 0.6);
+                // QUALIDADE 0.3 PARA ECONOMIZAR ESPAÇO
+                fotoBase64 = canvas.toDataURL('image/jpeg', 0.3);
                 document.getElementById('foto-preview').src = fotoBase64;
                 document.getElementById('foto-preview').style.display = 'block';
                 document.getElementById('upload-text').style.display = 'none';
+                document.getElementById('edit-link-foto').value = ''; 
             };
             img.src = e.target.result;
         };
         reader.readAsDataURL(file);
     }
 
+    // FUNÇÃO SALVAR ATUALIZADA PARA ACEITAR LINK OU BASE64
     function salvarProduto() {
         const nome = document.getElementById('edit-nome').value.trim();
         const preco = parseFloat(document.getElementById('edit-preco').value);
@@ -741,15 +755,21 @@
         const cat = document.getElementById('edit-cat').value;
         const unidade = document.getElementById('edit-unidade').value;
         const emoji = document.getElementById('edit-emoji').value.trim() || '📦';
+        const linkFoto = document.getElementById('edit-link-foto').value.trim();
+
         if (!nome || isNaN(preco) || preco <= 0 || isNaN(estoque) || estoque < 0) { toast('⚠️ Preencha tudo!'); return; }
+
+        let fotoFinal = fotoBase64 || (linkFoto !== "" ? linkFoto : null);
+
         if (editandoId) {
             const p = produtos.find(x => x.id === editandoId);
             Object.assign(p, { nome, preco, estoque, cat, unidade, emoji });
-            if (fotoBase64) p.foto = fotoBase64;
+            if (fotoFinal) p.foto = fotoFinal;
         } else {
             const novoId = produtos.length ? Math.max(...produtos.map(x => x.id)) + 1 : 1;
-            produtos.push({ id: novoId, nome, preco, estoque, cat, unidade, emoji, foto: fotoBase64 || null });
+            produtos.push({ id: novoId, nome, preco, estoque, cat, unidade, emoji, foto: fotoFinal });
         }
+
         localStorage.setItem('banca_produtos', JSON.stringify(produtos));
         renderLoja(); mudarAba('produtos'); toast('✅ Produto salvo!');
     }
