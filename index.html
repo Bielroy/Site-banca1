@@ -6,7 +6,7 @@
     <title>Banca Adair e Pedrina</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1b4332">
-    
+    <link rel="apple-touch-icon" href="icon-192.png">
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -34,15 +34,58 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'DM Sans', sans-serif; background: var(--sand); color: var(--text); min-height: 100vh; }
 
-        header { background: var(--green-deep); color: var(--white); padding: 2.5rem 2rem 2rem; text-align: center; position: relative; overflow: hidden; }
+        /* ============================================================
+           HEADER
+        ============================================================ */
+        header {
+            background: var(--green-deep);
+            color: var(--white);
+            padding: 2rem 2rem 1.6rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
         header::before { content: ''; position: absolute; top: -60px; right: -60px; width: 220px; height: 220px; background: rgba(82,183,136,0.15); border-radius: 50%; }
         header::after { content: ''; position: absolute; bottom: -40px; left: -40px; width: 160px; height: 160px; background: rgba(244,132,95,0.1); border-radius: 50%; }
+
+        /* Banner customizável */
+        .header-banner { width: 100%; max-height: 160px; object-fit: cover; border-radius: 12px; margin-bottom: 14px; display: none; position: relative; z-index: 1; }
+        .header-banner.visivel { display: block; }
+
         header h1 { font-family: 'Playfair Display', serif; font-size: 2.6rem; font-weight: 900; letter-spacing: -0.5px; position: relative; z-index: 1; }
         header h1 span { color: var(--green-soft); }
-        header p { font-size: 0.95rem; opacity: 0.75; margin-top: 6px; font-weight: 300; position: relative; z-index: 1; }
+        header p.subtitulo { font-size: 0.95rem; opacity: 0.75; margin-top: 6px; font-weight: 300; position: relative; z-index: 1; }
+
         .header-badges { display: flex; justify-content: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; position: relative; z-index: 1; }
         .badge { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 4px 14px; border-radius: 20px; font-size: 0.8rem; font-weight: 500; }
 
+        /* Banner de loja fechada */
+        .banner-fechado {
+            display: none;
+            background: #7f1d1d;
+            color: white;
+            text-align: center;
+            padding: 10px 20px;
+            font-weight: 700;
+            font-size: 0.92rem;
+            position: relative;
+            z-index: 300;
+        }
+        .banner-fechado.visivel { display: block; }
+        .banner-aviso-minimo {
+            display: none;
+            background: #fef3c7;
+            color: #92400e;
+            text-align: center;
+            padding: 8px 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .banner-aviso-minimo.visivel { display: block; }
+
+        /* ============================================================
+           CONTROLES
+        ============================================================ */
         .controles { background: var(--white); position: sticky; top: 0; z-index: 200; box-shadow: 0 2px 20px rgba(0,0,0,0.07); padding: 14px 20px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
         .busca-wrap { width: 100%; max-width: 560px; position: relative; }
         .busca-wrap svg { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--text-muted); width: 18px; height: 18px; pointer-events: none; }
@@ -53,8 +96,14 @@
         .cat-btn:hover { border-color: var(--green-soft); color: var(--green-mid); }
         .cat-btn.active { background: var(--green-mid); color: white; border-color: var(--green-mid); box-shadow: 0 4px 12px rgba(45,106,79,0.3); }
 
+        /* ============================================================
+           LAYOUT
+        ============================================================ */
         .layout { display: flex; gap: 28px; max-width: 1260px; margin: 0 auto; padding: 28px 20px; align-items: flex-start; }
 
+        /* ============================================================
+           PRODUTOS
+        ============================================================ */
         .produtos-grid { flex: 2; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; align-content: start; }
         .produto-card { background: var(--white); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); transition: all 0.3s ease; border: 1.5px solid transparent; display: flex; flex-direction: column; animation: fadeUp 0.4s ease both; }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
@@ -69,11 +118,12 @@
         .btn-add { width: 38px; height: 38px; border-radius: 50%; border: none; background: var(--green-pale); color: var(--green-mid); font-size: 22px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), background 0.2s; line-height: 1; }
         .btn-add:hover:not(:disabled) { background: var(--green-mid); color: white; transform: scale(1.1) rotate(90deg); box-shadow: 0 4px 12px rgba(45,106,79,0.35); }
         .btn-add:active:not(:disabled) { transform: scale(0.9); }
-
         .sem-produto { grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--text-muted); }
         .sem-produto span { font-size: 3rem; display: block; margin-bottom: 12px; }
 
-        /* Carrinho */
+        /* ============================================================
+           CARRINHO
+        ============================================================ */
         .carrinho { flex: 0 0 340px; background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; position: sticky; top: 140px; max-height: calc(100vh - 160px); overflow: hidden; }
         .carrinho-topo { padding: 20px 22px 16px; border-bottom: 1px solid #f3f4f6; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
         .carrinho-topo h2 { font-family: 'Playfair Display', serif; font-size: 1.3rem; color: var(--green-deep); }
@@ -100,20 +150,21 @@
         .total-linha { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
         .total-label { font-weight: 600; color: var(--text-muted); font-size: 0.9rem; }
         .total-valor { font-family: 'Playfair Display', serif; font-size: 1.8rem; color: var(--green-deep); font-weight: 700; }
+        .aviso-minimo-carrinho { background: #fef3c7; color: #92400e; padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; margin-bottom: 10px; text-align: center; display: none; }
+        .aviso-minimo-carrinho.visivel { display: block; }
         .btn-finalizar { width: 100%; padding: 16px; background: linear-gradient(135deg, #25D366, #1aab55); color: white; border: none; border-radius: var(--radius-sm); font-family: 'DM Sans', sans-serif; font-size: 1rem; font-weight: 700; cursor: pointer; letter-spacing: 0.3px; transition: all 0.3s; box-shadow: 0 6px 20px rgba(37,211,102,0.3); display: flex; align-items: center; justify-content: center; gap: 8px; }
         .btn-finalizar:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(37,211,102,0.4); }
+        .btn-finalizar:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
         .pulse-btn { animation: pulse-shadow 2s infinite; }
         @keyframes pulse-shadow { 0% { box-shadow: 0 0 0 0 rgba(37,211,102, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(37,211,102, 0); } 100% { box-shadow: 0 0 0 0 rgba(37,211,102, 0); } }
         .pulse-text { transition: color 0.3s; }
         .pulse-text.update { color: var(--danger); transform: scale(1.1); display: inline-block; }
+        .btn-compartilhar { width: 100%; padding: 10px; background: var(--green-pale); color: var(--green-deep); border: 1.5px solid var(--green-soft); border-radius: var(--radius-sm); font-family: 'DM Sans', sans-serif; font-size: 0.85rem; font-weight: 700; cursor: pointer; margin-top: 10px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+        .btn-compartilhar:hover { background: var(--green-mid); color: white; }
 
-        /* Clientes Salvos */
-        .clientes-salvos { margin-bottom: 16px; }
-        .clientes-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-        .cliente-chip { background: var(--green-pale); border: 1px solid var(--green-soft); color: var(--green-deep); border-radius: 20px; padding: 5px 14px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-        .cliente-chip:hover { background: var(--green-mid); color: white; }
-
-        /* Status de Entrega */
+        /* ============================================================
+           STATUS DE ENTREGA
+        ============================================================ */
         .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; }
         .status-recebido { background: #fef3c7; color: #92400e; }
         .status-separando { background: #dbeafe; color: #1e40af; }
@@ -121,22 +172,29 @@
         .status-entregue { background: #d1fae5; color: #065f46; }
         .status-presencial { background: #fce7f3; color: #9d174d; }
 
-        /* Painel de Entregas */
-        .painel-entregas { margin-bottom: 20px; }
+        /* ============================================================
+           PAINEL DE ENTREGAS
+        ============================================================ */
         .entrega-card { background: white; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; border: 1.5px solid #e5e7eb; transition: all 0.2s; }
         .entrega-card:hover { border-color: var(--green-soft); box-shadow: var(--shadow); }
+        .entrega-card.novo { animation: novoAlerta 0.6s ease; border-color: var(--green-soft); }
+        @keyframes novoAlerta { 0%,100%{border-color:#e5e7eb} 50%{border-color:var(--green-soft);box-shadow:0 0 0 4px rgba(82,183,136,0.3)} }
         .entrega-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
         .entrega-cliente { font-weight: 700; font-size: 0.92rem; }
         .entrega-end { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
         .entrega-itens { font-size: 0.78rem; color: #555; margin: 6px 0; padding: 6px 10px; background: var(--sand); border-radius: 8px; }
-        .entrega-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+        .entrega-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; flex-wrap: wrap; gap: 6px; }
         .entrega-total { font-weight: 700; color: var(--green-mid); font-size: 0.9rem; }
         .btn-status { padding: 6px 14px; border-radius: 20px; border: 1.5px solid #e5e7eb; background: white; font-family: 'DM Sans', sans-serif; font-size: 0.78rem; font-weight: 700; cursor: pointer; transition: all 0.2s; color: var(--green-mid); }
         .btn-status:hover { background: var(--green-mid); color: white; border-color: var(--green-mid); }
         .btn-status-danger { color: var(--danger); }
         .btn-status-danger:hover { background: var(--danger); color: white; border-color: var(--danger); }
+        .btn-imprimir-pedido { color: #555; }
+        .btn-imprimir-pedido:hover { background: #555; color: white; border-color: #555; }
 
-        /* Relatórios */
+        /* ============================================================
+           RELATÓRIOS
+        ============================================================ */
         .relatorio-card { background: var(--sand); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
         .relatorio-titulo { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
         .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed #e5e7eb; }
@@ -150,8 +208,14 @@
         .stat-box-val { font-family: 'Playfair Display', serif; font-size: 1.6rem; color: var(--green-deep); font-weight: 700; }
         .stat-box-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
 
-        /* Mobile */
+        /* ============================================================
+           ANIMAÇÃO VOADORA
+        ============================================================ */
         .flying-item { position: fixed; z-index: 1000; width: 40px; height: 40px; border-radius: 50%; background: var(--green-pale); display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.2); transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1); pointer-events: none; }
+
+        /* ============================================================
+           MOBILE
+        ============================================================ */
         .btn-flutuante-carrinho { display: none; }
         .carrinho-overlay { display: none; }
         .btn-fechar-mobile { display: none; background: none; border: none; font-size: 24px; color: var(--text-muted); cursor: pointer; padding: 0 8px; line-height: 1; }
@@ -159,7 +223,7 @@
         @media (max-width: 860px) {
             .layout { flex-direction: column; padding: 16px; padding-bottom: 80px; }
             .produtos-grid { grid-template-columns: repeat(2, 1fr); }
-            .btn-flutuante-carrinho { display: block; position: fixed; bottom: 35px; left: 50%; transform: translateX(-50%); background: var(--green-deep); color: white; border: none; padding: 14px 28px; border-radius: 30px; font-weight: 700; font-size: 1rem; box-shadow: var(--shadow-lg); z-index: 100; transition: transform 0.2s; white-space: nowrap; }
+            .btn-flutuante-carrinho { display: block; position: fixed; bottom: 35px; left: 50%; transform: translateX(-50%); background: var(--green-deep); color: white; border: none; padding: 14px 28px; border-radius: 30px; font-weight: 700; font-size: 1rem; box-shadow: var(--shadow-lg); z-index: 100; transition: transform 0.2s; white-space: nowrap; cursor: pointer; }
             .btn-flutuante-carrinho:active { transform: translateX(-50%) scale(0.95); }
             .carrinho-overlay.aberto { display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; backdrop-filter: blur(2px); }
             .carrinho { position: fixed; bottom: -100%; left: 0; width: 100%; max-height: 85vh; z-index: 1001; border-radius: 24px 24px 0 0; transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); flex: none; top: auto; }
@@ -168,11 +232,19 @@
         }
         @media (max-width: 420px) { .produtos-grid { grid-template-columns: 1fr 1fr; gap: 12px; } }
 
+        /* ============================================================
+           FOOTER
+        ============================================================ */
         footer { text-align: center; padding: 28px 20px 80px; color: var(--text-muted); font-size: 0.85rem; }
-        .btn-admin-acesso { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; background: none; border: 1.5px solid #e5e7eb; color: var(--text-muted); font-family: 'DM Sans', sans-serif; font-size: 0.82rem; padding: 8px 18px; border-radius: 20px; cursor: pointer; transition: all 0.2s; }
+        .footer-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+        .btn-admin-acesso { display: inline-flex; align-items: center; gap: 6px; background: none; border: 1.5px solid #e5e7eb; color: var(--text-muted); font-family: 'DM Sans', sans-serif; font-size: 0.82rem; padding: 8px 18px; border-radius: 20px; cursor: pointer; transition: all 0.2s; }
         .btn-admin-acesso:hover { border-color: var(--green-soft); color: var(--green-mid); background: var(--green-pale); }
+        .btn-instalar-pwa { display: none; }
+        .btn-instalar-pwa.visivel { display: inline-flex; }
 
-        /* Modais */
+        /* ============================================================
+           MODAIS
+        ============================================================ */
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 500; justify-content: center; align-items: center; backdrop-filter: blur(6px); padding: 16px; }
         .modal-overlay.aberto { display: flex; }
         .modal { background: white; border-radius: var(--radius); width: 100%; max-width: 520px; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.2); animation: modalIn 0.3s ease; }
@@ -191,22 +263,30 @@
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 
-        /* Admin */
+        /* Clientes Salvos */
+        .clientes-salvos { margin-bottom: 16px; }
+        .clientes-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .cliente-chip { background: var(--green-pale); border: 1px solid var(--green-soft); color: var(--green-deep); border-radius: 20px; padding: 5px 14px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .cliente-chip:hover { background: var(--green-mid); color: white; }
+
+        /* ============================================================
+           ADMIN
+        ============================================================ */
         .modal.admin-modal { max-width: 680px; }
         .admin-tabs { display: flex; border-bottom: 1px solid #f3f4f6; flex-shrink: 0; overflow-x: auto; }
-        .admin-tab { flex-shrink: 0; padding: 13px 16px; background: none; border: none; font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; border-bottom: 2.5px solid transparent; transition: all 0.2s; white-space: nowrap; }
+        .admin-tab { flex-shrink: 0; padding: 13px 16px; background: none; border: none; font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; border-bottom: 2.5px solid transparent; transition: all 0.2s; white-space: nowrap; position: relative; }
         .admin-tab.active { color: var(--green-mid); border-bottom-color: var(--green-mid); }
+        .tab-badge { position: absolute; top: 8px; right: 6px; background: var(--danger); color: white; font-size: 0.65rem; font-weight: 700; border-radius: 10px; padding: 1px 5px; min-width: 16px; text-align: center; }
+
         .secao-titulo { font-weight: 700; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin: 20px 0 12px; }
         .carousel { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 12px; scroll-snap-type: x mandatory; }
-        
+
         .admin-card { min-width: 260px; max-width: 260px; background: var(--sand); border-radius: 14px; padding: 24px 16px; scroll-snap-align: start; flex-shrink: 0; border: 1.5px solid #e5e7eb; text-align: center; position: relative; }
         .admin-card-img { width: 90px; height: 90px; border-radius: 12px; background: white; display: flex; align-items: center; justify-content: center; font-size: 3.5rem; margin: 10px auto 16px; overflow: hidden; border: 1px solid #f0f0f0; }
         .admin-card-img img { width: 100%; height: 100%; object-fit: cover; }
         .admin-card h4 { font-size: 1.05rem; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
-        
         .btn-edit-card { position: absolute; top: 12px; right: 12px; width: 42px; height: 42px; background: white; border: 1.5px solid #e5e7eb; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); transition: all 0.2s; }
         .btn-edit-card:active { transform: scale(0.9); }
-        
         .btn-quick-toggle { position: absolute; top: 12px; left: 12px; width: 42px; height: 42px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); transition: all 0.2s; }
         .btn-quick-toggle:active { transform: scale(0.9); }
         .btn-quick-toggle.desativar { background: #fee2e2; color: #dc2626; border: 1.5px solid #fca5a5; }
@@ -217,17 +297,52 @@
         .foto-upload-area input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
         .foto-preview { width: 80px; height: 80px; border-radius: 12px; object-fit: cover; display: none; margin: 0 auto 10px; border: 2px solid var(--green-pale); }
         .botoes-editor { display: flex; gap: 10px; margin-top: 20px; }
-        .btn-primary { flex: 1; padding: 13px; background: var(--green-mid); color: white; border: none; border-radius: var(--radius-sm); font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+        .btn-primary { flex: 1; padding: 13px; background: var(--green-mid); color: white; border: none; border-radius: var(--radius-sm); font-weight: 700; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.2s; }
+        .btn-primary:hover { background: var(--green-deep); }
         .btn-secondary { padding: 13px 20px; background: #f3f4f6; border: none; border-radius: var(--radius-sm); cursor: pointer; font-family: 'DM Sans', sans-serif; }
         .btn-danger { padding: 13px 20px; background: #fef2f2; color: var(--danger); border: 1.5px solid #fca5a5; border-radius: var(--radius-sm); cursor: pointer; font-family: 'DM Sans', sans-serif; }
-        .btn-add-novo { width: 100%; padding: 14px; background: var(--green-pale); color: var(--green-deep); border: 2px dashed var(--green-soft); border-radius: 14px; font-weight: 700; cursor: pointer; margin-bottom: 20px; font-family: 'DM Sans', sans-serif; }
-        .config-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid #f3f4f6; }
-        .config-input-inline { padding: 8px 12px; border: 1.5px solid #e5e7eb; border-radius: 8px; width: 200px; font-family: 'DM Sans', sans-serif; }
+        .btn-add-novo { width: 100%; padding: 14px; background: var(--green-pale); color: var(--green-deep); border: 2px dashed var(--green-soft); border-radius: 14px; font-weight: 700; cursor: pointer; margin-bottom: 20px; font-family: 'DM Sans', sans-serif; transition: all 0.2s; }
+        .btn-add-novo:hover { background: var(--green-mid); color: white; border-color: var(--green-mid); border-style: solid; }
+        .config-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid #f3f4f6; flex-wrap: wrap; gap: 10px; }
+        .config-input-inline { padding: 8px 12px; border: 1.5px solid #e5e7eb; border-radius: 8px; font-family: 'DM Sans', sans-serif; background: var(--sand); outline: none; min-width: 0; }
+        .config-input-inline:focus { border-color: var(--green-soft); }
         .historico-item { background: var(--sand); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
 
+        /* Horário de funcionamento */
+        .config-secao { background: var(--sand); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+        .config-secao-titulo { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+        .toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; cursor: pointer; inset: 0; background: #d1d5db; border-radius: 24px; transition: 0.3s; }
+        .toggle-slider:before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s; }
+        input:checked + .toggle-slider { background: var(--green-mid); }
+        input:checked + .toggle-slider:before { transform: translateX(20px); }
+        .exportar-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border: 1.5px solid #e5e7eb; background: white; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 0.82rem; font-weight: 600; cursor: pointer; color: var(--text-muted); transition: all 0.2s; }
+        .exportar-btn:hover { border-color: var(--green-soft); color: var(--green-mid); }
+
+        /* ============================================================
+           TOAST
+        ============================================================ */
         .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--green-deep); color: white; padding: 12px 24px; border-radius: 30px; font-weight: 600; font-size: 0.9rem; z-index: 9999; transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); white-space: nowrap; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
         .toast.visivel { transform: translateX(-50%) translateY(0); }
 
+        /* ============================================================
+           PRINT — comprovante de pedido
+        ============================================================ */
+        @media print {
+            body > *:not(#print-area) { display: none !important; }
+            #print-area { display: block !important; font-family: monospace; font-size: 12px; max-width: 300px; margin: 0 auto; }
+            #print-area h2 { text-align: center; font-size: 16px; margin-bottom: 8px; }
+            #print-area .linha { border-top: 1px dashed #000; margin: 8px 0; }
+            #print-area table { width: 100%; border-collapse: collapse; }
+            #print-area td { padding: 2px 0; }
+            #print-area .total { font-size: 14px; font-weight: bold; }
+        }
+        #print-area { display: none; }
+
+        /* ============================================================
+           MISC
+        ============================================================ */
         *:focus { outline: none; }
         *:focus-visible { outline: 3px solid var(--orange-deep); outline-offset: 2px; border-radius: 4px; }
         ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -237,14 +352,23 @@
 </head>
 <body>
 
-<header>
-    <h1>Banca <span>Adair</span> e Pedrina</h1>
-    <p>Produtos frescos direto para sua mesa 🌿</p>
+<!-- ÁREA DE IMPRESSÃO -->
+<div id="print-area"></div>
+
+<header id="header-principal">
+    <img class="header-banner" id="header-banner-img" src="" alt="Banner da banca">
+    <h1 id="header-nome">Banca <span>Adair</span> e Pedrina</h1>
+    <p class="subtitulo" id="header-subtitulo">Produtos frescos direto para sua mesa 🌿</p>
     <div class="header-badges">
         <span class="badge">✅ Entrega no condomínio</span>
         <span class="badge">💳 PIX • Cartão • Dinheiro</span>
     </div>
 </header>
+
+<div class="banner-fechado" id="banner-fechado">
+    🚫 Estamos fechados no momento. Voltamos em breve!
+</div>
+<div class="banner-aviso-minimo" id="banner-aviso-minimo"></div>
 
 <div class="controles">
     <div class="busca-wrap">
@@ -279,11 +403,15 @@
                 <span class="total-label">Total</span>
                 <span class="total-valor">R$ <span id="total-val" class="pulse-text">0,00</span></span>
             </div>
-            <button class="btn-finalizar pulse-btn" onclick="abrirCheckout()">
+            <div class="aviso-minimo-carrinho" id="aviso-minimo-carrinho"></div>
+            <button class="btn-finalizar pulse-btn" id="btn-finalizar" onclick="abrirCheckout()">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13.5 19.79 19.79 0 0 1 1.61 4.9 2 2 0 0 1 3.59 2.73h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 10.13a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
                 </svg>
                 Finalizar no WhatsApp
+            </button>
+            <button class="btn-compartilhar" onclick="compartilharCardapio()">
+                🔗 Compartilhar cardápio
             </button>
         </div>
     </div>
@@ -291,12 +419,17 @@
 
 <footer>
     &copy; 2026 Banca Adair e Pedrina. Todos os direitos reservados.<br>
-    <button class="btn-admin-acesso" onclick="abrirAdmin()">🔒 Gerenciar Banca</button>
+    <div class="footer-actions">
+        <button class="btn-admin-acesso" onclick="abrirAdmin()">🔒 Gerenciar Banca</button>
+        <button class="btn-admin-acesso btn-instalar-pwa" id="btn-instalar-pwa" onclick="instalarPWA()">📲 Instalar App</button>
+    </div>
 </footer>
 
 <div class="toast" id="toast"></div>
 
-<!-- MODAL CHECKOUT -->
+<!-- ============================================================
+     MODAL CHECKOUT
+============================================================ -->
 <div class="modal-overlay" id="overlay-checkout">
     <div class="modal">
         <div class="modal-head">
@@ -305,31 +438,28 @@
         </div>
         <div class="modal-body">
             <div class="clientes-salvos" id="clientes-salvos-area"></div>
-
             <div class="form-group">
                 <label>Seu Nome</label>
-                <input type="text" id="cli-nome" placeholder="Como devemos te chamar?" oninput="salvarClienteTemp()">
+                <input type="text" id="cli-nome" placeholder="Como devemos te chamar?">
             </div>
             <div class="form-group">
                 <label>Telefone (opcional)</label>
-                <input type="tel" id="cli-tel" placeholder="(62) 99999-9999" oninput="salvarClienteTemp()">
+                <input type="tel" id="cli-tel" placeholder="(62) 99999-9999">
             </div>
-
             <div class="grid-2">
                 <div class="form-group">
                     <label>Quadra</label>
-                    <input type="text" id="cli-quadra" placeholder="Ex: 7" oninput="salvarClienteTemp()">
+                    <input type="text" id="cli-quadra" placeholder="Ex: 7">
                 </div>
                 <div class="form-group">
                     <label>Casa / Lote</label>
-                    <input type="text" id="cli-lote" placeholder="Ex: 14" oninput="salvarClienteTemp()">
+                    <input type="text" id="cli-lote" placeholder="Ex: 14">
                 </div>
             </div>
             <div class="form-group">
                 <label>Referência (opcional)</label>
                 <input type="text" id="cli-ref" placeholder="Ex: casa azul, perto da praça">
             </div>
-
             <div class="form-group">
                 <label>Forma de Pagamento</label>
                 <select id="cli-pagamento" onchange="checarTroco()">
@@ -346,7 +476,6 @@
                 <label>Observações (opcional)</label>
                 <textarea id="cli-obs" rows="2" placeholder="Ex: sem cebola, deixar na porta..."></textarea>
             </div>
-
             <div style="display:flex; gap:10px;">
                 <button class="btn-finalizar" onclick="enviarWhatsApp()" style="flex:1">
                     Enviar Pedido
@@ -357,7 +486,9 @@
     </div>
 </div>
 
-<!-- MODAL ADMIN -->
+<!-- ============================================================
+     MODAL ADMIN
+============================================================ -->
 <div class="modal-overlay" id="overlay-admin">
     <div class="modal admin-modal">
         <div class="modal-head">
@@ -366,7 +497,7 @@
         </div>
         <div class="admin-tabs" id="admin-tabs">
             <button class="admin-tab active" onclick="mudarAba('produtos')">📦 Produtos</button>
-            <button class="admin-tab" onclick="mudarAba('entregas')">🚚 Entregas</button>
+            <button class="admin-tab" onclick="mudarAba('entregas')" id="tab-entregas">🚚 Entregas</button>
             <button class="admin-tab" onclick="mudarAba('historico')">📋 Histórico</button>
             <button class="admin-tab" onclick="mudarAba('relatorios')">📊 Relatório</button>
             <button class="admin-tab" onclick="mudarAba('config')">⚙️ Config</button>
@@ -376,20 +507,59 @@
 </div>
 
 <script>
-const VERSAO = 'v16';
+// ============================================================
+// CONSTANTES E ESTADO GLOBAL
+// ============================================================
+const VERSAO = 'v17';
 const SENHA_HASH = '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4'; // "1234"
+const STATUS_ENTREGA = ['recebido', 'separando', 'saiu', 'entregue'];
+const STATUS_LABEL = { recebido: '📥 Recebido', separando: '📦 Separando', saiu: '🚴 Saiu', entregue: '✅ Entregue', presencial: '🏪 Presencial' };
+const STATUS_CLASS = { recebido: 'status-recebido', separando: 'status-separando', saiu: 'status-saiu', entregue: 'status-entregue', presencial: 'status-presencial' };
+const CATEGORIAS = ['todas','frutas','verduras','folhas','temperos'];
+const CAT_LABEL = { todas:'🏷️ Ver Todos', frutas:'🍎 Frutas', verduras:'🥦 Verduras', folhas:'🥬 Folhas', temperos:'🧄 Temperos' };
+const UNIDADES = ['kg','g','maço','un','caixa','dúzia','litro'];
 
-// Usamos estoque 999 para "Em Estoque" e 0 para "Esgotado"
 const PADRAO = [
     { id: 1, nome: "Batata Inglesa", preco: 6.50, cat: "verduras", estoque: 999, emoji: "🥔", unidade: "kg", foto: null },
     { id: 2, nome: "Batata Doce", preco: 5.50, cat: "verduras", estoque: 999, emoji: "🍠", unidade: "kg", foto: null },
     { id: 3, nome: "Mandioca Descascada", preco: 10.00, cat: "verduras", estoque: 999, emoji: "🪵", unidade: "kg", foto: null }
-]; // Resumido aqui só por espaço, o script puxa os reais do Google
+];
 
-const STATUS_ENTREGA = ['recebido', 'separando', 'saiu', 'entregue'];
-const STATUS_LABEL = { recebido: '📥 Recebido', separando: '📦 Separando', saiu: '🚴 Saiu', entregue: '✅ Entregue', presencial: '🏪 Presencial' };
-const STATUS_CLASS = { recebido: 'status-recebido', separando: 'status-separando', saiu: 'status-saiu', entregue: 'status-entregue', presencial: 'status-presencial' };
+let produtos = [];
+let carrinho = JSON.parse(localStorage.getItem('banca_carrinho') || '[]');
+let catAtiva = 'todas';
+let busca = '';
+let abaAtiva = 'produtos';
+let editandoId = null;
+let fotoBase64 = null;
+let timeoutBusca;
+let deferredPrompt = null; // PWA install
+let ultimaContagemEntregas = 0;
+let carregandoFirebase = false; // flag anti-loop
+let somAtivado = false;
 
+// ============================================================
+// PWA — INSTALAR APP
+// ============================================================
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    document.getElementById('btn-instalar-pwa').classList.add('visivel');
+});
+
+function instalarPWA() {
+    if (!deferredPrompt) { toast('📲 Abra no Chrome ou Safari para instalar!'); return; }
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(r => {
+        if (r.outcome === 'accepted') toast('✅ App instalado com sucesso!');
+        deferredPrompt = null;
+        document.getElementById('btn-instalar-pwa').classList.remove('visivel');
+    });
+}
+
+// ============================================================
+// CARREGAR PRODUTOS DO FIREBASE
+// ============================================================
 function carregar() {
     if (localStorage.getItem('banca_versao') !== VERSAO) {
         localStorage.setItem('banca_produtos', JSON.stringify(PADRAO));
@@ -398,73 +568,251 @@ function carregar() {
     return JSON.parse(localStorage.getItem('banca_produtos') || '[]');
 }
 
-let produtos = [];
-
-// ============================================================
-// CARREGAR TUDO DA NUVEM QUANDO O SITE ABRE
-// ============================================================
 async function carregarProdutosDoFirebase() {
-    try {
-        if (!window.db) { setTimeout(carregarProdutosDoFirebase, 500); return; }
+    if (carregandoFirebase) return;
+    if (!window.db) { setTimeout(carregarProdutosDoFirebase, 600); return; }
+    carregandoFirebase = true;
 
+    try {
         const querySnapshot = await window.getDocs(window.collection(window.db, "produtos"));
         const listaDaNuvem = [];
-        
         querySnapshot.forEach((doc) => {
             listaDaNuvem.push({ id: parseInt(doc.id), ...doc.data() });
         });
 
         if (listaDaNuvem.length > 0) {
-            produtos = listaDaNuvem; 
-            renderLoja(); 
+            produtos = listaDaNuvem;
+            localStorage.setItem('banca_produtos', JSON.stringify(produtos));
         } else {
             produtos = carregar();
         }
     } catch (e) {
         console.error("Erro ao ler nuvem:", e);
-        produtos = carregar(); 
+        produtos = carregar();
+    } finally {
+        carregandoFirebase = false;
     }
+
+    renderLoja();
+    verificarHorario();
 }
 carregarProdutosDoFirebase();
 
-// NOVIDADE: Essa função busca o histórico, clientes e entregas do Firebase silenciosamente
+// SINCRONIZAR DADOS (clientes, entregas, histórico, config)
+let sincronizandoDados = false;
 async function sincronizarDadosDaNuvem() {
-    if (!window.db) { setTimeout(sincronizarDadosDaNuvem, 500); return; }
+    if (sincronizandoDados || !window.db) { setTimeout(sincronizarDadosDaNuvem, 600); return; }
+    sincronizandoDados = true;
     try {
         const querySnapshot = await window.getDocs(window.collection(window.db, "loja"));
         querySnapshot.forEach((doc) => {
-            // Se ele achar dados salvos na nuvem, ele atualiza o celular na hora
-            if (doc.id === "clientes" && doc.data().dados) localStorage.setItem('banca_clientes', JSON.stringify(doc.data().dados));
-            if (doc.id === "entregas" && doc.data().dados) localStorage.setItem('banca_entregas', JSON.stringify(doc.data().dados));
-            if (doc.id === "historico" && doc.data().dados) localStorage.setItem('banca_historico', JSON.stringify(doc.data().dados));
-            if (doc.id === "config" && doc.data().whatsapp) localStorage.setItem('banca_whatsapp', doc.data().whatsapp);
+            const d = doc.data();
+            if (doc.id === "clientes" && d.dados) localStorage.setItem('banca_clientes', JSON.stringify(d.dados));
+            if (doc.id === "entregas" && d.dados) {
+                // Só sobrescreve se a nuvem tiver dados mais recentes (mais itens)
+                const local = JSON.parse(localStorage.getItem('banca_entregas') || '[]');
+                if (d.dados.length >= local.length) localStorage.setItem('banca_entregas', JSON.stringify(d.dados));
+            }
+            if (doc.id === "historico" && d.dados) {
+                const local = JSON.parse(localStorage.getItem('banca_historico') || '[]');
+                if (d.dados.length >= local.length) localStorage.setItem('banca_historico', JSON.stringify(d.dados));
+            }
+            if (doc.id === "config") {
+                if (d.whatsapp) localStorage.setItem('banca_whatsapp', d.whatsapp);
+                if (d.horario_inicio) localStorage.setItem('banca_horario_inicio', d.horario_inicio);
+                if (d.horario_fim) localStorage.setItem('banca_horario_fim', d.horario_fim);
+                if (d.horario_ativo !== undefined) localStorage.setItem('banca_horario_ativo', d.horario_ativo ? '1' : '0');
+                if (d.pedido_minimo !== undefined) localStorage.setItem('banca_pedido_minimo', String(d.pedido_minimo));
+                if (d.banner_url !== undefined) localStorage.setItem('banca_banner', d.banner_url);
+                if (d.nome_loja !== undefined) localStorage.setItem('banca_nome', d.nome_loja);
+                aplicarConfigVisuais();
+            }
         });
-    } catch(e) { 
-        console.log("Erro ao puxar histórico da nuvem:", e); 
+        verificarHorario();
+        checarNovosEntregas();
+    } catch(e) {
+        console.log("Erro ao puxar dados da nuvem:", e);
+    } finally {
+        sincronizandoDados = false;
     }
 }
 sincronizarDadosDaNuvem();
 
-let carrinho = JSON.parse(localStorage.getItem('banca_carrinho') || '[]');
-let catAtiva = 'todas';
-let busca = '';
-let abaAtiva = 'produtos';
-let editandoId = null;
-let fotoBase64 = null;
-let timeoutBusca;
-
-const CATEGORIAS = ['todas','frutas','verduras','folhas','temperos'];
-const CAT_LABEL = { todas:'🏷️ Ver Todos', frutas:'🍎 Frutas', verduras:'🥦 Verduras', folhas:'🥬 Folhas', temperos:'🧄 Temperos' };
-const UNIDADES = ['kg','g','maço','un','caixa','dúzia','litro'];
-
-function debounce(func, delay) {
-    return function() { clearTimeout(timeoutBusca); timeoutBusca = setTimeout(() => func.apply(this, arguments), delay); };
+// ============================================================
+// CONFIG VISUAIS (banner, nome)
+// ============================================================
+function aplicarConfigVisuais() {
+    const nome = localStorage.getItem('banca_nome');
+    if (nome) {
+        const partes = nome.split(' ');
+        const destaque = partes[partes.length - 1];
+        const resto = partes.slice(0, -1).join(' ');
+        document.getElementById('header-nome').innerHTML = `${resto} <span>${destaque}</span>`;
+        document.title = nome;
+    }
+    const banner = localStorage.getItem('banca_banner');
+    const bannerEl = document.getElementById('header-banner-img');
+    if (banner) {
+        bannerEl.src = banner;
+        bannerEl.classList.add('visivel');
+    } else {
+        bannerEl.classList.remove('visivel');
+    }
+    const minimo = parseFloat(localStorage.getItem('banca_pedido_minimo') || '0');
+    const avisoTop = document.getElementById('banner-aviso-minimo');
+    if (minimo > 0) {
+        avisoTop.textContent = `⚠️ Pedido mínimo: R$ ${fmt(minimo)}`;
+        avisoTop.classList.add('visivel');
+    } else {
+        avisoTop.classList.remove('visivel');
+    }
 }
-const filtrarBuscaDebounced = debounce(() => {
-    busca = document.getElementById('busca-input').value.toLowerCase().trim();
-    renderLoja();
-}, 300);
+aplicarConfigVisuais();
 
+// ============================================================
+// HORÁRIO DE FUNCIONAMENTO
+// ============================================================
+function verificarHorario() {
+    const ativo = localStorage.getItem('banca_horario_ativo') === '1';
+    if (!ativo) {
+        document.getElementById('banner-fechado').classList.remove('visivel');
+        document.getElementById('btn-finalizar').disabled = false;
+        return;
+    }
+    const inicio = localStorage.getItem('banca_horario_inicio') || '07:00';
+    const fim = localStorage.getItem('banca_horario_fim') || '20:00';
+    const agora = new Date();
+    const [hI, mI] = inicio.split(':').map(Number);
+    const [hF, mF] = fim.split(':').map(Number);
+    const minutosAgora = agora.getHours() * 60 + agora.getMinutes();
+    const minutosInicio = hI * 60 + mI;
+    const minutosFim = hF * 60 + mF;
+    const aberto = minutosAgora >= minutosInicio && minutosAgora < minutosFim;
+
+    const banner = document.getElementById('banner-fechado');
+    const btn = document.getElementById('btn-finalizar');
+
+    if (!aberto) {
+        banner.textContent = `🚫 Fechado no momento. Atendemos das ${inicio} às ${fim}.`;
+        banner.classList.add('visivel');
+        btn.disabled = true;
+    } else {
+        banner.classList.remove('visivel');
+        btn.disabled = false;
+    }
+}
+// Verificar horário a cada minuto
+setInterval(verificarHorario, 60000);
+
+// ============================================================
+// COMPARTILHAR CARDÁPIO
+// ============================================================
+function compartilharCardapio() {
+    const url = window.location.href;
+    if (navigator.share) {
+        navigator.share({
+            title: localStorage.getItem('banca_nome') || 'Banca Adair e Pedrina',
+            text: '🌿 Veja o cardápio fresquinho!',
+            url
+        }).catch(() => {});
+    } else {
+        navigator.clipboard.writeText(url).then(() => {
+            toast('🔗 Link copiado!');
+        }).catch(() => {
+            toast('🔗 Copie o link da barra do navegador');
+        });
+    }
+}
+
+// ============================================================
+// SOM DE NOTIFICAÇÃO
+// ============================================================
+function tocarSom() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const notas = [523, 659, 784];
+        notas.forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = freq;
+            osc.type = 'sine';
+            gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.12);
+            gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + i * 0.12 + 0.02);
+            gain.gain.linearRampToValueAtTime(0, ctx.currentTime + i * 0.12 + 0.18);
+            osc.start(ctx.currentTime + i * 0.12);
+            osc.stop(ctx.currentTime + i * 0.12 + 0.18);
+        });
+    } catch(e) {}
+}
+
+// ============================================================
+// NOTIFICAÇÃO DE NOVOS PEDIDOS (polling)
+// ============================================================
+function checarNovosEntregas() {
+    const entregas = getEntregas();
+    const ativas = entregas.filter(e => e.status !== 'entregue');
+    const novaContagem = ativas.length;
+
+    // Atualizar badge na aba
+    const tabEntregas = document.getElementById('tab-entregas');
+    if (tabEntregas) {
+        const badgeExistente = tabEntregas.querySelector('.tab-badge');
+        if (novaContagem > 0) {
+            if (badgeExistente) { badgeExistente.textContent = novaContagem; }
+            else {
+                const badge = document.createElement('span');
+                badge.className = 'tab-badge';
+                badge.textContent = novaContagem;
+                tabEntregas.appendChild(badge);
+            }
+        } else {
+            if (badgeExistente) badgeExistente.remove();
+        }
+    }
+
+    // Som + notificação só se aumentou (novo pedido chegou)
+    if (ultimaContagemEntregas > 0 && novaContagem > ultimaContagemEntregas) {
+        tocarSom();
+        toast(`🔔 Novo pedido recebido! (${novaContagem} em aberto)`);
+        if (Notification.permission === 'granted') {
+            new Notification('🛒 Novo Pedido!', {
+                body: `Você tem ${novaContagem} entrega(s) em aberto.`,
+                icon: 'icon-192.png'
+            });
+        }
+    }
+    ultimaContagemEntregas = novaContagem;
+}
+
+// Polling a cada 30 segundos para checar novos pedidos no Firebase
+async function pollingEntregas() {
+    if (!window.db) { setTimeout(pollingEntregas, 1000); return; }
+    try {
+        const doc = await window.getDoc(window.docRef(window.db, "loja", "entregas"));
+        if (doc.exists()) {
+            const dados = doc.data().dados || [];
+            const local = JSON.parse(localStorage.getItem('banca_entregas') || '[]');
+            if (dados.length > local.length) {
+                localStorage.setItem('banca_entregas', JSON.stringify(dados));
+                checarNovosEntregas();
+            }
+        }
+    } catch(e) {}
+    setTimeout(pollingEntregas, 30000);
+}
+
+// Pedir permissão de notificação ao abrir admin
+function pedirPermissaoNotificacao() {
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+}
+
+// ============================================================
+// RENDER CATEGORIAS
+// ============================================================
 function renderCategorias() {
     const div = document.getElementById('categorias');
     div.innerHTML = CATEGORIAS.map(c =>
@@ -473,12 +821,15 @@ function renderCategorias() {
 }
 function setCat(cat) { catAtiva = cat; renderCategorias(); renderLoja(); }
 
+// ============================================================
+// RENDER LOJA
+// ============================================================
 function renderLoja() {
     const grid = document.getElementById('lista-produtos');
     let lista = produtos.filter(p => {
         const cat = catAtiva === 'todas' || p.cat === catAtiva;
         const txt = p.nome.toLowerCase().includes(busca);
-        return cat && txt && p.estoque > 0; // Só mostra os Disponíveis
+        return cat && txt && p.estoque > 0;
     });
 
     if (lista.length === 0) {
@@ -487,8 +838,9 @@ function renderLoja() {
     }
 
     grid.innerHTML = lista.map((p, i) => {
-        const imgHTML = p.foto ? `<img src="${p.foto}" alt="${p.nome}">` : p.emoji || '📦';
-
+        const imgHTML = p.foto
+            ? `<img src="${p.foto}" alt="${p.nome}" loading="lazy">`
+            : (p.emoji || '📦');
         return `
         <div class="produto-card" style="animation-delay:${i*0.04}s">
             <div class="produto-img-wrap">
@@ -506,6 +858,9 @@ function renderLoja() {
     }).join('');
 }
 
+// ============================================================
+// CARRINHO — ADICIONAR / ALTERAR
+// ============================================================
 function adicionarComAnimacao(event, id, emoji) {
     const btn = event.target;
     const rect = btn.getBoundingClientRect();
@@ -515,9 +870,16 @@ function adicionarComAnimacao(event, id, emoji) {
     flyer.style.left = `${rect.left}px`;
     flyer.style.top = `${rect.top}px`;
     document.body.appendChild(flyer);
-    const cartIcon = window.innerWidth <= 860 ? document.getElementById('btn-carrinho-mobile') : document.querySelector('.carrinho-topo h2');
+    const cartIcon = window.innerWidth <= 860
+        ? document.getElementById('btn-carrinho-mobile')
+        : document.querySelector('.carrinho-topo h2');
     const cartRect = cartIcon.getBoundingClientRect();
-    setTimeout(() => { flyer.style.left = `${cartRect.left + 20}px`; flyer.style.top = `${cartRect.top + 10}px`; flyer.style.opacity = '0.5'; flyer.style.transform = 'scale(0.5)'; }, 10);
+    setTimeout(() => {
+        flyer.style.left = `${cartRect.left + 20}px`;
+        flyer.style.top = `${cartRect.top + 10}px`;
+        flyer.style.opacity = '0.5';
+        flyer.style.transform = 'scale(0.5)';
+    }, 10);
     setTimeout(() => flyer.remove(), 600);
     addCarrinho(id);
 }
@@ -563,8 +925,24 @@ function atualizarEstadoCarrinho() {
     setTimeout(() => el.classList.remove('update'), 300);
     const totalItens = carrinho.reduce((acc, item) => acc + item.qtd, 0);
     document.getElementById('qtd-flutuante').textContent = totalItens;
+
+    // Verificar pedido mínimo
+    const minimo = parseFloat(localStorage.getItem('banca_pedido_minimo') || '0');
+    const totalValor = carrinho.reduce((acc, item) => acc + item.preco * item.qtd, 0);
+    const avisoCarrinho = document.getElementById('aviso-minimo-carrinho');
+    const btnFin = document.getElementById('btn-finalizar');
+
+    if (minimo > 0 && totalValor < minimo && carrinho.length > 0) {
+        const falta = minimo - totalValor;
+        avisoCarrinho.textContent = `⚠️ Faltam R$ ${fmt(falta)} para o mínimo de R$ ${fmt(minimo)}`;
+        avisoCarrinho.classList.add('visivel');
+        btnFin.disabled = true;
+    } else {
+        avisoCarrinho.classList.remove('visivel');
+        verificarHorario(); // reaplica estado do horário
+    }
+
     renderCarrinho();
-    renderLoja();
 }
 
 function renderCarrinho() {
@@ -579,7 +957,9 @@ function renderCarrinho() {
     div.innerHTML = carrinho.map(item => {
         const sub = item.preco * item.qtd;
         total += sub;
-        const imgEl = item.foto ? `<img src="${item.foto}" style="width:100%;height:100%;object-fit:cover;" alt="">` : item.emoji || '📦';
+        const imgEl = item.foto
+            ? `<img src="${item.foto}" style="width:100%;height:100%;object-fit:cover;" alt="">`
+            : item.emoji || '📦';
         return `
         <div class="carrinho-item">
             <div class="item-emoji">${imgEl}</div>
@@ -604,17 +984,14 @@ function toggleCarrinhoMobile() {
 }
 
 // ============================================================
-// CLIENTES SALVOS (COM BACKUP NA NUVEM)
+// CLIENTES SALVOS
 // ============================================================
 function getClientes() { return JSON.parse(localStorage.getItem('banca_clientes') || '[]'); }
 
-function salvarClientes(arr) { 
-    localStorage.setItem('banca_clientes', JSON.stringify(arr)); 
-    // Copia pra nuvem
-    if (window.db) window.setDoc(window.doc(window.db, "loja", "clientes"), { dados: arr }).catch(e=>console.log(e));
+function salvarClientes(arr) {
+    localStorage.setItem('banca_clientes', JSON.stringify(arr));
+    if (window.db) window.setDoc(window.docRef(window.db, "loja", "clientes"), { dados: arr }).catch(e=>console.log(e));
 }
-
-function salvarClienteTemp() {}
 
 function salvarClienteParaProximo() {
     const nome = document.getElementById('cli-nome').value.trim();
@@ -622,19 +999,15 @@ function salvarClienteParaProximo() {
     const quadra = document.getElementById('cli-quadra').value.trim();
     const lote = document.getElementById('cli-lote').value.trim();
     const ref = document.getElementById('cli-ref').value.trim();
-
     if (!nome || !quadra || !lote) { toast('⚠️ Preencha nome, quadra e lote!'); return; }
-
     const clientes = getClientes();
     const idx = clientes.findIndex(c => c.nome.toLowerCase() === nome.toLowerCase());
     const novoCliente = { nome, tel, quadra, lote, ref };
-
     if (idx >= 0) { clientes[idx] = novoCliente; }
     else { clientes.unshift(novoCliente); }
-
     salvarClientes(clientes.slice(0, 20));
     renderClientesSalvos();
-    toast('✅ Cliente salvo na nuvem!');
+    toast('✅ Cliente salvo!');
 }
 
 function renderClientesSalvos() {
@@ -646,16 +1019,16 @@ function renderClientesSalvos() {
         <div style="font-size:0.8rem; font-weight:700; color:var(--text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">Clientes salvos</div>
         <div class="clientes-chips">
             ${clientes.slice(0, 8).map(c =>
-                `<button class="cliente-chip" onclick="preencherCliente('${c.nome}')">${c.nome} — Q${c.quadra}/L${c.lote}</button>`
+                `<button class="cliente-chip" onclick="preencherCliente('${c.nome.replace(/'/g,"\\'")}')">
+                    ${c.nome} — Q${c.quadra}/L${c.lote}
+                </button>`
             ).join('')}
         </div>
-        <div style="height:12px;"></div>
-    `;
+        <div style="height:12px;"></div>`;
 }
 
 function preencherCliente(nome) {
-    const clientes = getClientes();
-    const c = clientes.find(x => x.nome === nome);
+    const c = getClientes().find(x => x.nome === nome);
     if (!c) return;
     document.getElementById('cli-nome').value = c.nome;
     document.getElementById('cli-tel').value = c.tel || '';
@@ -699,7 +1072,7 @@ function enviarWhatsApp() {
     let total = 0;
     const endFormatado = `Quadra ${quadra}, Casa ${lote}${ref ? ` (${ref})` : ''}`;
 
-    let msg = `*NOVO PEDIDO — ${localStorage.getItem('banca_nome') || 'Banca'}*\n\n`;
+    let msg = `*NOVO PEDIDO — ${localStorage.getItem('banca_nome') || 'Banca Adair e Pedrina'}*\n\n`;
     msg += `👤 *Cliente:* ${nome}`;
     if (tel) msg += ` · 📱 ${tel}`;
     msg += `\n📍 *Endereço:* ${endFormatado}\n`;
@@ -737,14 +1110,13 @@ function limparFormCheckout() {
 }
 
 // ============================================================
-// PAINEL DE ENTREGAS (COM BACKUP NA NUVEM)
+// ENTREGAS
 // ============================================================
 function getEntregas() { return JSON.parse(localStorage.getItem('banca_entregas') || '[]'); }
 
-function salvarEntregas(arr) { 
-    localStorage.setItem('banca_entregas', JSON.stringify(arr)); 
-    // Copia pra nuvem
-    if (window.db) window.setDoc(window.doc(window.db, "loja", "entregas"), { dados: arr }).catch(e=>console.log(e));
+function salvarEntregas(arr) {
+    localStorage.setItem('banca_entregas', JSON.stringify(arr));
+    if (window.db) window.setDoc(window.docRef(window.db, "loja", "entregas"), { dados: arr }).catch(e=>console.log(e));
 }
 
 function adicionarEntrega(pedido) {
@@ -752,6 +1124,7 @@ function adicionarEntrega(pedido) {
     const id = Date.now();
     entregas.unshift({ ...pedido, id, status: pedido.tipo === 'presencial' ? 'presencial' : 'recebido' });
     salvarEntregas(entregas.slice(0, 100));
+    checarNovosEntregas();
 }
 
 function avancarStatus(id) {
@@ -768,7 +1141,34 @@ function removerEntrega(id) {
     if (!confirm('Arquivar esta entrega?')) return;
     const entregas = getEntregas().filter(x => x.id !== id);
     salvarEntregas(entregas);
+    checarNovosEntregas();
     mudarAba('entregas');
+}
+
+// ============================================================
+// IMPRESSÃO DE PEDIDO
+// ============================================================
+function imprimirPedido(e) {
+    const endStr = e.quadra ? `Quadra ${e.quadra}, Casa ${e.lote}${e.ref ? ` (${e.ref})` : ''}` : (e.end || '');
+    let linhasItens = e.itens.map(i =>
+        `<tr><td>${i.qtd}x ${i.nome}</td><td style="text-align:right">R$ ${fmt(i.preco * i.qtd)}</td></tr>`
+    ).join('');
+
+    document.getElementById('print-area').innerHTML = `
+        <h2>${localStorage.getItem('banca_nome') || 'Banca Adair e Pedrina'}</h2>
+        <div class="linha"></div>
+        <p><strong>Cliente:</strong> ${e.nome}</p>
+        ${endStr ? `<p><strong>Endereço:</strong> ${endStr}</p>` : ''}
+        ${e.tel ? `<p><strong>Tel:</strong> ${e.tel}</p>` : ''}
+        <p><strong>Pagamento:</strong> ${e.pag}</p>
+        <p><strong>Data:</strong> ${e.data}</p>
+        <div class="linha"></div>
+        <table>${linhasItens}</table>
+        <div class="linha"></div>
+        <p class="total"><strong>TOTAL: R$ ${fmt(e.total)}</strong></p>
+        ${e.obs ? `<p><em>Obs: ${e.obs}</em></p>` : ''}
+    `;
+    window.print();
 }
 
 function renderAbaEntregas(body) {
@@ -797,8 +1197,9 @@ function renderAbaEntregas(body) {
             <div class="entrega-itens">${e.itens.map(i => `${i.qtd}x ${i.nome}`).join(' · ')}</div>
             <div class="entrega-footer">
                 <span class="entrega-total">R$ ${fmt(e.total)} · ${e.pag}</span>
-                <div style="display:flex;gap:6px;">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
                     ${proxLabel && e.status !== 'presencial' ? `<button class="btn-status" onclick="avancarStatus(${e.id})">${proxLabel}</button>` : ''}
+                    <button class="btn-status btn-imprimir-pedido" onclick='imprimirPedido(${JSON.stringify(e).replace(/'/g,"&apos;")})'>🖨️</button>
                     <button class="btn-status btn-status-danger" onclick="removerEntrega(${e.id})">✓ OK</button>
                 </div>
             </div>
@@ -820,7 +1221,6 @@ function renderAbaEntregas(body) {
 function abrirPedidoPresencial() {
     const body = document.getElementById('admin-body');
     document.getElementById('admin-titulo').textContent = '🏪 Venda Presencial';
-
     body.innerHTML = `
         <div class="editor-section">
             <div class="form-group"><label>Nome do Cliente</label><input type="text" id="pres-nome" placeholder="Nome ou 'Balcão'"></div>
@@ -836,25 +1236,22 @@ function abrirPedidoPresencial() {
                 </select>
             </div>
         </div>
-
         <div class="editor-section">
             <div style="font-weight:700;font-size:0.82rem;color:var(--text-muted);margin-bottom:10px">📦 ADICIONAR ITENS</div>
             <div class="grid-2" style="margin-bottom:10px;">
-                <select id="pres-prod" style="padding:10px;border:1.5px solid #e5e7eb;border-radius:8px;font-family:'DM Sans',sans-serif;">
+                <select id="pres-prod" style="padding:10px;border:1.5px solid #e5e7eb;border-radius:8px;font-family:'DM Sans',sans-serif;background:var(--sand);">
                     ${produtos.filter(p=>p.estoque>0).map(p=>`<option value="${p.id}">${p.nome} (R$ ${fmt(p.preco)}/${p.unidade})</option>`).join('')}
                 </select>
-                <input type="number" id="pres-qtd" value="1" min="0.1" step="0.1" style="padding:10px;border:1.5px solid #e5e7eb;border-radius:8px;font-family:'DM Sans',sans-serif;">
+                <input type="number" id="pres-qtd" value="1" min="0.1" step="0.1" style="padding:10px;border:1.5px solid #e5e7eb;border-radius:8px;font-family:'DM Sans',sans-serif;background:var(--sand);">
             </div>
             <button class="btn-primary" onclick="addItemPresencial()" style="width:100%;margin-bottom:12px;">➕ Adicionar</button>
             <div id="pres-lista" style="font-size:0.88rem;"></div>
         </div>
-
         <div class="botoes-editor">
             <button class="btn-secondary" onclick="mudarAba('entregas')">← Voltar</button>
             <button class="btn-primary" onclick="finalizarPresencial()">✅ Finalizar Venda</button>
         </div>
     `;
-
     window._presItens = [];
     renderListaPresencial();
 }
@@ -864,11 +1261,9 @@ function addItemPresencial() {
     const qtd = parseFloat(document.getElementById('pres-qtd').value) || 1;
     const p = produtos.find(x => x.id === prodId);
     if (!p) return;
-
     const existe = window._presItens.findIndex(x => x.id === prodId);
     if (existe >= 0) { window._presItens[existe].qtd += qtd; }
     else { window._presItens.push({ id: p.id, nome: p.nome, preco: p.preco, emoji: p.emoji, unidade: p.unidade, qtd }); }
-
     renderListaPresencial();
     toast(`${p.emoji} ${p.nome} adicionado`);
 }
@@ -886,9 +1281,13 @@ function renderListaPresencial() {
         total += sub;
         return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px dashed #e5e7eb;">
             <span>${item.emoji} ${item.nome} × ${String(item.qtd).replace('.',',')} ${item.unidade}</span>
-            <span style="font-weight:700;color:var(--green-mid)">R$ ${fmt(sub)} <button onclick="window._presItens.splice(${i},1);renderListaPresencial();" style="background:none;border:none;color:var(--danger);cursor:pointer;margin-left:6px;">✕</button></span>
+            <span style="font-weight:700;color:var(--green-mid)">R$ ${fmt(sub)}
+                <button onclick="window._presItens.splice(${i},1);renderListaPresencial();" style="background:none;border:none;color:var(--danger);cursor:pointer;margin-left:6px;">✕</button>
+            </span>
         </div>`;
-    }).join('') + `<div style="display:flex;justify-content:space-between;font-weight:700;margin-top:10px;font-size:1rem;"><span>Total</span><span style="color:var(--green-deep)">R$ ${fmt(total)}</span></div>`;
+    }).join('') + `<div style="display:flex;justify-content:space-between;font-weight:700;margin-top:10px;font-size:1rem;">
+        <span>Total</span><span style="color:var(--green-deep)">R$ ${fmt(total)}</span>
+    </div>`;
 }
 
 function finalizarPresencial() {
@@ -897,25 +1296,20 @@ function finalizarPresencial() {
     const quadra = document.getElementById('pres-quadra').value.trim();
     const lote = document.getElementById('pres-lote').value.trim();
     const pag = document.getElementById('pres-pag').value;
-
     let total = window._presItens.reduce((acc, i) => acc + i.preco * i.qtd, 0);
-
     const pedido = { nome, quadra, lote, ref: '', tel: '', pag, total, itens: [...window._presItens], obs: '', data: new Date().toLocaleString('pt-BR'), tipo: 'presencial' };
     salvarHistorico(pedido);
     adicionarEntrega(pedido);
-    
     toast('✅ Venda registrada!');
     mudarAba('entregas');
 }
 
 // ============================================================
-// HISTÓRICO E RELATÓRIOS (COM BACKUP NA NUVEM)
+// HISTÓRICO E RELATÓRIOS
 // ============================================================
 function salvarHistorico(pedido) {
     const hist = JSON.parse(localStorage.getItem('banca_historico') || '[]');
     hist.unshift({ ...pedido, data: pedido.data || new Date().toLocaleString('pt-BR') });
-    
-    // Manter apenas 30 dias pra não pesar
     const limite = new Date();
     limite.setDate(limite.getDate() - 30);
     const filtrado = hist.filter(h => {
@@ -925,30 +1319,60 @@ function salvarHistorico(pedido) {
             return new Date(`${a}-${m}-${d}`) >= limite;
         } catch { return true; }
     });
-    
     const arrayFinal = filtrado.slice(0, 200);
     localStorage.setItem('banca_historico', JSON.stringify(arrayFinal));
-    
-    // Manda uma cópia de segurança para o Google
-    if (window.db) window.setDoc(window.doc(window.db, "loja", "historico"), { dados: arrayFinal }).catch(e=>console.log(e));
+    if (window.db) window.setDoc(window.docRef(window.db, "loja", "historico"), { dados: arrayFinal }).catch(e=>console.log(e));
 }
 
-function renderAbaHistorico(body, filtro = '') {
+function exportarCSV() {
     const hist = JSON.parse(localStorage.getItem('banca_historico') || '[]');
-    const filtrado = filtro ? hist.filter(h => h.nome.toLowerCase().includes(filtro.toLowerCase())) : hist;
+    if (!hist.length) { toast('Nenhum dado para exportar'); return; }
+    let csv = 'Data,Cliente,Endereço,Pagamento,Total,Itens\n';
+    hist.forEach(h => {
+        const end = h.quadra ? `Quadra ${h.quadra} Casa ${h.lote}` : '';
+        const itens = h.itens.map(i => `${i.qtd}x ${i.nome}`).join(' | ');
+        csv += `"${h.data}","${h.nome}","${end}","${h.pag}","${fmt(h.total)}","${itens}"\n`;
+    });
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `historico-banca-${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('📊 CSV exportado!');
+}
+
+function renderAbaHistorico(body, filtro = '', dataFiltro = '') {
+    let hist = JSON.parse(localStorage.getItem('banca_historico') || '[]');
+    if (filtro) hist = hist.filter(h => h.nome.toLowerCase().includes(filtro.toLowerCase()));
+    if (dataFiltro) hist = hist.filter(h => {
+        try { return h.data.includes(dataFiltro); } catch { return true; }
+    });
+
     body.innerHTML = `
-        <input type="text" placeholder="🔍 Buscar por cliente..." value="${filtro}" oninput="renderAbaHistorico(document.getElementById('admin-body'), this.value)" style="width:100%;padding:10px 14px;margin-bottom:12px;border-radius:8px;border:1.5px solid #e5e7eb;font-family:'DM Sans',sans-serif;">
-        <div style="display:flex;gap:10px;margin-bottom:16px;">
-            <div style="flex:1;background:var(--green-pale);border-radius:10px;padding:12px;text-align:center;">
-                <div style="font-size:1.4rem;font-weight:700;color:var(--green-deep)">${filtrado.length}</div>
-                <div style="font-size:0.75rem;color:var(--text-muted)">pedidos</div>
-            </div>
-            <div style="flex:1;background:#fef3c7;border-radius:10px;padding:12px;text-align:center;">
-                <div style="font-size:1.4rem;font-weight:700;color:#92400e">R$ ${fmt(filtrado.reduce((a,h)=>a+(h.total||0),0))}</div>
-                <div style="font-size:0.75rem;color:var(--text-muted)">total geral</div>
-            </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+            <input type="text" placeholder="🔍 Buscar cliente..." value="${filtro}"
+                oninput="renderAbaHistorico(document.getElementById('admin-body'), this.value, document.getElementById('filtro-data').value)"
+                style="flex:1;padding:10px 14px;border-radius:8px;border:1.5px solid #e5e7eb;font-family:'DM Sans',sans-serif;background:var(--sand);">
+            <input type="date" id="filtro-data" value="${dataFiltro}"
+                onchange="renderAbaHistorico(document.getElementById('admin-body'), document.querySelector('[placeholder*=cliente]').value, this.value)"
+                style="padding:10px;border-radius:8px;border:1.5px solid #e5e7eb;font-family:'DM Sans',sans-serif;background:var(--sand);">
         </div>
-        ${filtrado.map(h => {
+        <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;">
+            <div style="display:flex;gap:8px;">
+                <div style="flex:1;background:var(--green-pale);border-radius:10px;padding:12px;text-align:center;min-width:90px;">
+                    <div style="font-size:1.4rem;font-weight:700;color:var(--green-deep)">${hist.length}</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted)">pedidos</div>
+                </div>
+                <div style="flex:1;background:#fef3c7;border-radius:10px;padding:12px;text-align:center;min-width:90px;">
+                    <div style="font-size:1.4rem;font-weight:700;color:#92400e">R$ ${fmt(hist.reduce((a,h)=>a+(h.total||0),0))}</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted)">total</div>
+                </div>
+            </div>
+            <button class="exportar-btn" onclick="exportarCSV()">📊 Exportar CSV</button>
+        </div>
+        ${hist.map(h => {
             const endStr = h.quadra ? `Quadra ${h.quadra}, Casa ${h.lote}` : (h.end || '');
             return `<div class="historico-item">
                 <div style="display:flex;justify-content:space-between;font-weight:bold;align-items:center;">
@@ -960,78 +1384,96 @@ function renderAbaHistorico(body, filtro = '') {
                 <div style="font-size:0.8rem;color:#444;">${h.itens.map(i=>`${String(i.qtd).replace('.',',')}x ${i.nome}`).join(' · ')}</div>
             </div>`;
         }).join('')}
-        ${filtrado.length === 0 ? '<p style="text-align:center;color:#999;padding:30px">Nenhum pedido encontrado.</p>' : ''}
+        ${hist.length === 0 ? '<p style="text-align:center;color:#999;padding:30px">Nenhum pedido encontrado.</p>' : ''}
     `;
 }
 
 function renderAbaRelatorios(body) {
     document.getElementById('admin-titulo').textContent = '📊 Relatórios';
     const hist = JSON.parse(localStorage.getItem('banca_historico') || '[]');
-
     if (hist.length === 0) {
         body.innerHTML = '<p style="text-align:center;color:#999;padding:40px">Ainda não há pedidos registrados.</p>';
         return;
     }
-
-    const contagem = {};
-    const receita = {};
-    hist.forEach(h => {
-        h.itens.forEach(item => {
-            contagem[item.nome] = (contagem[item.nome] || 0) + item.qtd;
-            receita[item.nome] = (receita[item.nome] || 0) + (item.preco * item.qtd);
-        });
-    });
-
+    const contagem = {}, receita = {};
+    hist.forEach(h => h.itens.forEach(item => {
+        contagem[item.nome] = (contagem[item.nome] || 0) + item.qtd;
+        receita[item.nome] = (receita[item.nome] || 0) + (item.preco * item.qtd);
+    }));
     const top = Object.entries(contagem).sort((a,b) => b[1]-a[1]).slice(0, 8);
     const maxQtd = top[0]?.[1] || 1;
-
     const totalReceita = hist.reduce((a, h) => a + (h.total || 0), 0);
     const totalPedidos = hist.length;
     const ticketMedio = totalPedidos > 0 ? totalReceita / totalPedidos : 0;
     const online = hist.filter(h => h.tipo !== 'presencial').length;
     const presencial = hist.filter(h => h.tipo === 'presencial').length;
-
     const clientes = {};
     hist.forEach(h => { clientes[h.nome] = (clientes[h.nome] || 0) + (h.total || 0); });
     const topClientes = Object.entries(clientes).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
+    // Receita por dia (últimos 7 dias)
+    const receitaDia = {};
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date(); d.setDate(d.getDate() - i);
+        const chave = d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' });
+        receitaDia[chave] = 0;
+    }
+    hist.forEach(h => {
+        try {
+            const partes = h.data.split(', ')[0].split('/');
+            const chave = `${partes[0]}/${partes[1]}`;
+            if (receitaDia[chave] !== undefined) receitaDia[chave] += h.total || 0;
+        } catch {}
+    });
+    const maxDia = Math.max(...Object.values(receitaDia), 1);
+
     body.innerHTML = `
         <div class="stats-grid">
-            <div class="stat-box">
-                <div class="stat-box-val">${totalPedidos}</div>
-                <div class="stat-box-label">Pedidos (30d)</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-box-val">R$${fmt(ticketMedio)}</div>
-                <div class="stat-box-label">Ticket médio</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-box-val">R$${fmt(totalReceita)}</div>
-                <div class="stat-box-label">Receita total</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-box-val">${online}/${presencial}</div>
-                <div class="stat-box-label">Online/Presencial</div>
-            </div>
+            <div class="stat-box"><div class="stat-box-val">${totalPedidos}</div><div class="stat-box-label">Pedidos (30d)</div></div>
+            <div class="stat-box"><div class="stat-box-val">R$${fmt(ticketMedio)}</div><div class="stat-box-label">Ticket médio</div></div>
+            <div class="stat-box"><div class="stat-box-val">R$${fmt(totalReceita)}</div><div class="stat-box-label">Receita total</div></div>
+            <div class="stat-box"><div class="stat-box-val">${online}/${presencial}</div><div class="stat-box-label">Online/Presencial</div></div>
+        </div>
+
+        <div class="relatorio-card">
+            <div class="relatorio-titulo">📅 Receita — últimos 7 dias</div>
+            ${Object.entries(receitaDia).map(([dia, val]) => `
+                <div>
+                    <div class="stat-row">
+                        <span class="stat-nome">${dia}</span>
+                        <span class="stat-val">R$ ${fmt(val)}</span>
+                    </div>
+                    <div class="stat-bar"><div class="stat-fill" style="width:${Math.round(val/maxDia*100)}%"></div></div>
+                </div>
+            `).join('')}
         </div>
 
         <div class="relatorio-card">
             <div class="relatorio-titulo">🏆 Produtos mais vendidos</div>
             ${top.map(([nome, qtd]) => `
                 <div>
-                    <div class="stat-row">
-                        <span class="stat-nome">${nome}</span>
-                        <span class="stat-val">${String(qtd).replace('.',',')} un.</span>
-                    </div>
+                    <div class="stat-row"><span class="stat-nome">${nome}</span><span class="stat-val">${String(qtd).replace('.',',')} un.</span></div>
                     <div class="stat-bar"><div class="stat-fill" style="width:${Math.round(qtd/maxQtd*100)}%"></div></div>
                 </div>
             `).join('')}
         </div>
+
+        <div class="relatorio-card">
+            <div class="relatorio-titulo">👑 Top clientes</div>
+            ${topClientes.map(([nome, total]) => `
+                <div class="stat-row">
+                    <span class="stat-nome">${nome}</span>
+                    <span class="stat-val">R$ ${fmt(total)}</span>
+                </div>
+            `).join('')}
+        </div>
+
+        <button class="exportar-btn" onclick="exportarCSV()" style="width:100%;justify-content:center;margin-top:4px;">📊 Exportar CSV completo</button>
     `;
 }
 
 // ============================================================
-// ADMIN - PRODUTOS 
+// ADMIN — PRODUTOS
 // ============================================================
 async function abrirAdmin() {
     const senha = prompt('Senha de acesso:');
@@ -1039,8 +1481,10 @@ async function abrirAdmin() {
     const hash = await sha256(senha);
     const hashSalvo = localStorage.getItem('banca_senha_hash') || SENHA_HASH;
     if (hash !== hashSalvo) { toast('❌ Senha incorreta!'); return; }
+    pedirPermissaoNotificacao();
     abrirModal('overlay-admin');
     mudarAba('entregas');
+    pollingEntregas();
 }
 
 function mudarAba(aba) {
@@ -1054,6 +1498,7 @@ function mudarAba(aba) {
     else if (aba === 'historico') renderAbaHistorico(body);
     else if (aba === 'relatorios') renderAbaRelatorios(body);
     else renderAbaConfig(body);
+    checarNovosEntregas();
 }
 
 function renderAbaProdutos(body) {
@@ -1070,41 +1515,38 @@ function renderAbaProdutos(body) {
 }
 
 function cardAdmin(p) {
-    const imgEl = p.foto ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" alt="">` : p.emoji || '📦';
+    const imgEl = p.foto
+        ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" alt="">`
+        : p.emoji || '📦';
     const disponivel = p.estoque > 0;
-
-    const btnEsquerda = disponivel 
+    const btnEsquerda = disponivel
         ? `<button class="btn-quick-toggle desativar" onclick="toggleDisponibilidade(${p.id}, false)" title="Marcar como esgotado">❌</button>`
         : `<button class="btn-quick-toggle ativar" onclick="toggleDisponibilidade(${p.id}, true)" title="Marcar como disponível">✅</button>`;
-
     return `
     <div class="admin-card">
         ${btnEsquerda}
         <button class="btn-edit-card" onclick="abrirEditor(${p.id})" title="Editar">✏️</button>
-        
         <div class="admin-card-img">${imgEl}</div>
         <h4>${p.nome}</h4>
         <div style="font-size: 1.1rem; color: var(--green-deep); font-weight: bold;">R$ ${fmt(p.preco)}</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">${p.unidade} · ${p.cat}</div>
     </div>`;
 }
 
 async function toggleDisponibilidade(id, tornarDisponivel) {
     const p = produtos.find(x => x.id === id);
     if (!p) return;
-    
-    p.estoque = tornarDisponivel ? 999 : 0; 
+    p.estoque = tornarDisponivel ? 999 : 0;
     localStorage.setItem('banca_produtos', JSON.stringify(produtos));
-    
     renderAbaProdutos(document.getElementById('admin-body'));
     renderLoja();
-    
     try {
-        toast("⏳ Atualizando nuvem...");
-        await window.setDoc(window.doc(window.db, "produtos", String(p.id)), p);
+        toast("⏳ Atualizando...");
+        await window.setDoc(window.docRef(window.db, "produtos", String(p.id)), p);
         toast(tornarDisponivel ? "✅ Voltou para o estoque!" : "❌ Marcado como esgotado!");
     } catch (e) {
         console.error(e);
-        toast("❌ Erro ao atualizar nuvem. Verifique a internet.");
+        toast("❌ Erro ao atualizar. Verifique a internet.");
     }
 }
 
@@ -1113,9 +1555,7 @@ function abrirEditor(id) {
     const body = document.getElementById('admin-body');
     const p = id ? produtos.find(x => x.id === id) : null;
     document.getElementById('admin-titulo').textContent = id ? '✏️ Editar Produto' : '➕ Novo Produto';
-
     const estaDisponivel = !p || p.estoque > 0;
-
     body.innerHTML = `
         <div class="editor-section">
             <div style="font-weight:700;font-size:0.82rem;margin-bottom:14px;color:var(--text-muted)">📸 Foto</div>
@@ -1126,22 +1566,22 @@ function abrirEditor(id) {
             </div>
             <div style="margin-top:12px;border-top:1px dashed #ccc;padding-top:10px;">
                 <label style="font-size:0.75rem;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;">OU COLE O LINK DA FOTO:</label>
-                <input type="text" id="edit-link-foto" placeholder="https://..." value="${p?.foto&&p.foto.startsWith('http')?p.foto:''}" style="width:100%;padding:8px;border-radius:8px;border:1.5px solid #e5e7eb;font-family:'DM Sans',sans-serif;">
+                <input type="text" id="edit-link-foto" placeholder="https://..." value="${p?.foto&&p.foto.startsWith('http')?p.foto:''}" style="width:100%;padding:8px;border-radius:8px;border:1.5px solid #e5e7eb;font-family:'DM Sans',sans-serif;background:var(--sand);">
             </div>
         </div>
         <div class="editor-section">
             <div class="form-group"><label>Emoji</label><input type="text" id="edit-emoji" value="${p?.emoji||'📦'}" maxlength="2"></div>
             <div class="form-group"><label>Nome</label><input type="text" id="edit-nome" value="${p?.nome||''}"></div>
             <div class="grid-2">
-                <div class="form-group"><label>Preço (R$)</label><input type="number" id="edit-preco" value="${p?.preco||''}" step="0.50"></div>
+                <div class="form-group"><label>Preço (R$)</label><input type="number" id="edit-preco" value="${p?.preco||''}" step="0.50" min="0"></div>
                 <div class="form-group"><label>Unidade</label><select id="edit-unidade">${UNIDADES.map(u=>`<option value="${u}" ${p?.unidade===u?'selected':''}>${u}</option>`).join('')}</select></div>
             </div>
             <div class="grid-2">
                 <div class="form-group">
                     <label>Status</label>
                     <select id="edit-status">
-                        <option value="999" ${estaDisponivel ? 'selected' : ''}>✅ Em Estoque</option>
-                        <option value="0" ${!estaDisponivel ? 'selected' : ''}>❌ Esgotado</option>
+                        <option value="999" ${estaDisponivel?'selected':''}>✅ Em Estoque</option>
+                        <option value="0" ${!estaDisponivel?'selected':''}>❌ Esgotado</option>
                     </select>
                 </div>
                 <div class="form-group"><label>Categoria</label><select id="edit-cat">${['frutas','verduras','folhas','temperos'].map(c=>`<option value="${c}" ${p?.cat===c?'selected':''}>${c}</option>`).join('')}</select></div>
@@ -1183,64 +1623,157 @@ function carregarFoto(event) {
 async function salvarProduto() {
     const nome = document.getElementById('edit-nome').value.trim();
     const preco = parseFloat(document.getElementById('edit-preco').value);
-    const estoque = parseFloat(document.getElementById('edit-status').value); 
+    const estoque = parseFloat(document.getElementById('edit-status').value);
     const cat = document.getElementById('edit-cat').value;
     const unidade = document.getElementById('edit-unidade').value;
     const emoji = document.getElementById('edit-emoji').value.trim() || '📦';
     const linkFoto = document.getElementById('edit-link-foto').value.trim();
 
-    if (!nome || isNaN(preco) || preco <= 0) { 
-        toast('⚠️ Preencha tudo corretamente!'); 
-        return; 
-    }
+    if (!nome || isNaN(preco) || preco <= 0) { toast('⚠️ Preencha tudo corretamente!'); return; }
 
-    const fotoFinal = fotoBase64 || (linkFoto ? linkFoto : null);
+    const fotoFinal = fotoBase64 || (linkFoto ? linkFoto : (editandoId ? (produtos.find(p=>p.id===editandoId)?.foto || null) : null));
     const dadosProduto = { nome, preco, estoque, cat, unidade, emoji, foto: fotoFinal };
 
     toast("⏳ Salvando na nuvem...");
-
     try {
-        let idParaUsar = editandoId ? String(editandoId) : String(Date.now());
-        
-        await window.setDoc(window.doc(window.db, "produtos", idParaUsar), dadosProduto);
-        
+        const idParaUsar = editandoId ? String(editandoId) : String(Date.now());
+        await window.setDoc(window.docRef(window.db, "produtos", idParaUsar), dadosProduto);
         toast("✅ Salvo com sucesso!");
-        carregarProdutosDoFirebase(); 
-        mudarAba('produtos'); 
+        carregandoFirebase = false;
+        carregarProdutosDoFirebase();
+        mudarAba('produtos');
     } catch (e) {
         console.error(e);
         toast("❌ Erro ao salvar online");
     }
 }
 
-function deletarProduto(id) {
-    if (!confirm('Excluir este produto?')) return;
+async function deletarProduto(id) {
+    if (!confirm('Excluir este produto permanentemente?')) return;
+    // Remove do array local
     produtos = produtos.filter(p => p.id !== id);
     carrinho = carrinho.filter(c => c.id !== id);
     localStorage.setItem('banca_produtos', JSON.stringify(produtos));
     atualizarEstadoCarrinho();
     renderLoja();
     mudarAba('produtos');
-    toast('🗑 Excluído');
+    // Remove do Firebase
+    try {
+        await window.deleteDoc(window.docRef(window.db, "produtos", String(id)));
+        toast('🗑 Excluído da nuvem!');
+    } catch (e) {
+        console.error(e);
+        toast('⚠️ Excluído localmente (erro na nuvem)');
+    }
 }
 
+// ============================================================
+// CONFIG
+// ============================================================
 function renderAbaConfig(body) {
     document.getElementById('admin-titulo').textContent = '⚙️ Configurações';
+    const horarioAtivo = localStorage.getItem('banca_horario_ativo') === '1';
+    const inicio = localStorage.getItem('banca_horario_inicio') || '07:00';
+    const fim = localStorage.getItem('banca_horario_fim') || '20:00';
+    const minimo = localStorage.getItem('banca_pedido_minimo') || '0';
+    const banner = localStorage.getItem('banca_banner') || '';
+    const nome = localStorage.getItem('banca_nome') || 'Banca Adair e Pedrina';
+
     body.innerHTML = `
-        <div class="config-row"><div><strong>📱 WhatsApp</strong></div><input type="tel" id="cfg-numero" value="${localStorage.getItem('banca_whatsapp') || ''}" class="config-input-inline"></div>
-        <button class="btn-primary" onclick="salvarConfig()" style="margin-top:20px;width:100%">💾 Salvar Configurações</button>
+        <div class="config-secao">
+            <div class="config-secao-titulo">📱 Contato</div>
+            <div class="config-row">
+                <div><strong>WhatsApp</strong><br><small style="color:var(--text-muted)">Com DDI: 5562999...</small></div>
+                <input class="config-input-inline" type="tel" id="cfg-numero" value="${localStorage.getItem('banca_whatsapp') || ''}" placeholder="5562...">
+            </div>
+        </div>
+
+        <div class="config-secao">
+            <div class="config-secao-titulo">🏪 Identidade da Banca</div>
+            <div class="config-row">
+                <div><strong>Nome da Banca</strong></div>
+                <input class="config-input-inline" type="text" id="cfg-nome" value="${nome}" style="width:200px;">
+            </div>
+            <div class="config-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
+                <strong>Banner (URL da imagem)</strong>
+                <input class="config-input-inline" type="text" id="cfg-banner" value="${banner}" placeholder="https://..." style="width:100%;">
+                <small style="color:var(--text-muted)">Cole o link de uma imagem para o banner do cabeçalho.</small>
+            </div>
+        </div>
+
+        <div class="config-secao">
+            <div class="config-secao-titulo">⏰ Horário de Funcionamento</div>
+            <div class="config-row">
+                <div><strong>Ativar controle de horário</strong><br><small style="color:var(--text-muted)">Bloqueia pedidos fora do horário</small></div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="cfg-horario-ativo" ${horarioAtivo?'checked':''}>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="config-row">
+                <div><strong>Abre às</strong></div>
+                <input class="config-input-inline" type="time" id="cfg-inicio" value="${inicio}" style="width:120px;">
+            </div>
+            <div class="config-row">
+                <div><strong>Fecha às</strong></div>
+                <input class="config-input-inline" type="time" id="cfg-fim" value="${fim}" style="width:120px;">
+            </div>
+        </div>
+
+        <div class="config-secao">
+            <div class="config-secao-titulo">💰 Pedido Mínimo</div>
+            <div class="config-row">
+                <div><strong>Valor mínimo (R$)</strong><br><small style="color:var(--text-muted)">Use 0 para sem mínimo</small></div>
+                <input class="config-input-inline" type="number" id="cfg-minimo" value="${minimo}" min="0" step="0.5" style="width:100px;">
+            </div>
+        </div>
+
+        <div class="config-secao">
+            <div class="config-secao-titulo">🔒 Segurança</div>
+            <div class="config-row">
+                <div><strong>Alterar senha</strong><br><small style="color:var(--text-muted)">Atual: ****</small></div>
+                <input class="config-input-inline" type="password" id="cfg-nova-senha" placeholder="Nova senha" style="width:140px;">
+            </div>
+        </div>
+
+        <button class="btn-primary" onclick="salvarConfig()" style="width:100%;margin-top:8px;">💾 Salvar Configurações</button>
     `;
 }
 
 async function salvarConfig() {
     const num = document.getElementById('cfg-numero').value.replace(/\D/g,'');
+    const inicio = document.getElementById('cfg-inicio').value;
+    const fim = document.getElementById('cfg-fim').value;
+    const horarioAtivo = document.getElementById('cfg-horario-ativo').checked;
+    const minimo = parseFloat(document.getElementById('cfg-minimo').value) || 0;
+    const banner = document.getElementById('cfg-banner').value.trim();
+    const nome = document.getElementById('cfg-nome').value.trim();
+    const novaSenha = document.getElementById('cfg-nova-senha').value;
+
     localStorage.setItem('banca_whatsapp', num);
-    
-    // Salva o número na nuvem para não perder
-    if (window.db) {
-        window.setDoc(window.doc(window.db, "loja", "config"), { whatsapp: num }).catch(e=>console.log(e));
+    localStorage.setItem('banca_horario_inicio', inicio);
+    localStorage.setItem('banca_horario_fim', fim);
+    localStorage.setItem('banca_horario_ativo', horarioAtivo ? '1' : '0');
+    localStorage.setItem('banca_pedido_minimo', String(minimo));
+    localStorage.setItem('banca_banner', banner);
+    localStorage.setItem('banca_nome', nome);
+
+    if (novaSenha && novaSenha.length >= 4) {
+        const h = await sha256(novaSenha);
+        localStorage.setItem('banca_senha_hash', h);
+        toast('🔒 Senha alterada!');
     }
-    
+
+    if (window.db) {
+        window.setDoc(window.docRef(window.db, "loja", "config"), {
+            whatsapp: num, horario_inicio: inicio, horario_fim: fim,
+            horario_ativo: horarioAtivo, pedido_minimo: minimo,
+            banner_url: banner, nome_loja: nome
+        }).catch(e=>console.log(e));
+    }
+
+    aplicarConfigVisuais();
+    verificarHorario();
     toast('✅ Configurações salvas!');
 }
 
@@ -1248,46 +1781,14 @@ async function salvarConfig() {
 // UTILS
 // ============================================================
 function fmt(n) { return parseFloat(n).toFixed(2).replace('.', ','); }
-function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('visivel'); clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('visivel'), 2800); }
+function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('visivel');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('visivel'), 2800);
+}
 function abrirModal(id) { document.getElementById(id).classList.add('aberto'); }
 function fecharModal(id) { document.getElementById(id).classList.remove('aberto'); }
-document.querySelectorAll('.modal-overlay').forEach(ov => { ov.addEventListener('click', e => { if (e.target === ov) fecharModal(ov.id); }); });
-async function sha256(msg) { const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg)); return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join(''); }
-
-// INIT
-renderCategorias();
-renderLoja();
-renderCarrinho();
-document.getElementById('qtd-flutuante').textContent = carrinho.reduce((acc, item) => acc + item.qtd, 0);
-
-</script>
-
-<!-- CONFIGURAÇÃO DO FIREBASE -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
-  import { getFirestore, collection, getDocs, setDoc, doc, addDoc } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyAY_qGll6YJKA6ErYIOd5XIVblrlq8vynM",
-    authDomain: "banca-adair-e-pedrina.firebaseapp.com",
-    projectId: "banca-adair-e-pedrina",
-    storageBucket: "banca-adair-e-pedrina.firebasestorage.app",
-    messagingSenderId: "829734263703",
-    appId: "1:829734263703:web:7c849d2e6d323d3a55c2d2",
-    measurementId: "G-S2W9M4Z759"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-
-  window.db = db;
-  window.collection = collection;
-  window.getDocs = getDocs;
-  window.addDoc = addDoc;
-  window.setDoc = setDoc;
-  window.doc = doc;
-
-  console.log("🔥 Firebase conectado!");
-</script>
-</body>
-</html>
+document.querySelectorAll('.modal-overlay').forEach(ov => {
+    ov.addEventListener('click', e => { 
