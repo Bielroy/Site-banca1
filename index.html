@@ -1278,19 +1278,18 @@ function fecharModal(id) { document.getElementById(id).classList.remove('aberto'
 document.querySelectorAll('.modal-overlay').forEach(ov => { ov.addEventListener('click', e => { if (e.target === ov) fecharModal(ov.id); }); });
 async function sha256(msg) { const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg)); return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join(''); }
 
-// INIT
+    // INIT
 renderCategorias();
 renderLoja();
 renderCarrinho();
 document.getElementById('qtd-flutuante').textContent = carrinho.reduce((acc, item) => acc + item.qtd, 0);
-    <script type="module">
-  // 1. O código padrão do app que o site te deu
+</script>
+
+<!-- CÓDIGO DO FIREBASE (Sempre depois que o script de cima fechar!) -->
+<script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
-  
-  // 2. O "Motor" do Banco de Dados (Firestore) - Essa parte a gente precisa adicionar!
   import { getFirestore, collection, getDocs, setDoc, doc, addDoc } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 
-  // Suas chaves (exatamente como estavam lá)
   const firebaseConfig = {
     apiKey: "AIzaSyAY_qGll6YJKA6ErYIOd5XIVblrlq8vynM",
     authDomain: "banca-adair-e-pedrina.firebaseapp.com",
@@ -1301,11 +1300,9 @@ document.getElementById('qtd-flutuante').textContent = carrinho.reduce((acc, ite
     measurementId: "G-S2W9M4Z759"
   };
 
-  // Inicializa o app e o banco de dados
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
-  // Coloca os comandos do banco "para fora" para o resto do seu código conseguir usar
   window.db = db;
   window.collection = collection;
   window.getDocs = getDocs;
@@ -1315,6 +1312,6 @@ document.getElementById('qtd-flutuante').textContent = carrinho.reduce((acc, ite
 
   console.log("🔥 Firebase e Banco de Dados conectados com sucesso!");
 </script>
-</script>
 </body>
 </html>
+
