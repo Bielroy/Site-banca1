@@ -1283,6 +1283,38 @@ renderCategorias();
 renderLoja();
 renderCarrinho();
 document.getElementById('qtd-flutuante').textContent = carrinho.reduce((acc, item) => acc + item.qtd, 0);
+    <script type="module">
+  // 1. O código padrão do app que o site te deu
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
+  
+  // 2. O "Motor" do Banco de Dados (Firestore) - Essa parte a gente precisa adicionar!
+  import { getFirestore, collection, getDocs, setDoc, doc, addDoc } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+
+  // Suas chaves (exatamente como estavam lá)
+  const firebaseConfig = {
+    apiKey: "AIzaSyAY_qGll6YJKA6ErYIOd5XIVblrlq8vynM",
+    authDomain: "banca-adair-e-pedrina.firebaseapp.com",
+    projectId: "banca-adair-e-pedrina",
+    storageBucket: "banca-adair-e-pedrina.firebasestorage.app",
+    messagingSenderId: "829734263703",
+    appId: "1:829734263703:web:7c849d2e6d323d3a55c2d2",
+    measurementId: "G-S2W9M4Z759"
+  };
+
+  // Inicializa o app e o banco de dados
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // Coloca os comandos do banco "para fora" para o resto do seu código conseguir usar
+  window.db = db;
+  window.collection = collection;
+  window.getDocs = getDocs;
+  window.addDoc = addDoc;
+  window.setDoc = setDoc;
+  window.doc = doc;
+
+  console.log("🔥 Firebase e Banco de Dados conectados com sucesso!");
+</script>
 </script>
 </body>
 </html>
