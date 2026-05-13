@@ -1830,20 +1830,23 @@ iniciarApp();
 <!-- ============================================================
      MÓDULO FIREBASE (Carrega por último e exporta as funções)
 ============================================================ -->
+<!-- ============================================================
+     MÓDULO FIREBASE (Carrega por último e exporta as funções)
+============================================================ -->
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
     import { getFirestore, collection, getDocs, getDoc, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
-    // COLE AQUI AS SUAS CHAVES DO FIREBASE
-        const firebaseConfig = {
-        apiKey: "AIzaSyB-exemplo-sua-chave-aqui",
-        authDomain: "suabanca.firebaseapp.com",
-        projectId: "suabanca-123",
-        storageBucket: "suabanca-123.appspot.com",
-        messagingSenderId: "123456789",
-        appId: "1:123456789:web:abcdef123456"
+    // SUAS CHAVES REAIS DO FIREBASE
+    const firebaseConfig = {
+      apiKey: "AIzaSyAY_qGll6YJKA6ErYIOd5XIVblrlq8vynM",
+      authDomain: "banca-adair-e-pedrina.firebaseapp.com",
+      projectId: "banca-adair-e-pedrina",
+      storageBucket: "banca-adair-e-pedrina.firebasestorage.app",
+      messagingSenderId: "829734263703",
+      appId: "1:829734263703:web:7c849d2e6d323d3a55c2d2",
+      measurementId: "G-S2W9M4Z759"
     };
-
 
     try {
         const app = initializeApp(firebaseConfig);
