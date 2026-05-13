@@ -1235,6 +1235,7 @@ function carregarFoto(event) {
 }
 
 function salvarProduto() {
+async function salvarProduto() {
     const nome = document.getElementById('edit-nome').value.trim();
     const preco = parseFloat(document.getElementById('edit-preco').value);
     const estoque = parseFloat(document.getElementById('edit-estoque').value);
@@ -1243,23 +1244,31 @@ function salvarProduto() {
     const emoji = document.getElementById('edit-emoji').value.trim() || '📦';
     const linkFoto = document.getElementById('edit-link-foto').value.trim();
 
-    if (!nome || isNaN(preco) || preco <= 0 || isNaN(estoque) || estoque < 0) { toast('⚠️ Preencha tudo!'); return; }
+    if (!nome || isNaN(preco) || preco <= 0 || isNaN(estoque) || estoque < 0) { 
+        toast('⚠️ Preencha tudo corretamente!'); 
+        return; 
+    }
 
     const fotoFinal = fotoBase64 || (linkFoto ? linkFoto : null);
+    const dadosProduto = { nome, preco, estoque, cat, unidade, emoji, foto: fotoFinal };
 
-    if (editandoId) {
-        const p = produtos.find(x => x.id === editandoId);
-        Object.assign(p, { nome, preco, estoque, cat, unidade, emoji });
-        if (fotoFinal) p.foto = fotoFinal;
-    } else {
-        const novoId = produtos.length ? Math.max(...produtos.map(x => x.id)) + 1 : 1;
-        produtos.push({ id: novoId, nome, preco, estoque, cat, unidade, emoji, foto: fotoFinal });
+    toast("⏳ Salvando na nuvem...");
+
+    try {
+        let idParaUsar = editandoId ? String(editandoId) : String(Date.now());
+        
+        // SALVA NO FIREBASE
+        await window.setDoc(window.doc(window.db, "produtos", idParaUsar), dadosProduto);
+        
+        toast("✅ Salvo com sucesso!");
+        carregarProdutosDoFirebase(); 
+        mudarAba('produtos'); 
+    } catch (e) {
+        console.error(e);
+        toast("❌ Erro ao salvar online");
     }
-    localStorage.setItem('banca_produtos', JSON.stringify(produtos));
-    renderLoja();
-    mudarAba('produtos');
-    toast('✅ Produto salvo!');
 }
+
 
 function deletarProduto(id) {
     if (!confirm('Excluir este produto?')) return;
