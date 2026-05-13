@@ -1234,7 +1234,6 @@ function carregarFoto(event) {
     reader.readAsDataURL(file);
 }
 
-function salvarProduto() {
 async function salvarProduto() {
     const nome = document.getElementById('edit-nome').value.trim();
     const preco = parseFloat(document.getElementById('edit-preco').value);
@@ -1315,10 +1314,7 @@ function fecharModal(id) { document.getElementById(id).classList.remove('aberto'
 document.querySelectorAll('.modal-overlay').forEach(ov => { ov.addEventListener('click', e => { if (e.target === ov) fecharModal(ov.id); }); });
 async function sha256(msg) { const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg)); return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join(''); }
 
-    // INIT
-renderCategorias();
-renderLoja();
-renderCarrinho();
+    
 // INIT
 renderCategorias();
 renderLoja();
