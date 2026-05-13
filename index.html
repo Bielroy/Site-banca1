@@ -465,7 +465,37 @@ function carregar() {
     return JSON.parse(localStorage.getItem('banca_produtos') || '[]');
 }
 
-let produtos = carregar();
+let produtos = []; // Começa vazio porque vamos buscar no Google
+
+async function carregarProdutosDoFirebase() {
+    try {
+        // Verifica se o Firebase já está pronto, se não, espera meio segundo
+        if (!window.db) { setTimeout(carregarProdutosDoFirebase, 500); return; }
+
+        const querySnapshot = await window.getDocs(window.collection(window.db, "produtos"));
+        const listaDaNuvem = [];
+        
+        querySnapshot.forEach((doc) => {
+            // Pega cada produto que está lá no Google e joga na nossa lista
+            listaDaNuvem.push({ id: parseInt(doc.id), ...doc.data() });
+        });
+
+        if (listaDaNuvem.length > 0) {
+            produtos = listaDaNuvem; // Atualiza o site com o que veio da internet
+            renderLoja(); 
+        } else {
+            // Se o Google estiver vazio (primeira vez), usa a lista padrão do código
+            produtos = carregar();
+        }
+    } catch (e) {
+        console.error("Erro ao ler nuvem:", e);
+        produtos = carregar(); // Se a internet cair, usa o plano B (local)
+    }
+}
+
+// Manda o site buscar os dados assim que abrir
+carregarProdutosDoFirebase();
+
 let carrinho = JSON.parse(localStorage.getItem('banca_carrinho') || '[]');
 let catAtiva = 'todas';
 let busca = '';
