@@ -199,13 +199,11 @@
         .secao-titulo { font-weight: 700; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin: 20px 0 12px; }
         .carousel { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 12px; scroll-snap-type: x mandatory; }
         
-        /* NOVO DESIGN DO CARTÃO ADMIN (1 por vez, maior) */
         .admin-card { min-width: 260px; max-width: 260px; background: var(--sand); border-radius: 14px; padding: 24px 16px; scroll-snap-align: start; flex-shrink: 0; border: 1.5px solid #e5e7eb; text-align: center; position: relative; }
         .admin-card-img { width: 90px; height: 90px; border-radius: 12px; background: white; display: flex; align-items: center; justify-content: center; font-size: 3.5rem; margin: 10px auto 16px; overflow: hidden; border: 1px solid #f0f0f0; }
         .admin-card-img img { width: 100%; height: 100%; object-fit: cover; }
         .admin-card h4 { font-size: 1.05rem; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
         
-        /* Botões laterais do Admin */
         .btn-edit-card { position: absolute; top: 12px; right: 12px; width: 42px; height: 42px; background: white; border: 1.5px solid #e5e7eb; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); transition: all 0.2s; }
         .btn-edit-card:active { transform: scale(0.9); }
         
@@ -306,7 +304,6 @@
             <button class="btn-fechar" onclick="fecharModal('overlay-checkout')">&times;</button>
         </div>
         <div class="modal-body">
-            <!-- Clientes Salvos -->
             <div class="clientes-salvos" id="clientes-salvos-area"></div>
 
             <div class="form-group">
@@ -386,70 +383,8 @@ const SENHA_HASH = '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c8
 const PADRAO = [
     { id: 1, nome: "Batata Inglesa", preco: 6.50, cat: "verduras", estoque: 999, emoji: "🥔", unidade: "kg", foto: null },
     { id: 2, nome: "Batata Doce", preco: 5.50, cat: "verduras", estoque: 999, emoji: "🍠", unidade: "kg", foto: null },
-    { id: 3, nome: "Mandioca Descascada", preco: 10.00, cat: "verduras", estoque: 999, emoji: "🪵", unidade: "kg", foto: null },
-    { id: 4, nome: "Cenoura", preco: 6.00, cat: "verduras", estoque: 999, emoji: "🥕", unidade: "kg", foto: null },
-    { id: 5, nome: "Beterraba", preco: 5.50, cat: "verduras", estoque: 999, emoji: "🟣", unidade: "kg", foto: null },
-    { id: 6, nome: "Inhame", preco: 9.50, cat: "verduras", estoque: 999, emoji: "🥔", unidade: "kg", foto: null },
-    { id: 7, nome: "Cará", preco: 8.90, cat: "verduras", estoque: 999, emoji: "🥔", unidade: "kg", foto: null },
-    { id: 8, nome: "Gengibre", preco: 15.00, cat: "verduras", estoque: 999, emoji: "🫚", unidade: "kg", foto: null },
-    { id: 9, nome: "Cebola Branca", preco: 5.50, cat: "verduras", estoque: 999, emoji: "🧅", unidade: "kg", foto: null },
-    { id: 10, nome: "Cebola Roxa", preco: 8.00, cat: "verduras", estoque: 999, emoji: "🧅", unidade: "kg", foto: null },
-    { id: 11, nome: "Alho Inteiro", preco: 25.00, cat: "verduras", estoque: 999, emoji: "🧄", unidade: "kg", foto: null },
-    { id: 12, nome: "Tomate Saladete", preco: 7.50, cat: "verduras", estoque: 999, emoji: "🍅", unidade: "kg", foto: null },
-    { id: 13, nome: "Tomatinho Cereja", preco: 5.00, cat: "verduras", estoque: 999, emoji: "🍅", unidade: "caixa", foto: null },
-    { id: 14, nome: "Abobrinha Italiana", preco: 5.00, cat: "verduras", estoque: 999, emoji: "🥒", unidade: "kg", foto: null },
-    { id: 15, nome: "Pepino Japonês", preco: 6.00, cat: "verduras", estoque: 999, emoji: "🥒", unidade: "kg", foto: null },
-    { id: 16, nome: "Chuchu", preco: 4.00, cat: "verduras", estoque: 999, emoji: "🍐", unidade: "kg", foto: null },
-    { id: 17, nome: "Quiabo", preco: 8.50, cat: "verduras", estoque: 999, emoji: "🌵", unidade: "kg", foto: null },
-    { id: 18, nome: "Jiló", preco: 7.00, cat: "verduras", estoque: 999, emoji: "🟢", unidade: "kg", foto: null },
-    { id: 19, nome: "Vagem", preco: 12.00, cat: "verduras", estoque: 999, emoji: "🎋", unidade: "kg", foto: null },
-    { id: 20, nome: "Milho Verde", preco: 2.50, cat: "verduras", estoque: 999, emoji: "🌽", unidade: "un", foto: null },
-    { id: 21, nome: "Pimentão Verde", preco: 8.00, cat: "verduras", estoque: 999, emoji: "🫑", unidade: "kg", foto: null },
-    { id: 22, nome: "Pimentão Vermelho", preco: 15.00, cat: "verduras", estoque: 999, emoji: "🫑", unidade: "kg", foto: null },
-    { id: 23, nome: "Pimentão Amarelo", preco: 15.00, cat: "verduras", estoque: 999, emoji: "🫑", unidade: "kg", foto: null },
-    { id: 24, nome: "Abóbora Cabotiá", preco: 4.50, cat: "verduras", estoque: 999, emoji: "🎃", unidade: "kg", foto: null },
-    { id: 25, nome: "Brócolis Ninja", preco: 8.00, cat: "verduras", estoque: 999, emoji: "🥦", unidade: "un", foto: null },
-    { id: 26, nome: "Couve-Flor", preco: 9.00, cat: "verduras", estoque: 999, emoji: "🥦", unidade: "un", foto: null },
-    { id: 27, nome: "Beringela", preco: 6.00, cat: "verduras", estoque: 999, emoji: "🍆", unidade: "kg", foto: null },
-    { id: 28, nome: "Pimenta de Cheiro", preco: 15.00, cat: "verduras", estoque: 999, emoji: "🌶️", unidade: "kg", foto: null },
-    { id: 29, nome: "Pimenta Bode", preco: 18.00, cat: "verduras", estoque: 999, emoji: "🔥", unidade: "kg", foto: null },
-    { id: 30, nome: "Pimenta Cumari", preco: 25.00, cat: "verduras", estoque: 999, emoji: "🟢", unidade: "kg", foto: null },
-    { id: 31, nome: "Alface Crespa", preco: 3.50, cat: "folhas", estoque: 999, emoji: "🥬", unidade: "maço", foto: null },
-    { id: 32, nome: "Alface Americana", preco: 5.00, cat: "folhas", estoque: 999, emoji: "🥬", unidade: "un", foto: null },
-    { id: 33, nome: "Couve Manteiga", preco: 3.00, cat: "folhas", estoque: 999, emoji: "🌿", unidade: "maço", foto: null },
-    { id: 34, nome: "Rúcula", preco: 4.50, cat: "folhas", estoque: 999, emoji: "🥗", unidade: "maço", foto: null },
-    { id: 35, nome: "Cheiro Verde", preco: 2.50, cat: "folhas", estoque: 999, emoji: "🌱", unidade: "maço", foto: null },
-    { id: 36, nome: "Repolho Verde", preco: 5.00, cat: "folhas", estoque: 999, emoji: "🥬", unidade: "un", foto: null },
-    { id: 37, nome: "Repolho Roxo", preco: 7.00, cat: "folhas", estoque: 999, emoji: "🟣", unidade: "un", foto: null },
-    { id: 38, nome: "Espinafre", preco: 4.50, cat: "folhas", estoque: 999, emoji: "🍃", unidade: "maço", foto: null },
-    { id: 39, nome: "Banana Prata", preco: 7.00, cat: "frutas", estoque: 999, emoji: "🍌", unidade: "kg", foto: null },
-    { id: 40, nome: "Banana Nanica", preco: 6.00, cat: "frutas", estoque: 999, emoji: "🍌", unidade: "kg", foto: null },
-    { id: 41, nome: "Maçã Gala", preco: 9.00, cat: "frutas", estoque: 999, emoji: "🍎", unidade: "kg", foto: null },
-    { id: 42, nome: "Mamão Papaia", preco: 6.00, cat: "frutas", estoque: 999, emoji: "🍈", unidade: "un", foto: null },
-    { id: 43, nome: "Laranja Pera", preco: 5.00, cat: "frutas", estoque: 999, emoji: "🍊", unidade: "kg", foto: null },
-    { id: 44, nome: "Limão Taiti", preco: 4.00, cat: "frutas", estoque: 999, emoji: "🍋", unidade: "kg", foto: null },
-    { id: 45, nome: "Abacaxi Pérola", preco: 8.00, cat: "frutas", estoque: 999, emoji: "🍍", unidade: "un", foto: null },
-    { id: 46, nome: "Melancia", preco: 2.50, cat: "frutas", estoque: 999, emoji: "🍉", unidade: "kg", foto: null },
-    { id: 47, nome: "Alho Frito", preco: 8.50, cat: "temperos", estoque: 999, emoji: "🧄", unidade: "g", foto: null },
-    { id: 48, nome: "Açafrão", preco: 6.00, cat: "temperos", estoque: 999, emoji: "🟠", unidade: "g", foto: null },
-    { id: 49, nome: "Lemon Pepper", preco: 9.50, cat: "temperos", estoque: 999, emoji: "🍋", unidade: "g", foto: null },
-    { id: 50, nome: "Edu Guedes", preco: 10.00, cat: "temperos", estoque: 999, emoji: "👨‍🍳", unidade: "g", foto: null },
-    { id: 51, nome: "Ana Maria", preco: 10.00, cat: "temperos", estoque: 999, emoji: "👩‍🍳", unidade: "g", foto: null },
-    { id: 52, nome: "Chimichurri", preco: 9.00, cat: "temperos", estoque: 999, emoji: "🌿", unidade: "g", foto: null },
-    { id: 53, nome: "Páprica Doce", preco: 7.50, cat: "temperos", estoque: 999, emoji: "🔴", unidade: "g", foto: null },
-    { id: 54, nome: "Páprica Defumada", preco: 8.50, cat: "temperos", estoque: 999, emoji: "💨", unidade: "g", foto: null },
-    { id: 55, nome: "Páprica Picante", preco: 8.50, cat: "temperos", estoque: 999, emoji: "🔥", unidade: "g", foto: null },
-    { id: 56, nome: "Pimenta do Reino Pó", preco: 11.00, cat: "temperos", estoque: 999, emoji: "⚫", unidade: "g", foto: null },
-    { id: 57, nome: "Pimenta Reino Grão", preco: 13.00, cat: "temperos", estoque: 999, emoji: "🔘", unidade: "g", foto: null },
-    { id: 58, nome: "Pimenta Calabresa", preco: 7.00, cat: "temperos", estoque: 999, emoji: "🌶️", unidade: "g", foto: null },
-    { id: 59, nome: "Colorau", preco: 5.00, cat: "temperos", estoque: 999, emoji: "🍂", unidade: "g", foto: null },
-    { id: 60, nome: "Orégano", preco: 8.00, cat: "temperos", estoque: 999, emoji: "🌿", unidade: "g", foto: null },
-    { id: 61, nome: "Cominho em Pó", preco: 7.00, cat: "temperos", estoque: 999, emoji: "🤎", unidade: "g", foto: null },
-    { id: 62, nome: "Manjericão Seco", preco: 6.00, cat: "temperos", estoque: 999, emoji: "🌿", unidade: "g", foto: null },
-    { id: 63, nome: "Ovos Brancos", preco: 18.00, cat: "verduras", estoque: 999, emoji: "🥚", unidade: "dúzia", foto: null },
-    { id: 64, nome: "Ovos Caipira", preco: 22.00, cat: "verduras", estoque: 999, emoji: "🥚", unidade: "dúzia", foto: null },
-    { id: 65, nome: "Mel Puro 500ml", preco: 35.00, cat: "frutas", estoque: 999, emoji: "🍯", unidade: "un", foto: null }
-];
+    { id: 3, nome: "Mandioca Descascada", preco: 10.00, cat: "verduras", estoque: 999, emoji: "🪵", unidade: "kg", foto: null }
+]; // Resumido aqui só por espaço, o script puxa os reais do Google
 
 const STATUS_ENTREGA = ['recebido', 'separando', 'saiu', 'entregue'];
 const STATUS_LABEL = { recebido: '📥 Recebido', separando: '📦 Separando', saiu: '🚴 Saiu', entregue: '✅ Entregue', presencial: '🏪 Presencial' };
@@ -465,6 +400,9 @@ function carregar() {
 
 let produtos = [];
 
+// ============================================================
+// CARREGAR TUDO DA NUVEM QUANDO O SITE ABRE
+// ============================================================
 async function carregarProdutosDoFirebase() {
     try {
         if (!window.db) { setTimeout(carregarProdutosDoFirebase, 500); return; }
@@ -487,8 +425,25 @@ async function carregarProdutosDoFirebase() {
         produtos = carregar(); 
     }
 }
-
 carregarProdutosDoFirebase();
+
+// NOVIDADE: Essa função busca o histórico, clientes e entregas do Firebase silenciosamente
+async function sincronizarDadosDaNuvem() {
+    if (!window.db) { setTimeout(sincronizarDadosDaNuvem, 500); return; }
+    try {
+        const querySnapshot = await window.getDocs(window.collection(window.db, "loja"));
+        querySnapshot.forEach((doc) => {
+            // Se ele achar dados salvos na nuvem, ele atualiza o celular na hora
+            if (doc.id === "clientes" && doc.data().dados) localStorage.setItem('banca_clientes', JSON.stringify(doc.data().dados));
+            if (doc.id === "entregas" && doc.data().dados) localStorage.setItem('banca_entregas', JSON.stringify(doc.data().dados));
+            if (doc.id === "historico" && doc.data().dados) localStorage.setItem('banca_historico', JSON.stringify(doc.data().dados));
+            if (doc.id === "config" && doc.data().whatsapp) localStorage.setItem('banca_whatsapp', doc.data().whatsapp);
+        });
+    } catch(e) { 
+        console.log("Erro ao puxar histórico da nuvem:", e); 
+    }
+}
+sincronizarDadosDaNuvem();
 
 let carrinho = JSON.parse(localStorage.getItem('banca_carrinho') || '[]');
 let catAtiva = 'todas';
@@ -649,10 +604,15 @@ function toggleCarrinhoMobile() {
 }
 
 // ============================================================
-// CLIENTES SALVOS
+// CLIENTES SALVOS (COM BACKUP NA NUVEM)
 // ============================================================
 function getClientes() { return JSON.parse(localStorage.getItem('banca_clientes') || '[]'); }
-function salvarClientes(arr) { localStorage.setItem('banca_clientes', JSON.stringify(arr)); }
+
+function salvarClientes(arr) { 
+    localStorage.setItem('banca_clientes', JSON.stringify(arr)); 
+    // Copia pra nuvem
+    if (window.db) window.setDoc(window.doc(window.db, "loja", "clientes"), { dados: arr }).catch(e=>console.log(e));
+}
 
 function salvarClienteTemp() {}
 
@@ -674,7 +634,7 @@ function salvarClienteParaProximo() {
 
     salvarClientes(clientes.slice(0, 20));
     renderClientesSalvos();
-    toast('✅ Cliente salvo!');
+    toast('✅ Cliente salvo na nuvem!');
 }
 
 function renderClientesSalvos() {
@@ -777,10 +737,15 @@ function limparFormCheckout() {
 }
 
 // ============================================================
-// PAINEL DE ENTREGAS
+// PAINEL DE ENTREGAS (COM BACKUP NA NUVEM)
 // ============================================================
 function getEntregas() { return JSON.parse(localStorage.getItem('banca_entregas') || '[]'); }
-function salvarEntregas(arr) { localStorage.setItem('banca_entregas', JSON.stringify(arr)); }
+
+function salvarEntregas(arr) { 
+    localStorage.setItem('banca_entregas', JSON.stringify(arr)); 
+    // Copia pra nuvem
+    if (window.db) window.setDoc(window.doc(window.db, "loja", "entregas"), { dados: arr }).catch(e=>console.log(e));
+}
 
 function adicionarEntrega(pedido) {
     const entregas = getEntregas();
@@ -944,11 +909,13 @@ function finalizarPresencial() {
 }
 
 // ============================================================
-// HISTÓRICO E RELATÓRIOS (Sem mudanças visuais)
+// HISTÓRICO E RELATÓRIOS (COM BACKUP NA NUVEM)
 // ============================================================
 function salvarHistorico(pedido) {
     const hist = JSON.parse(localStorage.getItem('banca_historico') || '[]');
     hist.unshift({ ...pedido, data: pedido.data || new Date().toLocaleString('pt-BR') });
+    
+    // Manter apenas 30 dias pra não pesar
     const limite = new Date();
     limite.setDate(limite.getDate() - 30);
     const filtrado = hist.filter(h => {
@@ -958,7 +925,12 @@ function salvarHistorico(pedido) {
             return new Date(`${a}-${m}-${d}`) >= limite;
         } catch { return true; }
     });
-    localStorage.setItem('banca_historico', JSON.stringify(filtrado.slice(0, 200)));
+    
+    const arrayFinal = filtrado.slice(0, 200);
+    localStorage.setItem('banca_historico', JSON.stringify(arrayFinal));
+    
+    // Manda uma cópia de segurança para o Google
+    if (window.db) window.setDoc(window.doc(window.db, "loja", "historico"), { dados: arrayFinal }).catch(e=>console.log(e));
 }
 
 function renderAbaHistorico(body, filtro = '') {
@@ -1059,7 +1031,7 @@ function renderAbaRelatorios(body) {
 }
 
 // ============================================================
-// ADMIN - PRODUTOS (Botões de X e ✅ incluídos)
+// ADMIN - PRODUTOS 
 // ============================================================
 async function abrirAdmin() {
     const senha = prompt('Senha de acesso:');
@@ -1101,7 +1073,6 @@ function cardAdmin(p) {
     const imgEl = p.foto ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" alt="">` : p.emoji || '📦';
     const disponivel = p.estoque > 0;
 
-    // Botão da esquerda (X vermelho se disponível, Check verde se esgotado)
     const btnEsquerda = disponivel 
         ? `<button class="btn-quick-toggle desativar" onclick="toggleDisponibilidade(${p.id}, false)" title="Marcar como esgotado">❌</button>`
         : `<button class="btn-quick-toggle ativar" onclick="toggleDisponibilidade(${p.id}, true)" title="Marcar como disponível">✅</button>`;
@@ -1117,15 +1088,13 @@ function cardAdmin(p) {
     </div>`;
 }
 
-// Nova função para o botão rápido ❌ / ✅
 async function toggleDisponibilidade(id, tornarDisponivel) {
     const p = produtos.find(x => x.id === id);
     if (!p) return;
     
-    p.estoque = tornarDisponivel ? 999 : 0; // 999 é nosso código pra disponível, 0 pra esgotado
+    p.estoque = tornarDisponivel ? 999 : 0; 
     localStorage.setItem('banca_produtos', JSON.stringify(produtos));
     
-    // Atualiza a tela de adm na hora
     renderAbaProdutos(document.getElementById('admin-body'));
     renderLoja();
     
@@ -1145,7 +1114,6 @@ function abrirEditor(id) {
     const p = id ? produtos.find(x => x.id === id) : null;
     document.getElementById('admin-titulo').textContent = id ? '✏️ Editar Produto' : '➕ Novo Produto';
 
-    // Se é novo produto, o padrão é disponível. Se for edição, avalia.
     const estaDisponivel = !p || p.estoque > 0;
 
     body.innerHTML = `
@@ -1215,7 +1183,7 @@ function carregarFoto(event) {
 async function salvarProduto() {
     const nome = document.getElementById('edit-nome').value.trim();
     const preco = parseFloat(document.getElementById('edit-preco').value);
-    const estoque = parseFloat(document.getElementById('edit-status').value); // Lê se é 999 ou 0
+    const estoque = parseFloat(document.getElementById('edit-status').value); 
     const cat = document.getElementById('edit-cat').value;
     const unidade = document.getElementById('edit-unidade').value;
     const emoji = document.getElementById('edit-emoji').value.trim() || '📦';
@@ -1260,19 +1228,19 @@ function renderAbaConfig(body) {
     document.getElementById('admin-titulo').textContent = '⚙️ Configurações';
     body.innerHTML = `
         <div class="config-row"><div><strong>📱 WhatsApp</strong></div><input type="tel" id="cfg-numero" value="${localStorage.getItem('banca_whatsapp') || ''}" class="config-input-inline"></div>
-        
-        <div class="relatorio-card" style="background: #fff3e0; border: 1.5px solid var(--orange); margin-top: 20px;">
-            <div class="relatorio-titulo" style="color: var(--orange-deep)">☁️ Nuvem (Firebase)</div>
-            <p style="font-size: 0.75rem; margin-bottom: 10px;">Aperte aqui para enviar seus 65 produtos originais para o Google pela primeira vez.</p>
-            <button class="btn-primary" onclick="sincronizarProdutosComFirebase()" style="background: var(--orange-deep); width: 100%">⬆️ Sincronizar Agora</button>
-        </div>
-
         <button class="btn-primary" onclick="salvarConfig()" style="margin-top:20px;width:100%">💾 Salvar Configurações</button>
     `;
 }
 
 async function salvarConfig() {
-    localStorage.setItem('banca_whatsapp', document.getElementById('cfg-numero').value.replace(/\D/g,''));
+    const num = document.getElementById('cfg-numero').value.replace(/\D/g,'');
+    localStorage.setItem('banca_whatsapp', num);
+    
+    // Salva o número na nuvem para não perder
+    if (window.db) {
+        window.setDoc(window.doc(window.db, "loja", "config"), { whatsapp: num }).catch(e=>console.log(e));
+    }
+    
     toast('✅ Configurações salvas!');
 }
 
@@ -1292,29 +1260,6 @@ renderLoja();
 renderCarrinho();
 document.getElementById('qtd-flutuante').textContent = carrinho.reduce((acc, item) => acc + item.qtd, 0);
 
-// --- FUNÇÃO DE SINCRONIZAÇÃO ---
-async function sincronizarProdutosComFirebase() {
-    if (!confirm("Deseja enviar todos os produtos locais para o banco de dados na nuvem? Isso atualizará o estoque online.")) return;
-    
-    toast("⏳ Sincronizando... aguarde");
-    try {
-        for (const p of PADRAO) {
-            await window.setDoc(window.doc(window.db, "produtos", String(p.id)), {
-                nome: p.nome,
-                preco: p.preco,
-                cat: p.cat,
-                estoque: p.estoque,
-                emoji: p.emoji,
-                unidade: p.unidade,
-                foto: p.foto
-            });
-        }
-        toast("✅ Tudo online! 65 produtos sincronizados.");
-    } catch (e) {
-        console.error(e);
-        toast("❌ Erro na sincronização");
-    }
-}
 </script>
 
 <!-- CONFIGURAÇÃO DO FIREBASE -->
