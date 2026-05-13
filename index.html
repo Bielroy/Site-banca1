@@ -1271,24 +1271,22 @@ function deletarProduto(id) {
     mudarAba('produtos');
     toast('🗑 Excluído');
 }
-
 function renderAbaConfig(body) {
     document.getElementById('admin-titulo').textContent = '⚙️ Configurações';
     body.innerHTML = `
-        <div class="config-row"><div><strong>📱 WhatsApp (Ex: 5562999...)</strong></div><input type="tel" id="cfg-numero" value="${localStorage.getItem('banca_whatsapp') || ''}" class="config-input-inline"></div>
-        <div class="config-row"><div><strong>🏪 Nome da Banca</strong></div><input type="text" id="cfg-nome" value="${localStorage.getItem('banca_nome') || 'Banca Adair e Pedrina'}" class="config-input-inline"></div>
-        <div class="config-row"><div><strong>🔑 Nova Senha</strong></div><input type="password" id="cfg-senha" placeholder="deixe vazio para não mudar" class="config-input-inline"></div>
-        <div class="config-row">
-            <div><strong>🗂 Limpar clientes salvos</strong></div>
-            <button onclick="if(confirm('Apagar todos os clientes salvos?')){localStorage.removeItem('banca_clientes');toast('✅ Clientes removidos');}" style="padding:8px 16px;background:#fef2f2;color:var(--danger);border:1.5px solid #fca5a5;border-radius:8px;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:700;">Apagar</button>
+        <div class="config-row"><div><strong>📱 WhatsApp</strong></div><input type="tel" id="cfg-numero" value="${localStorage.getItem('banca_whatsapp') || ''}" class="config-input-inline"></div>
+        
+        <!-- ÁREA DO FIREBASE -->
+        <div class="relatorio-card" style="background: #fff3e0; border: 1.5px solid var(--orange); margin-top: 20px;">
+            <div class="relatorio-titulo" style="color: var(--orange-deep)">☁️ Nuvem (Firebase)</div>
+            <p style="font-size: 0.75rem; margin-bottom: 10px;">Aperte aqui para enviar seus 65 produtos originais para o Google pela primeira vez.</p>
+            <button class="btn-primary" onclick="sincronizarProdutosComFirebase()" style="background: var(--orange-deep); width: 100%">⬆️ Sincronizar Agora</button>
         </div>
-        <div class="config-row">
-            <div><strong>📋 Limpar histórico</strong></div>
-            <button onclick="if(confirm('Apagar todo o histórico?')){localStorage.removeItem('banca_historico');toast('✅ Histórico limpo');}" style="padding:8px 16px;background:#fef2f2;color:var(--danger);border:1.5px solid #fca5a5;border-radius:8px;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:700;">Apagar</button>
-        </div>
+
         <button class="btn-primary" onclick="salvarConfig()" style="margin-top:20px;width:100%">💾 Salvar Configurações</button>
     `;
 }
+
 
 async function salvarConfig() {
     localStorage.setItem('banca_whatsapp', document.getElementById('cfg-numero').value.replace(/\D/g,''));
