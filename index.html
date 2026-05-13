@@ -1282,10 +1282,39 @@ async function sha256(msg) { const buf = await crypto.subtle.digest('SHA-256', n
 renderCategorias();
 renderLoja();
 renderCarrinho();
+// INIT
+renderCategorias();
+renderLoja();
+renderCarrinho();
 document.getElementById('qtd-flutuante').textContent = carrinho.reduce((acc, item) => acc + item.qtd, 0);
+
+// --- FUNÇÃO MÁGICA PARA SINCRONIZAR COM O FIREBASE ---
+async function sincronizarProdutosComFirebase() {
+    if (!confirm("Deseja enviar todos os produtos locais para o banco de dados na nuvem? Isso atualizará o estoque online.")) return;
+    
+    toast("⏳ Sincronizando... aguarde");
+    try {
+        for (const p of PADRAO) {
+            // Cria ou atualiza o produto usando o ID dele como nome do documento
+            await window.setDoc(window.doc(window.db, "produtos", String(p.id)), {
+                nome: p.nome,
+                preco: p.preco,
+                cat: p.cat,
+                estoque: p.estoque,
+                emoji: p.emoji,
+                unidade: p.unidade,
+                foto: p.foto
+            });
+        }
+        toast("✅ Tudo online! 65 produtos sincronizados.");
+    } catch (e) {
+        console.error(e);
+        toast("❌ Erro na sincronização");
+    }
+}
 </script>
 
-<!-- CÓDIGO DO FIREBASE (Sempre depois que o script de cima fechar!) -->
+<!-- CONFIGURAÇÃO DO FIREBASE -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
   import { getFirestore, collection, getDocs, setDoc, doc, addDoc } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
@@ -1303,6 +1332,7 @@ document.getElementById('qtd-flutuante').textContent = carrinho.reduce((acc, ite
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
+  // Exportando para o escopo global (window)
   window.db = db;
   window.collection = collection;
   window.getDocs = getDocs;
@@ -1310,8 +1340,7 @@ document.getElementById('qtd-flutuante').textContent = carrinho.reduce((acc, ite
   window.setDoc = setDoc;
   window.doc = doc;
 
-  console.log("🔥 Firebase e Banco de Dados conectados com sucesso!");
+  console.log("🔥 Firebase conectado!");
 </script>
 </body>
 </html>
-
