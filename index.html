@@ -596,7 +596,7 @@ async function carregarProdutosDoFirebase() {
     renderLoja();
     verificarHorario();
 }
-carregarProdutosDoFirebase();
+// Removida chamada inicial para não dar conflito (será chamada pelo módulo)
 
 // SINCRONIZAR DADOS (clientes, entregas, histórico, config)
 let sincronizandoDados = false;
@@ -636,7 +636,7 @@ async function sincronizarDadosDaNuvem() {
         sincronizandoDados = false;
     }
 }
-sincronizarDadosDaNuvem();
+// Removida chamada inicial para não dar conflito (será chamada pelo módulo)
 
 // ============================================================
 // CONFIG VISUAIS (banner, nome)
@@ -790,9 +790,9 @@ function checarNovosEntregas() {
 async function pollingEntregas() {
     if (!window.db) { setTimeout(pollingEntregas, 1000); return; }
     try {
-        const doc = await window.getDoc(window.docRef(window.db, "loja", "entregas"));
-        if (doc.exists()) {
-            const dados = doc.data().dados || [];
+        const docSnap = await window.getDoc(window.docRef(window.db, "loja", "entregas"));
+        if (docSnap.exists()) {
+            const dados = docSnap.data().dados || [];
             const local = JSON.parse(localStorage.getItem('banca_entregas') || '[]');
             if (dados.length > local.length) {
                 localStorage.setItem('banca_entregas', JSON.stringify(dados));
@@ -1791,4 +1791,82 @@ function toast(msg) {
 function abrirModal(id) { document.getElementById(id).classList.add('aberto'); }
 function fecharModal(id) { document.getElementById(id).classList.remove('aberto'); }
 document.querySelectorAll('.modal-overlay').forEach(ov => {
-    ov.addEventListener('click', e => { 
+    ov.addEventListener('click', e => {
+        if (e.target === ov) ov.classList.remove('aberto');
+    });
+});
+
+// ============================================================
+// FUNÇÃO DE BUSCA (Debounce)
+// ============================================================
+function filtrarBuscaDebounced() {
+    clearTimeout(timeoutBusca);
+    timeoutBusca = setTimeout(() => {
+        busca = document.getElementById('busca-input').value.toLowerCase();
+        renderLoja();
+    }, 300);
+}
+
+// ============================================================
+// HASH PARA SENHA (SHA-256)
+// ============================================================
+async function sha256(message) {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Inicializações seguras
+function iniciarApp() {
+    renderCategorias();
+    renderLoja();
+    verificarHorario();
+}
+iniciarApp();
+
+</script>
+
+<!-- ============================================================
+     MÓDULO FIREBASE (Carrega por último e exporta as funções)
+============================================================ -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getFirestore, collection, getDocs, getDoc, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+    // COLE AQUI AS SUAS CHAVES DO FIREBASE
+    const firebaseConfig = {
+        apiKey: "SUA_API_KEY",
+        authDomain: "SEU_DOMINIO",
+        projectId: "SEU_PROJECT_ID",
+        storageBucket: "SEU_BUCKET",
+        messagingSenderId: "SEU_SENDER_ID",
+        appId: "SEU_APP_ID"
+    };
+
+    try {
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        window.db = db;
+        window.collection = collection;
+        window.getDocs = getDocs;
+        window.getDoc = getDoc;
+        window.docRef = doc;
+        window.setDoc = setDoc;
+        window.deleteDoc = deleteDoc;
+
+        console.log("🔥 Firebase inicializado com sucesso!");
+
+        // Chamadas seguras que antes davam erro
+        if (window.carregarProdutosDoFirebase) window.carregarProdutosDoFirebase();
+        if (window.sincronizarDadosDaNuvem) window.sincronizarDadosDaNuvem();
+        if (window.pollingEntregas) window.pollingEntregas();
+
+    } catch (error) {
+        console.error("❌ Erro ao inicializar o Firebase:", error);
+    }
+</script>
+
+</body>
+</html>
