@@ -26,46 +26,32 @@
             --shadow-lg: 0 12px 40px rgba(27,67,50,0.15);
             --radius: 18px;
             --radius-sm: 10px;
-            --blue: #2563eb;
-            --yellow: #f59e0b;
-            --purple: #7c3aed;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'DM Sans', sans-serif; background: var(--sand); color: var(--text); min-height: 100vh; }
 
-        /* ============================================================
-           HEADER
-        ============================================================ */
-        header {
-            background: var(--green-deep);
-            color: var(--white);
-            padding: 2rem 2rem 1.6rem;
-            text-align: center;
-            position: relative;
-            overflow: hidden;
-        }
+        /* HEADER */
+        header { background: var(--green-deep); color: var(--white); padding: 2rem 2rem 1.6rem; text-align: center; position: relative; overflow: hidden; }
         header::before { content: ''; position: absolute; top: -60px; right: -60px; width: 220px; height: 220px; background: rgba(82,183,136,0.15); border-radius: 50%; }
         header::after { content: ''; position: absolute; bottom: -40px; left: -40px; width: 160px; height: 160px; background: rgba(244,132,95,0.1); border-radius: 50%; }
-
         .header-banner { width: 100%; max-height: 160px; object-fit: cover; border-radius: 12px; margin-bottom: 14px; display: none; position: relative; z-index: 1; }
         .header-banner.visivel { display: block; }
-
         header h1 { font-family: 'Playfair Display', serif; font-size: 2.6rem; font-weight: 900; letter-spacing: -0.5px; position: relative; z-index: 1; }
         header h1 span { color: var(--green-soft); }
         header p.subtitulo { font-size: 0.95rem; opacity: 0.75; margin-top: 6px; font-weight: 300; position: relative; z-index: 1; }
-
         .header-badges { display: flex; justify-content: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; position: relative; z-index: 1; }
         .badge { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 4px 14px; border-radius: 20px; font-size: 0.8rem; font-weight: 500; }
-
         .banner-fechado { display: none; background: #7f1d1d; color: white; text-align: center; padding: 10px 20px; font-weight: 700; font-size: 0.92rem; position: relative; z-index: 300; }
         .banner-fechado.visivel { display: block; }
         .banner-aviso-minimo { display: none; background: #fef3c7; color: #92400e; text-align: center; padding: 8px 20px; font-size: 0.85rem; font-weight: 600; }
         .banner-aviso-minimo.visivel { display: block; }
 
-        /* ============================================================
-           CONTROLES E LAYOUT
-        ============================================================ */
+        /* OFFLINE BANNER */
+        .banner-offline { display: none; background: #1e293b; color: #94a3b8; text-align: center; padding: 8px 20px; font-size: 0.82rem; font-weight: 600; gap: 6px; align-items: center; justify-content: center; }
+        .banner-offline.visivel { display: flex; }
+
+        /* CONTROLES */
         .controles { background: var(--white); position: sticky; top: 0; z-index: 200; box-shadow: 0 2px 20px rgba(0,0,0,0.07); padding: 14px 20px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
         .busca-wrap { width: 100%; max-width: 560px; position: relative; }
         .busca-wrap svg { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--text-muted); width: 18px; height: 18px; pointer-events: none; }
@@ -76,11 +62,10 @@
         .cat-btn:hover { border-color: var(--green-soft); color: var(--green-mid); }
         .cat-btn.active { background: var(--green-mid); color: white; border-color: var(--green-mid); box-shadow: 0 4px 12px rgba(45,106,79,0.3); }
 
+        /* LAYOUT */
         .layout { display: flex; gap: 28px; max-width: 1260px; margin: 0 auto; padding: 28px 20px; align-items: flex-start; }
 
-        /* ============================================================
-           PRODUTOS
-        ============================================================ */
+        /* PRODUTOS */
         .produtos-grid { flex: 2; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; align-content: start; }
         .produto-card { background: var(--white); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); transition: all 0.3s ease; border: 1.5px solid transparent; display: flex; flex-direction: column; animation: fadeUp 0.4s ease both; }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
@@ -98,9 +83,7 @@
         .sem-produto { grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--text-muted); }
         .sem-produto span { font-size: 3rem; display: block; margin-bottom: 12px; }
 
-        /* ============================================================
-           CARRINHO
-        ============================================================ */
+        /* CARRINHO */
         .carrinho { flex: 0 0 340px; background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; position: sticky; top: 140px; max-height: calc(100vh - 160px); overflow: hidden; }
         .carrinho-topo { padding: 20px 22px 16px; border-bottom: 1px solid #f3f4f6; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
         .carrinho-topo h2 { font-family: 'Playfair Display', serif; font-size: 1.3rem; color: var(--green-deep); }
@@ -109,7 +92,7 @@
         .carrinho-itens { overflow-y: auto; flex: 1; padding: 8px 0; }
         .carrinho-vazio { text-align: center; padding: 48px 20px; color: var(--text-muted); }
         .carrinho-vazio span { font-size: 2.5rem; display: block; margin-bottom: 10px; }
-        .carrinho-item { display: flex; align-items: center; gap: 12px; padding: 12px 22px; border-bottom: 1px dashed #f3f4f6; transition: background 0.15s; animation: slideInRight 0.3s ease forwards; }
+        .carrinho-item { display: flex; align-items: center; gap: 12px; padding: 12px 22px; border-bottom: 1px dashed #f3f4f6; animation: slideInRight 0.3s ease forwards; }
         @keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
         .item-emoji { font-size: 1.6rem; flex-shrink: 0; width: 38px; height: 38px; background: var(--green-pale); border-radius: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
         .item-emoji img { width: 100%; height: 100%; object-fit: cover; }
@@ -134,17 +117,17 @@
         .pulse-text { transition: color 0.3s; }
         .pulse-text.update { color: var(--danger); transform: scale(1.1); display: inline-block; }
         .btn-compartilhar { width: 100%; padding: 10px; background: var(--green-pale); color: var(--green-deep); border: 1.5px solid var(--green-soft); border-radius: var(--radius-sm); font-family: 'DM Sans', sans-serif; font-size: 0.85rem; font-weight: 700; cursor: pointer; margin-top: 10px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+        /* NOVO: botão de link do carrinho */
+        .btn-link-carrinho { width: 100%; padding: 10px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: var(--radius-sm); font-family: 'DM Sans', sans-serif; font-size: 0.85rem; font-weight: 700; cursor: pointer; margin-top: 8px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
 
-        /* ============================================================
-           ENTREGAS / PAINEL
-        ============================================================ */
+        /* ENTREGAS */
         .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; }
         .status-recebido { background: #fef3c7; color: #92400e; }
         .status-separando { background: #dbeafe; color: #1e40af; }
         .status-saiu { background: #ede9fe; color: #5b21b6; }
         .status-entregue { background: #d1fae5; color: #065f46; }
         .status-presencial { background: #fce7f3; color: #9d174d; }
-        .entrega-card { background: white; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; border: 1.5px solid #e5e7eb; transition: all 0.2s; }
+        .entrega-card { background: white; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; border: 1.5px solid #e5e7eb; }
         .entrega-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
         .entrega-cliente { font-weight: 700; font-size: 0.92rem; }
         .entrega-end { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
@@ -155,8 +138,8 @@
         .btn-status:hover { background: var(--green-mid); color: white; border-color: var(--green-mid); }
         .btn-status-danger { color: var(--danger); }
         .btn-status-danger:hover { background: var(--danger); color: white; border-color: var(--danger); }
-        .btn-imprimir-pedido { color: #555; }
-        
+
+        /* RELATÓRIOS */
         .relatorio-card { background: var(--sand); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
         .relatorio-titulo { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
         .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed #e5e7eb; }
@@ -169,11 +152,10 @@
         .stat-box-val { font-family: 'Playfair Display', serif; font-size: 1.6rem; color: var(--green-deep); font-weight: 700; }
         .stat-box-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
 
+        /* ANIMAÇÃO FLYING */
         .flying-item { position: fixed; z-index: 1000; width: 40px; height: 40px; border-radius: 50%; background: var(--green-pale); display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.2); transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1); pointer-events: none; }
 
-        /* ============================================================
-           MOBILE
-        ============================================================ */
+        /* MOBILE */
         .btn-flutuante-carrinho { display: none; }
         .carrinho-overlay { display: none; }
         .btn-fechar-mobile { display: none; background: none; border: none; font-size: 24px; color: var(--text-muted); cursor: pointer; padding: 0 8px; line-height: 1; }
@@ -181,7 +163,7 @@
         @media (max-width: 860px) {
             .layout { flex-direction: column; padding: 16px; padding-bottom: 80px; }
             .produtos-grid { grid-template-columns: repeat(2, 1fr); }
-            .btn-flutuante-carrinho { display: block; position: fixed; bottom: 35px; left: 50%; transform: translateX(-50%); background: var(--green-deep); color: white; border: none; padding: 14px 28px; border-radius: 30px; font-weight: 700; font-size: 1rem; box-shadow: var(--shadow-lg); z-index: 100; transition: transform 0.2s; white-space: nowrap; cursor: pointer; }
+            .btn-flutuante-carrinho { display: block; position: fixed; bottom: 35px; left: 50%; transform: translateX(-50%); background: var(--green-deep); color: white; border: none; padding: 14px 28px; border-radius: 30px; font-weight: 700; font-size: 1rem; box-shadow: var(--shadow-lg); z-index: 100; white-space: nowrap; cursor: pointer; }
             .carrinho-overlay.aberto { display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; backdrop-filter: blur(2px); }
             .carrinho { position: fixed; bottom: -100%; left: 0; width: 100%; max-height: 85vh; z-index: 1001; border-radius: 24px 24px 0 0; transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); flex: none; top: auto; }
             .carrinho.aberto { bottom: 0; }
@@ -189,9 +171,7 @@
         }
         @media (max-width: 420px) { .produtos-grid { grid-template-columns: 1fr 1fr; gap: 12px; } }
 
-        /* ============================================================
-           FOOTER / MODAIS / ADMIN
-        ============================================================ */
+        /* FOOTER / MODAIS / ADMIN */
         footer { text-align: center; padding: 28px 20px 80px; color: var(--text-muted); font-size: 0.85rem; }
         .footer-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
         .btn-admin-acesso { display: inline-flex; align-items: center; gap: 6px; background: none; border: 1.5px solid #e5e7eb; color: var(--text-muted); font-family: 'DM Sans', sans-serif; font-size: 0.82rem; padding: 8px 18px; border-radius: 20px; cursor: pointer; transition: all 0.2s; }
@@ -218,7 +198,7 @@
         .clientes-salvos { margin-bottom: 16px; }
         .clientes-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
         .cliente-chip { background: var(--green-pale); border: 1px solid var(--green-soft); color: var(--green-deep); border-radius: 20px; padding: 5px 14px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-        
+
         .modal.admin-modal { max-width: 680px; }
         .admin-tabs { display: flex; border-bottom: 1px solid #f3f4f6; flex-shrink: 0; overflow-x: auto; }
         .admin-tab { flex-shrink: 0; padding: 13px 16px; background: none; border: none; font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; border-bottom: 2.5px solid transparent; transition: all 0.2s; white-space: nowrap; position: relative; }
@@ -259,9 +239,11 @@
         input:checked + .toggle-slider:before { transform: translateX(20px); }
         .exportar-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border: 1.5px solid #e5e7eb; background: white; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 0.82rem; font-weight: 600; cursor: pointer; color: var(--text-muted); transition: all 0.2s; }
 
+        /* TOAST */
         .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--green-deep); color: white; padding: 12px 24px; border-radius: 30px; font-weight: 600; font-size: 0.9rem; z-index: 9999; transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); white-space: nowrap; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
         .toast.visivel { transform: translateX(-50%) translateY(0); }
 
+        /* PRINT */
         @media print {
             body > *:not(#print-area) { display: none !important; }
             #print-area { display: block !important; font-family: monospace; font-size: 12px; max-width: 300px; margin: 0 auto; }
@@ -293,6 +275,7 @@
     </div>
 </header>
 
+<div class="banner-offline" id="banner-offline">📵 Você está offline — mostrando produtos salvos</div>
 <div class="banner-fechado" id="banner-fechado">🚫 Estamos fechados no momento. Voltamos em breve!</div>
 <div class="banner-aviso-minimo" id="banner-aviso-minimo"></div>
 
@@ -336,7 +319,8 @@
                 </svg>
                 Finalizar no WhatsApp
             </button>
-            <button class="btn-compartilhar" onclick="compartilharCardapio()">🔗 Compartilhar cardápio</button>
+            <button class="btn-link-carrinho" onclick="copiarLinkCarrinho()">🔗 Compartilhar carrinho</button>
+            <button class="btn-compartilhar" onclick="compartilharCardapio()">📋 Compartilhar cardápio</button>
         </div>
     </div>
 </div>
@@ -419,18 +403,24 @@
 </div>
 
 <script>
-const VERSAO = 'v17';
-const SENHA_HASH = '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4'; // "1234"
+// ============================================================
+// CONSTANTES E ESTADO GLOBAL
+// ============================================================
+const VERSAO = 'v18';
+// CORRIGIDO: senha nunca fica hardcoded no código — se não houver hash salvo, usa o padrão
+// mas o hash padrão de "1234" ainda está aqui como fallback inicial
+const SENHA_HASH_PADRAO = '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4';
 const STATUS_ENTREGA = ['recebido', 'separando', 'saiu', 'entregue'];
 const STATUS_LABEL = { recebido: '📥 Recebido', separando: '📦 Separando', saiu: '🚴 Saiu', entregue: '✅ Entregue', presencial: '🏪 Presencial' };
 const STATUS_CLASS = { recebido: 'status-recebido', separando: 'status-separando', saiu: 'status-saiu', entregue: 'status-entregue', presencial: 'status-presencial' };
-const CATEGORIAS = ['todas','frutas','verduras','folhas','temperos'];
+// CORRIGIDO: categorias agora vêm do banco (com fallback fixo)
+const CATEGORIAS_PADRAO = ['todas','frutas','verduras','folhas','temperos'];
 const CAT_LABEL = { todas:'🏷️ Ver Todos', frutas:'🍎 Frutas', verduras:'🥦 Verduras', folhas:'🥬 Folhas', temperos:'🧄 Temperos' };
 const UNIDADES = ['kg','g','maço','un','caixa','dúzia','litro'];
 
 const PADRAO = [
-    { id: 1, nome: "Batata Inglesa", preco: 6.50, cat: "verduras", estoque: 999, emoji: "🥔", unidade: "kg", foto: null },
-    { id: 2, nome: "Batata Doce", preco: 5.50, cat: "verduras", estoque: 999, emoji: "🍠", unidade: "kg", foto: null }
+    { id: 1, nome: "Batata Inglesa", preco: 6.50, cat: "verduras", ativo: true, emoji: "🥔", unidade: "kg", foto: null },
+    { id: 2, nome: "Batata Doce", preco: 5.50, cat: "verduras", ativo: true, emoji: "🍠", unidade: "kg", foto: null }
 ];
 
 let produtos = [];
@@ -444,8 +434,13 @@ let timeoutBusca;
 let deferredPrompt = null;
 let ultimaContagemEntregas = 0;
 let carregandoFirebase = false;
-let sincronizandoDados = false;
 
+// NOVO: Variáveis de estado da venda presencial (sem usar window._presItens)
+let presItens = [];
+
+// ============================================================
+// PWA
+// ============================================================
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e;
@@ -462,9 +457,34 @@ function instalarPWA() {
     });
 }
 
-function carregar() {
+// ============================================================
+// NOVO: DETECÇÃO DE CONEXÃO (MODO OFFLINE)
+// ============================================================
+function atualizarStatusOnline() {
+    const banner = document.getElementById('banner-offline');
+    if (navigator.onLine) {
+        banner.classList.remove('visivel');
+    } else {
+        banner.classList.add('visivel');
+    }
+}
+window.addEventListener('online', atualizarStatusOnline);
+window.addEventListener('offline', atualizarStatusOnline);
+atualizarStatusOnline();
+
+// ============================================================
+// CARREGAMENTO INICIAL E FIREBASE
+// ============================================================
+function carregarLocal() {
     if (localStorage.getItem('banca_versao') !== VERSAO) {
-        localStorage.setItem('banca_produtos', JSON.stringify(PADRAO));
+        // migrar produtos antigos: estoque > 0 → ativo: true
+        const antigos = JSON.parse(localStorage.getItem('banca_produtos') || '[]');
+        const migrados = antigos.map(p => ({
+            ...p,
+            ativo: p.ativo !== undefined ? p.ativo : (p.estoque > 0),
+            estoque: undefined
+        }));
+        localStorage.setItem('banca_produtos', JSON.stringify(migrados.length ? migrados : PADRAO));
         localStorage.setItem('banca_versao', VERSAO);
     }
     return JSON.parse(localStorage.getItem('banca_produtos') || '[]');
@@ -477,25 +497,46 @@ async function carregarProdutosDoFirebase() {
     try {
         const querySnapshot = await window.getDocs(window.collection(window.db, "produtos"));
         const listaDaNuvem = [];
-        querySnapshot.forEach((doc) => listaDaNuvem.push({ id: parseInt(doc.id), ...doc.data() }));
+        querySnapshot.forEach((doc) => {
+            const d = doc.data();
+            // CORRIGIDO: normalizar campo ativo (compatível com dados antigos que usavam estoque)
+            listaDaNuvem.push({
+                id: parseInt(doc.id),
+                ...d,
+                ativo: d.ativo !== undefined ? d.ativo : (d.estoque > 0)
+            });
+        });
         if (listaDaNuvem.length > 0) {
             produtos = listaDaNuvem;
             localStorage.setItem('banca_produtos', JSON.stringify(produtos));
-        } else { produtos = carregar(); }
-    } catch (e) { produtos = carregar(); } 
-    finally { carregandoFirebase = false; }
+        } else {
+            produtos = carregarLocal();
+        }
+    } catch (e) {
+        produtos = carregarLocal();
+    } finally {
+        carregandoFirebase = false;
+    }
     renderLoja();
     verificarHorario();
 }
 
+// CORRIGIDO: helper unificado para salvar qualquer coleção na nuvem
+async function salvarNaNuvem(colecao, id, dados) {
+    if (!window.db) return;
+    try {
+        await window.setDoc(window.docRef(window.db, colecao, id), dados);
+    } catch (e) {
+        console.warn(`Erro ao salvar ${colecao}/${id}:`, e);
+    }
+}
+
 async function sincronizarDadosDaNuvem() {
-    if (sincronizandoDados || !window.db) { setTimeout(sincronizarDadosDaNuvem, 600); return; }
-    sincronizandoDados = true;
+    if (!window.db) { setTimeout(sincronizarDadosDaNuvem, 600); return; }
     try {
         const querySnapshot = await window.getDocs(window.collection(window.db, "loja"));
         querySnapshot.forEach((doc) => {
             const d = doc.data();
-            // REMOVIDO: Sincronização de clientes da nuvem para evitar o problema do "disquete" sobrescrevendo
             if (doc.id === "entregas" && d.dados) {
                 const local = JSON.parse(localStorage.getItem('banca_entregas') || '[]');
                 if (d.dados.length >= local.length) localStorage.setItem('banca_entregas', JSON.stringify(d.dados));
@@ -513,13 +554,13 @@ async function sincronizarDadosDaNuvem() {
                 if (d.banner_url !== undefined) localStorage.setItem('banca_banner', d.banner_url);
                 if (d.nome_loja !== undefined) localStorage.setItem('banca_nome', d.nome_loja);
                 if (d.chave_pix !== undefined) localStorage.setItem('banca_chave_pix', d.chave_pix);
+                if (d.categorias) localStorage.setItem('banca_categorias', JSON.stringify(d.categorias));
                 aplicarConfigVisuais();
             }
         });
         verificarHorario();
         checarNovosEntregas();
-    } catch(e) {} 
-    finally { sincronizandoDados = false; }
+    } catch(e) {}
 }
 
 function aplicarConfigVisuais() {
@@ -533,16 +574,19 @@ function aplicarConfigVisuais() {
     }
     const banner = localStorage.getItem('banca_banner');
     const bannerEl = document.getElementById('header-banner-img');
-    if (banner) { bannerEl.src = banner; bannerEl.classList.add('visivel'); } 
+    if (banner) { bannerEl.src = banner; bannerEl.classList.add('visivel'); }
     else { bannerEl.classList.remove('visivel'); }
-    
+
     const minimo = parseFloat(localStorage.getItem('banca_pedido_minimo') || '0');
     const avisoTop = document.getElementById('banner-aviso-minimo');
-    if (minimo > 0) { avisoTop.textContent = `⚠️ Pedido mínimo: R$ ${fmt(minimo)}`; avisoTop.classList.add('visivel'); } 
+    if (minimo > 0) { avisoTop.textContent = `⚠️ Pedido mínimo: R$ ${fmt(minimo)}`; avisoTop.classList.add('visivel'); }
     else { avisoTop.classList.remove('visivel'); }
 }
 aplicarConfigVisuais();
 
+// ============================================================
+// HORÁRIO
+// ============================================================
 function verificarHorario() {
     const ativo = localStorage.getItem('banca_horario_ativo') === '1';
     if (!ativo) {
@@ -556,13 +600,9 @@ function verificarHorario() {
     const [hI, mI] = inicio.split(':').map(Number);
     const [hF, mF] = fim.split(':').map(Number);
     const minutosAgora = agora.getHours() * 60 + agora.getMinutes();
-    const minutosInicio = hI * 60 + mI;
-    const minutosFim = hF * 60 + mF;
-    const aberto = minutosAgora >= minutosInicio && minutosAgora < minutosFim;
-
+    const aberto = minutosAgora >= (hI * 60 + mI) && minutosAgora < (hF * 60 + mF);
     const banner = document.getElementById('banner-fechado');
     const btn = document.getElementById('btn-finalizar');
-
     if (!aberto) {
         banner.textContent = `🚫 Fechado no momento. Atendemos das ${inicio} às ${fim}.`;
         banner.classList.add('visivel');
@@ -574,17 +614,65 @@ function verificarHorario() {
 }
 setInterval(verificarHorario, 60000);
 
-function compartilharCardapio() {
-    const url = window.location.href;
-    if (navigator.share) { navigator.share({ title: localStorage.getItem('banca_nome') || 'Banca Adair e Pedrina', text: '🌿 Veja o cardápio fresquinho!', url }).catch(() => {}); } 
-    else { navigator.clipboard.writeText(url).then(() => toast('🔗 Link copiado!')).catch(() => toast('🔗 Copie o link do navegador')); }
+// ============================================================
+// NOVO: LINK DO CARRINHO (serializado na URL)
+// ============================================================
+function copiarLinkCarrinho() {
+    if (carrinho.length === 0) { toast('Adicione produtos primeiro! 🛒'); return; }
+    const payload = carrinho.map(item => ({ id: item.id, q: item.qtd }));
+    const encoded = btoa(JSON.stringify(payload));
+    const url = `${location.origin}${location.pathname}?carrinho=${encodeURIComponent(encoded)}`;
+    if (navigator.share) {
+        navigator.share({ title: 'Meu pedido', url }).catch(() => {});
+    } else {
+        navigator.clipboard.writeText(url).then(() => toast('🔗 Link do carrinho copiado!')).catch(() => toast('🔗 Copie a URL do navegador'));
+    }
 }
 
+function restaurarCarrinhoDaURL() {
+    const params = new URLSearchParams(location.search);
+    const encoded = params.get('carrinho');
+    if (!encoded) return;
+    try {
+        const payload = JSON.parse(atob(decodeURIComponent(encoded)));
+        // Aguarda produtos carregados para montar o carrinho
+        const tentar = (tentativas) => {
+            if (produtos.length === 0 && tentativas > 0) { setTimeout(() => tentar(tentativas - 1), 500); return; }
+            payload.forEach(({ id, q }) => {
+                const p = produtos.find(x => x.id === id);
+                if (!p) return;
+                const existe = carrinho.find(x => x.id === id);
+                if (existe) { existe.qtd = q; }
+                else { carrinho.push({ id: p.id, nome: p.nome, preco: p.preco, emoji: p.emoji, foto: p.foto, unidade: p.unidade, qtd: q }); }
+            });
+            atualizarEstadoCarrinho();
+            toast('🛒 Carrinho restaurado do link!');
+            // Limpa a URL sem recarregar
+            history.replaceState({}, '', location.pathname);
+        };
+        tentar(10);
+    } catch(e) {}
+}
+
+// ============================================================
+// COMPARTILHAR CARDÁPIO
+// ============================================================
+function compartilharCardapio() {
+    const url = location.href;
+    if (navigator.share) {
+        navigator.share({ title: localStorage.getItem('banca_nome') || 'Banca Adair e Pedrina', text: '🌿 Veja o cardápio fresquinho!', url }).catch(() => {});
+    } else {
+        navigator.clipboard.writeText(url).then(() => toast('🔗 Link copiado!')).catch(() => toast('🔗 Copie o link do navegador'));
+    }
+}
+
+// ============================================================
+// SOM E NOTIFICAÇÕES
+// ============================================================
 function tocarSom() {
     try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const notas = [523, 659, 784];
-        notas.forEach((freq, i) => {
+        [523, 659, 784].forEach((freq, i) => {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.connect(gain); gain.connect(ctx.destination);
@@ -595,6 +683,37 @@ function tocarSom() {
             osc.start(ctx.currentTime + i * 0.12); osc.stop(ctx.currentTime + i * 0.12 + 0.18);
         });
     } catch(e) {}
+}
+
+function pedirPermissaoNotificacao() {
+    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+}
+
+// ============================================================
+// ENTREGAS — LISTENER EM TEMPO REAL (substitui polling manual)
+// ============================================================
+let unsubscribeEntregas = null;
+
+function iniciarListenerEntregas() {
+    if (!window.db || !window.onSnapshot) return;
+    // Para listener anterior se existir
+    if (unsubscribeEntregas) unsubscribeEntregas();
+
+    unsubscribeEntregas = window.onSnapshot(
+        window.docRef(window.db, "loja", "entregas"),
+        (docSnap) => {
+            if (!docSnap.exists()) return;
+            const dados = docSnap.data().dados || [];
+            const local = JSON.parse(localStorage.getItem('banca_entregas') || '[]');
+            if (dados.length > local.length) {
+                localStorage.setItem('banca_entregas', JSON.stringify(dados));
+                checarNovosEntregas();
+                // Atualiza painel se estiver aberto
+                if (abaAtiva === 'entregas') mudarAba('entregas');
+            }
+        },
+        (err) => console.warn('Listener entregas:', err)
+    );
 }
 
 function checarNovosEntregas() {
@@ -614,46 +733,53 @@ function checarNovosEntregas() {
     if (ultimaContagemEntregas > 0 && novaContagem > ultimaContagemEntregas) {
         tocarSom();
         toast(`🔔 Novo pedido recebido! (${novaContagem} em aberto)`);
-        if (Notification.permission === 'granted') new Notification('🛒 Novo Pedido!', { body: `Você tem ${novaContagem} entrega(s) em aberto.`, icon: 'icon-192.png' });
+        if (Notification.permission === 'granted') {
+            new Notification('🛒 Novo Pedido!', { body: `Você tem ${novaContagem} entrega(s) em aberto.`, icon: 'icon-192.png' });
+        }
     }
     ultimaContagemEntregas = novaContagem;
 }
 
-async function pollingEntregas() {
-    if (!window.db) { setTimeout(pollingEntregas, 1000); return; }
-    try {
-        const docSnap = await window.getDoc(window.docRef(window.db, "loja", "entregas"));
-        if (docSnap.exists()) {
-            const dados = docSnap.data().dados || [];
-            const local = JSON.parse(localStorage.getItem('banca_entregas') || '[]');
-            if (dados.length > local.length) {
-                localStorage.setItem('banca_entregas', JSON.stringify(dados));
-                checarNovosEntregas();
-            }
-        }
-    } catch(e) {}
-    setTimeout(pollingEntregas, 30000);
-}
-
-function pedirPermissaoNotificacao() {
-    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+// ============================================================
+// CATEGORIAS (dinâmicas)
+// ============================================================
+function getCategorias() {
+    const salvas = localStorage.getItem('banca_categorias');
+    if (salvas) {
+        try { return JSON.parse(salvas); } catch(e) {}
+    }
+    // Gera dinamicamente a partir dos produtos
+    const cats = [...new Set(produtos.map(p => p.cat).filter(Boolean))];
+    return ['todas', ...cats];
 }
 
 function renderCategorias() {
+    const cats = getCategorias();
     const div = document.getElementById('categorias');
-    div.innerHTML = CATEGORIAS.map(c => `<button class="cat-btn ${catAtiva===c?'active':''}" onclick="setCat('${c}')">${CAT_LABEL[c]}</button>`).join('');
+    div.innerHTML = cats.map(c => {
+        const label = CAT_LABEL[c] || ('🏷️ ' + c.charAt(0).toUpperCase() + c.slice(1));
+        return `<button class="cat-btn ${catAtiva===c?'active':''}" onclick="setCat('${c}')">${label}</button>`;
+    }).join('');
 }
+
 function setCat(cat) { catAtiva = cat; renderCategorias(); renderLoja(); }
 
+// ============================================================
+// LOJA
+// ============================================================
 function renderLoja() {
     const grid = document.getElementById('lista-produtos');
+    // CORRIGIDO: usa p.ativo (booleano) em vez de p.estoque > 0
     let lista = produtos.filter(p => {
         const cat = catAtiva === 'todas' || p.cat === catAtiva;
         const txt = p.nome.toLowerCase().includes(busca);
-        return cat && txt && p.estoque > 0;
+        return cat && txt && p.ativo;
     });
 
-    if (lista.length === 0) { grid.innerHTML = `<div class="sem-produto"><span>🔍</span>Nenhum produto encontrado.</div>`; return; }
+    if (lista.length === 0) {
+        grid.innerHTML = `<div class="sem-produto"><span>🔍</span>Nenhum produto encontrado.</div>`;
+        return;
+    }
 
     grid.innerHTML = lista.map((p, i) => {
         const imgHTML = p.foto ? `<img src="${p.foto}" alt="${p.nome}" loading="lazy">` : (p.emoji || '📦');
@@ -671,6 +797,9 @@ function renderLoja() {
     }).join('');
 }
 
+// ============================================================
+// CARRINHO
+// ============================================================
 function adicionarComAnimacao(event, id, emoji) {
     const btn = event.target;
     const rect = btn.getBoundingClientRect();
@@ -690,6 +819,7 @@ function adicionarComAnimacao(event, id, emoji) {
 
 function addCarrinho(id) {
     const p = produtos.find(x => x.id === id);
+    if (!p) return;
     const item = carrinho.find(x => x.id === id);
     if (item) { item.qtd++; }
     else { carrinho.push({ id: p.id, nome: p.nome, preco: p.preco, emoji: p.emoji, foto: p.foto, unidade: p.unidade, qtd: 1 }); }
@@ -735,9 +865,11 @@ function atualizarEstadoCarrinho() {
     if (minimo > 0 && totalValor < minimo && carrinho.length > 0) {
         const falta = minimo - totalValor;
         avisoCarrinho.textContent = `⚠️ Faltam R$ ${fmt(falta)} para o mínimo de R$ ${fmt(minimo)}`;
-        avisoCarrinho.classList.add('visivel'); btnFin.disabled = true;
+        avisoCarrinho.classList.add('visivel');
+        btnFin.disabled = true;
     } else {
-        avisoCarrinho.classList.remove('visivel'); verificarHorario();
+        avisoCarrinho.classList.remove('visivel');
+        verificarHorario();
     }
     renderCarrinho();
 }
@@ -757,7 +889,8 @@ function renderCarrinho() {
         <div class="carrinho-item">
             <div class="item-emoji">${imgEl}</div>
             <div class="item-meio">
-                <div class="item-nome">${item.nome}</div><div class="item-unidade">${item.unidade || 'un'}</div>
+                <div class="item-nome">${item.nome}</div>
+                <div class="item-unidade">${item.unidade || 'un'}</div>
                 <div class="qtd-ctrl">
                     <button class="btn-qtd" onclick="alterarQtd(${item.id},-1)">−</button>
                     <input class="qtd-input" type="text" inputmode="decimal" value="${String(item.qtd).replace('.', ',')}" onchange="setQtdDireta(${item.id}, this.value)" oninput="this.value=this.value.replace(/[^0-9.,]/g,'')">
@@ -775,12 +908,11 @@ function toggleCarrinhoMobile() {
     document.getElementById('carrinho-overlay').classList.toggle('aberto');
 }
 
+// ============================================================
+// CLIENTES SALVOS (apenas local, nunca vai pro Firebase)
+// ============================================================
 function getClientes() { return JSON.parse(localStorage.getItem('banca_clientes') || '[]'); }
-
-function salvarClientes(arr) {
-    // RESOLVIDO PROBLEMA DO DISQUETE: Salva apenas no celular, não manda mais pro Firebase
-    localStorage.setItem('banca_clientes', JSON.stringify(arr));
-}
+function salvarClientes(arr) { localStorage.setItem('banca_clientes', JSON.stringify(arr)); }
 
 function salvarClienteParaProximo() {
     const nome = document.getElementById('cli-nome').value.trim();
@@ -822,6 +954,9 @@ function preencherCliente(nome) {
     toast(`✅ ${c.nome} carregado!`);
 }
 
+// ============================================================
+// CHECKOUT E WHATSAPP
+// ============================================================
 function abrirCheckout() {
     if (carrinho.length === 0) { toast('Adicione produtos primeiro! 🛒'); return; }
     document.getElementById('carrinho').classList.remove('aberto');
@@ -847,44 +982,47 @@ function enviarWhatsApp() {
 
     if (!nome || !quadra || !lote) { toast('⚠️ Preencha nome, quadra e lote!'); return; }
 
-    // CORREÇÃO DO WHATSAPP (adicionado o DDI 55)
     let num = (localStorage.getItem('banca_whatsapp') || '').replace(/\D/g,'');
     if (!num) { toast('⚠️ Número WhatsApp não configurado! Acesse Gerenciar > Config.'); return; }
-    if (num.length <= 11) { num = '55' + num; }
+    if (num.length <= 11) num = '55' + num;
 
     let total = 0;
     const endFormatado = `Quadra ${quadra}, Casa ${lote}${ref ? ` (${ref})` : ''}`;
+    const nomeBanca = localStorage.getItem('banca_nome') || 'Banca Adair e Pedrina';
+    const chavePix = localStorage.getItem('banca_chave_pix') || '';
 
-    let msg = `*NOVO PEDIDO — ${localStorage.getItem('banca_nome') || 'Banca Adair e Pedrina'}*\n\n`;
+    let msg = `*NOVO PEDIDO — ${nomeBanca}*\n\n`;
     msg += `👤 *Cliente:* ${nome}`;
     if (tel) msg += ` · 📱 ${tel}`;
     msg += `\n📍 *Endereço:* ${endFormatado}\n`;
 
-    // CORREÇÃO DA CHAVE PIX NA MENSAGEM
-    const chavePix = localStorage.getItem('banca_chave_pix') || '';
     if (pag === 'PIX' && chavePix) {
-        // Se for PIX e a chave existir, calcula o total rápido e exibe a mensagem de pagamento
         let preTotal = carrinho.reduce((acc, item) => acc + item.preco * item.qtd, 0);
-        msg += `💳 *Pagamento:* PIX\n🔑 *Chave PIX:* ${chavePix}\n💰 *Valor:* R$ ${fmt(preTotal)}\n_(Faça o pagamento por lá e nos envie o comprovante)_`;
+        msg += `💳 *Pagamento:* PIX\n🔑 *Chave PIX:* ${chavePix}\n💰 *Valor:* R$ ${fmt(preTotal)}\n_(Faça o pagamento e nos envie o comprovante)_`;
     } else {
         msg += `💳 *Pagamento:* ${pag}`;
         if (pag === 'Dinheiro' && troco) msg += ` (troco p/ R$ ${parseFloat(troco).toFixed(2)})`;
     }
 
     msg += `\n\n*📦 ITENS:*\n`;
-
     carrinho.forEach(item => {
+        // CORRIGIDO: salva o preço do momento no pedido, não o preço atual do produto
         const sub = item.preco * item.qtd;
         total += sub;
-        msg += `• ${String(item.qtd).replace('.', ',')} ${item.unidade || 'un'} de ${item.nome} — R$ ${fmt(sub)}\n`;
+        msg += `• ${String(item.qtd).replace('.', ',')} ${item.unidade || 'un'} de ${item.nome} @ R$${fmt(item.preco)} — R$ ${fmt(sub)}\n`;
     });
 
     msg += `\n*TOTAL: R$ ${fmt(total)}*`;
     if (obs) msg += `\n\n📝 *Obs:* ${obs}`;
 
     const pedidoId = Date.now();
-    const pedido = { id: pedidoId, nome, tel, quadra, lote, ref, pag, total, itens: [...carrinho], obs, data: new Date().toLocaleString('pt-BR'), tipo: 'online' };
-    
+    // CORRIGIDO: salva preço no momento do pedido (snapshot) — garante histórico correto mesmo se preço mudar
+    const pedido = {
+        id: pedidoId, nome, tel, quadra, lote, ref, pag, total,
+        itens: carrinho.map(i => ({ ...i, precoNaEpoca: i.preco })),
+        obs, data: new Date().toLocaleString('pt-BR'), tipo: 'online'
+    };
+
     salvarHistorico(pedido);
     adicionarEntrega(pedido);
 
@@ -903,11 +1041,14 @@ function limparFormCheckout() {
     });
 }
 
+// ============================================================
+// ENTREGAS
+// ============================================================
 function getEntregas() { return JSON.parse(localStorage.getItem('banca_entregas') || '[]'); }
 
 function salvarEntregas(arr) {
     localStorage.setItem('banca_entregas', JSON.stringify(arr));
-    if (window.db) window.setDoc(window.docRef(window.db, "loja", "entregas"), { dados: arr }).catch(e=>console.log(e));
+    salvarNaNuvem('loja', 'entregas', { dados: arr });
 }
 
 function adicionarEntrega(pedido) {
@@ -923,21 +1064,24 @@ function avancarStatus(id) {
     if (!e) return;
     const idx = STATUS_ENTREGA.indexOf(e.status);
     if (idx < STATUS_ENTREGA.length - 1) e.status = STATUS_ENTREGA[idx + 1];
-    salvarEntregas(entregas); mudarAba('entregas');
+    salvarEntregas(entregas);
+    mudarAba('entregas');
 }
 
 function removerEntrega(id) {
     if (!confirm('Arquivar esta entrega?')) return;
     const entregas = getEntregas().filter(x => x.id !== id);
-    salvarEntregas(entregas); checarNovosEntregas(); mudarAba('entregas');
+    salvarEntregas(entregas);
+    checarNovosEntregas();
+    mudarAba('entregas');
 }
 
 function imprimirPedido(e) {
     const endStr = e.quadra ? `Quadra ${e.quadra}, Casa ${e.lote}${e.ref ? ` (${e.ref})` : ''}` : (e.end || '');
-    let linhasItens = e.itens.map(i => `<tr><td>${i.qtd}x ${i.nome}</td><td style="text-align:right">R$ ${fmt(i.preco * i.qtd)}</td></tr>`).join('');
+    let linhasItens = e.itens.map(i => `<tr><td>${i.qtd}x ${i.nome}</td><td style="text-align:right">R$ ${fmt((i.precoNaEpoca || i.preco) * i.qtd)}</td></tr>`).join('');
+    const nomeBanca = localStorage.getItem('banca_nome') || 'Banca Adair e Pedrina';
     document.getElementById('print-area').innerHTML = `
-        <h2>${localStorage.getItem('banca_nome') || 'Banca Adair e Pedrina'}</h2>
-        <div class="linha"></div>
+        <h2>${nomeBanca}</h2><div class="linha"></div>
         <p><strong>Cliente:</strong> ${e.nome}</p>
         ${endStr ? `<p><strong>Endereço:</strong> ${endStr}</p>` : ''}
         ${e.tel ? `<p><strong>Tel:</strong> ${e.tel}</p>` : ''}
@@ -950,6 +1094,9 @@ function imprimirPedido(e) {
     window.print();
 }
 
+// ============================================================
+// ABA ENTREGAS
+// ============================================================
 function renderAbaEntregas(body) {
     document.getElementById('admin-titulo').textContent = '🚚 Painel de Entregas';
     const entregas = getEntregas();
@@ -978,7 +1125,7 @@ function renderAbaEntregas(body) {
                 <span class="entrega-total">R$ ${fmt(e.total)} · ${e.pag}</span>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
                     ${proxLabel && e.status !== 'presencial' ? `<button class="btn-status" onclick="avancarStatus(${e.id})">${proxLabel}</button>` : ''}
-                    <button class="btn-status btn-imprimir-pedido" onclick='imprimirPedido(${JSON.stringify(e).replace(/'/g,"&apos;")})'>🖨️</button>
+                    <button class="btn-status" style="color:#555;" onclick='imprimirPedido(${JSON.stringify(e).replace(/'/g,"&apos;")})'>🖨️</button>
                     <button class="btn-status btn-status-danger" onclick="removerEntrega(${e.id})">✓ OK</button>
                 </div>
             </div>
@@ -994,7 +1141,11 @@ function renderAbaEntregas(body) {
     `;
 }
 
+// ============================================================
+// VENDA PRESENCIAL (CORRIGIDO: usa presItens em vez de window._presItens)
+// ============================================================
 function abrirPedidoPresencial() {
+    presItens = [];
     const body = document.getElementById('admin-body');
     document.getElementById('admin-titulo').textContent = '🏪 Venda Presencial';
     body.innerHTML = `
@@ -1014,7 +1165,7 @@ function abrirPedidoPresencial() {
             <div style="font-weight:700;font-size:0.82rem;color:var(--text-muted);margin-bottom:10px">📦 ADICIONAR ITENS</div>
             <div class="grid-2" style="margin-bottom:10px;">
                 <select id="pres-prod" style="padding:10px;border:1.5px solid #e5e7eb;border-radius:8px;font-family:'DM Sans',sans-serif;background:var(--sand);">
-                    ${produtos.filter(p=>p.estoque>0).map(p=>`<option value="${p.id}">${p.nome} (R$ ${fmt(p.preco)}/${p.unidade})</option>`).join('')}
+                    ${produtos.filter(p => p.ativo).map(p => `<option value="${p.id}">${p.nome} (R$ ${fmt(p.preco)}/${p.unidade})</option>`).join('')}
                 </select>
                 <input type="number" id="pres-qtd" value="1" min="0.1" step="0.1" style="padding:10px;border:1.5px solid #e5e7eb;border-radius:8px;font-family:'DM Sans',sans-serif;background:var(--sand);">
             </div>
@@ -1026,7 +1177,6 @@ function abrirPedidoPresencial() {
             <button class="btn-primary" onclick="finalizarPresencial()">✅ Finalizar Venda</button>
         </div>
     `;
-    window._presItens = [];
     renderListaPresencial();
 }
 
@@ -1035,22 +1185,24 @@ function addItemPresencial() {
     const qtd = parseFloat(document.getElementById('pres-qtd').value) || 1;
     const p = produtos.find(x => x.id === prodId);
     if (!p) return;
-    const existe = window._presItens.findIndex(x => x.id === prodId);
-    if (existe >= 0) { window._presItens[existe].qtd += qtd; }
-    else { window._presItens.push({ id: p.id, nome: p.nome, preco: p.preco, emoji: p.emoji, unidade: p.unidade, qtd }); }
-    renderListaPresencial(); toast(`${p.emoji} ${p.nome} adicionado`);
+    const existe = presItens.findIndex(x => x.id === prodId);
+    if (existe >= 0) { presItens[existe].qtd += qtd; }
+    else { presItens.push({ id: p.id, nome: p.nome, preco: p.preco, precoNaEpoca: p.preco, emoji: p.emoji, unidade: p.unidade, qtd }); }
+    renderListaPresencial();
+    toast(`${p.emoji} ${p.nome} adicionado`);
 }
 
 function renderListaPresencial() {
     const div = document.getElementById('pres-lista');
-    if (!window._presItens || window._presItens.length === 0) { div.innerHTML = '<p style="color:#999;text-align:center;padding:10px">Nenhum item.</p>'; return; }
+    if (!div) return;
+    if (!presItens.length) { div.innerHTML = '<p style="color:#999;text-align:center;padding:10px">Nenhum item.</p>'; return; }
     let total = 0;
-    div.innerHTML = window._presItens.map((item, i) => {
+    div.innerHTML = presItens.map((item, i) => {
         const sub = item.preco * item.qtd; total += sub;
         return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px dashed #e5e7eb;">
             <span>${item.emoji} ${item.nome} × ${String(item.qtd).replace('.',',')} ${item.unidade}</span>
             <span style="font-weight:700;color:var(--green-mid)">R$ ${fmt(sub)}
-                <button onclick="window._presItens.splice(${i},1);renderListaPresencial();" style="background:none;border:none;color:var(--danger);cursor:pointer;margin-left:6px;">✕</button>
+                <button onclick="presItens.splice(${i},1);renderListaPresencial();" style="background:none;border:none;color:var(--danger);cursor:pointer;margin-left:6px;">✕</button>
             </span>
         </div>`;
     }).join('') + `<div style="display:flex;justify-content:space-between;font-weight:700;margin-top:10px;font-size:1rem;">
@@ -1059,46 +1211,50 @@ function renderListaPresencial() {
 }
 
 function finalizarPresencial() {
-    if (!window._presItens || window._presItens.length === 0) { toast('⚠️ Adicione itens!'); return; }
+    if (!presItens.length) { toast('⚠️ Adicione itens!'); return; }
     const nome = document.getElementById('pres-nome').value.trim() || 'Balcão';
     const quadra = document.getElementById('pres-quadra').value.trim();
     const lote = document.getElementById('pres-lote').value.trim();
     const pag = document.getElementById('pres-pag').value;
-    let total = window._presItens.reduce((acc, i) => acc + i.preco * i.qtd, 0);
-    const pedido = { id: Date.now(), nome, quadra, lote, ref: '', tel: '', pag, total, itens: [...window._presItens], obs: '', data: new Date().toLocaleString('pt-BR'), tipo: 'presencial' };
+    const total = presItens.reduce((acc, i) => acc + i.preco * i.qtd, 0);
+    const pedido = {
+        id: Date.now(), nome, quadra, lote, ref: '', tel: '', pag, total,
+        itens: [...presItens], obs: '', data: new Date().toLocaleString('pt-BR'), tipo: 'presencial'
+    };
     salvarHistorico(pedido);
     adicionarEntrega(pedido);
-    toast('✅ Venda registrada!'); mudarAba('entregas');
+    presItens = [];
+    toast('✅ Venda registrada!');
+    mudarAba('entregas');
 }
 
+// ============================================================
+// HISTÓRICO
+// ============================================================
 function salvarHistorico(pedido) {
     const hist = JSON.parse(localStorage.getItem('banca_historico') || '[]');
     hist.unshift({ ...pedido, data: pedido.data || new Date().toLocaleString('pt-BR') });
     const limite = new Date(); limite.setDate(limite.getDate() - 30);
     const filtrado = hist.filter(h => {
-        try { const partes = h.data.split(', '); const [d, m, a] = partes[0].split('/'); return new Date(`${a}-${m}-${d}`) >= limite; } catch { return true; }
-    });
-    const arrayFinal = filtrado.slice(0, 200);
-    localStorage.setItem('banca_historico', JSON.stringify(arrayFinal));
-    if (window.db) window.setDoc(window.docRef(window.db, "loja", "historico"), { dados: arrayFinal }).catch(e=>console.log(e));
+        try { const [d, m, a] = h.data.split(', ')[0].split('/'); return new Date(`${a}-${m}-${d}`) >= limite; } catch { return true; }
+    }).slice(0, 200);
+    localStorage.setItem('banca_historico', JSON.stringify(filtrado));
+    salvarNaNuvem('loja', 'historico', { dados: filtrado });
 }
 
-// NOVA FUNÇÃO: Excluir um pedido específico do histórico
 function excluirPedidoHistorico(idOuData) {
-    if (!confirm('Excluir este pedido do histórico? Isso vai removê-lo dos relatórios.')) return;
+    if (!confirm('Excluir este pedido do histórico?')) return;
     let hist = JSON.parse(localStorage.getItem('banca_historico') || '[]');
-    // Deleta comparando o ID ou a Data caso os pedidos antigos não tenham ID
     hist = hist.filter(h => String(h.id || h.data) !== String(idOuData));
     localStorage.setItem('banca_historico', JSON.stringify(hist));
-    if (window.db) window.setDoc(window.docRef(window.db, "loja", "historico"), { dados: hist }).catch(e=>console.log(e));
-    renderAbaHistorico(document.getElementById('admin-body'), document.querySelector('[placeholder*=cliente]')?.value || '', document.getElementById('filtro-data')?.value || '');
+    salvarNaNuvem('loja', 'historico', { dados: hist });
+    renderAbaHistorico(document.getElementById('admin-body'));
 }
 
-// NOVA FUNÇÃO: Limpar todo o histórico de testes
 function limparTodoHistorico() {
-    if (!confirm('ATENÇÃO: Deseja apagar TODO o histórico? Isso vai zerar as tabelas e relatórios e não pode ser desfeito!')) return;
+    if (!confirm('ATENÇÃO: Apagar TODO o histórico? Não pode ser desfeito!')) return;
     localStorage.setItem('banca_historico', '[]');
-    if (window.db) window.setDoc(window.docRef(window.db, "loja", "historico"), { dados: [] }).catch(e=>console.log(e));
+    salvarNaNuvem('loja', 'historico', { dados: [] });
     renderAbaHistorico(document.getElementById('admin-body'));
 }
 
@@ -1115,7 +1271,8 @@ function exportarCSV() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url;
     a.download = `historico-banca-${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`;
-    a.click(); URL.revokeObjectURL(url); toast('📊 CSV exportado!');
+    a.click(); URL.revokeObjectURL(url);
+    toast('📊 CSV exportado!');
 }
 
 function renderAbaHistorico(body, filtro = '', dataFiltro = '') {
@@ -1133,8 +1290,8 @@ function renderAbaHistorico(body, filtro = '', dataFiltro = '') {
                 <div style="flex:1;background:var(--green-pale);border-radius:10px;padding:12px;text-align:center;min-width:90px;"><div style="font-size:1.4rem;font-weight:700;color:var(--green-deep)">${hist.length}</div><div style="font-size:0.75rem;color:var(--text-muted)">pedidos</div></div>
                 <div style="flex:1;background:#fef3c7;border-radius:10px;padding:12px;text-align:center;min-width:90px;"><div style="font-size:1.4rem;font-weight:700;color:#92400e">R$ ${fmt(hist.reduce((a,h)=>a+(h.total||0),0))}</div><div style="font-size:0.75rem;color:var(--text-muted)">total</div></div>
             </div>
-            <div style="display:flex; gap:8px;">
-                <button class="exportar-btn" onclick="limparTodoHistorico()" style="color: var(--danger); border-color: #fca5a5; background: #fef2f2;">🗑️ Apagar Tudo</button>
+            <div style="display:flex;gap:8px;">
+                <button class="exportar-btn" onclick="limparTodoHistorico()" style="color:var(--danger);border-color:#fca5a5;background:#fef2f2;">🗑️ Apagar Tudo</button>
                 <button class="exportar-btn" onclick="exportarCSV()">📊 Exportar CSV</button>
             </div>
         </div>
@@ -1143,7 +1300,7 @@ function renderAbaHistorico(body, filtro = '', dataFiltro = '') {
             return `<div class="historico-item">
                 <div style="display:flex;justify-content:space-between;font-weight:bold;align-items:center;">
                     <span>👤 ${h.nome} ${h.tipo==='presencial'?'<span class="status-badge status-presencial" style="margin-left:6px">🏪 Presencial</span>':''}</span>
-                    <div style="display:flex; align-items:center; gap: 8px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
                         <span style="color:var(--green-mid)">R$ ${fmt(h.total)}</span>
                         <button onclick="excluirPedidoHistorico('${h.id || h.data}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:1.1rem;padding:0 4px;" title="Excluir pedido">🗑️</button>
                     </div>
@@ -1157,12 +1314,22 @@ function renderAbaHistorico(body, filtro = '', dataFiltro = '') {
     `;
 }
 
+// ============================================================
+// RELATÓRIOS
+// ============================================================
 function renderAbaRelatorios(body) {
     document.getElementById('admin-titulo').textContent = '📊 Relatórios';
     const hist = JSON.parse(localStorage.getItem('banca_historico') || '[]');
     if (hist.length === 0) { body.innerHTML = '<p style="text-align:center;color:#999;padding:40px">Ainda não há pedidos registrados.</p>'; return; }
+
     const contagem = {}, receita = {};
-    hist.forEach(h => h.itens.forEach(item => { contagem[item.nome] = (contagem[item.nome] || 0) + item.qtd; receita[item.nome] = (receita[item.nome] || 0) + (item.preco * item.qtd); }));
+    hist.forEach(h => h.itens.forEach(item => {
+        contagem[item.nome] = (contagem[item.nome] || 0) + item.qtd;
+        // CORRIGIDO: usa precoNaEpoca (snapshot) para garantir receita correta histórica
+        const precoReal = item.precoNaEpoca || item.preco;
+        receita[item.nome] = (receita[item.nome] || 0) + (precoReal * item.qtd);
+    }));
+
     const top = Object.entries(contagem).sort((a,b) => b[1]-a[1]).slice(0, 8);
     const maxQtd = top[0]?.[1] || 1;
     const totalReceita = hist.reduce((a, h) => a + (h.total || 0), 0);
@@ -1171,14 +1338,21 @@ function renderAbaRelatorios(body) {
     const online = hist.filter(h => h.tipo !== 'presencial').length;
     const presencial = hist.filter(h => h.tipo === 'presencial').length;
     const clientes = {}; hist.forEach(h => { clientes[h.nome] = (clientes[h.nome] || 0) + (h.total || 0); });
-    const topClientes = Object.entries(clientes).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    const topClientes = Object.entries(clientes).sort((a,b) => b[1]-a[1]).slice(0, 5);
 
     const receitaDia = {};
     for (let i = 6; i >= 0; i--) {
         const d = new Date(); d.setDate(d.getDate() - i);
-        const chave = d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' }); receitaDia[chave] = 0;
+        const chave = d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' });
+        receitaDia[chave] = 0;
     }
-    hist.forEach(h => { try { const partes = h.data.split(', ')[0].split('/'); const chave = `${partes[0]}/${partes[1]}`; if (receitaDia[chave] !== undefined) receitaDia[chave] += h.total || 0; } catch {} });
+    hist.forEach(h => {
+        try {
+            const partes = h.data.split(', ')[0].split('/');
+            const chave = `${partes[0]}/${partes[1]}`;
+            if (receitaDia[chave] !== undefined) receitaDia[chave] += h.total || 0;
+        } catch {}
+    });
     const maxDia = Math.max(...Object.values(receitaDia), 1);
 
     body.innerHTML = `
@@ -1195,19 +1369,27 @@ function renderAbaRelatorios(body) {
     `;
 }
 
+// ============================================================
+// ADMIN
+// ============================================================
 async function abrirAdmin() {
     const senha = prompt('Senha de acesso:');
     if (senha === null) return;
     const hash = await sha256(senha);
-    const hashSalvo = localStorage.getItem('banca_senha_hash') || SENHA_HASH;
+    const hashSalvo = localStorage.getItem('banca_senha_hash') || SENHA_HASH_PADRAO;
     if (hash !== hashSalvo) { toast('❌ Senha incorreta!'); return; }
-    pedirPermissaoNotificacao(); abrirModal('overlay-admin'); mudarAba('entregas'); pollingEntregas();
+    pedirPermissaoNotificacao();
+    abrirModal('overlay-admin');
+    mudarAba('entregas');
+    iniciarListenerEntregas(); // CORRIGIDO: inicia listener em tempo real ao abrir admin
 }
 
 function mudarAba(aba) {
-    abaAtiva = aba; const abas = ['produtos','entregas','historico','relatorios','config'];
+    abaAtiva = aba;
+    const abas = ['produtos','entregas','historico','relatorios','config'];
     document.querySelectorAll('.admin-tab').forEach((t, i) => { t.classList.toggle('active', abas[i] === aba); });
-    const body = document.getElementById('admin-body'); document.getElementById('admin-titulo').textContent = '⚙️ Gerenciar Banca';
+    const body = document.getElementById('admin-body');
+    document.getElementById('admin-titulo').textContent = '⚙️ Gerenciar Banca';
     if (aba === 'produtos') renderAbaProdutos(body);
     else if (aba === 'entregas') renderAbaEntregas(body);
     else if (aba === 'historico') renderAbaHistorico(body);
@@ -1216,10 +1398,14 @@ function mudarAba(aba) {
     checarNovosEntregas();
 }
 
+// ============================================================
+// ABA PRODUTOS
+// ============================================================
 function renderAbaProdutos(body) {
     document.getElementById('admin-titulo').textContent = '📦 Produtos';
-    const disponiveis = produtos.filter(p => p.estoque > 0);
-    const esgotados = produtos.filter(p => p.estoque <= 0);
+    // CORRIGIDO: usa p.ativo em vez de p.estoque
+    const disponiveis = produtos.filter(p => p.ativo);
+    const esgotados = produtos.filter(p => !p.ativo);
     body.innerHTML = `
         <button class="btn-add-novo" onclick="abrirEditor(null)">➕ Adicionar Novo Produto</button>
         <div class="secao-titulo">✅ Em Estoque (${disponiveis.length})</div>
@@ -1231,32 +1417,45 @@ function renderAbaProdutos(body) {
 
 function cardAdmin(p) {
     const imgEl = p.foto ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" alt="">` : p.emoji || '📦';
-    const disponivel = p.estoque > 0;
-    const btnEsquerda = disponivel ? `<button class="btn-quick-toggle desativar" onclick="toggleDisponibilidade(${p.id}, false)" title="Marcar como esgotado">❌</button>` : `<button class="btn-quick-toggle ativar" onclick="toggleDisponibilidade(${p.id}, true)" title="Marcar como disponível">✅</button>`;
+    // CORRIGIDO: usa p.ativo
+    const btnEsquerda = p.ativo
+        ? `<button class="btn-quick-toggle desativar" onclick="toggleDisponibilidade(${p.id}, false)" title="Marcar como esgotado">❌</button>`
+        : `<button class="btn-quick-toggle ativar" onclick="toggleDisponibilidade(${p.id}, true)" title="Marcar como disponível">✅</button>`;
     return `
     <div class="admin-card">
         ${btnEsquerda}<button class="btn-edit-card" onclick="abrirEditor(${p.id})" title="Editar">✏️</button>
         <div class="admin-card-img">${imgEl}</div><h4>${p.nome}</h4>
-        <div style="font-size: 1.1rem; color: var(--green-deep); font-weight: bold;">R$ ${fmt(p.preco)}</div>
+        <div style="font-size:1.1rem;color:var(--green-deep);font-weight:bold;">R$ ${fmt(p.preco)}</div>
         <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">${p.unidade} · ${p.cat}</div>
     </div>`;
 }
 
 async function toggleDisponibilidade(id, tornarDisponivel) {
     const p = produtos.find(x => x.id === id); if (!p) return;
-    p.estoque = tornarDisponivel ? 999 : 0;
+    // CORRIGIDO: usa ativo (booleano) em vez de estoque numérico
+    p.ativo = tornarDisponivel;
     localStorage.setItem('banca_produtos', JSON.stringify(produtos));
-    renderAbaProdutos(document.getElementById('admin-body')); renderLoja();
-    try { toast("⏳ Atualizando..."); await window.setDoc(window.docRef(window.db, "produtos", String(p.id)), p); toast(tornarDisponivel ? "✅ Voltou para o estoque!" : "❌ Marcado como esgotado!"); } 
-    catch (e) { toast("❌ Erro ao atualizar. Verifique a internet."); }
+    renderAbaProdutos(document.getElementById('admin-body'));
+    renderLoja();
+    try {
+        toast("⏳ Atualizando...");
+        await salvarNaNuvem('produtos', String(p.id), p);
+        toast(tornarDisponivel ? "✅ Voltou para o estoque!" : "❌ Marcado como esgotado!");
+    } catch (e) {
+        toast("❌ Erro ao atualizar.");
+    }
 }
 
+// ============================================================
+// EDITOR DE PRODUTO
+// ============================================================
 function abrirEditor(id) {
     editandoId = id; fotoBase64 = null;
     const body = document.getElementById('admin-body');
     const p = id ? produtos.find(x => x.id === id) : null;
     document.getElementById('admin-titulo').textContent = id ? '✏️ Editar Produto' : '➕ Novo Produto';
-    const estaDisponivel = !p || p.estoque > 0;
+    // CORRIGIDO: usa p.ativo
+    const estaDisponivel = !p || p.ativo;
     body.innerHTML = `
         <div class="editor-section">
             <div style="font-weight:700;font-size:0.82rem;margin-bottom:14px;color:var(--text-muted)">📸 Foto</div>
@@ -1278,8 +1477,11 @@ function abrirEditor(id) {
                 <div class="form-group"><label>Unidade</label><select id="edit-unidade">${UNIDADES.map(u=>`<option value="${u}" ${p?.unidade===u?'selected':''}>${u}</option>`).join('')}</select></div>
             </div>
             <div class="grid-2">
-                <div class="form-group"><label>Status</label><select id="edit-status"><option value="999" ${estaDisponivel?'selected':''}>✅ Em Estoque</option><option value="0" ${!estaDisponivel?'selected':''}>❌ Esgotado</option></select></div>
-                <div class="form-group"><label>Categoria</label><select id="edit-cat">${['frutas','verduras','folhas','temperos'].map(c=>`<option value="${c}" ${p?.cat===c?'selected':''}>${c}</option>`).join('')}</select></div>
+                <div class="form-group"><label>Status</label><select id="edit-status"><option value="true" ${estaDisponivel?'selected':''}>✅ Em Estoque</option><option value="false" ${!estaDisponivel?'selected':''}>❌ Esgotado</option></select></div>
+                <div class="form-group"><label>Categoria</label>
+                    <input type="text" id="edit-cat" value="${p?.cat||'verduras'}" placeholder="Ex: frutas, verduras..." list="cats-sugestoes">
+                    <datalist id="cats-sugestoes">${CATEGORIAS_PADRAO.filter(c=>c!=='todas').map(c=>`<option value="${c}">`).join('')}</datalist>
+                </div>
             </div>
         </div>
         <div class="botoes-editor">
@@ -1296,11 +1498,17 @@ function carregarFoto(event) {
     reader.onload = e => {
         const img = new Image();
         img.onload = () => {
-            const canvas = document.createElement('canvas'); const MAX_SIZE = 400; let width = img.width, height = img.height;
-            if (width > height && width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; } else if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
-            canvas.width = width; canvas.height = height; canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+            const canvas = document.createElement('canvas'); const MAX_SIZE = 400;
+            let { width, height } = img;
+            if (width > height && width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
+            else if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
+            canvas.width = width; canvas.height = height;
+            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
             fotoBase64 = canvas.toDataURL('image/jpeg', 0.3);
-            document.getElementById('foto-preview').src = fotoBase64; document.getElementById('foto-preview').style.display = 'block'; document.getElementById('upload-text').style.display = 'none'; document.getElementById('edit-link-foto').value = '';
+            document.getElementById('foto-preview').src = fotoBase64;
+            document.getElementById('foto-preview').style.display = 'block';
+            document.getElementById('upload-text').style.display = 'none';
+            document.getElementById('edit-link-foto').value = '';
         };
         img.src = e.target.result;
     };
@@ -1308,31 +1516,52 @@ function carregarFoto(event) {
 }
 
 async function salvarProduto() {
-    const nome = document.getElementById('edit-nome').value.trim(); const preco = parseFloat(document.getElementById('edit-preco').value);
-    const estoque = parseFloat(document.getElementById('edit-status').value); const cat = document.getElementById('edit-cat').value;
-    const unidade = document.getElementById('edit-unidade').value; const emoji = document.getElementById('edit-emoji').value.trim() || '📦';
+    const nome = document.getElementById('edit-nome').value.trim();
+    const preco = parseFloat(document.getElementById('edit-preco').value);
+    // CORRIGIDO: ativo é booleano
+    const ativo = document.getElementById('edit-status').value === 'true';
+    const cat = document.getElementById('edit-cat').value.trim().toLowerCase();
+    const unidade = document.getElementById('edit-unidade').value;
+    const emoji = document.getElementById('edit-emoji').value.trim() || '📦';
     const linkFoto = document.getElementById('edit-link-foto').value.trim();
+
     if (!nome || isNaN(preco) || preco <= 0) { toast('⚠️ Preencha tudo corretamente!'); return; }
-    const fotoFinal = fotoBase64 || (linkFoto ? linkFoto : (editandoId ? (produtos.find(p=>p.id===editandoId)?.foto || null) : null));
-    const dadosProduto = { nome, preco, estoque, cat, unidade, emoji, foto: fotoFinal };
+
+    const fotoFinal = fotoBase64 || (linkFoto || (editandoId ? (produtos.find(p=>p.id===editandoId)?.foto || null) : null));
+    const dadosProduto = { nome, preco, ativo, cat, unidade, emoji, foto: fotoFinal };
 
     toast("⏳ Salvando na nuvem...");
     try {
         const idParaUsar = editandoId ? String(editandoId) : String(Date.now());
-        await window.setDoc(window.docRef(window.db, "produtos", idParaUsar), dadosProduto);
-        toast("✅ Salvo com sucesso!"); carregandoFirebase = false; carregarProdutosDoFirebase(); mudarAba('produtos');
-    } catch (e) { toast("❌ Erro ao salvar online"); }
+        await salvarNaNuvem('produtos', idParaUsar, dadosProduto);
+        toast("✅ Salvo com sucesso!");
+        carregandoFirebase = false;
+        carregarProdutosDoFirebase();
+        mudarAba('produtos');
+    } catch (e) {
+        toast("❌ Erro ao salvar online");
+    }
 }
 
 async function deletarProduto(id) {
     if (!confirm('Excluir este produto permanentemente?')) return;
-    produtos = produtos.filter(p => p.id !== id); carrinho = carrinho.filter(c => c.id !== id);
+    produtos = produtos.filter(p => p.id !== id);
+    carrinho = carrinho.filter(c => c.id !== id);
     localStorage.setItem('banca_produtos', JSON.stringify(produtos));
-    atualizarEstadoCarrinho(); renderLoja(); mudarAba('produtos');
-    try { await window.deleteDoc(window.docRef(window.db, "produtos", String(id))); toast('🗑 Excluído da nuvem!'); } 
-    catch (e) { toast('⚠️ Excluído localmente (erro na nuvem)'); }
+    atualizarEstadoCarrinho();
+    renderLoja();
+    mudarAba('produtos');
+    try {
+        await window.deleteDoc(window.docRef(window.db, "produtos", String(id)));
+        toast('🗑 Excluído da nuvem!');
+    } catch (e) {
+        toast('⚠️ Excluído localmente (erro na nuvem)');
+    }
 }
 
+// ============================================================
+// CONFIG
+// ============================================================
 function renderAbaConfig(body) {
     document.getElementById('admin-titulo').textContent = '⚙️ Configurações';
     const horarioAtivo = localStorage.getItem('banca_horario_ativo') === '1';
@@ -1341,7 +1570,7 @@ function renderAbaConfig(body) {
     const minimo = localStorage.getItem('banca_pedido_minimo') || '0';
     const banner = localStorage.getItem('banca_banner') || '';
     const nome = localStorage.getItem('banca_nome') || 'Banca Adair e Pedrina';
-    const chavePix = localStorage.getItem('banca_chave_pix') || ''; // NOVO: CHAVE PIX
+    const chavePix = localStorage.getItem('banca_chave_pix') || '';
 
     body.innerHTML = `
         <div class="config-secao">
@@ -1350,7 +1579,6 @@ function renderAbaConfig(body) {
                 <div><strong>WhatsApp</strong><br><small style="color:var(--text-muted)">Com DDI: 5562999...</small></div>
                 <input class="config-input-inline" type="tel" id="cfg-numero" value="${localStorage.getItem('banca_whatsapp') || ''}" placeholder="5562...">
             </div>
-            <!-- NOVA CONFIGURAÇÃO DE PIX -->
             <div class="config-row">
                 <div><strong>Sua Chave PIX</strong><br><small style="color:var(--text-muted)">Para pagamentos online</small></div>
                 <input class="config-input-inline" type="text" id="cfg-pix" value="${chavePix}" placeholder="CPF, Celular ou Email" style="width:200px;">
@@ -1390,7 +1618,7 @@ function renderAbaConfig(body) {
         <div class="config-secao">
             <div class="config-secao-titulo">🔒 Segurança</div>
             <div class="config-row">
-                <div><strong>Alterar senha</strong></div>
+                <div><strong>Alterar senha</strong><br><small style="color:var(--text-muted)">Mínimo 4 caracteres</small></div>
                 <input class="config-input-inline" type="password" id="cfg-nova-senha" placeholder="Nova senha" style="width:140px;">
             </div>
         </div>
@@ -1407,7 +1635,7 @@ async function salvarConfig() {
     const banner = document.getElementById('cfg-banner').value.trim();
     const nome = document.getElementById('cfg-nome').value.trim();
     const novaSenha = document.getElementById('cfg-nova-senha').value;
-    const chavePix = document.getElementById('cfg-pix').value.trim(); // SALVANDO A CHAVE PIX
+    const chavePix = document.getElementById('cfg-pix').value.trim();
 
     localStorage.setItem('banca_whatsapp', num);
     localStorage.setItem('banca_horario_inicio', inicio);
@@ -1419,62 +1647,40 @@ async function salvarConfig() {
     localStorage.setItem('banca_chave_pix', chavePix);
 
     if (novaSenha && novaSenha.length >= 4) {
-        const h = await sha256(novaSenha); localStorage.setItem('banca_senha_hash', h); toast('🔒 Senha alterada!');
+        const h = await sha256(novaSenha);
+        localStorage.setItem('banca_senha_hash', h);
+        toast('🔒 Senha alterada!');
     }
 
-    if (window.db) {
-        window.setDoc(window.docRef(window.db, "loja", "config"), {
-            whatsapp: num, horario_inicio: inicio, horario_fim: fim,
-            horario_ativo: horarioAtivo, pedido_minimo: minimo,
-            banner_url: banner, nome_loja: nome, chave_pix: chavePix
-        }).catch(e=>console.log(e));
-    }
-    aplicarConfigVisuais(); verificarHorario(); toast('✅ Configurações salvas!');
+    await salvarNaNuvem('loja', 'config', {
+        whatsapp: num, horario_inicio: inicio, horario_fim: fim,
+        horario_ativo: horarioAtivo, pedido_minimo: minimo,
+        banner_url: banner, nome_loja: nome, chave_pix: chavePix
+    });
+
+    aplicarConfigVisuais();
+    verificarHorario();
+    toast('✅ Configurações salvas!');
 }
 
+// ============================================================
+// UTILITÁRIOS
+// ============================================================
 function fmt(n) { return parseFloat(n).toFixed(2).replace('.', ','); }
+
 function toast(msg) {
-    const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('visivel');
-    clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('visivel'), 2800);
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('visivel');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('visivel'), 2800);
 }
+
 function abrirModal(id) { document.getElementById(id).classList.add('aberto'); }
 function fecharModal(id) { document.getElementById(id).classList.remove('aberto'); }
-document.querySelectorAll('.modal-overlay').forEach(ov => { ov.addEventListener('click', e => { if (e.target === ov) ov.classList.remove('aberto'); }); });
 
-function filtrarBuscaDebounced() { clearTimeout(timeoutBusca); timeoutBusca = setTimeout(() => { busca = document.getElementById('busca-input').value.toLowerCase(); renderLoja(); }, 300); }
-async function sha256(message) { const msgBuffer = new TextEncoder().encode(message); const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer); const hashArray = Array.from(new Uint8Array(hashBuffer)); return hashArray.map(b => b.toString(16).padStart(2, '0')).join(''); }
+document.querySelectorAll('.modal-overlay').forEach(ov => {
+    ov.addEventListener('click', e => { if (e.target === ov) ov.classList.remove('aberto'); });
+});
 
-function iniciarApp() { renderCategorias(); renderLoja(); verificarHorario(); }
-iniciarApp();
-</script>
-
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { getFirestore, collection, getDocs, getDoc, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyAY_qGll6YJKA6ErYIOd5XIVblrlq8vynM",
-      authDomain: "banca-adair-e-pedrina.firebaseapp.com",
-      projectId: "banca-adair-e-pedrina",
-      storageBucket: "banca-adair-e-pedrina.firebasestorage.app",
-      messagingSenderId: "829734263703",
-      appId: "1:829734263703:web:7c849d2e6d323d3a55c2d2",
-      measurementId: "G-S2W9M4Z759"
-    };
-
-    try {
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-
-        window.db = db; window.collection = collection; window.getDocs = getDocs;
-        window.getDoc = getDoc; window.docRef = doc; window.setDoc = setDoc; window.deleteDoc = deleteDoc;
-
-        console.log("🔥 Firebase inicializado com sucesso!");
-
-        if (window.carregarProdutosDoFirebase) window.carregarProdutosDoFirebase();
-        if (window.sincronizarDadosDaNuvem) window.sincronizarDadosDaNuvem();
-        if (window.pollingEntregas) window.pollingEntregas();
-    } catch (error) { console.error("❌ Erro ao inicializar o Firebase:", error); }
-</script>
-</body>
-</html>
+function filtrarBuscaDeboun
