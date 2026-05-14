@@ -378,7 +378,7 @@
 </div>
 
 <script>
-const VERSAO = 'v18'; // Atualizado para invalidar caches antigos
+const VERSAO = 'v18'; 
 const STATUS_ENTREGA = ['recebido', 'separando', 'saiu', 'entregue'];
 const STATUS_LABEL = { recebido: '📥 Recebido', separando: '📦 Separando', saiu: '🚴 Saiu', entregue: '✅ Entregue', presencial: '🏪 Presencial' };
 const STATUS_CLASS = { recebido: 'status-recebido', separando: 'status-separando', saiu: 'status-saiu', entregue: 'status-entregue', presencial: 'status-presencial' };
@@ -389,9 +389,9 @@ const PADRAO = [
     { id: 2, nome: "Batata Doce", preco: 5.50, cat: "verduras", ativo: true, emoji: "🍠", unidade: "kg", foto: null }
 ];
 
-let produtos = [];
+let produtos = carregar(); // 🔥 CORRIGIDO AQUI
 let carrinho = JSON.parse(localStorage.getItem('banca_carrinho') || '[]');
-let presItens = []; // Substituiu a global window._presItens
+let presItens = []; 
 let catAtiva = 'todas';
 let busca = '';
 let abaAtiva = 'produtos';
@@ -434,20 +434,36 @@ function carregar() {
     return JSON.parse(localStorage.getItem('banca_produtos') || '[]');
 }
 
-async function carregarProdutosDoFirebase() {
+async function carregarProdutosDoFirebase() { // 🔥 CORRIGIDO AQUI
     if (carregandoFirebase) return;
     if (!window.db) { setTimeout(carregarProdutosDoFirebase, 600); return; }
     carregandoFirebase = true;
     try {
         const querySnapshot = await window.getDocs(window.collection(window.db, "produtos"));
         const listaDaNuvem = [];
-        querySnapshot.forEach((doc) => listaDaNuvem.push({ id: parseInt(doc.id), ...doc.data() }));
-        if (listaDaNuvem.length > 0) {
-            produtos = listaDaNuvem;
-            localStorage.setItem('banca_produtos', JSON.stringify(produtos));
-        } else { produtos = carregar(); }
-    } catch (e) { produtos = carregar(); } 
-    finally { carregandoFirebase = false; }
+        
+        querySnapshot.forEach((doc) => {
+            let p = doc.data();
+            
+            // CONVERSÃO SILENCIOSA
+            if (p.ativo === undefined && p.estoque !== undefined) {
+                p.ativo = p.estoque > 0;
+                delete p.estoque;
+            }
+            if (p.ativo === undefined) p.ativo = true; 
+
+            listaDaNuvem.push({ id: parseInt(doc.id), ...p });
+        });
+
+        produtos = listaDaNuvem;
+        localStorage.setItem('banca_produtos', JSON.stringify(produtos));
+        
+    } catch (e) { 
+        console.error("Erro ao baixar produtos:", e);
+        produtos = carregar(); 
+    } finally { 
+        carregandoFirebase = false; 
+    }
     
     renderCategorias();
     renderLoja();
@@ -634,7 +650,7 @@ function renderLoja() {
     let lista = produtos.filter(p => {
         const cat = catAtiva === 'todas' || p.cat === catAtiva;
         const txt = p.nome.toLowerCase().includes(busca);
-        return cat && txt && p.ativo; // Mudado p.estoque > 0 para p.ativo
+        return cat && txt && p.ativo; // Usa o 'ativo' que agora é garantido existir!
     });
 
     if (lista.length === 0) { grid.innerHTML = `<div class="sem-produto"><span>🔍</span>Nenhum produto encontrado.</div>`; return; }
@@ -967,7 +983,6 @@ function renderAbaHistorico(filtro = '', dataFiltro = '') {
         }).join('')}
         ${hist.length === 0 ? '<p style="text-align:center;color:#999;padding:30px">Nenhum pedido encontrado.</p>' : ''}
     `;
-    // Foca de volta no input se estiver digitando (evita perder foco por re-renderizar o DOM inteiro)
     if(filtro) document.getElementById('filtro-hist-nome').focus();
 }
 
@@ -999,7 +1014,6 @@ function renderAbaRelatorios(body) {
 }
 
 async function abrirAdmin() {
-    // Se não tiver senha configurada, pede para configurar. Se tiver, valida.
     const hashSalvo = localStorage.getItem('banca_senha_hash');
     if (!hashSalvo) {
         alert("Parece que você não definiu uma senha de Admin. Você pode acessar, mas lembre-se de ir na aba 'Config' e definir uma senha de acesso!");
@@ -1019,7 +1033,7 @@ function mudarAba(aba) {
     const body = document.getElementById('admin-body'); document.getElementById('admin-titulo').textContent = '⚙️ Gerenciar Banca';
     if (aba === 'produtos') renderAbaProdutos(body);
     else if (aba === 'entregas') renderAbaEntregas(body);
-    else if (aba === 'historico') renderAbaHistorico(); // Tirei o parametro body
+    else if (aba === 'historico') renderAbaHistorico();
     else if (aba === 'relatorios') renderAbaRelatorios(body);
     else renderAbaConfig(body);
     checarNovosEntregas();
