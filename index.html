@@ -402,6 +402,40 @@ let deferredPrompt = null;
 let ultimaContagemEntregas = 0;
 let carregandoFirebase = false;
 
+// ==========================================
+// 🧠 MOTOR DE RECOMENDAÇÃO (NÍVEIS 2 E 3)
+// ==========================================
+
+function calcularScoreComDecaimento(itemPref, agora) {
+    if (!itemPref) return 0;
+    // Calcula quantos dias se passaram desde a última interação
+    const dias = (agora - itemPref.time) / (1000 * 60 * 60 * 24);
+    // Perde força a cada dia. Depois de 30 dias, o interesse cai para 10%.
+    const fator = Math.max(0.1, 1 - (dias / 30));
+    return itemPref.score * fator;
+}
+
+function atualizarPreferencias(produtosParaPontuar, pontos) {
+    let pref = JSON.parse(localStorage.getItem('banca_preferencias_v3') || '{"produtos":{}, "categorias":{}}');
+    const agora = Date.now();
+
+    produtosParaPontuar.forEach(p => {
+        // Pontua o produto específico
+        if (!pref.produtos[p.id]) pref.produtos[p.id] = { score: 0, time: agora };
+        pref.produtos[p.id].score += pontos;
+        pref.produtos[p.id].time = agora;
+
+        // Pontua a categoria (Afinidade) - Ganha 1/3 dos pontos
+        if (p.cat) {
+            if (!pref.categorias[p.cat]) pref.categorias[p.cat] = { score: 0, time: agora };
+            pref.categorias[p.cat].score += (pontos / 3); 
+            pref.categorias[p.cat].time = agora;
+        }
+    });
+    localStorage.setItem('banca_preferencias_v3', JSON.stringify(pref));
+}
+
+
 // DETECÇÃO OFFLINE
 window.addEventListener('online', atualizarStatusConexao);
 window.addEventListener('offline', atualizarStatusConexao);
@@ -647,10 +681,26 @@ function setCat(cat) { catAtiva = cat; renderCategorias(); renderLoja(); }
 
 function renderLoja() {
     const grid = document.getElementById('lista-produtos');
+    const pref = JSON.parse(localStorage.getItem('banca_preferencias_v3') || '{"produtos":{}, "categorias":{}}');
+    const agora = Date.now();
+
     let lista = produtos.filter(p => {
         const cat = catAtiva === 'todas' || p.cat === catAtiva;
         const txt = p.nome.toLowerCase().includes(busca);
-        return cat && txt && p.ativo; // Usa o 'ativo' que agora é garantido existir!
+        return cat && txt && p.ativo; 
+    });
+
+    // 🧠 Ordenação Inteligente: Peso do Produto + Categoria - Tempo
+    lista.sort((a, b) => {
+        const scoreProdA = calcularScoreComDecaimento(pref.produtos[a.id], agora);
+        const scoreCatA = calcularScoreComDecaimento(pref.categorias[a.cat], agora);
+        const notaA = scoreProdA + scoreCatA;
+
+        const scoreProdB = calcularScoreComDecaimento(pref.produtos[b.id], agora);
+        const scoreCatB = calcularScoreComDecaimento(pref.categorias[b.cat], agora);
+        const notaB = scoreProdB + scoreCatB;
+        
+        return notaB - notaA; 
     });
 
     if (lista.length === 0) { grid.innerHTML = `<div class="sem-produto"><span>🔍</span>Nenhum produto encontrado.</div>`; return; }
@@ -689,7 +739,12 @@ function addCarrinho(id) {
     const item = carrinho.find(x => x.id === id);
     if (item) { item.qtd++; }
     else { carrinho.push({ id: p.id, nome: p.nome, preco: p.preco, emoji: p.emoji, foto: p.foto, unidade: p.unidade, qtd: 1 }); }
-    atualizarEstadoCarrinho(); toast(`${p.emoji || '✅'} ${p.nome} adicionado!`);
+    
+    atualizarEstadoCarrinho(); 
+    toast(`${p.emoji || '✅'} ${p.nome} adicionado!`);
+
+    // 🧠 Registra que o cliente teve interesse (Vale 3 pontos)
+    atualizarPreferencias([p], 3);
 }
 
 function alterarQtd(id, delta) {
@@ -835,7 +890,12 @@ function enviarWhatsApp() {
     adicionarEntrega(pedido);
 
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
-    fecharModal('overlay-checkout'); carrinho = []; atualizarEstadoCarrinho();
+    fecharModal('overlay-checkout'); 
+    
+    // 🧠 Registra a compra confirmada de todos os itens do carrinho (Vale 5 pontos)
+    atualizarPreferencias(carrinho.map(c => produtos.find(p => p.id === c.id)).filter(Boolean), 5);
+    
+    carrinho = []; atualizarEstadoCarrinho();
     ['cli-nome','cli-tel','cli-quadra','cli-lote','cli-ref','cli-troco','cli-obs'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     toast('✅ Pedido enviado!');
 }
