@@ -1301,7 +1301,16 @@ iniciarApp();
         if (window.sincronizarConfigDaNuvem) window.sincronizarConfigDaNuvem();
         if (window.iniciarListenerEntregas) window.iniciarListenerEntregas();
         
-    } catch (error) { console.error("❌ Erro ao inicializar o Firebase:", error); }
+        } catch (error) { console.error("❌ Erro ao inicializar o Firebase:", error); }
 </script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js')
+      .then(() => console.log("Service Worker registrado! ✅"))
+      .catch(err => console.log("Erro no Service Worker:", err));
+  }
+</script>
+
 </body>
 </html>
