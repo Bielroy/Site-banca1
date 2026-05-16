@@ -1258,6 +1258,8 @@ iniciarApp();
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
     import { getFirestore, collection, getDocs, getDoc, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+    // 👇 Imports do Storage para as fotos funcionarem!
+    import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAY_qGll6YJKA6ErYIOd5XIVblrlq8vynM",
@@ -1272,6 +1274,13 @@ iniciarApp();
     try {
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const storage = getStorage(app);
+
+        // Deixando o Storage global para a função de upload conseguir usar
+        window.storage = storage;
+        window.ref = ref;
+        window.uploadString = uploadString;
+        window.getDownloadURL = getDownloadURL;
 
         window.db = db; window.collection = collection; window.getDocs = getDocs;
         window.getDoc = getDoc; window.docRef = doc; window.setDoc = setDoc; window.deleteDoc = deleteDoc;
@@ -1281,34 +1290,7 @@ iniciarApp();
         if (window.sincronizarConfigDaNuvem) window.sincronizarConfigDaNuvem();
         if (window.iniciarListenerEntregas) window.iniciarListenerEntregas();
         
-        } catch (error) { console.error("❌ Erro ao inicializar o Firebase:", error); }
+    } catch (error) { 
+        console.error("❌ Erro ao inicializar o Firebase:", error); 
+    }
 </script>
-
-<script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').then(registration => {
-      // Fica de olho para ver se tem atualização no código no GitHub
-      registration.addEventListener('updatefound', () => {
-        const newWorker = registration.installing;
-        newWorker.addEventListener('statechange', () => {
-          // Se achou versão nova e já baixou...
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            // Manda o aplicativo pular a espera e atualizar na marra!
-            newWorker.postMessage({ action: 'skipWaiting' });
-          }
-        });
-      });
-    }).catch(err => console.log("Erro no Service Worker:", err));
-
-    // Assim que a atualização terminar, recarrega a tela sozinho para mostrar o visual novo
-    let refreshing = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!refreshing) {
-        window.location.reload();
-        refreshing = true;
-      }
-    });
-  }
-</script>
-</body>
-</html>
