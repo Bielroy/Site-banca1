@@ -1286,8 +1286,28 @@ iniciarApp();
 
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js')
-      .catch(err => console.log("Erro no Service Worker:", err));
+    navigator.serviceWorker.register('/sw.js').then(registration => {
+      // Fica de olho para ver se tem atualização no código no GitHub
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        newWorker.addEventListener('statechange', () => {
+          // Se achou versão nova e já baixou...
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            // Manda o aplicativo pular a espera e atualizar na marra!
+            newWorker.postMessage({ action: 'skipWaiting' });
+          }
+        });
+      });
+    }).catch(err => console.log("Erro no Service Worker:", err));
+
+    // Assim que a atualização terminar, recarrega a tela sozinho para mostrar o visual novo
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) {
+        window.location.reload();
+        refreshing = true;
+      }
+    });
   }
 </script>
 </body>
