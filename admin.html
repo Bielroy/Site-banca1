@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Admin - Banca Adair e Pedrina</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --forest: #1a3a2a;
+            --forest-mid: #2c5f45;
+            --cream: #faf7f2;
+            --parchment: #f2ede3;
+            --danger: #dc2626;
+            --text-dark: #1a1a18;
+            --radius-sm: 12px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+        body { background: var(--cream); color: var(--text-dark); }
+        
+        /* LOGIN SCREEN */
+        #login-screen { height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--forest); }
+        .login-box { background: white; padding: 40px; border-radius: 20px; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .login-box h2 { margin-bottom: 20px; color: var(--forest); text-align: center; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 0.85rem; font-weight: 700; margin-bottom: 8px; }
+        .form-group input, .form-group select { width: 100%; padding: 12px; border: 1.5px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; }
+        .btn { width: 100%; padding: 14px; background: var(--forest); color: white; border: none; border-radius: var(--radius-sm); font-weight: 700; cursor: pointer; transition: 0.2s; }
+        .btn:hover { background: var(--forest-mid); }
+        .btn-danger { background: var(--danger); }
+        .btn-outline { background: transparent; border: 1.5px solid var(--forest); color: var(--forest); }
+
+        /* DASHBOARD */
+        #dashboard { display: none; padding: 20px; max-width: 1000px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 2px solid var(--parchment); margin-bottom: 20px; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab { padding: 10px 20px; background: var(--parchment); border: none; border-radius: 30px; cursor: pointer; font-weight: 600; }
+        .tab.active { background: var(--forest); color: white; }
+        
+        /* DATA TABLES */
+        .card { background: white; padding: 20px; border-radius: var(--radius-sm); margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0dcd4; }
+        .prod-info { display: flex; align-items: center; gap: 16px; }
+        .prod-img { width: 50px; height: 50px; border-radius: 8px; object-fit: cover; background: var(--parchment); display: flex; align-items: center; justify-content: center; font-size: 24px; }
+        
+        /* MODAL */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; }
+        .modal-overlay.aberto { display: flex; }
+        .modal { background: white; padding: 30px; border-radius: var(--radius-sm); width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+    <!-- TELA DE LOGIN -->
+    <div id="login-screen">
+        <div class="login-box">
+            <h2>📦 Admin Store</h2>
+            <div class="form-group">
+                <label>E-mail</label>
+                <input type="email" id="email" placeholder="admin@banca.com">
+            </div>
+            <div class="form-group">
+                <label>Senha</label>
+                <input type="password" id="senha" placeholder="••••••••">
+            </div>
+            <button class="btn" id="btn-login">Entrar no Painel</button>
+            <p id="login-erro" style="color: red; font-size: 0.85rem; margin-top: 10px; display: none; text-align: center;">Credenciais inválidas.</p>
+        </div>
+    </div>
+
+    <!-- PAINEL ADMINISTRATIVO -->
+    <div id="dashboard">
+        <header>
+            <h2>Painel Gerencial</h2>
+            <button class="btn btn-outline" style="width: auto;" id="btn-logout">Sair</button>
+        </header>
+
+        <div class="tabs">
+            <button class="tab active" onclick="mostrarAba('produtos')">Produtos</button>
+            <button class="tab" onclick="mostrarAba('relatorios')">Relatórios e Histórico</button>
+        </div>
+
+        <!-- ABA PRODUTOS -->
+        <div id="aba-produtos">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                <h3>Seus Produtos</h3>
+                <button class="btn" style="width: auto;" onclick="abrirEditor()">+ Novo Produto</button>
+            </div>
+            <div id="lista-produtos">Carregando...</div>
+        </div>
+
+        <!-- ABA RELATÓRIOS -->
+        <div id="aba-relatorios" style="display: none;">
+            <h3>Últimos Pedidos</h3>
+            <p style="color: #666; margin-bottom: 20px;">Histórico salvo no banco de dados.</p>
+            <div id="lista-historico">Carregando...</div>
+        </div>
+    </div>
+
+    <!-- MODAL DE EDIÇÃO DE PRODUTO -->
+    <div class="modal-overlay" id="modal-produto">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modal-titulo">Editar Produto</h3>
+                <button style="background: none; border: none; font-size: 20px; cursor: pointer;" onclick="fecharModal()">&times;</button>
+            </div>
+            <input type="hidden" id="edit-id">
+            
+            <div class="form-group">
+                <label>Foto do Produto</label>
+                <input type="file" id="edit-foto" accept="image/*">
+                <small style="color: #666;">Deixe vazio para manter a foto atual.</small>
+            </div>
+            <div class="form-group">
+                <label>Nome</label>
+                <input type="text" id="edit-nome">
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <div class="form-group" style="flex: 1;">
+                    <label>Preço (R$)</label>
+                    <input type="number" id="edit-preco" step="0.10">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Unidade</label>
+                    <select id="edit-unidade">
+                        <option value="kg">KG</option>
+                        <option value="un">Unidade</option>
+                        <option value="maço">Maço</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Categoria</label>
+                <input type="text" id="edit-cat">
+            </div>
+            <div class="form-group">
+                <label>Status</label>
+                <select id="edit-status">
+                    <option value="true">✅ Em Estoque</option>
+                    <option value="false">❌ Esgotado</option>
+                </select>
+            </div>
+            <button class="btn" id="btn-salvar-produto">Salvar Produto</button>
+            <button class="btn btn-danger" id="btn-excluir-produto" style="margin-top: 10px; display: none;">Excluir Permanentemente</button>
+        </div>
+    </div>
+
+    <!-- SCRIPTS DO FIREBASE -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+
+        // COLOQUE SUAS CHAVES DO FIREBASE AQUI
+        const firebaseConfig = {
+            apiKey: "AIzaSyAY_qGll6YJKA6ErYIOd5XIVblrlq8vynM",
+            authDomain: "banca-adair-e-pedrina.firebaseapp.com",
+            projectId: "banca-adair-e-pedrina",
+            storageBucket: "banca-adair-e-pedrina.firebasestorage.app"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+
+        let produtosAtuais = [];
+
+        // 1. SISTEMA DE LOGIN SEGURO
+        const loginScreen = document.getElementById('login-screen');
+        const dashboard = document.getElementById('dashboard');
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                loginScreen.style.display = 'none';
+                dashboard.style.display = 'block';
+                carregarProdutos();
+            } else {
+                loginScreen.style.display = 'flex';
+                dashboard.style.display = 'none';
+            }
+        });
+
+        document.getElementById('btn-login').addEventListener('click', () => {
+            const email = document.getElementById('email').value;
+            const senha = document.getElementById('senha').value;
+            signInWithEmailAndPassword(auth, email, senha)
+                .catch(error => {
+                    document.getElementById('login-erro').style.display = 'block';
+                });
+        });
+
+        document.getElementById('btn-logout').addEventListener('click', () => {
+            signOut(auth);
+        });
+
+        // 2. GERENCIAMENTO DE PRODUTOS
+        window.mostrarAba = (abaId) => {
+            document.getElementById('aba-produtos').style.display = abaId === 'produtos' ? 'block' : 'none';
+            document.getElementById('aba-relatorios').style.display = abaId === 'relatorios' ? 'block' : 'none';
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            if(abaId === 'relatorios') carregarRelatorios(); // Se tiver dados de relatórios no firebase
+        };
+
+        async function carregarProdutos() {
+            const snap = await getDocs(collection(db, "produtos"));
+            produtosAtuais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            const html = produtosAtuais.map(p => `
+                <div class="card">
+                    <div class="prod-info">
+                        <div class="prod-img">
+                            ${p.foto ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : '📦'}
+                        </div>
+                        <div>
+                            <h4 style="margin-bottom: 4px;">${p.nome} ${p.ativo ? '' : '<span style="color:red; font-size:12px;">(Esgotado)</span>'}</h4>
+                            <p style="color: var(--forest); font-weight: bold;">R$ ${parseFloat(p.preco).toFixed(2)} / ${p.unidade}</p>
+                        </div>
+                    </div>
+                    <button class="btn btn-outline" style="width:auto; padding: 8px 16px;" onclick="abrirEditor('${p.id}')">Editar</button>
+                </div>
+            `).join('');
+            
+            document.getElementById('lista-produtos').innerHTML = html;
+        }
+
+        // 3. EDITOR E UPLOAD DE FOTOS
+        window.abrirEditor = (id = null) => {
+            document.getElementById('modal-produto').classList.add('aberto');
+            const formFoto = document.getElementById('edit-foto');
+            formFoto.value = ''; // limpa o input de arquivo
+
+            if (id) {
+                const p = produtosAtuais.find(x => x.id === id);
+                document.getElementById('modal-titulo').innerText = 'Editar ' + p.nome;
+                document.getElementById('edit-id').value = p.id;
+                document.getElementById('edit-nome').value = p.nome;
+                document.getElementById('edit-preco').value = p.preco;
+                document.getElementById('edit-unidade').value = p.unidade;
+                document.getElementById('edit-cat').value = p.cat;
+                document.getElementById('edit-status').value = p.ativo.toString();
+                document.getElementById('btn-excluir-produto').style.display = 'block';
+            } else {
+                document.getElementById('modal-titulo').innerText = 'Novo Produto';
+                document.getElementById('edit-id').value = '';
+                document.getElementById('edit-nome').value = '';
+                document.getElementById('edit-preco').value = '';
+                document.getElementById('edit-cat').value = '';
+                document.getElementById('btn-excluir-produto').style.display = 'none';
+            }
+        };
+
+        window.fecharModal = () => {
+            document.getElementById('modal-produto').classList.remove('aberto');
+        };
+
+        document.getElementById('btn-salvar-produto').addEventListener('click', async () => {
+            const btn = document.getElementById('btn-salvar-produto');
+            btn.innerText = "Salvando...";
+            btn.disabled = true;
+
+            const id = document.getElementById('edit-id').value || Date.now().toString();
+            let pData = {
+                nome: document.getElementById('edit-nome').value,
+                preco: parseFloat(document.getElementById('edit-preco').value),
+                unidade: document.getElementById('edit-unidade').value,
+                cat: document.getElementById('edit-cat').value.toLowerCase(),
+                ativo: document.getElementById('edit-status').value === 'true'
+            };
+
+            // UPLOAD DA FOTO PARA O FIREBASE STORAGE
+            const fileInput = document.getElementById('edit-foto');
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                const storageRef = ref(storage, `fotos_produtos/${id}_${file.name}`);
+                await uploadBytes(storageRef, file);
+                const url = await getDownloadURL(storageRef);
+                pData.foto = url;
+            } else if (document.getElementById('edit-id').value) {
+                // Mantem a foto antiga se não subir uma nova
+                const pAntigo = produtosAtuais.find(x => x.id === id);
+                if(pAntigo && pAntigo.foto) pData.foto = pAntigo.foto;
+            }
+
+            // SALVAR NO BANCO DE DADOS
+            await setDoc(doc(db, "produtos", id), pData);
+            
+            fecharModal();
+            carregarProdutos();
+            btn.innerText = "Salvar Produto";
+            btn.disabled = false;
+        });
+
+        document.getElementById('btn-excluir-produto').addEventListener('click', async () => {
+            if(confirm("Tem certeza que deseja excluir?")) {
+                const id = document.getElementById('edit-id').value;
+                await deleteDoc(doc(db, "produtos", id));
+                fecharModal();
+                carregarProdutos();
+            }
+        });
+
+    </script>
+</body>
+</html>
