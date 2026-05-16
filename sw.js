@@ -41,3 +41,10 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
 });
+
+// Escuta a mensagem enviada pelo index.html para atualizar o app na hora
+self.addEventListener('message', event => {
+    if (event.data && event.data.action === 'skipWaiting') {
+        self.skipWaiting();
+    }
+});
