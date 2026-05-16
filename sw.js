@@ -22,3 +22,10 @@ self.addEventListener('fetch', event => {
     })
   );
 });
+
+// Escuta o comando de atualização automática e aplica na hora
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.action === 'skipWaiting') {
+    self.skipWaiting();
+  }
+});
