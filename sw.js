@@ -1,4 +1,4 @@
-const CACHE_NAME = 'banca-v1';
+const CACHE_NAME = 'banca-v2'; // Corrigido para const minúsculo e mudei para v2!
 const assets = [
   '/',
   '/index.html',
@@ -11,6 +11,18 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       return cache.addAll(assets);
+    })
+  );
+});
+
+// Essa é a mágica que apaga o visual velho do celular do cliente
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(keys => {
+      return Promise.all(keys
+        .filter(key => key !== CACHE_NAME)
+        .map(key => caches.delete(key))
+      );
     })
   );
 });
