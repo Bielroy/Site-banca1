@@ -52,21 +52,20 @@
 <body>
 
     <!-- TELA DE LOGIN SEM SENHA -->
-<div id="login-screen">
-    <div class="login-box">
-        <h2>📦 Admin Store</h2>
-        <p style="text-align: center; font-size: 0.85rem; color: #666; margin-bottom: 16px;">
-            Digite seu e-mail para receber um link de acesso seguro.
-        </p>
-        <div class="form-group">
-            <label>E-mail</label>
-            <input type="email" id="email" placeholder="Seu e-mail">
+    <div id="login-screen">
+        <div class="login-box">
+            <h2>📦 Admin Store</h2>
+            <p style="text-align: center; font-size: 0.85rem; color: #666; margin-bottom: 16px;">
+                Digite seu e-mail para receber um link de acesso seguro.
+            </p>
+            <div class="form-group">
+                <label>E-mail</label>
+                <input type="email" id="email" placeholder="Seu e-mail">
+            </div>
+            <button class="btn" id="btn-login">Receber Link de Acesso</button>
+            <p id="login-msg" style="font-size: 0.85rem; margin-top: 10px; text-align: center;"></p>
         </div>
-        <button class="btn" id="btn-login">Receber Link de Acesso</button>
-        <p id="login-msg" style="font-size: 0.85rem; margin-top: 10px; text-align: center;"></p>
     </div>
-</div>
-
 
     <!-- PAINEL ADMINISTRATIVO -->
     <div id="dashboard">
@@ -93,7 +92,7 @@
         <div id="aba-relatorios" style="display: none;">
             <h3>Últimos Pedidos</h3>
             <p style="color: #666; margin-bottom: 20px;">Histórico salvo no banco de dados.</p>
-            <div id="lista-historico">Carregando...</div>
+            <div id="lista-historico">Em breve...</div>
         </div>
     </div>
 
@@ -131,7 +130,7 @@
             </div>
             <div class="form-group">
                 <label>Categoria</label>
-                <input type="text" id="edit-cat">
+                <input type="text" id="edit-cat" placeholder="Ex: verduras, frutas...">
             </div>
             <div class="form-group">
                 <label>Status</label>
@@ -148,11 +147,11 @@
     <!-- SCRIPTS DO FIREBASE -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getAuth, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
         import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
-        // COLOQUE SUAS CHAVES DO FIREBASE AQUI
+        // CONFIGURAÇÃO FIREBASE
         const firebaseConfig = {
             apiKey: "AIzaSyAY_qGll6YJKA6ErYIOd5XIVblrlq8vynM",
             authDomain: "banca-adair-e-pedrina.firebaseapp.com",
@@ -167,10 +166,11 @@
 
         let produtosAtuais = [];
 
-        // 1. SISTEMA DE LOGIN SEGURO
         const loginScreen = document.getElementById('login-screen');
         const dashboard = document.getElementById('dashboard');
+        const msg = document.getElementById('login-msg');
 
+        // 1. SISTEMA DE LOGIN SEM SENHA
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 loginScreen.style.display = 'none';
@@ -182,14 +182,53 @@
             }
         });
 
+        // Dispara o e-mail quando clica no botão
         document.getElementById('btn-login').addEventListener('click', () => {
             const email = document.getElementById('email').value;
-            const senha = document.getElementById('senha').value;
-            signInWithEmailAndPassword(auth, email, senha)
-                .catch(error => {
-                    document.getElementById('login-erro').style.display = 'block';
+            if (!email) { 
+                msg.innerText = "⚠️ Digite um e-mail válido."; 
+                msg.style.color = "var(--danger)"; 
+                return; 
+            }
+            
+            msg.innerText = "Enviando link...";
+            msg.style.color = "var(--text-dark)";
+
+            const actionCodeSettings = {
+                url: window.location.href, // Faz o link abrir a mesma página
+                handleCodeInApp: true,
+            };
+
+            sendSignInLinkToEmail(auth, email, actionCodeSettings)
+                .then(() => {
+                    window.localStorage.setItem('emailForSignIn', email);
+                    msg.innerText = "✅ Link enviado! Verifique sua caixa de entrada (e o spam).";
+                    msg.style.color = "green";
+                })
+                .catch((error) => {
+                    msg.innerText = "❌ Erro ao enviar link. Tente novamente.";
+                    msg.style.color = "var(--danger)";
+                    console.error(error);
                 });
         });
+
+        // Checa se o usuário acabou de clicar no link do e-mail
+        if (isSignInWithEmailLink(auth, window.location.href)) {
+            let email = window.localStorage.getItem('emailForSignIn');
+            if (!email) {
+                email = window.prompt('Por favor, confirme seu e-mail para entrar:');
+            }
+            
+            msg.innerText = "Autenticando...";
+            signInWithEmailLink(auth, email, window.location.href)
+                .then((result) => {
+                    window.localStorage.removeItem('emailForSignIn');
+                })
+                .catch((error) => {
+                    msg.innerText = "❌ O link expirou ou é inválido.";
+                    msg.style.color = "var(--danger)";
+                });
+        }
 
         document.getElementById('btn-logout').addEventListener('click', () => {
             signOut(auth);
@@ -201,8 +240,6 @@
             document.getElementById('aba-relatorios').style.display = abaId === 'relatorios' ? 'block' : 'none';
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             event.target.classList.add('active');
-            
-            if(abaId === 'relatorios') carregarRelatorios(); // Se tiver dados de relatórios no firebase
         };
 
         async function carregarProdutos() {
@@ -231,7 +268,7 @@
         window.abrirEditor = (id = null) => {
             document.getElementById('modal-produto').classList.add('aberto');
             const formFoto = document.getElementById('edit-foto');
-            formFoto.value = ''; // limpa o input de arquivo
+            formFoto.value = ''; 
 
             if (id) {
                 const p = produtosAtuais.find(x => x.id === id);
@@ -239,8 +276,8 @@
                 document.getElementById('edit-id').value = p.id;
                 document.getElementById('edit-nome').value = p.nome;
                 document.getElementById('edit-preco').value = p.preco;
-                document.getElementById('edit-unidade').value = p.unidade;
-                document.getElementById('edit-cat').value = p.cat;
+                document.getElementById('edit-unidade').value = p.unidade || 'un';
+                document.getElementById('edit-cat').value = p.cat || '';
                 document.getElementById('edit-status').value = p.ativo.toString();
                 document.getElementById('btn-excluir-produto').style.display = 'block';
             } else {
@@ -280,7 +317,6 @@
                 const url = await getDownloadURL(storageRef);
                 pData.foto = url;
             } else if (document.getElementById('edit-id').value) {
-                // Mantem a foto antiga se não subir uma nova
                 const pAntigo = produtosAtuais.find(x => x.id === id);
                 if(pAntigo && pAntigo.foto) pData.foto = pAntigo.foto;
             }
