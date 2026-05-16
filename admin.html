@@ -51,22 +51,22 @@
 </head>
 <body>
 
-    <!-- TELA DE LOGIN -->
-    <div id="login-screen">
-        <div class="login-box">
-            <h2>📦 Admin Store</h2>
-            <div class="form-group">
-                <label>E-mail</label>
-                <input type="email" id="email" placeholder="admin@banca.com">
-            </div>
-            <div class="form-group">
-                <label>Senha</label>
-                <input type="password" id="senha" placeholder="••••••••">
-            </div>
-            <button class="btn" id="btn-login">Entrar no Painel</button>
-            <p id="login-erro" style="color: red; font-size: 0.85rem; margin-top: 10px; display: none; text-align: center;">Credenciais inválidas.</p>
+    <!-- TELA DE LOGIN SEM SENHA -->
+<div id="login-screen">
+    <div class="login-box">
+        <h2>📦 Admin Store</h2>
+        <p style="text-align: center; font-size: 0.85rem; color: #666; margin-bottom: 16px;">
+            Digite seu e-mail para receber um link de acesso seguro.
+        </p>
+        <div class="form-group">
+            <label>E-mail</label>
+            <input type="email" id="email" placeholder="Seu e-mail">
         </div>
+        <button class="btn" id="btn-login">Receber Link de Acesso</button>
+        <p id="login-msg" style="font-size: 0.85rem; margin-top: 10px; text-align: center;"></p>
     </div>
+</div>
+
 
     <!-- PAINEL ADMINISTRATIVO -->
     <div id="dashboard">
