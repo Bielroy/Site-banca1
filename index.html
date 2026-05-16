@@ -284,6 +284,13 @@
             </div>
             <div class="form-group"><label>Pagamento</label><select id="cli-pagamento"><option value="PIX">PIX</option><option value="Cartão">Cartão</option><option value="Dinheiro">Dinheiro</option></select></div>
             <div class="form-group" id="troco-group" style="display:none;"><label>Troco para quanto?</label><input type="number" inputmode="numeric" id="cli-troco" placeholder="Ex: 50"></div>
+            
+            <!-- CAMPO DE OBSERVAÇÕES ADICIONADO AQUI -->
+            <div class="form-group">
+                <label>Observações (opcional)</label>
+                <textarea id="cli-obs" rows="2" placeholder="Ex: tomates maduros, deixar na portaria..."></textarea>
+            </div>
+
             <button class="btn-finalizar" id="btn-enviar-pedido">Enviar Pedido 🚀</button>
         </div>
     </div>
@@ -607,13 +614,14 @@
         document.getElementById('troco-group').style.display = e.target.value === 'Dinheiro' ? 'block' : 'none';
     });
 
-    // Enviar WhatsApp (Sanitizado)
+    // LÓGICA DE ENVIO DO WHATSAPP ATUALIZADA (COM OBSERVAÇÃO)
     document.getElementById('btn-enviar-pedido').addEventListener('click', () => {
         const nome = document.getElementById('cli-nome').value.trim();
         const quadra = document.getElementById('cli-quadra').value.trim();
         const lote = document.getElementById('cli-lote').value.trim();
         const pag = document.getElementById('cli-pagamento').value;
         const troco = document.getElementById('cli-troco').value;
+        const obs = document.getElementById('cli-obs').value.trim(); // Puxa a observação
 
         if(!nome || !quadra || !lote) return showToast("Preencha nome, quadra e lote!");
 
@@ -627,12 +635,18 @@
         
         msg += `\n*TOTAL: ${fmt(total)}*`;
         
+        // Adiciona a observação na mensagem se o cliente preencheu algo
+        if (obs) {
+            msg += `\n\n📝 *Obs:* ${obs}`;
+        }
+        
         const url = `https://wa.me/${STATE.config.wpp}?text=${encodeURIComponent(msg)}`;
         window.open(url, '_blank');
         
         document.getElementById('overlay-checkout').classList.remove('aberto');
         STATE.carrinho = [];
         localStorage.setItem('cart', '[]');
+        document.getElementById('cli-obs').value = ''; // Limpa a observação após enviar
         renderCarrinho();
         showToast("Pedido enviado!");
     });
