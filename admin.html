@@ -6,6 +6,13 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Melhoria de Performance: Preconnect para Fontes e Firebase -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://firestore.googleapis.com">
+    <link rel="dns-prefetch" href="https://firestore.googleapis.com">
+
     <title>Painel Admin - Banca Adair e Pedrina</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -17,8 +24,10 @@
             --danger: #dc2626;
             --success: #16a34a;
             --text-dark: #1a1a18;
+            --text-mid: #4a4a44;
             --text-light: #666;
             --radius-sm: 12px;
+            --shadow-lg: 0 20px 40px hsl(148, 30%, 15%, 0.12);
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
         body { background: var(--cream); color: var(--text-dark); padding-bottom: 40px; }
@@ -56,8 +65,10 @@
         .card { background: white; padding: 20px; border-radius: var(--radius-sm); margin-bottom: 16px; border: 1px solid #e0dcd4; }
         
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
-        .modal-overlay.aberto { display: flex; }
-        .modal { background: white; padding: 30px; border-radius: 20px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+        .modal-overlay.aberto { display: flex; animation: fadeIn 0.2s ease; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .modal { background: white; padding: 30px; border-radius: 20px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes slideUp { from { transform: translateY(20px) scale(0.98); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
         .modal-header h3 { font-size: 1.5rem; }
 
@@ -75,6 +86,17 @@
         .dia-label { background: var(--parchment); padding: 10px 16px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; font-weight: 600; transition: 0.2s; user-select: none; }
         .dia-label:has(input:checked) { background: var(--forest); color: white; border-color: var(--forest-mid); }
         .dia-label input { display: none; }
+
+        /* Estilos do novo Modal de Confirmação UI */
+        .confirm-dialog { max-width: 380px; text-align: center; padding: 30px 24px; }
+        .confirm-dialog h3 { font-family: 'Fraunces', serif; margin-bottom: 12px; font-size: 1.4rem; }
+        .confirm-actions { display: flex; gap: 12px; margin-top: 20px; }
+        .confirm-actions button { flex: 1; padding: 14px; border-radius: 12px; font-weight: 700; cursor: pointer; border: none; }
+        .btn-cancelar { background: var(--parchment); color: var(--text-mid); }
+        .btn-confirmar { background: var(--danger); color: white; }
+
+        .toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(100px); opacity: 0; background: var(--forest); color: white; padding: 14px 28px; border-radius: 40px; font-weight: 600; font-size: 0.95rem; z-index: 9999; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2); box-shadow: var(--shadow-lg); pointer-events: none; }
+        .toast.visivel { transform: translateX(-50%) translateY(0); opacity: 1; }
     </style>
 </head>
 <body>
@@ -180,6 +202,7 @@
         </div>
     </div>
 
+    <!-- Modal Editar Produto -->
     <div class="modal-overlay" id="modal-produto">
         <div class="modal">
             <div class="modal-header">
@@ -201,6 +224,20 @@
         </div>
     </div>
 
+    <!-- UI Customizada para substituir Alertas e Confirmações Nativas -->
+    <div class="modal-overlay" id="overlay-confirm">
+        <div class="modal confirm-dialog">
+            <h3 id="confirm-title">Atenção</h3>
+            <p id="confirm-msg" style="color: var(--text-mid);">Deseja realmente fazer isso?</p>
+            <div class="confirm-actions">
+                <button class="btn-cancelar" id="btn-confirm-cancel">Cancelar</button>
+                <button class="btn-confirmar" id="btn-confirm-ok">Sim, continuar</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="toast" id="toast"></div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getAuth, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
@@ -221,6 +258,27 @@
 
         let produtosAtuais = [];
         let pedidosGerais = [];
+
+        // Substitutos para Alerts/Confirms nativos
+        let toastTimer;
+        const showToast = (msg) => {
+            const t = document.getElementById('toast');
+            t.textContent = msg; t.classList.add('visivel');
+            clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('visivel'), 3000);
+        };
+
+        const customConfirm = (title, msg) => {
+            return new Promise((resolve) => {
+                const overlay = document.getElementById('overlay-confirm');
+                document.getElementById('confirm-title').textContent = title;
+                document.getElementById('confirm-msg').textContent = msg;
+                overlay.classList.add('aberto');
+                const onOk = () => { cleanup(); resolve(true); };
+                const onCancel = () => { cleanup(); resolve(false); };
+                const cleanup = () => { overlay.classList.remove('aberto'); document.getElementById('btn-confirm-ok').removeEventListener('click', onOk); document.getElementById('btn-confirm-cancel').removeEventListener('click', onCancel); };
+                document.getElementById('btn-confirm-ok').addEventListener('click', onOk); document.getElementById('btn-confirm-cancel').addEventListener('click', onCancel);
+            });
+        };
 
         onAuthStateChanged(auth, (user) => {
             if (user) {
@@ -265,7 +323,6 @@
         async function carregarProdutos() {
             const snap = await getDocs(collection(db, "produtos"));
             
-            // Ordenação automática pelos últimos modificados
             produtosAtuais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                 .sort((a,b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
                 
@@ -337,7 +394,12 @@
         });
 
         document.getElementById('btn-excluir-produto').addEventListener('click', async () => {
-            if(confirm("APAGAR este produto permanentemente?")) { await deleteDoc(doc(db, "produtos", document.getElementById('edit-id').value)); fecharModal(); carregarProdutos(); }
+            if(await customConfirm("Atenção", "APAGAR este produto permanentemente?")) { 
+                await deleteDoc(doc(db, "produtos", document.getElementById('edit-id').value)); 
+                fecharModal(); 
+                carregarProdutos(); 
+                showToast("Produto apagado.");
+            }
         });
 
         window.carregarRelatorios = async () => {
@@ -369,14 +431,27 @@
         };
 
         window.baixarRelatorioCSV = () => {
-            if(pedidosGerais.length === 0) return alert("Não há pedidos para exportar.");
+            if(pedidosGerais.length === 0) return showToast("Não há pedidos para exportar.");
             let csv = "Data,Cliente,Quadra,Lote,Pagamento,Total,Itens\n";
             pedidosGerais.forEach(p => { csv += `"${p.data}","${p.nome}","${p.quadra}","${p.lote}","${p.pag}","${p.total}","${p.itens ? p.itens.map(i => `${i.qtd}x ${i.nome}`).join(' | ') : ''}"\n`; });
             const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: 'text/csv;charset=utf-8;' })); link.download = `Vendas_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`; link.click();
         };
 
-        window.excluirPedido = async (id) => { if(confirm("Deseja excluir este pedido?")) { await deleteDoc(doc(db, "pedidos", id)); carregarRelatorios(); } };
-        window.limparHistorico = async () => { if(confirm("Apagar TODOS os pedidos permanentemente?")) { await Promise.all(pedidosGerais.map(p => deleteDoc(doc(db, "pedidos", p.id)))); carregarRelatorios(); } };
+        window.excluirPedido = async (id) => { 
+            if(await customConfirm("Excluir", "Deseja excluir este pedido permanentemente?")) { 
+                await deleteDoc(doc(db, "pedidos", id)); 
+                carregarRelatorios(); 
+                showToast("Pedido excluído.");
+            } 
+        };
+        
+        window.limparHistorico = async () => { 
+            if(await customConfirm("Limpar Tudo", "Apagar TODOS os pedidos do sistema permanentemente?")) { 
+                await Promise.all(pedidosGerais.map(p => deleteDoc(doc(db, "pedidos", p.id)))); 
+                carregarRelatorios(); 
+                showToast("Histórico limpo com sucesso.");
+            } 
+        };
 
         async function carregarConfiguracoes() {
             const snap = await getDoc(doc(db, "loja", "config"));
