@@ -42,7 +42,7 @@
             --radius-sm: 12px;
             --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
             --safe-bottom: env(safe-area-inset-bottom, 20px);
-            --touch-target: 48px; /* Aumentado para melhor acessibilidade (Idosos) */
+            --touch-target: 48px;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -138,7 +138,6 @@
         .modal-overlay.aberto { display: flex; animation: fadeIn 0.2s ease; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         
-        /* Modal com botão Fixo no rodapé */
         .modal { background: white; border-radius: var(--radius); width: 100%; max-width: 520px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); position: relative; padding-bottom: 80px; overflow: hidden; }
         @keyframes slideUp { from { transform: translateY(20px) scale(0.98); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
         .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--parchment); background: white; z-index: 2; }
@@ -383,8 +382,23 @@
     };
 
     const renderLoja = () => {
-        const grid = document.getElementById('lista-produtos'), normalize = str => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(), termo = normalize(STATE.busca);
-        const filtrados = STATE.produtos.filter(p => { return p.ativo && (STATE.catAtiva === 'todas' || p.cat === STATE.catAtiva) && normalize(p.nome).includes(termo); });
+        const grid = document.getElementById('lista-produtos');
+        const normalize = str => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        const termo = normalize(STATE.busca);
+        
+        // NOVO: Puxa o histórico de compras para priorização
+        const historicoIds = JSON.parse(localStorage.getItem('banca_historico_compras') || '[]');
+        const idsCarrinho = STATE.carrinho.map(c => c.id);
+        
+        const filtrados = STATE.produtos
+            .filter(p => p.ativo && (STATE.catAtiva === 'todas' || p.cat === STATE.catAtiva) && normalize(p.nome).includes(termo))
+            .sort((a, b) => {
+                // Prioridade 1: Item já está no carrinho
+                // Prioridade 2: Item já foi comprado em dias anteriores
+                let pesoA = (idsCarrinho.includes(a.id) ? 2 : 0) + (historicoIds.includes(a.id) ? 1 : 0);
+                let pesoB = (idsCarrinho.includes(b.id) ? 2 : 0) + (historicoIds.includes(b.id) ? 1 : 0);
+                return pesoB - pesoA;
+            });
         
         if (filtrados.length === 0) { 
             grid.innerHTML = `
@@ -537,7 +551,6 @@
         const textoOriginal = btn.innerHTML;
         btn.innerHTML = 'Enviando... ⏳';
 
-        // VALIDAÇÃO DE PREÇO SEGURO E LÓGICA DO TROCO APLICADAS
         let totalReal = 0;
         let msg = `*NOVO PEDIDO*\n👤 ${nome}\n📍 Q${quadra} L${lote}\n💳 Pagamento: ${pag}\n\n*ITENS:*\n`;
 
@@ -567,9 +580,15 @@
         if(idx >= 0) { clientes[idx] = {nome, quadra, lote}; } else { clientes.unshift({nome, quadra, lote}); }
         localStorage.setItem('banca_clientes', JSON.stringify(clientes.slice(0, 5)));
 
+        // NOVO: Salva os itens que o cliente acabou de comprar no histórico local
+        const idsComprados = STATE.carrinho.map(item => item.id);
+        const historicoAntigo = JSON.parse(localStorage.getItem('banca_historico_compras') || '[]');
+        // Cria uma nova lista sem itens repetidos e guarda os últimos 30 comprados
+        const novoHistorico = [...new Set([...idsComprados, ...historicoAntigo])].slice(0, 30);
+        localStorage.setItem('banca_historico_compras', JSON.stringify(novoHistorico));
+
         const url = `https://wa.me/${STATE.config.wpp}?text=${encodeURIComponent(msg)}`;
         
-        // Envia pro Firebase em background usando os itens e preço validados
         addDoc(collection(db, "pedidos"), { nome, quadra, lote, pag, troco, obs, total: totalReal, itens: itensValidados, data: new Date().toISOString() })
             .catch(err => console.error("Erro ao salvar histórico", err));
 
