@@ -92,10 +92,21 @@
         .produto-preco span { font-size: 0.85rem; font-weight: 500; color: var(--text-light); }
         .btn-add { width: var(--touch-target); height: var(--touch-target); border-radius: 50%; border: none; background: var(--forest); color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all var(--transition); }
         
+        /* NOVO: Animação do botão de adicionar */
+        .btn-add:active { transform: scale(0.85); background: var(--forest-mid); }
+
         .carrinho { flex: 0 0 350px; background: var(--warm-white); border-radius: var(--radius); box-shadow: var(--shadow-md); display: flex; flex-direction: column; position: sticky; top: 140px; max-height: calc(100vh - 160px); border: 1px solid rgba(0,0,0,0.04); }
         .carrinho-topo { padding: 20px; border-bottom: 1px solid var(--parchment); display: flex; justify-content: space-between; align-items: center; }
         .carrinho-titulo { font-family: 'Fraunces', serif; font-size: 1.3rem; font-weight: 700; color: var(--forest); display: flex; align-items: center; gap: 8px; }
-        .carrinho-titulo-badge { background: var(--forest); color: var(--mint); font-size: 0.75rem; padding: 2px 10px; border-radius: 20px; font-weight: bold; }
+        .carrinho-titulo-badge { background: var(--forest); color: var(--mint); font-size: 0.75rem; padding: 2px 10px; border-radius: 20px; font-weight: bold; transition: all 0.3s ease; }
+        
+        /* NOVO: Animação de piscar do carrinho */
+        .carrinho-pulse { animation: pulseCart 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+        @keyframes pulseCart { 0% { transform: scale(1) translateX(0); } 50% { transform: scale(1.15) translateX(0); } 100% { transform: scale(1) translateX(0); } }
+
+        /* NOVO: Produto voador */
+        .produto-voador { position: fixed; z-index: 9999; pointer-events: none; width: 50px; height: 50px; border-radius: 50%; object-fit: cover; box-shadow: var(--shadow-md); transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1); }
+
         .btn-limpar { background: none; border: none; color: var(--text-light); font-weight: 600; cursor: pointer; font-size: 0.85rem; padding: 8px; }
         .carrinho-itens { overflow-y: auto; flex: 1; padding: 8px 0; }
         .carrinho-item { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--foam); }
@@ -385,10 +396,68 @@
         } catch (error) { showToast("Erro ao conectar com servidor."); }
     };
 
+    // Função de animação de voo para o carrinho
+    const animarVooParaCarrinho = (eventoClick, idProduto) => {
+        const card = eventoClick.target.closest('.produto-card') || eventoClick.target.closest('.upsell-box');
+        if (!card) return;
+
+        const imgElement = card.querySelector('img');
+        const wrapElement = card.querySelector('.produto-img-wrap');
+        
+        const voo = document.createElement('div');
+        voo.className = 'produto-voador';
+        
+        if (imgElement) {
+            voo.style.backgroundImage = `url(${imgElement.src})`;
+            voo.style.backgroundSize = 'cover';
+        } else if (wrapElement) {
+            voo.innerHTML = wrapElement.innerHTML;
+            voo.style.display = 'flex';
+            voo.style.alignItems = 'center';
+            voo.style.justifyContent = 'center';
+            voo.style.background = 'var(--foam)';
+            voo.style.fontSize = '2rem';
+        } else {
+            // Fallback para quando clica no upsell
+            voo.style.background = 'var(--forest)';
+            voo.style.border = '2px solid white';
+        }
+
+        const rectOrigem = eventoClick.target.getBoundingClientRect();
+        voo.style.left = `${rectOrigem.left}px`;
+        voo.style.top = `${rectOrigem.top}px`;
+        
+        document.body.appendChild(voo);
+
+        const isMobile = window.innerWidth <= 900;
+        const alvo = isMobile && !document.getElementById('carrinho').classList.contains('aberto') 
+            ? document.getElementById('btn-carrinho-mobile') 
+            : document.getElementById('qtd-badge');
+            
+        const rectAlvo = alvo.getBoundingClientRect();
+
+        requestAnimationFrame(() => {
+            voo.style.left = `${rectAlvo.left + (rectAlvo.width / 2) - 25}px`;
+            voo.style.top = `${rectAlvo.top + (rectAlvo.height / 2) - 25}px`;
+            voo.style.transform = 'scale(0.2)';
+            voo.style.opacity = '0.3';
+        });
+
+        setTimeout(() => {
+            voo.remove();
+            alvo.classList.add('carrinho-pulse');
+            setTimeout(() => alvo.classList.remove('carrinho-pulse'), 300);
+        }, 600);
+    };
+
     document.body.addEventListener('click', async (e) => {
         const target = e.target.closest('[data-action]'); if (!target) return;
         const action = target.dataset.action, id = target.dataset.id;
-        if (action === 'add' || action === 'inc') modificarCarrinho(id, 1);
+        
+        if (action === 'add' || action === 'inc') {
+            modificarCarrinho(id, 1);
+            if (action === 'add') animarVooParaCarrinho(e, id);
+        }
         if (action === 'dec') modificarCarrinho(id, -1);
         if (action === 'cat') { STATE.catAtiva = target.dataset.cat; renderCategorias(); renderLoja(); }
     });
@@ -414,7 +483,7 @@
         const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
         const area = document.getElementById('clientes-salvos-area');
         if(clientes.length === 0) { area.innerHTML = ''; return; }
-        area.innerHTML = `<div style="font-size:0.75rem; font-weight:bold; margin-bottom:8px; color:var(--text-mid); text-transform:uppercase;">Clientes Salvos:</div><div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 20px;">${clientes.map(c => `<button type="button" class="pill" style="color:var(--forest-mid); border-color:var(--sage); background:var(--foam);" onclick="window.preencherCliente('${escapeHTML(c.nome)}', '${escapeHTML(c.quadra)}', '${escapeHTML(c.lote)}')">${escapeHTML(c.nome)}</button>`).join('')}</div>`;
+        area.innerHTML = `<div style="font-size:0.75rem; font-weight:bold; margin-bottom:8px; color:var(--text-mid); text-transform:uppercase;">Preenchimento Rápido:</div><div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 20px;">${clientes.map(c => `<button type="button" class="pill" style="color:var(--forest-mid); border-color:var(--sage); background:var(--foam);" onclick="window.preencherCliente('${escapeHTML(c.nome)}', '${escapeHTML(c.quadra)}', '${escapeHTML(c.lote)}')">${escapeHTML(c.nome)}</button>`).join('')}</div>`;
     };
 
     window.preencherCliente = (nome, quadra, lote) => {
@@ -424,11 +493,23 @@
     };
 
     document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
-        renderClientesSalvos(); document.getElementById('overlay-checkout').classList.add('aberto');
+        // Preenche automaticamente o último cliente salvo
+        const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
+        if (clientes.length > 0) {
+            document.getElementById('cli-nome').value = clientes[0].nome || '';
+            document.getElementById('cli-quadra').value = clientes[0].quadra || '';
+            document.getElementById('cli-lote').value = clientes[0].lote || '';
+        }
+
+        renderClientesSalvos(); 
+        document.getElementById('overlay-checkout').classList.add('aberto');
         if(window.innerWidth <= 900) toggleCartMobile(false);
     });
 
-    document.getElementById('btn-enviar-pedido').addEventListener('click', async () => {
+    document.getElementById('btn-enviar-pedido').addEventListener('click', (e) => {
+        const btn = e.currentTarget;
+        if (btn.disabled) return;
+
         const nome = document.getElementById('cli-nome').value.trim();
         const quadra = document.getElementById('cli-quadra').value.trim();
         const lote = document.getElementById('cli-lote').value.trim();
@@ -438,8 +519,12 @@
 
         if(!nome || !quadra || !lote) return showToast("Preencha nome, quadra e lote!");
 
+        btn.disabled = true;
+        const textoOriginal = btn.innerHTML;
+        btn.innerHTML = 'Enviando... ⏳';
+
         let total = 0;
-        let msg = `*NOVO PEDIDO*\n👤 ${nome}\n📍 Q${quadra} L${lote}\n💳 Pagamento: ${pag}${pag === 'Dinheiro' ? ` (Troco: R$ ${troco})` : ''}\n\n*ITENS:*\n`;
+        let msg = `*NOVO PEDIDO*\n👤 ${nome}\n📍 Q${quadra} L${lote}\n💳 Pagamento: ${pag}${pag === 'Dinheiro' ? ` (Troco para: R$ ${troco})` : ''}\n\n*ITENS:*\n`;
         
         STATE.carrinho.forEach(item => { total += item.preco * item.qtd; msg += `• ${item.qtd}x ${item.nome} - ${fmt(item.preco * item.qtd)}\n`; });
         msg += `\n*TOTAL: ${fmt(total)}*`;
@@ -450,14 +535,26 @@
         if(idx >= 0) { clientes[idx] = {nome, quadra, lote}; } else { clientes.unshift({nome, quadra, lote}); }
         localStorage.setItem('banca_clientes', JSON.stringify(clientes.slice(0, 5)));
 
-        try { await addDoc(collection(db, "pedidos"), { nome, quadra, lote, pag, troco, obs, total, itens: STATE.carrinho, data: new Date().toISOString() }); } catch(e) { console.error("Erro ao salvar histórico", e); }
-
         const url = `https://wa.me/${STATE.config.wpp}?text=${encodeURIComponent(msg)}`;
+        
+        // Envia pro Firebase em background
+        addDoc(collection(db, "pedidos"), { nome, quadra, lote, pag, troco, obs, total, itens: STATE.carrinho, data: new Date().toISOString() })
+            .catch(err => console.error("Erro ao salvar histórico", err));
+
+        // Abre o zap imediatamente
         window.open(url, '_blank');
         
+        // Limpa tudo
         document.getElementById('overlay-checkout').classList.remove('aberto');
-        STATE.carrinho = []; localStorage.setItem('cart', '[]'); document.getElementById('cli-obs').value = ''; 
-        renderCarrinho(); showToast("Pedido enviado!");
+        STATE.carrinho = []; 
+        localStorage.setItem('cart', '[]'); 
+        document.getElementById('cli-obs').value = ''; 
+        document.getElementById('cli-troco').value = '';
+        renderCarrinho(); 
+        showToast("Pedido enviado!");
+
+        btn.disabled = false;
+        btn.innerHTML = textoOriginal;
     });
 
     document.getElementById('btn-voz').addEventListener('click', () => {
