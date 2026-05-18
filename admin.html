@@ -37,7 +37,7 @@
         .login-box h2 { margin-bottom: 20px; color: var(--forest); text-align: center; font-size: 1.8rem; }
         .form-group { margin-bottom: 16px; }
         .form-group label { display: block; font-size: 0.9rem; font-weight: 700; margin-bottom: 8px; color: var(--text-dark); }
-        .form-group input[type="text"], .form-group input[type="number"], .form-group input[type="email"], .form-group select { width: 100%; padding: 16px; border: 2px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; font-size: 1rem; }
+        .form-group input[type="text"], .form-group input[type="number"], .form-group input[type="email"], .form-group input[type="url"], .form-group select { width: 100%; padding: 16px; border: 2px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; font-size: 1rem; }
         .form-group input:focus { border-color: var(--forest-mid); }
         
         .btn { width: 100%; padding: 16px; background: var(--forest); color: white; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 1.05rem; cursor: pointer; transition: 0.2s; }
@@ -211,7 +211,14 @@
             </div>
             <input type="hidden" id="edit-id">
             
-            <div class="form-group"><label>Foto do Produto</label><input type="file" id="edit-foto" accept="image/*"><small style="color: var(--text-light);">Deixe vazio para manter a foto atual.</small></div>
+            <div class="form-group">
+                <label>Foto do Produto</label>
+                <input type="file" id="edit-foto" accept="image/*">
+                <p style="text-align: center; margin: 12px 0; font-weight: bold; color: var(--text-mid); font-size: 0.85rem;">OU</p>
+                <input type="url" id="edit-foto-url" placeholder="Cole o link (URL) da imagem aqui">
+                <small style="color: var(--text-light); display:block; margin-top:6px;">Deixe ambos vazios para manter a foto atual.</small>
+            </div>
+
             <div class="form-group"><label>Nome</label><input type="text" id="edit-nome"></div>
             <div style="display: flex; gap: 16px;">
                 <div class="form-group" style="flex: 1;"><label>Preço (R$)</label><input type="number" id="edit-preco" step="0.10"></div>
@@ -356,12 +363,18 @@
         };
 
         window.abrirEditor = (id = null) => {
-            document.getElementById('modal-produto').classList.add('aberto'); document.getElementById('edit-foto').value = ''; 
+            document.getElementById('modal-produto').classList.add('aberto'); 
+            document.getElementById('edit-foto').value = ''; 
+            document.getElementById('edit-foto-url').value = ''; // Limpa a URL
+            
             if (id) {
                 const p = produtosAtuais.find(x => x.id === id);
-                document.getElementById('modal-titulo').innerText = '✏️ Editar Produto'; document.getElementById('edit-id').value = p.id;
-                document.getElementById('edit-nome').value = p.nome; document.getElementById('edit-preco').value = p.preco;
-                document.getElementById('edit-unidade').value = p.unidade || 'un'; document.getElementById('edit-cat').value = p.cat || '';
+                document.getElementById('modal-titulo').innerText = '✏️ Editar Produto'; 
+                document.getElementById('edit-id').value = p.id;
+                document.getElementById('edit-nome').value = p.nome; 
+                document.getElementById('edit-preco').value = p.preco;
+                document.getElementById('edit-unidade').value = p.unidade || 'un'; 
+                document.getElementById('edit-cat').value = p.cat || '';
                 document.getElementById('btn-excluir-produto').style.display = 'block';
             } else {
                 document.getElementById('modal-titulo').innerText = '➕ Novo Produto';
@@ -373,24 +386,54 @@
         window.fecharModal = () => document.getElementById('modal-produto').classList.remove('aberto');
 
         document.getElementById('btn-salvar-produto').addEventListener('click', async () => {
-            const btn = document.getElementById('btn-salvar-produto'); btn.innerText = "Salvando..."; btn.disabled = true;
-            const id = document.getElementById('edit-id').value || Date.now().toString();
-            
-            let pData = { 
-                nome: document.getElementById('edit-nome').value, 
-                preco: parseFloat(document.getElementById('edit-preco').value), 
-                unidade: document.getElementById('edit-unidade').value, 
-                cat: document.getElementById('edit-cat').value.toLowerCase(), 
-                ativo: true,
-                ultimaModificacao: Date.now()
-            };
-            
-            const fileInput = document.getElementById('edit-foto');
-            if (fileInput.files.length > 0) { const storageRef = ref(storage, `fotos_produtos/${id}_${fileInput.files[0].name}`); await uploadBytes(storageRef, fileInput.files[0]); pData.foto = await getDownloadURL(storageRef); } 
-            else if (document.getElementById('edit-id').value) { const pAntigo = produtosAtuais.find(x => x.id === id); if(pAntigo && pAntigo.foto) pData.foto = pAntigo.foto; }
-            
-            await setDoc(doc(db, "produtos", id), pData, { merge: true });
-            fecharModal(); carregarProdutos(); btn.innerText = "💾 Salvar Alterações"; btn.disabled = false;
+            const btn = document.getElementById('btn-salvar-produto'); 
+            btn.innerText = "Salvando... ⏳"; 
+            btn.disabled = true;
+
+            try {
+                const id = document.getElementById('edit-id').value || Date.now().toString();
+                
+                let pData = { 
+                    nome: document.getElementById('edit-nome').value, 
+                    preco: parseFloat(document.getElementById('edit-preco').value), 
+                    unidade: document.getElementById('edit-unidade').value, 
+                    cat: document.getElementById('edit-cat').value.toLowerCase(), 
+                    ativo: true,
+                    ultimaModificacao: Date.now()
+                };
+                
+                const fileInput = document.getElementById('edit-foto');
+                const urlInput = document.getElementById('edit-foto-url').value.trim();
+
+                // 1. Prioriza a foto enviada pelo arquivo
+                if (fileInput.files.length > 0) { 
+                    const storageRef = ref(storage, `fotos_produtos/${id}_${fileInput.files[0].name}`); 
+                    await uploadBytes(storageRef, fileInput.files[0]); 
+                    pData.foto = await getDownloadURL(storageRef); 
+                } 
+                // 2. Se não enviou arquivo, tenta usar a URL colada
+                else if (urlInput) {
+                    pData.foto = urlInput;
+                }
+                // 3. Se não enviou nada, mantém a foto antiga (se for edição)
+                else if (document.getElementById('edit-id').value) { 
+                    const pAntigo = produtosAtuais.find(x => x.id === id); 
+                    if(pAntigo && pAntigo.foto) pData.foto = pAntigo.foto; 
+                }
+                
+                await setDoc(doc(db, "produtos", id), pData, { merge: true });
+                fecharModal(); 
+                carregarProdutos(); 
+                showToast("Produto salvo com sucesso!");
+
+            } catch (erro) {
+                console.error("Erro ao salvar:", erro);
+                alert("Erro ao salvar! Se você enviou uma foto, o Firebase pode ter bloqueado ou a imagem é pesada demais. Tente usar a opção de Link (URL) por enquanto.");
+            } finally {
+                // Isso garante que o botão destrave mesmo se der erro
+                btn.innerText = "💾 Salvar Alterações"; 
+                btn.disabled = false;
+            }
         });
 
         document.getElementById('btn-excluir-produto').addEventListener('click', async () => {
