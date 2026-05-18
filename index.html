@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     
     <title>Banca Adair e Pedrina | Frescor Todo Dia</title>
@@ -225,7 +225,6 @@
         </div>
         <div class="modal-body">
             
-            <!-- ÁREA DE CLIENTES SALVOS -->
             <div id="clientes-salvos-area"></div>
 
             <div class="form-group"><label>Nome</label><input type="text" id="cli-nome" placeholder="Como devemos te chamar?"></div>
@@ -273,7 +272,7 @@
         carrinho: JSON.parse(localStorage.getItem('cart') || '[]'),
         catAtiva: 'todas',
         busca: '',
-        config: { minimo: 0, wpp: '5562999999999' }
+        config: { minimo: 0, wpp: '5562999999999', lojaAberta: true, diasAbertos: [0,1,2,3,4,5,6] }
     };
 
     const fmt = (n) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
@@ -327,10 +326,35 @@
     };
 
     const atualizarBadge = (qtd, total) => {
-        document.getElementById('qtd-flutuante').textContent = qtd; document.getElementById('qtd-badge').textContent = qtd;
-        const btnF = document.getElementById('btn-abrir-checkout'), bannerMin = document.getElementById('banner-minimo');
-        if (STATE.config.minimo > 0 && total < STATE.config.minimo && qtd > 0) { btnF.disabled = true; bannerMin.textContent = `⚠️ Faltam ${fmt(STATE.config.minimo - total)} para o mínimo de pedido.`; bannerMin.classList.add('visivel'); } 
-        else { btnF.disabled = qtd === 0; bannerMin.classList.remove('visivel'); }
+        document.getElementById('qtd-flutuante').textContent = qtd; 
+        document.getElementById('qtd-badge').textContent = qtd;
+        
+        const btnF = document.getElementById('btn-abrir-checkout');
+        const bannerMin = document.getElementById('banner-minimo');
+        const bannerFechado = document.getElementById('banner-fechado');
+        
+        const lojaManualAberta = STATE.config.lojaAberta !== false; 
+        const hoje = new Date().getDay(); 
+        const diasPermitidos = STATE.config.diasAbertos || [0,1,2,3,4,5,6]; 
+        const hojePermitido = diasPermitidos.includes(hoje);
+        
+        if (!lojaManualAberta || !hojePermitido) {
+            btnF.disabled = true;
+            bannerMin.classList.remove('visivel'); 
+            bannerFechado.classList.add('visivel');
+            return; 
+        } else {
+            bannerFechado.classList.remove('visivel');
+        }
+
+        if (STATE.config.minimo > 0 && total < STATE.config.minimo && qtd > 0) { 
+            btnF.disabled = true; 
+            bannerMin.textContent = `⚠️ Faltam ${fmt(STATE.config.minimo - total)} para o mínimo de pedido.`; 
+            bannerMin.classList.add('visivel'); 
+        } else { 
+            btnF.disabled = qtd === 0; 
+            bannerMin.classList.remove('visivel'); 
+        }
     };
 
     const modificarCarrinho = (id, delta) => {
@@ -386,17 +410,11 @@
 
     document.getElementById('cli-pagamento').addEventListener('change', (e) => { document.getElementById('troco-group').style.display = e.target.value === 'Dinheiro' ? 'block' : 'none'; });
 
-    // CLIENTES SALVOS E ABERTURA DO CHECKOUT
     const renderClientesSalvos = () => {
         const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
         const area = document.getElementById('clientes-salvos-area');
         if(clientes.length === 0) { area.innerHTML = ''; return; }
-        area.innerHTML = `
-            <div style="font-size:0.75rem; font-weight:bold; margin-bottom:8px; color:var(--text-mid); text-transform:uppercase;">Clientes Salvos:</div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 20px;">
-                ${clientes.map(c => `<button type="button" class="pill" style="color:var(--forest-mid); border-color:var(--sage); background:var(--foam);" onclick="window.preencherCliente('${escapeHTML(c.nome)}', '${escapeHTML(c.quadra)}', '${escapeHTML(c.lote)}')">${escapeHTML(c.nome)}</button>`).join('')}
-            </div>
-        `;
+        area.innerHTML = `<div style="font-size:0.75rem; font-weight:bold; margin-bottom:8px; color:var(--text-mid); text-transform:uppercase;">Clientes Salvos:</div><div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 20px;">${clientes.map(c => `<button type="button" class="pill" style="color:var(--forest-mid); border-color:var(--sage); background:var(--foam);" onclick="window.preencherCliente('${escapeHTML(c.nome)}', '${escapeHTML(c.quadra)}', '${escapeHTML(c.lote)}')">${escapeHTML(c.nome)}</button>`).join('')}</div>`;
     };
 
     window.preencherCliente = (nome, quadra, lote) => {
@@ -406,12 +424,10 @@
     };
 
     document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
-        renderClientesSalvos();
-        document.getElementById('overlay-checkout').classList.add('aberto');
+        renderClientesSalvos(); document.getElementById('overlay-checkout').classList.add('aberto');
         if(window.innerWidth <= 900) toggleCartMobile(false);
     });
 
-    // ENVIO E SALVAMENTO DE PEDIDO E CLIENTE
     document.getElementById('btn-enviar-pedido').addEventListener('click', async () => {
         const nome = document.getElementById('cli-nome').value.trim();
         const quadra = document.getElementById('cli-quadra').value.trim();
@@ -425,39 +441,23 @@
         let total = 0;
         let msg = `*NOVO PEDIDO*\n👤 ${nome}\n📍 Q${quadra} L${lote}\n💳 Pagamento: ${pag}${pag === 'Dinheiro' ? ` (Troco: R$ ${troco})` : ''}\n\n*ITENS:*\n`;
         
-        STATE.carrinho.forEach(item => {
-            total += item.preco * item.qtd;
-            msg += `• ${item.qtd}x ${item.nome} - ${fmt(item.preco * item.qtd)}\n`;
-        });
-        
+        STATE.carrinho.forEach(item => { total += item.preco * item.qtd; msg += `• ${item.qtd}x ${item.nome} - ${fmt(item.preco * item.qtd)}\n`; });
         msg += `\n*TOTAL: ${fmt(total)}*`;
         if (obs) msg += `\n\n📝 *Obs:* ${obs}`;
 
-        // 1. Salvar Cliente no LocalStorage
         const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
         const idx = clientes.findIndex(c => c.nome.toLowerCase() === nome.toLowerCase());
         if(idx >= 0) { clientes[idx] = {nome, quadra, lote}; } else { clientes.unshift({nome, quadra, lote}); }
         localStorage.setItem('banca_clientes', JSON.stringify(clientes.slice(0, 5)));
 
-        // 2. Salvar Pedido no Histórico do Banco de Dados (Firebase)
-        try {
-            await addDoc(collection(db, "pedidos"), {
-                nome, quadra, lote, pag, troco, obs, total,
-                itens: STATE.carrinho,
-                data: new Date().toISOString()
-            });
-        } catch(e) { console.error("Erro ao salvar histórico", e); }
+        try { await addDoc(collection(db, "pedidos"), { nome, quadra, lote, pag, troco, obs, total, itens: STATE.carrinho, data: new Date().toISOString() }); } catch(e) { console.error("Erro ao salvar histórico", e); }
 
-        // 3. Enviar pro WhatsApp
         const url = `https://wa.me/${STATE.config.wpp}?text=${encodeURIComponent(msg)}`;
         window.open(url, '_blank');
         
         document.getElementById('overlay-checkout').classList.remove('aberto');
-        STATE.carrinho = [];
-        localStorage.setItem('cart', '[]');
-        document.getElementById('cli-obs').value = ''; 
-        renderCarrinho();
-        showToast("Pedido enviado!");
+        STATE.carrinho = []; localStorage.setItem('cart', '[]'); document.getElementById('cli-obs').value = ''; 
+        renderCarrinho(); showToast("Pedido enviado!");
     });
 
     document.getElementById('btn-voz').addEventListener('click', () => {
