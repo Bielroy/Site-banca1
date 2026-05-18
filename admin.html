@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel Admin - Banca Adair e Pedrina</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
@@ -16,12 +16,12 @@
             --parchment: #f2ede3;
             --danger: #dc2626;
             --text-dark: #1a1a18;
+            --text-light: #666;
             --radius-sm: 12px;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
         body { background: var(--cream); color: var(--text-dark); }
         
-        /* LOGIN SCREEN */
         #login-screen { height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--forest); }
         .login-box { background: white; padding: 40px; border-radius: 20px; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
         .login-box h2 { margin-bottom: 20px; color: var(--forest); text-align: center; }
@@ -33,44 +33,38 @@
         .btn-danger { background: var(--danger); }
         .btn-outline { background: transparent; border: 1.5px solid var(--forest); color: var(--forest); }
 
-        /* DASHBOARD */
         #dashboard { display: none; padding: 20px; max-width: 1000px; margin: 0 auto; }
         header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 2px solid var(--parchment); margin-bottom: 20px; }
         .tabs { display: flex; gap: 10px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 5px; }
         .tab { padding: 10px 20px; background: var(--parchment); border: none; border-radius: 30px; cursor: pointer; font-weight: 600; white-space: nowrap; }
         .tab.active { background: var(--forest); color: white; }
         
-        /* DATA TABLES */
         .card { background: white; padding: 20px; border-radius: var(--radius-sm); margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0dcd4; }
         .prod-info { display: flex; align-items: center; gap: 16px; }
         .prod-img { width: 50px; height: 50px; border-radius: 8px; object-fit: cover; background: var(--parchment); display: flex; align-items: center; justify-content: center; font-size: 24px; }
         
-        /* MODAL */
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 1000; }
         .modal-overlay.aberto { display: flex; }
         .modal { background: white; padding: 30px; border-radius: var(--radius-sm); width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
         .modal-header { display: flex; justify-content: space-between; margin-bottom: 20px; }
+
+        /* Estilo novo das estatísticas de vendas */
+        .stat-box { background: white; padding: 20px; border-radius: var(--radius-sm); border: 1px solid #e0dcd4; flex: 1; text-align: center; }
+        .stat-val { font-size: 2rem; font-weight: 700; color: var(--forest); margin-top: 8px; }
     </style>
 </head>
 <body>
 
-    <!-- TELA DE LOGIN SEM SENHA -->
     <div id="login-screen">
         <div class="login-box">
             <h2>📦 Admin Store</h2>
-            <p style="text-align: center; font-size: 0.85rem; color: #666; margin-bottom: 16px;">
-                Digite seu e-mail para receber um link de acesso seguro.
-            </p>
-            <div class="form-group">
-                <label>E-mail</label>
-                <input type="email" id="email" placeholder="Seu e-mail">
-            </div>
+            <p style="text-align: center; font-size: 0.85rem; color: var(--text-light); margin-bottom: 16px;">Digite seu e-mail para receber um link de acesso seguro.</p>
+            <div class="form-group"><label>E-mail</label><input type="email" id="email" placeholder="Seu e-mail"></div>
             <button class="btn" id="btn-login">Receber Link de Acesso</button>
             <p id="login-msg" style="font-size: 0.85rem; margin-top: 10px; text-align: center;"></p>
         </div>
     </div>
 
-    <!-- PAINEL ADMINISTRATIVO -->
     <div id="dashboard">
         <header>
             <h2>Painel Gerencial</h2>
@@ -92,28 +86,42 @@
             <div id="lista-produtos">Carregando...</div>
         </div>
 
-        <!-- ABA RELATÓRIOS -->
+        <!-- ABA RELATÓRIOS (NOVA E COMPLETA) -->
         <div id="aba-relatorios" style="display: none;">
-            <h3>Últimos Pedidos</h3>
-            <p style="color: #666; margin-bottom: 20px;">Histórico salvo no banco de dados.</p>
-            <div id="lista-historico">Em breve...</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3>Histórico de Vendas</h3>
+                <button class="btn btn-danger" style="width: auto; padding: 10px 20px;" onclick="limparHistorico()">🗑 Limpar Histórico</button>
+            </div>
+            
+            <div style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap;">
+                <div class="stat-box">
+                    <div style="font-size: 0.85rem; font-weight: bold; color: var(--text-light);">TOTAL DE PEDIDOS</div>
+                    <div class="stat-val" id="stat-pedidos">0</div>
+                </div>
+                <div class="stat-box">
+                    <div style="font-size: 0.85rem; font-weight: bold; color: var(--text-light);">RECEITA TOTAL</div>
+                    <div class="stat-val" id="stat-receita">R$ 0,00</div>
+                </div>
+            </div>
+
+            <div id="lista-historico">Buscando relatórios...</div>
         </div>
 
         <!-- ABA CONFIGURAÇÕES -->
         <div id="aba-config" style="display: none;">
             <h3>Configurações da Loja</h3>
-            <p style="color: #666; margin-bottom: 20px;">Defina para qual número os pedidos serão enviados.</p>
+            <p style="color: var(--text-light); margin-bottom: 20px;">Defina para qual número os pedidos serão enviados.</p>
             
             <div class="card" style="flex-direction: column; align-items: flex-start; gap: 16px;">
                 <div class="form-group" style="width: 100%;">
                     <label>Número do WhatsApp</label>
                     <input type="text" id="config-wpp" placeholder="Ex: 5562999999999">
-                    <small style="color: #666;">Use o formato: 55 + DDD + Número. (Ex: 5562988...)</small>
+                    <small style="color: var(--text-light);">Use o formato: 55 + DDD + Número. (Ex: 5562988...)</small>
                 </div>
                 <div class="form-group" style="width: 100%;">
                     <label>Pedido Mínimo (R$)</label>
                     <input type="number" id="config-minimo" step="0.5" placeholder="Ex: 15.00">
-                    <small style="color: #666;">Deixe 0 se não houver valor mínimo.</small>
+                    <small style="color: var(--text-light);">Deixe 0 se não houver valor mínimo.</small>
                 </div>
                 <button class="btn" id="btn-salvar-config">Salvar Configurações</button>
                 <p id="msg-config" style="color: green; font-size: 0.85rem; display: none; margin-top: 10px;">✅ Salvo com sucesso!</p>
@@ -133,50 +141,30 @@
             <div class="form-group">
                 <label>Foto do Produto</label>
                 <input type="file" id="edit-foto" accept="image/*">
-                <small style="color: #666;">Deixe vazio para manter a foto atual.</small>
+                <small style="color: var(--text-light);">Deixe vazio para manter a foto atual.</small>
             </div>
             <div class="form-group">
                 <label>Nome</label>
                 <input type="text" id="edit-nome">
             </div>
             <div style="display: flex; gap: 10px;">
-                <div class="form-group" style="flex: 1;">
-                    <label>Preço (R$)</label>
-                    <input type="number" id="edit-preco" step="0.10">
-                </div>
-                <div class="form-group" style="flex: 1;">
-                    <label>Unidade</label>
-                    <select id="edit-unidade">
-                        <option value="kg">KG</option>
-                        <option value="un">Unidade</option>
-                        <option value="maço">Maço</option>
-                    </select>
-                </div>
+                <div class="form-group" style="flex: 1;"><label>Preço (R$)</label><input type="number" id="edit-preco" step="0.10"></div>
+                <div class="form-group" style="flex: 1;"><label>Unidade</label><select id="edit-unidade"><option value="kg">KG</option><option value="un">Unidade</option><option value="maço">Maço</option></select></div>
             </div>
-            <div class="form-group">
-                <label>Categoria</label>
-                <input type="text" id="edit-cat" placeholder="Ex: verduras, frutas...">
-            </div>
-            <div class="form-group">
-                <label>Status</label>
-                <select id="edit-status">
-                    <option value="true">✅ Em Estoque</option>
-                    <option value="false">❌ Esgotado</option>
-                </select>
-            </div>
+            <div class="form-group"><label>Categoria</label><input type="text" id="edit-cat" placeholder="Ex: verduras, frutas..."></div>
+            <div class="form-group"><label>Status</label><select id="edit-status"><option value="true">✅ Em Estoque</option><option value="false">❌ Esgotado</option></select></div>
+            
             <button class="btn" id="btn-salvar-produto">Salvar Produto</button>
             <button class="btn btn-danger" id="btn-excluir-produto" style="margin-top: 10px; display: none;">Excluir Permanentemente</button>
         </div>
     </div>
 
-    <!-- SCRIPTS DO FIREBASE -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getAuth, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
         import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
-        // CONFIGURAÇÃO FIREBASE
         const firebaseConfig = {
             apiKey: "AIzaSyAY_qGll6YJKA6ErYIOd5XIVblrlq8vynM",
             authDomain: "banca-adair-e-pedrina.firebaseapp.com",
@@ -195,110 +183,119 @@
         const dashboard = document.getElementById('dashboard');
         const msg = document.getElementById('login-msg');
 
-        // 1. SISTEMA DE LOGIN SEM SENHA
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 loginScreen.style.display = 'none';
                 dashboard.style.display = 'block';
                 carregarProdutos();
                 carregarConfiguracoes();
+                carregarRelatorios(); // Agora os relatórios carregam de verdade!
             } else {
                 loginScreen.style.display = 'flex';
                 dashboard.style.display = 'none';
             }
         });
 
-        // Dispara o e-mail quando clica no botão
         document.getElementById('btn-login').addEventListener('click', () => {
             const email = document.getElementById('email').value;
-            if (!email) { 
-                msg.innerText = "⚠️ Digite um e-mail válido."; 
-                msg.style.color = "var(--danger)"; 
-                return; 
-            }
-            
-            msg.innerText = "Enviando link...";
-            msg.style.color = "var(--text-dark)";
-
-            const actionCodeSettings = {
-                url: window.location.href, // Faz o link abrir a mesma página
-                handleCodeInApp: true,
-            };
-
-            sendSignInLinkToEmail(auth, email, actionCodeSettings)
-                .then(() => {
-                    window.localStorage.setItem('emailForSignIn', email);
-                    msg.innerText = "✅ Link enviado! Verifique sua caixa de entrada (e o spam).";
-                    msg.style.color = "green";
-                })
-                .catch((error) => {
-                    msg.innerText = "❌ Erro ao enviar link. Tente novamente.";
-                    msg.style.color = "var(--danger)";
-                    console.error(error);
-                });
+            if (!email) { msg.innerText = "⚠️ Digite um e-mail válido."; msg.style.color = "var(--danger)"; return; }
+            msg.innerText = "Enviando link..."; msg.style.color = "var(--text-dark)";
+            sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true })
+                .then(() => { window.localStorage.setItem('emailForSignIn', email); msg.innerText = "✅ Link enviado! Verifique sua caixa de entrada (e o spam)."; msg.style.color = "green"; })
+                .catch((e) => { msg.innerText = "❌ Erro ao enviar link. Tente novamente."; msg.style.color = "var(--danger)"; console.error(e); });
         });
 
-        // Checa se o usuário acabou de clicar no link do e-mail
         if (isSignInWithEmailLink(auth, window.location.href)) {
             let email = window.localStorage.getItem('emailForSignIn');
-            if (!email) {
-                email = window.prompt('Por favor, confirme seu e-mail para entrar:');
-            }
-            
+            if (!email) email = window.prompt('Por favor, confirme seu e-mail para entrar:');
             msg.innerText = "Autenticando...";
             signInWithEmailLink(auth, email, window.location.href)
-                .then((result) => {
-                    window.localStorage.removeItem('emailForSignIn');
-                })
-                .catch((error) => {
-                    msg.innerText = "❌ O link expirou ou é inválido.";
-                    msg.style.color = "var(--danger)";
-                });
+                .then(() => window.localStorage.removeItem('emailForSignIn'))
+                .catch(() => { msg.innerText = "❌ O link expirou ou é inválido."; msg.style.color = "var(--danger)"; });
         }
 
-        document.getElementById('btn-logout').addEventListener('click', () => {
-            signOut(auth);
-        });
+        document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
 
         // NAVEGAÇÃO DE ABAS
         window.mostrarAba = (abaId) => {
             document.getElementById('aba-produtos').style.display = abaId === 'produtos' ? 'block' : 'none';
             document.getElementById('aba-relatorios').style.display = abaId === 'relatorios' ? 'block' : 'none';
             document.getElementById('aba-config').style.display = abaId === 'config' ? 'block' : 'none';
-            
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             event.target.classList.add('active');
+            if(abaId === 'relatorios') carregarRelatorios();
         };
 
-        // 2. GERENCIAMENTO DE PRODUTOS
+        // RELATÓRIOS E HISTÓRICO
+        window.carregarRelatorios = async () => {
+            const listDiv = document.getElementById('lista-historico');
+            listDiv.innerHTML = "Buscando pedidos...";
+            const snap = await getDocs(collection(db, "pedidos"));
+            const pedidos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => new Date(b.data) - new Date(a.data));
+            
+            let totalReceita = 0;
+            if(pedidos.length === 0) {
+                listDiv.innerHTML = "<p style='color:var(--text-light)'>Nenhum pedido registrado ainda.</p>";
+                document.getElementById('stat-pedidos').innerText = "0";
+                document.getElementById('stat-receita').innerText = "R$ 0,00";
+                return;
+            }
+
+            const html = pedidos.map(p => {
+                totalReceita += p.total || 0;
+                const dateObj = new Date(p.data);
+                const dataFormatada = isNaN(dateObj.getTime()) ? "Data desconhecida" : dateObj.toLocaleString('pt-BR');
+                const itensStr = p.itens ? p.itens.map(i => `${i.qtd}x ${i.nome}`).join(', ') : '';
+                
+                return `
+                <div class="card" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between; width: 100%;">
+                        <strong style="font-size: 1.1rem;">👤 ${p.nome} (Q${p.quadra} L${p.lote})</strong>
+                        <span style="color: var(--forest); font-weight: bold; font-size: 1.2rem;">R$ ${parseFloat(p.total||0).toFixed(2).replace('.',',')}</span>
+                    </div>
+                    <div style="font-size: 0.85rem; color: var(--text-light);">📅 ${dataFormatada} | 💳 ${p.pag} ${p.troco ? `(Troco: R$ ${p.troco})` : ''}</div>
+                    <div style="font-size: 0.9rem; margin-top: 5px;">📦 ${itensStr}</div>
+                    ${p.obs ? `<div style="font-size: 0.85rem; color: #92400e; background: #fef3c7; padding: 6px 10px; border-radius: 6px; width: 100%; margin-top: 5px;">📝 <b>Obs:</b> ${p.obs}</div>` : ''}
+                    <button class="btn btn-outline" style="border-color: var(--danger); color: var(--danger); padding: 6px 12px; margin-top: 10px; font-size: 0.8rem; width: auto;" onclick="window.excluirPedido('${p.id}')">Excluir Pedido</button>
+                </div>
+                `;
+            }).join('');
+
+            document.getElementById('stat-pedidos').innerText = pedidos.length;
+            document.getElementById('stat-receita').innerText = `R$ ${totalReceita.toFixed(2).replace('.',',')}`;
+            listDiv.innerHTML = html;
+        };
+
+        window.excluirPedido = async (id) => {
+            if(confirm("Tem certeza que deseja excluir este pedido do histórico?")) {
+                await deleteDoc(doc(db, "pedidos", id));
+                carregarRelatorios();
+            }
+        };
+
+        window.limparHistorico = async () => {
+            if(confirm("ATENÇÃO: Deseja apagar TODOS os pedidos do histórico permanentemente? Essa ação não pode ser desfeita.")) {
+                const snap = await getDocs(collection(db, "pedidos"));
+                const promises = snap.docs.map(d => deleteDoc(doc(db, "pedidos", d.id)));
+                await Promise.all(promises);
+                carregarRelatorios();
+            }
+        };
+
+        // PRODUTOS
         async function carregarProdutos() {
             const snap = await getDocs(collection(db, "produtos"));
             produtosAtuais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             
             const html = produtosAtuais.map(p => `
-                <div class="card">
-                    <div class="prod-info">
-                        <div class="prod-img">
-                            ${p.foto ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : '📦'}
-                        </div>
-                        <div>
-                            <h4 style="margin-bottom: 4px;">${p.nome} ${p.ativo ? '' : '<span style="color:red; font-size:12px;">(Esgotado)</span>'}</h4>
-                            <p style="color: var(--forest); font-weight: bold;">R$ ${parseFloat(p.preco).toFixed(2)} / ${p.unidade}</p>
-                        </div>
-                    </div>
-                    <button class="btn btn-outline" style="width:auto; padding: 8px 16px;" onclick="abrirEditor('${p.id}')">Editar</button>
-                </div>
+                <div class="card"><div class="prod-info"><div class="prod-img">${p.foto ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : '📦'}</div><div><h4 style="margin-bottom: 4px;">${p.nome} ${p.ativo ? '' : '<span style="color:red; font-size:12px;">(Esgotado)</span>'}</h4><p style="color: var(--forest); font-weight: bold;">R$ ${parseFloat(p.preco).toFixed(2)} / ${p.unidade}</p></div></div><button class="btn btn-outline" style="width:auto; padding: 8px 16px;" onclick="abrirEditor('${p.id}')">Editar</button></div>
             `).join('');
-            
             document.getElementById('lista-produtos').innerHTML = html;
         }
 
-        // 3. EDITOR E UPLOAD DE FOTOS
         window.abrirEditor = (id = null) => {
             document.getElementById('modal-produto').classList.add('aberto');
-            const formFoto = document.getElementById('edit-foto');
-            formFoto.value = ''; 
-
+            document.getElementById('edit-foto').value = ''; 
             if (id) {
                 const p = produtosAtuais.find(x => x.id === id);
                 document.getElementById('modal-titulo').innerText = 'Editar ' + p.nome;
@@ -311,64 +308,35 @@
                 document.getElementById('btn-excluir-produto').style.display = 'block';
             } else {
                 document.getElementById('modal-titulo').innerText = 'Novo Produto';
-                document.getElementById('edit-id').value = '';
-                document.getElementById('edit-nome').value = '';
-                document.getElementById('edit-preco').value = '';
-                document.getElementById('edit-cat').value = '';
+                ['edit-id', 'edit-nome', 'edit-preco', 'edit-cat'].forEach(i => document.getElementById(i).value = '');
                 document.getElementById('btn-excluir-produto').style.display = 'none';
             }
         };
 
-        window.fecharModal = () => {
-            document.getElementById('modal-produto').classList.remove('aberto');
-        };
+        window.fecharModal = () => document.getElementById('modal-produto').classList.remove('aberto');
 
         document.getElementById('btn-salvar-produto').addEventListener('click', async () => {
-            const btn = document.getElementById('btn-salvar-produto');
-            btn.innerText = "Salvando...";
-            btn.disabled = true;
-
+            const btn = document.getElementById('btn-salvar-produto'); btn.innerText = "Salvando..."; btn.disabled = true;
             const id = document.getElementById('edit-id').value || Date.now().toString();
-            let pData = {
-                nome: document.getElementById('edit-nome').value,
-                preco: parseFloat(document.getElementById('edit-preco').value),
-                unidade: document.getElementById('edit-unidade').value,
-                cat: document.getElementById('edit-cat').value.toLowerCase(),
-                ativo: document.getElementById('edit-status').value === 'true'
-            };
+            let pData = { nome: document.getElementById('edit-nome').value, preco: parseFloat(document.getElementById('edit-preco').value), unidade: document.getElementById('edit-unidade').value, cat: document.getElementById('edit-cat').value.toLowerCase(), ativo: document.getElementById('edit-status').value === 'true' };
 
-            // UPLOAD DA FOTO PARA O FIREBASE STORAGE
             const fileInput = document.getElementById('edit-foto');
             if (fileInput.files.length > 0) {
-                const file = fileInput.files[0];
-                const storageRef = ref(storage, `fotos_produtos/${id}_${file.name}`);
-                await uploadBytes(storageRef, file);
-                const url = await getDownloadURL(storageRef);
-                pData.foto = url;
+                const storageRef = ref(storage, `fotos_produtos/${id}_${fileInput.files[0].name}`);
+                await uploadBytes(storageRef, fileInput.files[0]); pData.foto = await getDownloadURL(storageRef);
             } else if (document.getElementById('edit-id').value) {
-                const pAntigo = produtosAtuais.find(x => x.id === id);
-                if(pAntigo && pAntigo.foto) pData.foto = pAntigo.foto;
+                const pAntigo = produtosAtuais.find(x => x.id === id); if(pAntigo && pAntigo.foto) pData.foto = pAntigo.foto;
             }
 
-            // SALVAR NO BANCO DE DADOS
             await setDoc(doc(db, "produtos", id), pData);
-            
-            fecharModal();
-            carregarProdutos();
-            btn.innerText = "Salvar Produto";
-            btn.disabled = false;
+            fecharModal(); carregarProdutos(); btn.innerText = "Salvar Produto"; btn.disabled = false;
         });
 
         document.getElementById('btn-excluir-produto').addEventListener('click', async () => {
-            if(confirm("Tem certeza que deseja excluir?")) {
-                const id = document.getElementById('edit-id').value;
-                await deleteDoc(doc(db, "produtos", id));
-                fecharModal();
-                carregarProdutos();
-            }
+            if(confirm("Tem certeza que deseja excluir?")) { await deleteDoc(doc(db, "produtos", document.getElementById('edit-id').value)); fecharModal(); carregarProdutos(); }
         });
 
-        // 4. GERENCIAMENTO DE CONFIGURAÇÕES
+        // CONFIGURAÇÕES
         async function carregarConfiguracoes() {
             const snap = await getDoc(doc(db, "loja", "config"));
             if (snap.exists()) {
@@ -379,19 +347,12 @@
         }
 
         document.getElementById('btn-salvar-config').addEventListener('click', async () => {
-            const btn = document.getElementById('btn-salvar-config');
-            btn.innerText = "Salvando...";
-            
-            // Limpa o número para deixar só os dígitos
+            const btn = document.getElementById('btn-salvar-config'); btn.innerText = "Salvando...";
             let wpp = document.getElementById('config-wpp').value.replace(/\D/g, ''); 
             const minimo = parseFloat(document.getElementById('config-minimo').value) || 0;
-
             await setDoc(doc(db, "loja", "config"), { wpp, minimo }, { merge: true });
-
             btn.innerText = "Salvar Configurações";
-            const msgConfig = document.getElementById('msg-config');
-            msgConfig.style.display = 'block';
-            setTimeout(() => msgConfig.style.display = 'none', 3000);
+            const msgConfig = document.getElementById('msg-config'); msgConfig.style.display = 'block'; setTimeout(() => msgConfig.style.display = 'none', 3000);
         });
 
     </script>
