@@ -28,7 +28,7 @@
         .login-box h2 { margin-bottom: 20px; color: var(--forest); text-align: center; font-size: 1.8rem; }
         .form-group { margin-bottom: 16px; }
         .form-group label { display: block; font-size: 0.9rem; font-weight: 700; margin-bottom: 8px; color: var(--text-dark); }
-        .form-group input[type="text"], .form-group input[type="number"], .form-group input[type="email"], .form-group select { width: 100%; padding: 16px; border: 2px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; font-size: 1rem; }
+        .form-group input, .form-group select { width: 100%; padding: 16px; border: 2px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; font-size: 1rem; }
         .form-group input:focus { border-color: var(--forest-mid); }
         
         .btn { width: 100%; padding: 16px; background: var(--forest); color: white; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 1.05rem; cursor: pointer; transition: 0.2s; }
@@ -44,6 +44,7 @@
         .tab { padding: 14px 24px; background: var(--parchment); border: none; border-radius: 30px; cursor: pointer; font-weight: 700; font-size: 1rem; white-space: nowrap; transition: 0.2s; }
         .tab.active { background: var(--forest); color: white; box-shadow: 0 4px 12px rgba(26,58,42,0.2); }
         
+        /* GRID DE PRODUTOS GIGANTES */
         .produtos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
         .card-produto { background: white; padding: 24px; border-radius: 16px; border: 2px solid #e0dcd4; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
         .card-produto.esgotado { border-color: #fca5a5; background: #fef2f2; }
@@ -61,6 +62,7 @@
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
         .modal-header h3 { font-size: 1.5rem; }
 
+        /* DASHBOARD RELATÓRIOS */
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
         .stat-box { background: white; padding: 24px; border-radius: 16px; border: 2px solid #e0dcd4; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
         .stat-val { font-size: 2.2rem; font-weight: 800; color: var(--forest); margin-top: 8px; }
@@ -70,12 +72,6 @@
         .ranking-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px dashed #e0dcd4; font-size: 1.05rem; }
         .ranking-item:last-child { border-bottom: none; }
         .ranking-item strong { color: var(--forest); }
-
-        /* Estilo dos checkboxes de dias */
-        .dias-semana { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
-        .dia-label { background: var(--parchment); padding: 10px 16px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; font-weight: 600; transition: 0.2s; user-select: none; }
-        .dia-label:has(input:checked) { background: var(--forest); color: white; border-color: var(--forest-mid); }
-        .dia-label input { display: none; }
     </style>
 </head>
 <body>
@@ -99,14 +95,16 @@
         <div class="tabs">
             <button class="tab active" onclick="mostrarAba('produtos')">🥦 Produtos e Estoque</button>
             <button class="tab" onclick="mostrarAba('relatorios')">📊 Relatórios e Vendas</button>
-            <button class="tab" onclick="mostrarAba('config')">⚙️ Configurações e Horários</button>
+            <button class="tab" onclick="mostrarAba('config')">⚙️ Configurações</button>
         </div>
 
+        <!-- ABA PRODUTOS -->
         <div id="aba-produtos">
             <button class="btn" style="margin-bottom: 24px; font-size: 1.2rem; padding: 18px;" onclick="abrirEditor()">➕ Adicionar Novo Produto</button>
             <div id="lista-produtos" class="produtos-grid">Carregando...</div>
         </div>
 
+        <!-- ABA RELATÓRIOS -->
         <div id="aba-relatorios" style="display: none;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;">
                 <h3 style="font-size: 1.5rem;">Visão Geral do Negócio</h3>
@@ -128,63 +126,47 @@
             </div>
 
             <div class="ranking-container">
-                <div class="ranking-box"><h3 style="margin-bottom: 16px; color: var(--forest);">🏆 Produtos Mais Vendidos</h3><div id="ranking-produtos"></div></div>
-                <div class="ranking-box"><h3 style="margin-bottom: 16px; color: var(--forest);">🌟 Melhores Clientes</h3><div id="ranking-clientes"></div></div>
-                <div class="ranking-box"><h3 style="margin-bottom: 16px; color: var(--forest);">📅 Vendas por Dia da Semana</h3><div id="ranking-dias"></div></div>
+                <div class="ranking-box">
+                    <h3 style="margin-bottom: 16px; color: var(--forest);">🏆 Produtos Mais Vendidos</h3>
+                    <div id="ranking-produtos">Carregando...</div>
+                </div>
+                <div class="ranking-box">
+                    <h3 style="margin-bottom: 16px; color: var(--forest);">🌟 Melhores Clientes</h3>
+                    <div id="ranking-clientes">Carregando...</div>
+                </div>
+                <div class="ranking-box">
+                    <h3 style="margin-bottom: 16px; color: var(--forest);">📅 Vendas por Dia da Semana</h3>
+                    <div id="ranking-dias">Carregando...</div>
+                </div>
             </div>
 
             <h3 style="margin-bottom: 16px; font-size: 1.5rem;">Últimos Pedidos Detalhados</h3>
             <div id="lista-historico">Buscando relatórios...</div>
         </div>
 
-        <!-- ABA CONFIGURAÇÕES (ATUALIZADA) -->
+        <!-- ABA CONFIGURAÇÕES -->
         <div id="aba-config" style="display: none;">
             <h3 style="font-size: 1.5rem; margin-bottom: 8px;">Configurações da Loja</h3>
-            <p style="color: var(--text-light); margin-bottom: 24px; font-size: 1.1rem;">Controle quando a sua banca recebe pedidos.</p>
+            <p style="color: var(--text-light); margin-bottom: 24px; font-size: 1.1rem;">Defina as regras gerais do seu sistema.</p>
             
             <div class="card" style="flex-direction: column; align-items: flex-start; gap: 20px; padding: 30px;">
-                
-                <!-- Botão Mestre -->
-                <div class="form-group" style="width: 100%; border-bottom: 2px dashed #e0dcd4; padding-bottom: 20px;">
-                    <label style="font-size: 1.1rem; color: var(--danger);">🛑 Botão Mestre de Emergência</label>
-                    <select id="config-status-loja" style="border-color: var(--danger); font-weight: bold;">
-                        <option value="aberta">✅ A Loja está ABERTA e recebendo pedidos</option>
-                        <option value="fechada">🚫 A Loja está FECHADA manualmente</option>
-                    </select>
-                    <small style="color: var(--text-light); display: block; margin-top: 6px;">Se mudar para fechada, ninguém consegue comprar, não importa o dia da semana.</small>
-                </div>
-
-                <!-- Dias da Semana -->
                 <div class="form-group" style="width: 100%;">
-                    <label style="font-size: 1.1rem;">📅 Dias da semana que a loja funciona</label>
-                    <div class="dias-semana">
-                        <label class="dia-label"><input type="checkbox" value="0" class="chk-dia"> Domingo</label>
-                        <label class="dia-label"><input type="checkbox" value="1" class="chk-dia"> Segunda</label>
-                        <label class="dia-label"><input type="checkbox" value="2" class="chk-dia"> Terça</label>
-                        <label class="dia-label"><input type="checkbox" value="3" class="chk-dia"> Quarta</label>
-                        <label class="dia-label"><input type="checkbox" value="4" class="chk-dia"> Quinta</label>
-                        <label class="dia-label"><input type="checkbox" value="5" class="chk-dia"> Sexta</label>
-                        <label class="dia-label"><input type="checkbox" value="6" class="chk-dia"> Sábado</label>
-                    </div>
-                </div>
-
-                <div class="form-group" style="width: 100%;">
-                    <label style="font-size: 1.1rem;">📱 Número do WhatsApp</label>
+                    <label style="font-size: 1.1rem;">Número do WhatsApp</label>
                     <input type="text" id="config-wpp" placeholder="Ex: 5562999999999">
+                    <small style="color: var(--text-light); display: block; margin-top: 6px;">Use o formato: 55 + DDD + Número. (Ex: 5562988...)</small>
                 </div>
-                
                 <div class="form-group" style="width: 100%;">
-                    <label style="font-size: 1.1rem;">💰 Pedido Mínimo (R$)</label>
+                    <label style="font-size: 1.1rem;">Pedido Mínimo (R$)</label>
                     <input type="number" id="config-minimo" step="0.5" placeholder="Ex: 15.00">
+                    <small style="color: var(--text-light); display: block; margin-top: 6px;">Deixe 0 se não houver valor mínimo.</small>
                 </div>
-                
                 <button class="btn" id="btn-salvar-config" style="font-size: 1.2rem;">💾 Salvar Configurações</button>
                 <p id="msg-config" style="color: var(--success); font-size: 1.1rem; display: none; margin-top: 10px; font-weight: bold;">✅ Salvo com sucesso!</p>
             </div>
         </div>
     </div>
 
-    <!-- MODAL EDITAR -->
+    <!-- MODAL DE EDIÇÃO DE PRODUTO -->
     <div class="modal-overlay" id="modal-produto">
         <div class="modal">
             <div class="modal-header">
@@ -193,7 +175,11 @@
             </div>
             <input type="hidden" id="edit-id">
             
-            <div class="form-group"><label>Foto do Produto</label><input type="file" id="edit-foto" accept="image/*"><small style="color: var(--text-light);">Deixe vazio para manter a foto atual.</small></div>
+            <div class="form-group">
+                <label>Foto do Produto</label>
+                <input type="file" id="edit-foto" accept="image/*">
+                <small style="color: var(--text-light);">Deixe vazio para manter a foto atual.</small>
+            </div>
             <div class="form-group"><label>Nome</label><input type="text" id="edit-nome"></div>
             <div style="display: flex; gap: 16px;">
                 <div class="form-group" style="flex: 1;"><label>Preço (R$)</label><input type="number" id="edit-preco" step="0.10"></div>
@@ -212,6 +198,7 @@
         import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
+        // COLOQUE SUAS CHAVES AQUI
         const firebaseConfig = {
             apiKey: "AIzaSyAY_qGll6YJKA6ErYIOd5XIVblrlq8vynM",
             authDomain: "banca-adair-e-pedrina.firebaseapp.com",
@@ -227,6 +214,7 @@
         let produtosAtuais = [];
         let pedidosGerais = [];
 
+        // LOGIN
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 document.getElementById('login-screen').style.display = 'none';
@@ -260,6 +248,7 @@
 
         document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
 
+        // ABAS
         window.mostrarAba = (abaId) => {
             ['produtos', 'relatorios', 'config'].forEach(id => document.getElementById(`aba-${id}`).style.display = id === abaId ? 'block' : 'none');
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -267,9 +256,11 @@
             if(abaId === 'relatorios') carregarRelatorios();
         };
 
+        // PRODUTOS GIGANTES COM TOGGLE RÁPIDO
         async function carregarProdutos() {
             const snap = await getDocs(collection(db, "produtos"));
             produtosAtuais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.nome.localeCompare(b.nome));
+            
             const html = produtosAtuais.map(p => `
                 <div class="card-produto ${p.ativo ? '' : 'esgotado'}">
                     <div class="prod-info-grande">
@@ -292,16 +283,21 @@
         }
 
         window.toggleEstoque = async (id, novoStatus) => {
-            await setDoc(doc(db, "produtos", id), { ativo: novoStatus }, { merge: true }); carregarProdutos();
+            await setDoc(doc(db, "produtos", id), { ativo: novoStatus }, { merge: true });
+            carregarProdutos();
         };
 
         window.abrirEditor = (id = null) => {
-            document.getElementById('modal-produto').classList.add('aberto'); document.getElementById('edit-foto').value = ''; 
+            document.getElementById('modal-produto').classList.add('aberto');
+            document.getElementById('edit-foto').value = ''; 
             if (id) {
                 const p = produtosAtuais.find(x => x.id === id);
-                document.getElementById('modal-titulo').innerText = '✏️ Editar Produto'; document.getElementById('edit-id').value = p.id;
-                document.getElementById('edit-nome').value = p.nome; document.getElementById('edit-preco').value = p.preco;
-                document.getElementById('edit-unidade').value = p.unidade || 'un'; document.getElementById('edit-cat').value = p.cat || '';
+                document.getElementById('modal-titulo').innerText = '✏️ Editar Produto';
+                document.getElementById('edit-id').value = p.id;
+                document.getElementById('edit-nome').value = p.nome;
+                document.getElementById('edit-preco').value = p.preco;
+                document.getElementById('edit-unidade').value = p.unidade || 'un';
+                document.getElementById('edit-cat').value = p.cat || '';
                 document.getElementById('btn-excluir-produto').style.display = 'block';
             } else {
                 document.getElementById('modal-titulo').innerText = '➕ Novo Produto';
@@ -316,41 +312,82 @@
             const btn = document.getElementById('btn-salvar-produto'); btn.innerText = "Salvando..."; btn.disabled = true;
             const id = document.getElementById('edit-id').value || Date.now().toString();
             let pData = { nome: document.getElementById('edit-nome').value, preco: parseFloat(document.getElementById('edit-preco').value), unidade: document.getElementById('edit-unidade').value, cat: document.getElementById('edit-cat').value.toLowerCase(), ativo: true };
+
             const fileInput = document.getElementById('edit-foto');
-            if (fileInput.files.length > 0) { const storageRef = ref(storage, `fotos_produtos/${id}_${fileInput.files[0].name}`); await uploadBytes(storageRef, fileInput.files[0]); pData.foto = await getDownloadURL(storageRef); } 
-            else if (document.getElementById('edit-id').value) { const pAntigo = produtosAtuais.find(x => x.id === id); if(pAntigo && pAntigo.foto) pData.foto = pAntigo.foto; }
+            if (fileInput.files.length > 0) {
+                const storageRef = ref(storage, `fotos_produtos/${id}_${fileInput.files[0].name}`);
+                await uploadBytes(storageRef, fileInput.files[0]); pData.foto = await getDownloadURL(storageRef);
+            } else if (document.getElementById('edit-id').value) {
+                const pAntigo = produtosAtuais.find(x => x.id === id); if(pAntigo && pAntigo.foto) pData.foto = pAntigo.foto;
+            }
+
             await setDoc(doc(db, "produtos", id), pData, { merge: true });
             fecharModal(); carregarProdutos(); btn.innerText = "💾 Salvar Alterações"; btn.disabled = false;
         });
 
         document.getElementById('btn-excluir-produto').addEventListener('click', async () => {
-            if(confirm("APAGAR este produto permanentemente?")) { await deleteDoc(doc(db, "produtos", document.getElementById('edit-id').value)); fecharModal(); carregarProdutos(); }
+            if(confirm("Tem certeza que deseja APAGAR este produto permanentemente?")) { await deleteDoc(doc(db, "produtos", document.getElementById('edit-id').value)); fecharModal(); carregarProdutos(); }
         });
 
+        // RELATÓRIOS E RANKINGS (Microeconomia Aplicada)
         window.carregarRelatorios = async () => {
             const listDiv = document.getElementById('lista-historico');
             const snap = await getDocs(collection(db, "pedidos"));
             pedidosGerais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => new Date(b.data) - new Date(a.data));
-            if(pedidosGerais.length === 0) { listDiv.innerHTML = "<p>Nenhum pedido registrado ainda.</p>"; return; }
+            
+            if(pedidosGerais.length === 0) {
+                listDiv.innerHTML = "<p>Nenhum pedido registrado ainda.</p>";
+                return;
+            }
 
-            let totalReceita = 0; let countProdutos = {}; let countClientes = {}; let countDias = { 'Domingo':0, 'Segunda':0, 'Terça':0, 'Quarta':0, 'Quinta':0, 'Sexta':0, 'Sábado':0 };
+            let totalReceita = 0;
+            let countProdutos = {};
+            let countClientes = {};
+            let countDias = { 'Domingo':0, 'Segunda':0, 'Terça':0, 'Quarta':0, 'Quinta':0, 'Sexta':0, 'Sábado':0 };
             const diasSemana = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
+            // Processamento Estratégico de Dados
             const htmlLista = pedidosGerais.map(p => {
                 totalReceita += p.total || 0;
+                
+                // Analytics: Produtos e Dias
                 const dateObj = new Date(p.data);
                 if(!isNaN(dateObj.getTime())) countDias[diasSemana[dateObj.getDay()]] += (p.total || 0);
-                const nomeCli = p.nome.trim().toUpperCase(); countClientes[nomeCli] = (countClientes[nomeCli] || 0) + (p.total || 0);
-                const itensStr = p.itens ? p.itens.map(i => { countProdutos[i.nome] = (countProdutos[i.nome] || 0) + i.qtd; return `${i.qtd}x ${i.nome}`; }).join(', ') : '';
-                return `<div class="card" style="flex-direction: column; align-items: flex-start; gap: 8px;"><div style="display: flex; justify-content: space-between; width: 100%;"><strong style="font-size: 1.1rem;">👤 ${p.nome} (Q${p.quadra} L${p.lote})</strong><span style="color: var(--forest); font-weight: bold; font-size: 1.2rem;">R$ ${parseFloat(p.total||0).toFixed(2).replace('.',',')}</span></div><div style="font-size: 0.9rem; color: var(--text-light);">📅 ${isNaN(dateObj.getTime()) ? "Data desconhecida" : dateObj.toLocaleString('pt-BR')} | 💳 ${p.pag}</div><div style="font-size: 0.95rem; margin-top: 5px;">📦 ${itensStr}</div><button class="btn btn-outline" style="border-color: var(--danger); color: var(--danger); padding: 8px 16px; margin-top: 10px; width: auto;" onclick="window.excluirPedido('${p.id}')">Excluir Pedido</button></div>`;
+                
+                // Analytics: Clientes
+                const nomeCli = p.nome.trim().toUpperCase();
+                countClientes[nomeCli] = (countClientes[nomeCli] || 0) + (p.total || 0);
+
+                const itensStr = p.itens ? p.itens.map(i => {
+                    countProdutos[i.nome] = (countProdutos[i.nome] || 0) + i.qtd; // Conta volume de itens
+                    return `${i.qtd}x ${i.nome}`;
+                }).join(', ') : '';
+                
+                return `
+                <div class="card" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between; width: 100%;">
+                        <strong style="font-size: 1.1rem;">👤 ${p.nome} (Q${p.quadra} L${p.lote})</strong>
+                        <span style="color: var(--forest); font-weight: bold; font-size: 1.2rem;">R$ ${parseFloat(p.total||0).toFixed(2).replace('.',',')}</span>
+                    </div>
+                    <div style="font-size: 0.9rem; color: var(--text-light);">📅 ${isNaN(dateObj.getTime()) ? "Data desconhecida" : dateObj.toLocaleString('pt-BR')} | 💳 ${p.pag}</div>
+                    <div style="font-size: 0.95rem; margin-top: 5px;">📦 ${itensStr}</div>
+                    <button class="btn btn-outline" style="border-color: var(--danger); color: var(--danger); padding: 8px 16px; margin-top: 10px; width: auto;" onclick="window.excluirPedido('${p.id}')">Excluir Pedido</button>
+                </div>
+                `;
             }).join('');
 
+            // Atualiza Dashboard Principal
             document.getElementById('stat-pedidos').innerText = pedidosGerais.length;
             document.getElementById('stat-receita').innerText = `R$ ${totalReceita.toFixed(2).replace('.',',')}`;
             listDiv.innerHTML = htmlLista;
 
-            const renderRanking = (dados, divId, formatador) => { const arr = Object.entries(dados).sort((a,b) => b[1] - a[1]).slice(0,5); document.getElementById(divId).innerHTML = arr.length ? arr.map(i => `<div class="ranking-item"><span>${i[0]}</span> <strong>${formatador(i[1])}</strong></div>`).join('') : '<p>Sem dados suficientes.</p>'; };
-            renderRanking(countProdutos, 'ranking-produtos', val => `${val} un.`);
+            // Renderiza Rankings
+            const renderRanking = (dados, divId, formatador) => {
+                const arr = Object.entries(dados).sort((a,b) => b[1] - a[1]).slice(0,5);
+                document.getElementById(divId).innerHTML = arr.length ? arr.map(i => `<div class="ranking-item"><span>${i[0]}</span> <strong>${formatador(i[1])}</strong></div>`).join('') : '<p>Sem dados suficientes.</p>';
+            };
+
+            renderRanking(countProdutos, 'ranking-produtos', val => `${val} unidades`);
             renderRanking(countClientes, 'ranking-clientes', val => `R$ ${val.toFixed(2).replace('.',',')}`);
             renderRanking(countDias, 'ranking-dias', val => `R$ ${val.toFixed(2).replace('.',',')}`);
         };
@@ -358,53 +395,41 @@
         window.baixarRelatorioCSV = () => {
             if(pedidosGerais.length === 0) return alert("Não há pedidos para exportar.");
             let csv = "Data,Cliente,Quadra,Lote,Pagamento,Total,Itens\n";
-            pedidosGerais.forEach(p => { csv += `"${p.data}","${p.nome}","${p.quadra}","${p.lote}","${p.pag}","${p.total}","${p.itens ? p.itens.map(i => `${i.qtd}x ${i.nome}`).join(' | ') : ''}"\n`; });
-            const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: 'text/csv;charset=utf-8;' })); link.download = `Vendas_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`; link.click();
+            pedidosGerais.forEach(p => {
+                const itensStr = p.itens ? p.itens.map(i => `${i.qtd}x ${i.nome}`).join(' | ') : '';
+                csv += `"${p.data}","${p.nome}","${p.quadra}","${p.lote}","${p.pag}","${p.total}","${itensStr}"\n`;
+            });
+            const blob = new Blob(["\ufeff", csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `Relatorio_Banca_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`;
+            link.click();
         };
 
-        window.excluirPedido = async (id) => { if(confirm("Deseja excluir este pedido?")) { await deleteDoc(doc(db, "pedidos", id)); carregarRelatorios(); } };
-        window.limparHistorico = async () => { if(confirm("Apagar TODOS os pedidos permanentemente?")) { await Promise.all(pedidosGerais.map(p => deleteDoc(doc(db, "pedidos", p.id)))); carregarRelatorios(); } };
+        window.excluirPedido = async (id) => {
+            if(confirm("Deseja excluir este pedido do histórico?")) { await deleteDoc(doc(db, "pedidos", id)); carregarRelatorios(); }
+        };
 
-        // CONFIGURAÇÕES ATUALIZADAS
+        window.limparHistorico = async () => {
+            if(confirm("ATENÇÃO: Apagar TODOS os pedidos? Essa ação não pode ser desfeita.")) {
+                await Promise.all(pedidosGerais.map(p => deleteDoc(doc(db, "pedidos", p.id)))); carregarRelatorios();
+            }
+        };
+
+        // CONFIGURAÇÕES
         async function carregarConfiguracoes() {
             const snap = await getDoc(doc(db, "loja", "config"));
             if (snap.exists()) {
-                const data = snap.data();
-                document.getElementById('config-wpp').value = data.wpp || '';
-                document.getElementById('config-minimo').value = data.minimo || 0;
-                document.getElementById('config-status-loja').value = data.lojaAberta === false ? "fechada" : "aberta";
-                
-                // Marca os dias salvos (se não existir, marca todos por padrão)
-                const diasSalvos = data.diasAbertos || [0,1,2,3,4,5,6];
-                document.querySelectorAll('.chk-dia').forEach(chk => {
-                    chk.checked = diasSalvos.includes(parseInt(chk.value));
-                });
-            } else {
-                // Padrão inicial: marca todos os dias
-                document.querySelectorAll('.chk-dia').forEach(chk => chk.checked = true);
+                document.getElementById('config-wpp').value = snap.data().wpp || '';
+                document.getElementById('config-minimo').value = snap.data().minimo || 0;
             }
         }
 
         document.getElementById('btn-salvar-config').addEventListener('click', async () => {
             const btn = document.getElementById('btn-salvar-config'); btn.innerText = "Salvando...";
-            
             let wpp = document.getElementById('config-wpp').value.replace(/\D/g, ''); 
-            const minimo = parseFloat(document.getElementById('config-minimo').value) || 0;
-            const lojaAberta = document.getElementById('config-status-loja').value === "aberta";
-            
-            // Pega todos os dias que você deixou marcado
-            const diasAbertos = Array.from(document.querySelectorAll('.chk-dia:checked')).map(chk => parseInt(chk.value));
-
-            await setDoc(doc(db, "loja", "config"), { 
-                wpp, 
-                minimo,
-                lojaAberta,
-                diasAbertos 
-            }, { merge: true });
-
-            btn.innerText = "💾 Salvar Configurações"; 
-            document.getElementById('msg-config').style.display = 'block'; 
-            setTimeout(() => document.getElementById('msg-config').style.display = 'none', 3000);
+            await setDoc(doc(db, "loja", "config"), { wpp, minimo: parseFloat(document.getElementById('config-minimo').value) || 0 }, { merge: true });
+            btn.innerText = "💾 Salvar Configurações"; document.getElementById('msg-config').style.display = 'block'; setTimeout(() => document.getElementById('msg-config').style.display = 'none', 3000);
         });
 
     </script>
