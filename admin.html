@@ -15,116 +15,153 @@
             --cream: #faf7f2;
             --parchment: #f2ede3;
             --danger: #dc2626;
+            --success: #16a34a;
             --text-dark: #1a1a18;
             --text-light: #666;
             --radius-sm: 12px;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
-        body { background: var(--cream); color: var(--text-dark); }
+        body { background: var(--cream); color: var(--text-dark); padding-bottom: 40px; }
         
-        #login-screen { height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--forest); }
-        .login-box { background: white; padding: 40px; border-radius: 20px; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-        .login-box h2 { margin-bottom: 20px; color: var(--forest); text-align: center; }
+        #login-screen { height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--forest); padding: 20px; }
+        .login-box { background: white; padding: 40px 30px; border-radius: 20px; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .login-box h2 { margin-bottom: 20px; color: var(--forest); text-align: center; font-size: 1.8rem; }
         .form-group { margin-bottom: 16px; }
-        .form-group label { display: block; font-size: 0.85rem; font-weight: 700; margin-bottom: 8px; }
-        .form-group input, .form-group select { width: 100%; padding: 12px; border: 1.5px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; }
-        .btn { width: 100%; padding: 14px; background: var(--forest); color: white; border: none; border-radius: var(--radius-sm); font-weight: 700; cursor: pointer; transition: 0.2s; }
+        .form-group label { display: block; font-size: 0.9rem; font-weight: 700; margin-bottom: 8px; color: var(--text-dark); }
+        .form-group input, .form-group select { width: 100%; padding: 16px; border: 2px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; font-size: 1rem; }
+        .form-group input:focus { border-color: var(--forest-mid); }
+        
+        .btn { width: 100%; padding: 16px; background: var(--forest); color: white; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 1.05rem; cursor: pointer; transition: 0.2s; }
         .btn:hover { background: var(--forest-mid); }
         .btn-danger { background: var(--danger); }
-        .btn-outline { background: transparent; border: 1.5px solid var(--forest); color: var(--forest); }
+        .btn-success { background: var(--success); }
+        .btn-outline { background: transparent; border: 2px solid var(--forest); color: var(--forest); }
+        .btn-export { background: #0284c7; color: white; margin-bottom: 20px; display: inline-flex; align-items: center; gap: 8px; width: auto; padding: 12px 20px; }
 
-        #dashboard { display: none; padding: 20px; max-width: 1000px; margin: 0 auto; }
-        header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 2px solid var(--parchment); margin-bottom: 20px; }
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 5px; }
-        .tab { padding: 10px 20px; background: var(--parchment); border: none; border-radius: 30px; cursor: pointer; font-weight: 600; white-space: nowrap; }
-        .tab.active { background: var(--forest); color: white; }
+        #dashboard { display: none; padding: 20px; max-width: 1200px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 2px solid var(--parchment); margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 24px; overflow-x: auto; padding-bottom: 8px; }
+        .tab { padding: 14px 24px; background: var(--parchment); border: none; border-radius: 30px; cursor: pointer; font-weight: 700; font-size: 1rem; white-space: nowrap; transition: 0.2s; }
+        .tab.active { background: var(--forest); color: white; box-shadow: 0 4px 12px rgba(26,58,42,0.2); }
         
-        .card { background: white; padding: 20px; border-radius: var(--radius-sm); margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #e0dcd4; }
-        .prod-info { display: flex; align-items: center; gap: 16px; }
-        .prod-img { width: 50px; height: 50px; border-radius: 8px; object-fit: cover; background: var(--parchment); display: flex; align-items: center; justify-content: center; font-size: 24px; }
+        /* GRID DE PRODUTOS GIGANTES */
+        .produtos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+        .card-produto { background: white; padding: 24px; border-radius: 16px; border: 2px solid #e0dcd4; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
+        .card-produto.esgotado { border-color: #fca5a5; background: #fef2f2; }
+        .prod-info-grande { display: flex; align-items: center; gap: 20px; }
+        .prod-img-grande { width: 90px; height: 90px; border-radius: 12px; object-fit: cover; background: var(--parchment); display: flex; align-items: center; justify-content: center; font-size: 40px; flex-shrink: 0; }
+        .prod-detalhes h4 { font-size: 1.4rem; margin-bottom: 6px; color: var(--text-dark); }
+        .prod-detalhes p { color: var(--forest); font-weight: 800; font-size: 1.2rem; }
+        .botoes-acao { display: flex; gap: 10px; margin-top: auto; }
         
-        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 1000; }
+        .card { background: white; padding: 20px; border-radius: var(--radius-sm); margin-bottom: 16px; border: 1px solid #e0dcd4; }
+        
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
         .modal-overlay.aberto { display: flex; }
-        .modal { background: white; padding: 30px; border-radius: var(--radius-sm); width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
-        .modal-header { display: flex; justify-content: space-between; margin-bottom: 20px; }
+        .modal { background: white; padding: 30px; border-radius: 20px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+        .modal-header h3 { font-size: 1.5rem; }
 
-        /* Estilo novo das estatísticas de vendas */
-        .stat-box { background: white; padding: 20px; border-radius: var(--radius-sm); border: 1px solid #e0dcd4; flex: 1; text-align: center; }
-        .stat-val { font-size: 2rem; font-weight: 700; color: var(--forest); margin-top: 8px; }
+        /* DASHBOARD RELATÓRIOS */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-box { background: white; padding: 24px; border-radius: 16px; border: 2px solid #e0dcd4; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
+        .stat-val { font-size: 2.2rem; font-weight: 800; color: var(--forest); margin-top: 8px; }
+        
+        .ranking-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .ranking-box { background: white; border: 2px solid #e0dcd4; border-radius: 16px; padding: 20px; }
+        .ranking-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px dashed #e0dcd4; font-size: 1.05rem; }
+        .ranking-item:last-child { border-bottom: none; }
+        .ranking-item strong { color: var(--forest); }
     </style>
 </head>
 <body>
 
     <div id="login-screen">
         <div class="login-box">
-            <h2>📦 Admin Store</h2>
-            <p style="text-align: center; font-size: 0.85rem; color: var(--text-light); margin-bottom: 16px;">Digite seu e-mail para receber um link de acesso seguro.</p>
+            <h2>📦 Painel da Banca</h2>
+            <p style="text-align: center; font-size: 0.95rem; color: var(--text-light); margin-bottom: 20px;">Digite seu e-mail para receber o acesso seguro.</p>
             <div class="form-group"><label>E-mail</label><input type="email" id="email" placeholder="Seu e-mail"></div>
-            <button class="btn" id="btn-login">Receber Link de Acesso</button>
-            <p id="login-msg" style="font-size: 0.85rem; margin-top: 10px; text-align: center;"></p>
+            <button class="btn" id="btn-login">Receber Link Mágico</button>
+            <p id="login-msg" style="font-size: 0.95rem; margin-top: 16px; text-align: center; font-weight: 600;"></p>
         </div>
     </div>
 
     <div id="dashboard">
         <header>
-            <h2>Painel Gerencial</h2>
-            <button class="btn btn-outline" style="width: auto;" id="btn-logout">Sair</button>
+            <h2 style="font-size: 2rem; color: var(--forest);">Gerenciar Banca</h2>
+            <button class="btn btn-outline" style="width: auto; padding: 12px 24px;" id="btn-logout">Sair</button>
         </header>
 
         <div class="tabs">
-            <button class="tab active" onclick="mostrarAba('produtos')">Produtos</button>
-            <button class="tab" onclick="mostrarAba('relatorios')">Relatórios e Histórico</button>
-            <button class="tab" onclick="mostrarAba('config')">Configurações</button>
+            <button class="tab active" onclick="mostrarAba('produtos')">🥦 Produtos e Estoque</button>
+            <button class="tab" onclick="mostrarAba('relatorios')">📊 Relatórios e Vendas</button>
+            <button class="tab" onclick="mostrarAba('config')">⚙️ Configurações</button>
         </div>
 
         <!-- ABA PRODUTOS -->
         <div id="aba-produtos">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
-                <h3>Seus Produtos</h3>
-                <button class="btn" style="width: auto;" onclick="abrirEditor()">+ Novo Produto</button>
-            </div>
-            <div id="lista-produtos">Carregando...</div>
+            <button class="btn" style="margin-bottom: 24px; font-size: 1.2rem; padding: 18px;" onclick="abrirEditor()">➕ Adicionar Novo Produto</button>
+            <div id="lista-produtos" class="produtos-grid">Carregando...</div>
         </div>
 
-        <!-- ABA RELATÓRIOS (NOVA E COMPLETA) -->
+        <!-- ABA RELATÓRIOS -->
         <div id="aba-relatorios" style="display: none;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h3>Histórico de Vendas</h3>
-                <button class="btn btn-danger" style="width: auto; padding: 10px 20px;" onclick="limparHistorico()">🗑 Limpar Histórico</button>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;">
+                <h3 style="font-size: 1.5rem;">Visão Geral do Negócio</h3>
+                <div>
+                    <button class="btn btn-export" onclick="baixarRelatorioCSV()">📥 Baixar Relatório (Excel)</button>
+                    <button class="btn btn-danger" style="width: auto; padding: 12px 20px;" onclick="limparHistorico()">🗑 Limpar Tudo</button>
+                </div>
             </div>
             
-            <div style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap;">
+            <div class="stats-grid">
                 <div class="stat-box">
-                    <div style="font-size: 0.85rem; font-weight: bold; color: var(--text-light);">TOTAL DE PEDIDOS</div>
+                    <div style="font-size: 0.9rem; font-weight: bold; color: var(--text-light);">TOTAL DE PEDIDOS</div>
                     <div class="stat-val" id="stat-pedidos">0</div>
                 </div>
                 <div class="stat-box">
-                    <div style="font-size: 0.85rem; font-weight: bold; color: var(--text-light);">RECEITA TOTAL</div>
+                    <div style="font-size: 0.9rem; font-weight: bold; color: var(--text-light);">RECEITA TOTAL</div>
                     <div class="stat-val" id="stat-receita">R$ 0,00</div>
                 </div>
             </div>
 
+            <div class="ranking-container">
+                <div class="ranking-box">
+                    <h3 style="margin-bottom: 16px; color: var(--forest);">🏆 Produtos Mais Vendidos</h3>
+                    <div id="ranking-produtos">Carregando...</div>
+                </div>
+                <div class="ranking-box">
+                    <h3 style="margin-bottom: 16px; color: var(--forest);">🌟 Melhores Clientes</h3>
+                    <div id="ranking-clientes">Carregando...</div>
+                </div>
+                <div class="ranking-box">
+                    <h3 style="margin-bottom: 16px; color: var(--forest);">📅 Vendas por Dia da Semana</h3>
+                    <div id="ranking-dias">Carregando...</div>
+                </div>
+            </div>
+
+            <h3 style="margin-bottom: 16px; font-size: 1.5rem;">Últimos Pedidos Detalhados</h3>
             <div id="lista-historico">Buscando relatórios...</div>
         </div>
 
         <!-- ABA CONFIGURAÇÕES -->
         <div id="aba-config" style="display: none;">
-            <h3>Configurações da Loja</h3>
-            <p style="color: var(--text-light); margin-bottom: 20px;">Defina para qual número os pedidos serão enviados.</p>
+            <h3 style="font-size: 1.5rem; margin-bottom: 8px;">Configurações da Loja</h3>
+            <p style="color: var(--text-light); margin-bottom: 24px; font-size: 1.1rem;">Defina as regras gerais do seu sistema.</p>
             
-            <div class="card" style="flex-direction: column; align-items: flex-start; gap: 16px;">
+            <div class="card" style="flex-direction: column; align-items: flex-start; gap: 20px; padding: 30px;">
                 <div class="form-group" style="width: 100%;">
-                    <label>Número do WhatsApp</label>
+                    <label style="font-size: 1.1rem;">Número do WhatsApp</label>
                     <input type="text" id="config-wpp" placeholder="Ex: 5562999999999">
-                    <small style="color: var(--text-light);">Use o formato: 55 + DDD + Número. (Ex: 5562988...)</small>
+                    <small style="color: var(--text-light); display: block; margin-top: 6px;">Use o formato: 55 + DDD + Número. (Ex: 5562988...)</small>
                 </div>
                 <div class="form-group" style="width: 100%;">
-                    <label>Pedido Mínimo (R$)</label>
+                    <label style="font-size: 1.1rem;">Pedido Mínimo (R$)</label>
                     <input type="number" id="config-minimo" step="0.5" placeholder="Ex: 15.00">
-                    <small style="color: var(--text-light);">Deixe 0 se não houver valor mínimo.</small>
+                    <small style="color: var(--text-light); display: block; margin-top: 6px;">Deixe 0 se não houver valor mínimo.</small>
                 </div>
-                <button class="btn" id="btn-salvar-config">Salvar Configurações</button>
-                <p id="msg-config" style="color: green; font-size: 0.85rem; display: none; margin-top: 10px;">✅ Salvo com sucesso!</p>
+                <button class="btn" id="btn-salvar-config" style="font-size: 1.2rem;">💾 Salvar Configurações</button>
+                <p id="msg-config" style="color: var(--success); font-size: 1.1rem; display: none; margin-top: 10px; font-weight: bold;">✅ Salvo com sucesso!</p>
             </div>
         </div>
     </div>
@@ -134,7 +171,7 @@
         <div class="modal">
             <div class="modal-header">
                 <h3 id="modal-titulo">Editar Produto</h3>
-                <button style="background: none; border: none; font-size: 20px; cursor: pointer;" onclick="fecharModal()">&times;</button>
+                <button style="background: none; border: none; font-size: 28px; cursor: pointer; padding: 10px;" onclick="fecharModal()">&times;</button>
             </div>
             <input type="hidden" id="edit-id">
             
@@ -143,19 +180,15 @@
                 <input type="file" id="edit-foto" accept="image/*">
                 <small style="color: var(--text-light);">Deixe vazio para manter a foto atual.</small>
             </div>
-            <div class="form-group">
-                <label>Nome</label>
-                <input type="text" id="edit-nome">
-            </div>
-            <div style="display: flex; gap: 10px;">
+            <div class="form-group"><label>Nome</label><input type="text" id="edit-nome"></div>
+            <div style="display: flex; gap: 16px;">
                 <div class="form-group" style="flex: 1;"><label>Preço (R$)</label><input type="number" id="edit-preco" step="0.10"></div>
                 <div class="form-group" style="flex: 1;"><label>Unidade</label><select id="edit-unidade"><option value="kg">KG</option><option value="un">Unidade</option><option value="maço">Maço</option></select></div>
             </div>
             <div class="form-group"><label>Categoria</label><input type="text" id="edit-cat" placeholder="Ex: verduras, frutas..."></div>
-            <div class="form-group"><label>Status</label><select id="edit-status"><option value="true">✅ Em Estoque</option><option value="false">❌ Esgotado</option></select></div>
             
-            <button class="btn" id="btn-salvar-produto">Salvar Produto</button>
-            <button class="btn btn-danger" id="btn-excluir-produto" style="margin-top: 10px; display: none;">Excluir Permanentemente</button>
+            <button class="btn" id="btn-salvar-produto" style="margin-top: 10px;">💾 Salvar Alterações</button>
+            <button class="btn btn-outline" style="border-color: var(--danger); color: var(--danger); margin-top: 16px;" id="btn-excluir-produto">🗑 Excluir Produto do Sistema</button>
         </div>
     </div>
 
@@ -165,6 +198,7 @@
         import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
+        // COLOQUE SUAS CHAVES AQUI
         const firebaseConfig = {
             apiKey: "AIzaSyAY_qGll6YJKA6ErYIOd5XIVblrlq8vynM",
             authDomain: "banca-adair-e-pedrina.firebaseapp.com",
@@ -178,136 +212,95 @@
         const storage = getStorage(app);
 
         let produtosAtuais = [];
+        let pedidosGerais = [];
 
-        const loginScreen = document.getElementById('login-screen');
-        const dashboard = document.getElementById('dashboard');
-        const msg = document.getElementById('login-msg');
-
+        // LOGIN
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                loginScreen.style.display = 'none';
-                dashboard.style.display = 'block';
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'block';
                 carregarProdutos();
                 carregarConfiguracoes();
-                carregarRelatorios(); // Agora os relatórios carregam de verdade!
+                carregarRelatorios();
             } else {
-                loginScreen.style.display = 'flex';
-                dashboard.style.display = 'none';
+                document.getElementById('login-screen').style.display = 'flex';
+                document.getElementById('dashboard').style.display = 'none';
             }
         });
 
         document.getElementById('btn-login').addEventListener('click', () => {
             const email = document.getElementById('email').value;
+            const msg = document.getElementById('login-msg');
             if (!email) { msg.innerText = "⚠️ Digite um e-mail válido."; msg.style.color = "var(--danger)"; return; }
             msg.innerText = "Enviando link..."; msg.style.color = "var(--text-dark)";
             sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true })
-                .then(() => { window.localStorage.setItem('emailForSignIn', email); msg.innerText = "✅ Link enviado! Verifique sua caixa de entrada (e o spam)."; msg.style.color = "green"; })
-                .catch((e) => { msg.innerText = "❌ Erro ao enviar link. Tente novamente."; msg.style.color = "var(--danger)"; console.error(e); });
+                .then(() => { window.localStorage.setItem('emailForSignIn', email); msg.innerText = "✅ Link enviado! Verifique o e-mail."; msg.style.color = "var(--success)"; })
+                .catch((e) => { msg.innerText = "❌ Erro ao enviar link."; msg.style.color = "var(--danger)"; });
         });
 
         if (isSignInWithEmailLink(auth, window.location.href)) {
             let email = window.localStorage.getItem('emailForSignIn');
-            if (!email) email = window.prompt('Por favor, confirme seu e-mail para entrar:');
-            msg.innerText = "Autenticando...";
+            if (!email) email = window.prompt('Confirme seu e-mail:');
             signInWithEmailLink(auth, email, window.location.href)
                 .then(() => window.localStorage.removeItem('emailForSignIn'))
-                .catch(() => { msg.innerText = "❌ O link expirou ou é inválido."; msg.style.color = "var(--danger)"; });
+                .catch(() => alert("O link expirou."));
         }
 
         document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
 
-        // NAVEGAÇÃO DE ABAS
+        // ABAS
         window.mostrarAba = (abaId) => {
-            document.getElementById('aba-produtos').style.display = abaId === 'produtos' ? 'block' : 'none';
-            document.getElementById('aba-relatorios').style.display = abaId === 'relatorios' ? 'block' : 'none';
-            document.getElementById('aba-config').style.display = abaId === 'config' ? 'block' : 'none';
+            ['produtos', 'relatorios', 'config'].forEach(id => document.getElementById(`aba-${id}`).style.display = id === abaId ? 'block' : 'none');
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             event.target.classList.add('active');
             if(abaId === 'relatorios') carregarRelatorios();
         };
 
-        // RELATÓRIOS E HISTÓRICO
-        window.carregarRelatorios = async () => {
-            const listDiv = document.getElementById('lista-historico');
-            listDiv.innerHTML = "Buscando pedidos...";
-            const snap = await getDocs(collection(db, "pedidos"));
-            const pedidos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => new Date(b.data) - new Date(a.data));
-            
-            let totalReceita = 0;
-            if(pedidos.length === 0) {
-                listDiv.innerHTML = "<p style='color:var(--text-light)'>Nenhum pedido registrado ainda.</p>";
-                document.getElementById('stat-pedidos').innerText = "0";
-                document.getElementById('stat-receita').innerText = "R$ 0,00";
-                return;
-            }
-
-            const html = pedidos.map(p => {
-                totalReceita += p.total || 0;
-                const dateObj = new Date(p.data);
-                const dataFormatada = isNaN(dateObj.getTime()) ? "Data desconhecida" : dateObj.toLocaleString('pt-BR');
-                const itensStr = p.itens ? p.itens.map(i => `${i.qtd}x ${i.nome}`).join(', ') : '';
-                
-                return `
-                <div class="card" style="flex-direction: column; align-items: flex-start; gap: 8px;">
-                    <div style="display: flex; justify-content: space-between; width: 100%;">
-                        <strong style="font-size: 1.1rem;">👤 ${p.nome} (Q${p.quadra} L${p.lote})</strong>
-                        <span style="color: var(--forest); font-weight: bold; font-size: 1.2rem;">R$ ${parseFloat(p.total||0).toFixed(2).replace('.',',')}</span>
-                    </div>
-                    <div style="font-size: 0.85rem; color: var(--text-light);">📅 ${dataFormatada} | 💳 ${p.pag} ${p.troco ? `(Troco: R$ ${p.troco})` : ''}</div>
-                    <div style="font-size: 0.9rem; margin-top: 5px;">📦 ${itensStr}</div>
-                    ${p.obs ? `<div style="font-size: 0.85rem; color: #92400e; background: #fef3c7; padding: 6px 10px; border-radius: 6px; width: 100%; margin-top: 5px;">📝 <b>Obs:</b> ${p.obs}</div>` : ''}
-                    <button class="btn btn-outline" style="border-color: var(--danger); color: var(--danger); padding: 6px 12px; margin-top: 10px; font-size: 0.8rem; width: auto;" onclick="window.excluirPedido('${p.id}')">Excluir Pedido</button>
-                </div>
-                `;
-            }).join('');
-
-            document.getElementById('stat-pedidos').innerText = pedidos.length;
-            document.getElementById('stat-receita').innerText = `R$ ${totalReceita.toFixed(2).replace('.',',')}`;
-            listDiv.innerHTML = html;
-        };
-
-        window.excluirPedido = async (id) => {
-            if(confirm("Tem certeza que deseja excluir este pedido do histórico?")) {
-                await deleteDoc(doc(db, "pedidos", id));
-                carregarRelatorios();
-            }
-        };
-
-        window.limparHistorico = async () => {
-            if(confirm("ATENÇÃO: Deseja apagar TODOS os pedidos do histórico permanentemente? Essa ação não pode ser desfeita.")) {
-                const snap = await getDocs(collection(db, "pedidos"));
-                const promises = snap.docs.map(d => deleteDoc(doc(db, "pedidos", d.id)));
-                await Promise.all(promises);
-                carregarRelatorios();
-            }
-        };
-
-        // PRODUTOS
+        // PRODUTOS GIGANTES COM TOGGLE RÁPIDO
         async function carregarProdutos() {
             const snap = await getDocs(collection(db, "produtos"));
-            produtosAtuais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            produtosAtuais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => a.nome.localeCompare(b.nome));
             
             const html = produtosAtuais.map(p => `
-                <div class="card"><div class="prod-info"><div class="prod-img">${p.foto ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : '📦'}</div><div><h4 style="margin-bottom: 4px;">${p.nome} ${p.ativo ? '' : '<span style="color:red; font-size:12px;">(Esgotado)</span>'}</h4><p style="color: var(--forest); font-weight: bold;">R$ ${parseFloat(p.preco).toFixed(2)} / ${p.unidade}</p></div></div><button class="btn btn-outline" style="width:auto; padding: 8px 16px;" onclick="abrirEditor('${p.id}')">Editar</button></div>
+                <div class="card-produto ${p.ativo ? '' : 'esgotado'}">
+                    <div class="prod-info-grande">
+                        <div class="prod-img-grande">${p.foto ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">` : '📦'}</div>
+                        <div class="prod-detalhes">
+                            <h4>${p.nome}</h4>
+                            <p>R$ ${parseFloat(p.preco).toFixed(2).replace('.',',')} <span style="font-size:0.9rem; color:var(--text-light); font-weight:normal">/${p.unidade}</span></p>
+                        </div>
+                    </div>
+                    <div class="botoes-acao">
+                        ${p.ativo 
+                            ? `<button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" onclick="toggleEstoque('${p.id}', false)">❌ Esgotar</button>`
+                            : `<button class="btn btn-success" onclick="toggleEstoque('${p.id}', true)">✅ Voltar pro Estoque</button>`
+                        }
+                        <button class="btn" style="width: auto; padding: 16px 20px;" onclick="abrirEditor('${p.id}')">✏️ Editar</button>
+                    </div>
+                </div>
             `).join('');
             document.getElementById('lista-produtos').innerHTML = html;
         }
+
+        window.toggleEstoque = async (id, novoStatus) => {
+            await setDoc(doc(db, "produtos", id), { ativo: novoStatus }, { merge: true });
+            carregarProdutos();
+        };
 
         window.abrirEditor = (id = null) => {
             document.getElementById('modal-produto').classList.add('aberto');
             document.getElementById('edit-foto').value = ''; 
             if (id) {
                 const p = produtosAtuais.find(x => x.id === id);
-                document.getElementById('modal-titulo').innerText = 'Editar ' + p.nome;
+                document.getElementById('modal-titulo').innerText = '✏️ Editar Produto';
                 document.getElementById('edit-id').value = p.id;
                 document.getElementById('edit-nome').value = p.nome;
                 document.getElementById('edit-preco').value = p.preco;
                 document.getElementById('edit-unidade').value = p.unidade || 'un';
                 document.getElementById('edit-cat').value = p.cat || '';
-                document.getElementById('edit-status').value = p.ativo.toString();
                 document.getElementById('btn-excluir-produto').style.display = 'block';
             } else {
-                document.getElementById('modal-titulo').innerText = 'Novo Produto';
+                document.getElementById('modal-titulo').innerText = '➕ Novo Produto';
                 ['edit-id', 'edit-nome', 'edit-preco', 'edit-cat'].forEach(i => document.getElementById(i).value = '');
                 document.getElementById('btn-excluir-produto').style.display = 'none';
             }
@@ -318,7 +311,7 @@
         document.getElementById('btn-salvar-produto').addEventListener('click', async () => {
             const btn = document.getElementById('btn-salvar-produto'); btn.innerText = "Salvando..."; btn.disabled = true;
             const id = document.getElementById('edit-id').value || Date.now().toString();
-            let pData = { nome: document.getElementById('edit-nome').value, preco: parseFloat(document.getElementById('edit-preco').value), unidade: document.getElementById('edit-unidade').value, cat: document.getElementById('edit-cat').value.toLowerCase(), ativo: document.getElementById('edit-status').value === 'true' };
+            let pData = { nome: document.getElementById('edit-nome').value, preco: parseFloat(document.getElementById('edit-preco').value), unidade: document.getElementById('edit-unidade').value, cat: document.getElementById('edit-cat').value.toLowerCase(), ativo: true };
 
             const fileInput = document.getElementById('edit-foto');
             if (fileInput.files.length > 0) {
@@ -328,31 +321,115 @@
                 const pAntigo = produtosAtuais.find(x => x.id === id); if(pAntigo && pAntigo.foto) pData.foto = pAntigo.foto;
             }
 
-            await setDoc(doc(db, "produtos", id), pData);
-            fecharModal(); carregarProdutos(); btn.innerText = "Salvar Produto"; btn.disabled = false;
+            await setDoc(doc(db, "produtos", id), pData, { merge: true });
+            fecharModal(); carregarProdutos(); btn.innerText = "💾 Salvar Alterações"; btn.disabled = false;
         });
 
         document.getElementById('btn-excluir-produto').addEventListener('click', async () => {
-            if(confirm("Tem certeza que deseja excluir?")) { await deleteDoc(doc(db, "produtos", document.getElementById('edit-id').value)); fecharModal(); carregarProdutos(); }
+            if(confirm("Tem certeza que deseja APAGAR este produto permanentemente?")) { await deleteDoc(doc(db, "produtos", document.getElementById('edit-id').value)); fecharModal(); carregarProdutos(); }
         });
+
+        // RELATÓRIOS E RANKINGS (Microeconomia Aplicada)
+        window.carregarRelatorios = async () => {
+            const listDiv = document.getElementById('lista-historico');
+            const snap = await getDocs(collection(db, "pedidos"));
+            pedidosGerais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => new Date(b.data) - new Date(a.data));
+            
+            if(pedidosGerais.length === 0) {
+                listDiv.innerHTML = "<p>Nenhum pedido registrado ainda.</p>";
+                return;
+            }
+
+            let totalReceita = 0;
+            let countProdutos = {};
+            let countClientes = {};
+            let countDias = { 'Domingo':0, 'Segunda':0, 'Terça':0, 'Quarta':0, 'Quinta':0, 'Sexta':0, 'Sábado':0 };
+            const diasSemana = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+
+            // Processamento Estratégico de Dados
+            const htmlLista = pedidosGerais.map(p => {
+                totalReceita += p.total || 0;
+                
+                // Analytics: Produtos e Dias
+                const dateObj = new Date(p.data);
+                if(!isNaN(dateObj.getTime())) countDias[diasSemana[dateObj.getDay()]] += (p.total || 0);
+                
+                // Analytics: Clientes
+                const nomeCli = p.nome.trim().toUpperCase();
+                countClientes[nomeCli] = (countClientes[nomeCli] || 0) + (p.total || 0);
+
+                const itensStr = p.itens ? p.itens.map(i => {
+                    countProdutos[i.nome] = (countProdutos[i.nome] || 0) + i.qtd; // Conta volume de itens
+                    return `${i.qtd}x ${i.nome}`;
+                }).join(', ') : '';
+                
+                return `
+                <div class="card" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between; width: 100%;">
+                        <strong style="font-size: 1.1rem;">👤 ${p.nome} (Q${p.quadra} L${p.lote})</strong>
+                        <span style="color: var(--forest); font-weight: bold; font-size: 1.2rem;">R$ ${parseFloat(p.total||0).toFixed(2).replace('.',',')}</span>
+                    </div>
+                    <div style="font-size: 0.9rem; color: var(--text-light);">📅 ${isNaN(dateObj.getTime()) ? "Data desconhecida" : dateObj.toLocaleString('pt-BR')} | 💳 ${p.pag}</div>
+                    <div style="font-size: 0.95rem; margin-top: 5px;">📦 ${itensStr}</div>
+                    <button class="btn btn-outline" style="border-color: var(--danger); color: var(--danger); padding: 8px 16px; margin-top: 10px; width: auto;" onclick="window.excluirPedido('${p.id}')">Excluir Pedido</button>
+                </div>
+                `;
+            }).join('');
+
+            // Atualiza Dashboard Principal
+            document.getElementById('stat-pedidos').innerText = pedidosGerais.length;
+            document.getElementById('stat-receita').innerText = `R$ ${totalReceita.toFixed(2).replace('.',',')}`;
+            listDiv.innerHTML = htmlLista;
+
+            // Renderiza Rankings
+            const renderRanking = (dados, divId, formatador) => {
+                const arr = Object.entries(dados).sort((a,b) => b[1] - a[1]).slice(0,5);
+                document.getElementById(divId).innerHTML = arr.length ? arr.map(i => `<div class="ranking-item"><span>${i[0]}</span> <strong>${formatador(i[1])}</strong></div>`).join('') : '<p>Sem dados suficientes.</p>';
+            };
+
+            renderRanking(countProdutos, 'ranking-produtos', val => `${val} unidades`);
+            renderRanking(countClientes, 'ranking-clientes', val => `R$ ${val.toFixed(2).replace('.',',')}`);
+            renderRanking(countDias, 'ranking-dias', val => `R$ ${val.toFixed(2).replace('.',',')}`);
+        };
+
+        window.baixarRelatorioCSV = () => {
+            if(pedidosGerais.length === 0) return alert("Não há pedidos para exportar.");
+            let csv = "Data,Cliente,Quadra,Lote,Pagamento,Total,Itens\n";
+            pedidosGerais.forEach(p => {
+                const itensStr = p.itens ? p.itens.map(i => `${i.qtd}x ${i.nome}`).join(' | ') : '';
+                csv += `"${p.data}","${p.nome}","${p.quadra}","${p.lote}","${p.pag}","${p.total}","${itensStr}"\n`;
+            });
+            const blob = new Blob(["\ufeff", csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `Relatorio_Banca_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`;
+            link.click();
+        };
+
+        window.excluirPedido = async (id) => {
+            if(confirm("Deseja excluir este pedido do histórico?")) { await deleteDoc(doc(db, "pedidos", id)); carregarRelatorios(); }
+        };
+
+        window.limparHistorico = async () => {
+            if(confirm("ATENÇÃO: Apagar TODOS os pedidos? Essa ação não pode ser desfeita.")) {
+                await Promise.all(pedidosGerais.map(p => deleteDoc(doc(db, "pedidos", p.id)))); carregarRelatorios();
+            }
+        };
 
         // CONFIGURAÇÕES
         async function carregarConfiguracoes() {
             const snap = await getDoc(doc(db, "loja", "config"));
             if (snap.exists()) {
-                const data = snap.data();
-                document.getElementById('config-wpp').value = data.wpp || '';
-                document.getElementById('config-minimo').value = data.minimo || 0;
+                document.getElementById('config-wpp').value = snap.data().wpp || '';
+                document.getElementById('config-minimo').value = snap.data().minimo || 0;
             }
         }
 
         document.getElementById('btn-salvar-config').addEventListener('click', async () => {
             const btn = document.getElementById('btn-salvar-config'); btn.innerText = "Salvando...";
             let wpp = document.getElementById('config-wpp').value.replace(/\D/g, ''); 
-            const minimo = parseFloat(document.getElementById('config-minimo').value) || 0;
-            await setDoc(doc(db, "loja", "config"), { wpp, minimo }, { merge: true });
-            btn.innerText = "Salvar Configurações";
-            const msgConfig = document.getElementById('msg-config'); msgConfig.style.display = 'block'; setTimeout(() => msgConfig.style.display = 'none', 3000);
+            await setDoc(doc(db, "loja", "config"), { wpp, minimo: parseFloat(document.getElementById('config-minimo').value) || 0 }, { merge: true });
+            btn.innerText = "💾 Salvar Configurações"; document.getElementById('msg-config').style.display = 'block'; setTimeout(() => document.getElementById('msg-config').style.display = 'none', 3000);
         });
 
     </script>
