@@ -1,11 +1,11 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-// Importando serviços essenciais
-import { getAuth, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { 
     initializeFirestore, 
     persistentLocalCache, 
     persistentMultipleTabManager,
-    collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc 
+    collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
+    query, orderBy, limit, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -18,7 +18,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// Configuração robusta com Cache Offline (Funciona sem 4G temporariamente)
 const db = initializeFirestore(app, {
     localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
 });
@@ -26,10 +25,10 @@ const db = initializeFirestore(app, {
 const auth = getAuth(app);
 const storage = getStorage(app);
 
-// Exportando os módulos para serem usados pelo app.js e admin.js
 export { 
     db, auth, storage,
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
-    sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut,
+    query, orderBy, limit, writeBatch,
+    sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously,
     ref, uploadBytes, getDownloadURL
 };
