@@ -1,8 +1,9 @@
-import { db, collection, getDocs, onSnapshot, addDoc } from './firebase.js';
+import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged } from './firebase.js';
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio } from './utils.js';
 
-const CART_VERSION = "1.2";
+const CART_VERSION = "2.0"; // Versão atualizada para forçar limpeza de cache antigo incompatível
 let STATE = {
+    uid: null,
     produtos: [], 
     carrinho: [], 
     catAtiva: 'todas', 
@@ -11,6 +12,17 @@ let STATE = {
     favoritos: JSON.parse(localStorage.getItem('banca_favs') || '[]')
 };
 
+// ----------------------------------------------------
+// AUTENTICAÇÃO ANÔNIMA (Retenção de Cliente)
+// ----------------------------------------------------
+onAuthStateChanged(auth, (user) => {
+    if (user) {
+        STATE.uid = user.uid;
+    } else {
+        signInAnonymously(auth).catch(err => console.error("Erro na Autenticação Anônima:", err));
+    }
+});
+
 // Inicialização segura do Estado do Carrinho Persistido
 try { 
     const raw = localStorage.getItem('banca_cart');
@@ -18,7 +30,7 @@ try {
         const parsed = JSON.parse(raw); 
         if(parsed.v === CART_VERSION) STATE.carrinho = parsed.items; 
     }
-} catch(e) {}
+} catch(e) { console.warn("Cache do carrinho invalidado."); }
 
 const getCartQty = (id) => { 
     const item = STATE.carrinho.find(x => x.id === id); 
@@ -26,19 +38,15 @@ const getCartQty = (id) => {
 };
 
 // ----------------------------------------------------
-// GERENCIAMENTO AVANÇADO DE ELEMENTOS DO DOM
+// GERENCIAMENTO DOM CIRÚRGICO (Prevenção de CLS)
 // ----------------------------------------------------
-
 const atualizarBadgesDOM = (produtoId, qtd) => {
     const badge = document.getElementById(`badge-${produtoId}`);
     if(badge) {
         const prod = STATE.produtos.find(p => p.id === produtoId);
         badge.textContent = isFracionavel(prod?.unidade) && qtd > 0 ? formatarQuantidadeVisual(qtd, true) : qtd;
-        if(qtd > 0) {
-            badge.classList.add('visivel');
-        } else {
-            badge.classList.remove('visivel');
-        }
+        if(qtd > 0) badge.classList.add('visivel');
+        else badge.classList.remove('visivel');
     }
 };
 
@@ -120,7 +128,6 @@ const renderCarrinhoCompleto = () => {
     const cont = document.getElementById('carrinho-itens');
     const placeholderSVG = `<div class="item-emoji skeleton"></div>`;
     
-    // CORREÇÃO CRÍTICA DO RESÍDUO VISUAL: Varre e zera os badges da grid de produtos
     STATE.produtos.forEach(p => {
         const badgeGrid = document.getElementById(`badge-${p.id}`);
         if(badgeGrid) {
@@ -158,6 +165,17 @@ const renderCarrinhoCompleto = () => {
     atualizarRodapeCarrinhoDOM();
 };
 
+// ----------------------------------------------------
+// DEBOUNCE PARA SALVAR NO DISCO (Previne CPU Stuttering)
+// ----------------------------------------------------
+let debounceSalvarCarrinho;
+const persistirCarrinhoComDebounce = () => {
+    clearTimeout(debounceSalvarCarrinho);
+    debounceSalvarCarrinho = setTimeout(() => {
+        localStorage.setItem('banca_cart', JSON.stringify({v: CART_VERSION, items: STATE.carrinho}));
+    }, 400);
+};
+
 const modificarCarrinho = (id, delta, fixo = false) => {
     const p = STATE.produtos.find(x => x.id === id);
     if (!p) return;
@@ -171,7 +189,6 @@ const modificarCarrinho = (id, delta, fixo = false) => {
 
     if (idx > -1) { 
         novaQtd = fixFloat(fixo ? valParaAplicar : STATE.carrinho[idx].qtd + valParaAplicar);
-        if (novaQtd > 99) novaQtd = 99; 
         
         if (novaQtd <= 0) {
             STATE.carrinho.splice(idx, 1); 
@@ -180,12 +197,10 @@ const modificarCarrinho = (id, delta, fixo = false) => {
         }
     } else if (valParaAplicar > 0) { 
         novaQtd = fixFloat(fixo ? valParaAplicar : 1);
-        if (novaQtd > 99) novaQtd = 99;
         STATE.carrinho.push({...p, qtd: novaQtd}); 
     }
     
-    localStorage.setItem('banca_cart', JSON.stringify({v: CART_VERSION, items: STATE.carrinho})); 
-    
+    persistirCarrinhoComDebounce();
     atualizarBadgesDOM(id, novaQtd);
     atualizarLinhaCarrinhoDOM(id, novaQtd, fmt(p.preco * novaQtd));
     atualizarRodapeCarrinhoDOM();
@@ -245,11 +260,48 @@ const renderCategorias = () => {
 };
 
 // ----------------------------------------------------
-// FIREBASE REALTIME SYNC (onSnapshot)
+// EVENTOS DE BUSCA E VOZ (Debounce e Web Speech API)
+// ----------------------------------------------------
+let buscaTimeout;
+document.getElementById('busca-input').addEventListener('input', (e) => {
+    clearTimeout(buscaTimeout);
+    buscaTimeout = setTimeout(() => {
+        STATE.busca = e.target.value;
+        renderLoja();
+    }, 300);
+});
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (SpeechRecognition) {
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'pt-BR';
+    
+    document.getElementById('btn-voz').addEventListener('click', () => {
+        const btn = document.getElementById('btn-voz');
+        btn.classList.add('gravando');
+        recognition.start();
+    });
+
+    recognition.onresult = (event) => {
+        const textoGravado = event.results[0][0].transcript;
+        const input = document.getElementById('busca-input');
+        input.value = textoGravado;
+        STATE.busca = textoGravado;
+        renderLoja();
+    };
+
+    recognition.onend = () => document.getElementById('btn-voz').classList.remove('gravando');
+} else {
+    document.getElementById('btn-voz').style.display = 'none';
+}
+
+// ----------------------------------------------------
+// FIREBASE REALTIME SYNC
 // ----------------------------------------------------
 const iniciarRealTimeSync = () => {
     if (!navigator.onLine) { document.getElementById('banner-offline').classList.add('visivel'); }
     
+    // Otimização: Escuta apenas o documento config, não a coleção inteira
     onSnapshot(collection(db, "loja"), (snap) => {
         snap.forEach(d => { if(d.id === 'config') STATE.config = {...STATE.config, ...d.data()}; });
         atualizarRodapeCarrinhoDOM();
@@ -260,16 +312,13 @@ const iniciarRealTimeSync = () => {
         renderCategorias(); 
         renderLoja(); 
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
-    }, (error) => {
-        console.error("Erro Realtime:", error);
-    });
+    }, (error) => console.error("Erro Realtime:", error));
 };
 
 // ----------------------------------------------------
-// DELEGAÇÃO DE EVENTOS CENTRALIZADA (Garante Resiliência)
+// DELEGAÇÃO DE EVENTOS CENTRALIZADA
 // ----------------------------------------------------
 document.body.addEventListener('click', (e) => {
-    // 1. Tratamento de Ações Dirigidas (data-action)
     const actionTarget = e.target.closest('[data-action]'); 
     if (actionTarget) {
         const action = actionTarget.dataset.action;
@@ -290,16 +339,17 @@ document.body.addEventListener('click', (e) => {
             renderHistorico();
             openModal('modal-historico');
         }
+        else if (action === 'repetir-pedido') {
+            repetirPedido(id);
+        }
         return;
     }
 
-    // 2. CORREÇÃO CRÍTICA DO FECHAMENTO: Tratamento via Delegação Direta e Unificada de data-fechar
     const fecharTarget = e.target.closest('[data-fechar]');
     if (fecharTarget) {
         const modalId = fecharTarget.dataset.fechar;
-        closeModal(modalId); // Executa limpeza síncrona imediata no DOM para evitar travas visuais
+        closeModal(modalId);
         
-        // Sincroniza a stack de navegação e evita que o popstate reabra camadas indesejadas
         if (history.state && history.state.modal === modalId) {
             history.back();
         } else if (window.location.hash === `#${modalId}`) {
@@ -309,21 +359,22 @@ document.body.addEventListener('click', (e) => {
     }
 });
 
-document.getElementById('carrinho-itens').addEventListener('change', (e) => {
+// Tratamento suave de input de quantidade
+document.getElementById('carrinho-itens').addEventListener('input', (e) => {
     if(e.target.classList.contains('qtd-input')) {
         const id = e.target.dataset.id;
         const p = STATE.produtos.find(x => x.id === id);
         let val = parseFloat(e.target.value.replace(',', '.'));
-        if(isNaN(val) || val < 0) val = 0;
+        
+        // Se o valor for inválido durante a digitação, ignora sem quebrar o estado local
+        if(isNaN(val) || val < 0) return; 
         
         val = (p && !isFracionavel(p.unidade)) ? Math.round(val) : fixFloat(val);
         modificarCarrinho(id, val, true);
     }
 });
 
-// HISTORY API: Gerenciador Nativo de Popstate para Botão Voltar (Android/iOS Gestures)
 window.addEventListener('popstate', (e) => { 
-    // Limpeza em lote controlada por eventos nativos
     document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('aberto'));
     document.getElementById('carrinho-overlay').classList.remove('aberto');
     document.getElementById('carrinho').classList.remove('aberto');
@@ -353,13 +404,12 @@ const toggleCartMobile = (abrir) => {
 document.getElementById('btn-carrinho-mobile').addEventListener('click', () => toggleCartMobile(true));
 document.getElementById('carrinho-overlay').addEventListener('click', () => history.back());
 
-// CORREÇÃO DO BOTÃO ESVAZIAR: Event listener limpa e reconfigura o LocalStorage sem resíduos
 document.getElementById('btn-limpar-carrinho').addEventListener('click', () => {
     if (STATE.carrinho.length === 0) return;
     if (confirm("Tem certeza que deseja esvaziar todo o pedido?")) {
         STATE.carrinho = []; 
         localStorage.setItem('banca_cart', JSON.stringify({v: CART_VERSION, items: []})); 
-        renderCarrinhoCompleto(); // Atualização em cadeia limpa dados da grid e barra lateral simultaneamente
+        renderCarrinhoCompleto(); 
         showToast("🛒 Carrinho esvaziado!");
         
         if (window.innerWidth <= 900 && document.getElementById('carrinho').classList.contains('aberto')) {
@@ -378,7 +428,6 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     openModal('modal-checkout');
 });
 
-// HISTÓRICO DE PEDIDOS DO CLIENTE
 const renderHistorico = () => {
     const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
     const lista = document.getElementById('lista-meus-pedidos');
@@ -394,33 +443,37 @@ const renderHistorico = () => {
                 <strong style="color:var(--forest);">${new Date(p.data).toLocaleDateString('pt-BR')}</strong>
                 <span style="color:var(--forest); font-weight:900;">${fmt(p.total)}</span>
             </div>
-            <p style="font-size:0.9rem; color:var(--text-mid); line-height:1.4;">${escapeHTML(p.descItens)}</p>
-            <button class="btn btn-outline" style="width:100%; margin-top:14px; padding:10px;" onclick="window.repetirPedido(${p.id})">Repetir Pedido</button>
+            <p style="font-size:0.9rem; color:var(--text-mid); line-height:1.4;">${escapeHTML(p.descItens || 'Itens do pedido')}</p>
+            <button class="btn btn-outline" style="width:100%; margin-top:14px; padding:10px;" data-action="repetir-pedido" data-id="${p.id}">Repetir Pedido</button>
         </article>
     `).join('');
 };
 
-window.repetirPedido = (pedId) => {
+const repetirPedido = (pedId) => {
     const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
-    const ped = meusPedidos.find(p => p.id === pedId);
-    if(ped) {
+    const ped = meusPedidos.find(p => p.id === String(pedId) || p.id === Number(pedId)); // Garante compatibilidade de tipo
+    if(ped && ped.itens) {
         STATE.carrinho = [];
         ped.itens.forEach(i => {
             const prodInfo = STATE.produtos.find(px => px.id === i.id);
             if(prodInfo && prodInfo.ativo) STATE.carrinho.push({...prodInfo, qtd: i.qtd});
         });
-        localStorage.setItem('banca_cart', JSON.stringify({v: CART_VERSION, items: STATE.carrinho}));
+        persistirCarrinhoComDebounce();
         renderCarrinhoCompleto();
-        history.back(); 
+        closeModal('modal-historico');
         showToast('🛒 Itens adicionados ao carrinho!');
     }
 };
 
-// CHECKOUT SEGURO (Preços validados contra fraudes de injeção local)
 document.getElementById('cli-pagamento').addEventListener('change', (e) => { 
-    document.getElementById('troco-group').style.display = e.target.value === 'Dinheiro' ? 'block' : 'none'; 
+    const isDinheiro = e.target.value === 'Dinheiro';
+    document.getElementById('troco-group').style.display = isDinheiro ? 'block' : 'none'; 
+    if(!isDinheiro) document.getElementById('cli-troco').value = '';
 });
 
+// ----------------------------------------------------
+// INTEGRAÇÃO SERVERLESS SEGURA (Vercel API)
+// ----------------------------------------------------
 document.getElementById('btn-enviar-pedido').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     if (btn.disabled) return;
@@ -434,43 +487,34 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
     if(!nome || !quadra || !lote) { showToast("⚠️ Preencha nome, quadra e lote!"); return; }
 
-    btn.disabled = true; btn.textContent = 'Autenticando valores...';
+    btn.disabled = true; 
+    btn.textContent = 'Processando pedido... ⏳';
 
     try {
-        const snapRef = await getDocs(collection(db, "produtos"));
-        const dbProdutosSeguros = snapRef.docs.map(d => ({id: d.id, ...d.data()}));
+        // Envia apenas o payload mínimo (Trust No Client)
+        const payload = {
+            nome, quadra, lote, pag, troco: trocoRaw, obs,
+            itens: STATE.carrinho.map(item => ({ id: item.id, qtd: item.qtd }))
+        };
 
-        let totalReal = 0;
-        let msg = `*NOVO PEDIDO*\n👤 ${nome}\n📍 Q${quadra} L${lote}\n💳 Pagamento: ${pag}\n\n*ITENS:*\n`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // Timeout de 10s para redes 3G ruins
 
-        const itensValidados = STATE.carrinho.map(itemCart => {
-            const prodOficial = dbProdutosSeguros.find(p => p.id === itemCart.id);
-            if (!prodOficial) throw new Error(`Produto ${itemCart.nome} indisponível.`);
-            
-            const precoSeguro = prodOficial.preco;
-            const subtotal = precoSeguro * itemCart.qtd;
-            totalReal += subtotal;
-            
-            const isKg = isFracionavel(prodOficial.unidade);
-            const qtdStr = isKg ? `${formatarQuantidadeVisual(itemCart.qtd, true)} ${prodOficial.unidade || 'kg'}` : `${itemCart.qtd}x`;
-            
-            msg += `• ${qtdStr} ${prodOficial.nome} - ${fmt(subtotal)}\n`;
-            return { id: itemCart.id, nome: prodOficial.nome, qtd: itemCart.qtd, preco: precoSeguro, unidade: prodOficial.unidade };
+        const response = await fetch('/api/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: controller.signal
         });
 
-        if (pag === 'Dinheiro') {
-            const trocoNum = parseFloat(trocoRaw.replace(',', '.')); 
-            if (isNaN(trocoNum) || trocoNum < totalReal) {
-                showToast("⚠️ O valor do troco deve ser maior que o total da compra.");
-                btn.disabled = false; btn.textContent = 'Enviar Pedido via WhatsApp 🚀';
-                return;
-            }
-            msg = msg.replace(`Pagamento: ${pag}`, `Pagamento: ${pag} (Troco para: R$ ${trocoNum.toFixed(2).replace('.',',')})`);
+        clearTimeout(timeoutId);
+        const data = await response.json();
+
+        if (!response.ok || !data.sucesso) {
+            throw new Error(data.error || "Falha ao processar pedido no servidor.");
         }
 
-        msg += `\n*TOTAL: ${fmt(totalReal)}*`;
-        if (obs) msg += `\n\n📝 *Obs:* ${obs}`;
-
+        // Salva metadados seguros no LocalStorage para o histórico
         const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
         const idx = clientes.findIndex(c => c.nome.toLowerCase() === nome.toLowerCase());
         if(idx >= 0) { clientes[idx] = {nome, quadra, lote}; } else { clientes.unshift({nome, quadra, lote}); }
@@ -478,35 +522,37 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
         const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
         meusPedidos.unshift({
-            id: Date.now(), data: new Date().toISOString(), total: totalReal,
-            descItens: itensValidados.map(i => isFracionavel(i.unidade) ? `${formatarQuantidadeVisual(i.qtd, true)}${i.unidade} ${i.nome}` : `${i.qtd}x ${i.nome}`).join(', '),
-            itens: itensValidados
+            id: data.pedido.id, 
+            data: new Date().toISOString(), 
+            total: data.pedido.total,
+            descItens: STATE.carrinho.map(i => isFracionavel(i.unidade) ? `${formatarQuantidadeVisual(i.qtd, true)}${i.unidade} ${i.nome}` : `${i.qtd}x ${i.nome}`).join(', '),
+            itens: STATE.carrinho.map(item => ({ id: item.id, qtd: item.qtd }))
         });
         localStorage.setItem('banca_meus_pedidos', JSON.stringify(meusPedidos.slice(0, 10)));
 
-        addDoc(collection(db, "pedidos"), { nome, quadra, lote, pag, troco: trocoRaw, obs, total: totalReal, itens: itensValidados, data: new Date().toISOString() });
-
-        window.open(`https://wa.me/${STATE.config.wpp}?text=${encodeURIComponent(msg)}`, '_blank');
+        // Redireciona com segurança
+        window.open(data.pedido.whatsappMsg, '_blank');
         
         closeModal('modal-checkout');
-        if (history.state && history.state.modal === 'modal-checkout') history.back();
-        
         setTimeout(() => openModal('modal-sucesso'), 300); 
         
         STATE.carrinho = []; 
         localStorage.setItem('banca_cart', JSON.stringify({v: CART_VERSION, items: []}));
         renderCarrinhoCompleto();
-        document.getElementById('cli-obs').value = ''; document.getElementById('cli-troco').value = '';
+        document.getElementById('cli-obs').value = ''; 
+        document.getElementById('cli-troco').value = '';
 
     } catch(err) {
-        showToast("Erro ao validar produtos. Tente recarregar.");
+        if(err.name === 'AbortError') showToast("Tempo esgotado. Verifique sua internet.");
+        else showToast(err.message || "Erro na validação. Tente recarregar a página.");
         console.error(err);
     } finally {
-        btn.disabled = false; btn.textContent = 'Enviar Pedido via WhatsApp 🚀';
+        btn.disabled = false; 
+        btn.textContent = 'Enviar Pedido via WhatsApp 🚀';
     }
 });
 
-window.addEventListener('online', () => { document.getElementById('banner-offline').classList.remove('visivel'); });
+window.addEventListener('online', () => document.getElementById('banner-offline').classList.remove('visivel'));
 window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
 
 renderCarrinhoCompleto();
