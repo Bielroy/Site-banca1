@@ -11,7 +11,7 @@ let STATE = {
     favoritos: JSON.parse(localStorage.getItem('banca_favs') || '[]')
 };
 
-// Resgata o carrinho salvo localmente no navegador
+// Inicialização segura do Estado do Carrinho Persistido
 try { 
     const raw = localStorage.getItem('banca_cart');
     if(raw) { 
@@ -26,7 +26,7 @@ const getCartQty = (id) => {
 };
 
 // ----------------------------------------------------
-// GERENCIAMENTO FINO DE DOM (Alta Performance)
+// GERENCIAMENTO AVANÇADO DE ELEMENTOS DO DOM
 // ----------------------------------------------------
 
 const atualizarBadgesDOM = (produtoId, qtd) => {
@@ -119,6 +119,15 @@ const renderUpsell = () => {
 const renderCarrinhoCompleto = () => {
     const cont = document.getElementById('carrinho-itens');
     const placeholderSVG = `<div class="item-emoji skeleton"></div>`;
+    
+    // CORREÇÃO CRÍTICA DO RESÍDUO VISUAL: Varre e zera os badges da grid de produtos
+    STATE.produtos.forEach(p => {
+        const badgeGrid = document.getElementById(`badge-${p.id}`);
+        if(badgeGrid) {
+            badgeGrid.textContent = '0';
+            badgeGrid.classList.remove('visivel');
+        }
+    });
     
     if (STATE.carrinho.length === 0) {
         cont.innerHTML = `<div class="empty-state">${iconeCarrinhoVazio}<p>Seu pedido está vazio</p><span>Adicione produtos para começar.</span></div>`;
@@ -257,29 +266,46 @@ const iniciarRealTimeSync = () => {
 };
 
 // ----------------------------------------------------
-// LISTENERS DELEGADOS E INTERAÇÕES
+// DELEGAÇÃO DE EVENTOS CENTRALIZADA (Garante Resiliência)
 // ----------------------------------------------------
 document.body.addEventListener('click', (e) => {
-    const target = e.target.closest('[data-action]'); 
-    if (!target) return;
-    
-    const action = target.dataset.action;
-    const id = target.dataset.id;
-    
-    if (action === 'add' || action === 'inc') { 
-        modificarCarrinho(id, 1); 
-        if(action === 'add') animarFeedbackBtn(target); 
+    // 1. Tratamento de Ações Dirigidas (data-action)
+    const actionTarget = e.target.closest('[data-action]'); 
+    if (actionTarget) {
+        const action = actionTarget.dataset.action;
+        const id = actionTarget.dataset.id;
+        
+        if (action === 'add' || action === 'inc') { 
+            modificarCarrinho(id, 1); 
+            if(action === 'add') animarFeedbackBtn(actionTarget); 
+        }
+        else if (action === 'dec') { modificarCarrinho(id, -1); }
+        else if (action === 'cat') { STATE.catAtiva = actionTarget.dataset.cat; renderCategorias(); renderLoja(); }
+        else if (action === 'fav') { 
+            if(STATE.favoritos.includes(id)) STATE.favoritos = STATE.favoritos.filter(f => f !== id); 
+            else STATE.favoritos.push(id); 
+            localStorage.setItem('banca_favs', JSON.stringify(STATE.favoritos)); renderLoja(); 
+        }
+        else if (action === 'open-historico') {
+            renderHistorico();
+            openModal('modal-historico');
+        }
+        return;
     }
-    else if (action === 'dec') { modificarCarrinho(id, -1); }
-    else if (action === 'cat') { STATE.catAtiva = target.dataset.cat; renderCategorias(); renderLoja(); }
-    else if (action === 'fav') { 
-        if(STATE.favoritos.includes(id)) STATE.favoritos = STATE.favoritos.filter(f => f !== id); 
-        else STATE.favoritos.push(id); 
-        localStorage.setItem('banca_favs', JSON.stringify(STATE.favoritos)); renderLoja(); 
-    }
-    else if (action === 'open-historico') {
-        renderHistorico();
-        openModal('modal-historico');
+
+    // 2. CORREÇÃO CRÍTICA DO FECHAMENTO: Tratamento via Delegação Direta e Unificada de data-fechar
+    const fecharTarget = e.target.closest('[data-fechar]');
+    if (fecharTarget) {
+        const modalId = fecharTarget.dataset.fechar;
+        closeModal(modalId); // Executa limpeza síncrona imediata no DOM para evitar travas visuais
+        
+        // Sincroniza a stack de navegação e evita que o popstate reabra camadas indesejadas
+        if (history.state && history.state.modal === modalId) {
+            history.back();
+        } else if (window.location.hash === `#${modalId}`) {
+            history.replaceState(null, '', ' ');
+        }
+        return;
     }
 });
 
@@ -295,21 +321,23 @@ document.getElementById('carrinho-itens').addEventListener('change', (e) => {
     }
 });
 
-// HISTORY API PARA MODAIS (Android Back Button Fix)
+// HISTORY API: Gerenciador Nativo de Popstate para Botão Voltar (Android/iOS Gestures)
 window.addEventListener('popstate', (e) => { 
+    // Limpeza em lote controlada por eventos nativos
     document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('aberto'));
     document.getElementById('carrinho-overlay').classList.remove('aberto');
     document.getElementById('carrinho').classList.remove('aberto');
 
-    if (e.state && e.state.modal) document.getElementById(e.state.modal).classList.add('aberto');
-    if (e.state && e.state.cart) {
-        document.getElementById('carrinho').classList.add('aberto');
-        document.getElementById('carrinho-overlay').classList.add('aberto');
+    if (e.state) {
+        if (e.state.modal) {
+            const m = document.getElementById(e.state.modal);
+            if (m) m.classList.add('aberto');
+        }
+        if (e.state.cart) {
+            document.getElementById('carrinho').classList.add('aberto');
+            document.getElementById('carrinho-overlay').classList.add('aberto');
+        }
     }
-});
-
-document.querySelectorAll('[data-fechar]').forEach(btn => { 
-    btn.addEventListener('click', (e) => { history.back(); }); 
 });
 
 const toggleCartMobile = (abrir) => {
@@ -319,20 +347,24 @@ const toggleCartMobile = (abrir) => {
         document.getElementById('carrinho-overlay').classList.add('aberto'); 
         history.pushState({cart: true}, ''); 
     } else { 
-        history.back();
+        if(history.state && history.state.cart) history.back();
     }
 };
 document.getElementById('btn-carrinho-mobile').addEventListener('click', () => toggleCartMobile(true));
 document.getElementById('carrinho-overlay').addEventListener('click', () => history.back());
 
+// CORREÇÃO DO BOTÃO ESVAZIAR: Event listener limpa e reconfigura o LocalStorage sem resíduos
 document.getElementById('btn-limpar-carrinho').addEventListener('click', () => {
     if (STATE.carrinho.length === 0) return;
     if (confirm("Tem certeza que deseja esvaziar todo o pedido?")) {
         STATE.carrinho = []; 
-        localStorage.removeItem('banca_cart'); 
-        renderCarrinhoCompleto(); 
+        localStorage.setItem('banca_cart', JSON.stringify({v: CART_VERSION, items: []})); 
+        renderCarrinhoCompleto(); // Atualização em cadeia limpa dados da grid e barra lateral simultaneamente
         showToast("🛒 Carrinho esvaziado!");
-        if (window.innerWidth <= 900) history.back();
+        
+        if (window.innerWidth <= 900 && document.getElementById('carrinho').classList.contains('aberto')) {
+            history.back();
+        }
     }
 });
 
@@ -384,7 +416,7 @@ window.repetirPedido = (pedId) => {
     }
 };
 
-// CHECKOUT SEGURO (Preços validados na Nuvem contra fraudes de DevTools)
+// CHECKOUT SEGURO (Preços validados contra fraudes de injeção local)
 document.getElementById('cli-pagamento').addEventListener('change', (e) => { 
     document.getElementById('troco-group').style.display = e.target.value === 'Dinheiro' ? 'block' : 'none'; 
 });
@@ -456,10 +488,13 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
         window.open(`https://wa.me/${STATE.config.wpp}?text=${encodeURIComponent(msg)}`, '_blank');
         
-        history.back(); 
+        closeModal('modal-checkout');
+        if (history.state && history.state.modal === 'modal-checkout') history.back();
+        
         setTimeout(() => openModal('modal-sucesso'), 300); 
         
-        STATE.carrinho = []; localStorage.removeItem('banca_cart'); 
+        STATE.carrinho = []; 
+        localStorage.setItem('banca_cart', JSON.stringify({v: CART_VERSION, items: []}));
         renderCarrinhoCompleto();
         document.getElementById('cli-obs').value = ''; document.getElementById('cli-troco').value = '';
 
@@ -471,7 +506,6 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     }
 });
 
-// Inicialização da escuta em tempo real e verificação de internet
 window.addEventListener('online', () => { document.getElementById('banner-offline').classList.remove('visivel'); });
 window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
 
