@@ -17,75 +17,78 @@
     <main id="login-screen">
         <section class="login-box">
             <h2>Gestão da Banca</h2>
-            <p class="login-sub">Acesse via link mágico no seu e-mail.</p>
-            <div class="form-group"><label for="email">E-mail autorizado</label><input type="email" id="email" placeholder="contato@exemplo.com"></div>
-            <button class="btn" id="btn-login">Receber Link de Acesso</button>
+            <p class="login-sub">Acesso restrito. Insira o e-mail autorizado.</p>
+            <div class="form-group">
+                <label for="email">E-mail Administrativo</label>
+                <input type="email" id="email" placeholder="admin@exemplo.com">
+            </div>
+            <button class="btn" id="btn-login">Receber Link Seguro</button>
             <p id="login-msg" class="login-msg"></p>
         </section>
     </main>
 
     <main id="dashboard" style="display: none;">
         <header class="dash-header">
-            <h2>Painel Admin</h2>
-            <button class="btn btn-outline" id="btn-logout">Sair do Sistema</button>
+            <h2>Painel Enterprise</h2>
+            <button class="btn btn-outline" id="btn-logout" style="width: auto;">Desconectar</button>
         </header>
 
         <nav class="tabs" aria-label="Abas do Painel">
             <button class="tab active" data-aba="produtos">🥦 Produtos e Estoque</button>
-            <button class="tab" data-aba="relatorios">📊 Relatórios e Vendas</button>
-            <button class="tab" data-aba="config">⚙️ Configurações</button>
+            <button class="tab" data-aba="relatorios">📊 Dashboard Financeiro</button>
+            <button class="tab" data-aba="config">⚙️ Operacional</button>
         </nav>
 
         <section id="aba-produtos" class="aba-content active">
             <button class="btn btn-add-prod" data-action="novo-produto">+ Adicionar Novo Produto</button>
-            <div id="lista-produtos" class="produtos-grid">Carregando...</div>
+            <div id="lista-produtos" class="produtos-grid">Carregando catálogo...</div>
         </section>
 
         <section id="aba-relatorios" class="aba-content">
             <header class="relatorios-header">
-                <h3>Visão Geral do Negócio</h3>
+                <h3>Visão Consolidada</h3>
                 <div class="relatorios-actions">
-                    <button class="btn btn-export" id="btn-exportar">📥 Exportar Excel</button>
-                    <button class="btn btn-limpar-hist" id="btn-limpar-hist">Limpar Histórico</button>
+                    <button class="btn btn-export" id="btn-exportar">📥 Exportar Dados Recentes</button>
+                    <button class="btn btn-limpar-hist" id="btn-limpar-hist">Apagar Histórico</button>
                 </div>
             </header>
             
             <div class="stats-grid">
                 <article class="stat-box">
-                    <span class="stat-label">TOTAL DE PEDIDOS</span>
+                    <span class="stat-label">TOTAL DE VENDAS</span>
                     <strong class="stat-val" id="stat-pedidos">0</strong>
                 </article>
                 <article class="stat-box">
-                    <span class="stat-label">RECEITA TOTAL</span>
+                    <span class="stat-label">RECEITA GLOBAL</span>
                     <strong class="stat-val" id="stat-receita">R$ 0,00</strong>
                 </article>
             </div>
 
             <div class="ranking-container">
-                <article class="ranking-box"><h3>🏆 Mais Vendidos</h3><div id="ranking-produtos"></div></article>
-                <article class="ranking-box"><h3>🌟 Melhores Clientes</h3><div id="ranking-clientes"></div></article>
-                <article class="ranking-box"><h3>📅 Vendas por Dia</h3><div id="ranking-dias"></div></article>
+                <article class="ranking-box"><h3>🏆 Top Produtos</h3><div id="ranking-produtos"></div></article>
+                <article class="ranking-box"><h3>🌟 Top Clientes</h3><div id="ranking-clientes"></div></article>
+                <article class="ranking-box"><h3>📅 Dias mais Fortes</h3><div id="ranking-dias"></div></article>
             </div>
 
-            <h3>Últimos Pedidos Detalhados</h3>
-            <div id="lista-historico">Buscando relatórios...</div>
+            <h3 style="margin: 30px 0 15px; color: var(--forest); font-family: 'Fraunces', serif;">50 Últimos Pedidos (Logística)</h3>
+            <div id="lista-historico">Buscando inteligência de dados...</div>
         </section>
 
         <section id="aba-config" class="aba-content">
-            <h3>Configurações da Loja</h3>
-            <p class="config-sub">Controle o horário de funcionamento e parâmetros.</p>
+            <h3>Parâmetros da Loja</h3>
+            <p class="config-sub">Ações sincronizadas em tempo real com todos os clientes.</p>
             
             <article class="card config-card">
                 <div class="form-group border-bottom">
-                    <label class="danger-label">🛑 Status Manual da Loja</label>
+                    <label class="danger-label">🛑 Disjuntor Principal (Master Switch)</label>
                     <select id="config-status-loja">
                         <option value="aberta">A Loja está ABERTA (Recebendo pedidos)</option>
-                        <option value="fechada">A Loja está FECHADA (Ninguém consegue pedir)</option>
+                        <option value="fechada">A Loja está FECHADA (Checkout bloqueado)</option>
                     </select>
                 </div>
 
                 <div class="form-group">
-                    <label>📅 Dias de Funcionamento (Automático)</label>
+                    <label>📅 Dias de Abertura Automática</label>
                     <div class="dias-semana">
                         <label class="dia-label"><input type="checkbox" value="0" class="chk-dia"> Dom</label>
                         <label class="dia-label"><input type="checkbox" value="1" class="chk-dia"> Seg</label>
@@ -98,16 +101,15 @@
                 </div>
 
                 <div class="grid-2">
-                    <div class="form-group"><label>📱 WhatsApp p/ Pedidos</label><input type="text" id="config-wpp"></div>
-                    <div class="form-group"><label>💰 Pedido Mínimo (R$)</label><input type="number" id="config-minimo" step="0.5"></div>
+                    <div class="form-group"><label>📱 Número de Atendimento (WhatsApp)</label><input type="text" id="config-wpp" placeholder="55DD9XXXXXXXX"></div>
+                    <div class="form-group"><label>💰 Ticket Mínimo (R$)</label><input type="number" id="config-minimo" step="0.5"></div>
                 </div>
                 
-                <button class="btn btn-salvar-config" id="btn-salvar-config">💾 Salvar Configurações</button>
+                <button class="btn btn-salvar-config" id="btn-salvar-config">💾 Gravar Definições</button>
             </article>
         </section>
     </main>
 
-    <!-- Modal Editar Produto -->
     <div class="modal-overlay" id="modal-produto">
         <div class="modal">
             <header class="modal-header">
@@ -117,38 +119,37 @@
             <div class="modal-body">
                 <input type="hidden" id="edit-id">
                 <div class="form-group">
-                    <label>Foto do Produto</label>
+                    <label>Imagem Otimizada</label>
                     <input type="file" id="edit-foto" accept="image/*">
                     <p class="ou-divisor">OU</p>
-                    <input type="url" id="edit-foto-url" placeholder="Cole o link da imagem">
+                    <input type="url" id="edit-foto-url" placeholder="Insira a URL pública da imagem">
                 </div>
-                <div class="form-group"><label>Nome</label><input type="text" id="edit-nome"></div>
+                <div class="form-group"><label>Nomenclatura Oficial</label><input type="text" id="edit-nome"></div>
                 <div class="grid-2">
-                    <div class="form-group"><label>Preço (R$)</label><input type="number" id="edit-preco" step="0.10"></div>
+                    <div class="form-group"><label>Preço Base (R$)</label><input type="number" id="edit-preco" step="0.10"></div>
                     <div class="form-group">
-                        <label>Unidade</label>
+                        <label>Métrica de Venda</label>
                         <select id="edit-unidade">
-                            <option value="kg">KG</option><option value="un">Unidade</option><option value="maço">Maço</option><option value="bdj">Bandeja</option>
+                            <option value="kg">Quilo (kg)</option><option value="un">Unidade (un)</option><option value="maço">Maço</option><option value="bdj">Bandeja</option>
                         </select>
                     </div>
                 </div>
-                <div class="form-group"><label>Categoria</label><input type="text" id="edit-cat"></div>
+                <div class="form-group"><label>Classificação (Categoria)</label><input type="text" id="edit-cat"></div>
             </div>
             <footer class="modal-footer">
-                <button class="btn" id="btn-salvar-produto">💾 Salvar</button>
-                <button class="btn btn-outline btn-delete" id="btn-excluir-produto">🗑 Excluir do Sistema</button>
+                <button class="btn" id="btn-salvar-produto">💾 Gravar no Banco</button>
+                <button class="btn btn-outline btn-delete" id="btn-excluir-produto">🗑 Destruir Registro</button>
             </footer>
         </div>
     </div>
 
-    <!-- Confirm Dialog -->
     <div class="modal-overlay" id="overlay-confirm">
         <div class="modal confirm-dialog">
-            <h3 id="confirm-title">Atenção</h3>
-            <p id="confirm-msg">Deseja realmente fazer isso?</p>
+            <h3 id="confirm-title">Alerta de Segurança</h3>
+            <p id="confirm-msg">Confirma a operação solicitada?</p>
             <div class="confirm-actions">
                 <button class="btn-cancelar" id="btn-confirm-cancel">Cancelar</button>
-                <button class="btn-confirmar" id="btn-confirm-ok">Sim, continuar</button>
+                <button class="btn-confirmar" id="btn-confirm-ok">Prosseguir</button>
             </div>
         </div>
     </div>
