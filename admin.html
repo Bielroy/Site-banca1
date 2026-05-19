@@ -13,7 +13,6 @@
     <link rel="dns-prefetch" href="https://firestore.googleapis.com">
 
     <title>Painel Admin - Banca Adair e Pedrina</title>
-    <!-- Adicionado display=swap e font Fraunces que faltava no admin -->
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -130,7 +129,6 @@
                 <h3 style="font-size: 1.5rem; font-family: 'Fraunces', serif;">Visão Geral do Negócio</h3>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <button class="btn btn-export" onclick="baixarRelatorioCSV()">📥 Exportar para Excel</button>
-                    <!-- Ajustado para não usar visual 'danger' como principal em ação de suporte -->
                     <button class="btn" style="width: auto; padding: 12px 20px; background: #94a3b8; color: white;" onclick="limparHistorico()">Limpar Histórico</button>
                 </div>
             </div>
@@ -263,6 +261,16 @@
         // Proteção XSS
         const escapeHTML = (str) => { if(!str) return ''; return String(str).replace(/[&<>'"]/g, match => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[match])); };
 
+        // Auxiliares para cálculo de Quilos e Frações no Painel
+        const isFracionavel = (unidade) => {
+            const u = (unidade || '').toLowerCase();
+            return ['kg', 'kilo', 'quilograma', 'g', 'grama', 'l', 'litro'].includes(u);
+        };
+        const formatarQtdRelatorio = (qtd, und) => {
+            if (isFracionavel(und)) return `${qtd.toString().replace('.', ',')} ${und || 'kg'}`;
+            return `${qtd}x`;
+        };
+
         let toastTimer;
         const showToast = (msg) => {
             const t = document.getElementById('toast');
@@ -294,7 +302,6 @@
             }
         });
 
-        // Prevenção de Spam no Login
         let isLoginProcessing = false;
         document.getElementById('btn-login').addEventListener('click', () => {
             if (isLoginProcessing) return;
@@ -309,7 +316,7 @@
             
             sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true })
                 .then(() => { 
-                    window.sessionStorage.setItem('emailForSignIn', email); // sessionStorage é mais seguro
+                    window.sessionStorage.setItem('emailForSignIn', email);
                     msg.textContent = "✅ Link enviado! Verifique o e-mail."; msg.style.color = "var(--success)"; 
                 })
                 .catch((e) => { msg.textContent = "❌ Erro ao enviar link."; msg.style.color = "var(--danger)"; })
@@ -328,7 +335,6 @@
 
         document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
 
-        // Corrigido uso global do event
         window.mostrarAba = (abaId, ev) => {
             ['produtos', 'relatorios', 'config'].forEach(id => document.getElementById(`aba-${id}`).style.display = id === abaId ? 'block' : 'none');
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -401,7 +407,6 @@
             btn.textContent = "Salvando... ⏳"; btn.disabled = true;
 
             try {
-                // IDs mais robustos ao invés de apenas Date.now()
                 const id = document.getElementById('edit-id').value || crypto.randomUUID();
                 
                 let pData = { 
@@ -459,7 +464,12 @@
                 const dateObj = new Date(p.data);
                 if(!isNaN(dateObj.getTime())) countDias[diasSemana[dateObj.getDay()]] += (p.total || 0);
                 const nomeCli = escapeHTML(p.nome).trim().toUpperCase(); countClientes[nomeCli] = (countClientes[nomeCli] || 0) + (p.total || 0);
-                const itensStr = p.itens ? p.itens.map(i => { countProdutos[i.nome] = (countProdutos[i.nome] || 0) + i.qtd; return `${i.qtd}x ${escapeHTML(i.nome)}`; }).join(', ') : '';
+                
+                // Formatação robusta de itens (KG ou Unidades)
+                const itensStr = p.itens ? p.itens.map(i => { 
+                    countProdutos[i.nome] = (countProdutos[i.nome] || 0) + i.qtd; 
+                    return `${formatarQtdRelatorio(i.qtd, i.unidade)} ${escapeHTML(i.nome)}`; 
+                }).join(', ') : '';
                 
                 return `<div class="card" style="flex-direction: column; align-items: flex-start; gap: 8px;"><div style="display: flex; justify-content: space-between; width: 100%;"><strong style="font-size: 1.1rem;">👤 ${escapeHTML(p.nome)} (Q${escapeHTML(p.quadra)} L${escapeHTML(p.lote)})</strong><span style="color: var(--forest); font-weight: bold; font-size: 1.2rem;">R$ ${parseFloat(p.total||0).toFixed(2).replace('.',',')}</span></div><div style="font-size: 0.9rem; color: var(--text-light);">📅 ${isNaN(dateObj.getTime()) ? "Desconhecida" : dateObj.toLocaleString('pt-BR')} | 💳 ${escapeHTML(p.pag)}</div><div style="font-size: 0.95rem; margin-top: 5px; background: var(--parchment); padding: 10px; border-radius: 8px;">📦 ${itensStr}</div><button class="btn btn-outline" style="border-color: var(--danger); color: var(--danger); padding: 8px 16px; margin-top: 10px; width: auto; font-size: 0.9rem;" onclick="window.excluirPedido('${escapeHTML(p.id)}')">Excluir Pedido</button></div>`;
             }).join('');
@@ -468,8 +478,13 @@
             document.getElementById('stat-receita').textContent = `R$ ${totalReceita.toFixed(2).replace('.',',')}`;
             listDiv.innerHTML = htmlLista;
 
-            const renderRanking = (dados, divId, formatador) => { const arr = Object.entries(dados).sort((a,b) => b[1] - a[1]).slice(0,5); document.getElementById(divId).innerHTML = arr.length ? arr.map(i => `<div class="ranking-item"><span>${escapeHTML(i[0])}</span> <strong>${formatador(i[1])}</strong></div>`).join('') : '<p style="color: var(--text-light)">Sem dados.</p>'; };
-            renderRanking(countProdutos, 'ranking-produtos', val => `${val} un.`);
+            const renderRanking = (dados, divId, formatador) => { 
+                const arr = Object.entries(dados).sort((a,b) => b[1] - a[1]).slice(0,5); 
+                document.getElementById(divId).innerHTML = arr.length ? arr.map(i => `<div class="ranking-item"><span>${escapeHTML(i[0])}</span> <strong>${formatador(i[1])}</strong></div>`).join('') : '<p style="color: var(--text-light)">Sem dados.</p>'; 
+            };
+            
+            // Formatador dinâmico: se tiver dízima, é kg/L; se for inteiro redondo, mostra "un."
+            renderRanking(countProdutos, 'ranking-produtos', val => val % 1 !== 0 ? `${val.toFixed(2).replace('.',',')} med.` : `${val} un.`);
             renderRanking(countClientes, 'ranking-clientes', val => `R$ ${val.toFixed(2).replace('.',',')}`);
             renderRanking(countDias, 'ranking-dias', val => `R$ ${val.toFixed(2).replace('.',',')}`);
         };
@@ -477,8 +492,14 @@
         window.baixarRelatorioCSV = () => {
             if(pedidosGerais.length === 0) return showToast("Não há pedidos.");
             let csv = "Data,Cliente,Quadra,Lote,Pagamento,Total,Itens\n";
-            pedidosGerais.forEach(p => { csv += `"${p.data}","${p.nome}","${p.quadra}","${p.lote}","${p.pag}","${p.total}","${p.itens ? p.itens.map(i => `${i.qtd}x ${i.nome}`).join(' | ') : ''}"\n`; });
-            const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: 'text/csv;charset=utf-8;' })); link.download = `Vendas_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`; link.click();
+            pedidosGerais.forEach(p => { 
+                const itensTxt = p.itens ? p.itens.map(i => `${formatarQtdRelatorio(i.qtd, i.unidade)} ${i.nome}`).join(' | ') : '';
+                csv += `"${p.data}","${p.nome}","${p.quadra}","${p.lote}","${p.pag}","${p.total.toFixed(2).replace('.',',')}","${itensTxt}"\n`; 
+            });
+            const link = document.createElement("a"); 
+            link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: 'text/csv;charset=utf-8;' })); 
+            link.download = `Vendas_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`; 
+            link.click();
         };
 
         window.excluirPedido = async (id) => { 
