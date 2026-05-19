@@ -2,22 +2,25 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
+    
     <title>Banca Adair e Pedrina | Frescor Todo Dia</title>
-    <meta name="description" content="Compre frutas, verduras e hortaliças frescas com entrega rápida.">
+    <meta name="description" content="Compre frutas, verduras e hortaliças frescas com entrega rápida no seu condomínio.">
     <meta name="theme-color" content="#1a3a2a">
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     
-    <!-- CSS Modular -->
     <link rel="stylesheet" href="./css/variables.css">
     <link rel="stylesheet" href="./css/loja.css">
+    
+    <link rel="icon" href="./icon-192.png">
+    <link rel="manifest" href="./manifest.json">
 </head>
 <body>
 
-<div class="banner-aviso fechado" id="banner-offline" aria-live="polite">📵 Você está sem internet. Usando dados salvos.</div>
+<div class="banner-aviso fechado" id="banner-offline" aria-live="assertive">📵 Você está sem internet. Usando dados salvos.</div>
 <div class="banner-aviso fechado" id="banner-fechado" aria-live="polite">🚫 Estamos fechados no momento. Voltamos em breve!</div>
 <div class="banner-aviso minimo" id="banner-minimo" aria-live="polite"></div>
 
@@ -44,14 +47,35 @@
         </div>
         <nav class="categorias" id="categorias" aria-label="Filtro de Categorias">
             <button class="cat-btn skeleton" style="width:80px;height:38px"></button>
+            <button class="cat-btn skeleton" style="width:120px;height:38px"></button>
         </nav>
     </div>
 </section>
 
 <main class="layout">
-    <!-- Grid de Produtos -->
     <section class="produtos-grid" id="lista-produtos" aria-label="Lista de Produtos">
-        <article class="produto-card skeleton" style="height: 280px;"></article>
+        <article class="produto-card">
+            <div class="produto-img-wrap skeleton" style="aspect-ratio: 1; width: 100%;"></div>
+            <div class="produto-info" style="gap: 8px;">
+                <div class="skeleton" style="height: 12px; width: 40%; margin-bottom: 4px;"></div>
+                <div class="skeleton" style="height: 18px; width: 80%; margin-bottom: auto;"></div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 12px;">
+                    <div class="skeleton" style="height: 24px; width: 50%;"></div>
+                    <div class="skeleton" style="height: 36px; width: 36px; border-radius: 50%;"></div>
+                </div>
+            </div>
+        </article>
+        <article class="produto-card">
+            <div class="produto-img-wrap skeleton" style="aspect-ratio: 1; width: 100%;"></div>
+            <div class="produto-info" style="gap: 8px;">
+                <div class="skeleton" style="height: 12px; width: 40%; margin-bottom: 4px;"></div>
+                <div class="skeleton" style="height: 18px; width: 80%; margin-bottom: auto;"></div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 12px;">
+                    <div class="skeleton" style="height: 24px; width: 50%;"></div>
+                    <div class="skeleton" style="height: 36px; width: 36px; border-radius: 50%;"></div>
+                </div>
+            </div>
+        </article>
     </section>
 
     <button class="btn-flutuante-carrinho" id="btn-carrinho-mobile" aria-label="Ver Carrinho">
@@ -59,16 +83,13 @@
     </button>
     <div class="carrinho-overlay" id="carrinho-overlay"></div>
 
-    <!-- Sidebar Carrinho -->
     <aside class="carrinho" id="carrinho" aria-label="Seu Carrinho de Compras">
         <header class="carrinho-topo">
             <h2 class="carrinho-titulo">Meu Pedido <span class="carrinho-titulo-badge" id="qtd-badge">0</span></h2>
             <button class="btn-limpar" id="btn-limpar-carrinho">Esvaziar</button>
         </header>
         
-        <div class="carrinho-itens" id="carrinho-itens">
-            <!-- Estado Vazio Injetado via JS -->
-        </div>
+        <div class="carrinho-itens" id="carrinho-itens"></div>
         <div id="upsell-container"></div>
         
         <footer class="carrinho-rodape">
@@ -81,7 +102,6 @@
     </aside>
 </main>
 
-<!-- Modal Checkout -->
 <div class="modal-overlay" id="modal-checkout" role="dialog" aria-modal="true">
     <div class="modal">
         <header class="modal-head">
@@ -89,11 +109,10 @@
             <button class="btn-fechar" data-fechar="modal-checkout" aria-label="Fechar">&times;</button>
         </header>
         <div class="modal-body">
-            <div id="clientes-salvos-area"></div>
             <div class="form-group"><label for="cli-nome">Como devemos te chamar?</label><input type="text" id="cli-nome" placeholder="Seu nome"></div>
             <div class="grid-2">
-                <div class="form-group"><label for="cli-quadra">Quadra</label><input type="text" id="cli-quadra"></div>
-                <div class="form-group"><label for="cli-lote">Casa/Lote</label><input type="text" id="cli-lote"></div>
+                <div class="form-group"><label for="cli-quadra">Quadra</label><input type="text" inputmode="numeric" id="cli-quadra"></div>
+                <div class="form-group"><label for="cli-lote">Casa/Lote</label><input type="text" inputmode="numeric" id="cli-lote"></div>
             </div>
             <div class="form-group">
                 <label for="cli-pagamento">Forma de Pagamento</label>
@@ -103,9 +122,15 @@
                     <option value="Dinheiro">Dinheiro</option>
                 </select>
             </div>
-            <div class="form-group" id="troco-group" style="display:none;">
-                <label for="cli-troco">Troco para quanto?</label>
-                <input type="text" inputmode="decimal" id="cli-troco" placeholder="Ex: 50,00">
+            <div class="form-group" id="troco-group" style="display:none; background: var(--parchment); padding: 12px; border-radius: 8px;">
+                <label style="margin-bottom: 12px;">Vai precisar de troco?</label>
+                <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+                    <button type="button" class="btn btn-outline" id="btn-troco-nao" style="flex:1; padding: 10px; font-size: 0.9rem;" onclick="document.getElementById('cli-troco').value='Não preciso'; this.style.background='var(--forest)'; this.style.color='white'; document.getElementById('btn-troco-sim').style.background=''; document.getElementById('btn-troco-sim').style.color=''; document.getElementById('input-troco-area').style.display='none';">Não (Valor exato)</button>
+                    <button type="button" class="btn btn-outline" id="btn-troco-sim" style="flex:1; padding: 10px; font-size: 0.9rem;" onclick="document.getElementById('cli-troco').value=''; this.style.background='var(--forest)'; this.style.color='white'; document.getElementById('btn-troco-nao').style.background=''; document.getElementById('btn-troco-nao').style.color=''; document.getElementById('input-troco-area').style.display='block'; document.getElementById('cli-troco').focus();">Sim, preciso</button>
+                </div>
+                <div id="input-troco-area" style="display:none;">
+                    <input type="text" inputmode="decimal" id="cli-troco" placeholder="Troco para quanto? Ex: 50,00">
+                </div>
             </div>
             <div class="form-group" style="margin-bottom: 0;">
                 <label for="cli-obs">Observações (opcional)</label>
@@ -113,31 +138,27 @@
             </div>
         </div>
         <footer class="modal-footer">
-            <button class="btn-finalizar" id="btn-enviar-pedido">Enviar Pedido via WhatsApp 🚀</button>
+            <button class="btn-finalizar" id="btn-enviar-pedido">Enviar Pedido 🚀</button>
         </footer>
     </div>
 </div>
 
-<!-- Modal Meus Pedidos -->
 <div class="modal-overlay" id="modal-historico" role="dialog" aria-modal="true">
     <div class="modal">
         <header class="modal-head">
             <h2>📜 Meus Pedidos</h2>
             <button class="btn-fechar" data-fechar="modal-historico">&times;</button>
         </header>
-        <div class="modal-body" id="lista-meus-pedidos">
-            <!-- Injetado via JS -->
-        </div>
+        <div class="modal-body" id="lista-meus-pedidos"></div>
     </div>
 </div>
 
-<!-- Modal Sucesso -->
 <div class="modal-overlay" id="modal-sucesso" role="dialog" aria-modal="true">
     <div class="modal modal-center">
-        <div class="modal-body">
+        <div class="modal-body" style="padding-top: 40px;">
             <div class="circulo-sucesso">✓</div>
-            <h2 class="title-success">Pedido Prontinho!</h2>
-            <p class="text-success">Você será redirecionado para o nosso WhatsApp para confirmar e receber seu pedido.</p>
+            <h2 class="title-success">Pedido Registrado!</h2>
+            <p class="text-success">Você será redirecionado para o nosso WhatsApp para finalizar. Caso a janela não abra, clique no botão abaixo.</p>
             <button class="btn-finalizar" data-fechar="modal-sucesso">Voltar para a Loja</button>
         </div>
     </div>
@@ -145,7 +166,6 @@
 
 <div class="toast" id="toast" role="alert"></div>
 
-<!-- JS Modular -->
 <script type="module" src="./js/loja.js"></script>
 </body>
 </html>
