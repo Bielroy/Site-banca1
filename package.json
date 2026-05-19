@@ -1,1 +1,11 @@
-
+{
+  "name": "banca-adair-pedrina",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "start": "serve ."
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}
