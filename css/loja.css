@@ -34,7 +34,7 @@ header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; 
 .cat-btn { flex-shrink: 0; padding: 10px 20px; border-radius: 30px; border: 1.5px solid #e0dcd4; background: white; font-weight: 600; font-size: 0.85rem; color: var(--text-light); cursor: pointer; transition: var(--transition); text-transform: capitalize; }
 .cat-btn:hover, .cat-btn.active { border-color: var(--forest); color: white; background: var(--forest); }
 
-/* Layout e Grid */
+/* Layout e Grid Responsivo */
 .layout { display: flex; gap: 28px; max-width: 1260px; margin: 0 auto; padding: 32px 28px; align-items: flex-start; }
 .produtos-grid { flex: 2; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 18px; }
 
@@ -45,9 +45,7 @@ header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; 
 .produto-img-wrap { width: 100%; aspect-ratio: 1; background: var(--foam); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
 .produto-img-wrap img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s ease; }
 .produto-card:hover .produto-img-wrap img { transform: scale(1.05); }
-.produto-img-placeholder { width: 40%; height: 40%; color: var(--sage); opacity: 0.6; }
 
-/* Botão Favorito Animado */
 .btn-fav { position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.9); border: none; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; font-size: 1.1rem; box-shadow: var(--shadow-sm); transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2); backdrop-filter: blur(4px); }
 .btn-fav.ativo { color: var(--danger); text-shadow: 0 2px 4px rgba(220,38,38,0.3); transform: scale(1.1); }
 .btn-fav:not(.ativo) { filter: grayscale(100%); opacity: 0.8; }
@@ -64,7 +62,6 @@ header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; 
 .produto-preco { font-family: 'Fraunces', serif; font-size: 1.55rem; font-weight: 800; color: var(--forest); letter-spacing: -0.5px; line-height: 1; }
 .produto-preco span { font-size: 0.8rem; font-weight: 600; color: var(--text-light); }
 
-/* Animação Botão Add */
 .btn-add { width: 44px; height: 44px; border-radius: 50%; border: none; background: var(--forest); color: white; font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2); position: relative; }
 .btn-add:hover { transform: scale(1.1); background: var(--forest-mid); }
 .btn-add:active { transform: scale(0.9); }
@@ -102,22 +99,21 @@ header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; 
 
 .btn-finalizar { width: 100%; padding: 16px; min-height: 52px; background: var(--forest); color: white; border: none; border-radius: var(--radius-sm); font-size: 1.05rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2); }
 .btn-finalizar:hover:not(:disabled) { background: var(--forest-mid); transform: translateY(-2px); }
-.btn-finalizar:active:not(:disabled) { transform: translateY(0); }
 .btn-finalizar:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Empty States (SVGs via Base64/CSS ou injeção JS) */
+/* Empty States */
 .empty-state { text-align: center; padding: 40px 20px; color: var(--text-light); }
 .empty-state svg { width: 64px; height: 64px; opacity: 0.3; margin-bottom: 16px; color: var(--forest); }
 .empty-state p { font-weight: 600; font-size: 1.1rem; color: var(--text-mid); }
 .empty-state span { font-size: 0.9rem; display: block; margin-top: 4px; }
 
-/* Modais (Scroll fix no iOS) */
+/* Modais Enterprise (Tratamento para Teclado Mobile e dvh) */
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1005; justify-content: center; align-items: center; backdrop-filter: blur(4px); padding: 16px; }
 .modal-overlay.aberto { display: flex; animation: fadeIn 0.2s ease; }
-.modal { background: white; border-radius: var(--radius); width: 100%; max-width: 520px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; }
+.modal { background: white; border-radius: var(--radius); width: 100%; max-width: 520px; max-height: 85dvh; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; }
 .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--parchment); background: white; z-index: 2; flex-shrink: 0; }
 .modal-head h2 { font-family: 'Fraunces', serif; font-size: 1.5rem; color: var(--forest); }
-.modal-body { overflow-y: auto; padding: 24px; flex: 1; scrollbar-width: thin; -webkit-overflow-scrolling: touch; } /* Fix iOS Scroll */
+.modal-body { overflow-y: auto; padding: 24px; flex: 1; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
 .modal-footer { padding: 16px 24px; background: white; border-top: 1px solid var(--parchment); flex-shrink: 0; }
 
 .btn-fechar { background: var(--parchment); border: none; width: 36px; height: 36px; border-radius: 50%; font-size: 20px; cursor: pointer; color: var(--text-mid); display: flex; align-items: center; justify-content: center; transition: 0.2s; }
@@ -126,7 +122,7 @@ header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; 
 /* Forms */
 .form-group { margin-bottom: 16px; }
 .form-group label { display: block; font-size: 0.8rem; font-weight: 700; color: var(--text-mid); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-.form-group input, .form-group select, .form-group textarea { width: 100%; padding: 14px; border: 1.5px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; background: var(--parchment); transition: 0.2s; color: var(--text-dark); }
+.form-group input, .form-group select, .form-group textarea { width: 100%; padding: 14px; border: 1.5px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; background: var(--parchment); transition: 0.2s; color: var(--text-dark); font-size: 16px; /* Evita zoom automático no iOS */ }
 .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--forest); background: white; box-shadow: 0 0 0 3px rgba(26,58,42,0.1); }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
@@ -137,17 +133,15 @@ header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; 
 .title-success { font-family: 'Fraunces', serif; color: var(--forest); margin-bottom: 12px; font-size: 1.8rem; }
 .text-success { color: var(--text-mid); margin-bottom: 24px; line-height: 1.5; font-size: 1.05rem; }
 
-/* Toast System */
+/* Toast System e Float Btn */
+.btn-flutuante-carrinho { display: none; }
 .toast { position: fixed; bottom: calc(var(--safe-bottom) + 80px); left: 50%; transform: translateX(-50%) translateY(100px); opacity: 0; background: var(--forest); color: white; padding: 14px 28px; border-radius: 40px; font-weight: 700; font-size: 0.95rem; z-index: 9999; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2); box-shadow: var(--shadow-lg); pointer-events: none; text-align: center; white-space: nowrap; }
 .toast.visivel { transform: translateX(-50%) translateY(0); opacity: 1; }
 
-.btn-flutuante-carrinho { display: none; }
-
 /* ========================================= */
-/* MEDIA QUERIES (Resolvendo os Breakpoints) */
+/* MEDIA QUERIES (Resiliência Mobile Extrema) */
 /* ========================================= */
 
-/* TABLET (Otimização do grid e espaços em branco) */
 @media (min-width: 601px) and (max-width: 1024px) {
     .layout { flex-direction: column; padding: 24px 20px; }
     .produtos-grid { width: 100%; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
@@ -155,22 +149,26 @@ header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; 
     .btn-flutuante-carrinho { display: none; }
 }
 
-/* MOBILE */
 @media (max-width: 600px) {
     .layout { padding: 20px 16px calc(var(--safe-bottom) + 100px); flex-direction: column; }
-    .produtos-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); width: 100%; gap: 12px; }
+    /* Correção de Grid (Auto-fit com minmax reduzido para acomodar 2 itens no iPhone SE) */
+    .produtos-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); width: 100%; gap: 12px; }
     .produto-nome { font-size: 0.95rem; }
     .produto-preco { font-size: 1.3rem; }
     
-    .carrinho { position: fixed; bottom: -100%; left: 0; width: 100%; max-height: 85vh; z-index: 1001; border-radius: 24px 24px 0 0; transition: bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1); flex: none; top: auto; padding-bottom: var(--safe-bottom); }
+    .carrinho { position: fixed; bottom: -100%; left: 0; width: 100%; max-height: 85dvh; z-index: 1001; border-radius: 24px 24px 0 0; transition: bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1); flex: none; top: auto; padding-bottom: var(--safe-bottom); }
     .carrinho.aberto { bottom: 0; }
     .carrinho-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; backdrop-filter: blur(4px); }
     .carrinho-overlay.aberto { display: block; animation: fadeIn 0.3s ease; }
     
-    /* Z-Index corrigido para o Float vs Toast (Sobreposição resolvida) */
     .btn-flutuante-carrinho { display: flex; align-items: center; justify-content: center; position: fixed; bottom: calc(var(--safe-bottom) + 20px); left: 50%; transform: translateX(-50%); background: var(--forest); color: white; border: none; padding: 16px 32px; border-radius: 40px; font-weight: 700; font-size: 1.05rem; box-shadow: var(--shadow-lg); z-index: 900; cursor: pointer; min-width: 260px; transition: transform 0.2s; }
     .btn-flutuante-carrinho:active { transform: translateX(-50%) scale(0.95); }
     
-    .toast { z-index: 9999; bottom: calc(var(--safe-bottom) + 90px); } /* Toast fica acima do botão flutuante */
+    .toast { z-index: 9999; bottom: calc(var(--safe-bottom) + 90px); } 
     header h1 { font-size: 2rem; }
+    
+    /* Prevenção de Esmagamento do Teclado no Modal */
+    .modal-overlay { padding: 0; align-items: flex-end; }
+    .modal { max-height: 95dvh; border-radius: 20px 20px 0 0; }
+    .modal-body { padding-bottom: calc(24px + var(--safe-bottom)); }
 }
