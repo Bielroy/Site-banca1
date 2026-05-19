@@ -2,801 +2,150 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Banca Adair e Pedrina | Frescor Todo Dia</title>
+    <meta name="description" content="Compre frutas, verduras e hortaliças frescas com entrega rápida.">
+    <meta name="theme-color" content="#1a3a2a">
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preconnect" href="https://firestore.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     
-    <title>Banca Adair e Pedrina | Frescor Todo Dia no seu Condomínio</title>
-    <meta name="description" content="Compre frutas, verduras e hortaliças frescas com entrega rápida e direta no seu condomínio.">
-    <meta name="theme-color" content="#1a3a2a">
-    
-    <meta property="og:title" content="Banca Adair e Pedrina 🥬">
-    <meta property="og:description" content="Produtos fresquinhos entregues direto na sua porta. Faça seu pedido agora!">
-    <meta property="og:type" content="website">
-    
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600;9..144,700;9..144,900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <style>
-        :root {
-            --forest: #1a3a2a; --forest-mid: #2c5f45; --leaf: #4a9467;
-            --mint: #7ec8a0; --sage: #b8dfc8; --foam: #e8f5ee;
-            --earth: #c4773a; --earth-light: #e8a96a; --cream: #faf7f2;
-            --parchment: #f2ede3; --warm-white: #fefcf8; --text-dark: #1a1a18;
-            --text-mid: #4a4a44; --text-light: #8a8a80; --danger: #dc2626;
-            --shadow-sm: 0 2px 12px hsl(148, 30%, 15%, 0.04);
-            --shadow-md: 0 8px 24px hsl(148, 30%, 15%, 0.08);
-            --shadow-lg: 0 20px 40px hsl(148, 30%, 15%, 0.12);
-            --radius: 20px; --radius-sm: 12px;
-            --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-            --safe-bottom: env(safe-area-inset-bottom, 20px);
-        }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--cream); color: var(--text-dark); min-height: 100vh; -webkit-tap-highlight-color: transparent; }
-        button, input, select, textarea { font-family: inherit; font-size: 16px; }
-
-        .skeleton { background: linear-gradient(90deg, #e0dcd4 25%, #f2ede3 50%, #e0dcd4 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 8px; border: none !important; color: transparent !important; user-select: none; pointer-events: none; }
-        .skeleton img, .skeleton span, .skeleton div { opacity: 0; }
-        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-
-        header { background: var(--forest); color: white; position: relative; overflow: hidden; padding: 0; }
-        header::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(ellipse 80% 60% at 70% 20%, rgba(78,148,103,0.25) 0%, transparent 60%), radial-gradient(ellipse 50% 80% at 10% 80%, rgba(200,120,58,0.15) 0%, transparent 50%); z-index: 0; }
-        .header-inner { position: relative; z-index: 1; padding: 36px 28px 28px; max-width: 1260px; margin: 0 auto; }
-        
-        .header-eyebrow { display: inline-flex; align-items: center; gap: 6px; background: rgba(126,200,160,0.2); border: 1px solid rgba(126,200,160,0.3); color: var(--mint); font-size: 0.72rem; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 5px 14px; border-radius: 30px; margin-bottom: 14px; }
-        header h1 { font-family: 'Fraunces', serif; font-size: clamp(2.2rem, 5vw, 3.2rem); font-weight: 900; line-height: 1.05; letter-spacing: -1px; margin-bottom: 6px; }
-        header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; }
-        .header-subtitle { font-size: 1.05rem; font-weight: 500; color: var(--sage); margin-bottom: 20px; }
-        
-        .header-pills { display: flex; gap: 8px; flex-wrap: wrap; }
-        .pill { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.85); padding: 6px 16px; border-radius: 30px; font-size: 0.8rem; font-weight: 500; backdrop-filter: blur(10px); }
-
-        .banner-aviso { display: none; text-align: center; padding: 10px 20px; font-weight: 700; font-size: 0.88rem; }
-        .banner-aviso.fechado { background: #7f1d1d; color: white; }
-        .banner-aviso.minimo { background: #fef3c7; color: #92400e; }
-        .banner-aviso.visivel { display: block; }
-
-        .controles { background: var(--warm-white); position: sticky; top: 0; z-index: 200; border-bottom: 1px solid rgba(0,0,0,0.06); box-shadow: 0 4px 24px rgba(0,0,0,0.05); }
-        .controles-inner { max-width: 1260px; margin: 0 auto; padding: 14px 28px; display: flex; flex-direction: column; gap: 12px; }
-        .busca-wrap { width: 100%; max-width: 520px; position: relative; display: flex; align-items: center; gap: 8px; }
-        .busca-icon { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: var(--text-light); width: 17px; height: 17px; pointer-events: none; }
-        .busca-input { width: 100%; padding: 14px 20px 14px 48px; border-radius: 40px; border: 1.5px solid #e0dcd4; font-family: inherit; font-size: 0.95rem; outline: none; transition: var(--transition); background: var(--parchment); }
-        .busca-input:focus { border-color: var(--leaf); background: white; box-shadow: 0 0 0 4px rgba(74,148,103,0.1); }
-        
-        .btn-voz { background: var(--parchment); border: 1.5px solid #e0dcd4; border-radius: 50%; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: var(--transition); flex-shrink: 0; font-size: 1.1rem; }
-        .btn-voz.gravando { background: #fee2e2; border-color: var(--danger); animation: pulsoGravacao 1.5s infinite; }
-        @keyframes pulsoGravacao { 0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); } 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); } }
-
-        .categorias { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
-        .categorias::-webkit-scrollbar { display: none; }
-        .cat-btn { flex-shrink: 0; padding: 10px 20px; border-radius: 30px; border: 1.5px solid #e0dcd4; background: white; font-weight: 600; font-size: 0.85rem; color: var(--text-light); cursor: pointer; transition: var(--transition); text-transform: capitalize; }
-        .cat-btn:hover, .cat-btn.active { border-color: var(--forest); color: white; background: var(--forest); }
-
-        .layout { display: flex; gap: 28px; max-width: 1260px; margin: 0 auto; padding: 32px 28px; align-items: flex-start; }
-
-        .produtos-grid { flex: 2; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 18px; }
-        .produto-card { background: var(--warm-white); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); border: 1.5px solid transparent; display: flex; flex-direction: column; position: relative; transition: transform 0.2s; }
-        .produto-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
-        .produto-img-wrap { width: 100%; aspect-ratio: 1; background: var(--foam); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
-        .produto-img-wrap img { width: 100%; height: 100%; object-fit: cover; }
-        .produto-img-placeholder { width: 40%; height: 40%; color: var(--sage); opacity: 0.6; }
-        
-        .btn-fav { position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.9); border: none; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; font-size: 1.1rem; box-shadow: var(--shadow-sm); transition: 0.2s; backdrop-filter: blur(4px); }
-        .btn-fav.ativo { color: var(--danger); text-shadow: 0 2px 4px rgba(220,38,38,0.3); }
-        .btn-fav:not(.ativo) { filter: grayscale(100%); opacity: 0.8; }
-        .btn-fav:active { transform: scale(0.85); }
-        
-        .card-badge { position: absolute; top: 12px; right: 52px; background: var(--forest); color: white; min-width: 28px; height: 28px; padding: 0 8px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; display: flex; align-items: center; justify-content: center; z-index: 10; opacity: 0; transform: scale(0.5); transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2); }
-        .card-badge.visivel { opacity: 1; transform: scale(1); }
-        
-        .produto-unidade-tag { position: absolute; top: 12px; left: 12px; background: rgba(26,58,42,0.85); backdrop-filter: blur(8px); color: var(--mint); font-size: 0.7rem; font-weight: 700; padding: 4px 12px; border-radius: 20px; text-transform: uppercase; z-index: 10; }
-        .produto-info { padding: 16px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
-        .produto-categoria { font-size: 0.75rem; font-weight: 700; color: var(--leaf); text-transform: uppercase; letter-spacing: 1px; }
-        .produto-nome { font-size: 1rem; color: var(--text-mid); line-height: 1.2; font-weight: 600; }
-        .produto-preco-row { display: flex; align-items: flex-end; justify-content: space-between; margin-top: auto; padding-top: 8px; }
-        .produto-preco { font-family: 'Fraunces', serif; font-size: 1.55rem; font-weight: 800; color: var(--forest); letter-spacing: -0.5px; line-height: 1; }
-        .produto-preco span { font-size: 0.8rem; font-weight: 500; color: var(--text-light); }
-        
-        .btn-add { width: 44px; height: 44px; border-radius: 50%; border: none; background: var(--forest); color: white; font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; overflow: hidden; position: relative; }
-        .btn-add:active { transform: scale(0.9); }
-        .btn-add.sucesso { background: var(--leaf); pointer-events: none; }
-
-        .carrinho { flex: 0 0 350px; background: var(--warm-white); border-radius: var(--radius); box-shadow: var(--shadow-md); display: flex; flex-direction: column; position: sticky; top: 140px; max-height: calc(100vh - 160px); border: 1px solid rgba(0,0,0,0.04); }
-        .carrinho-topo { padding: 20px; border-bottom: 1px solid var(--parchment); display: flex; justify-content: space-between; align-items: center; }
-        .carrinho-titulo { font-family: 'Fraunces', serif; font-size: 1.3rem; font-weight: 700; color: var(--forest); display: flex; align-items: center; gap: 8px; }
-        .carrinho-titulo-badge { background: var(--forest); color: var(--mint); font-size: 0.75rem; padding: 2px 10px; border-radius: 20px; font-weight: bold; }
-        
-        .carrinho-pulse { animation: pulseCart 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
-        @keyframes pulseCart { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
-
-        .btn-limpar { background: none; border: none; color: var(--text-light); font-weight: 600; cursor: pointer; font-size: 0.85rem; padding: 8px; transition: color 0.2s; }
-        .btn-limpar:hover { color: var(--danger); }
-        
-        .carrinho-itens { overflow-y: auto; flex: 1; padding: 8px 0; scrollbar-width: thin; }
-        .carrinho-item { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--foam); }
-        .item-emoji { flex-shrink: 0; width: 48px; height: 48px; background: var(--parchment); border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-        .item-emoji img { width: 100%; height: 100%; object-fit: cover; }
-        .item-meio { flex: 1; min-width: 0; }
-        .item-nome { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-dark); }
-        .qtd-ctrl { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-        .btn-qtd { width: 36px; height: 36px; border-radius: 8px; border: 1.5px solid #e0dcd4; background: white; font-weight: 700; cursor: pointer; color: var(--text-mid); display: flex; align-items: center; justify-content: center; }
-        .btn-qtd:active { background: var(--parchment); }
-        .qtd-input { width: 50px; height: 36px; text-align: center; border: 1.5px solid #e0dcd4; border-radius: 8px; font-weight: 700; font-size: 0.9rem; outline: none; background: white; color: var(--text-dark); }
-        .qtd-input:focus { border-color: var(--forest); box-shadow: 0 0 0 3px rgba(26,58,42,0.1); }
-        .item-preco { font-family: 'Fraunces', serif; font-weight: 700; font-size: 1.05rem; color: var(--forest); }
-        
-        .upsell-box { background: var(--foam); margin: 10px 20px; padding: 12px; border-radius: 12px; font-size: 0.85rem; border: 1px dashed var(--mint); display: flex; justify-content: space-between; align-items: center; }
-        .upsell-box button { background: var(--forest); color: white; border: none; padding: 6px 12px; border-radius: 8px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: background 0.2s; }
-        .upsell-box button:hover { background: var(--forest-mid); }
-
-        .carrinho-rodape { padding: 20px; border-top: 1px solid var(--parchment); background: var(--warm-white); border-radius: 0 0 var(--radius) var(--radius); z-index: 10; }
-        .total-box { background: var(--forest); border-radius: 14px; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-        .total-label { font-size: 0.85rem; font-weight: 600; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 0.5px; }
-        .total-valor { font-family: 'Fraunces', serif; font-size: 1.8rem; color: white; font-weight: 700; }
-        
-        .btn-finalizar { width: 100%; padding: 16px; min-height: 52px; background: var(--forest); color: white; border: none; border-radius: var(--radius-sm); font-size: 1.05rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: var(--transition); }
-        .btn-finalizar:hover:not(:disabled) { background: var(--forest-mid); transform: translateY(-2px); }
-        .btn-finalizar:active:not(:disabled) { transform: translateY(0); }
-        .btn-finalizar:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1005; justify-content: center; align-items: center; backdrop-filter: blur(4px); padding: 16px; }
-        .modal-overlay.aberto { display: flex; animation: fadeIn 0.2s ease; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        
-        .modal { background: white; border-radius: var(--radius); width: 100%; max-width: 520px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; }
-        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--parchment); background: white; z-index: 2; flex-shrink: 0; }
-        .modal-body { overflow-y: auto; padding: 24px; flex: 1; scrollbar-width: thin; }
-        .modal-footer { padding: 16px 24px; background: white; border-top: 1px solid var(--parchment); flex-shrink: 0; }
-
-        .btn-fechar { background: var(--parchment); border: none; width: 36px; height: 36px; border-radius: 50%; font-size: 20px; cursor: pointer; color: var(--text-mid); display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
-        .btn-fechar:hover { background: #e0dcd4; color: var(--text-dark); }
-        
-        .form-group { margin-bottom: 16px; }
-        .form-group label { display: block; font-size: 0.8rem; font-weight: 700; color: var(--text-mid); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 14px; border: 1.5px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; background: var(--parchment); transition: 0.2s; color: var(--text-dark); }
-        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--forest); background: white; box-shadow: 0 0 0 3px rgba(26,58,42,0.1); }
-        
-        #modal-sucesso .modal { text-align: center; padding-bottom: 0; max-width: 400px; }
-        .circulo-sucesso { width: 80px; height: 80px; background: #dcfce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: #16a34a; font-size: 40px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.2); }
-
-        .toast { position: fixed; bottom: calc(var(--safe-bottom) + 80px); left: 50%; transform: translateX(-50%) translateY(100px); opacity: 0; background: var(--forest); color: white; padding: 14px 28px; border-radius: 40px; font-weight: 600; font-size: 0.95rem; z-index: 9999; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2); box-shadow: var(--shadow-lg); pointer-events: none; text-align: center; white-space: nowrap; }
-        .toast.visivel { transform: translateX(-50%) translateY(0); opacity: 1; }
-
-        .btn-flutuante-carrinho { display: none; }
-        
-        @media (max-width: 900px) {
-            .layout { padding: 20px 16px calc(var(--safe-bottom) + 100px); flex-direction: column; }
-            .produtos-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); width: 100%; gap: 12px; }
-            .produto-nome { font-size: 0.95rem; }
-            .produto-preco { font-size: 1.3rem; }
-            .carrinho { position: fixed; bottom: -100%; left: 0; width: 100%; max-height: 85vh; z-index: 1001; border-radius: 24px 24px 0 0; transition: bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1); flex: none; top: auto; padding-bottom: var(--safe-bottom); }
-            .carrinho.aberto { bottom: 0; }
-            .carrinho-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; backdrop-filter: blur(4px); }
-            .carrinho-overlay.aberto { display: block; animation: fadeIn 0.3s ease; }
-            .btn-flutuante-carrinho { display: flex; align-items: center; justify-content: center; position: fixed; bottom: calc(var(--safe-bottom) + 20px); left: 50%; transform: translateX(-50%); background: var(--forest); color: white; border: none; padding: 16px 32px; border-radius: 40px; font-weight: 700; font-size: 1.05rem; box-shadow: var(--shadow-lg); z-index: 100; cursor: pointer; min-width: 260px; transition: transform 0.2s; }
-            .btn-flutuante-carrinho:active { transform: translateX(-50%) scale(0.95); }
-            header h1 { font-size: 2rem; }
-        }
-    </style>
+    <!-- CSS Modular -->
+    <link rel="stylesheet" href="./css/variables.css">
+    <link rel="stylesheet" href="./css/loja.css">
 </head>
 <body>
 
-<div class="banner-aviso fechado" id="banner-offline">📵 Você está sem internet. O cardápio pode estar desatualizado.</div>
-<div class="banner-aviso fechado" id="banner-fechado">🚫 Estamos fechados no momento. Voltamos em breve!</div>
-<div class="banner-aviso minimo" id="banner-minimo"></div>
+<div class="banner-aviso fechado" id="banner-offline" aria-live="polite">📵 Você está sem internet. Usando dados salvos.</div>
+<div class="banner-aviso fechado" id="banner-fechado" aria-live="polite">🚫 Estamos fechados no momento. Voltamos em breve!</div>
+<div class="banner-aviso minimo" id="banner-minimo" aria-live="polite"></div>
 
 <header id="header-principal">
     <div class="header-inner">
         <div class="header-eyebrow">🌿 Frescor Todo Dia</div>
         <h1 id="header-nome">Banca <em>Adair</em> e Pedrina</h1>
         <div class="header-subtitle">Seg a Sáb • Entrega no seu condomínio</div>
-        <div class="header-pills">
-            <span class="pill">⭐ +200 pedidos no condomínio</span>
-            <span class="pill">✅ Peça e receba em casa</span>
+        <nav class="header-pills" aria-label="Navegação de Destaques">
+            <span class="pill">⭐ +200 pedidos</span>
+            <span class="pill">✅ Receba em casa</span>
             <span class="pill">💳 PIX • Cartão • Dinheiro</span>
-            <button class="pill" id="btn-historico" style="cursor:pointer; background: var(--leaf); font-weight: bold; border-color: var(--mint); transition: 0.2s;">📜 Meus Pedidos</button>
-        </div>
+            <button class="pill btn-historico" data-action="open-historico">📜 Meus Pedidos</button>
+        </nav>
     </div>
 </header>
 
-<div class="controles">
+<section class="controles" aria-label="Controles de Busca e Filtro">
     <div class="controles-inner">
         <div class="busca-wrap">
             <svg class="busca-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/></svg>
-            <input type="text" id="busca-input" class="busca-input" placeholder="Buscar batata, alface, tomate...">
-            <button class="btn-voz" id="btn-voz" title="Pesquisa por voz">🎤</button>
+            <input type="text" id="busca-input" class="busca-input" placeholder="Buscar batata, alface, tomate..." aria-label="Buscar produtos">
+            <button class="btn-voz" id="btn-voz" aria-label="Pesquisa por voz">🎤</button>
         </div>
-        <div class="categorias" id="categorias">
+        <nav class="categorias" id="categorias" aria-label="Filtro de Categorias">
             <button class="cat-btn skeleton" style="width:80px;height:38px"></button>
-        </div>
+        </nav>
     </div>
-</div>
+</section>
 
-<div class="layout">
-    <div class="produtos-grid" id="lista-produtos">
-        <div class="produto-card skeleton" style="height: 280px;"></div>
-    </div>
+<main class="layout">
+    <!-- Grid de Produtos -->
+    <section class="produtos-grid" id="lista-produtos" aria-label="Lista de Produtos">
+        <article class="produto-card skeleton" style="height: 280px;"></article>
+    </section>
 
-    <button class="btn-flutuante-carrinho" id="btn-carrinho-mobile">
+    <button class="btn-flutuante-carrinho" id="btn-carrinho-mobile" aria-label="Ver Carrinho">
         🛒 Ver Pedido (<span id="qtd-flutuante">0</span>)
     </button>
     <div class="carrinho-overlay" id="carrinho-overlay"></div>
 
-    <div class="carrinho" id="carrinho">
-        <div class="carrinho-topo">
-            <div class="carrinho-titulo">Meu Pedido <span class="carrinho-titulo-badge" id="qtd-badge">0</span></div>
+    <!-- Sidebar Carrinho -->
+    <aside class="carrinho" id="carrinho" aria-label="Seu Carrinho de Compras">
+        <header class="carrinho-topo">
+            <h2 class="carrinho-titulo">Meu Pedido <span class="carrinho-titulo-badge" id="qtd-badge">0</span></h2>
             <button class="btn-limpar" id="btn-limpar-carrinho">Esvaziar</button>
+        </header>
+        
+        <div class="carrinho-itens" id="carrinho-itens">
+            <!-- Estado Vazio Injetado via JS -->
         </div>
-        <div class="carrinho-itens" id="carrinho-itens"></div>
         <div id="upsell-container"></div>
-        <div class="carrinho-rodape">
+        
+        <footer class="carrinho-rodape">
             <div class="total-box">
                 <span class="total-label">Total</span>
                 <span class="total-valor" id="total-val">R$ 0,00</span>
             </div>
-            <button class="btn-finalizar" id="btn-abrir-checkout" disabled>
-                Finalizar Pedido
-            </button>
-        </div>
-    </div>
-</div>
+            <button class="btn-finalizar" id="btn-abrir-checkout" disabled>Finalizar Pedido</button>
+        </footer>
+    </aside>
+</main>
 
 <!-- Modal Checkout -->
-<div class="modal-overlay" id="overlay-checkout">
+<div class="modal-overlay" id="modal-checkout" role="dialog" aria-modal="true">
     <div class="modal">
-        <div class="modal-head">
-            <h2 style="font-family: 'Fraunces', serif; font-size: 1.5rem; color: var(--forest);">📦 Dados da Entrega</h2>
-            <button class="btn-fechar" data-fechar="overlay-checkout">&times;</button>
-        </div>
+        <header class="modal-head">
+            <h2>📦 Dados da Entrega</h2>
+            <button class="btn-fechar" data-fechar="modal-checkout" aria-label="Fechar">&times;</button>
+        </header>
         <div class="modal-body">
             <div id="clientes-salvos-area"></div>
-            <div class="form-group"><label>Como devemos te chamar?</label><input type="text" id="cli-nome" placeholder="Seu nome"></div>
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
-                <div class="form-group"><label>Quadra</label><input type="text" id="cli-quadra"></div>
-                <div class="form-group"><label>Casa/Lote</label><input type="text" id="cli-lote"></div>
+            <div class="form-group"><label for="cli-nome">Como devemos te chamar?</label><input type="text" id="cli-nome" placeholder="Seu nome"></div>
+            <div class="grid-2">
+                <div class="form-group"><label for="cli-quadra">Quadra</label><input type="text" id="cli-quadra"></div>
+                <div class="form-group"><label for="cli-lote">Casa/Lote</label><input type="text" id="cli-lote"></div>
             </div>
-            <div class="form-group"><label>Forma de Pagamento</label><select id="cli-pagamento"><option value="PIX">PIX (Chave via WhatsApp)</option><option value="Cartão">Cartão (Levamos a maquininha)</option><option value="Dinheiro">Dinheiro</option></select></div>
-            <div class="form-group" id="troco-group" style="display:none;"><label>Troco para quanto?</label><input type="text" inputmode="decimal" id="cli-troco" placeholder="Ex: 50,00"></div>
-            <div class="form-group" style="margin-bottom: 0;"><label>Observações (opcional)</label><textarea id="cli-obs" rows="2" placeholder="Ex: tomates bem maduros, deixar na portaria..."></textarea></div>
+            <div class="form-group">
+                <label for="cli-pagamento">Forma de Pagamento</label>
+                <select id="cli-pagamento">
+                    <option value="PIX">PIX (Chave via WhatsApp)</option>
+                    <option value="Cartão">Cartão (Levamos a maquininha)</option>
+                    <option value="Dinheiro">Dinheiro</option>
+                </select>
+            </div>
+            <div class="form-group" id="troco-group" style="display:none;">
+                <label for="cli-troco">Troco para quanto?</label>
+                <input type="text" inputmode="decimal" id="cli-troco" placeholder="Ex: 50,00">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="cli-obs">Observações (opcional)</label>
+                <textarea id="cli-obs" rows="2" placeholder="Ex: tomates bem maduros, deixar na portaria..."></textarea>
+            </div>
         </div>
-        <div class="modal-footer">
+        <footer class="modal-footer">
             <button class="btn-finalizar" id="btn-enviar-pedido">Enviar Pedido via WhatsApp 🚀</button>
-        </div>
+        </footer>
     </div>
 </div>
 
 <!-- Modal Meus Pedidos -->
-<div class="modal-overlay" id="modal-historico">
+<div class="modal-overlay" id="modal-historico" role="dialog" aria-modal="true">
     <div class="modal">
-        <div class="modal-head">
-            <h2 style="font-family: 'Fraunces', serif; font-size: 1.5rem; color: var(--forest);">📜 Meus Pedidos</h2>
+        <header class="modal-head">
+            <h2>📜 Meus Pedidos</h2>
             <button class="btn-fechar" data-fechar="modal-historico">&times;</button>
-        </div>
+        </header>
         <div class="modal-body" id="lista-meus-pedidos">
-            <!-- Pedidos injetados via JS -->
+            <!-- Injetado via JS -->
         </div>
     </div>
 </div>
 
 <!-- Modal Sucesso -->
-<div class="modal-overlay" id="modal-sucesso">
-    <div class="modal">
+<div class="modal-overlay" id="modal-sucesso" role="dialog" aria-modal="true">
+    <div class="modal modal-center">
         <div class="modal-body">
             <div class="circulo-sucesso">✓</div>
-            <h2 style="font-family: 'Fraunces', serif; color: var(--forest); margin-bottom: 12px; font-size: 1.8rem;">Pedido Prontinho!</h2>
-            <p style="color: var(--text-mid); margin-bottom: 24px; line-height: 1.5; font-size: 1.05rem;">Você será redirecionado para o nosso WhatsApp para confirmar e receber seu pedido.</p>
-            <button class="btn-finalizar" onclick="document.getElementById('modal-sucesso').classList.remove('aberto')">Voltar para a Loja</button>
+            <h2 class="title-success">Pedido Prontinho!</h2>
+            <p class="text-success">Você será redirecionado para o nosso WhatsApp para confirmar e receber seu pedido.</p>
+            <button class="btn-finalizar" data-fechar="modal-sucesso">Voltar para a Loja</button>
         </div>
     </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="alert"></div>
 
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { getFirestore, collection, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-
-    const firebaseConfig = {
-        apiKey: "AIzaSyAY_qGll6YJKA6ErYIOd5XIVblrlq8vynM", 
-        authDomain: "banca-adair-e-pedrina.firebaseapp.com",
-        projectId: "banca-adair-e-pedrina"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-
-    const CART_VERSION = "1.2"; 
-    let savedCart = { v: CART_VERSION, items: [] };
-    try { 
-        const raw = localStorage.getItem('banca_cart');
-        if(raw) { 
-            const parsed = JSON.parse(raw); 
-            if(parsed.v === CART_VERSION) savedCart = parsed; 
-        }
-    } catch(e) {}
-
-    let STATE = {
-        produtos: [], carrinho: savedCart.items, catAtiva: 'todas', busca: '',
-        config: { minimo: 0, wpp: '5562999999999', lojaAberta: true, diasAbertos: [0,1,2,3,4,5,6] },
-        favoritos: JSON.parse(localStorage.getItem('banca_favs') || '[]')
-    };
-
-    const fmt = (n) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
-    const escapeHTML = (str) => { if(!str) return ''; return String(str).replace(/[&<>'"]/g, match => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[match])); };
-    const placeholderSVG = `<svg class="produto-img-placeholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>`;
-
-    const isFracionavel = (unidade) => {
-        const u = (unidade || '').toLowerCase();
-        return ['kg', 'kilo', 'quilograma', 'g', 'grama', 'l', 'litro'].includes(u);
-    };
-
-    const fixFloat = (num) => Math.round(num * 1000) / 1000;
-
-    const formatarQuantidadeVisual = (qtd, fracionavel) => {
-        if (!fracionavel) return qtd.toString();
-        return qtd.toString().replace('.', ',');
-    };
-
-    let toastTimer;
-    const showToast = (msg) => {
-        const t = document.getElementById('toast');
-        t.textContent = msg; t.classList.add('visivel');
-        clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('visivel'), 3000);
-    };
-
-    const getCartQty = (id) => { 
-        const item = STATE.carrinho.find(x => x.id === id); 
-        return item ? item.qtd : 0; 
-    };
-
-    const renderCarrinho = () => {
-        const cont = document.getElementById('carrinho-itens');
-        const upsellCont = document.getElementById('upsell-container');
-        let total = 0, html = '';
-
-        STATE.produtos.forEach(p => {
-            const badge = document.getElementById(`badge-${p.id}`);
-            if(badge) {
-                const q = getCartQty(p.id);
-                badge.textContent = isFracionavel(p.unidade) && q > 0 ? formatarQuantidadeVisual(q, true) : q;
-                if(q > 0) badge.classList.add('visivel'); else badge.classList.remove('visivel');
-            }
-        });
-
-        if (STATE.carrinho.length === 0) {
-            cont.innerHTML = `<div style="text-align:center; padding: 60px 20px; color: var(--text-light);"><span style="font-size:3.5rem; opacity:0.2; display:block; margin-bottom:12px;">🛒</span><p style="font-weight:600; font-size:1.1rem; color:var(--text-mid);">Seu pedido está vazio</p><p style="font-size:0.9rem; margin-top:4px;">Adicione produtos para começar.</p></div>`;
-            document.getElementById('total-val').textContent = 'R$ 0,00';
-            upsellCont.innerHTML = '';
-            atualizarBadge(0, 0); 
-            return;
-        }
-
-        STATE.carrinho.forEach(item => {
-            const sub = item.preco * item.qtd; 
-            total += sub;
-            const fracionavel = isFracionavel(item.unidade);
-            
-            // O segredo está aqui: Mudado para type="text", removendo o conflito nativo do HTML com a vírgula
-            html += `
-            <div class="carrinho-item">
-                <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(item.foto)}" loading="lazy" width="48" height="48" alt="${escapeHTML(item.nome)}">` : placeholderSVG}</div>
-                <div class="item-meio">
-                    <div class="item-nome">${escapeHTML(item.nome)}</div>
-                    <div class="qtd-ctrl">
-                        <button class="btn-qtd" data-action="dec" data-id="${item.id}" aria-label="Diminuir quantidade">−</button>
-                        <input class="qtd-input" type="text" inputmode="decimal" value="${formatarQuantidadeVisual(item.qtd, fracionavel)}" data-id="${item.id}" aria-label="Quantidade">
-                        <button class="btn-qtd" data-action="inc" data-id="${item.id}" aria-label="Aumentar quantidade">+</button>
-                    </div>
-                </div>
-                <span class="item-preco">${fmt(sub)}</span>
-            </div>`;
-        });
-        cont.innerHTML = html; 
-        document.getElementById('total-val').textContent = fmt(total);
-        
-        const idsNoCarrinho = STATE.carrinho.map(c => c.id);
-        const catsNoCarrinho = [...new Set(STATE.carrinho.map(c => c.cat))];
-        
-        let sugestoes = STATE.produtos.filter(p => p.ativo && !idsNoCarrinho.includes(p.id) && catsNoCarrinho.includes(p.cat));
-        if(sugestoes.length === 0) sugestoes = STATE.produtos.filter(p => p.ativo && !idsNoCarrinho.includes(p.id));
-
-        if (sugestoes.length > 0) {
-            sugestoes.sort((a,b) => (STATE.favoritos.includes(b.id) ? 1 : 0) - (STATE.favoritos.includes(a.id) ? 1 : 0));
-            const up = sugestoes[0];
-            upsellCont.innerHTML = `<div class="upsell-box"><span>Que tal levar <b>${escapeHTML(up.nome)}</b>?</span><button data-action="add" data-id="${up.id}">+ Add</button></div>`;
-        } else {
-            upsellCont.innerHTML = '';
-        }
-        
-        const qtdDistinta = STATE.carrinho.reduce((acc, item) => acc + (isFracionavel(item.unidade) ? 1 : item.qtd), 0);
-        atualizarBadge(qtdDistinta, total);
-    };
-
-    const atualizarBadge = (qtd, total) => {
-        const displayQtd = Math.ceil(qtd); 
-        document.getElementById('qtd-flutuante').textContent = displayQtd; 
-        document.getElementById('qtd-badge').textContent = displayQtd;
-        
-        const btnF = document.getElementById('btn-abrir-checkout');
-        const bannerMin = document.getElementById('banner-minimo');
-        const bannerFechado = document.getElementById('banner-fechado');
-        
-        const lojaAberta = STATE.config.lojaAberta !== false; 
-        const hojePermitido = (STATE.config.diasAbertos || [0,1,2,3,4,5,6]).includes(new Date().getDay());
-        
-        if (!lojaAberta || !hojePermitido) {
-            btnF.disabled = true; btnF.textContent = "Loja Fechada";
-            bannerMin.classList.remove('visivel'); bannerFechado.classList.add('visivel');
-            return; 
-        } else { 
-            bannerFechado.classList.remove('visivel'); 
-        }
-
-        if (STATE.config.minimo > 0 && total < STATE.config.minimo && STATE.carrinho.length > 0) { 
-            btnF.disabled = true; btnF.textContent = `Falta ${fmt(STATE.config.minimo - total)}`;
-            bannerMin.textContent = `⚠️ Valor mínimo para pedido: ${fmt(STATE.config.minimo)}`; 
-            bannerMin.classList.add('visivel'); 
-        } else { 
-            btnF.disabled = STATE.carrinho.length === 0; btnF.textContent = "Finalizar Pedido";
-            bannerMin.classList.remove('visivel'); 
-        }
-    };
-
-    const modificarCarrinho = (id, delta, fixo = false) => {
-        const p = STATE.produtos.find(x => x.id === id);
-        if (!p) return;
-
-        const fracionavel = isFracionavel(p.unidade);
-        const step = fracionavel ? 0.1 : 1;
-        
-        let valParaAplicar = fixo ? delta : (delta > 0 ? step : -step);
-
-        const idx = STATE.carrinho.findIndex(x => x.id === id);
-        
-        if (idx > -1) { 
-            let novaQtd = fixo ? valParaAplicar : STATE.carrinho[idx].qtd + valParaAplicar; 
-            novaQtd = fixFloat(novaQtd);
-            
-            if (novaQtd > 99) novaQtd = 99; 
-            
-            if (novaQtd <= 0) {
-                STATE.carrinho.splice(idx, 1); 
-            } else {
-                STATE.carrinho[idx].qtd = novaQtd;
-            }
-        } 
-        else if (valParaAplicar > 0) { 
-            let novaQtdInicial = fixo ? valParaAplicar : 1; 
-            novaQtdInicial = fixFloat(novaQtdInicial);
-            if (novaQtdInicial > 99) novaQtdInicial = 99;
-            
-            STATE.carrinho.push({...p, qtd: novaQtdInicial}); 
-        }
-        
-        localStorage.setItem('banca_cart', JSON.stringify({v: CART_VERSION, items: STATE.carrinho})); 
-        renderCarrinho();
-    };
-
-    document.getElementById('carrinho-itens').addEventListener('change', (e) => {
-        if(e.target.classList.contains('qtd-input')) {
-            const id = e.target.dataset.id;
-            const p = STATE.produtos.find(x => x.id === id);
-            
-            let rawValue = e.target.value.replace(',', '.');
-            let val = parseFloat(rawValue);
-            
-            if(isNaN(val) || val < 0) val = 0;
-            
-            if (p && !isFracionavel(p.unidade)) {
-                val = Math.round(val);
-            } else {
-                val = fixFloat(val); 
-            }
-
-            modificarCarrinho(id, val, true);
-        }
-    });
-
-    const renderLoja = () => {
-        const grid = document.getElementById('lista-produtos');
-        const normalize = str => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-        const termo = normalize(STATE.busca);
-        
-        const idsCarrinho = STATE.carrinho.map(c => c.id);
-        
-        const filtrados = STATE.produtos
-            .filter(p => p.ativo && 
-                (STATE.catAtiva === 'todas' || 
-                (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(p.id)) || 
-                p.cat === STATE.catAtiva) && 
-                normalize(p.nome).includes(termo))
-            .sort((a, b) => {
-                let pesoA = (idsCarrinho.includes(a.id) ? 2 : 0) + (STATE.favoritos.includes(a.id) ? 1 : 0);
-                let pesoB = (idsCarrinho.includes(b.id) ? 2 : 0) + (STATE.favoritos.includes(b.id) ? 1 : 0);
-                return pesoB - pesoA;
-            });
-        
-        if (filtrados.length === 0) { 
-            grid.innerHTML = `<div style="grid-column: 1/-1; text-align:center; padding: 60px 20px; color: var(--text-light);"><div style="font-size: 4rem; margin-bottom: 16px; opacity: 0.5;">🥬🔍</div><h3 style="color: var(--forest); margin-bottom: 8px;">Nenhum produto encontrado</h3><p>Tente buscar por outro termo ou limpe os filtros.</p></div>`; return; 
-        }
-
-        grid.innerHTML = filtrados.map((p, i) => {
-            const qtdNoCarrinho = getCartQty(p.id);
-            const isKg = isFracionavel(p.unidade);
-            const badgeTexto = isKg && qtdNoCarrinho > 0 ? formatarQuantidadeVisual(qtdNoCarrinho, true) : qtdNoCarrinho;
-            
-            return `
-            <div class="produto-card">
-                <div class="produto-img-wrap">
-                    ${p.foto ? `<img src="${escapeHTML(p.foto)}" loading="lazy" width="400" height="400" alt="${escapeHTML(p.nome)}">` : placeholderSVG}
-                    <button class="btn-fav ${STATE.favoritos.includes(p.id) ? 'ativo' : ''}" data-action="fav" data-id="${p.id}" aria-label="Favoritar">❤️</button>
-                    <span class="produto-unidade-tag">${escapeHTML(p.unidade || 'un')}</span>
-                    <div class="card-badge ${qtdNoCarrinho > 0 ? 'visivel':''}" id="badge-${p.id}">${badgeTexto}</div>
-                </div>
-                <div class="produto-info">
-                    <div class="produto-categoria">${escapeHTML(p.cat)}</div>
-                    <h3 class="produto-nome">${escapeHTML(p.nome)}</h3>
-                    <div class="produto-preco-row">
-                        <span class="produto-preco">${fmt(p.preco)}<br><span>por ${escapeHTML(p.unidade || 'un')}</span></span>
-                        <button class="btn-add" data-action="add" data-id="${p.id}" id="addbtn-${p.id}" aria-label="Adicionar ao carrinho">+</button>
-                    </div>
-                </div>
-            </div>`;
-        }).join('');
-    };
-
-    const renderCategorias = () => {
-        const cats = ['todas', 'favoritos', ...new Set(STATE.produtos.map(p => p.cat))].filter(Boolean);
-        document.getElementById('categorias').innerHTML = cats.map(c => `<button class="cat-btn ${c === STATE.catAtiva ? 'active' : ''}" data-action="cat" data-cat="${escapeHTML(c)}">${c === 'todas' ? 'Todos' : c === 'favoritos' ? '❤️ Favoritos' : escapeHTML(c)}</button>`).join('');
-    };
-
-    const carregarDados = async () => {
-        if (!navigator.onLine) { document.getElementById('banner-offline').classList.add('visivel'); return; }
-        try {
-            const snap = await getDocs(collection(db, "produtos")); 
-            STATE.produtos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            
-            const confSnap = await getDocs(collection(db, "loja")); 
-            confSnap.forEach(d => { if(d.id === 'config') STATE.config = {...STATE.config, ...d.data()}; });
-            
-            renderCategorias(); 
-            renderLoja(); 
-            renderCarrinho();
-        } catch (e) { 
-            console.error("Erro Firebase:", e); 
-            showToast("Erro ao carregar cardápio. Tente recarregar a página.");
-        }
-    };
-
-    const animarFeedbackBtn = (btn) => {
-        btn.classList.add('sucesso'); btn.innerHTML = '✓';
-        setTimeout(() => { btn.classList.remove('sucesso'); btn.innerHTML = '+'; }, 500);
-    };
-
-    document.body.addEventListener('click', async (e) => {
-        const target = e.target.closest('[data-action]'); if (!target) return;
-        const action = target.dataset.action, id = target.dataset.id;
-        
-        if (action === 'add' || action === 'inc') { 
-            modificarCarrinho(id, 1); 
-            if(action === 'add') animarFeedbackBtn(target); 
-        }
-        if (action === 'dec') modificarCarrinho(id, -1);
-        if (action === 'cat') { STATE.catAtiva = target.dataset.cat; renderCategorias(); renderLoja(); }
-        if (action === 'fav') { 
-            if(STATE.favoritos.includes(id)) STATE.favoritos = STATE.favoritos.filter(f => f !== id); 
-            else STATE.favoritos.push(id); 
-            localStorage.setItem('banca_favs', JSON.stringify(STATE.favoritos)); renderLoja(); 
-        }
-    });
-
-    const toggleCartMobile = (abrir) => {
-        const c = document.getElementById('carrinho'), o = document.getElementById('carrinho-overlay');
-        if (abrir) { 
-            c.classList.add('aberto'); 
-            o.classList.add('aberto'); 
-            history.pushState({cart: true}, ''); 
-        } else { 
-            c.classList.remove('aberto'); 
-            o.classList.remove('aberto'); 
-        }
-    };
-    
-    window.addEventListener('popstate', (e) => { if (!e.state?.cart) { toggleCartMobile(false); } });
-    document.getElementById('btn-carrinho-mobile').addEventListener('click', () => toggleCartMobile(true));
-    document.getElementById('carrinho-overlay').addEventListener('click', () => toggleCartMobile(false));
-    document.querySelectorAll('[data-fechar]').forEach(btn => { 
-        btn.addEventListener('click', (e) => { document.getElementById(e.currentTarget.dataset.fechar).classList.remove('aberto'); }); 
-    });
-
-    document.getElementById('btn-limpar-carrinho').addEventListener('click', () => {
-        if (STATE.carrinho.length === 0) return;
-        if (confirm("Tem certeza que deseja esvaziar todo o pedido?")) {
-            STATE.carrinho = []; 
-            localStorage.removeItem('banca_cart'); 
-            renderCarrinho();
-            showToast("🛒 Carrinho esvaziado!");
-            if (window.innerWidth <= 900) toggleCartMobile(false);
-        }
-    });
-
-    document.getElementById('cli-pagamento').addEventListener('change', (e) => { 
-        document.getElementById('troco-group').style.display = e.target.value === 'Dinheiro' ? 'block' : 'none'; 
-    });
-
-    document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
-        const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
-        if (clientes.length > 0) {
-            document.getElementById('cli-nome').value = clientes[0].nome || '';
-            document.getElementById('cli-quadra').value = clientes[0].quadra || '';
-            document.getElementById('cli-lote').value = clientes[0].lote || '';
-        }
-        document.getElementById('overlay-checkout').classList.add('aberto');
-        if(window.innerWidth <= 900) toggleCartMobile(false);
-    });
-
-    document.getElementById('btn-historico').addEventListener('click', () => {
-        const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
-        const lista = document.getElementById('lista-meus-pedidos');
-        
-        if(meusPedidos.length === 0) {
-            lista.innerHTML = '<div style="text-align:center; padding: 40px 20px;"><span style="font-size:3rem; opacity:0.3">📜</span><p style="color:var(--text-mid); margin-top:16px; font-weight:600;">Você ainda não fez nenhum pedido.</p></div>';
-        } else {
-            lista.innerHTML = meusPedidos.map(p => `
-                <div style="border: 1px solid var(--parchment); border-radius: 12px; padding: 16px; margin-bottom: 12px; background:var(--warm-white);">
-                    <div style="display:flex; justify-content: space-between; margin-bottom: 8px;">
-                        <strong style="color:var(--forest);">${new Date(p.data).toLocaleDateString('pt-BR')}</strong>
-                        <span style="color:var(--forest); font-weight:900;">${fmt(p.total)}</span>
-                    </div>
-                    <div style="font-size:0.9rem; color:var(--text-mid); line-height:1.4;">${escapeHTML(p.descItens)}</div>
-                    <button class="btn-outline" style="width:100%; padding:10px; margin-top:14px; border-radius:8px; border:2px solid var(--mint); background:var(--foam); cursor:pointer; font-weight:bold; color:var(--forest-mid); transition:0.2s;" onclick="window.repetirPedido(${p.id})">Repetir Pedido</button>
-                </div>
-            `).join('');
-        }
-        document.getElementById('modal-historico').classList.add('aberto');
-    });
-
-    window.repetirPedido = (pedId) => {
-        const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
-        const ped = meusPedidos.find(p => p.id === pedId);
-        if(ped) {
-            STATE.carrinho = [];
-            ped.itens.forEach(i => {
-                const prodInfo = STATE.produtos.find(px => px.id === i.id);
-                if(prodInfo && prodInfo.ativo) STATE.carrinho.push({...prodInfo, qtd: i.qtd});
-            });
-            localStorage.setItem('banca_cart', JSON.stringify({v: CART_VERSION, items: STATE.carrinho}));
-            renderCarrinho();
-            document.getElementById('modal-historico').classList.remove('aberto');
-            showToast('🛒 Itens adicionados ao carrinho!');
-            if (window.innerWidth <= 900) toggleCartMobile(true);
-        }
-    };
-
-    document.getElementById('btn-enviar-pedido').addEventListener('click', (e) => {
-        const btn = e.currentTarget;
-        if (btn.disabled) return;
-
-        const nome = document.getElementById('cli-nome').value.trim();
-        const quadra = document.getElementById('cli-quadra').value.trim();
-        const lote = document.getElementById('cli-lote').value.trim();
-        const pag = document.getElementById('cli-pagamento').value;
-        const trocoRaw = document.getElementById('cli-troco').value.trim();
-        const obs = document.getElementById('cli-obs').value.trim();
-
-        if(!nome || !quadra || !lote) {
-            showToast("⚠️ Preencha nome, quadra e lote!");
-            return;
-        }
-
-        btn.disabled = true; btn.textContent = 'Gerando Pedido...';
-
-        let totalReal = 0;
-        let msg = `*NOVO PEDIDO*\n👤 ${nome}\n📍 Q${quadra} L${lote}\n💳 Pagamento: ${pag}\n\n*ITENS:*\n`;
-
-        const itensValidados = STATE.carrinho.map(itemCart => {
-            const prodDB = STATE.produtos.find(p => p.id === itemCart.id);
-            const precoSeguro = prodDB ? prodDB.preco : itemCart.preco; 
-            const unidadeReal = prodDB ? prodDB.unidade : itemCart.unidade;
-            
-            const subtotal = precoSeguro * itemCart.qtd;
-            totalReal += subtotal;
-            
-            const fracionavel = isFracionavel(unidadeReal);
-            const qtdStrMsg = fracionavel ? `${formatarQuantidadeVisual(itemCart.qtd, true)} ${unidadeReal || 'kg'}` : `${itemCart.qtd}x`;
-            
-            msg += `• ${qtdStrMsg} ${itemCart.nome} - ${fmt(subtotal)}\n`;
-            return { id: itemCart.id, nome: itemCart.nome, qtd: itemCart.qtd, preco: precoSeguro, unidade: unidadeReal };
-        });
-
-        if (pag === 'Dinheiro') {
-            const trocoNum = parseFloat(trocoRaw.replace(',', '.')); 
-            if (isNaN(trocoNum) || trocoNum < totalReal) {
-                btn.disabled = false; btn.textContent = 'Enviar Pedido via WhatsApp 🚀';
-                showToast("⚠️ O valor do troco deve ser maior que o total da compra.");
-                return;
-            }
-            msg = msg.replace(`Pagamento: ${pag}`, `Pagamento: ${pag} (Troco para: R$ ${trocoNum.toFixed(2).replace('.',',')})`);
-        }
-
-        msg += `\n*TOTAL: ${fmt(totalReal)}*`;
-        if (obs) msg += `\n\n📝 *Obs:* ${obs}`;
-
-        const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
-        const idx = clientes.findIndex(c => c.nome.toLowerCase() === nome.toLowerCase());
-        if(idx >= 0) { clientes[idx] = {nome, quadra, lote}; } else { clientes.unshift({nome, quadra, lote}); }
-        localStorage.setItem('banca_clientes', JSON.stringify(clientes.slice(0, 5)));
-
-        const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
-        meusPedidos.unshift({
-            id: Date.now(),
-            data: new Date().toISOString(),
-            total: totalReal,
-            descItens: itensValidados.map(i => {
-                const isKg = isFracionavel(i.unidade);
-                return isKg ? `${formatarQuantidadeVisual(i.qtd, true)}${i.unidade} ${i.nome}` : `${i.qtd}x ${i.nome}`;
-            }).join(', '),
-            itens: itensValidados
-        });
-        localStorage.setItem('banca_meus_pedidos', JSON.stringify(meusPedidos.slice(0, 10)));
-
-        addDoc(collection(db, "pedidos"), { 
-            nome, quadra, lote, pag, troco: trocoRaw, obs, 
-            total: totalReal, itens: itensValidados, 
-            data: new Date().toISOString() 
-        }).catch((err)=>{ console.error("Erro não-crítico ao salvar no DB", err); });
-
-        const url = `https://wa.me/${STATE.config.wpp}?text=${encodeURIComponent(msg)}`;
-        window.open(url, '_blank');
-        
-        document.getElementById('overlay-checkout').classList.remove('aberto');
-        document.getElementById('modal-sucesso').classList.add('aberto'); 
-        
-        STATE.carrinho = []; localStorage.removeItem('banca_cart'); 
-        document.getElementById('cli-obs').value = ''; document.getElementById('cli-troco').value = '';
-        renderCarrinho(); 
-        
-        btn.disabled = false; btn.textContent = 'Enviar Pedido via WhatsApp 🚀';
-    });
-
-    document.getElementById('btn-voz').addEventListener('click', () => {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) return showToast('Seu navegador não suporta busca por voz.');
-        
-        const recognition = new SpeechRecognition(); 
-        recognition.lang = 'pt-BR'; 
-        const btnVoz = document.getElementById('btn-voz');
-        const inputBusca = document.getElementById('busca-input');
-
-        recognition.onstart = () => { btnVoz.classList.add('gravando'); inputBusca.placeholder = "Ouvindo..."; };
-        recognition.onend = () => { btnVoz.classList.remove('gravando'); inputBusca.placeholder = "Buscar batata, alface..."; };
-        
-        recognition.onresult = (e) => { 
-            const query = e.results[0][0].transcript; 
-            inputBusca.value = query; STATE.busca = query; renderLoja(); 
-        };
-        recognition.start();
-    });
-
-    let timeoutBusca;
-    document.getElementById('busca-input').addEventListener('input', (e) => { 
-        clearTimeout(timeoutBusca); 
-        timeoutBusca = setTimeout(() => { STATE.busca = e.target.value; renderLoja(); }, 300); 
-    });
-    
-    window.addEventListener('online', () => { 
-        document.getElementById('banner-offline').classList.remove('visivel'); 
-        if(STATE.produtos.length === 0) carregarDados(); 
-    });
-    window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
-    
-    carregarDados();
-</script>
+<!-- JS Modular -->
+<script type="module" src="./js/loja.js"></script>
 </body>
 </html>
