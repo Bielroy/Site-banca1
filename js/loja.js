@@ -508,7 +508,18 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         });
 
         clearTimeout(timeoutId);
-        const data = await response.json();
+
+        // CORREÇÃO CRÍTICA: Intercepta erros 500 do Vercel sem quebrar o JSON parser
+        const contentType = response.headers.get("content-type");
+        let data;
+        
+        if (contentType && contentType.includes("application/json")) {
+            data = await response.json();
+        } else {
+            const erroCru = await response.text();
+            console.error("Vercel Crash Log:", erroCru);
+            throw new Error("O servidor (Vercel) falhou. Verifique os logs na Vercel.");
+        }
 
         if (!response.ok || !data.sucesso) {
             throw new Error(data.error || "Falha ao processar pedido no servidor.");
@@ -544,11 +555,11 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
     } catch(err) {
         if(err.name === 'AbortError') showToast("Tempo esgotado. Verifique sua internet.");
-        else showToast(err.message || "Erro na validação. Tente recarregar a página.");
-        console.error(err);
+        else showToast(err.message); // Exibe o erro real de falha do servidor na tela
+        console.error("Falha no Checkout:", err);
     } finally {
         btn.disabled = false; 
-        btn.textContent = 'Enviar Pedido via WhatsApp 🚀';
+        btn.textContent = 'Enviar Pedido 🚀';
     }
 });
 
