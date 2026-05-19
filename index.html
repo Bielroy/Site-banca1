@@ -126,8 +126,7 @@
         .qtd-ctrl { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
         .btn-qtd { width: 36px; height: 36px; border-radius: 8px; border: 1.5px solid #e0dcd4; background: white; font-weight: 700; cursor: pointer; color: var(--text-mid); display: flex; align-items: center; justify-content: center; }
         .btn-qtd:active { background: var(--parchment); }
-        .qtd-input { width: 50px; height: 36px; text-align: center; border: 1.5px solid #e0dcd4; border-radius: 8px; font-weight: 700; font-size: 0.9rem; outline: none; background: white; color: var(--text-dark); -moz-appearance: textfield; }
-        .qtd-input::-webkit-outer-spin-button, .qtd-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .qtd-input { width: 50px; height: 36px; text-align: center; border: 1.5px solid #e0dcd4; border-radius: 8px; font-weight: 700; font-size: 0.9rem; outline: none; background: white; color: var(--text-dark); }
         .qtd-input:focus { border-color: var(--forest); box-shadow: 0 0 0 3px rgba(26,58,42,0.1); }
         .item-preco { font-family: 'Fraunces', serif; font-weight: 700; font-size: 1.05rem; color: var(--forest); }
         
@@ -312,7 +311,7 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    const CART_VERSION = "1.2"; // Atualizado para suportar floats
+    const CART_VERSION = "1.2"; 
     let savedCart = { v: CART_VERSION, items: [] };
     try { 
         const raw = localStorage.getItem('banca_cart');
@@ -328,24 +327,19 @@
         favoritos: JSON.parse(localStorage.getItem('banca_favs') || '[]')
     };
 
-    // Utilitários robustos para formatação e tipagem
     const fmt = (n) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
     const escapeHTML = (str) => { if(!str) return ''; return String(str).replace(/[&<>'"]/g, match => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[match])); };
     const placeholderSVG = `<svg class="produto-img-placeholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>`;
 
-    // Determina se um item aceita quantidade decimal (fracionável)
     const isFracionavel = (unidade) => {
         const u = (unidade || '').toLowerCase();
         return ['kg', 'kilo', 'quilograma', 'g', 'grama', 'l', 'litro'].includes(u);
     };
 
-    // Corrige flutuações de ponto flutuante do JS (ex: 0.1 + 0.2 = 0.3)
     const fixFloat = (num) => Math.round(num * 1000) / 1000;
 
-    // Formata a quantidade visualmente para o usuário
     const formatarQuantidadeVisual = (qtd, fracionavel) => {
         if (!fracionavel) return qtd.toString();
-        // Converte ponto para vírgula para manter padrão brasileiro
         return qtd.toString().replace('.', ',');
     };
 
@@ -366,12 +360,10 @@
         const upsellCont = document.getElementById('upsell-container');
         let total = 0, html = '';
 
-        // Atualiza Badges dos Produtos na Grid Principal
         STATE.produtos.forEach(p => {
             const badge = document.getElementById(`badge-${p.id}`);
             if(badge) {
                 const q = getCartQty(p.id);
-                // Se for fracionável, formata com vírgula para não quebrar UI
                 badge.textContent = isFracionavel(p.unidade) && q > 0 ? formatarQuantidadeVisual(q, true) : q;
                 if(q > 0) badge.classList.add('visivel'); else badge.classList.remove('visivel');
             }
@@ -389,8 +381,8 @@
             const sub = item.preco * item.qtd; 
             total += sub;
             const fracionavel = isFracionavel(item.unidade);
-            const step = fracionavel ? "0.1" : "1";
             
+            // O segredo está aqui: Mudado para type="text", removendo o conflito nativo do HTML com a vírgula
             html += `
             <div class="carrinho-item">
                 <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(item.foto)}" loading="lazy" width="48" height="48" alt="${escapeHTML(item.nome)}">` : placeholderSVG}</div>
@@ -398,7 +390,7 @@
                     <div class="item-nome">${escapeHTML(item.nome)}</div>
                     <div class="qtd-ctrl">
                         <button class="btn-qtd" data-action="dec" data-id="${item.id}" aria-label="Diminuir quantidade">−</button>
-                        <input class="qtd-input" type="number" step="${step}" inputmode="decimal" value="${formatarQuantidadeVisual(item.qtd, fracionavel)}" data-id="${item.id}" aria-label="Quantidade">
+                        <input class="qtd-input" type="text" inputmode="decimal" value="${formatarQuantidadeVisual(item.qtd, fracionavel)}" data-id="${item.id}" aria-label="Quantidade">
                         <button class="btn-qtd" data-action="inc" data-id="${item.id}" aria-label="Aumentar quantidade">+</button>
                     </div>
                 </div>
@@ -408,7 +400,6 @@
         cont.innerHTML = html; 
         document.getElementById('total-val').textContent = fmt(total);
         
-        // Upsell Inteligente: Cruza dados de categoria e prioriza produtos favoritados
         const idsNoCarrinho = STATE.carrinho.map(c => c.id);
         const catsNoCarrinho = [...new Set(STATE.carrinho.map(c => c.cat))];
         
@@ -423,14 +414,11 @@
             upsellCont.innerHTML = '';
         }
         
-        // Cálculo do badge (Mercado Livre/iFood UX): itens distintos no carrinho ou soma inteligente
-        // Aqui contamos quantos "tipos" de produtos temos, para evitar "3,5 itens" no badge
         const qtdDistinta = STATE.carrinho.reduce((acc, item) => acc + (isFracionavel(item.unidade) ? 1 : item.qtd), 0);
         atualizarBadge(qtdDistinta, total);
     };
 
     const atualizarBadge = (qtd, total) => {
-        // Arredonda para exibição caso alguma anomalia passe
         const displayQtd = Math.ceil(qtd); 
         document.getElementById('qtd-flutuante').textContent = displayQtd; 
         document.getElementById('qtd-badge').textContent = displayQtd;
@@ -460,7 +448,6 @@
         }
     };
 
-    // Core Business Logic para Modificar Carrinho (Lida com Inteiros e Floats)
     const modificarCarrinho = (id, delta, fixo = false) => {
         const p = STATE.produtos.find(x => x.id === id);
         if (!p) return;
@@ -468,17 +455,15 @@
         const fracionavel = isFracionavel(p.unidade);
         const step = fracionavel ? 0.1 : 1;
         
-        // Se a ação for via botão (+/-), usamos o step apropriado para a unidade.
-        // Se for um valor 'fixo' (digitado no input), usamos o delta bruto enviado.
         let valParaAplicar = fixo ? delta : (delta > 0 ? step : -step);
 
         const idx = STATE.carrinho.findIndex(x => x.id === id);
         
         if (idx > -1) { 
             let novaQtd = fixo ? valParaAplicar : STATE.carrinho[idx].qtd + valParaAplicar; 
-            novaQtd = fixFloat(novaQtd); // Limpa resíduos de ponto flutuante do JS
+            novaQtd = fixFloat(novaQtd);
             
-            if (novaQtd > 99) novaQtd = 99; // Limite máximo de segurança
+            if (novaQtd > 99) novaQtd = 99; 
             
             if (novaQtd <= 0) {
                 STATE.carrinho.splice(idx, 1); 
@@ -487,7 +472,6 @@
             }
         } 
         else if (valParaAplicar > 0) { 
-            // Adição inicial na grid: padroniza em 1.0 kg ou 1 un para facilitar a vida do usuário
             let novaQtdInicial = fixo ? valParaAplicar : 1; 
             novaQtdInicial = fixFloat(novaQtdInicial);
             if (novaQtdInicial > 99) novaQtdInicial = 99;
@@ -499,23 +483,20 @@
         renderCarrinho();
     };
 
-    // Listener de digitação direta no carrinho
     document.getElementById('carrinho-itens').addEventListener('change', (e) => {
         if(e.target.classList.contains('qtd-input')) {
             const id = e.target.dataset.id;
             const p = STATE.produtos.find(x => x.id === id);
             
-            // Permite digitação com vírgula padrão brasileiro
             let rawValue = e.target.value.replace(',', '.');
             let val = parseFloat(rawValue);
             
             if(isNaN(val) || val < 0) val = 0;
             
-            // Força a ser inteiro se a unidade não aceitar fração
             if (p && !isFracionavel(p.unidade)) {
                 val = Math.round(val);
             } else {
-                val = fixFloat(val); // Arredonda 3 casas pra garantir precisão sem dízimas absurdas
+                val = fixFloat(val); 
             }
 
             modificarCarrinho(id, val, true);
@@ -598,13 +579,12 @@
         setTimeout(() => { btn.classList.remove('sucesso'); btn.innerHTML = '+'; }, 500);
     };
 
-    // Delegação de Eventos Otimizada
     document.body.addEventListener('click', async (e) => {
         const target = e.target.closest('[data-action]'); if (!target) return;
         const action = target.dataset.action, id = target.dataset.id;
         
         if (action === 'add' || action === 'inc') { 
-            modificarCarrinho(id, 1); // A função sabe tratar se é 1 inteiro ou +0.1 dependendo da unidade
+            modificarCarrinho(id, 1); 
             if(action === 'add') animarFeedbackBtn(target); 
         }
         if (action === 'dec') modificarCarrinho(id, -1);
@@ -637,7 +617,6 @@
 
     document.getElementById('btn-limpar-carrinho').addEventListener('click', () => {
         if (STATE.carrinho.length === 0) return;
-        // Confirmação simples via JS nativo evita cliques acidentais
         if (confirm("Tem certeza que deseja esvaziar todo o pedido?")) {
             STATE.carrinho = []; 
             localStorage.removeItem('banca_cart'); 
@@ -662,7 +641,6 @@
         if(window.innerWidth <= 900) toggleCartMobile(false);
     });
 
-    // Lógica do Histórico de Pedidos
     document.getElementById('btn-historico').addEventListener('click', () => {
         const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
         const lista = document.getElementById('lista-meus-pedidos');
@@ -730,7 +708,6 @@
             const subtotal = precoSeguro * itemCart.qtd;
             totalReal += subtotal;
             
-            // Formatação inteligente da mensagem para WhatsApp
             const fracionavel = isFracionavel(unidadeReal);
             const qtdStrMsg = fracionavel ? `${formatarQuantidadeVisual(itemCart.qtd, true)} ${unidadeReal || 'kg'}` : `${itemCart.qtd}x`;
             
@@ -756,7 +733,6 @@
         if(idx >= 0) { clientes[idx] = {nome, quadra, lote}; } else { clientes.unshift({nome, quadra, lote}); }
         localStorage.setItem('banca_clientes', JSON.stringify(clientes.slice(0, 5)));
 
-        // Salvar Histórico do Cliente Localmente
         const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
         meusPedidos.unshift({
             id: Date.now(),
@@ -770,7 +746,6 @@
         });
         localStorage.setItem('banca_meus_pedidos', JSON.stringify(meusPedidos.slice(0, 10)));
 
-        // Background sync para o Firebase
         addDoc(collection(db, "pedidos"), { 
             nome, quadra, lote, pag, troco: trocoRaw, obs, 
             total: totalReal, itens: itensValidados, 
