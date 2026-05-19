@@ -11,16 +11,22 @@ let STATE = {
     favoritos: JSON.parse(localStorage.getItem('banca_favs') || '[]')
 };
 
-// Resgata carrinho persistente
+// Resgata o carrinho salvo localmente no navegador
 try { 
     const raw = localStorage.getItem('banca_cart');
-    if(raw) { const parsed = JSON.parse(raw); if(parsed.v === CART_VERSION) STATE.carrinho = parsed.items; }
+    if(raw) { 
+        const parsed = JSON.parse(raw); 
+        if(parsed.v === CART_VERSION) STATE.carrinho = parsed.items; 
+    }
 } catch(e) {}
 
-const getCartQty = (id) => { const item = STATE.carrinho.find(x => x.id === id); return item ? item.qtd : 0; };
+const getCartQty = (id) => { 
+    const item = STATE.carrinho.find(x => x.id === id); 
+    return item ? item.qtd : 0; 
+};
 
 // ----------------------------------------------------
-// GERENCIAMENTO DE DOM (Sem InnerHTML Thrashing)
+// GERENCIAMENTO FINO DE DOM (Alta Performance)
 // ----------------------------------------------------
 
 const atualizarBadgesDOM = (produtoId, qtd) => {
@@ -28,7 +34,11 @@ const atualizarBadgesDOM = (produtoId, qtd) => {
     if(badge) {
         const prod = STATE.produtos.find(p => p.id === produtoId);
         badge.textContent = isFracionavel(prod?.unidade) && qtd > 0 ? formatarQuantidadeVisual(qtd, true) : qtd;
-        qtd > 0 ? badge.classList.add('visivel') : badge.classList.remove('visivel');
+        if(qtd > 0) {
+            badge.classList.add('visivel');
+        } else {
+            badge.classList.remove('visivel');
+        }
     }
 };
 
@@ -36,10 +46,10 @@ const atualizarLinhaCarrinhoDOM = (id, novaQtd, subtotalFmt) => {
     const row = document.getElementById(`cart-row-${id}`);
     if(novaQtd <= 0) {
         if(row) row.remove();
-        if(STATE.carrinho.length === 0) renderCarrinhoCompleto(); // Se zerou tudo, mostra empty state
+        if(STATE.carrinho.length === 0) renderCarrinhoCompleto();
     } else {
         if(!row) {
-            renderCarrinhoCompleto(); // Se a linha não existe, renderiza tudo com segurança
+            renderCarrinhoCompleto(); 
         } else {
             const input = row.querySelector('.qtd-input');
             const price = row.querySelector('.item-preco');
@@ -67,16 +77,20 @@ const atualizarRodapeCarrinhoDOM = () => {
     const hojePermitido = (STATE.config.diasAbertos || [0,1,2,3,4,5,6]).includes(new Date().getDay());
     
     if (!lojaAberta || !hojePermitido) {
-        btnF.disabled = true; btnF.textContent = "Loja Fechada";
-        bannerMin.classList.remove('visivel'); bannerFechado.classList.add('visivel');
+        btnF.disabled = true; 
+        btnF.textContent = "Loja Fechada";
+        bannerMin.classList.remove('visivel'); 
+        bannerFechado.classList.add('visivel');
     } else { 
         bannerFechado.classList.remove('visivel'); 
         if (STATE.config.minimo > 0 && total < STATE.config.minimo && STATE.carrinho.length > 0) { 
-            btnF.disabled = true; btnF.textContent = `Falta ${fmt(STATE.config.minimo - total)}`;
+            btnF.disabled = true; 
+            btnF.textContent = `Falta ${fmt(STATE.config.minimo - total)}`;
             bannerMin.textContent = `⚠️ Valor mínimo para pedido: ${fmt(STATE.config.minimo)}`; 
             bannerMin.classList.add('visivel'); 
         } else { 
-            btnF.disabled = STATE.carrinho.length === 0; btnF.textContent = "Finalizar Pedido";
+            btnF.disabled = STATE.carrinho.length === 0; 
+            btnF.textContent = "Finalizar Pedido";
             bannerMin.classList.remove('visivel'); 
         }
     }
@@ -116,7 +130,6 @@ const renderCarrinhoCompleto = () => {
     STATE.carrinho.forEach(item => {
         const sub = item.preco * item.qtd; 
         const fracionavel = isFracionavel(item.unidade);
-        const step = fracionavel ? "0.1" : "1";
         
         html += `
         <article class="carrinho-item" id="cart-row-${item.id}">
@@ -164,7 +177,6 @@ const modificarCarrinho = (id, delta, fixo = false) => {
     
     localStorage.setItem('banca_cart', JSON.stringify({v: CART_VERSION, items: STATE.carrinho})); 
     
-    // Atualização Fina no DOM (Performance máxima)
     atualizarBadgesDOM(id, novaQtd);
     atualizarLinhaCarrinhoDOM(id, novaQtd, fmt(p.preco * novaQtd));
     atualizarRodapeCarrinhoDOM();
@@ -193,7 +205,6 @@ const renderLoja = () => {
         return; 
     }
 
-    // Usando lazy loading nativo nas imagens
     grid.innerHTML = filtrados.map(p => {
         const qtdNoCarrinho = getCartQty(p.id);
         const badgeTexto = isFracionavel(p.unidade) && qtdNoCarrinho > 0 ? formatarQuantidadeVisual(qtdNoCarrinho, true) : qtdNoCarrinho;
@@ -225,26 +236,20 @@ const renderCategorias = () => {
 };
 
 // ----------------------------------------------------
-// INTEGRAÇÃO FIREBASE (Real-time Snapshot)
+// FIREBASE REALTIME SYNC (onSnapshot)
 // ----------------------------------------------------
-let unsubscribeProdutos = null;
-
 const iniciarRealTimeSync = () => {
     if (!navigator.onLine) { document.getElementById('banner-offline').classList.add('visivel'); }
     
-    // Configurações Globais da Loja
     onSnapshot(collection(db, "loja"), (snap) => {
         snap.forEach(d => { if(d.id === 'config') STATE.config = {...STATE.config, ...d.data()}; });
         atualizarRodapeCarrinhoDOM();
     });
 
-    // Produtos em Tempo Real
-    unsubscribeProdutos = onSnapshot(collection(db, "produtos"), (snap) => {
+    onSnapshot(collection(db, "produtos"), (snap) => {
         STATE.produtos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         renderCategorias(); 
         renderLoja(); 
-        // Não apaga o carrinho do usuário se o produto mudar (UX amigável), 
-        // mas atualiza os crachás na loja.
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
     }, (error) => {
         console.error("Erro Realtime:", error);
@@ -252,7 +257,7 @@ const iniciarRealTimeSync = () => {
 };
 
 // ----------------------------------------------------
-// EVENT LISTENERS DELEGADOS E MODAIS
+// LISTENERS DELEGADOS E INTERAÇÕES
 // ----------------------------------------------------
 document.body.addEventListener('click', (e) => {
     const target = e.target.closest('[data-action]'); 
@@ -278,7 +283,6 @@ document.body.addEventListener('click', (e) => {
     }
 });
 
-// Listener Fino para o Input do Carrinho
 document.getElementById('carrinho-itens').addEventListener('change', (e) => {
     if(e.target.classList.contains('qtd-input')) {
         const id = e.target.dataset.id;
@@ -291,7 +295,7 @@ document.getElementById('carrinho-itens').addEventListener('change', (e) => {
     }
 });
 
-// HISTORY API PARA MODAIS (Corrige botão voltar)
+// HISTORY API PARA MODAIS (Android Back Button Fix)
 window.addEventListener('popstate', (e) => { 
     document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('aberto'));
     document.getElementById('carrinho-overlay').classList.remove('aberto');
@@ -305,12 +309,9 @@ window.addEventListener('popstate', (e) => {
 });
 
 document.querySelectorAll('[data-fechar]').forEach(btn => { 
-    btn.addEventListener('click', (e) => { 
-        history.back(); // Invoca o popstate que fecha os modais nativamente
-    }); 
+    btn.addEventListener('click', (e) => { history.back(); }); 
 });
 
-// Controle do Carrinho Mobile
 const toggleCartMobile = (abrir) => {
     if(window.innerWidth > 900) return;
     if (abrir) { 
@@ -324,12 +325,13 @@ const toggleCartMobile = (abrir) => {
 document.getElementById('btn-carrinho-mobile').addEventListener('click', () => toggleCartMobile(true));
 document.getElementById('carrinho-overlay').addEventListener('click', () => history.back());
 
-// Ações do Carrinho
 document.getElementById('btn-limpar-carrinho').addEventListener('click', () => {
     if (STATE.carrinho.length === 0) return;
     if (confirm("Tem certeza que deseja esvaziar todo o pedido?")) {
-        STATE.carrinho = []; localStorage.removeItem('banca_cart'); 
-        renderCarrinhoCompleto(); showToast("🛒 Carrinho esvaziado!");
+        STATE.carrinho = []; 
+        localStorage.removeItem('banca_cart'); 
+        renderCarrinhoCompleto(); 
+        showToast("🛒 Carrinho esvaziado!");
         if (window.innerWidth <= 900) history.back();
     }
 });
@@ -344,7 +346,7 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     openModal('modal-checkout');
 });
 
-// HISTÓRICO DE PEDIDOS
+// HISTÓRICO DE PEDIDOS DO CLIENTE
 const renderHistorico = () => {
     const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
     const lista = document.getElementById('lista-meus-pedidos');
@@ -377,12 +379,12 @@ window.repetirPedido = (pedId) => {
         });
         localStorage.setItem('banca_cart', JSON.stringify({v: CART_VERSION, items: STATE.carrinho}));
         renderCarrinhoCompleto();
-        history.back(); // Fecha modal
+        history.back(); 
         showToast('🛒 Itens adicionados ao carrinho!');
     }
 };
 
-// CHECKOUT E VALIDAÇÃO DE SEGURANÇA (Garantindo preço do Banco de Dados)
+// CHECKOUT SEGURO (Preços validados na Nuvem contra fraudes de DevTools)
 document.getElementById('cli-pagamento').addEventListener('change', (e) => { 
     document.getElementById('troco-group').style.display = e.target.value === 'Dinheiro' ? 'block' : 'none'; 
 });
@@ -403,7 +405,6 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     btn.disabled = true; btn.textContent = 'Autenticando valores...';
 
     try {
-        // SEGURANÇA: Busca o valor oficial no banco ANTES de enviar o zap
         const snapRef = await getDocs(collection(db, "produtos"));
         const dbProdutosSeguros = snapRef.docs.map(d => ({id: d.id, ...d.data()}));
 
@@ -412,7 +413,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
         const itensValidados = STATE.carrinho.map(itemCart => {
             const prodOficial = dbProdutosSeguros.find(p => p.id === itemCart.id);
-            if (!prodOficial) throw new Error(`Produto ${itemCart.nome} não existe mais.`);
+            if (!prodOficial) throw new Error(`Produto ${itemCart.nome} indisponível.`);
             
             const precoSeguro = prodOficial.preco;
             const subtotal = precoSeguro * itemCart.qtd;
@@ -438,13 +439,11 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         msg += `\n*TOTAL: ${fmt(totalReal)}*`;
         if (obs) msg += `\n\n📝 *Obs:* ${obs}`;
 
-        // Salva cliente local
         const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
         const idx = clientes.findIndex(c => c.nome.toLowerCase() === nome.toLowerCase());
         if(idx >= 0) { clientes[idx] = {nome, quadra, lote}; } else { clientes.unshift({nome, quadra, lote}); }
         localStorage.setItem('banca_clientes', JSON.stringify(clientes.slice(0, 5)));
 
-        // Salva histórico
         const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
         meusPedidos.unshift({
             id: Date.now(), data: new Date().toISOString(), total: totalReal,
@@ -453,14 +452,12 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         });
         localStorage.setItem('banca_meus_pedidos', JSON.stringify(meusPedidos.slice(0, 10)));
 
-        // Salva Firebase Assíncrono
         addDoc(collection(db, "pedidos"), { nome, quadra, lote, pag, troco: trocoRaw, obs, total: totalReal, itens: itensValidados, data: new Date().toISOString() });
 
-        // Abre WhatsApp e Limpa
         window.open(`https://wa.me/${STATE.config.wpp}?text=${encodeURIComponent(msg)}`, '_blank');
         
-        history.back(); // Fecha checkout
-        setTimeout(() => openModal('modal-sucesso'), 300); // Abre Sucesso
+        history.back(); 
+        setTimeout(() => openModal('modal-sucesso'), 300); 
         
         STATE.carrinho = []; localStorage.removeItem('banca_cart'); 
         renderCarrinhoCompleto();
@@ -474,7 +471,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     }
 });
 
-// Inicialização
+// Inicialização da escuta em tempo real e verificação de internet
 window.addEventListener('online', () => { document.getElementById('banner-offline').classList.remove('visivel'); });
 window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
 
