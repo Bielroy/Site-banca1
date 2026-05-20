@@ -12,15 +12,14 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     
-    <link rel="stylesheet" href="/css/variables.css">
-    <link rel="stylesheet" href="/css/loja.css">
+    <link rel="stylesheet" href="./css/variables.css">
+    <link rel="stylesheet" href="./css/loja.css">
     
-    <link rel="icon" href="/icon-192.png">
-    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="./icon-192.png">
+    <link rel="manifest" href="./manifest.json">
 </head>
 <body>
 
-<!-- Central de Ícones SVG Ocultos (Fim da poluição visual no JS) -->
 <svg style="display: none;">
     <defs>
         <symbol id="icon-cart-empty" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -58,7 +57,6 @@
             <button class="btn-voz" id="btn-voz" aria-label="Pesquisa por voz">🎤</button>
         </div>
         <nav class="categorias" id="categorias" aria-label="Filtro de Categorias">
-            <!-- Renderizado dinamicamente -->
             <button class="cat-btn skeleton" style="width:80px;height:38px"></button>
             <button class="cat-btn skeleton" style="width:120px;height:38px"></button>
         </nav>
@@ -66,7 +64,6 @@
 </section>
 
 <main class="layout">
-    <!-- Removido o Skeleton estático daqui, faremos no JS -->
     <section class="produtos-grid" id="lista-produtos" aria-label="Lista de Produtos">
         <div id="loader-produtos" style="width: 100%; display: flex; gap: 18px;">
             <article class="produto-card skeleton"><div class="produto-img-wrap" style="aspect-ratio:1;"></div><div class="produto-info" style="height:100px;"></div></article>
@@ -92,7 +89,6 @@
         </header>
         
         <div class="carrinho-itens" id="carrinho-itens">
-            <!-- Empty state nativo do carrinho -->
             <div class="empty-state" id="empty-cart">
                 <svg><use href="#icon-cart-empty" /></svg>
                 <p>Seu pedido está vazio</p>
@@ -175,6 +171,6 @@
 
 <div class="toast" id="toast" role="alert"></div>
 
-<script type="module" src="/js/loja.js"></script>
+<script type="module" src="./js/loja.js"></script>
 </body>
 </html>
