@@ -1,73 +1,89 @@
-import admin from 'firebase-admin';
+const admin = require('firebase-admin');
 
-// Sanitizador brutal de Chave Privada (Previne erros de cópia e cola na Vercel)
+// Sanitizador brutal de Chave Privada (Previne erros de cópia e cola)
 const formatPrivateKey = (key) => {
   if (!key) return '';
   return key
-    .replace(/\\n/g, '\n') // Converte barra-n literal em quebra de linha real
-    .replace(/^"|"$/g, '') // Remove aspas duplas no início e no fim, se existirem
+    .replace(/\\n/g, '\n') // Converte quebras falsas em reais
+    .replace(/^"|"$/g, '') // Arranca aspas nas pontas
     .trim();
 };
 
-if (!admin.apps.length) {
-  try {
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: formatPrivateKey(process.env.FIREBASE_PRIVATE_KEY),
-      })
-    });
-  } catch (initError) {
-    console.error("FALHA CRÍTICA NA INICIALIZAÇÃO DO FIREBASE:", initError.message);
-  }
-}
+// Variável de instância global para o banco de dados
+let db;
 
-const db = admin.firestore();
+// Função de boot seguro (Late Initialization)
+const bootFirebase = () => {
+  if (!admin.apps.length) {
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const privateKey = formatPrivateKey(process.env.FIREBASE_PRIVATE_KEY);
+
+    if (!projectId || !clientEmail || !privateKey) {
+      throw new Error("Variáveis de ambiente (PROJECT_ID, EMAIL ou PRIVATE_KEY) ausentes na Vercel.");
+    }
+
+    try {
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId,
+          clientEmail,
+          privateKey,
+        })
+      });
+    } catch (certError) {
+      throw new Error("Credenciais inválidas: O Firebase rejeitou a Chave Privada. Verifique as aspas e quebras de linha.");
+    }
+  }
+  if (!db) db = admin.firestore();
+};
 
 const paraCentavos = (valor) => Math.round(valor * 100);
 const paraFlutuante = (centavos) => parseFloat((centavos / 100).toFixed(2));
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
+  // CORS Rigoroso
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
+  if (req.method !== 'POST') return res.status(405).json({ sucesso: false, error: 'Método HTTP não permitido.' });
 
-  // Trava de segurança: Verifica se as variáveis de ambiente foram carregadas
-  if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_PRIVATE_KEY) {
-    console.error("ERRO DE AMBIENTE: Variáveis do Firebase ausentes na Vercel.");
-    return res.status(500).json({ error: 'Erro de configuração no servidor (Variáveis de Ambiente).' });
+  // Tenta ligar o banco DENTRO do request. Se falhar, retorna JSON (não quebra o Front)
+  try {
+    bootFirebase();
+  } catch (bootError) {
+    console.error("FALHA DE BOOT NO FIREBASE:", bootError.message);
+    return res.status(500).json({ sucesso: false, error: `Servidor Vercel sem acesso: ${bootError.message}` });
   }
 
   const { nome, quadra, lote, pag, troco, obs, itens } = req.body;
 
   if (!nome || !quadra || !lote || !pag || !Array.isArray(itens) || itens.length === 0) {
-    return res.status(400).json({ error: 'Payload malformado ou itens ausentes.' });
+    return res.status(400).json({ sucesso: false, error: 'Payload malformado ou itens ausentes no carrinho.' });
   }
 
   try {
     const resultado = await db.runTransaction(async (transaction) => {
       const configRef = db.doc("loja/config");
       const configSnap = await transaction.get(configRef);
-      if (!configSnap.exists) throw new Error("Parâmetros da loja não configurados.");
+      if (!configSnap.exists) throw new Error("Parâmetros da loja não configurados no Firebase.");
       
       const configData = configSnap.data();
-      if (configData.lojaAberta === false) throw new Error("A loja encontra-se fechada.");
+      if (configData.lojaAberta === false) throw new Error("Operação negada: A loja está fechada.");
       
       let totalAcumuladoCentavos = 0;
       const itensValidados = [];
 
       for (const item of itens) {
-        if (!item.id || item.qtd <= 0) throw new Error("Item corrompido.");
+        if (!item.id || item.qtd <= 0) throw new Error("Item com ID nulo ou quantidade inválida.");
         const prodRef = db.doc(`produtos/${item.id}`);
         const prodSnap = await transaction.get(prodRef);
-        if (!prodSnap.exists) throw new Error(`Produto não localizado.`);
+        if (!prodSnap.exists) throw new Error(`Produto não localizado na base de dados.`);
         const prodData = prodSnap.data();
-        if (prodData.ativo === false) throw new Error(`Produto esgotado.`);
+        if (prodData.ativo === false) throw new Error(`O produto ${prodData.nome} esgotou.`);
 
         const precoUnidadeCentavos = paraCentavos(prodData.preco);
         const subtotalItemCentavos = Math.round(precoUnidadeCentavos * item.qtd);
@@ -85,13 +101,13 @@ export default async function handler(req, res) {
 
       const totalFinalFlutuante = paraFlutuante(totalAcumuladoCentavos);
       if (totalFinalFlutuante < (configData.minimo || 0)) {
-        throw new Error(`Pedido mínimo: R$ ${configData.minimo}.`);
+        throw new Error(`Pedido mínimo: R$ ${configData.minimo}. Adicione mais itens.`);
       }
 
       let trocoFormatado = "";
       if (pag === "Dinheiro" && troco && troco !== "Não preciso") {
         const valorTroco = parseFloat(String(troco).replace(",", "."));
-        if (isNaN(valorTroco) || valorTroco <= totalFinalFlutuante) throw new Error("Troco inválido.");
+        if (isNaN(valorTroco) || valorTroco <= totalFinalFlutuante) throw new Error("Troco menor que o valor total.");
         trocoFormatado = `(Troco para: R$ ${valorTroco.toFixed(2).replace(".", ",")})`;
       } else if (pag === "Dinheiro") {
         trocoFormatado = "(Dinheiro trocado)";
@@ -120,10 +136,10 @@ export default async function handler(req, res) {
     return res.status(200).json({ sucesso: true, pedido: resultado });
 
   } catch (error) {
-    console.error("ERRO NA TRANSAÇÃO:", error.message);
+    console.error("ERRO TRANSACIONAL INTERNO:", error.message);
     return res.status(400).json({ sucesso: false, error: error.message });
   }
-}
+};
 
 function montarTextoWhatsApp(pedido, numero) {
   let msg = `*NOVO PEDIDO (Seguro)*\n👤 ${pedido.nome}\n📍 Q${pedido.quadra} L${pedido.lote}\n💳 Pagamento: ${pedido.pag}\n\n*ITENS:*\n`;
