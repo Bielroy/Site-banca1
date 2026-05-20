@@ -2,15 +2,17 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Painel Admin - Banca Adair e Pedrina</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     
-    <link rel="stylesheet" href="./css/variables.css">
-    <link rel="stylesheet" href="./css/admin.css">
+    <link rel="stylesheet" href="/css/variables.css">
+    <link rel="stylesheet" href="/css/admin.css">
+    
+    <link rel="icon" href="/icon-192.png">
 </head>
 <body>
 
@@ -27,7 +29,7 @@
         </section>
     </main>
 
-    <main id="dashboard" style="display: none;">
+    <main id="dashboard" class="hidden">
         <header class="dash-header">
             <h2>Painel Enterprise</h2>
             <button class="btn btn-outline" id="btn-logout" style="width: auto;">Desconectar</button>
@@ -70,7 +72,7 @@
                 <article class="ranking-box"><h3>📅 Dias mais Fortes</h3><div id="ranking-dias"></div></article>
             </div>
 
-            <h3 style="margin: 30px 0 15px; color: var(--forest); font-family: 'Fraunces', serif;">50 Últimos Pedidos (Logística)</h3>
+            <h3 style="margin: 30px 0 15px; color: var(--forest); font-family: 'Fraunces', serif;">Histórico de Pedidos (Logística)</h3>
             <div id="lista-historico">Buscando inteligência de dados...</div>
         </section>
 
@@ -130,7 +132,10 @@
                     <div class="form-group">
                         <label>Métrica de Venda</label>
                         <select id="edit-unidade">
-                            <option value="kg">Quilo (kg)</option><option value="un">Unidade (un)</option><option value="maço">Maço</option><option value="bdj">Bandeja</option>
+                            <option value="kg">Quilo (kg)</option>
+                            <option value="un">Unidade (un)</option>
+                            <option value="maço">Maço</option>
+                            <option value="bdj">Bandeja</option>
                         </select>
                     </div>
                 </div>
@@ -138,7 +143,7 @@
             </div>
             <footer class="modal-footer">
                 <button class="btn" id="btn-salvar-produto">💾 Gravar no Banco</button>
-                <button class="btn btn-outline btn-delete" id="btn-excluir-produto">🗑 Destruir Registro</button>
+                <button class="btn btn-outline btn-delete hidden" id="btn-excluir-produto">🗑 Destruir Registro</button>
             </footer>
         </div>
     </div>
@@ -156,6 +161,6 @@
     
     <div class="toast" id="toast"></div>
 
-    <script type="module" src="./js/admin.js"></script>
+    <script type="module" src="/js/admin.js"></script>
 </body>
 </html>
