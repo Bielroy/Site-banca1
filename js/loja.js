@@ -1,7 +1,7 @@
-import { db, auth, collection, getDocs, onSnapshot, signInAnonymously, onAuthStateChanged } from './firebase.js';
-import { html, safeHTML, fmt, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, openModal, closeModal, setBtnLoading } from './utils.js';
+import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged } from './firebase.js';
+import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio } from './utils.js';
 
-const CART_VERSION = "3.0"; 
+const CART_VERSION = "2.0"; // Versão atualizada para forçar limpeza de cache antigo incompatível
 let STATE = {
     uid: null,
     produtos: [], 
@@ -13,13 +13,17 @@ let STATE = {
 };
 
 // ----------------------------------------------------
-// AUTENTICAÇÃO ANÔNIMA
+// AUTENTICAÇÃO ANÔNIMA (Retenção de Cliente)
 // ----------------------------------------------------
 onAuthStateChanged(auth, (user) => {
-    if (user) STATE.uid = user.uid;
-    else signInAnonymously(auth).catch(err => console.error("Erro na Autenticação Anônima:", err));
+    if (user) {
+        STATE.uid = user.uid;
+    } else {
+        signInAnonymously(auth).catch(err => console.error("Erro na Autenticação Anônima:", err));
+    }
 });
 
+// Inicialização segura do Estado do Carrinho Persistido
 try { 
     const raw = localStorage.getItem('banca_cart');
     if(raw) { 
@@ -34,7 +38,7 @@ const getCartQty = (id) => {
 };
 
 // ----------------------------------------------------
-// DOM MANIPULATION OTIMIZADO (VIRTUALIZAÇÃO SOFT)
+// GERENCIAMENTO DOM CIRÚRGICO (Prevenção de CLS)
 // ----------------------------------------------------
 const atualizarBadgesDOM = (produtoId, qtd) => {
     const badge = document.getElementById(`badge-${produtoId}`);
@@ -50,9 +54,8 @@ const atualizarLinhaCarrinhoDOM = (id, novaQtd, subtotalFmt) => {
     const row = document.getElementById(`cart-row-${id}`);
     if(novaQtd <= 0) {
         if(row) row.remove();
-        if(STATE.carrinho.length === 0) document.getElementById('empty-cart').classList.remove('hidden');
+        if(STATE.carrinho.length === 0) renderCarrinhoCompleto();
     } else {
-        document.getElementById('empty-cart').classList.add('hidden');
         if(!row) {
             renderCarrinhoCompleto(); 
         } else {
@@ -115,8 +118,7 @@ const renderUpsell = () => {
     if (sugestoes.length > 0) {
         sugestoes.sort((a,b) => (STATE.favoritos.includes(b.id) ? 1 : 0) - (STATE.favoritos.includes(a.id) ? 1 : 0));
         const up = sugestoes[0];
-        // Proteção XSS com Template Tag
-        upsellCont.innerHTML = html`<div class="upsell-box"><span>Que tal levar <b>${up.nome}</b>?</span><button class="btn btn-outline" style="padding: 6px 12px" data-action="add" data-id="${up.id}">+ Add</button></div>`;
+        upsellCont.innerHTML = `<div class="upsell-box"><span>Que tal levar <b>${escapeHTML(up.nome)}</b>?</span><button data-action="add" data-id="${up.id}">+ Add</button></div>`;
     } else {
         upsellCont.innerHTML = '';
     }
@@ -124,12 +126,7 @@ const renderUpsell = () => {
 
 const renderCarrinhoCompleto = () => {
     const cont = document.getElementById('carrinho-itens');
-    const emptyState = document.getElementById('empty-cart');
-    
-    // Limpa a lista atual exceto o empty state
-    Array.from(cont.children).forEach(child => {
-        if (child.id !== 'empty-cart') child.remove();
-    });
+    const placeholderSVG = `<div class="item-emoji skeleton"></div>`;
     
     STATE.produtos.forEach(p => {
         const badgeGrid = document.getElementById(`badge-${p.id}`);
@@ -140,25 +137,21 @@ const renderCarrinhoCompleto = () => {
     });
     
     if (STATE.carrinho.length === 0) {
-        emptyState.classList.remove('hidden');
+        cont.innerHTML = `<div class="empty-state">${iconeCarrinhoVazio}<p>Seu pedido está vazio</p><span>Adicione produtos para começar.</span></div>`;
         atualizarRodapeCarrinhoDOM();
         return;
     }
 
-    emptyState.classList.add('hidden');
-    let htmlContent = '';
-    
+    let html = '';
     STATE.carrinho.forEach(item => {
         const sub = item.preco * item.qtd; 
         const fracionavel = isFracionavel(item.unidade);
-        const fotoHTML = item.foto ? safeHTML(`<img src="${item.foto}" loading="lazy" width="48" height="48" alt="Foto do produto">`) : safeHTML(`<div class="item-emoji skeleton"></div>`);
         
-        // Uso estrito do html tag p/ segurança
-        htmlContent += html`
+        html += `
         <article class="carrinho-item" id="cart-row-${item.id}">
-            <div class="item-emoji">${fotoHTML}</div>
+            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(item.foto)}" loading="lazy" width="48" height="48" alt="${escapeHTML(item.nome)}">` : placeholderSVG}</div>
             <div class="item-meio">
-                <h3 class="item-nome">${item.nome}</h3>
+                <h3 class="item-nome">${escapeHTML(item.nome)}</h3>
                 <div class="qtd-ctrl">
                     <button class="btn-qtd" data-action="dec" data-id="${item.id}" aria-label="Diminuir quantidade">−</button>
                     <input class="qtd-input" type="text" inputmode="decimal" value="${formatarQuantidadeVisual(item.qtd, fracionavel)}" data-id="${item.id}" aria-label="Quantidade">
@@ -168,12 +161,13 @@ const renderCarrinhoCompleto = () => {
             <span class="item-preco">${fmt(sub)}</span>
         </article>`;
     });
-    
-    // Injeta de forma segura mantendo o empty state no topo
-    cont.insertAdjacentHTML('beforeend', htmlContent); 
+    cont.innerHTML = html; 
     atualizarRodapeCarrinhoDOM();
 };
 
+// ----------------------------------------------------
+// DEBOUNCE PARA SALVAR NO DISCO (Previne CPU Stuttering)
+// ----------------------------------------------------
 let debounceSalvarCarrinho;
 const persistirCarrinhoComDebounce = () => {
     clearTimeout(debounceSalvarCarrinho);
@@ -212,94 +206,69 @@ const modificarCarrinho = (id, delta, fixo = false) => {
     atualizarRodapeCarrinhoDOM();
 };
 
-// ----------------------------------------------------
-// FIM DO LAYOUT THRASHING (RENDERIZAÇÃO ÚNICA E CSS TOGGLE)
-// ----------------------------------------------------
-const renderLojaInicial = () => {
+const renderLoja = () => {
     const grid = document.getElementById('lista-produtos');
-    const loader = document.getElementById('loader-produtos');
-    if(loader) loader.remove();
+    const normalize = str => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const termo = normalize(STATE.busca);
+    const idsCarrinho = STATE.carrinho.map(c => c.id);
+    
+    const filtrados = STATE.produtos
+        .filter(p => p.ativo && 
+            (STATE.catAtiva === 'todas' || 
+            (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(p.id)) || 
+            p.cat === STATE.catAtiva) && 
+            normalize(p.nome).includes(termo))
+        .sort((a, b) => {
+            let pesoA = (idsCarrinho.includes(a.id) ? 2 : 0) + (STATE.favoritos.includes(a.id) ? 1 : 0);
+            let pesoB = (idsCarrinho.includes(b.id) ? 2 : 0) + (STATE.favoritos.includes(b.id) ? 1 : 0);
+            return pesoB - pesoA;
+        });
+    
+    if (filtrados.length === 0) { 
+        grid.innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Nenhum produto encontrado</p><span>Tente buscar por outro termo ou limpe os filtros.</span></div>`; 
+        return; 
+    }
 
-    const htmlContent = STATE.produtos.map(p => {
+    grid.innerHTML = filtrados.map(p => {
         const qtdNoCarrinho = getCartQty(p.id);
         const badgeTexto = isFracionavel(p.unidade) && qtdNoCarrinho > 0 ? formatarQuantidadeVisual(qtdNoCarrinho, true) : qtdNoCarrinho;
         const favActive = STATE.favoritos.includes(p.id) ? 'ativo' : '';
-        const normalizeName = p.nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
         
-        const fotoHTML = p.foto ? safeHTML(`<img src="${p.foto}" loading="lazy" width="200" height="200" alt="Foto">`) : safeHTML('<div class="produto-img-placeholder skeleton" style="width:100%;height:100%"></div>');
-
-        // Note o data-busca usado para a filtragem em CSS depois
-        return html`
-        <article class="produto-card ${p.ativo ? '' : 'hidden'}" id="card-${p.id}" data-busca="${normalizeName}" data-cat="${p.cat}" data-id="${p.id}">
+        return `
+        <article class="produto-card">
             <div class="produto-img-wrap">
-                ${fotoHTML}
+                ${p.foto ? `<img src="${escapeHTML(p.foto)}" loading="lazy" width="200" height="200" alt="${escapeHTML(p.nome)}">` : '<div class="produto-img-placeholder skeleton" style="width:100%;height:100%"></div>'}
                 <button class="btn-fav ${favActive}" data-action="fav" data-id="${p.id}" aria-label="Favoritar">❤️</button>
-                <span class="produto-unidade-tag">${p.unidade || 'un'}</span>
+                <span class="produto-unidade-tag">${escapeHTML(p.unidade || 'un')}</span>
                 <div class="card-badge ${qtdNoCarrinho > 0 ? 'visivel':''}" id="badge-${p.id}">${badgeTexto}</div>
             </div>
             <div class="produto-info">
-                <span class="produto-categoria">${p.cat}</span>
-                <h3 class="produto-nome">${p.nome}</h3>
+                <span class="produto-categoria">${escapeHTML(p.cat)}</span>
+                <h3 class="produto-nome">${escapeHTML(p.nome)}</h3>
                 <div class="produto-preco-row">
-                    <span class="produto-preco">${fmt(p.preco)}<br><span>por ${p.unidade || 'un'}</span></span>
+                    <span class="produto-preco">${fmt(p.preco)}<br><span>por ${escapeHTML(p.unidade || 'un')}</span></span>
                     <button class="btn-add" data-action="add" data-id="${p.id}" aria-label="Adicionar">+</button>
                 </div>
             </div>
         </article>`;
     }).join('');
-
-    grid.innerHTML = htmlContent;
-    filtrarLojaVisivel(); // Aplica estado inicial
-};
-
-const filtrarLojaVisivel = () => {
-    const termo = STATE.busca.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    const cards = document.querySelectorAll('.produto-card');
-    let visibleCount = 0;
-
-    cards.forEach(card => {
-        const p = STATE.produtos.find(x => x.id === card.dataset.id);
-        if(!p || !p.ativo) return; // Se esgotou no Firebase, nunca mostra
-
-        const matchesBusca = card.dataset.busca.includes(termo);
-        const matchesCat = STATE.catAtiva === 'todas' || 
-                           (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(card.dataset.id)) || 
-                           card.dataset.cat === STATE.catAtiva;
-
-        if (matchesBusca && matchesCat) {
-            card.classList.remove('hidden');
-            visibleCount++;
-        } else {
-            card.classList.add('hidden');
-        }
-    });
-
-    const emptySearch = document.getElementById('empty-search');
-    if (visibleCount === 0 && STATE.produtos.length > 0) {
-        emptySearch.classList.remove('hidden');
-    } else {
-        emptySearch.classList.add('hidden');
-    }
 };
 
 const renderCategorias = () => {
-    const cats = ['todas', 'favoritos', ...new Set(STATE.produtos.filter(p => p.ativo).map(p => p.cat))].filter(Boolean);
-    document.getElementById('categorias').innerHTML = cats.map(c => {
-        const label = c === 'todas' ? 'Todos' : c === 'favoritos' ? '❤️ Favoritos' : c;
-        return html`<button class="cat-btn ${c === STATE.catAtiva ? 'active' : ''}" data-action="cat" data-cat="${c}">${label}</button>`;
-    }).join('');
+    const cats = ['todas', 'favoritos', ...new Set(STATE.produtos.map(p => p.cat))].filter(Boolean);
+    document.getElementById('categorias').innerHTML = cats.map(c => `<button class="cat-btn ${c === STATE.catAtiva ? 'active' : ''}" data-action="cat" data-cat="${escapeHTML(c)}">${c === 'todas' ? 'Todos' : c === 'favoritos' ? '❤️ Favoritos' : escapeHTML(c)}</button>`).join('');
 };
 
 // ----------------------------------------------------
-// OTIMIZAÇÃO DE BUSCA E VOZ
+// EVENTOS DE BUSCA E VOZ (Debounce e Web Speech API)
 // ----------------------------------------------------
 let buscaTimeout;
 document.getElementById('busca-input').addEventListener('input', (e) => {
     clearTimeout(buscaTimeout);
     buscaTimeout = setTimeout(() => {
         STATE.busca = e.target.value;
-        filtrarLojaVisivel(); // Modifica apenas CSS, 0 layout thrashing
-    }, 150); // Menos delay, pois agora é leve
+        renderLoja();
+    }, 300);
 });
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -308,50 +277,46 @@ if (SpeechRecognition) {
     recognition.lang = 'pt-BR';
     
     document.getElementById('btn-voz').addEventListener('click', () => {
-        document.getElementById('btn-voz').classList.add('gravando');
+        const btn = document.getElementById('btn-voz');
+        btn.classList.add('gravando');
         recognition.start();
     });
 
     recognition.onresult = (event) => {
-        const txt = event.results[0][0].transcript;
-        document.getElementById('busca-input').value = txt;
-        STATE.busca = txt;
-        filtrarLojaVisivel();
+        const textoGravado = event.results[0][0].transcript;
+        const input = document.getElementById('busca-input');
+        input.value = textoGravado;
+        STATE.busca = textoGravado;
+        renderLoja();
     };
 
     recognition.onend = () => document.getElementById('btn-voz').classList.remove('gravando');
 } else {
-    document.getElementById('btn-voz').classList.add('hidden');
+    document.getElementById('btn-voz').style.display = 'none';
 }
 
 // ----------------------------------------------------
-// FIREBASE GETDOCS (Economia de Dinheiro)
+// FIREBASE REALTIME SYNC
 // ----------------------------------------------------
-const carregarDadosFirebase = async () => {
-    if (!navigator.onLine) document.getElementById('banner-offline').classList.add('visivel');
+const iniciarRealTimeSync = () => {
+    if (!navigator.onLine) { document.getElementById('banner-offline').classList.add('visivel'); }
     
-    // Config da Loja fica em tempo real (é barato)
+    // Otimização: Escuta apenas o documento config, não a coleção inteira
     onSnapshot(collection(db, "loja"), (snap) => {
         snap.forEach(d => { if(d.id === 'config') STATE.config = {...STATE.config, ...d.data()}; });
         atualizarRodapeCarrinhoDOM();
     });
 
-    try {
-        // Produtos lidos UMA vez por sessão. Firestore usa Cache Local por baixo dos panos.
-        const snap = await getDocs(collection(db, "produtos"));
+    onSnapshot(collection(db, "produtos"), (snap) => {
         STATE.produtos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
-        renderLojaInicial();
         renderCategorias(); 
-        STATE.carrinho.forEach(item => atualizarBadgesDOM(item.id, item.qtd));
-    } catch(err) {
-        console.error("Erro ao carregar catálogo:", err);
-        showToast("Erro ao carregar produtos. Atualize a página.");
-    }
+        renderLoja(); 
+        STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
+    }, (error) => console.error("Erro Realtime:", error));
 };
 
 // ----------------------------------------------------
-// EVENT DELEGATION
+// DELEGAÇÃO DE EVENTOS CENTRALIZADA
 // ----------------------------------------------------
 document.body.addEventListener('click', (e) => {
     const actionTarget = e.target.closest('[data-action]'); 
@@ -364,72 +329,46 @@ document.body.addEventListener('click', (e) => {
             if(action === 'add') animarFeedbackBtn(actionTarget); 
         }
         else if (action === 'dec') { modificarCarrinho(id, -1); }
-        else if (action === 'cat') { 
-            STATE.catAtiva = actionTarget.dataset.cat; 
-            renderCategorias(); 
-            filtrarLojaVisivel(); 
-        }
+        else if (action === 'cat') { STATE.catAtiva = actionTarget.dataset.cat; renderCategorias(); renderLoja(); }
         else if (action === 'fav') { 
-            if(STATE.favoritos.includes(id)) {
-                STATE.favoritos = STATE.favoritos.filter(f => f !== id);
-                document.querySelector(`#card-${id} .btn-fav`).classList.remove('ativo');
-            } else {
-                STATE.favoritos.push(id); 
-                document.querySelector(`#card-${id} .btn-fav`).classList.add('ativo');
-            }
-            localStorage.setItem('banca_favs', JSON.stringify(STATE.favoritos)); 
-            if(STATE.catAtiva === 'favoritos') filtrarLojaVisivel(); // Atualiza a vista se estiver na aba de favoritos
+            if(STATE.favoritos.includes(id)) STATE.favoritos = STATE.favoritos.filter(f => f !== id); 
+            else STATE.favoritos.push(id); 
+            localStorage.setItem('banca_favs', JSON.stringify(STATE.favoritos)); renderLoja(); 
         }
-        else if (action === 'open-historico') { renderHistorico(); openModal('modal-historico'); }
-        else if (action === 'repetir-pedido') { repetirPedido(id); }
+        else if (action === 'open-historico') {
+            renderHistorico();
+            openModal('modal-historico');
+        }
+        else if (action === 'repetir-pedido') {
+            repetirPedido(id);
+        }
         return;
     }
 
     const fecharTarget = e.target.closest('[data-fechar]');
     if (fecharTarget) {
-        closeModal(fecharTarget.dataset.fechar);
-        if (history.state && history.state.modal === fecharTarget.dataset.fechar) history.back();
+        const modalId = fecharTarget.dataset.fechar;
+        closeModal(modalId);
+        
+        if (history.state && history.state.modal === modalId) {
+            history.back();
+        } else if (window.location.hash === `#${modalId}`) {
+            history.replaceState(null, '', ' ');
+        }
         return;
     }
 });
 
-// UI Tratamento do Pagamento e Troco 
-document.getElementById('cli-pagamento').addEventListener('change', (e) => { 
-    const isDinheiro = e.target.value === 'Dinheiro';
-    const trocoGroup = document.getElementById('troco-group');
-    if(isDinheiro) trocoGroup.classList.remove('hidden');
-    else {
-        trocoGroup.classList.add('hidden');
-        document.getElementById('cli-troco').value = '';
-        // Reseta os botões de troco
-        document.getElementById('btn-troco-nao').classList.add('ativo');
-        document.getElementById('btn-troco-sim').classList.remove('ativo');
-        document.getElementById('input-troco-area').classList.add('hidden');
-    }
-});
-
-document.getElementById('btn-troco-nao').addEventListener('click', () => {
-    document.getElementById('btn-troco-nao').classList.add('ativo');
-    document.getElementById('btn-troco-sim').classList.remove('ativo');
-    document.getElementById('input-troco-area').classList.add('hidden');
-    document.getElementById('cli-troco').value = 'Não preciso';
-});
-
-document.getElementById('btn-troco-sim').addEventListener('click', () => {
-    document.getElementById('btn-troco-sim').classList.add('ativo');
-    document.getElementById('btn-troco-nao').classList.remove('ativo');
-    document.getElementById('input-troco-area').classList.remove('hidden');
-    document.getElementById('cli-troco').value = '';
-    document.getElementById('cli-troco').focus();
-});
-
-
+// Tratamento suave de input de quantidade
 document.getElementById('carrinho-itens').addEventListener('input', (e) => {
     if(e.target.classList.contains('qtd-input')) {
         const id = e.target.dataset.id;
         const p = STATE.produtos.find(x => x.id === id);
         let val = parseFloat(e.target.value.replace(',', '.'));
+        
+        // Se o valor for inválido durante a digitação, ignora sem quebrar o estado local
         if(isNaN(val) || val < 0) return; 
+        
         val = (p && !isFracionavel(p.unidade)) ? Math.round(val) : fixFloat(val);
         modificarCarrinho(id, val, true);
     }
@@ -441,7 +380,10 @@ window.addEventListener('popstate', (e) => {
     document.getElementById('carrinho').classList.remove('aberto');
 
     if (e.state) {
-        if (e.state.modal) document.getElementById(e.state.modal)?.classList.add('aberto');
+        if (e.state.modal) {
+            const m = document.getElementById(e.state.modal);
+            if (m) m.classList.add('aberto');
+        }
         if (e.state.cart) {
             document.getElementById('carrinho').classList.add('aberto');
             document.getElementById('carrinho-overlay').classList.add('aberto');
@@ -450,7 +392,7 @@ window.addEventListener('popstate', (e) => {
 });
 
 const toggleCartMobile = (abrir) => {
-    if(window.innerWidth > 1024) return;
+    if(window.innerWidth > 900) return;
     if (abrir) { 
         document.getElementById('carrinho').classList.add('aberto'); 
         document.getElementById('carrinho-overlay').classList.add('aberto'); 
@@ -464,12 +406,15 @@ document.getElementById('carrinho-overlay').addEventListener('click', () => hist
 
 document.getElementById('btn-limpar-carrinho').addEventListener('click', () => {
     if (STATE.carrinho.length === 0) return;
-    if (confirm("Esvaziar o pedido inteiro?")) {
+    if (confirm("Tem certeza que deseja esvaziar todo o pedido?")) {
         STATE.carrinho = []; 
         localStorage.setItem('banca_cart', JSON.stringify({v: CART_VERSION, items: []})); 
         renderCarrinhoCompleto(); 
         showToast("🛒 Carrinho esvaziado!");
-        if (window.innerWidth <= 1024 && document.getElementById('carrinho').classList.contains('aberto')) history.back();
+        
+        if (window.innerWidth <= 900 && document.getElementById('carrinho').classList.contains('aberto')) {
+            history.back();
+        }
     }
 });
 
@@ -488,17 +433,17 @@ const renderHistorico = () => {
     const lista = document.getElementById('lista-meus-pedidos');
     
     if(meusPedidos.length === 0) {
-        lista.innerHTML = html`<div class="empty-state"><svg><use href="#icon-history-empty" /></svg><p>Sem pedidos anteriores</p></div>`;
+        lista.innerHTML = `<div class="empty-state">${iconeHistoricoVazio}<p>Sem pedidos anteriores</p><span>Você ainda não fez nenhum pedido.</span></div>`;
         return;
     }
     
-    lista.innerHTML = meusPedidos.map(p => html`
-        <article class="historico-card">
-            <div class="historico-header">
-                <strong class="historico-data">${new Date(p.data).toLocaleDateString('pt-BR')}</strong>
-                <span class="historico-total">${fmt(p.total)}</span>
+    lista.innerHTML = meusPedidos.map(p => `
+        <article style="border: 1px solid var(--parchment); border-radius: 12px; padding: 16px; margin-bottom: 12px; background:var(--warm-white);">
+            <div style="display:flex; justify-content: space-between; margin-bottom: 8px;">
+                <strong style="color:var(--forest);">${new Date(p.data).toLocaleDateString('pt-BR')}</strong>
+                <span style="color:var(--forest); font-weight:900;">${fmt(p.total)}</span>
             </div>
-            <p class="historico-desc">${p.descItens || 'Itens do pedido'}</p>
+            <p style="font-size:0.9rem; color:var(--text-mid); line-height:1.4;">${escapeHTML(p.descItens || 'Itens do pedido')}</p>
             <button class="btn btn-outline" style="width:100%; margin-top:14px; padding:10px;" data-action="repetir-pedido" data-id="${p.id}">Repetir Pedido</button>
         </article>
     `).join('');
@@ -506,7 +451,7 @@ const renderHistorico = () => {
 
 const repetirPedido = (pedId) => {
     const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
-    const ped = meusPedidos.find(p => p.id === String(pedId) || p.id === Number(pedId));
+    const ped = meusPedidos.find(p => p.id === String(pedId) || p.id === Number(pedId)); // Garante compatibilidade de tipo
     if(ped && ped.itens) {
         STATE.carrinho = [];
         ped.itens.forEach(i => {
@@ -516,12 +461,18 @@ const repetirPedido = (pedId) => {
         persistirCarrinhoComDebounce();
         renderCarrinhoCompleto();
         closeModal('modal-historico');
-        showToast('🛒 Itens adicionados!');
+        showToast('🛒 Itens adicionados ao carrinho!');
     }
 };
 
+document.getElementById('cli-pagamento').addEventListener('change', (e) => { 
+    const isDinheiro = e.target.value === 'Dinheiro';
+    document.getElementById('troco-group').style.display = isDinheiro ? 'block' : 'none'; 
+    if(!isDinheiro) document.getElementById('cli-troco').value = '';
+});
+
 // ----------------------------------------------------
-// INTEGRAÇÃO SERVERLESS
+// INTEGRAÇÃO SERVERLESS SEGURA (Vercel API)
 // ----------------------------------------------------
 document.getElementById('btn-enviar-pedido').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
@@ -531,29 +482,23 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     const quadra = document.getElementById('cli-quadra').value.trim();
     const lote = document.getElementById('cli-lote').value.trim();
     const pag = document.getElementById('cli-pagamento').value;
-    const isDinheiro = pag === 'Dinheiro';
-    
-    // Trata o troco a partir dos botões novos
-    let trocoFinal = '';
-    if (isDinheiro) {
-        const inputTroco = document.getElementById('cli-troco').value.trim();
-        trocoFinal = inputTroco === '' ? 'Não informado' : inputTroco;
-    }
-
+    const trocoRaw = document.getElementById('cli-troco').value.trim();
     const obs = document.getElementById('cli-obs').value.trim();
 
     if(!nome || !quadra || !lote) { showToast("⚠️ Preencha nome, quadra e lote!"); return; }
 
-    setBtnLoading('btn-enviar-pedido', true, 'Processando pedido... 🚀');
+    btn.disabled = true; 
+    btn.textContent = 'Processando pedido... ⏳';
 
     try {
+        // Envia apenas o payload mínimo (Trust No Client)
         const payload = {
-            nome, quadra, lote, pag, troco: trocoFinal, obs,
+            nome, quadra, lote, pag, troco: trocoRaw, obs,
             itens: STATE.carrinho.map(item => ({ id: item.id, qtd: item.qtd }))
         };
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000); 
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // Timeout de 10s para redes 3G ruins
 
         const response = await fetch('/api/checkout', {
             method: 'POST',
@@ -564,20 +509,26 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
         clearTimeout(timeoutId);
 
+        // CORREÇÃO CRÍTICA: Intercepta erros 500 do Vercel sem quebrar o JSON parser
         const contentType = response.headers.get("content-type");
         let data;
         
         if (contentType && contentType.includes("application/json")) {
             data = await response.json();
         } else {
-            throw new Error("Erro Crítico no Vercel. Contate o administrador.");
+            const erroCru = await response.text();
+            console.error("Vercel Crash Log:", erroCru);
+            throw new Error("O servidor (Vercel) falhou. Verifique os logs na Vercel.");
         }
 
-        if (!response.ok || !data.sucesso) throw new Error(data.error || "Falha ao processar.");
+        if (!response.ok || !data.sucesso) {
+            throw new Error(data.error || "Falha ao processar pedido no servidor.");
+        }
 
+        // Salva metadados seguros no LocalStorage para o histórico
         const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
         const idx = clientes.findIndex(c => c.nome.toLowerCase() === nome.toLowerCase());
-        if(idx >= 0) clientes[idx] = {nome, quadra, lote}; else clientes.unshift({nome, quadra, lote});
+        if(idx >= 0) { clientes[idx] = {nome, quadra, lote}; } else { clientes.unshift({nome, quadra, lote}); }
         localStorage.setItem('banca_clientes', JSON.stringify(clientes.slice(0, 5)));
 
         const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
@@ -590,6 +541,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         });
         localStorage.setItem('banca_meus_pedidos', JSON.stringify(meusPedidos.slice(0, 10)));
 
+        // Redireciona com segurança
         window.open(data.pedido.whatsappMsg, '_blank');
         
         closeModal('modal-checkout');
@@ -602,10 +554,12 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         document.getElementById('cli-troco').value = '';
 
     } catch(err) {
-        if(err.name === 'AbortError') showToast("Conexão fraca. Verifique sua internet.");
-        else showToast(err.message); 
+        if(err.name === 'AbortError') showToast("Tempo esgotado. Verifique sua internet.");
+        else showToast(err.message); // Exibe o erro real de falha do servidor na tela
+        console.error("Falha no Checkout:", err);
     } finally {
-        setBtnLoading('btn-enviar-pedido', false);
+        btn.disabled = false; 
+        btn.textContent = 'Enviar Pedido 🚀';
     }
 });
 
@@ -613,4 +567,4 @@ window.addEventListener('online', () => document.getElementById('banner-offline'
 window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
 
 renderCarrinhoCompleto();
-carregarDadosFirebase();
+iniciarRealTimeSync();
