@@ -1,21 +1,20 @@
 import { auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL } from './firebase.js';
-import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal } from './utils.js';
+import { html, safeHTML, fmt, formatarQtdRelatorio, showToast, openModal, closeModal, setBtnLoading } from './utils.js';
 
 let produtosAtuais = [];
 let pedidosGerais = [];
-const placeholderSVG = `<div class="prod-img-placeholder skeleton" style="width:100%;height:100%"></div>`;
 
 // ----------------------------------------------------
-// AUTENTICAÇÃO
+// AUTENTICAÇÃO SEGURA (MAGIC LINK)
 // ----------------------------------------------------
 onAuthStateChanged(auth, (user) => {
     if (user) {
-        document.getElementById('login-screen').style.display = 'none';
-        document.getElementById('dashboard').style.display = 'block';
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('dashboard').classList.remove('hidden');
         iniciarRealTimeSync(); 
     } else {
-        document.getElementById('login-screen').style.display = 'flex';
-        document.getElementById('dashboard').style.display = 'none';
+        document.getElementById('login-screen').classList.remove('hidden');
+        document.getElementById('dashboard').classList.add('hidden');
     }
 });
 
@@ -28,32 +27,40 @@ document.getElementById('btn-login').addEventListener('click', () => {
     if (!email) { msg.textContent = "⚠️ Digite um e-mail válido."; msg.style.color = "var(--danger)"; return; }
     
     isLoginProcessing = true;
-    document.getElementById('btn-login').disabled = true;
-    msg.textContent = "Enviando link..."; msg.style.color = "var(--text-dark)";
+    setBtnLoading('btn-login', true, 'Enviando link...');
+    msg.textContent = "";
     
     sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true })
         .then(() => { 
             window.sessionStorage.setItem('emailForSignIn', email);
-            msg.textContent = "✅ Link enviado! Verifique o e-mail."; msg.style.color = "var(--success)"; 
+            msg.textContent = "✅ Link enviado! Verifique sua caixa de entrada."; 
+            msg.style.color = "var(--success)"; 
         })
-        .catch((e) => { msg.textContent = "❌ Erro ao enviar link."; msg.style.color = "var(--danger)"; })
+        .catch((e) => { 
+            console.error("Auth Error:", e);
+            msg.textContent = "❌ Erro ao enviar link. Tente novamente."; 
+            msg.style.color = "var(--danger)"; 
+        })
         .finally(() => {
-            setTimeout(() => { isLoginProcessing = false; document.getElementById('btn-login').disabled = false; }, 5000);
+            setTimeout(() => { 
+                isLoginProcessing = false; 
+                setBtnLoading('btn-login', false); 
+            }, 5000);
         });
 });
 
 if (isSignInWithEmailLink(auth, window.location.href)) {
     let email = window.sessionStorage.getItem('emailForSignIn');
-    if (!email) email = window.prompt('Confirme seu e-mail para acessar:');
+    if (!email) email = window.prompt('Confirme seu e-mail administrativo para acessar:');
     signInWithEmailLink(auth, email, window.location.href)
         .then(() => window.sessionStorage.removeItem('emailForSignIn'))
-        .catch(() => alert("O link expirou ou é inválido. Tente novamente."));
+        .catch(() => alert("O link expirou ou é inválido. Solicite um novo."));
 }
 
 document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
 
 // ----------------------------------------------------
-// NAVEGAÇÃO E MODAIS
+// NAVEGAÇÃO E MODAIS (HISTORY E TABS)
 // ----------------------------------------------------
 document.querySelector('.tabs').addEventListener('click', (e) => {
     if(e.target.classList.contains('tab')) {
@@ -65,10 +72,6 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
         
         if(e.target.dataset.aba === 'relatorios') renderRelatorios();
     }
-});
-
-document.querySelectorAll('[data-fechar]').forEach(btn => { 
-    btn.addEventListener('click', (e) => { closeModal(e.currentTarget.dataset.fechar); }); 
 });
 
 const customConfirm = (title, msg) => {
@@ -90,16 +93,14 @@ const customConfirm = (title, msg) => {
 };
 
 // ----------------------------------------------------
-// SYNC EM TEMPO REAL (Firestore)
+// SYNC EM TEMPO REAL (Requisito Crítico do Admin)
 // ----------------------------------------------------
 const iniciarRealTimeSync = () => {
-    // Escuta Produtos
     onSnapshot(collection(db, "produtos"), (snap) => {
         produtosAtuais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
         renderProdutos();
     });
 
-    // Escuta Configurações
     onSnapshot(doc(db, "loja", "config"), (snap) => {
         if (snap.exists()) {
             const data = snap.data();
@@ -108,12 +109,9 @@ const iniciarRealTimeSync = () => {
             document.getElementById('config-status-loja').value = data.lojaAberta === false ? "fechada" : "aberta";
             const diasSalvos = data.diasAbertos || [0,1,2,3,4,5,6];
             document.querySelectorAll('.chk-dia').forEach(chk => chk.checked = diasSalvos.includes(parseInt(chk.value)));
-        } else {
-            document.querySelectorAll('.chk-dia').forEach(chk => chk.checked = true);
         }
     });
 
-    // Escuta Pedidos (Histórico vivo)
     onSnapshot(collection(db, "pedidos"), (snap) => {
         pedidosGerais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => new Date(b.data) - new Date(a.data));
         if(document.getElementById('aba-relatorios').classList.contains('active')) renderRelatorios();
@@ -121,28 +119,32 @@ const iniciarRealTimeSync = () => {
 };
 
 // ----------------------------------------------------
-// PRODUTOS (CRUD)
+// PRODUTOS (CRUD COM SANITIZAÇÃO)
 // ----------------------------------------------------
 const renderProdutos = () => {
-    const html = produtosAtuais.map(p => `
+    const htmlContent = produtosAtuais.map(p => {
+        const imgTag = p.foto ? safeHTML(`<img src="${p.foto}" loading="lazy">`) : safeHTML(`<div class="prod-img-placeholder skeleton" style="width:100%;height:100%"></div>`);
+        const statusBtn = p.ativo 
+            ? safeHTML(`<button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" data-action="toggle-estoque" data-id="${p.id}" data-status="false">Esgotar Produto</button>`)
+            : safeHTML(`<button class="btn btn-success" style="background:var(--success); color:white; border:none;" data-action="toggle-estoque" data-id="${p.id}" data-status="true">Voltar p/ Estoque</button>`);
+
+        return html`
         <article class="card-produto ${p.ativo ? '' : 'esgotado'}">
             <div class="prod-info-grande">
-                <div class="prod-img-grande">${p.foto ? `<img src="${escapeHTML(p.foto)}" loading="lazy">` : placeholderSVG}</div>
+                <div class="prod-img-grande">${imgTag}</div>
                 <div class="prod-detalhes">
-                    <h4>${escapeHTML(p.nome)}</h4>
-                    <p>${fmt(p.preco)} <span style="font-size:0.9rem; color:var(--text-light); font-weight:normal">/${escapeHTML(p.unidade)}</span></p>
+                    <h4>${p.nome}</h4>
+                    <p>${fmt(p.preco)} <span style="font-size:0.9rem; color:var(--text-light); font-weight:normal">/${p.unidade}</span></p>
                 </div>
             </div>
             <div class="botoes-acao">
-                ${p.ativo 
-                    ? `<button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" data-action="toggle-estoque" data-id="${p.id}" data-status="false">Esgotar Produto</button>`
-                    : `<button class="btn btn-success" data-action="toggle-estoque" data-id="${p.id}" data-status="true">Voltar p/ Estoque</button>`
-                }
+                ${statusBtn}
                 <button class="btn" style="width: auto; padding: 16px 20px;" data-action="editar-produto" data-id="${p.id}">Editar</button>
             </div>
-        </article>
-    `).join('');
-    document.getElementById('lista-produtos').innerHTML = html;
+        </article>`;
+    }).join('');
+
+    document.getElementById('lista-produtos').innerHTML = htmlContent;
 };
 
 document.body.addEventListener('click', async (e) => {
@@ -152,7 +154,7 @@ document.body.addEventListener('click', async (e) => {
     if(action === 'novo-produto') {
         document.getElementById('modal-titulo').textContent = 'Novo Produto';
         ['edit-id', 'edit-nome', 'edit-preco', 'edit-cat', 'edit-foto', 'edit-foto-url'].forEach(i => document.getElementById(i).value = '');
-        document.getElementById('btn-excluir-produto').style.display = 'none';
+        document.getElementById('btn-excluir-produto').classList.add('hidden');
         openModal('modal-produto');
     }
     
@@ -167,7 +169,7 @@ document.body.addEventListener('click', async (e) => {
         document.getElementById('edit-cat').value = p.cat || '';
         document.getElementById('edit-foto').value = ''; 
         document.getElementById('edit-foto-url').value = ''; 
-        document.getElementById('btn-excluir-produto').style.display = 'block';
+        document.getElementById('btn-excluir-produto').classList.remove('hidden');
         openModal('modal-produto');
     }
     
@@ -181,11 +183,21 @@ document.body.addEventListener('click', async (e) => {
         await setDoc(doc(db, "produtos", id), { ativo: novoStatus, ultimaModificacao: Date.now() }, { merge: true });
         showToast(novoStatus ? "Produto disponível!" : "Produto esgotado.");
     }
+    
+    else if(action === 'excluir-pedido') {
+        if(await customConfirm("Excluir", "Deseja excluir este pedido permanentemente?")) { 
+            await deleteDoc(doc(db, "pedidos", target.dataset.id)); 
+            showToast("Pedido excluído.");
+        } 
+    }
+    
+    // Tratamento de modais centralizado
+    const fecharTarget = e.target.closest('[data-fechar]');
+    if (fecharTarget) closeModal(fecharTarget.dataset.fechar);
 });
 
 document.getElementById('btn-salvar-produto').addEventListener('click', async () => {
-    const btn = document.getElementById('btn-salvar-produto'); 
-    btn.textContent = "Salvando... ⏳"; btn.disabled = true;
+    setBtnLoading('btn-salvar-produto', true, 'Salvando... ⏳');
 
     try {
         const id = document.getElementById('edit-id').value || crypto.randomUUID();
@@ -198,7 +210,7 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
             ultimaModificacao: Date.now()
         };
         
-        if(!pData.nome || isNaN(pData.preco)) throw new Error("Preencha nome e preço.");
+        if(!pData.nome || isNaN(pData.preco)) throw new Error("Preencha nome e preço obrigatórios.");
 
         const fileInput = document.getElementById('edit-foto');
         const urlInput = document.getElementById('edit-foto-url').value.trim();
@@ -207,59 +219,72 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
             const storageRef = ref(storage, `fotos_produtos/${id}_${fileInput.files[0].name}`); 
             await uploadBytes(storageRef, fileInput.files[0]); 
             pData.foto = await getDownloadURL(storageRef); 
-        } 
-        else if (urlInput) { pData.foto = urlInput; }
-        else if (document.getElementById('edit-id').value) { 
+        } else if (urlInput) { 
+            pData.foto = urlInput; 
+        } else if (document.getElementById('edit-id').value) { 
             const pAntigo = produtosAtuais.find(x => x.id === id); 
             if(pAntigo && pAntigo.foto) pData.foto = pAntigo.foto; 
         }
         
         await setDoc(doc(db, "produtos", id), pData, { merge: true });
-        closeModal('modal-produto'); showToast("Produto salvo com sucesso!");
+        closeModal('modal-produto'); 
+        showToast("Produto salvo com sucesso!");
     } catch (erro) {
-        alert(erro.message || "Erro ao salvar o produto.");
+        alert(erro.message || "Erro ao salvar o produto no Banco de Dados.");
     } finally {
-        btn.textContent = "💾 Salvar"; btn.disabled = false;
+        setBtnLoading('btn-salvar-produto', false);
     }
 });
 
 document.getElementById('btn-excluir-produto').addEventListener('click', async () => {
     if(await customConfirm("Atenção Crítica", "APAGAR este produto permanentemente do banco de dados?")) { 
+        setBtnLoading('btn-excluir-produto', true);
         await deleteDoc(doc(db, "produtos", document.getElementById('edit-id').value)); 
-        closeModal('modal-produto'); showToast("Produto apagado.");
+        setBtnLoading('btn-excluir-produto', false);
+        closeModal('modal-produto'); 
+        showToast("Produto apagado com sucesso.");
     }
 });
 
 // ----------------------------------------------------
-// RELATÓRIOS E HISTÓRICO
+// RELATÓRIOS E LOGÍSTICA (Com Sanitização)
 // ----------------------------------------------------
 const renderRelatorios = () => {
     const listDiv = document.getElementById('lista-historico');
-    if(pedidosGerais.length === 0) { listDiv.innerHTML = "<p style='color:var(--text-light)'>Nenhum pedido registrado.</p>"; return; }
+    if(pedidosGerais.length === 0) { 
+        listDiv.innerHTML = html`<p style="color:var(--text-light)">Nenhum pedido registrado.</p>`; 
+        return; 
+    }
 
-    let totalReceita = 0; let countProdutos = {}; let countClientes = {}; let countDias = { 'Domingo':0, 'Segunda':0, 'Terça':0, 'Quarta':0, 'Quinta':0, 'Sexta':0, 'Sábado':0 };
+    let totalReceita = 0; 
+    let countProdutos = {}; 
+    let countClientes = {}; 
+    let countDias = { 'Domingo':0, 'Segunda':0, 'Terça':0, 'Quarta':0, 'Quinta':0, 'Sexta':0, 'Sábado':0 };
     const diasSemana = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
     const htmlLista = pedidosGerais.map(p => {
         totalReceita += p.total || 0;
         const dateObj = new Date(p.data);
         if(!isNaN(dateObj.getTime())) countDias[diasSemana[dateObj.getDay()]] += (p.total || 0);
-        const nomeCli = escapeHTML(p.nome).trim().toUpperCase(); countClientes[nomeCli] = (countClientes[nomeCli] || 0) + (p.total || 0);
+        
+        const nomeCli = p.nome.trim().toUpperCase(); 
+        countClientes[nomeCli] = (countClientes[nomeCli] || 0) + (p.total || 0);
         
         const itensStr = p.itens ? p.itens.map(i => { 
             countProdutos[i.nome] = (countProdutos[i.nome] || 0) + i.qtd; 
-            return `${formatarQtdRelatorio(i.qtd, i.unidade)} ${escapeHTML(i.nome)}`; 
+            return `${formatarQtdRelatorio(i.qtd, i.unidade)} ${i.nome}`; 
         }).join(', ') : '';
         
-        return `
+        return html`
         <article class="card" style="flex-direction: column; align-items: flex-start; gap: 8px;">
             <div style="display: flex; justify-content: space-between; width: 100%;">
-                <strong style="font-size: 1.1rem;">👤 ${escapeHTML(p.nome)} (Q${escapeHTML(p.quadra)} L${escapeHTML(p.lote)})</strong>
+                <strong style="font-size: 1.1rem;">👤 ${p.nome} (Q${p.quadra} L${p.lote})</strong>
                 <span style="color: var(--forest); font-weight: bold; font-size: 1.2rem;">${fmt(p.total||0)}</span>
             </div>
-            <div style="font-size: 0.9rem; color: var(--text-light);">📅 ${isNaN(dateObj.getTime()) ? "Desconhecida" : dateObj.toLocaleString('pt-BR')} | 💳 ${escapeHTML(p.pag)}</div>
+            <div style="font-size: 0.9rem; color: var(--text-light);">📅 ${isNaN(dateObj.getTime()) ? "Desconhecida" : dateObj.toLocaleString('pt-BR')} | 💳 ${p.pag}</div>
             <div style="font-size: 0.95rem; margin-top: 5px; background: var(--parchment); padding: 10px; border-radius: 8px;">📦 ${itensStr}</div>
-            <button class="btn btn-outline" style="border-color: var(--danger); color: var(--danger); padding: 8px 16px; margin-top: 10px; width: auto; font-size: 0.9rem;" onclick="window.excluirPedido('${escapeHTML(p.id)}')">Excluir Pedido</button>
+            ${p.obs ? safeHTML(`<div style="font-size: 0.9rem; color: var(--danger); margin-top: 4px; font-weight:bold;">📝 Obs: ${p.obs}</div>`) : ''}
+            <button class="btn btn-outline" style="border-color: var(--danger); color: var(--danger); padding: 8px 16px; margin-top: 10px; width: auto; font-size: 0.9rem;" data-action="excluir-pedido" data-id="${p.id}">Excluir Pedido</button>
         </article>`;
     }).join('');
 
@@ -269,7 +294,9 @@ const renderRelatorios = () => {
 
     const renderRanking = (dados, divId, formatador) => { 
         const arr = Object.entries(dados).sort((a,b) => b[1] - a[1]).slice(0,5); 
-        document.getElementById(divId).innerHTML = arr.length ? arr.map(i => `<div class="ranking-item"><span>${escapeHTML(i[0])}</span> <strong>${formatador(i[1])}</strong></div>`).join('') : '<p style="color: var(--text-light)">Sem dados.</p>'; 
+        document.getElementById(divId).innerHTML = arr.length 
+            ? arr.map(i => html`<div class="ranking-item"><span>${i[0]}</span> <strong>${formatador(i[1])}</strong></div>`).join('') 
+            : html`<p style="color: var(--text-light)">Sem dados o suficiente.</p>`; 
     };
     
     renderRanking(countProdutos, 'ranking-produtos', val => val % 1 !== 0 ? `${val.toFixed(2).replace('.',',')} med.` : `${val} un.`);
@@ -278,42 +305,42 @@ const renderRelatorios = () => {
 };
 
 document.getElementById('btn-exportar').addEventListener('click', () => {
-    if(pedidosGerais.length === 0) return showToast("Não há pedidos.");
+    if(pedidosGerais.length === 0) return showToast("Não há pedidos para exportar.");
+    
     let csv = "Data,Cliente,Quadra,Lote,Pagamento,Total,Itens\n";
     pedidosGerais.forEach(p => { 
         const itensTxt = p.itens ? p.itens.map(i => `${formatarQtdRelatorio(i.qtd, i.unidade)} ${i.nome}`).join(' | ') : '';
         csv += `"${p.data}","${p.nome}","${p.quadra}","${p.lote}","${p.pag}","${p.total.toFixed(2).replace('.',',')}","${itensTxt}"\n`; 
     });
+    
     const link = document.createElement("a"); 
     link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: 'text/csv;charset=utf-8;' })); 
-    link.download = `Vendas_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`; 
+    link.download = `Relatorio_Vendas_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`; 
     link.click();
 });
 
 document.getElementById('btn-limpar-hist').addEventListener('click', async () => {
     if(await customConfirm("Atenção Extrema", "Apagar TODOS os pedidos do sistema de forma irreversível?")) { 
+        setBtnLoading('btn-limpar-hist', true, 'Limpando banco...');
         await Promise.all(pedidosGerais.map(p => deleteDoc(doc(db, "pedidos", p.id)))); 
-        showToast("Histórico apagado.");
+        setBtnLoading('btn-limpar-hist', false);
+        showToast("Histórico de pedidos formatado.");
     }
 });
 
-// Acesso global para inline onclick (botão de excluir no HTML string)
-window.excluirPedido = async (id) => { 
-    if(await customConfirm("Excluir", "Deseja excluir este pedido permanentemente?")) { 
-        await deleteDoc(doc(db, "pedidos", id)); showToast("Pedido excluído.");
-    } 
-};
-
 // ----------------------------------------------------
-// CONFIGURAÇÕES GERAIS
+// CONFIGURAÇÕES GERAIS DA LOJA
 // ----------------------------------------------------
 document.getElementById('btn-salvar-config').addEventListener('click', async () => {
-    const btn = document.getElementById('btn-salvar-config'); btn.textContent = "Salvando...";
+    setBtnLoading('btn-salvar-config', true, 'Salvando...');
+    
     let wpp = document.getElementById('config-wpp').value.replace(/\D/g, ''); 
     const minimo = parseFloat(document.getElementById('config-minimo').value) || 0;
     const lojaAberta = document.getElementById('config-status-loja').value === "aberta";
     const diasAbertos = Array.from(document.querySelectorAll('.chk-dia:checked')).map(chk => parseInt(chk.value));
 
     await setDoc(doc(db, "loja", "config"), { wpp, minimo, lojaAberta, diasAbertos }, { merge: true });
-    btn.textContent = "💾 Salvar Configurações"; showToast("Configurações atualizadas!");
+    
+    setBtnLoading('btn-salvar-config', false);
+    showToast("Configurações atualizadas com sucesso!");
 });
