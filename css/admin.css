@@ -105,12 +105,3 @@
 /* Toast */
 .toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(100px); opacity: 0; background: var(--forest); color: white; padding: 14px 28px; border-radius: 40px; font-weight: 700; font-size: 0.95rem; z-index: 9999; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2); box-shadow: var(--shadow-lg); pointer-events: none; }
 .toast.visivel { transform: translateX(-50%) translateY(0); opacity: 1; }
-
-/* Utilitário Global */
-.hidden { display: none !important; }
-
-/* Correções de Z-Index Modais */
-.modal-overlay { z-index: var(--z-overlay, 1000); }
-.modal { z-index: var(--z-modal, 1001); }
-.toast { z-index: var(--z-toast, 9999); }
-
