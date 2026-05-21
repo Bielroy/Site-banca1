@@ -2,35 +2,42 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel Admin - Banca Adair e Pedrina</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Painel Enterprise - Banca Adair e Pedrina</title>
+    
+    <meta name="robots" content="noindex, nofollow"> <!-- Evita indexação do painel admin pelo Google -->
+    <meta name="theme-color" content="#1a3a2a">
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     
     <link rel="stylesheet" href="./css/variables.css">
+    <link rel="stylesheet" href="./css/shared.css">
     <link rel="stylesheet" href="./css/admin.css">
 </head>
 <body>
 
-    <main id="login-screen">
-        <section class="login-box">
+    <!-- Transformado em section para não conflitar com o main principal -->
+    <section id="login-screen">
+        <div class="login-box">
             <h2>Gestão da Banca</h2>
             <p class="login-sub">Acesso restrito. Insira o e-mail autorizado.</p>
             <div class="form-group">
                 <label for="email">E-mail Administrativo</label>
                 <input type="email" id="email" placeholder="admin@exemplo.com">
             </div>
-            <button class="btn" id="btn-login">Receber Link Seguro</button>
+            <!-- Usa classes padronizadas do shared -->
+            <button class="btn-outline" style="background: var(--forest); color: white; width: 100%; padding: 14px;" id="btn-login">Receber Link Seguro</button>
             <p id="login-msg" class="login-msg"></p>
-        </section>
-    </main>
+        </div>
+    </section>
 
+    <!-- Único main do documento -->
     <main id="dashboard" style="display: none;">
         <header class="dash-header">
-            <h2>Painel Enterprise</h2>
-            <button class="btn btn-outline" id="btn-logout" style="width: auto;">Desconectar</button>
+            <h2>Painel de Controle</h2>
+            <button class="btn-outline" id="btn-logout" style="padding: 10px 20px;">Desconectar</button>
         </header>
 
         <nav class="tabs" aria-label="Abas do Painel">
@@ -40,7 +47,7 @@
         </nav>
 
         <section id="aba-produtos" class="aba-content active">
-            <button class="btn btn-add-prod" data-action="novo-produto">+ Adicionar Novo Produto</button>
+            <button class="btn-outline" style="background: var(--forest); color: white; padding: 14px; margin-bottom: 24px;" data-action="novo-produto">+ Adicionar Novo Produto</button>
             <div id="lista-produtos" class="produtos-grid">Carregando catálogo...</div>
         </section>
 
@@ -48,8 +55,8 @@
             <header class="relatorios-header">
                 <h3>Visão Consolidada</h3>
                 <div class="relatorios-actions">
-                    <button class="btn btn-export" id="btn-exportar">📥 Exportar Dados Recentes</button>
-                    <button class="btn btn-limpar-hist" id="btn-limpar-hist">Apagar Histórico</button>
+                    <button class="btn-export" id="btn-exportar">📥 Exportar Dados</button>
+                    <button class="btn-limpar-hist" id="btn-limpar-hist">Apagar Histórico</button>
                 </div>
             </header>
             
@@ -70,15 +77,15 @@
                 <article class="ranking-box"><h3>📅 Dias mais Fortes</h3><div id="ranking-dias"></div></article>
             </div>
 
-            <h3 style="margin: 30px 0 15px; color: var(--forest); font-family: 'Fraunces', serif;">50 Últimos Pedidos (Logística)</h3>
+            <h3 class="historico-titulo">Últimos 50 Pedidos (Logística)</h3>
             <div id="lista-historico">Buscando inteligência de dados...</div>
         </section>
 
         <section id="aba-config" class="aba-content">
-            <h3>Parâmetros da Loja</h3>
+            <h3 style="font-family: 'Fraunces', serif; color: var(--forest); font-size: 1.5rem; margin-bottom: 8px;">Parâmetros da Loja</h3>
             <p class="config-sub">Ações sincronizadas em tempo real com todos os clientes.</p>
             
-            <article class="card config-card">
+            <article class="config-card">
                 <div class="form-group border-bottom">
                     <label class="danger-label">🛑 Disjuntor Principal (Master Switch)</label>
                     <select id="config-status-loja">
@@ -87,7 +94,7 @@
                     </select>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" style="width: 100%;">
                     <label>📅 Dias de Abertura Automática</label>
                     <div class="dias-semana">
                         <label class="dia-label"><input type="checkbox" value="0" class="chk-dia"> Dom</label>
@@ -100,21 +107,22 @@
                     </div>
                 </div>
 
-                <div class="grid-2">
+                <div class="grid-2" style="width: 100%;">
                     <div class="form-group"><label>📱 Número de Atendimento (WhatsApp)</label><input type="text" id="config-wpp" placeholder="55DD9XXXXXXXX"></div>
                     <div class="form-group"><label>💰 Ticket Mínimo (R$)</label><input type="number" id="config-minimo" step="0.5"></div>
                 </div>
                 
-                <button class="btn btn-salvar-config" id="btn-salvar-config">💾 Gravar Definições</button>
+                <button class="btn-salvar-config" id="btn-salvar-config">💾 Gravar Definições</button>
             </article>
         </section>
     </main>
 
+    <!-- Modais usando shared.css -->
     <div class="modal-overlay" id="modal-produto">
         <div class="modal">
-            <header class="modal-header">
-                <h3 id="modal-titulo">Editar Produto</h3>
-                <button class="btn-fechar-icon" data-fechar="modal-produto">&times;</button>
+            <header class="modal-head">
+                <h2 id="modal-titulo">Editar Produto</h2>
+                <button class="btn-fechar" data-fechar="modal-produto">&times;</button>
             </header>
             <div class="modal-body">
                 <input type="hidden" id="edit-id">
@@ -136,20 +144,23 @@
                 </div>
                 <div class="form-group"><label>Classificação (Categoria)</label><input type="text" id="edit-cat"></div>
             </div>
-            <footer class="modal-footer">
-                <button class="btn" id="btn-salvar-produto">💾 Gravar no Banco</button>
-                <button class="btn btn-outline btn-delete" id="btn-excluir-produto">🗑 Destruir Registro</button>
+            <footer class="modal-footer" style="display: flex; flex-direction: column; gap: 10px;">
+                <button class="btn-outline" style="background: var(--forest); color: white; padding: 14px;" id="btn-salvar-produto">💾 Gravar no Banco</button>
+                <button class="btn-outline" style="color: var(--danger); border-color: var(--danger); padding: 14px;" id="btn-excluir-produto">🗑 Destruir Registro</button>
             </footer>
         </div>
     </div>
 
+    <!-- Modal Compartilhado Custom Confirm -->
     <div class="modal-overlay" id="overlay-confirm">
-        <div class="modal confirm-dialog">
-            <h3 id="confirm-title">Alerta de Segurança</h3>
-            <p id="confirm-msg">Confirma a operação solicitada?</p>
-            <div class="confirm-actions">
-                <button class="btn-cancelar" id="btn-confirm-cancel">Cancelar</button>
-                <button class="btn-confirmar" id="btn-confirm-ok">Prosseguir</button>
+        <div class="modal" style="max-width: 380px; text-align: center;">
+            <div class="modal-body" style="padding: 30px 24px;">
+                <h2 id="confirm-title" style="color: var(--forest); margin-bottom: 12px; font-size: 1.6rem;">Atenção</h2>
+                <p id="confirm-msg" style="color: var(--text-mid); font-size: 1.05rem;">Confirma a operação?</p>
+                <div style="display: flex; gap: 12px; margin-top: 24px;">
+                    <button class="btn-outline" id="btn-confirm-cancel" style="flex: 1; padding: 12px; border-color: #e0dcd4; color: var(--text-dark);">Cancelar</button>
+                    <button class="btn-outline" id="btn-confirm-ok" style="flex: 1; padding: 12px; background: var(--danger); color: white; border-color: var(--danger);">Confirmar</button>
+                </div>
             </div>
         </div>
     </div>
