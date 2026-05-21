@@ -1,26 +1,32 @@
-import { auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL } from './firebase.js';
-import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal } from './utils.js';
+import { auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL, query, orderBy, limit, writeBatch } from './firebase.js';
+import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal, customConfirm } from './utils.js';
 
 let produtosAtuais = [];
 let pedidosGerais = [];
+let unsubscribes = []; // Prevenção de Memory Leaks
+
 const placeholderSVG = `<div class="prod-img-placeholder skeleton" style="width:100%;height:100%"></div>`;
 
 // ----------------------------------------------------
-// AUTENTICAÇÃO
+// AUTENTICAÇÃO E GERENCIAMENTO DE MEMÓRIA
 // ----------------------------------------------------
 onAuthStateChanged(auth, (user) => {
+    // Matar processos antigos se o usuário mudar
+    unsubscribes.forEach(unsub => unsub()); 
+    unsubscribes = [];
+
     if (user) {
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('dashboard').style.display = 'block';
         iniciarRealTimeSync(); 
     } else {
-        document.getElementById('login-screen').style.display = 'flex';
+        document.getElementById('login-screen').style.display = 'block';
         document.getElementById('dashboard').style.display = 'none';
     }
 });
 
 let isLoginProcessing = false;
-document.getElementById('btn-login').addEventListener('click', () => {
+document.getElementById('btn-login').addEventListener('click', async () => {
     if (isLoginProcessing) return;
     const email = document.getElementById('email').value.trim();
     const msg = document.getElementById('login-msg');
@@ -31,15 +37,17 @@ document.getElementById('btn-login').addEventListener('click', () => {
     document.getElementById('btn-login').disabled = true;
     msg.textContent = "Enviando link..."; msg.style.color = "var(--text-dark)";
     
-    sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true })
-        .then(() => { 
-            window.sessionStorage.setItem('emailForSignIn', email);
-            msg.textContent = "✅ Link enviado! Verifique o e-mail."; msg.style.color = "var(--success)"; 
-        })
-        .catch((e) => { msg.textContent = "❌ Erro ao enviar link."; msg.style.color = "var(--danger)"; })
-        .finally(() => {
-            setTimeout(() => { isLoginProcessing = false; document.getElementById('btn-login').disabled = false; }, 5000);
-        });
+    try {
+        await sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true });
+        window.sessionStorage.setItem('emailForSignIn', email);
+        msg.textContent = "✅ Link enviado! Verifique o e-mail."; 
+        msg.style.color = "var(--success)"; 
+    } catch(error) {
+        msg.textContent = "❌ Erro ao enviar link. Tente novamente."; 
+        msg.style.color = "var(--danger)";
+    } finally {
+        setTimeout(() => { isLoginProcessing = false; document.getElementById('btn-login').disabled = false; }, 5000);
+    }
 });
 
 if (isSignInWithEmailLink(auth, window.location.href)) {
@@ -47,13 +55,13 @@ if (isSignInWithEmailLink(auth, window.location.href)) {
     if (!email) email = window.prompt('Confirme seu e-mail para acessar:');
     signInWithEmailLink(auth, email, window.location.href)
         .then(() => window.sessionStorage.removeItem('emailForSignIn'))
-        .catch(() => alert("O link expirou ou é inválido. Tente novamente."));
+        .catch(() => alert("O link expirou ou é inválido. Peça um novo."));
 }
 
 document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
 
 // ----------------------------------------------------
-// NAVEGAÇÃO E MODAIS
+// NAVEGAÇÃO DE ABAS
 // ----------------------------------------------------
 document.querySelector('.tabs').addEventListener('click', (e) => {
     if(e.target.classList.contains('tab')) {
@@ -63,7 +71,7 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
         e.target.classList.add('active');
         document.getElementById(`aba-${e.target.dataset.aba}`).classList.add('active');
         
-        if(e.target.dataset.aba === 'relatorios') renderRelatorios();
+        if(e.target.dataset.aba === 'relatorios') renderRelatoriosMaster();
     }
 });
 
@@ -71,36 +79,19 @@ document.querySelectorAll('[data-fechar]').forEach(btn => {
     btn.addEventListener('click', (e) => { closeModal(e.currentTarget.dataset.fechar); }); 
 });
 
-const customConfirm = (title, msg) => {
-    return new Promise((resolve) => {
-        document.getElementById('confirm-title').textContent = title;
-        document.getElementById('confirm-msg').textContent = msg;
-        openModal('overlay-confirm');
-        
-        const onOk = () => { cleanup(); resolve(true); };
-        const onCancel = () => { cleanup(); resolve(false); };
-        const cleanup = () => { 
-            closeModal('overlay-confirm'); 
-            document.getElementById('btn-confirm-ok').removeEventListener('click', onOk); 
-            document.getElementById('btn-confirm-cancel').removeEventListener('click', onCancel); 
-        };
-        document.getElementById('btn-confirm-ok').addEventListener('click', onOk); 
-        document.getElementById('btn-confirm-cancel').addEventListener('click', onCancel);
-    });
-};
-
 // ----------------------------------------------------
-// SYNC EM TEMPO REAL (Firestore)
+// SYNC REALTIME (Otimizado com Limits e Unsubscribes)
 // ----------------------------------------------------
 const iniciarRealTimeSync = () => {
-    // Escuta Produtos
-    onSnapshot(collection(db, "produtos"), (snap) => {
+    // 1. Produtos
+    const unsubProd = onSnapshot(collection(db, "produtos"), (snap) => {
         produtosAtuais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
         renderProdutos();
     });
+    unsubscribes.push(unsubProd);
 
-    // Escuta Configurações
-    onSnapshot(doc(db, "loja", "config"), (snap) => {
+    // 2. Configurações (Focado só no doc de config)
+    const unsubConfig = onSnapshot(doc(db, "loja", "config"), (snap) => {
         if (snap.exists()) {
             const data = snap.data();
             document.getElementById('config-wpp').value = data.wpp || '';
@@ -108,20 +99,21 @@ const iniciarRealTimeSync = () => {
             document.getElementById('config-status-loja').value = data.lojaAberta === false ? "fechada" : "aberta";
             const diasSalvos = data.diasAbertos || [0,1,2,3,4,5,6];
             document.querySelectorAll('.chk-dia').forEach(chk => chk.checked = diasSalvos.includes(parseInt(chk.value)));
-        } else {
-            document.querySelectorAll('.chk-dia').forEach(chk => chk.checked = true);
         }
     });
+    unsubscribes.push(unsubConfig);
 
-    // Escuta Pedidos (Histórico vivo)
-    onSnapshot(collection(db, "pedidos"), (snap) => {
-        pedidosGerais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => new Date(b.data) - new Date(a.data));
-        if(document.getElementById('aba-relatorios').classList.contains('active')) renderRelatorios();
+    // 3. Pedidos OTIMIZADOS (Prevenção de estouro de billing - Limita aos últimos 50)
+    const pedQuery = query(collection(db, "pedidos"), orderBy("data", "desc"), limit(50));
+    const unsubPedidos = onSnapshot(pedQuery, (snap) => {
+        pedidosGerais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if(document.getElementById('aba-relatorios').classList.contains('active')) renderRelatoriosMaster();
     });
+    unsubscribes.push(unsubPedidos);
 };
 
 // ----------------------------------------------------
-// PRODUTOS (CRUD)
+// GESTÃO DE PRODUTOS
 // ----------------------------------------------------
 const renderProdutos = () => {
     const html = produtosAtuais.map(p => `
@@ -135,10 +127,10 @@ const renderProdutos = () => {
             </div>
             <div class="botoes-acao">
                 ${p.ativo 
-                    ? `<button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" data-action="toggle-estoque" data-id="${p.id}" data-status="false">Esgotar Produto</button>`
-                    : `<button class="btn btn-success" data-action="toggle-estoque" data-id="${p.id}" data-status="true">Voltar p/ Estoque</button>`
+                    ? `<button class="btn-outline" style="border-color:var(--danger); color:var(--danger); padding: 12px;" data-action="toggle-estoque" data-id="${p.id}" data-status="false">Esgotar Produto</button>`
+                    : `<button class="btn-outline" style="background:var(--success); border-color:var(--success); color:white; padding: 12px;" data-action="toggle-estoque" data-id="${p.id}" data-status="true">Voltar p/ Estoque</button>`
                 }
-                <button class="btn" style="width: auto; padding: 16px 20px;" data-action="editar-produto" data-id="${p.id}">Editar</button>
+                <button class="btn-outline" style="background: var(--parchment); color: var(--text-dark); border-color: #e0dcd4; padding: 12px;" data-action="editar-produto" data-id="${p.id}">Editar</button>
             </div>
         </article>
     `).join('');
@@ -149,37 +141,51 @@ document.body.addEventListener('click', async (e) => {
     const target = e.target.closest('[data-action]'); if(!target) return;
     const action = target.dataset.action;
     
-    if(action === 'novo-produto') {
-        document.getElementById('modal-titulo').textContent = 'Novo Produto';
-        ['edit-id', 'edit-nome', 'edit-preco', 'edit-cat', 'edit-foto', 'edit-foto-url'].forEach(i => document.getElementById(i).value = '');
-        document.getElementById('btn-excluir-produto').style.display = 'none';
-        openModal('modal-produto');
-    }
-    
-    else if(action === 'editar-produto') {
-        const p = produtosAtuais.find(x => x.id === target.dataset.id);
-        if(!p) return;
-        document.getElementById('modal-titulo').textContent = 'Editar Produto'; 
-        document.getElementById('edit-id').value = p.id;
-        document.getElementById('edit-nome').value = p.nome; 
-        document.getElementById('edit-preco').value = p.preco;
-        document.getElementById('edit-unidade').value = p.unidade || 'un'; 
-        document.getElementById('edit-cat').value = p.cat || '';
-        document.getElementById('edit-foto').value = ''; 
-        document.getElementById('edit-foto-url').value = ''; 
-        document.getElementById('btn-excluir-produto').style.display = 'block';
-        openModal('modal-produto');
-    }
-    
-    else if(action === 'toggle-estoque') {
-        const id = target.dataset.id;
-        const novoStatus = target.dataset.status === 'true';
-        if(!novoStatus) {
-            const confirmado = await customConfirm("Esgotar Produto?", "Clientes não poderão comprar até você voltar pro estoque.");
-            if(!confirmado) return;
+    try {
+        if(action === 'novo-produto') {
+            document.getElementById('modal-titulo').textContent = 'Novo Produto';
+            ['edit-id', 'edit-nome', 'edit-preco', 'edit-cat', 'edit-foto', 'edit-foto-url'].forEach(i => document.getElementById(i).value = '');
+            document.getElementById('btn-excluir-produto').style.display = 'none';
+            openModal('modal-produto');
         }
-        await setDoc(doc(db, "produtos", id), { ativo: novoStatus, ultimaModificacao: Date.now() }, { merge: true });
-        showToast(novoStatus ? "Produto disponível!" : "Produto esgotado.");
+        
+        else if(action === 'editar-produto') {
+            const p = produtosAtuais.find(x => x.id === target.dataset.id);
+            if(!p) return;
+            document.getElementById('modal-titulo').textContent = 'Editar Produto'; 
+            document.getElementById('edit-id').value = p.id;
+            document.getElementById('edit-nome').value = p.nome; 
+            document.getElementById('edit-preco').value = p.preco;
+            document.getElementById('edit-unidade').value = p.unidade || 'un'; 
+            document.getElementById('edit-cat').value = p.cat || '';
+            document.getElementById('edit-foto').value = ''; 
+            document.getElementById('edit-foto-url').value = ''; 
+            document.getElementById('btn-excluir-produto').style.display = 'block';
+            openModal('modal-produto');
+        }
+        
+        else if(action === 'toggle-estoque') {
+            const id = target.dataset.id;
+            const novoStatus = target.dataset.status === 'true';
+            if(!novoStatus) {
+                const confirmado = await customConfirm("Esgotar Produto?", "Clientes não poderão comprar até você voltar pro estoque.");
+                if(!confirmado) return;
+            }
+            await setDoc(doc(db, "produtos", id), { ativo: novoStatus, ultimaModificacao: Date.now() }, { merge: true });
+            showToast(novoStatus ? "Produto disponível!" : "Produto esgotado.");
+        }
+        
+        // Substitui a gambiarra do onclick inline no histórico
+        else if (action === 'excluir-pedido') {
+            const id = target.dataset.id;
+            if(await customConfirm("Excluir", "Deseja excluir este pedido permanentemente da fila?")) { 
+                await deleteDoc(doc(db, "pedidos", id)); 
+                showToast("Pedido arquivado/excluído.");
+            }
+        }
+    } catch(err) {
+        console.error("Ação Falhou:", err);
+        showToast("Houve um erro ao processar sua ação.", true);
     }
 });
 
@@ -208,7 +214,11 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
             await uploadBytes(storageRef, fileInput.files[0]); 
             pData.foto = await getDownloadURL(storageRef); 
         } 
-        else if (urlInput) { pData.foto = urlInput; }
+        else if (urlInput) { 
+            // Validação de URL básica
+            if(!urlInput.startsWith('http')) throw new Error("URL da foto inválida.");
+            pData.foto = urlInput; 
+        }
         else if (document.getElementById('edit-id').value) { 
             const pAntigo = produtosAtuais.find(x => x.id === id); 
             if(pAntigo && pAntigo.foto) pData.foto = pAntigo.foto; 
@@ -217,9 +227,9 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
         await setDoc(doc(db, "produtos", id), pData, { merge: true });
         closeModal('modal-produto'); showToast("Produto salvo com sucesso!");
     } catch (erro) {
-        alert(erro.message || "Erro ao salvar o produto.");
+        showToast(erro.message || "Erro ao salvar o produto.", true);
     } finally {
-        btn.textContent = "💾 Salvar"; btn.disabled = false;
+        btn.textContent = "💾 Gravar no Banco"; btn.disabled = false;
     }
 });
 
@@ -231,54 +241,89 @@ document.getElementById('btn-excluir-produto').addEventListener('click', async (
 });
 
 // ----------------------------------------------------
-// RELATÓRIOS E HISTÓRICO
+// RELATÓRIOS E LOGÍSTICA (Refatorado - SRP Aplicado)
 // ----------------------------------------------------
-const renderRelatorios = () => {
-    const listDiv = document.getElementById('lista-historico');
-    if(pedidosGerais.length === 0) { listDiv.innerHTML = "<p style='color:var(--text-light)'>Nenhum pedido registrado.</p>"; return; }
 
-    let totalReceita = 0; let countProdutos = {}; let countClientes = {}; let countDias = { 'Domingo':0, 'Segunda':0, 'Terça':0, 'Quarta':0, 'Quinta':0, 'Sexta':0, 'Sábado':0 };
+const extrairEstatisticas = (pedidos) => {
+    let totalReceita = 0; 
+    let countProdutos = {}; 
+    let countClientes = {}; 
+    let countDias = { 'Domingo':0, 'Segunda':0, 'Terça':0, 'Quarta':0, 'Quinta':0, 'Sexta':0, 'Sábado':0 };
     const diasSemana = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
-    const htmlLista = pedidosGerais.map(p => {
+    pedidos.forEach(p => {
         totalReceita += p.total || 0;
         const dateObj = new Date(p.data);
         if(!isNaN(dateObj.getTime())) countDias[diasSemana[dateObj.getDay()]] += (p.total || 0);
-        const nomeCli = escapeHTML(p.nome).trim().toUpperCase(); countClientes[nomeCli] = (countClientes[nomeCli] || 0) + (p.total || 0);
         
-        const itensStr = p.itens ? p.itens.map(i => { 
-            countProdutos[i.nome] = (countProdutos[i.nome] || 0) + i.qtd; 
-            return `${formatarQtdRelatorio(i.qtd, i.unidade)} ${escapeHTML(i.nome)}`; 
-        }).join(', ') : '';
+        const nomeCli = escapeHTML(p.nome).trim().toUpperCase(); 
+        countClientes[nomeCli] = (countClientes[nomeCli] || 0) + (p.total || 0);
         
-        return `
-        <article class="card" style="flex-direction: column; align-items: flex-start; gap: 8px;">
-            <div style="display: flex; justify-content: space-between; width: 100%;">
-                <strong style="font-size: 1.1rem;">👤 ${escapeHTML(p.nome)} (Q${escapeHTML(p.quadra)} L${escapeHTML(p.lote)})</strong>
-                <span style="color: var(--forest); font-weight: bold; font-size: 1.2rem;">${fmt(p.total||0)}</span>
-            </div>
-            <div style="font-size: 0.9rem; color: var(--text-light);">📅 ${isNaN(dateObj.getTime()) ? "Desconhecida" : dateObj.toLocaleString('pt-BR')} | 💳 ${escapeHTML(p.pag)}</div>
-            <div style="font-size: 0.95rem; margin-top: 5px; background: var(--parchment); padding: 10px; border-radius: 8px;">📦 ${itensStr}</div>
-            <button class="btn btn-outline" style="border-color: var(--danger); color: var(--danger); padding: 8px 16px; margin-top: 10px; width: auto; font-size: 0.9rem;" onclick="window.excluirPedido('${escapeHTML(p.id)}')">Excluir Pedido</button>
-        </article>`;
-    }).join('');
+        if (p.itens) {
+            p.itens.forEach(i => {
+                countProdutos[i.nome] = (countProdutos[i.nome] || 0) + i.qtd; 
+            });
+        }
+    });
 
-    document.getElementById('stat-pedidos').textContent = pedidosGerais.length;
-    document.getElementById('stat-receita').textContent = fmt(totalReceita);
-    listDiv.innerHTML = htmlLista;
-
-    const renderRanking = (dados, divId, formatador) => { 
-        const arr = Object.entries(dados).sort((a,b) => b[1] - a[1]).slice(0,5); 
-        document.getElementById(divId).innerHTML = arr.length ? arr.map(i => `<div class="ranking-item"><span>${escapeHTML(i[0])}</span> <strong>${formatador(i[1])}</strong></div>`).join('') : '<p style="color: var(--text-light)">Sem dados.</p>'; 
-    };
-    
-    renderRanking(countProdutos, 'ranking-produtos', val => val % 1 !== 0 ? `${val.toFixed(2).replace('.',',')} med.` : `${val} un.`);
-    renderRanking(countClientes, 'ranking-clientes', val => fmt(val));
-    renderRanking(countDias, 'ranking-dias', val => fmt(val));
+    return { totalReceita, countProdutos, countClientes, countDias };
 };
 
+const renderHtmlPedidos = (pedidos) => {
+    return pedidos.map(p => {
+        const dateObj = new Date(p.data);
+        const dataFmt = isNaN(dateObj.getTime()) ? "Desconhecida" : dateObj.toLocaleString('pt-BR');
+        const itensStr = p.itens ? p.itens.map(i => `${formatarQtdRelatorio(i.qtd, i.unidade)} ${escapeHTML(i.nome)}`).join(', ') : '';
+        
+        return `
+        <article class="card-pedido">
+            <div class="card-pedido-topo">
+                <span class="card-pedido-cliente">👤 ${escapeHTML(p.nome)} (Q${escapeHTML(p.quadra)} L${escapeHTML(p.lote)})</span>
+                <span class="card-pedido-total">${fmt(p.total||0)}</span>
+            </div>
+            <div class="card-pedido-meta">📅 ${dataFmt} | 💳 ${escapeHTML(p.pag)}</div>
+            <div class="card-pedido-itens">📦 ${itensStr}</div>
+            <button class="btn-outline" style="border-color: var(--danger); color: var(--danger); padding: 8px 16px; margin-top: 10px; width: max-content; font-size: 0.9rem;" data-action="excluir-pedido" data-id="${escapeHTML(p.id)}">Limpar Fila</button>
+        </article>`;
+    }).join('');
+};
+
+const renderRankingGenerico = (dados, divId, formatador) => { 
+    const arr = Object.entries(dados).sort((a,b) => b[1] - a[1]).slice(0,5); 
+    const html = arr.length ? arr.map(i => `<div class="ranking-item"><span>${escapeHTML(i[0])}</span> <strong>${formatador(i[1])}</strong></div>`).join('') : '<p style="color: var(--text-light)">Sem dados.</p>'; 
+    document.getElementById(divId).innerHTML = html;
+};
+
+// Função Master Controladora (SRP Core)
+const renderRelatoriosMaster = () => {
+    const listDiv = document.getElementById('lista-historico');
+    
+    if(pedidosGerais.length === 0) { 
+        listDiv.innerHTML = "<p style='color:var(--text-light)'>Nenhum pedido recente na fila.</p>"; 
+        return; 
+    }
+
+    // 1. Processar dados matemáticos puros
+    const stats = extrairEstatisticas(pedidosGerais);
+
+    // 2. Renderizar Estatísticas de Topo
+    document.getElementById('stat-pedidos').textContent = pedidosGerais.length;
+    document.getElementById('stat-receita').textContent = fmt(stats.totalReceita);
+
+    // 3. Renderizar Rankings
+    renderRankingGenerico(stats.countProdutos, 'ranking-produtos', val => val % 1 !== 0 ? `${val.toFixed(2).replace('.',',')} med.` : `${val} un.`);
+    renderRankingGenerico(stats.countClientes, 'ranking-clientes', val => fmt(val));
+    renderRankingGenerico(stats.countDias, 'ranking-dias', val => fmt(val));
+
+    // 4. Renderizar a Logística (Cards HTML)
+    listDiv.innerHTML = renderHtmlPedidos(pedidosGerais);
+};
+
+// ----------------------------------------------------
+// EXPORTAÇÃO E BATCH DELETE (Alta Performance)
+// ----------------------------------------------------
 document.getElementById('btn-exportar').addEventListener('click', () => {
-    if(pedidosGerais.length === 0) return showToast("Não há pedidos.");
+    if(pedidosGerais.length === 0) return showToast("Não há pedidos.", true);
     let csv = "Data,Cliente,Quadra,Lote,Pagamento,Total,Itens\n";
     pedidosGerais.forEach(p => { 
         const itensTxt = p.itens ? p.itens.map(i => `${formatarQtdRelatorio(i.qtd, i.unidade)} ${i.nome}`).join(' | ') : '';
@@ -286,34 +331,52 @@ document.getElementById('btn-exportar').addEventListener('click', () => {
     });
     const link = document.createElement("a"); 
     link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: 'text/csv;charset=utf-8;' })); 
-    link.download = `Vendas_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`; 
+    link.download = `Vendas_Logistica_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.csv`; 
     link.click();
 });
 
 document.getElementById('btn-limpar-hist').addEventListener('click', async () => {
-    if(await customConfirm("Atenção Extrema", "Apagar TODOS os pedidos do sistema de forma irreversível?")) { 
-        await Promise.all(pedidosGerais.map(p => deleteDoc(doc(db, "pedidos", p.id)))); 
-        showToast("Histórico apagado.");
+    if(pedidosGerais.length === 0) return;
+    
+    if(await customConfirm("Limpeza em Massa", "Isto apagará os últimos 50 pedidos finalizados para limpar a tela de logística. Confirmar?")) { 
+        try {
+            // Operação Atômica: writeBatch resolve até 500 exclusões de uma vez num único request HTTP.
+            const batch = writeBatch(db);
+            pedidosGerais.forEach(p => {
+                const docRef = doc(db, "pedidos", p.id);
+                batch.delete(docRef);
+            });
+            await batch.commit();
+            showToast("Logística esvaziada!");
+        } catch (error) {
+            console.error(error);
+            showToast("Erro ao processar limpeza em lote.", true);
+        }
     }
 });
 
-// Acesso global para inline onclick (botão de excluir no HTML string)
-window.excluirPedido = async (id) => { 
-    if(await customConfirm("Excluir", "Deseja excluir este pedido permanentemente?")) { 
-        await deleteDoc(doc(db, "pedidos", id)); showToast("Pedido excluído.");
-    } 
-};
-
 // ----------------------------------------------------
-// CONFIGURAÇÕES GERAIS
+// CONFIGURAÇÕES OPERACIONAIS
 // ----------------------------------------------------
 document.getElementById('btn-salvar-config').addEventListener('click', async () => {
-    const btn = document.getElementById('btn-salvar-config'); btn.textContent = "Salvando...";
-    let wpp = document.getElementById('config-wpp').value.replace(/\D/g, ''); 
-    const minimo = parseFloat(document.getElementById('config-minimo').value) || 0;
-    const lojaAberta = document.getElementById('config-status-loja').value === "aberta";
-    const diasAbertos = Array.from(document.querySelectorAll('.chk-dia:checked')).map(chk => parseInt(chk.value));
+    const btn = document.getElementById('btn-salvar-config'); 
+    btn.textContent = "Salvando... ⏳";
+    btn.disabled = true;
 
-    await setDoc(doc(db, "loja", "config"), { wpp, minimo, lojaAberta, diasAbertos }, { merge: true });
-    btn.textContent = "💾 Salvar Configurações"; showToast("Configurações atualizadas!");
+    try {
+        let wpp = document.getElementById('config-wpp').value.replace(/\D/g, ''); 
+        const minimo = parseFloat(document.getElementById('config-minimo').value) || 0;
+        const lojaAberta = document.getElementById('config-status-loja').value === "aberta";
+        const diasAbertos = Array.from(document.querySelectorAll('.chk-dia:checked')).map(chk => parseInt(chk.value));
+
+        if(wpp.length < 10) throw new Error("Número de WhatsApp muito curto.");
+
+        await setDoc(doc(db, "loja", "config"), { wpp, minimo, lojaAberta, diasAbertos }, { merge: true });
+        showToast("Configurações atualizadas!");
+    } catch(err) {
+        showToast(err.message, true);
+    } finally {
+        btn.textContent = "💾 Gravar Definições";
+        btn.disabled = false;
+    }
 });
