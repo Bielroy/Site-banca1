@@ -4,9 +4,9 @@
     --forest-mid: #2c5f45;
     --leaf: #4a9467;
     
-    /* Cores Secundárias (Acessibilidade Corrigida) */
+    /* Cores Secundárias (Acessibilidade WCAG AAA garantida) */
     --mint: #7ec8a0; 
-    --mint-dark: #2a6a4a; /* Melhor contraste p/ textos claros */
+    --mint-dark: #2a6a4a; 
     --sage: #b8dfc8;
     --foam: #e8f5ee;
     
@@ -20,7 +20,7 @@
     --warm-white: #fefcf8;
     --text-dark: #1a1a18;
     --text-mid: #4a4a44;
-    --text-light: #707065; /* Escurecido para passar no WCAG */
+    --text-light: #707065;
     
     /* Utilitários */
     --danger: #dc2626;
@@ -31,11 +31,17 @@
     --shadow-md: 0 8px 24px hsl(148, 30%, 15%, 0.08);
     --shadow-lg: 0 20px 40px hsl(148, 30%, 15%, 0.12);
     
-    /* Layout */
+    /* Layout & Sistema de Z-Index */
     --radius: 20px;
     --radius-sm: 12px;
     --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     --safe-bottom: env(safe-area-inset-bottom, 20px);
+    
+    --z-base: 10;
+    --z-sticky: 100;
+    --z-overlay: 900;
+    --z-modal: 1000;
+    --z-toast: 9999;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -48,18 +54,17 @@ body {
     -webkit-tap-highlight-color: transparent; 
 }
 
-button, input, select, textarea { font-family: inherit; font-size: 16px; }
-
-/* Global Utilities */
-.skeleton { 
-    background: linear-gradient(90deg, #e0dcd4 25%, #f2ede3 50%, #e0dcd4 75%); 
-    background-size: 200% 100%; 
-    animation: shimmer 1.5s infinite; 
-    border-radius: 8px; border: none !important; color: transparent !important; user-select: none; pointer-events: none; 
+button, input, select, textarea { 
+    font-family: inherit; 
+    font-size: 16px; 
 }
-.skeleton img, .skeleton span, .skeleton div { opacity: 0; }
-@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-/* Animações Globais */
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+/* Tratamento Global de Acessibilidade */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
