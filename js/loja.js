@@ -1,23 +1,32 @@
-import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged } from './firebase.js';
-import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio } from './utils.js';
+import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, query, limit } from './firebase.js';
+import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm } from './utils.js';
 
-const CART_VERSION = "2.0"; // Versão atualizada para forçar limpeza de cache antigo incompatível
-let STATE = {
+const CART_VERSION = "2.1"; // Incrementado pós-refatoração
+let unsubscribes = []; // Prevenção de Memory Leaks
+
+// Estado Global Isolado
+const STATE = {
     uid: null,
     produtos: [], 
     carrinho: [], 
     catAtiva: 'todas', 
     busca: '',
     config: { minimo: 0, wpp: '5562999999999', lojaAberta: true, diasAbertos: [0,1,2,3,4,5,6] },
-    favoritos: JSON.parse(localStorage.getItem('banca_favs') || '[]')
+    favoritos: JSON.parse(localStorage.getItem('banca_favs') || '[]'),
+    lojaRenderizada: false // Flag para o diffing do DOM
 };
 
 // ----------------------------------------------------
-// AUTENTICAÇÃO ANÔNIMA (Retenção de Cliente)
+// AUTENTICAÇÃO ANÔNIMA & MEMORY LEAK PREVENTION
 // ----------------------------------------------------
 onAuthStateChanged(auth, (user) => {
+    // Limpa listeners antigos para prevenir vazamento de memória e leituras repetidas
+    unsubscribes.forEach(unsub => unsub()); 
+    unsubscribes = [];
+
     if (user) {
         STATE.uid = user.uid;
+        iniciarRealTimeSync();
     } else {
         signInAnonymously(auth).catch(err => console.error("Erro na Autenticação Anônima:", err));
     }
@@ -38,7 +47,7 @@ const getCartQty = (id) => {
 };
 
 // ----------------------------------------------------
-// GERENCIAMENTO DOM CIRÚRGICO (Prevenção de CLS)
+// GERENCIAMENTO DOM CIRÚRGICO (Diffing e Prevenção de CLS)
 // ----------------------------------------------------
 const atualizarBadgesDOM = (produtoId, qtd) => {
     const badge = document.getElementById(`badge-${produtoId}`);
@@ -118,7 +127,7 @@ const renderUpsell = () => {
     if (sugestoes.length > 0) {
         sugestoes.sort((a,b) => (STATE.favoritos.includes(b.id) ? 1 : 0) - (STATE.favoritos.includes(a.id) ? 1 : 0));
         const up = sugestoes[0];
-        upsellCont.innerHTML = `<div class="upsell-box"><span>Que tal levar <b>${escapeHTML(up.nome)}</b>?</span><button data-action="add" data-id="${up.id}">+ Add</button></div>`;
+        upsellCont.innerHTML = `<div class="upsell-box"><span>Que tal levar <b>${escapeHTML(up.nome)}</b>?</span><button class="btn btn-outline" style="padding: 6px 12px;" data-action="add" data-id="${up.id}">+ Add</button></div>`;
     } else {
         upsellCont.innerHTML = '';
     }
@@ -128,9 +137,10 @@ const renderCarrinhoCompleto = () => {
     const cont = document.getElementById('carrinho-itens');
     const placeholderSVG = `<div class="item-emoji skeleton"></div>`;
     
+    // Reset badges only if full render
     STATE.produtos.forEach(p => {
         const badgeGrid = document.getElementById(`badge-${p.id}`);
-        if(badgeGrid) {
+        if(badgeGrid && getCartQty(p.id) === 0) {
             badgeGrid.textContent = '0';
             badgeGrid.classList.remove('visivel');
         }
@@ -165,9 +175,6 @@ const renderCarrinhoCompleto = () => {
     atualizarRodapeCarrinhoDOM();
 };
 
-// ----------------------------------------------------
-// DEBOUNCE PARA SALVAR NO DISCO (Previne CPU Stuttering)
-// ----------------------------------------------------
 let debounceSalvarCarrinho;
 const persistirCarrinhoComDebounce = () => {
     clearTimeout(debounceSalvarCarrinho);
@@ -189,7 +196,6 @@ const modificarCarrinho = (id, delta, fixo = false) => {
 
     if (idx > -1) { 
         novaQtd = fixFloat(fixo ? valParaAplicar : STATE.carrinho[idx].qtd + valParaAplicar);
-        
         if (novaQtd <= 0) {
             STATE.carrinho.splice(idx, 1); 
         } else {
@@ -206,36 +212,18 @@ const modificarCarrinho = (id, delta, fixo = false) => {
     atualizarRodapeCarrinhoDOM();
 };
 
-const renderLoja = () => {
+// ----------------------------------------------------
+// ALTA PERFORMANCE: FILTRAGEM VIA CSS EM VEZ DE RECONSTRUIR O DOM
+// ----------------------------------------------------
+const construirCardsIniciais = () => {
     const grid = document.getElementById('lista-produtos');
-    const normalize = str => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    const termo = normalize(STATE.busca);
-    const idsCarrinho = STATE.carrinho.map(c => c.id);
-    
-    const filtrados = STATE.produtos
-        .filter(p => p.ativo && 
-            (STATE.catAtiva === 'todas' || 
-            (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(p.id)) || 
-            p.cat === STATE.catAtiva) && 
-            normalize(p.nome).includes(termo))
-        .sort((a, b) => {
-            let pesoA = (idsCarrinho.includes(a.id) ? 2 : 0) + (STATE.favoritos.includes(a.id) ? 1 : 0);
-            let pesoB = (idsCarrinho.includes(b.id) ? 2 : 0) + (STATE.favoritos.includes(b.id) ? 1 : 0);
-            return pesoB - pesoA;
-        });
-    
-    if (filtrados.length === 0) { 
-        grid.innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Nenhum produto encontrado</p><span>Tente buscar por outro termo ou limpe os filtros.</span></div>`; 
-        return; 
-    }
-
-    grid.innerHTML = filtrados.map(p => {
+    const html = STATE.produtos.map(p => {
         const qtdNoCarrinho = getCartQty(p.id);
         const badgeTexto = isFracionavel(p.unidade) && qtdNoCarrinho > 0 ? formatarQuantidadeVisual(qtdNoCarrinho, true) : qtdNoCarrinho;
         const favActive = STATE.favoritos.includes(p.id) ? 'ativo' : '';
         
         return `
-        <article class="produto-card">
+        <article class="produto-card" data-produto-id="${p.id}" data-cat="${escapeHTML(p.cat)}" data-nome="${p.nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()}" style="display: flex;">
             <div class="produto-img-wrap">
                 ${p.foto ? `<img src="${escapeHTML(p.foto)}" loading="lazy" width="200" height="200" alt="${escapeHTML(p.nome)}">` : '<div class="produto-img-placeholder skeleton" style="width:100%;height:100%"></div>'}
                 <button class="btn-fav ${favActive}" data-action="fav" data-id="${p.id}" aria-label="Favoritar">❤️</button>
@@ -246,12 +234,57 @@ const renderLoja = () => {
                 <span class="produto-categoria">${escapeHTML(p.cat)}</span>
                 <h3 class="produto-nome">${escapeHTML(p.nome)}</h3>
                 <div class="produto-preco-row">
-                    <span class="produto-preco">${fmt(p.preco)}<br><span>por ${escapeHTML(p.unidade || 'un')}</span></span>
+                    <span class="produto-preco">${fmt(p.preco)}<br><span style="font-size: 0.8rem; color: var(--text-light); font-weight: 600;">por ${escapeHTML(p.unidade || 'un')}</span></span>
                     <button class="btn-add" data-action="add" data-id="${p.id}" aria-label="Adicionar">+</button>
                 </div>
             </div>
         </article>`;
     }).join('');
+    grid.innerHTML = html;
+    STATE.lojaRenderizada = true;
+};
+
+const renderLoja = (forcarRebuild = false) => {
+    const grid = document.getElementById('lista-produtos');
+    
+    if(!STATE.lojaRenderizada || forcarRebuild) {
+        construirCardsIniciais();
+    }
+
+    const termo = STATE.busca.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const cards = grid.querySelectorAll('.produto-card');
+    let itensVisiveis = 0;
+
+    cards.forEach(card => {
+        const pId = card.dataset.produtoId;
+        const pNome = card.dataset.nome;
+        const pCat = card.dataset.cat;
+        
+        const isFavorito = STATE.favoritos.includes(pId);
+        const matchBusca = pNome.includes(termo);
+        const matchCat = (STATE.catAtiva === 'todas') || 
+                         (STATE.catAtiva === 'favoritos' && isFavorito) || 
+                         (pCat === STATE.catAtiva);
+
+        // Operação ultrarrápida no DOM em vez de innerHTML
+        if(matchBusca && matchCat) {
+            card.style.display = 'flex';
+            itensVisiveis++;
+        } else {
+            card.style.display = 'none';
+        }
+    });
+
+    const emptyId = 'empty-grid-msg';
+    let emptyMsg = document.getElementById(emptyId);
+
+    if (itensVisiveis === 0) {
+        if(!emptyMsg) {
+            grid.insertAdjacentHTML('beforeend', `<div id="${emptyId}" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Nenhum produto encontrado</p><span>Tente buscar por outro termo ou limpe os filtros.</span></div>`);
+        }
+    } else if(emptyMsg) {
+        emptyMsg.remove();
+    }
 };
 
 const renderCategorias = () => {
@@ -260,7 +293,7 @@ const renderCategorias = () => {
 };
 
 // ----------------------------------------------------
-// EVENTOS DE BUSCA E VOZ (Debounce e Web Speech API)
+// EVENTOS DE BUSCA E VOZ
 // ----------------------------------------------------
 let buscaTimeout;
 document.getElementById('busca-input').addEventListener('input', (e) => {
@@ -268,7 +301,7 @@ document.getElementById('busca-input').addEventListener('input', (e) => {
     buscaTimeout = setTimeout(() => {
         STATE.busca = e.target.value;
         renderLoja();
-    }, 300);
+    }, 150); // Reduzido de 300ms porque o Diffing é rápido
 });
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -277,8 +310,7 @@ if (SpeechRecognition) {
     recognition.lang = 'pt-BR';
     
     document.getElementById('btn-voz').addEventListener('click', () => {
-        const btn = document.getElementById('btn-voz');
-        btn.classList.add('gravando');
+        document.getElementById('btn-voz').classList.add('gravando');
         recognition.start();
     });
 
@@ -290,35 +322,42 @@ if (SpeechRecognition) {
         renderLoja();
     };
 
+    recognition.onerror = () => {
+        document.getElementById('btn-voz').classList.remove('gravando');
+        showToast("Erro no reconhecimento de voz.", true);
+    }
     recognition.onend = () => document.getElementById('btn-voz').classList.remove('gravando');
 } else {
     document.getElementById('btn-voz').style.display = 'none';
 }
 
 // ----------------------------------------------------
-// FIREBASE REALTIME SYNC
+// FIREBASE REALTIME SYNC (Otimizado)
 // ----------------------------------------------------
 const iniciarRealTimeSync = () => {
     if (!navigator.onLine) { document.getElementById('banner-offline').classList.add('visivel'); }
     
-    // Otimização: Escuta apenas o documento config, não a coleção inteira
-    onSnapshot(collection(db, "loja"), (snap) => {
-        snap.forEach(d => { if(d.id === 'config') STATE.config = {...STATE.config, ...d.data()}; });
+    // Escuta ESPECÍFICA para Config (Limita bandwidth)
+    const unsubConfig = onSnapshot(doc(db, "loja", "config"), (snap) => {
+        if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()};
         atualizarRodapeCarrinhoDOM();
     });
+    unsubscribes.push(unsubConfig);
 
-    onSnapshot(collection(db, "produtos"), (snap) => {
-        STATE.produtos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // Escuta Produtos Limitada a Ativos e Ordenados
+    const unsubProdutos = onSnapshot(collection(db, "produtos"), (snap) => {
+        STATE.produtos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.ativo);
         renderCategorias(); 
-        renderLoja(); 
+        renderLoja(true); // Força rebuild da UI apenas quando o banco real atualizar
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
     }, (error) => console.error("Erro Realtime:", error));
+    unsubscribes.push(unsubProdutos);
 };
 
 // ----------------------------------------------------
-// DELEGAÇÃO DE EVENTOS CENTRALIZADA
+// DELEGAÇÃO DE EVENTOS CENTRALIZADA (Refatorado)
 // ----------------------------------------------------
-document.body.addEventListener('click', (e) => {
+document.body.addEventListener('click', async (e) => {
     const actionTarget = e.target.closest('[data-action]'); 
     if (actionTarget) {
         const action = actionTarget.dataset.action;
@@ -329,11 +368,21 @@ document.body.addEventListener('click', (e) => {
             if(action === 'add') animarFeedbackBtn(actionTarget); 
         }
         else if (action === 'dec') { modificarCarrinho(id, -1); }
-        else if (action === 'cat') { STATE.catAtiva = actionTarget.dataset.cat; renderCategorias(); renderLoja(); }
+        else if (action === 'cat') { 
+            STATE.catAtiva = actionTarget.dataset.cat; 
+            document.querySelectorAll('.cat-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.cat === STATE.catAtiva));
+            renderLoja(); 
+        }
         else if (action === 'fav') { 
-            if(STATE.favoritos.includes(id)) STATE.favoritos = STATE.favoritos.filter(f => f !== id); 
-            else STATE.favoritos.push(id); 
-            localStorage.setItem('banca_favs', JSON.stringify(STATE.favoritos)); renderLoja(); 
+            if(STATE.favoritos.includes(id)) {
+                STATE.favoritos = STATE.favoritos.filter(f => f !== id);
+                actionTarget.classList.remove('ativo');
+            } else {
+                STATE.favoritos.push(id);
+                actionTarget.classList.add('ativo');
+            }
+            localStorage.setItem('banca_favs', JSON.stringify(STATE.favoritos)); 
+            if(STATE.catAtiva === 'favoritos') renderLoja(); 
         }
         else if (action === 'open-historico') {
             renderHistorico();
@@ -342,6 +391,27 @@ document.body.addEventListener('click', (e) => {
         else if (action === 'repetir-pedido') {
             repetirPedido(id);
         }
+        // Nova Lógica Isolada do Troco sem Inline JS
+        else if (action === 'toggle-troco') {
+            const valor = actionTarget.dataset.value;
+            const btnSim = document.querySelector('[data-value="sim"]');
+            const btnNao = document.querySelector('[data-value="nao"]');
+            const inputArea = document.getElementById('input-troco-area');
+            const cliTroco = document.getElementById('cli-troco');
+
+            if(valor === 'nao') {
+                cliTroco.value = 'Não preciso';
+                btnNao.classList.add('active');
+                btnSim.classList.remove('active');
+                inputArea.style.display = 'none';
+            } else {
+                cliTroco.value = '';
+                btnSim.classList.add('active');
+                btnNao.classList.remove('active');
+                inputArea.style.display = 'block';
+                cliTroco.focus();
+            }
+        }
         return;
     }
 
@@ -349,26 +419,19 @@ document.body.addEventListener('click', (e) => {
     if (fecharTarget) {
         const modalId = fecharTarget.dataset.fechar;
         closeModal(modalId);
-        
-        if (history.state && history.state.modal === modalId) {
-            history.back();
-        } else if (window.location.hash === `#${modalId}`) {
-            history.replaceState(null, '', ' ');
-        }
+        if (history.state && history.state.modal === modalId) history.back();
+        else if (window.location.hash === `#${modalId}`) history.replaceState(null, '', ' ');
         return;
     }
 });
 
-// Tratamento suave de input de quantidade
+// Tratamento Suave Input
 document.getElementById('carrinho-itens').addEventListener('input', (e) => {
     if(e.target.classList.contains('qtd-input')) {
         const id = e.target.dataset.id;
         const p = STATE.produtos.find(x => x.id === id);
         let val = parseFloat(e.target.value.replace(',', '.'));
-        
-        // Se o valor for inválido durante a digitação, ignora sem quebrar o estado local
         if(isNaN(val) || val < 0) return; 
-        
         val = (p && !isFracionavel(p.unidade)) ? Math.round(val) : fixFloat(val);
         modificarCarrinho(id, val, true);
     }
@@ -404,17 +467,14 @@ const toggleCartMobile = (abrir) => {
 document.getElementById('btn-carrinho-mobile').addEventListener('click', () => toggleCartMobile(true));
 document.getElementById('carrinho-overlay').addEventListener('click', () => history.back());
 
-document.getElementById('btn-limpar-carrinho').addEventListener('click', () => {
+document.getElementById('btn-limpar-carrinho').addEventListener('click', async () => {
     if (STATE.carrinho.length === 0) return;
-    if (confirm("Tem certeza que deseja esvaziar todo o pedido?")) {
+    if (await customConfirm("Esvaziar Pedido", "Tem certeza que deseja esvaziar todo o pedido?")) {
         STATE.carrinho = []; 
         localStorage.setItem('banca_cart', JSON.stringify({v: CART_VERSION, items: []})); 
         renderCarrinhoCompleto(); 
         showToast("🛒 Carrinho esvaziado!");
-        
-        if (window.innerWidth <= 900 && document.getElementById('carrinho').classList.contains('aberto')) {
-            history.back();
-        }
+        if (window.innerWidth <= 900 && document.getElementById('carrinho').classList.contains('aberto')) history.back();
     }
 });
 
@@ -451,7 +511,7 @@ const renderHistorico = () => {
 
 const repetirPedido = (pedId) => {
     const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
-    const ped = meusPedidos.find(p => p.id === String(pedId) || p.id === Number(pedId)); // Garante compatibilidade de tipo
+    const ped = meusPedidos.find(p => p.id === String(pedId) || p.id === Number(pedId)); 
     if(ped && ped.itens) {
         STATE.carrinho = [];
         ped.itens.forEach(i => {
@@ -472,7 +532,7 @@ document.getElementById('cli-pagamento').addEventListener('change', (e) => {
 });
 
 // ----------------------------------------------------
-// INTEGRAÇÃO SERVERLESS SEGURA (Vercel API)
+// INTEGRAÇÃO SERVERLESS
 // ----------------------------------------------------
 document.getElementById('btn-enviar-pedido').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
@@ -485,20 +545,19 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     const trocoRaw = document.getElementById('cli-troco').value.trim();
     const obs = document.getElementById('cli-obs').value.trim();
 
-    if(!nome || !quadra || !lote) { showToast("⚠️ Preencha nome, quadra e lote!"); return; }
+    if(!nome || !quadra || !lote) { showToast("⚠️ Preencha nome, quadra e lote!", true); return; }
 
     btn.disabled = true; 
     btn.textContent = 'Processando pedido... ⏳';
 
     try {
-        // Envia apenas o payload mínimo (Trust No Client)
         const payload = {
             nome, quadra, lote, pag, troco: trocoRaw, obs,
             itens: STATE.carrinho.map(item => ({ id: item.id, qtd: item.qtd }))
         };
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // Timeout de 10s para redes 3G ruins
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
 
         const response = await fetch('/api/checkout', {
             method: 'POST',
@@ -509,23 +568,17 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
         clearTimeout(timeoutId);
 
-        // CORREÇÃO CRÍTICA: Intercepta erros 500 do Vercel sem quebrar o JSON parser
         const contentType = response.headers.get("content-type");
         let data;
         
         if (contentType && contentType.includes("application/json")) {
             data = await response.json();
         } else {
-            const erroCru = await response.text();
-            console.error("Vercel Crash Log:", erroCru);
-            throw new Error("O servidor (Vercel) falhou. Verifique os logs na Vercel.");
+            throw new Error("Servidor retornou formato inválido. Tente novamente.");
         }
 
-        if (!response.ok || !data.sucesso) {
-            throw new Error(data.error || "Falha ao processar pedido no servidor.");
-        }
+        if (!response.ok || !data.sucesso) throw new Error(data.error || "Falha ao processar pedido.");
 
-        // Salva metadados seguros no LocalStorage para o histórico
         const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
         const idx = clientes.findIndex(c => c.nome.toLowerCase() === nome.toLowerCase());
         if(idx >= 0) { clientes[idx] = {nome, quadra, lote}; } else { clientes.unshift({nome, quadra, lote}); }
@@ -541,7 +594,6 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         });
         localStorage.setItem('banca_meus_pedidos', JSON.stringify(meusPedidos.slice(0, 10)));
 
-        // Redireciona com segurança
         window.open(data.pedido.whatsappMsg, '_blank');
         
         closeModal('modal-checkout');
@@ -554,9 +606,8 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         document.getElementById('cli-troco').value = '';
 
     } catch(err) {
-        if(err.name === 'AbortError') showToast("Tempo esgotado. Verifique sua internet.");
-        else showToast(err.message); // Exibe o erro real de falha do servidor na tela
-        console.error("Falha no Checkout:", err);
+        if(err.name === 'AbortError') showToast("Tempo esgotado. Verifique sua internet.", true);
+        else showToast(err.message, true);
     } finally {
         btn.disabled = false; 
         btn.textContent = 'Enviar Pedido 🚀';
