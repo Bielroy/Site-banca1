@@ -1,4 +1,4 @@
-import { auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL, query, orderBy, limit, writeBatch } from './firebase.js';
+import { auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL, query, orderBy, limit, writeBatch, where } from './firebase.js';
 import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal, customConfirm } from './utils.js';
 
 let produtosAtuais = [];
@@ -10,6 +10,22 @@ const placeholderSVG = `<div class="prod-img-placeholder skeleton" style="width:
 // ----------------------------------------------------
 // AUTENTICAÇÃO E GERENCIAMENTO DE MEMÓRIA
 // ----------------------------------------------------
+
+// Função Helper para o Modal de E-mail Nativo (Substitui window.prompt)
+const requestEmailVerification = () => {
+    return new Promise((resolve) => {
+        openModal('modal-email-verify');
+        const okBtn = document.getElementById('btn-verify-ok');
+        const cancelBtn = document.getElementById('btn-verify-cancel');
+        const input = document.getElementById('verify-email-input');
+
+        const cleanup = () => { closeModal('modal-email-verify'); okBtn.onclick = null; cancelBtn.onclick = null; };
+
+        okBtn.onclick = () => { if(input.value.trim()) { cleanup(); resolve(input.value.trim()); } };
+        cancelBtn.onclick = () => { cleanup(); resolve(null); };
+    });
+};
+
 onAuthStateChanged(auth, (user) => {
     // Matar processos antigos se o usuário mudar
     unsubscribes.forEach(unsub => unsub()); 
@@ -52,10 +68,16 @@ document.getElementById('btn-login').addEventListener('click', async () => {
 
 if (isSignInWithEmailLink(auth, window.location.href)) {
     let email = window.sessionStorage.getItem('emailForSignIn');
-    if (!email) email = window.prompt('Confirme seu e-mail para acessar:');
-    signInWithEmailLink(auth, email, window.location.href)
-        .then(() => window.sessionStorage.removeItem('emailForSignIn'))
-        .catch(() => alert("O link expirou ou é inválido. Peça um novo."));
+    const processLogin = async () => {
+        if (!email) email = await requestEmailVerification(); // Uso do Modal Nativo
+        if(email) {
+            try {
+                await signInWithEmailLink(auth, email, window.location.href);
+                window.sessionStorage.removeItem('emailForSignIn');
+            } catch(e) { showToast("Link expirado ou inválido. Peça um novo.", true); }
+        }
+    };
+    processLogin();
 }
 
 document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
@@ -103,8 +125,8 @@ const iniciarRealTimeSync = () => {
     });
     unsubscribes.push(unsubConfig);
 
-    // 3. Pedidos OTIMIZADOS (Prevenção de estouro de billing - Limita aos últimos 50)
-    const pedQuery = query(collection(db, "pedidos"), orderBy("data", "desc"), limit(50));
+    // 3. Pedidos OTIMIZADOS (Filtra só os pendentes para a logística e puxa só 50)
+    const pedQuery = query(collection(db, "pedidos"), where("status", "==", "pendente"), orderBy("data", "desc"), limit(50));
     const unsubPedidos = onSnapshot(pedQuery, (snap) => {
         pedidosGerais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         if(document.getElementById('aba-relatorios').classList.contains('active')) renderRelatoriosMaster();
@@ -175,12 +197,12 @@ document.body.addEventListener('click', async (e) => {
             showToast(novoStatus ? "Produto disponível!" : "Produto esgotado.");
         }
         
-        // Substitui a gambiarra do onclick inline no histórico
+        // Arquivamento individual
         else if (action === 'excluir-pedido') {
             const id = target.dataset.id;
-            if(await customConfirm("Excluir", "Deseja excluir este pedido permanentemente da fila?")) { 
-                await deleteDoc(doc(db, "pedidos", id)); 
-                showToast("Pedido arquivado/excluído.");
+            if(await customConfirm("Limpar da Fila", "Deseja arquivar este pedido finalizado e retirá-lo da logística?")) { 
+                await setDoc(doc(db, "pedidos", id), { status: 'arquivado' }, { merge: true }); 
+                showToast("Pedido arquivado com sucesso!");
             }
         }
     } catch(err) {
@@ -283,7 +305,7 @@ const renderHtmlPedidos = (pedidos) => {
             </div>
             <div class="card-pedido-meta">📅 ${dataFmt} | 💳 ${escapeHTML(p.pag)}</div>
             <div class="card-pedido-itens">📦 ${itensStr}</div>
-            <button class="btn-outline" style="border-color: var(--danger); color: var(--danger); padding: 8px 16px; margin-top: 10px; width: max-content; font-size: 0.9rem;" data-action="excluir-pedido" data-id="${escapeHTML(p.id)}">Limpar Fila</button>
+            <button class="btn-outline" style="border-color: var(--danger); color: var(--danger); padding: 8px 16px; margin-top: 10px; width: max-content; font-size: 0.9rem;" data-action="excluir-pedido" data-id="${escapeHTML(p.id)}">Limpar da Fila</button>
         </article>`;
     }).join('');
 };
@@ -320,10 +342,10 @@ const renderRelatoriosMaster = () => {
 };
 
 // ----------------------------------------------------
-// EXPORTAÇÃO E BATCH DELETE (Alta Performance)
+// EXPORTAÇÃO E BATCH UPDATE (Segurança Fiscal)
 // ----------------------------------------------------
 document.getElementById('btn-exportar').addEventListener('click', () => {
-    if(pedidosGerais.length === 0) return showToast("Não há pedidos.", true);
+    if(pedidosGerais.length === 0) return showToast("Não há pedidos pendentes.", true);
     let csv = "Data,Cliente,Quadra,Lote,Pagamento,Total,Itens\n";
     pedidosGerais.forEach(p => { 
         const itensTxt = p.itens ? p.itens.map(i => `${formatarQtdRelatorio(i.qtd, i.unidade)} ${i.nome}`).join(' | ') : '';
@@ -338,16 +360,16 @@ document.getElementById('btn-exportar').addEventListener('click', () => {
 document.getElementById('btn-limpar-hist').addEventListener('click', async () => {
     if(pedidosGerais.length === 0) return;
     
-    if(await customConfirm("Limpeza em Massa", "Isto apagará os últimos 50 pedidos finalizados para limpar a tela de logística. Confirmar?")) { 
+    if(await customConfirm("Limpeza em Massa", "Isto ARQUIVARÁ todos os pedidos da tela de logística. Eles sairão da fila, mas os dados fiscais e financeiros permanecerão intactos no banco. Confirmar?")) { 
         try {
-            // Operação Atômica: writeBatch resolve até 500 exclusões de uma vez num único request HTTP.
             const batch = writeBatch(db);
             pedidosGerais.forEach(p => {
                 const docRef = doc(db, "pedidos", p.id);
-                batch.delete(docRef);
+                // ATUALIZA STATUS PARA ARQUIVADO EM VEZ DE DELETAR
+                batch.update(docRef, { status: 'arquivado' }); 
             });
             await batch.commit();
-            showToast("Logística esvaziada!");
+            showToast("Logística esvaziada e pedidos arquivados!");
         } catch (error) {
             console.error(error);
             showToast("Erro ao processar limpeza em lote.", true);
