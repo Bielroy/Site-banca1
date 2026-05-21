@@ -1,3 +1,8 @@
+body { overscroll-behavior-y: none; } /* Trava elástico da página inteira no iOS */
+.modal-body { overscroll-behavior-y: contain; } /* Scrolla modal, mas não vaza pro body */
+.carrinho-itens { overscroll-behavior-y: contain; }
+
+
 /* Skeletons */
 .skeleton { 
     background: linear-gradient(90deg, #e0dcd4 25%, #f2ede3 50%, #e0dcd4 75%); 
