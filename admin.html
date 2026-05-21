@@ -153,6 +153,21 @@
 
     <!-- Modal Compartilhado Custom Confirm -->
     <div class="modal-overlay" id="overlay-confirm">
+        <!-- Modal Elegante de Verificação de Email -->
+<div class="modal-overlay" id="modal-email-verify">
+    <div class="modal" style="max-width: 380px; text-align: center;">
+        <div class="modal-body" style="padding: 30px 24px;">
+            <h2 style="color: var(--forest); margin-bottom: 12px; font-size: 1.4rem;">Confirmação de Segurança</h2>
+            <p style="color: var(--text-mid); font-size: 0.95rem; margin-bottom: 20px;">Por favor, confirme seu e-mail para validar o acesso.</p>
+            <div class="form-group"><input type="email" id="verify-email-input" placeholder="seu@email.com"></div>
+            <div style="display: flex; gap: 12px; margin-top: 10px;">
+                <button class="btn-outline" id="btn-verify-cancel" style="flex: 1; padding: 12px; border-color: #e0dcd4; color: var(--text-dark);">Cancelar</button>
+                <button class="btn-outline" id="btn-verify-ok" style="flex: 1; padding: 12px; background: var(--forest); color: white;">Acessar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
         <div class="modal" style="max-width: 380px; text-align: center;">
             <div class="modal-body" style="padding: 30px 24px;">
                 <h2 id="confirm-title" style="color: var(--forest); margin-bottom: 12px; font-size: 1.6rem;">Atenção</h2>
