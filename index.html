@@ -8,11 +8,18 @@
     <meta name="description" content="Compre frutas, verduras e hortaliças frescas com entrega rápida no seu condomínio.">
     <meta name="theme-color" content="#1a3a2a">
     
+    <!-- Open Graph SEO -->
+    <meta property="og:title" content="Banca Adair e Pedrina">
+    <meta property="og:description" content="Produtos frescos direto para sua mesa. Entrega em condomínios.">
+    <meta property="og:type" content="website">
+    <meta name="robots" content="index, follow">
+    
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     
     <link rel="stylesheet" href="./css/variables.css">
+    <link rel="stylesheet" href="./css/shared.css">
     <link rel="stylesheet" href="./css/loja.css">
     
     <link rel="icon" href="./icon-192.png">
@@ -54,28 +61,7 @@
 
 <main class="layout">
     <section class="produtos-grid" id="lista-produtos" aria-label="Lista de Produtos">
-        <article class="produto-card">
-            <div class="produto-img-wrap skeleton" style="aspect-ratio: 1; width: 100%;"></div>
-            <div class="produto-info" style="gap: 8px;">
-                <div class="skeleton" style="height: 12px; width: 40%; margin-bottom: 4px;"></div>
-                <div class="skeleton" style="height: 18px; width: 80%; margin-bottom: auto;"></div>
-                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 12px;">
-                    <div class="skeleton" style="height: 24px; width: 50%;"></div>
-                    <div class="skeleton" style="height: 36px; width: 36px; border-radius: 50%;"></div>
-                </div>
-            </div>
-        </article>
-        <article class="produto-card">
-            <div class="produto-img-wrap skeleton" style="aspect-ratio: 1; width: 100%;"></div>
-            <div class="produto-info" style="gap: 8px;">
-                <div class="skeleton" style="height: 12px; width: 40%; margin-bottom: 4px;"></div>
-                <div class="skeleton" style="height: 18px; width: 80%; margin-bottom: auto;"></div>
-                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 12px;">
-                    <div class="skeleton" style="height: 24px; width: 50%;"></div>
-                    <div class="skeleton" style="height: 36px; width: 36px; border-radius: 50%;"></div>
-                </div>
-            </div>
-        </article>
+        <!-- JS renderiza aqui -->
     </section>
 
     <button class="btn-flutuante-carrinho" id="btn-carrinho-mobile" aria-label="Ver Carrinho">
@@ -85,7 +71,7 @@
 
     <aside class="carrinho" id="carrinho" aria-label="Seu Carrinho de Compras">
         <header class="carrinho-topo">
-            <h2 class="carrinho-titulo">Meu Pedido <span class="carrinho-titulo-badge" id="qtd-badge">0</span></h2>
+            <h3 class="carrinho-titulo">Meu Pedido <span class="carrinho-titulo-badge" id="qtd-badge">0</span></h3>
             <button class="btn-limpar" id="btn-limpar-carrinho">Esvaziar</button>
         </header>
         
@@ -102,6 +88,7 @@
     </aside>
 </main>
 
+<!-- Modais sem classes inline no CSS -->
 <div class="modal-overlay" id="modal-checkout" role="dialog" aria-modal="true">
     <div class="modal">
         <header class="modal-head">
@@ -122,16 +109,19 @@
                     <option value="Dinheiro">Dinheiro</option>
                 </select>
             </div>
-            <div class="form-group" id="troco-group" style="display:none; background: var(--parchment); padding: 12px; border-radius: 8px;">
+            
+            <div class="form-group troco-container" id="troco-group" style="display:none; background: var(--parchment); padding: 12px; border-radius: 8px;">
                 <label style="margin-bottom: 12px;">Vai precisar de troco?</label>
                 <div style="display: flex; gap: 12px; margin-bottom: 12px;">
-                    <button type="button" class="btn btn-outline" id="btn-troco-nao" style="flex:1; padding: 10px; font-size: 0.9rem;" onclick="document.getElementById('cli-troco').value='Não preciso'; this.style.background='var(--forest)'; this.style.color='white'; document.getElementById('btn-troco-sim').style.background=''; document.getElementById('btn-troco-sim').style.color=''; document.getElementById('input-troco-area').style.display='none';">Não (Valor exato)</button>
-                    <button type="button" class="btn btn-outline" id="btn-troco-sim" style="flex:1; padding: 10px; font-size: 0.9rem;" onclick="document.getElementById('cli-troco').value=''; this.style.background='var(--forest)'; this.style.color='white'; document.getElementById('btn-troco-nao').style.background=''; document.getElementById('btn-troco-nao').style.color=''; document.getElementById('input-troco-area').style.display='block'; document.getElementById('cli-troco').focus();">Sim, preciso</button>
+                    <!-- Delegação de evento JS, sem inline onclick! -->
+                    <button type="button" class="btn btn-outline" data-action="toggle-troco" data-value="nao" style="flex:1; padding: 10px; font-size: 0.9rem;">Não (Valor exato)</button>
+                    <button type="button" class="btn btn-outline" data-action="toggle-troco" data-value="sim" style="flex:1; padding: 10px; font-size: 0.9rem;">Sim, preciso</button>
                 </div>
                 <div id="input-troco-area" style="display:none;">
                     <input type="text" inputmode="decimal" id="cli-troco" placeholder="Troco para quanto? Ex: 50,00">
                 </div>
             </div>
+            
             <div class="form-group" style="margin-bottom: 0;">
                 <label for="cli-obs">Observações (opcional)</label>
                 <textarea id="cli-obs" rows="2" placeholder="Ex: tomates bem maduros, deixar na portaria..."></textarea>
@@ -155,10 +145,10 @@
 
 <div class="modal-overlay" id="modal-sucesso" role="dialog" aria-modal="true">
     <div class="modal modal-center">
-        <div class="modal-body" style="padding-top: 40px;">
-            <div class="circulo-sucesso">✓</div>
-            <h2 class="title-success">Pedido Registrado!</h2>
-            <p class="text-success">Você será redirecionado para o nosso WhatsApp para finalizar. Caso a janela não abra, clique no botão abaixo.</p>
+        <div class="modal-body" style="padding-top: 40px; text-align: center;">
+            <div class="circulo-sucesso" style="width: 80px; height: 80px; background: #dcfce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: var(--success); font-size: 40px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.2); animation: scaleIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.2);">✓</div>
+            <h2 class="title-success" style="font-family: 'Fraunces', serif; color: var(--forest); margin-bottom: 12px; font-size: 1.8rem;">Pedido Registrado!</h2>
+            <p class="text-success" style="color: var(--text-mid); margin-bottom: 24px; line-height: 1.5; font-size: 1.05rem;">Você será redirecionado para o nosso WhatsApp para finalizar. Caso a janela não abra, clique no botão abaixo.</p>
             <button class="btn-finalizar" data-fechar="modal-sucesso">Voltar para a Loja</button>
         </div>
     </div>
