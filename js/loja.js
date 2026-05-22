@@ -1,7 +1,7 @@
 import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc } from './firebase.js';
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage } from './utils.js';
 
-const CART_VERSION = "2.2"; 
+const CART_VERSION = "2.3"; // Atualizado para invalidar caches legados defeituosos
 let unsubscribes = []; 
 
 const STATE = {
@@ -13,10 +13,10 @@ const STATE = {
     config: { minimo: 0, wpp: '5562999999999', lojaAberta: true, diasAbertos: [0,1,2,3,4,5,6] },
     favoritos: JSON.parse(localStorage.getItem('banca_favs') || '[]'),
     lojaRenderizada: false,
-    checkoutSessionId: null // Chave de Idempotência
+    checkoutSessionId: null 
 };
 
-// 1. CARREGAMENTO ULTRA RÁPIDO DO CARRINHO VIA INDEXED DB
+// 1. CARREGAMENTO ULTRA RÁPIDO DO CARRINHO (INDEXED DB)
 const carregarCarrinhoDB = async () => {
     try { 
         const raw = await dbStorage.get('banca_cart');
@@ -26,7 +26,7 @@ const carregarCarrinhoDB = async () => {
         }
     } catch(e) { console.warn("Cache vazio/inválido."); }
 };
-carregarCarrinhoDB(); // Inicia imediatamente, sem travar main thread
+carregarCarrinhoDB(); 
 
 onAuthStateChanged(auth, (user) => {
     unsubscribes.forEach(unsub => unsub()); 
@@ -38,6 +38,39 @@ onAuthStateChanged(auth, (user) => {
         signInAnonymously(auth).catch(err => console.error("Erro Auth Anônima:", err));
     }
 });
+
+// 2. PROTEÇÃO DE PREÇO E ESTOQUE (NOVO - SEGURANÇA EMPRESARIAL)
+const syncCarrinhoComPrecosAoVivo = () => {
+    if (STATE.carrinho.length === 0 || STATE.produtos.length === 0) return;
+    
+    let modificou = false;
+    let itensRemovidos = 0;
+
+    STATE.carrinho.forEach(itemCart => {
+        const prodAoVivo = STATE.produtos.find(p => p.id === itemCart.id);
+        if (prodAoVivo) {
+            if (itemCart.preco !== prodAoVivo.preco) {
+                itemCart.preco = prodAoVivo.preco;
+                modificou = true;
+            }
+        } else {
+            // Produto foi inativado ou deletado do banco
+            itemCart.qtd = 0; 
+            itensRemovidos++;
+            modificou = true;
+        }
+    });
+
+    if (modificou) {
+        STATE.carrinho = STATE.carrinho.filter(i => i.qtd > 0);
+        persistirCarrinhoComDebounce();
+        renderCarrinhoCompleto();
+        
+        if (itensRemovidos > 0) {
+            showToast(`⚠️ ${itensRemovidos} item(ns) esgotaram e foram removidos do carrinho.`, true);
+        }
+    }
+};
 
 const getCartQty = (id) => { 
     const item = STATE.carrinho.find(x => x.id === id); 
@@ -120,7 +153,8 @@ const renderUpsell = () => {
     if(sugestoes.length === 0) sugestoes = STATE.produtos.filter(p => p.ativo && !idsNoCarrinho.includes(p.id));
 
     if (sugestoes.length > 0) {
-        sugestoes.sort((a,b) => (STATE.favoritos.includes(b.id) ? 1 : 0) - (STATE.favoritos.includes(a.id) ? 1 : 0));
+        // Prioriza mostrar favoritos no upsell
+        sugestoes.sort((a,b) => (STATE.favoritos.includes(b.id) ? -1 : 1));
         const up = sugestoes[0];
         upsellCont.innerHTML = `<div class="upsell-box"><span>Que tal levar <b>${escapeHTML(up.nome)}</b>?</span><button class="btn btn-outline" style="padding: 6px 12px;" data-action="add" data-id="${up.id}">+ Add</button></div>`;
     } else {
@@ -280,18 +314,20 @@ if (SpeechRecognition) {
     recognition.onend = () => document.getElementById('btn-voz').classList.remove('gravando');
 } else document.getElementById('btn-voz').style.display = 'none';
 
-
 const iniciarRealTimeSync = () => {
     if (!navigator.onLine) document.getElementById('banner-offline').classList.add('visivel');
+    
     const unsubConfig = onSnapshot(doc(db, "loja", "config"), (snap) => {
         if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()};
         atualizarRodapeCarrinhoDOM();
     });
     unsubscribes.push(unsubConfig);
+    
     const unsubProdutos = onSnapshot(collection(db, "produtos"), (snap) => {
         STATE.produtos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.ativo);
         renderCategorias(); 
         renderLoja(true); 
+        syncCarrinhoComPrecosAoVivo(); // Segurança e Sincronização ao vivo
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
     }, (error) => console.error("Erro Realtime:", error));
     unsubscribes.push(unsubProdutos);
@@ -409,8 +445,7 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
         document.getElementById('cli-quadra').value = clientes[0].quadra || '';
         document.getElementById('cli-lote').value = clientes[0].lote || '';
     }
-    // GERA CHAVE ÚNICA DE IDEMPOTÊNCIA PARA ESTA TENTATIVA DE COMPRA
-    STATE.checkoutSessionId = crypto.randomUUID();
+    STATE.checkoutSessionId = crypto.randomUUID(); // Idempotência
     openModal('modal-checkout');
 });
 
@@ -427,24 +462,46 @@ const renderHistorico = () => {
                 <span style="color:var(--forest); font-weight:900;">${fmt(p.total)}</span>
             </div>
             <p style="font-size:0.9rem; color:var(--text-mid); line-height:1.4;">${escapeHTML(p.descItens || 'Itens do pedido')}</p>
-            <button class="btn-outline" style="width:100%; margin-top:14px; padding:10px;" data-action="repetir-pedido" data-id="${p.id}">Repetir Pedido</button>
+            <button class="btn btn-outline w-100 mt-3" data-action="repetir-pedido" data-id="${p.id}">Repetir Pedido</button>
         </article>
     `).join('');
 };
 
+// 3. RECOMPRA INTELIGENTE E VALIDAÇÃO
 const repetirPedido = (pedId) => {
     const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
-    const ped = meusPedidos.find(p => p.id === String(pedId) || p.id === Number(pedId)); 
-    if(ped && ped.itens) {
-        STATE.carrinho = [];
-        ped.itens.forEach(i => {
-            const prodInfo = STATE.produtos.find(px => px.id === i.id);
-            if(prodInfo && prodInfo.ativo) STATE.carrinho.push({...prodInfo, qtd: i.qtd});
-        });
+    const ped = meusPedidos.find(p => String(p.id) === String(pedId)); 
+    if(!ped || !ped.itens) return;
+
+    let itensAdicionados = 0;
+    let itensEsgotados = [];
+    
+    // Zera o carrinho atual (Comportamento padrão iFood para repetir pedido)
+    STATE.carrinho = [];
+    
+    ped.itens.forEach(i => {
+        // Verifica se o produto AINDA EXISTE e está ATIVO no banco de dados atual
+        const prodAtualizado = STATE.produtos.find(px => px.id === i.id);
+        if(prodAtualizado && prodAtualizado.ativo) { 
+            // Adiciona pegando o PREÇO NOVO, não o preço antigo do histórico
+            STATE.carrinho.push({...prodAtualizado, qtd: i.qtd});
+            itensAdicionados++;
+        } else {
+            itensEsgotados.push(i.nome || 'Produto Indisponível');
+        }
+    });
+
+    if (itensAdicionados > 0) {
         persistirCarrinhoComDebounce();
         renderCarrinhoCompleto();
         closeModal('modal-historico');
-        showToast('🛒 Itens adicionados ao carrinho!');
+        toggleCartMobile(true);
+        
+        let msgToast = "🛒 Itens adicionados com preços atualizados!";
+        if(itensEsgotados.length > 0) msgToast = `🛒 Alguns itens foram adicionados. Faltaram: ${itensEsgotados.join(', ')} (Esgotados)`;
+        showToast(msgToast, itensEsgotados.length > 0);
+    } else {
+        showToast("❌ Todos os itens deste pedido encontram-se esgotados.", true);
     }
 };
 
@@ -454,7 +511,7 @@ document.getElementById('cli-pagamento').addEventListener('change', (e) => {
     if(!isDinheiro) document.getElementById('cli-troco').value = '';
 });
 
-// INTEGRAÇÃO SERVERLESS ULTRA BLINDADA
+// INTEGRAÇÃO SERVERLESS BLINDADA COM FALLBACK
 document.getElementById('btn-enviar-pedido').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     if (btn.disabled) return;
@@ -490,9 +547,10 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         });
 
         clearTimeout(timeoutId);
-        const data = await response.json().catch(() => { throw new Error("Servidor retornou erro fatal. Tente novamente."); });
-
-        if (!response.ok || !data.sucesso) throw new Error(data.error || "Falha ao processar pedido.");
+        
+        if (!response.ok) throw new Error("Servidor ocupado. Tente novamente em alguns segundos.");
+        const data = await response.json();
+        if (!data.sucesso) throw new Error(data.error || "Falha ao processar pedido.");
 
         const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
         const idx = clientes.findIndex(c => c.nome.toLowerCase() === nome.toLowerCase());
@@ -505,7 +563,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             data: new Date().toISOString(), 
             total: data.pedido.total,
             descItens: STATE.carrinho.map(i => isFracionavel(i.unidade) ? `${formatarQuantidadeVisual(i.qtd, true)}${i.unidade} ${i.nome}` : `${i.qtd}x ${i.nome}`).join(', '),
-            itens: STATE.carrinho.map(item => ({ id: item.id, qtd: item.qtd }))
+            itens: STATE.carrinho.map(item => ({ id: item.id, qtd: item.qtd, nome: item.nome }))
         });
         localStorage.setItem('banca_meus_pedidos', JSON.stringify(meusPedidos.slice(0, 10)));
 
@@ -520,7 +578,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         document.getElementById('cli-obs').value = ''; document.getElementById('cli-troco').value = '';
 
     } catch(err) {
-        if(err.name === 'AbortError') showToast("Sua internet falhou. Tente novamente.", true);
+        if(err.name === 'AbortError') showToast("Sua internet falhou. Verifique o sinal e tente novamente.", true);
         else showToast(err.message, true);
     } finally {
         btn.disabled = false; 
