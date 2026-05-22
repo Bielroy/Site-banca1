@@ -16,7 +16,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}']
+        // Isso garante que o cache encontre seus arquivos na Vercel
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,webmanifest}']
       },
       manifest: false
     })
