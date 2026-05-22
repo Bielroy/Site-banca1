@@ -588,3 +588,85 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
 window.addEventListener('online', () => document.getElementById('banner-offline').classList.remove('visivel'));
 window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
+
+// =========================================================
+// INTEGRAÇÃO COMPLETA DO ASSISTENTE CHAT GEMINI (NOVO)
+// =========================================================
+
+document.getElementById('btn-ia-flutuante').addEventListener('click', () => {
+    openModal('modal-ia-chat');
+});
+
+const enviarMensagemParaIA = async () => {
+    const input = document.getElementById('input-ia-mensagem');
+    const texto = input.value.trim();
+    if (!texto) return;
+
+    const corpoChat = document.getElementById('chat-ia-corpo');
+    const containerSugestoes = document.getElementById('ia-sugestoes-container');
+    const btnEnviar = document.getElementById('btn-ia-enviar');
+
+    // 1. Renderiza mensagem do usuário no chat
+    corpoChat.insertAdjacentHTML('beforeend', `
+        <div style="align-self: flex-end; background: var(--forest); color: white; padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; box-shadow: var(--shadow-sm);">
+            ${escapeHTML(texto)}
+        </div>
+    `);
+    
+    input.value = '';
+    containerSugestoes.innerHTML = '';
+    btnEnviar.disabled = true;
+    btnEnviar.textContent = '⏱️...';
+    corpoChat.scrollTop = corpoChat.scrollHeight;
+
+    try {
+        // 2. Chama a API Serverless na Vercel
+        const response = await fetch('/api/assistente', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mensagemCliente: texto })
+        });
+
+        const data = await response.json();
+        
+        // 3. Renderiza a resposta textual da IA
+        corpoChat.insertAdjacentHTML('beforeend', `
+            <div style="align-self: flex-start; background: white; color: var(--text-dark); padding: 14px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); line-height: 1.5;">
+                ${data.resposta}
+            </div>
+        `);
+
+        // 4. Renderiza botões de ação rápida para o carrinho (A mágica da conversão)
+        if (data.sugestoes && data.sugestoes.length > 0) {
+            let botoesHtml = '';
+            data.sugestoes.forEach(prodId => {
+                const produtoNoBanco = STATE.produtos.find(p => p.id === prodId);
+                if (produtoNoBanco) {
+                    // Usamos data-action="add" para reaproveitar a lógica global já existente!
+                    botoesHtml += `
+                        <button class="btn btn-outline" style="padding: 6px 12px; font-size: 0.85rem; white-space: nowrap; border-color: var(--earth); color: var(--earth);" data-action="add" data-id="${produtoNoBanco.id}">
+                            🛒 + ${escapeHTML(produtoNoBanco.nome)}
+                        </button>
+                    `;
+                }
+            });
+            containerSugestoes.innerHTML = botoesHtml;
+        }
+
+    } catch (err) {
+        corpoChat.insertAdjacentHTML('beforeend', `
+            <div style="align-self: flex-start; background: var(--danger-light); color: var(--danger); padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem;">
+                Erro ao conectar com o assistente. Verifique sua conexão.
+            </div>
+        `);
+    } finally {
+        btnEnviar.disabled = false;
+        btnEnviar.textContent = 'Enviar';
+        corpoChat.scrollTop = corpoChat.scrollHeight;
+    }
+};
+
+document.getElementById('btn-ia-enviar').addEventListener('click', enviarMensagemParaIA);
+document.getElementById('input-ia-mensagem').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') enviarMensagemParaIA();
+});
