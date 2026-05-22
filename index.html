@@ -8,7 +8,6 @@
     <meta name="description" content="Compre frutas, verduras e hortaliças frescas com entrega rápida no seu condomínio.">
     <meta name="theme-color" content="#1a3a2a">
     
-    <!-- Open Graph SEO -->
     <meta property="og:title" content="Banca Adair e Pedrina">
     <meta property="og:description" content="Produtos frescos direto para sua mesa. Entrega em condomínios.">
     <meta property="og:type" content="website">
@@ -61,8 +60,7 @@
 
 <main class="layout">
     <section class="produtos-grid" id="lista-produtos" aria-label="Lista de Produtos">
-        <!-- JS renderiza aqui -->
-    </section>
+        </section>
 
     <button class="btn-flutuante-carrinho" id="btn-carrinho-mobile" aria-label="Ver Carrinho">
         🛒 Ver Pedido (<span id="qtd-flutuante">0</span>)
@@ -88,7 +86,6 @@
     </aside>
 </main>
 
-<!-- Modais sem classes inline no CSS -->
 <div class="modal-overlay" id="modal-checkout" role="dialog" aria-modal="true">
     <div class="modal">
         <header class="modal-head">
@@ -113,7 +110,6 @@
             <div class="form-group troco-container" id="troco-group" style="display:none; background: var(--parchment); padding: 12px; border-radius: 8px;">
                 <label style="margin-bottom: 12px;">Vai precisar de troco?</label>
                 <div style="display: flex; gap: 12px; margin-bottom: 12px;">
-                    <!-- Delegação de evento JS, sem inline onclick! -->
                     <button type="button" class="btn btn-outline" data-action="toggle-troco" data-value="nao" style="flex:1; padding: 10px; font-size: 0.9rem;">Não (Valor exato)</button>
                     <button type="button" class="btn btn-outline" data-action="toggle-troco" data-value="sim" style="flex:1; padding: 10px; font-size: 0.9rem;">Sim, preciso</button>
                 </div>
@@ -154,8 +150,40 @@
     </div>
 </div>
 
+<button id="btn-ia-flutuante" style="position: fixed; bottom: calc(var(--safe-bottom) + 90px); right: 20px; width: 56px; height: 56px; background: var(--earth); color: white; border: none; border-radius: 50%; box-shadow: var(--shadow-lg); z-index: var(--z-sticky); cursor: pointer; font-size: 24px; display: flex; align-items: center; justify-content: center; transition: var(--transition);" aria-label="Falar com Assistente">✨</button>
+
+<div class="modal-overlay" id="modal-ia-chat" role="dialog" aria-modal="true">
+    <div class="modal" style="max-width: 450px; height: 75dvh;">
+        <header class="modal-head">
+            <h2>✨ Assistente de Receitas</h2>
+            <button class="btn-fechar" data-fechar="modal-ia-chat">&times;</button>
+        </header>
+        <div class="modal-body" id="chat-ia-corpo" style="display: flex; flex-direction: column; gap: 16px; background: var(--parchment); overflow-y: auto;">
+            <div style="background: white; padding: 14px; border-radius: var(--radius-sm); border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); font-size: 0.95rem; line-height: 1.5;">
+                🥦 <b>Banca Adair e Pedrina:</b> Olá! Sou o seu sommelier de receitas. O que planeja cozinhar hoje? Pode me pedir dicas como: <i>"O que preciso para fazer um vinagrete completo?"</i> ou <i>"Ideia de sobremesa com frutas"</i>!
+            </div>
+        </div>
+        <div id="ia-sugestoes-container" style="padding: 10px 16px; background: white; display: flex; gap: 8px; overflow-x: auto; border-top: 1px solid var(--parchment);"></div>
+        <footer class="modal-footer" style="padding: 12px 16px; background: white;">
+            <div style="display: flex; gap: 8px; width: 100%;">
+                <input type="text" id="input-ia-mensagem" placeholder="Pergunte sobre uma receita ou produto..." style="flex: 1; padding: 12px; border: 1.5px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; font-size: 16px;">
+                <button class="btn btn-primary" id="btn-ia-enviar" style="padding: 12px 20px;">Enviar</button>
+            </div>
+        </footer>
+    </div>
+</div>
+
 <div class="toast" id="toast" role="alert"></div>
 
 <script type="module" src="./js/loja.js"></script>
+
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js').catch(err => console.error('Erro PWA:', err));
+        });
+    }
+</script>
+
 </body>
 </html>
