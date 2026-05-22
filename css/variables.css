@@ -4,7 +4,7 @@
     --forest-mid: #2c5f45;
     --leaf: #4a9467;
     
-    /* Cores Secundárias (Acessibilidade WCAG AAA garantida) */
+    /* Cores Secundárias */
     --mint: #7ec8a0; 
     --mint-dark: #2a6a4a; 
     --sage: #b8dfc8;
@@ -22,9 +22,15 @@
     --text-mid: #4a4a44;
     --text-light: #707065;
     
-    /* Utilitários */
+    /* Utilitários & Status Logístico (NOVO) */
     --danger: #dc2626;
+    --danger-light: #fef2f2;
     --success: #16a34a;
+    --success-light: #dcfce7;
+    --info: #0284c7;
+    --warning: #d97706;
+    --warning-light: #fef3c7;
+    --disabled: #94a3b8;
     
     /* Sombras Elevadas */
     --shadow-sm: 0 2px 12px hsl(148, 30%, 15%, 0.04);
