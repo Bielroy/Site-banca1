@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
-import { VitePWA } from 'vite-plugin-pwa';
+// Removemos a importação do VitePWA para destravar a Vercel
 
 export default defineConfig({
   build: {
@@ -11,15 +11,6 @@ export default defineConfig({
       }
     }
   },
-  plugins: [
-    VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'auto',
-      workbox: {
-        // Isso garante que o cache encontre seus arquivos na Vercel
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,webmanifest}']
-      },
-      manifest: false
-    })
-  ]
+  // Deixe os plugins vazios para o build passar limpo!
+  plugins: []
 });
