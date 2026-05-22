@@ -5,7 +5,7 @@ import {
     persistentLocalCache, 
     persistentMultipleTabManager,
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
-    query, orderBy, limit, writeBatch
+    query, orderBy, limit, writeBatch, where // <-- where ADICIONADO AQUI
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -28,7 +28,7 @@ const storage = getStorage(app);
 export { 
     db, auth, storage,
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
-    query, orderBy, limit, writeBatch,
+    query, orderBy, limit, writeBatch, where, // <-- where EXPORTADO AQUI
     sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously,
     ref, uploadBytes, getDownloadURL
 };
