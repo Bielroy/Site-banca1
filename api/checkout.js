@@ -48,7 +48,7 @@ module.exports = async function handler(req, res) {
   const bodySize = JSON.stringify(req.body).length;
   if (bodySize > 15000) return res.status(413).json({ sucesso: false, error: 'Payload abusivo.' });
 
-  let { nome, quadra, lote, pag, troco, obs, itens, clientTotal, idempotencyKey } = req.body;
+  let { nome, quadra, lote, pag, troco, obs, itens, clientTotal, idempotencyKey, userId } = req.body;
 
   if (!idempotencyKey) return res.status(400).json({ sucesso: false, error: 'Falha de segurança: Chave de Idempotência ausente.' });
   if (!nome || !quadra || !lote || !pag || !Array.isArray(itens) || itens.length === 0) {
@@ -120,10 +120,17 @@ module.exports = async function handler(req, res) {
       }
       
       const dadosPedido = {
-        id: pedidoRef.id, nome, quadra, lote, 
+        id: pedidoRef.id, 
+        userId: userId || "anonimo", // <-- ADICIONADO PARA CASAR COM O FIRESTORE RULES
+        nome, 
+        quadra, 
+        lote, 
         pag: trocoFormatado ? `${pag} ${trocoFormatado}` : pag,
-        obs, total: totalFinalFlutuante, itens: itensValidados,
-        data: new Date().toISOString(), status: "pendente" // <-- IMPORTANTE PARA A LOGÍSTICA
+        obs, 
+        total: totalFinalFlutuante, 
+        itens: itensValidados,
+        data: new Date().toISOString(), 
+        status: "pendente" 
       };
 
       transaction.set(pedidoRef, dadosPedido);
