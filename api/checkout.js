@@ -7,6 +7,7 @@ const formatPrivateKey = (key) => {
 
 let db;
 
+// [3] Inicialização Estável
 const bootFirebase = () => {
   if (!admin.apps.length) {
     const projectId = process.env.FIREBASE_PROJECT_ID;
@@ -33,6 +34,9 @@ const sanitizeString = (str, maxLength) => {
     return cleanStr.length > maxLength ? cleanStr.substring(0, maxLength) : cleanStr;
 };
 
+// [4] Rate Limit Básico para Checkout
+const rateLimitMap = new Map();
+
 module.exports = async function handler(req, res) {
   const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -42,6 +46,15 @@ module.exports = async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ sucesso: false, error: 'Método não permitido.' });
+
+  // Rate Limiting (Previne flood de pedidos falsos pelo mesmo IP)
+  const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+  const agora = Date.now();
+  if (rateLimitMap.has(ip) && agora - rateLimitMap.get(ip) < 5000) {
+      return res.status(429).json({ sucesso: false, error: 'Processando muitos pedidos. Aguarde alguns segundos.' });
+  }
+  rateLimitMap.set(ip, agora);
+  if (rateLimitMap.size > 2000) rateLimitMap.clear();
 
   try { bootFirebase(); } catch (bootError) { return res.status(500).json({ sucesso: false, error: "Erro interno no servidor." }); }
 
@@ -62,7 +75,7 @@ module.exports = async function handler(req, res) {
 
   try {
     const resultado = await db.runTransaction(async (transaction) => {
-      // 1. CHECAGEM DE IDEMPOTÊNCIA (Se o ID já existir, devolve sucesso imediato sem cobrar)
+      // 1. CHECAGEM DE IDEMPOTÊNCIA
       const pedidoRef = db.collection("pedidos").doc(idempotencyKey);
       const pedidoSnap = await transaction.get(pedidoRef);
       
@@ -71,7 +84,6 @@ module.exports = async function handler(req, res) {
       const configData = configSnap.data();
 
       if (pedidoSnap.exists) {
-         // O pedido já foi processado! Retorna o sucesso original.
          return { id: pedidoRef.id, total: pedidoSnap.data().total, whatsappMsg: montarTextoWhatsApp(pedidoSnap.data(), configData.wpp) };
       }
 
@@ -121,7 +133,7 @@ module.exports = async function handler(req, res) {
       
       const dadosPedido = {
         id: pedidoRef.id, 
-        userId: userId || "anonimo", // <-- ADICIONADO PARA CASAR COM O FIRESTORE RULES
+        userId: userId || "anonimo", // Integração com Firestore Security Rules
         nome, 
         quadra, 
         lote, 
