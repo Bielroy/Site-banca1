@@ -1,50 +1,85 @@
-import { initializeApp, cert } from 'firebase-admin/app';
+import { getApps, initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { GoogleGenAI } from '@google/generative-ai';
 
-// Inicialização segura do Firebase Admin
-if (!global.firebaseAdminInitialized) {
+// [3] Inicialização Estável do Firebase Admin (Evita Cold Start Crashes)
+if (!getApps().length) {
     initializeApp({
         credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))
     });
-    global.firebaseAdminInitialized = true;
 }
 
 const db = getFirestore();
 
-// Inicializa o SDK do Gemini usando a sua API Key protegida em ambiente cloud
+// Inicializa o SDK do Gemini
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// [2] Cache In-Memory Serverless (Economia absurda de custos de leitura no Firestore)
+let cachedCatalog = null;
+let cacheTimestamp = 0;
+const CACHE_TTL = 5 * 60 * 1000; // O cache expira a cada 5 minutos
+
+// [4] Rate Limit Básico em Memória (Evita Spam Bots)
+const rateLimitMap = new Map();
+
 export default async function handler(req, res) {
+    // Configurações CORS
+    const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
+    res.setHeader('Access-Control-Allow-Credentials', true);
+    res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+    res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    if (req.method === 'OPTIONS') return res.status(200).end();
+
     if (req.method !== 'POST') {
         return res.status(405).json({ sucesso: false, error: 'Método não permitido' });
     }
 
+    // Rate Limiting por IP (Máximo de 1 mensagem a cada 3 segundos por usuário)
+    const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+    const agora = Date.now();
+    if (rateLimitMap.has(ip)) {
+        if (agora - rateLimitMap.get(ip) < 3000) {
+            return res.status(429).json({ sucesso: false, resposta: "Você está enviando mensagens muito rápido. Por favor, aguarde alguns segundos.", sugestoes: [] });
+        }
+    }
+    rateLimitMap.set(ip, agora);
+    // Prevenção de memory leak no Map
+    if (rateLimitMap.size > 2000) rateLimitMap.clear();
+
     try {
         const { mensagemCliente } = req.body;
-        if (!mensagemCliente) {
-            return res.status(400).json({ sucesso: false, error: 'Mensagem inválida' });
+        
+        // Validação de Payload (Evita tokens excessivos)
+        if (!mensagemCliente || typeof mensagemCliente !== 'string' || mensagemCliente.length > 500) {
+            return res.status(400).json({ sucesso: false, error: 'Mensagem inválida ou muito longa.' });
         }
 
-        // 1. Busca todos os produtos ativos direto do Firestore para passar o contexto real à IA
-        const produtosSnap = await db.collection('produtos').where('ativo', '==', true).get();
-        const catalogoDisponivel = [];
-        
-        produtosSnap.forEach(doc => {
-            const data = doc.data();
-            catalogoDisponivel.push({
-                id: doc.id,
-                nome: data.nome,
-                preco: data.preco,
-                unidade: data.unidade || 'un',
-                cat: data.cat
+        // Lógica de Cache (Só bate no banco se o cache não existir ou estiver vencido)
+        if (!cachedCatalog || (agora - cacheTimestamp > CACHE_TTL)) {
+            const produtosSnap = await db.collection('produtos').where('ativo', '==', true).get();
+            const tempCatalog = [];
+            
+            produtosSnap.forEach(doc => {
+                const data = doc.data();
+                tempCatalog.push({
+                    id: doc.id,
+                    nome: data.nome,
+                    preco: data.preco,
+                    unidade: data.unidade || 'un',
+                    cat: data.cat
+                });
             });
-        });
+            cachedCatalog = tempCatalog;
+            cacheTimestamp = agora;
+        }
 
-        // 2. Instancia o modelo ultra-rápido focado em chat e tarefas estruturadas
+        const catalogoDisponivel = cachedCatalog;
+
+        // Instancia o modelo
         const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-        // 3. Prompt de Sistema rigoroso definindo comportamento comercial, tom de voz e regras de saída
         const systemInstruction = `
         Você é o assistente virtual e sommelier de hortifruti da "Banca Adair e Pedrina".
         Seu objetivo é ajudar o cliente a escolher produtos, sugerir receitas baseadas no estoque atual e impulsionar vendas.
@@ -60,7 +95,6 @@ export default async function handler(req, res) {
         ${JSON.stringify(catalogoDisponivel)}
         `;
 
-        // 4. Executa a chamada gerando a resposta
         const resultado = await model.generateContent({
             contents: [{ role: 'user', parts: [{ text: mensagemCliente }] }],
             generationConfig: {
