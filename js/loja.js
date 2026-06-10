@@ -554,7 +554,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             itens: STATE.carrinho.map(item => ({ id: item.id, qtd: item.qtd })),
             clientTotal: STATE.carrinho.reduce((acc, item) => acc + (item.preco * item.qtd), 0),
             idempotencyKey: STATE.checkoutSessionId,
-            userId: STATE.uid // <-- ADICIONADO AQUI
+            userId: STATE.uid 
         };
 
         const controller = new AbortController();
@@ -611,7 +611,7 @@ window.addEventListener('online', () => document.getElementById('banner-offline'
 window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
 
 // =========================================================
-// INTEGRAÇÃO COMPLETA DO ASSISTENTE CHAT GEMINI (NOVO)
+// INTEGRAÇÃO COMPLETA DO ASSISTENTE CHAT GEMINI (RECONSTRUÍDA)
 // =========================================================
 
 document.getElementById('btn-ia-flutuante').addEventListener('click', () => {
@@ -627,7 +627,7 @@ const enviarMensagemParaIA = async () => {
     const containerSugestoes = document.getElementById('ia-sugestoes-container');
     const btnEnviar = document.getElementById('btn-ia-enviar');
 
-    // 1. Renderiza mensagem do usuário no chat
+    // Renderiza mensagem do usuário no chat
     corpoChat.insertAdjacentHTML('beforeend', `
         <div style="align-self: flex-end; background: var(--forest); color: white; padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; box-shadow: var(--shadow-sm);">
             ${escapeHTML(texto)}
@@ -638,32 +638,57 @@ const enviarMensagemParaIA = async () => {
     containerSugestoes.innerHTML = '';
     btnEnviar.disabled = true;
     btnEnviar.textContent = '⏱️...';
+
+    // UI/UX: Indicador de digitação (Skeleton Bubble)
+    const idDigitando = 'typing-' + Date.now();
+    corpoChat.insertAdjacentHTML('beforeend', `
+        <div id="${idDigitando}" style="align-self: flex-start; background: white; padding: 14px 20px; border-radius: var(--radius-sm); border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); display: flex; gap: 6px; align-items: center;">
+            <span style="width: 6px; height: 6px; background: var(--forest); border-radius: 50%; animation: fadeIn 0.6s infinite alternate;"></span>
+            <span style="width: 6px; height: 6px; background: var(--forest); border-radius: 50%; animation: fadeIn 0.6s infinite alternate 0.2s;"></span>
+            <span style="width: 6px; height: 6px; background: var(--forest); border-radius: 50%; animation: fadeIn 0.6s infinite alternate 0.4s;"></span>
+        </div>
+    `);
     corpoChat.scrollTop = corpoChat.scrollHeight;
 
     try {
-        // 2. Chama a API Serverless na Vercel
+        // Proteção contra Timeout do Servidor (AbortController de 15s)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+
         const response = await fetch('/api/assistente', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mensagemCliente: texto })
+            body: JSON.stringify({ mensagemCliente: texto }),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
+
+        // Remove o indicador de digitação
+        const bolhaDigitando = document.getElementById(idDigitando);
+        if (bolhaDigitando) bolhaDigitando.remove();
+
+        // Validação estrita da resposta para evitar quebra do JSON.parse(HTML)
+        if (!response.ok) {
+            if (response.status === 429) throw new Error("RATE_LIMIT");
+            throw new Error(`Erro na rede (Status: ${response.status})`);
+        }
 
         const data = await response.json();
         
-        // 3. Renderiza a resposta textual da IA
+        // Renderiza a resposta textual da IA
         corpoChat.insertAdjacentHTML('beforeend', `
             <div style="align-self: flex-start; background: white; color: var(--text-dark); padding: 14px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); line-height: 1.5;">
                 ${data.resposta}
             </div>
         `);
 
-        // 4. Renderiza botões de ação rápida para o carrinho (A mágica da conversão)
+        // Renderiza botões de ação rápida para o carrinho
         if (data.sugestoes && data.sugestoes.length > 0) {
             let botoesHtml = '';
             data.sugestoes.forEach(prodId => {
                 const produtoNoBanco = STATE.produtos.find(p => p.id === prodId);
                 if (produtoNoBanco) {
-                    // Usamos data-action="add" para reaproveitar a lógica global já existente!
                     botoesHtml += `
                         <button class="btn btn-outline" style="padding: 6px 12px; font-size: 0.85rem; white-space: nowrap; border-color: var(--earth); color: var(--earth);" data-action="add" data-id="${produtoNoBanco.id}">
                             🛒 + ${escapeHTML(produtoNoBanco.nome)}
@@ -675,9 +700,17 @@ const enviarMensagemParaIA = async () => {
         }
 
     } catch (err) {
+        // Fallback e limpeza visual
+        const bolhaDigitando = document.getElementById(idDigitando);
+        if (bolhaDigitando) bolhaDigitando.remove();
+
+        let msgErro = "Erro ao conectar com o assistente. Verifique sua conexão.";
+        if (err.name === 'AbortError') msgErro = "O assistente demorou muito para responder. Tente enviar de novo.";
+        if (err.message === "RATE_LIMIT") msgErro = "Você enviou muitas mensagens. Aguarde alguns segundos.";
+
         corpoChat.insertAdjacentHTML('beforeend', `
-            <div style="align-self: flex-start; background: var(--danger-light); color: var(--danger); padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem;">
-                Erro ao conectar com o assistente. Verifique sua conexão.
+            <div style="align-self: flex-start; background: var(--danger-light); color: var(--danger); padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; border: 1px solid #fca5a5;">
+                ⚠️ ${msgErro}
             </div>
         `);
     } finally {
