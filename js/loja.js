@@ -28,14 +28,34 @@ const carregarCarrinhoDB = async () => {
 };
 carregarCarrinhoDB(); 
 
+// =========================================================
+// CONTROLE DE INICIALIZAÇÃO E AUTENTICAÇÃO (CORRIGIDO)
+// =========================================================
+let realTimeSyncIniciado = false;
+
 onAuthStateChanged(auth, (user) => {
-    unsubscribes.forEach(unsub => unsub()); 
-    unsubscribes = [];
     if (user) {
         STATE.uid = user.uid;
-        iniciarRealTimeSync();
+        
+        // Se a aplicação já estiver ouvindo o banco, mantém a conexão viva sem reiniciar listeners
+        if (!realTimeSyncIniciado) {
+            iniciarRealTimeSync();
+            realTimeSyncIniciado = true;
+        }
     } else {
-        signInAnonymously(auth).catch(err => console.error("Erro Auth Anônima:", err));
+        // Modo Visitante Segurado: Se o Auth falhar ou deslogar, limpa tudo e força o sync público
+        unsubscribes.forEach(unsub => unsub());
+        unsubscribes = [];
+        realTimeSyncIniciado = false;
+
+        // Dispara o sync imediatamente (as regras do Firestore permitem leitura sem login)
+        iniciarRealTimeSync();
+        realTimeSyncIniciado = true;
+
+        // Tenta autenticar anonimamente em segundo plano para recursos logísticos e persistência
+        signInAnonymously(auth).catch(err => {
+            console.warn("⚠️ Firebase Anonymous Auth desativado ou lento. Rodando de forma estável como visitante público:", err);
+        });
     }
 });
 
@@ -533,7 +553,8 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             nome, quadra, lote, pag, troco: trocoRaw, obs,
             itens: STATE.carrinho.map(item => ({ id: item.id, qtd: item.qtd })),
             clientTotal: STATE.carrinho.reduce((acc, item) => acc + (item.preco * item.qtd), 0),
-            idempotencyKey: STATE.checkoutSessionId
+            idempotencyKey: STATE.checkoutSessionId,
+            userId: STATE.uid // <-- ADICIONADO AQUI
         };
 
         const controller = new AbortController();
