@@ -1,6 +1,5 @@
 import { auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL, query, orderBy, limit, writeBatch, where } from './firebase.js';
 import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal, customConfirm } from './utils.js';
-// [FASE 2] Dependência npm exigida: npm install chart.js
 import Chart from 'chart.js/auto';
 
 let produtosAtuais = [];
@@ -33,29 +32,12 @@ const compressImageToJPG = (file, maxWidth = 800, quality = 0.8) => {
                 ctx.drawImage(img, 0, 0, width, height);
                 
                 canvas.toBlob((blob) => {
-                    resolve(new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), {
-                        type: 'image/jpeg',
-                        lastModified: Date.now()
-                    }));
+                    resolve(new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), { type: 'image/jpeg' }));
                 }, 'image/jpeg', quality);
             };
             img.onerror = (err) => reject(err);
         };
         reader.onerror = (err) => reject(err);
-    });
-};
-
-const requestEmailVerification = () => {
-    return new Promise((resolve) => {
-        openModal('modal-email-verify');
-        const okBtn = document.getElementById('btn-verify-ok');
-        const cancelBtn = document.getElementById('btn-verify-cancel');
-        const input = document.getElementById('verify-email-input');
-
-        const cleanup = () => { closeModal('modal-email-verify'); okBtn.onclick = null; cancelBtn.onclick = null; };
-
-        okBtn.onclick = () => { if(input.value.trim()) { cleanup(); resolve(input.value.trim()); } };
-        cancelBtn.onclick = () => { cleanup(); resolve(null); };
     });
 };
 
@@ -66,7 +48,7 @@ onAuthStateChanged(auth, (user) => {
     if (user) {
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('dashboard').style.display = 'block';
-        iniciarIAFeaturesDOM(); // Inicializa os botões e interface visual da Inteligência Artificial
+        iniciarIAFeaturesDOM(); 
         iniciarRealTimeSync(); 
     } else {
         document.getElementById('login-screen').style.display = 'block';
@@ -82,18 +64,15 @@ document.getElementById('btn-login').addEventListener('click', async () => {
     
     if (!email) { msg.textContent = "⚠️ Digite um e-mail válido."; msg.style.color = "var(--danger)"; return; }
     
-    isLoginProcessing = true;
-    document.getElementById('btn-login').disabled = true;
+    isLoginProcessing = true; document.getElementById('btn-login').disabled = true;
     msg.textContent = "A enviar link..."; msg.style.color = "var(--text-dark)";
     
     try {
         await sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true });
         window.sessionStorage.setItem('emailForSignIn', email);
-        msg.textContent = "✅ Link enviado! Verifique o e-mail."; 
-        msg.style.color = "var(--success)"; 
+        msg.textContent = "✅ Link enviado! Verifique o e-mail."; msg.style.color = "var(--success)"; 
     } catch(error) {
-        msg.textContent = "❌ Erro ao enviar link. Tente novamente."; 
-        msg.style.color = "var(--danger)";
+        msg.textContent = "❌ Erro ao enviar. Tente novamente."; msg.style.color = "var(--danger)";
     } finally {
         setTimeout(() => { isLoginProcessing = false; document.getElementById('btn-login').disabled = false; }, 5000);
     }
@@ -102,12 +81,14 @@ document.getElementById('btn-login').addEventListener('click', async () => {
 if (isSignInWithEmailLink(auth, window.location.href)) {
     let email = window.sessionStorage.getItem('emailForSignIn');
     const processLogin = async () => {
-        if (!email) email = await requestEmailVerification(); 
+        if (!email) {
+            email = prompt("Por segurança, confirme o seu e-mail:");
+        }
         if(email) {
             try {
                 await signInWithEmailLink(auth, email, window.location.href);
                 window.sessionStorage.removeItem('emailForSignIn');
-            } catch(e) { showToast("Link expirado ou inválido. Peça um novo.", true); }
+            } catch(e) { showToast("Link expirado ou inválido.", true); }
         }
     };
     processLogin();
@@ -136,13 +117,10 @@ const playAlertaPedido = () => {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        oscillator.type = 'sine';
-        oscillator.frequency.value = 850;
+        oscillator.connect(gainNode); gainNode.connect(audioCtx.destination);
+        oscillator.type = 'sine'; oscillator.frequency.value = 850;
         gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        oscillator.start();
-        oscillator.stop(audioCtx.currentTime + 0.3);
+        oscillator.start(); oscillator.stop(audioCtx.currentTime + 0.3);
     } catch(e) {}
 };
 
@@ -170,14 +148,12 @@ const iniciarRealTimeSync = () => {
 
     const unsubPedidos = onSnapshot(pedQuery, (snap) => {
         const temNovoPendente = snap.docChanges().some(change => change.type === 'added' && change.doc.data().status === 'pendente');
-        
         if (!cargaInicial && temNovoPendente) {
             playAlertaPedido();
             showToast("🔔 NOVO PEDIDO NA FILA!", false);
             if (Notification.permission === "granted") new Notification("Banca", { body: "Novo pedido chegou!" });
         }
         cargaInicial = false;
-
         pedidosGerais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         if(document.getElementById('aba-relatorios').classList.contains('active')) renderRelatoriosMaster();
     });
@@ -190,6 +166,14 @@ document.getElementById('admin-busca-input')?.addEventListener('input', (e) => {
     adminBuscaTermo = e.target.value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     renderProdutos();
 });
+
+const getEstoqueBadge = (estoqueFisico, ativo) => {
+    if (!ativo) return `<span class="badge-estoque esgotado">Esgotado Indefinido</span>`;
+    if (estoqueFisico === undefined || estoqueFisico === null || estoqueFisico === "") return `<span class="badge-estoque alto">Stock: Ilimitado</span>`;
+    if (estoqueFisico <= 0) return `<span class="badge-estoque esgotado">Stock: ZERADO</span>`;
+    if (estoqueFisico <= 5) return `<span class="badge-estoque baixo">Stock Baixo: ${estoqueFisico} restam</span>`;
+    return `<span class="badge-estoque alto">Stock: ${estoqueFisico} un.</span>`;
+};
 
 const renderProdutos = () => {
     const listaFiltrada = produtosAtuais.filter(p => {
@@ -204,8 +188,12 @@ const renderProdutos = () => {
             <div class="prod-info-grande">
                 <div class="prod-img-grande">${p.foto ? `<img src="${escapeHTML(p.foto)}" loading="lazy">` : placeholderSVG}</div>
                 <div class="prod-detalhes">
-                    <h4>${escapeHTML(p.nome)}</h4>
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <h4>${escapeHTML(p.nome)}</h4>
+                        <button class="btn-social-media" data-action="gerar-post" data-id="${p.id}" title="Gerar Post Instagram/WPP"><i class="fa fa-instagram"></i> Post IA</button>
+                    </div>
                     <p>${fmt(p.preco)} <span style="font-size:0.9rem; color:var(--text-light); font-weight:normal">/${escapeHTML(p.unidade)}</span></p>
+                    ${getEstoqueBadge(p.estoqueFisico, p.ativo)}
                 </div>
             </div>
             <div class="botoes-acao">
@@ -232,15 +220,33 @@ document.getElementById('edit-foto')?.addEventListener('change', (e) => {
     }
 });
 
+// [FASE 3] Injetor do Sistema de Stock na UI do Modal (3.03)
+const injetarEstoqueUI = () => {
+    if(!document.getElementById('edit-estoque-fisico')) {
+        const precoRow = document.getElementById('edit-preco')?.closest('.grid-2');
+        if(precoRow) {
+            precoRow.insertAdjacentHTML('afterend', `
+                <div class="form-group-estoque">
+                    <label for="edit-estoque-fisico">📦 Quantidade Física em Stock (Opcional)</label>
+                    <input type="number" id="edit-estoque-fisico" min="0" placeholder="Ex: 50 (Deixe em branco p/ infinito)">
+                    <small style="color:var(--text-light); font-size:0.75rem; display:block; margin-top:4px;">Se preenchido, o produto irá esgotar automaticamente quando chegar a 0 no e-commerce.</small>
+                </div>
+            `);
+        }
+    }
+};
+
 document.body.addEventListener('click', async (e) => {
     const target = e.target.closest('[data-action]'); if(!target) return;
     const action = target.dataset.action;
     
     try {
         if(action === 'novo-produto') {
+            injetarEstoqueUI();
             document.getElementById('modal-titulo').textContent = 'Novo Produto';
             ['edit-id', 'edit-nome', 'edit-preco', 'edit-cat', 'edit-foto', 'edit-foto-url'].forEach(i => document.getElementById(i).value = '');
             if(document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = '';
+            if(document.getElementById('edit-estoque-fisico')) document.getElementById('edit-estoque-fisico').value = '';
             
             const previewContainer = document.getElementById('preview-foto-wrapper');
             if(previewContainer) previewContainer.innerHTML = placeholderSVG;
@@ -249,6 +255,7 @@ document.body.addEventListener('click', async (e) => {
         }
         
         else if(action === 'editar-produto') {
+            injetarEstoqueUI();
             const p = produtosAtuais.find(x => x.id === target.dataset.id);
             if(!p) return;
             document.getElementById('modal-titulo').textContent = 'Editar Produto'; 
@@ -261,6 +268,7 @@ document.body.addEventListener('click', async (e) => {
             document.getElementById('edit-foto-url').value = ''; 
             
             if(document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = p.descricao || '';
+            if(document.getElementById('edit-estoque-fisico')) document.getElementById('edit-estoque-fisico').value = p.estoqueFisico !== undefined ? p.estoqueFisico : '';
             
             const previewContainer = document.getElementById('preview-foto-wrapper');
             if(previewContainer) previewContainer.innerHTML = p.foto ? `<img src="${escapeHTML(p.foto)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">` : placeholderSVG;
@@ -268,12 +276,37 @@ document.body.addEventListener('click', async (e) => {
             document.getElementById('btn-excluir-produto').style.display = 'block';
             openModal('modal-produto');
         }
+
+        // [FASE 3] Feature: Gerar Post Redes Sociais (3.05)
+        else if(action === 'gerar-post') {
+            const p = produtosAtuais.find(x => x.id === target.dataset.id);
+            if(!p) return;
+            const originHtml = target.innerHTML;
+            target.innerHTML = "⏳"; target.disabled = true;
+            try {
+                const res = await fetch('/api/assistente', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'social_post', produtoInfo: { nome: p.nome, cat: p.cat, preco: p.preco } })
+                });
+                const data = await res.json();
+                if(!data.sucesso) throw new Error("Falha na IA");
+                
+                // Exibe o post num Modal simples ou no Clipboard
+                await navigator.clipboard.writeText(data.post);
+                showToast("✨ Texto copiado para a Área de Transferência!");
+                alert(`Post Gerado Pela IA (Já Copiado!):\n\n${data.post}`);
+            } catch(e) {
+                showToast("Erro ao gerar post.", true);
+            } finally {
+                target.innerHTML = originHtml; target.disabled = false;
+            }
+        }
         
         else if(action === 'toggle-estoque') {
             const id = target.dataset.id;
             const novoStatus = target.dataset.status === 'true';
             if(!novoStatus) {
-                const confirmado = await customConfirm("Esgotar Produto?", "Clientes não poderão comprar até você voltar pro estoque.");
+                const confirmado = await customConfirm("Esgotar Produto?", "Clientes não poderão comprar até você voltar pro stock.");
                 if(!confirmado) return;
             }
             await setDoc(doc(db, "produtos", id), { ativo: novoStatus, ultimaModificacao: Date.now() }, { merge: true });
@@ -300,9 +333,8 @@ document.body.addEventListener('click', async (e) => {
     }
 });
 
-// [FASE 2] Integração Inteligência Artificial no Painel 
 const iniciarIAFeaturesDOM = () => {
-    // 1. Injetar campo de descrição no formulário de edição (Feature 2.05)
+    // 1. Descrição IA (Mantida da Fase 2)
     const catInput = document.getElementById('edit-cat');
     if(catInput && !document.getElementById('form-group-descricao')) {
         catInput.closest('.form-group').insertAdjacentHTML('afterend', `
@@ -318,12 +350,9 @@ const iniciarIAFeaturesDOM = () => {
         document.getElementById('btn-ia-descricao').addEventListener('click', async (e) => {
             const nome = document.getElementById('edit-nome').value;
             const cat = document.getElementById('edit-cat').value;
-            if(!nome || !cat) return showToast("⚠️ Preencha Nome e Categoria primeiro para dar contexto à IA.", true);
-            
-            const btn = e.currentTarget;
-            const originText = btn.innerHTML;
+            if(!nome || !cat) return showToast("⚠️ Preencha Nome e Categoria primeiro.", true);
+            const btn = e.currentTarget; const originText = btn.innerHTML;
             btn.innerHTML = "A gerar... ⏳"; btn.disabled = true;
-
             try {
                 const res = await fetch('/api/assistente', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -331,32 +360,26 @@ const iniciarIAFeaturesDOM = () => {
                 });
                 const data = await res.json();
                 if(!data.sucesso) throw new Error(data.error);
-                
                 document.getElementById('edit-descricao').value = data.descricao;
                 showToast("✨ Descrição de Alta Conversão gerada!");
-            } catch(err) {
-                showToast("Falha na geração via IA.", true);
-            } finally {
-                btn.innerHTML = originText; btn.disabled = false;
-            }
+            } catch(err) { showToast("Falha na geração via IA.", true); } 
+            finally { btn.innerHTML = originText; btn.disabled = false; }
         });
     }
 
-    // 2. Injetar botão global para "Montar Kit Inteligente" (Feature 2.06)
+    // 2. Kits (Mantida da Fase 2)
     const dashboardControls = document.querySelector('.dash-header');
     if(dashboardControls && !document.getElementById('btn-ia-kit')) {
         dashboardControls.insertAdjacentHTML('beforeend', `
-            <button id="btn-ia-kit" class="btn-ia-action" style="padding: 12px 24px; font-size: 1rem; border-radius: 8px;">
-                🪄 Criar Kit Promocional c/ IA
-            </button>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <button id="btn-ia-kit" class="btn-ia-action" style="padding: 10px 18px; font-size: 0.95rem;">🪄 Criar Kit c/ IA</button>
+            </div>
         `);
 
         document.getElementById('btn-ia-kit').addEventListener('click', async (e) => {
-            if(produtosAtuais.length < 5) return showToast("É necessário ter mais produtos no catálogo para montar kits.", true);
-            const btn = e.currentTarget;
-            const originText = btn.innerHTML;
-            btn.innerHTML = "🪄 A arquitetar kit ideal... ⏳"; btn.disabled = true;
-
+            if(produtosAtuais.length < 5) return showToast("Precisa de mais produtos no catálogo.", true);
+            const btn = e.currentTarget; const originText = btn.innerHTML;
+            btn.innerHTML = "⏳ A criar kit..."; btn.disabled = true;
             try {
                 const res = await fetch('/api/assistente', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -365,25 +388,15 @@ const iniciarIAFeaturesDOM = () => {
                 const data = await res.json();
                 if(!data.sucesso) throw new Error(data.error);
                 
-                // Pré-preenche o Modal de Novo Produto com a Recomendação da IA
+                injetarEstoqueUI();
                 document.getElementById('modal-titulo').textContent = '⭐ ' + data.kit.nome;
-                document.getElementById('edit-id').value = '';
-                document.getElementById('edit-nome').value = data.kit.nome;
-                document.getElementById('edit-preco').value = data.kit.preco;
-                document.getElementById('edit-cat').value = 'Kits Inteligentes';
-                document.getElementById('edit-unidade').value = 'kit';
-                
-                if(document.getElementById('edit-descricao')) {
-                    document.getElementById('edit-descricao').value = `${data.kit.descricao}\n\n📦 O que inclui:\n${data.kit.itensInclusos}`;
-                }
-                
+                document.getElementById('edit-id').value = ''; document.getElementById('edit-nome').value = data.kit.nome;
+                document.getElementById('edit-preco').value = data.kit.preco; document.getElementById('edit-cat').value = 'Kits Inteligentes'; document.getElementById('edit-unidade').value = 'kit';
+                if(document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = `${data.kit.descricao}\n\n📦 O que inclui:\n${data.kit.itensInclusos}`;
                 openModal('modal-produto');
                 showToast("✨ Kit formulado! Ajuste o preço e guarde.");
-            } catch(err) {
-                showToast("Falha ao analisar catálogo e montar kit.", true);
-            } finally {
-                btn.innerHTML = originText; btn.disabled = false;
-            }
+            } catch(err) { showToast("Falha ao montar kit.", true); } 
+            finally { btn.innerHTML = originText; btn.disabled = false; }
         });
     }
 };
@@ -394,13 +407,18 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
 
     try {
         const id = document.getElementById('edit-id').value || crypto.randomUUID();
+        // [FASE 3] Integração da gravação do valor do Stock
+        let rawEstoque = document.getElementById('edit-estoque-fisico') ? document.getElementById('edit-estoque-fisico').value : '';
+        let estoqueFinal = rawEstoque === '' ? null : parseInt(rawEstoque);
+
         let pData = { 
             nome: document.getElementById('edit-nome').value.trim(), 
             preco: parseFloat(document.getElementById('edit-preco').value), 
             unidade: document.getElementById('edit-unidade').value, 
             cat: document.getElementById('edit-cat').value.trim().toLowerCase(), 
             descricao: document.getElementById('edit-descricao') ? document.getElementById('edit-descricao').value.trim() : '',
-            ativo: true,
+            estoqueFisico: estoqueFinal,
+            ativo: estoqueFinal !== null ? (estoqueFinal > 0) : true, // Desativa logo se o stock inserido for 0
             ultimaModificacao: Date.now()
         };
         
@@ -457,12 +475,9 @@ const extrairEstatisticas = (pedidos) => {
         countClientes[nomeCli] = (countClientes[nomeCli] || 0) + (p.total || 0);
         
         if (p.itens) {
-            p.itens.forEach(i => {
-                countProdutos[i.nome] = (countProdutos[i.nome] || 0) + i.qtd; 
-            });
+            p.itens.forEach(i => { countProdutos[i.nome] = (countProdutos[i.nome] || 0) + i.qtd; });
         }
     });
-
     return { totalReceita, countProdutos, countClientes, countDias };
 };
 
@@ -508,6 +523,53 @@ const renderRankingGenerico = (dados, divId, formatador) => {
     if(cont) cont.innerHTML = html;
 };
 
+// [FASE 3] Injetor do Botão e Lógica do Relatório Analítico da IA (3.08)
+const acoplarRelatorioIADemanda = (historicoMap) => {
+    let painelArea = document.getElementById('area-grafico-receita');
+    if(!painelArea) return;
+    
+    if(!document.getElementById('btn-gerar-relatorio-ia')) {
+        painelArea.insertAdjacentHTML('beforebegin', `
+            <div style="display:flex; justify-content:flex-end; margin-bottom: 12px;">
+                <button id="btn-gerar-relatorio-ia" class="btn-ia-action">🧠 Pedir Relatório de Previsão de Demanda à IA</button>
+            </div>
+            <div id="container-relatorio-ia"></div>
+        `);
+
+        document.getElementById('btn-gerar-relatorio-ia').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            btn.innerHTML = "A analisar cruzamento de dados... ⏳"; btn.disabled = true;
+            
+            // Compila o histórico leve para a IA ler sem estourar o payload
+            const historicoLeve = Object.entries(historicoMap).map(i => ({ data: i[0], faturacao_dia: i[1] }));
+            
+            try {
+                const res = await fetch('/api/assistente', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'demand_prediction', historicoVendas: historicoLeve })
+                });
+                const data = await res.json();
+                if(!data.sucesso) throw new Error("Erro na rede neural.");
+                
+                document.getElementById('container-relatorio-ia').innerHTML = `
+                    <div class="ia-relatorio-box animation-slide-up">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                            <span style="font-size:1.5rem">📊</span>
+                            <h3 style="margin:0;">Insight Logístico da Inteligência Artificial</h3>
+                        </div>
+                        <p style="color:var(--text-light); font-size:0.8rem; margin-bottom:16px;">Análise em Tempo Real • Baseado nas vendas faturadas</p>
+                        ${data.relatorio}
+                    </div>
+                `;
+            } catch(e) {
+                showToast("A IA não conseguiu gerar o relatório de momento.", true);
+            } finally {
+                btn.innerHTML = "🧠 Atualizar Previsão de Demanda"; btn.disabled = false;
+            }
+        });
+    }
+};
+
 const renderRelatoriosMaster = () => {
     const listDiv = document.getElementById('lista-historico');
     if(pedidosGerais.length === 0) { 
@@ -522,7 +584,6 @@ const renderRelatoriosMaster = () => {
     document.getElementById('stat-pedidos').textContent = pedidosGerais.length;
     document.getElementById('stat-receita').textContent = fmt(stats.totalReceita);
 
-    // [FASE 2] Injeção dinâmica do Canvas para o Gráfico Chart.js (2.04)
     let containerGrafico = document.getElementById('area-grafico-receita');
     if(!containerGrafico) {
         const rankingContainer = document.getElementById('ranking-dias')?.closest('.rankings-grid');
@@ -536,7 +597,6 @@ const renderRelatoriosMaster = () => {
         }
     }
 
-    // Processamento de dados temporal (últimos 15 dias operacionais na fila)
     if (document.getElementById('receita-chart')) {
         const historicoMap = {};
         pedidosGerais.forEach(p => {
@@ -546,6 +606,8 @@ const renderRelatoriosMaster = () => {
                 historicoMap[label] = (historicoMap[label] || 0) + p.total;
             }
         });
+        
+        acoplarRelatorioIADemanda(historicoMap); // Chama a injeção da Feature 3.08
         
         const labels = Object.keys(historicoMap).reverse(); 
         const valores = Object.values(historicoMap).reverse();
@@ -560,23 +622,13 @@ const renderRelatoriosMaster = () => {
                 datasets: [{
                     label: 'Faturação (R$)',
                     data: valores,
-                    borderColor: '#1a3a2a', // --forest
-                    backgroundColor: 'rgba(74, 148, 103, 0.2)', // --leaf alpha
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: '#4a9467',
-                    pointRadius: 4
+                    borderColor: '#1a3a2a', 
+                    backgroundColor: 'rgba(74, 148, 103, 0.2)', 
+                    borderWidth: 3, fill: true, tension: 0.4,
+                    pointBackgroundColor: '#4a9467', pointRadius: 4
                 }]
             },
-            options: {
-                responsive: true,
-                plugins: { legend: { display: false } },
-                scales: {
-                    y: { beginAtZero: true, grid: { color: '#f2ede3' } },
-                    x: { grid: { display: false } }
-                }
-            }
+            options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: '#f2ede3' } }, x: { grid: { display: false } } } }
         });
     }
 
@@ -602,8 +654,7 @@ document.getElementById('btn-exportar').addEventListener('click', () => {
 
 document.getElementById('btn-limpar-hist').addEventListener('click', async () => {
     if(pedidosGerais.length === 0) return;
-    
-    if(await customConfirm("Limpeza de Final de Expediente", "Isto ARQUIVARÁ todos os pedidos da tela atual (mesmo os que ainda não foram marcados como entregues). Confirmar encerramento em lote?")) { 
+    if(await customConfirm("Limpeza de Final de Expediente", "Isto ARQUIVARÁ todos os pedidos da tela atual. Confirmar encerramento em lote?")) { 
         try {
             const batch = writeBatch(db);
             pedidosGerais.forEach(p => {
@@ -613,8 +664,7 @@ document.getElementById('btn-limpar-hist').addEventListener('click', async () =>
             await batch.commit();
             showToast("Expediente finalizado. Pedidos arquivados.");
         } catch (error) {
-            console.error(error);
-            showToast("Erro ao processar lote.", true);
+            console.error(error); showToast("Erro ao processar lote.", true);
         }
     }
 });
