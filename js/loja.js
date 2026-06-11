@@ -45,28 +45,21 @@ onAuthStateChanged(auth, (user) => {
         realTimeSyncIniciado = true;
 
         signInAnonymously(auth).catch(err => {
-            console.warn("⚠️ Firebase Anonymous Auth desativado ou lento. Rodando de forma estável como visitante público:", err);
+            console.warn("⚠️ Firebase Anonymous Auth desativado ou lento.", err);
         });
     }
 });
 
 const syncCarrinhoComPrecosAoVivo = () => {
     if (STATE.carrinho.length === 0 || STATE.produtos.length === 0) return;
-    
-    let modificou = false;
-    let itensRemovidos = 0;
+    let modificou = false; let itensRemovidos = 0;
 
     STATE.carrinho.forEach(itemCart => {
         const prodAoVivo = STATE.produtos.find(p => p.id === itemCart.id);
         if (prodAoVivo) {
-            if (itemCart.preco !== prodAoVivo.preco) {
-                itemCart.preco = prodAoVivo.preco;
-                modificou = true;
-            }
+            if (itemCart.preco !== prodAoVivo.preco) { itemCart.preco = prodAoVivo.preco; modificou = true; }
         } else {
-            itemCart.qtd = 0; 
-            itensRemovidos++;
-            modificou = true;
+            itemCart.qtd = 0; itensRemovidos++; modificou = true;
         }
     });
 
@@ -74,10 +67,7 @@ const syncCarrinhoComPrecosAoVivo = () => {
         STATE.carrinho = STATE.carrinho.filter(i => i.qtd > 0);
         persistirCarrinhoComDebounce();
         renderCarrinhoCompleto();
-        
-        if (itensRemovidos > 0) {
-            showToast(`⚠️ ${itensRemovidos} item(ns) esgotaram e foram removidos do carrinho.`, true);
-        }
+        if (itensRemovidos > 0) showToast(`⚠️ ${itensRemovidos} item(ns) esgotaram.`, true);
     }
 };
 
@@ -91,8 +81,7 @@ const atualizarBadgesDOM = (produtoId, qtd) => {
     if(badge) {
         const prod = STATE.produtos.find(p => p.id === produtoId);
         badge.textContent = isFracionavel(prod?.unidade) && qtd > 0 ? formatarQuantidadeVisual(qtd, true) : qtd;
-        if(qtd > 0) badge.classList.add('visivel');
-        else badge.classList.remove('visivel');
+        if(qtd > 0) badge.classList.add('visivel'); else badge.classList.remove('visivel');
     }
 };
 
@@ -102,9 +91,8 @@ const atualizarLinhaCarrinhoDOM = (id, novaQtd, subtotalFmt) => {
         if(row) row.remove();
         if(STATE.carrinho.length === 0) renderCarrinhoCompleto();
     } else {
-        if(!row) {
-            renderCarrinhoCompleto(); 
-        } else {
+        if(!row) { renderCarrinhoCompleto(); } 
+        else {
             const input = row.querySelector('.qtd-input');
             const price = row.querySelector('.item-preco');
             const prod = STATE.produtos.find(p => p.id === id);
@@ -131,20 +119,15 @@ const atualizarRodapeCarrinhoDOM = () => {
     const hojePermitido = (STATE.config.diasAbertos || [0,1,2,3,4,5,6]).includes(new Date().getDay());
     
     if (!lojaAberta || !hojePermitido) {
-        btnF.disabled = true; 
-        btnF.textContent = "Loja Fechada";
-        bannerMin.classList.remove('visivel'); 
-        bannerFechado.classList.add('visivel');
+        btnF.disabled = true; btnF.textContent = "Loja Fechada";
+        bannerMin.classList.remove('visivel'); bannerFechado.classList.add('visivel');
     } else { 
         bannerFechado.classList.remove('visivel'); 
         if (STATE.config.minimo > 0 && total < STATE.config.minimo && STATE.carrinho.length > 0) { 
-            btnF.disabled = true; 
-            btnF.textContent = `Falta ${fmt(STATE.config.minimo - total)}`;
-            bannerMin.textContent = `⚠️ Valor mínimo para pedido: ${fmt(STATE.config.minimo)}`; 
-            bannerMin.classList.add('visivel'); 
+            btnF.disabled = true; btnF.textContent = `Falta ${fmt(STATE.config.minimo - total)}`;
+            bannerMin.textContent = `⚠️ Valor mínimo: ${fmt(STATE.config.minimo)}`; bannerMin.classList.add('visivel'); 
         } else { 
-            btnF.disabled = STATE.carrinho.length === 0; 
-            btnF.textContent = "Finalizar Pedido";
+            btnF.disabled = STATE.carrinho.length === 0; btnF.textContent = "Finalizar Pedido";
             bannerMin.classList.remove('visivel'); 
         }
     }
@@ -157,7 +140,6 @@ const renderUpsell = () => {
 
     const idsNoCarrinho = STATE.carrinho.map(c => c.id);
     const catsNoCarrinho = [...new Set(STATE.carrinho.map(c => c.cat))];
-    
     let sugestoes = STATE.produtos.filter(p => p.ativo && !idsNoCarrinho.includes(p.id) && catsNoCarrinho.includes(p.cat));
     if(sugestoes.length === 0) sugestoes = STATE.produtos.filter(p => p.ativo && !idsNoCarrinho.includes(p.id));
 
@@ -176,16 +158,12 @@ const renderCarrinhoCompleto = () => {
     
     STATE.produtos.forEach(p => {
         const badgeGrid = document.getElementById(`badge-${p.id}`);
-        if(badgeGrid && getCartQty(p.id) === 0) {
-            badgeGrid.textContent = '0';
-            badgeGrid.classList.remove('visivel');
-        }
+        if(badgeGrid && getCartQty(p.id) === 0) { badgeGrid.textContent = '0'; badgeGrid.classList.remove('visivel'); }
     });
     
     if (STATE.carrinho.length === 0) {
         cont.innerHTML = `<div class="empty-state">${iconeCarrinhoVazio}<p>Seu pedido está vazio</p><span>Adicione produtos para começar.</span></div>`;
-        atualizarRodapeCarrinhoDOM();
-        return;
+        atualizarRodapeCarrinhoDOM(); return;
     }
 
     let html = '';
@@ -206,16 +184,13 @@ const renderCarrinhoCompleto = () => {
             <span class="item-preco">${fmt(sub)}</span>
         </article>`;
     });
-    cont.innerHTML = html; 
-    atualizarRodapeCarrinhoDOM();
+    cont.innerHTML = html; atualizarRodapeCarrinhoDOM();
 };
 
 let debounceSalvarCarrinho;
 const persistirCarrinhoComDebounce = () => {
     clearTimeout(debounceSalvarCarrinho);
-    debounceSalvarCarrinho = setTimeout(() => {
-        dbStorage.set('banca_cart', {v: CART_VERSION, items: STATE.carrinho});
-    }, 400);
+    debounceSalvarCarrinho = setTimeout(() => { dbStorage.set('banca_cart', {v: CART_VERSION, items: STATE.carrinho}); }, 400);
 };
 
 const modificarCarrinho = (id, delta, fixo = false) => {
@@ -231,8 +206,7 @@ const modificarCarrinho = (id, delta, fixo = false) => {
 
     if (idx > -1) { 
         novaQtd = fixFloat(fixo ? valParaAplicar : STATE.carrinho[idx].qtd + valParaAplicar);
-        if (novaQtd <= 0) STATE.carrinho.splice(idx, 1); 
-        else STATE.carrinho[idx].qtd = novaQtd;
+        if (novaQtd <= 0) STATE.carrinho.splice(idx, 1); else STATE.carrinho[idx].qtd = novaQtd;
     } else if (valParaAplicar > 0) { 
         novaQtd = fixFloat(fixo ? valParaAplicar : 1);
         STATE.carrinho.push({...p, qtd: novaQtd}); 
@@ -268,8 +242,7 @@ const construirCardsIniciais = () => {
             </div>
         </article>`;
     }).join('');
-    grid.innerHTML = html;
-    STATE.lojaRenderizada = true;
+    grid.innerHTML = html; STATE.lojaRenderizada = true;
 };
 
 const renderLoja = (forcarRebuild = false) => {
@@ -287,10 +260,9 @@ const renderLoja = (forcarRebuild = false) => {
         else { card.style.display = 'none'; }
     });
 
-    const emptyId = 'empty-grid-msg';
-    let emptyMsg = document.getElementById(emptyId);
+    const emptyId = 'empty-grid-msg'; let emptyMsg = document.getElementById(emptyId);
     if (itensVisiveis === 0) {
-        if(!emptyMsg) grid.insertAdjacentHTML('beforeend', `<div id="${emptyId}" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Nenhum produto encontrado</p><span>Tente buscar por outro termo ou limpe os filtros.</span></div>`);
+        if(!emptyMsg) grid.insertAdjacentHTML('beforeend', `<div id="${emptyId}" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Nenhum produto encontrado</p></div>`);
     } else if(emptyMsg) { emptyMsg.remove(); }
 };
 
@@ -307,17 +279,9 @@ document.getElementById('busca-input').addEventListener('input', (e) => {
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (SpeechRecognition) {
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'pt-BR';
-    document.getElementById('btn-voz').addEventListener('click', () => {
-        document.getElementById('btn-voz').classList.add('gravando');
-        recognition.start();
-    });
-    recognition.onresult = (event) => {
-        STATE.busca = event.results[0][0].transcript;
-        document.getElementById('busca-input').value = STATE.busca;
-        renderLoja();
-    };
+    const recognition = new SpeechRecognition(); recognition.lang = 'pt-BR';
+    document.getElementById('btn-voz').addEventListener('click', () => { document.getElementById('btn-voz').classList.add('gravando'); recognition.start(); });
+    recognition.onresult = (event) => { STATE.busca = event.results[0][0].transcript; document.getElementById('busca-input').value = STATE.busca; renderLoja(); };
     recognition.onerror = () => { document.getElementById('btn-voz').classList.remove('gravando'); showToast("Erro no reconhecimento de voz.", true); }
     recognition.onend = () => document.getElementById('btn-voz').classList.remove('gravando');
 } else document.getElementById('btn-voz').style.display = 'none';
@@ -326,16 +290,13 @@ const iniciarRealTimeSync = () => {
     if (!navigator.onLine) document.getElementById('banner-offline').classList.add('visivel');
     
     const unsubConfig = onSnapshot(doc(db, "loja", "config"), (snap) => {
-        if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()};
-        atualizarRodapeCarrinhoDOM();
+        if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()}; atualizarRodapeCarrinhoDOM();
     });
     unsubscribes.push(unsubConfig);
     
     const unsubProdutos = onSnapshot(collection(db, "produtos"), (snap) => {
         STATE.produtos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.ativo);
-        renderCategorias(); 
-        renderLoja(true); 
-        syncCarrinhoComPrecosAoVivo(); 
+        renderCategorias(); renderLoja(true); syncCarrinhoComPrecosAoVivo(); 
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
     }, (error) => console.error("Erro Realtime:", error));
     unsubscribes.push(unsubProdutos);
@@ -344,8 +305,7 @@ const iniciarRealTimeSync = () => {
 document.body.addEventListener('click', async (e) => {
     const actionTarget = e.target.closest('[data-action]'); 
     if (actionTarget) {
-        const action = actionTarget.dataset.action;
-        const id = actionTarget.dataset.id;
+        const action = actionTarget.dataset.action; const id = actionTarget.dataset.id;
         
         if (action === 'add' || action === 'inc') { modificarCarrinho(id, 1); if(action === 'add') animarFeedbackBtn(actionTarget); }
         else if (action === 'dec') { modificarCarrinho(id, -1); }
@@ -355,13 +315,8 @@ document.body.addEventListener('click', async (e) => {
             renderLoja(); 
         }
         else if (action === 'fav') { 
-            if(STATE.favoritos.includes(id)) {
-                STATE.favoritos = STATE.favoritos.filter(f => f !== id);
-                actionTarget.classList.remove('ativo');
-            } else {
-                STATE.favoritos.push(id);
-                actionTarget.classList.add('ativo');
-            }
+            if(STATE.favoritos.includes(id)) { STATE.favoritos = STATE.favoritos.filter(f => f !== id); actionTarget.classList.remove('ativo'); } 
+            else { STATE.favoritos.push(id); actionTarget.classList.add('ativo'); }
             localStorage.setItem('banca_favs', JSON.stringify(STATE.favoritos)); 
             if(STATE.catAtiva === 'favoritos') renderLoja(); 
         }
@@ -369,26 +324,19 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'repetir-pedido') { repetirPedido(id); }
         else if (action === 'toggle-troco') {
             const valor = actionTarget.dataset.value;
-            const btnSim = document.querySelector('[data-value="sim"]');
-            const btnNao = document.querySelector('[data-value="nao"]');
-            const inputArea = document.getElementById('input-troco-area');
-            const cliTroco = document.getElementById('cli-troco');
+            const btnSim = document.querySelector('[data-value="sim"]'); const btnNao = document.querySelector('[data-value="nao"]');
+            const inputArea = document.getElementById('input-troco-area'); const cliTroco = document.getElementById('cli-troco');
             if(valor === 'nao') {
-                cliTroco.value = 'Não preciso';
-                btnNao.classList.add('active'); btnSim.classList.remove('active');
-                inputArea.style.display = 'none';
+                cliTroco.value = 'Não preciso'; btnNao.classList.add('active'); btnSim.classList.remove('active'); inputArea.style.display = 'none';
             } else {
-                cliTroco.value = '';
-                btnSim.classList.add('active'); btnNao.classList.remove('active');
-                inputArea.style.display = 'block'; cliTroco.focus();
+                cliTroco.value = ''; btnSim.classList.add('active'); btnNao.classList.remove('active'); inputArea.style.display = 'block'; cliTroco.focus();
             }
         }
         return;
     }
     const fecharTarget = e.target.closest('[data-fechar]');
     if (fecharTarget) {
-        const modalId = fecharTarget.dataset.fechar;
-        closeModal(modalId);
+        const modalId = fecharTarget.dataset.fechar; closeModal(modalId);
         if (history.state && history.state.modal === modalId) history.back();
         else if (window.location.hash === `#${modalId}`) history.replaceState(null, '', ' ');
         return;
@@ -397,8 +345,7 @@ document.body.addEventListener('click', async (e) => {
 
 document.getElementById('carrinho-itens').addEventListener('input', (e) => {
     if(e.target.classList.contains('qtd-input')) {
-        const id = e.target.dataset.id;
-        const p = STATE.produtos.find(x => x.id === id);
+        const id = e.target.dataset.id; const p = STATE.produtos.find(x => x.id === id);
         let val = parseFloat(e.target.value.replace(',', '.'));
         if(isNaN(val) || val < 0) return; 
         val = (p && !isFracionavel(p.unidade)) ? Math.round(val) : fixFloat(val);
@@ -424,10 +371,8 @@ window.addEventListener('popstate', (e) => {
 const toggleCartMobile = (abrir) => {
     if(window.innerWidth > 900) return;
     if (abrir) { 
-        document.getElementById('carrinho').classList.add('aberto'); 
-        document.getElementById('carrinho-overlay').classList.add('aberto'); 
-        document.body.style.overflow = 'hidden';
-        history.pushState({cart: true}, ''); 
+        document.getElementById('carrinho').classList.add('aberto'); document.getElementById('carrinho-overlay').classList.add('aberto'); 
+        document.body.style.overflow = 'hidden'; history.pushState({cart: true}, ''); 
     } else { 
         if(history.state && history.state.cart) history.back();
     }
@@ -438,10 +383,8 @@ document.getElementById('carrinho-overlay').addEventListener('click', () => hist
 document.getElementById('btn-limpar-carrinho').addEventListener('click', async () => {
     if (STATE.carrinho.length === 0) return;
     if (await customConfirm("Esvaziar Pedido", "Tem certeza que deseja esvaziar todo o pedido?")) {
-        STATE.carrinho = []; 
-        dbStorage.set('banca_cart', {v: CART_VERSION, items: []}); 
-        renderCarrinhoCompleto(); 
-        showToast("🛒 Carrinho esvaziado!");
+        STATE.carrinho = []; dbStorage.set('banca_cart', {v: CART_VERSION, items: []}); 
+        renderCarrinhoCompleto(); showToast("🛒 Carrinho esvaziado!");
         if (window.innerWidth <= 900 && document.getElementById('carrinho').classList.contains('aberto')) history.back();
     }
 });
@@ -453,16 +396,13 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
         document.getElementById('cli-quadra').value = clientes[0].quadra || '';
         document.getElementById('cli-lote').value = clientes[0].lote || '';
     }
-    STATE.checkoutSessionId = crypto.randomUUID(); 
-    openModal('modal-checkout');
+    STATE.checkoutSessionId = crypto.randomUUID(); openModal('modal-checkout');
 });
 
 const renderHistorico = () => {
     const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
     const lista = document.getElementById('lista-meus-pedidos');
-    if(meusPedidos.length === 0) {
-        lista.innerHTML = `<div class="empty-state">${iconeHistoricoVazio}<p>Sem pedidos</p></div>`; return;
-    }
+    if(meusPedidos.length === 0) { lista.innerHTML = `<div class="empty-state">${iconeHistoricoVazio}<p>Sem pedidos</p></div>`; return; }
     lista.innerHTML = meusPedidos.map(p => `
         <article style="border: 1px solid var(--parchment); border-radius: 12px; padding: 16px; margin-bottom: 12px; background:var(--warm-white);">
             <div style="display:flex; justify-content: space-between; margin-bottom: 8px;">
@@ -480,33 +420,21 @@ const repetirPedido = (pedId) => {
     const ped = meusPedidos.find(p => String(p.id) === String(pedId)); 
     if(!ped || !ped.itens) return;
 
-    let itensAdicionados = 0;
-    let itensEsgotados = [];
-    
-    STATE.carrinho = [];
+    let itensAdicionados = 0; let itensEsgotados = []; STATE.carrinho = [];
     
     ped.itens.forEach(i => {
         const prodAtualizado = STATE.produtos.find(px => px.id === i.id);
         if(prodAtualizado && prodAtualizado.ativo) { 
-            STATE.carrinho.push({...prodAtualizado, qtd: i.qtd});
-            itensAdicionados++;
-        } else {
-            itensEsgotados.push(i.nome || 'Produto Indisponível');
-        }
+            STATE.carrinho.push({...prodAtualizado, qtd: i.qtd}); itensAdicionados++;
+        } else { itensEsgotados.push(i.nome || 'Produto Indisponível'); }
     });
 
     if (itensAdicionados > 0) {
-        persistirCarrinhoComDebounce();
-        renderCarrinhoCompleto();
-        closeModal('modal-historico');
-        toggleCartMobile(true);
-        
+        persistirCarrinhoComDebounce(); renderCarrinhoCompleto(); closeModal('modal-historico'); toggleCartMobile(true);
         let msgToast = "🛒 Itens adicionados com preços atualizados!";
         if(itensEsgotados.length > 0) msgToast = `🛒 Alguns itens foram adicionados. Faltaram: ${itensEsgotados.join(', ')} (Esgotados)`;
         showToast(msgToast, itensEsgotados.length > 0);
-    } else {
-        showToast("❌ Todos os itens deste pedido encontram-se esgotados.", true);
-    }
+    } else { showToast("❌ Todos os itens deste pedido encontram-se esgotados.", true); }
 };
 
 document.getElementById('cli-pagamento').addEventListener('change', (e) => { 
@@ -515,6 +443,11 @@ document.getElementById('cli-pagamento').addEventListener('change', (e) => {
     if(!isDinheiro) document.getElementById('cli-troco').value = '';
 });
 
+
+// =========================================================
+// CORREÇÃO CRÍTICA DE FRONT-END NO CHECKOUT
+// Agora ele não morre cego no "Servidor ocupado" se der erro
+// =========================================================
 document.getElementById('btn-enviar-pedido').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     if (btn.disabled) return;
@@ -528,8 +461,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
     if(!nome || !quadra || !lote) { showToast("⚠️ Preencha nome, quadra e lote!", true); return; }
 
-    btn.disabled = true; 
-    btn.textContent = 'Processando pedido... ⏳';
+    btn.disabled = true; btn.textContent = 'Processando pedido... ⏳';
 
     try {
         const payload = {
@@ -551,9 +483,16 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         });
 
         clearTimeout(timeoutId);
+
+        // BLINDAGEM DO JSON AQUI TAMBÉM
+        let data;
+        try {
+            data = await response.json();
+        } catch(e) {
+            throw new Error(`Falha grave de processamento (Status HTTP: ${response.status})`);
+        }
         
-        if (!response.ok) throw new Error("Servidor ocupado. Tente novamente em alguns segundos.");
-        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Ocorreu um erro ao enviar o pedido.");
         if (!data.sucesso) throw new Error(data.error || "Falha ao processar pedido.");
 
         const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
@@ -563,30 +502,23 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
         const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
         meusPedidos.unshift({
-            id: data.pedido.id, 
-            data: new Date().toISOString(), 
-            total: data.pedido.total,
+            id: data.pedido.id, data: new Date().toISOString(), total: data.pedido.total,
             descItens: STATE.carrinho.map(i => isFracionavel(i.unidade) ? `${formatarQuantidadeVisual(i.qtd, true)}${i.unidade} ${i.nome}` : `${i.qtd}x ${i.nome}`).join(', '),
             itens: STATE.carrinho.map(item => ({ id: item.id, qtd: item.qtd, nome: item.nome }))
         });
         localStorage.setItem('banca_meus_pedidos', JSON.stringify(meusPedidos.slice(0, 10)));
 
         window.open(data.pedido.whatsappMsg, '_blank');
-        
         closeModal('modal-checkout');
         setTimeout(() => openModal('modal-sucesso'), 300); 
-        
-        STATE.carrinho = []; 
-        dbStorage.set('banca_cart', {v: CART_VERSION, items: []});
-        renderCarrinhoCompleto();
-        document.getElementById('cli-obs').value = ''; document.getElementById('cli-troco').value = '';
+        STATE.carrinho = []; dbStorage.set('banca_cart', {v: CART_VERSION, items: []});
+        renderCarrinhoCompleto(); document.getElementById('cli-obs').value = ''; document.getElementById('cli-troco').value = '';
 
     } catch(err) {
         if(err.name === 'AbortError') showToast("Sua internet falhou. Verifique o sinal e tente novamente.", true);
         else showToast(err.message, true);
     } finally {
-        btn.disabled = false; 
-        btn.textContent = 'Enviar Pedido 🚀';
+        btn.disabled = false; btn.textContent = 'Enviar Pedido 🚀';
     }
 });
 
@@ -595,12 +527,9 @@ window.addEventListener('offline', () => document.getElementById('banner-offline
 
 
 // =========================================================
-// INTEGRAÇÃO DA IA - CAPTURA DE ERRO APERFEIÇOADA
+// CORREÇÃO CRÍTICA DO FRONT-END DA IA
 // =========================================================
-
-document.getElementById('btn-ia-flutuante').addEventListener('click', () => {
-    openModal('modal-ia-chat');
-});
+document.getElementById('btn-ia-flutuante').addEventListener('click', () => { openModal('modal-ia-chat'); });
 
 const enviarMensagemParaIA = async () => {
     const input = document.getElementById('input-ia-mensagem');
@@ -617,10 +546,8 @@ const enviarMensagemParaIA = async () => {
         </div>
     `);
     
-    input.value = '';
-    containerSugestoes.innerHTML = '';
-    btnEnviar.disabled = true;
-    btnEnviar.textContent = '⏱️...';
+    input.value = ''; containerSugestoes.innerHTML = '';
+    btnEnviar.disabled = true; btnEnviar.textContent = '⏱️...';
 
     const idDigitando = 'typing-' + Date.now();
     corpoChat.insertAdjacentHTML('beforeend', `
@@ -642,20 +569,25 @@ const enviarMensagemParaIA = async () => {
             body: JSON.stringify({ mensagemCliente: texto }),
             signal: controller.signal
         });
-
         clearTimeout(timeoutId);
 
         const bolhaDigitando = document.getElementById(idDigitando);
         if (bolhaDigitando) bolhaDigitando.remove();
 
-        if (!response.ok) {
-            if (response.status === 429) throw new Error("RATE_LIMIT");
-            // Agora o erro joga o status HTTP real capturado do servidor
-            throw new Error(`Erro na rede (Status HTTP: ${response.status})`);
+        // ⚠️ O PULO DO GATO: LER O JSON ANTES DE AVALIAR O ERRO
+        let data;
+        try {
+            data = await response.json();
+        } catch(e) {
+            throw new Error(`Falha do Vercel Engine (Status HTTP: ${response.status})`);
         }
 
-        const data = await response.json();
-        
+        if (!response.ok) {
+            if (response.status === 429) throw new Error("RATE_LIMIT");
+            // Agora finalmente ele exibe a mensagem de erro que vem do banco de dados/backend
+            throw new Error(data.error || `Erro interno (Status: ${response.status})`);
+        }
+
         corpoChat.insertAdjacentHTML('beforeend', `
             <div style="align-self: flex-start; background: white; color: var(--text-dark); padding: 14px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); line-height: 1.5;">
                 ${data.resposta}
@@ -681,24 +613,20 @@ const enviarMensagemParaIA = async () => {
         const bolhaDigitando = document.getElementById(idDigitando);
         if (bolhaDigitando) bolhaDigitando.remove();
 
-        // ⚠️ MUDANÇA AQUI: Mostramos o err.message real gerado no bloco acima.
-        let msgErro = `Falha na conexão: ${err.message}`;
+        let msgErro = `🚨 ${err.message}`; // <--- ESTE É O ERRO REAL QUE VAMOS VER AGORA!
         if (err.name === 'AbortError') msgErro = "O assistente demorou muito para responder (Timeout).";
         if (err.message === "RATE_LIMIT") msgErro = "Você enviou muitas mensagens. Aguarde alguns segundos.";
 
         corpoChat.insertAdjacentHTML('beforeend', `
             <div style="align-self: flex-start; background: var(--danger-light); color: var(--danger); padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; border: 1px solid #fca5a5;">
-                ⚠️ ${msgErro}
+                ${msgErro}
             </div>
         `);
     } finally {
-        btnEnviar.disabled = false;
-        btnEnviar.textContent = 'Enviar';
+        btnEnviar.disabled = false; btnEnviar.textContent = 'Enviar';
         corpoChat.scrollTop = corpoChat.scrollHeight;
     }
 };
 
 document.getElementById('btn-ia-enviar').addEventListener('click', enviarMensagemParaIA);
-document.getElementById('input-ia-mensagem').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') enviarMensagemParaIA();
-});
+document.getElementById('input-ia-mensagem').addEventListener('keydown', (e) => { if (e.key === 'Enter') enviarMensagemParaIA(); });
