@@ -27,7 +27,7 @@ const bootFirebase = () => {
 
 let cachedCatalog = null;
 let cacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+const CACHE_TTL = 5 * 60 * 1000; // Cache de 5 minutos para economizar leituras no banco
 
 const rateLimitMap = new Map();
 
@@ -41,6 +41,7 @@ module.exports = async function handler(req, res) {
     if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'POST') return res.status(405).json({ sucesso: false, error: 'Método não permitido' });
 
+    // Proteção contra ataques e spam
     const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
     const agora = Date.now();
     if (rateLimitMap.has(ip) && agora - rateLimitMap.get(ip) < 3000) {
@@ -72,7 +73,6 @@ module.exports = async function handler(req, res) {
             cacheTimestamp = agora;
         }
 
-        // PROMPT UNIVERSAL (Funciona em 100% das versões do Gemini sem dar conflito de parâmetros)
         const promptUniversal = `
 Você é o sommelier de hortifruti da Banca Adair e Pedrina.
 Use APENAS os produtos do catálogo abaixo.
@@ -87,23 +87,12 @@ MENSAGEM DO CLIENTE:
 ${mensagemCliente}
 `;
         
-        let textoResposta = "";
-
-        try {
-            // TENTATIVA 1: Gemini 1.5 Flash (Rápido, mas pode dar 404 na sua conta)
-            const model15 = ai.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
-            const result = await model15.generateContent(promptUniversal);
-            textoResposta = result.response.text();
-        } catch (err15) {
-            console.warn("Modelo 1.5 bloqueado pelo Google. Ativando Resiliência para 1.0 Pro:", err15.message);
-            
-            // TENTATIVA 2: Fallback Absoluto (O Gemini Pro Universal)
-            const model10 = ai.getGenerativeModel({ model: 'gemini-pro' });
-            const result = await model10.generateContent(promptUniversal);
-            textoResposta = result.response.text();
-        }
+        // Usando a versão de produção mais rápida e barata do Gemini
+        const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const result = await model.generateContent(promptUniversal);
+        let textoResposta = result.response.text();
         
-        // Limpa sujeiras de markdown que a IA possa enviar por acidente
+        // Previne que a IA envie código quebrado
         textoResposta = textoResposta.replace(/```json/g, '').replace(/```/g, '').trim();
         const jsonResposta = JSON.parse(textoResposta);
 
