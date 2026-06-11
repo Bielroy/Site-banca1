@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { resolve } from 'path';
 
 export default defineConfig({
   plugins: [
@@ -35,6 +36,13 @@ export default defineConfig({
     })
   ],
   build: {
-    target: 'esnext'
+    target: 'esnext',
+    // [AQUI ESTÁ A CORREÇÃO] Avisamos o Vite que existem duas páginas!
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        admin: resolve(__dirname, 'admin.html')
+      }
+    }
   }
 });
