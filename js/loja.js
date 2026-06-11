@@ -1,5 +1,7 @@
 import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc } from './firebase.js';
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage } from './utils.js';
+// [FASE 3] Modularização da IA (3.06)
+import { initIA } from './ia.js';
 
 const CART_VERSION = "2.3"; 
 let unsubscribes = []; 
@@ -17,24 +19,20 @@ const STATE = {
     historicoChat: []
 };
 
-// [UX - FASE 2] Timer para Recuperação de Carrinho Abandonado (2.10)
 let inatividadeTimer;
 const resetInatividadeTimer = () => {
     clearTimeout(inatividadeTimer);
-    // Ativa IA apenas se houver itens no carrinho e o usuário não estiver já no checkout ou chat
     if (STATE.carrinho.length > 0 && !document.getElementById('modal-checkout')?.classList.contains('aberto') && !document.getElementById('modal-ia-chat')?.classList.contains('aberto')) {
         inatividadeTimer = setTimeout(() => {
             showToast("🤖 O assistente tem uma sugestão para o seu pedido. Que tal dar uma olhada?", false);
             const btnIA = document.getElementById('btn-ia-flutuante');
             if(btnIA) {
                 btnIA.classList.add('pulse-anim');
-                // Remove o pulso após 10 segundos
                 setTimeout(() => btnIA.classList.remove('pulse-anim'), 10000);
             }
-        }, 180000); // 3 minutos de inatividade engatilha a intervenção
+        }, 180000); 
     }
 };
-// Escuta global para rastrear atividade do usuário
 ['click', 'touchstart', 'scroll', 'keydown'].forEach(evt => document.addEventListener(evt, resetInatividadeTimer, { passive: true }));
 
 const carregarCarrinhoDB = async () => {
@@ -42,61 +40,41 @@ const carregarCarrinhoDB = async () => {
         const raw = await dbStorage.get('banca_cart');
         if(raw && raw.v === CART_VERSION) { 
             STATE.carrinho = raw.items; 
-            renderCarrinhoCompleto();
-            resetInatividadeTimer();
+            renderCarrinhoCompleto(); resetInatividadeTimer();
         }
-    } catch(e) { console.warn("Cache vazio/inválido."); }
+    } catch(e) {}
 };
 carregarCarrinhoDB(); 
 
 let realTimeSyncIniciado = false;
-
 onAuthStateChanged(auth, (user) => {
     if (user) {
         STATE.uid = user.uid;
-        if (!realTimeSyncIniciado) {
-            iniciarRealTimeSync();
-            realTimeSyncIniciado = true;
-        }
+        if (!realTimeSyncIniciado) { iniciarRealTimeSync(); realTimeSyncIniciado = true; }
     } else {
-        unsubscribes.forEach(unsub => unsub());
-        unsubscribes = [];
-        realTimeSyncIniciado = false;
-
-        iniciarRealTimeSync();
-        realTimeSyncIniciado = true;
-
-        signInAnonymously(auth).catch(err => {
-            console.warn("⚠️ Firebase Anonymous Auth desativado ou lento.", err);
-        });
+        unsubscribes.forEach(u => u()); unsubscribes = []; realTimeSyncIniciado = false;
+        iniciarRealTimeSync(); realTimeSyncIniciado = true;
+        signInAnonymously(auth).catch(e => console.warn(e));
     }
 });
 
 const syncCarrinhoComPrecosAoVivo = () => {
     if (STATE.carrinho.length === 0 || STATE.produtos.length === 0) return;
     let modificou = false; let itensRemovidos = 0;
-
     STATE.carrinho.forEach(itemCart => {
         const prodAoVivo = STATE.produtos.find(p => p.id === itemCart.id);
         if (prodAoVivo) {
             if (itemCart.preco !== prodAoVivo.preco) { itemCart.preco = prodAoVivo.preco; modificou = true; }
-        } else {
-            itemCart.qtd = 0; itensRemovidos++; modificou = true;
-        }
+        } else { itemCart.qtd = 0; itensRemovidos++; modificou = true; }
     });
-
     if (modificou) {
         STATE.carrinho = STATE.carrinho.filter(i => i.qtd > 0);
-        persistirCarrinhoComDebounce();
-        renderCarrinhoCompleto();
+        persistirCarrinhoComDebounce(); renderCarrinhoCompleto();
         if (itensRemovidos > 0) showToast(`⚠️ ${itensRemovidos} item(ns) esgotaram.`, true);
     }
 };
 
-const getCartQty = (id) => { 
-    const item = STATE.carrinho.find(x => x.id === id); 
-    return item ? item.qtd : 0; 
-};
+const getCartQty = (id) => { const item = STATE.carrinho.find(x => x.id === id); return item ? item.qtd : 0; };
 
 const atualizarBadgesDOM = (produtoId, qtd) => {
     const badge = document.getElementById(`badge-${produtoId}`);
@@ -128,7 +106,6 @@ const atualizarRodapeCarrinhoDOM = () => {
     let total = 0;
     STATE.carrinho.forEach(item => total += (item.preco * item.qtd));
     document.getElementById('total-val').textContent = fmt(total);
-
     const qtdDistinta = Math.ceil(STATE.carrinho.reduce((acc, item) => acc + (isFracionavel(item.unidade) ? 1 : item.qtd), 0));
     document.getElementById('qtd-flutuante').textContent = qtdDistinta; 
     document.getElementById('qtd-badge').textContent = qtdDistinta;
@@ -136,7 +113,6 @@ const atualizarRodapeCarrinhoDOM = () => {
     const btnF = document.getElementById('btn-abrir-checkout');
     const bannerMin = document.getElementById('banner-minimo');
     const bannerFechado = document.getElementById('banner-fechado');
-    
     const lojaAberta = STATE.config.lojaAberta !== false; 
     const hojePermitido = (STATE.config.diasAbertos || [0,1,2,3,4,5,6]).includes(new Date().getDay());
     
@@ -153,49 +129,26 @@ const atualizarRodapeCarrinhoDOM = () => {
             bannerMin.classList.remove('visivel'); 
         }
     }
-    renderUpsell();
     resetInatividadeTimer();
-};
-
-const renderUpsell = () => {
-    const upsellCont = document.getElementById('upsell-container');
-    if (STATE.carrinho.length === 0) { upsellCont.innerHTML = ''; return; }
-
-    const idsNoCarrinho = STATE.carrinho.map(c => c.id);
-    const catsNoCarrinho = [...new Set(STATE.carrinho.map(c => c.cat))];
-    let sugestoes = STATE.produtos.filter(p => p.ativo && !idsNoCarrinho.includes(p.id) && catsNoCarrinho.includes(p.cat));
-    if(sugestoes.length === 0) sugestoes = STATE.produtos.filter(p => p.ativo && !idsNoCarrinho.includes(p.id));
-
-    if (sugestoes.length > 0) {
-        sugestoes.sort((a,b) => (STATE.favoritos.includes(b.id) ? -1 : 1));
-        const up = sugestoes[0];
-        upsellCont.innerHTML = `<div class="upsell-box"><span>Que tal levar <b>${escapeHTML(up.nome)}</b>?</span><button class="btn btn-outline" style="padding: 6px 12px;" data-action="add" data-id="${up.id}">+ Add</button></div>`;
-    } else {
-        upsellCont.innerHTML = '';
-    }
 };
 
 const renderCarrinhoCompleto = () => {
     const cont = document.getElementById('carrinho-itens');
     const placeholderSVG = `<div class="item-emoji skeleton"></div>`;
-    
     STATE.produtos.forEach(p => {
         const badgeGrid = document.getElementById(`badge-${p.id}`);
         if(badgeGrid && getCartQty(p.id) === 0) { badgeGrid.textContent = '0'; badgeGrid.classList.remove('visivel'); }
     });
-    
     if (STATE.carrinho.length === 0) {
         cont.innerHTML = `<div class="empty-state">${iconeCarrinhoVazio}<p>Seu pedido está vazio</p><span>Adicione produtos para começar.</span></div>`;
         atualizarRodapeCarrinhoDOM(); return;
     }
-
     let html = '';
     STATE.carrinho.forEach(item => {
-        const sub = item.preco * item.qtd; 
-        const fracionavel = isFracionavel(item.unidade);
+        const sub = item.preco * item.qtd; const fracionavel = isFracionavel(item.unidade);
         html += `
         <article class="carrinho-item" id="cart-row-${item.id}">
-            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(item.foto)}" loading="lazy" width="48" height="48" alt="${escapeHTML(item.nome)}">` : placeholderSVG}</div>
+            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(item.foto)}" loading="lazy" width="48" height="48">` : placeholderSVG}</div>
             <div class="item-meio">
                 <h3 class="item-nome">${escapeHTML(item.nome)}</h3>
                 <div class="qtd-ctrl">
@@ -217,13 +170,9 @@ const persistirCarrinhoComDebounce = () => {
 };
 
 const modificarCarrinho = (id, delta, fixo = false) => {
-    const p = STATE.produtos.find(x => x.id === id);
-    if (!p) return;
-
-    const fracionavel = isFracionavel(p.unidade);
-    const step = fracionavel ? 0.1 : 1;
+    const p = STATE.produtos.find(x => x.id === id); if (!p) return;
+    const fracionavel = isFracionavel(p.unidade); const step = fracionavel ? 0.1 : 1;
     let valParaAplicar = fixo ? delta : (delta > 0 ? step : -step);
-    
     const idx = STATE.carrinho.findIndex(x => x.id === id);
     let novaQtd = 0;
 
@@ -231,35 +180,11 @@ const modificarCarrinho = (id, delta, fixo = false) => {
         novaQtd = fixFloat(fixo ? valParaAplicar : STATE.carrinho[idx].qtd + valParaAplicar);
         if (novaQtd <= 0) STATE.carrinho.splice(idx, 1); else STATE.carrinho[idx].qtd = novaQtd;
     } else if (valParaAplicar > 0) { 
-        novaQtd = fixFloat(fixo ? valParaAplicar : 1);
-        STATE.carrinho.push({...p, qtd: novaQtd}); 
+        novaQtd = fixFloat(fixo ? valParaAplicar : 1); STATE.carrinho.push({...p, qtd: novaQtd}); 
     }
     
-    persistirCarrinhoComDebounce();
-    atualizarBadgesDOM(id, novaQtd);
-    atualizarLinhaCarrinhoDOM(id, novaQtd, fmt(p.preco * novaQtd));
-    atualizarRodapeCarrinhoDOM();
-};
-
-// [UX - FASE 2] Skeleton Premium Injector (2.09)
-const renderSkeletons = () => {
-    const grid = document.getElementById('lista-produtos');
-    let skeletonHtml = '';
-    for(let i=0; i<8; i++) {
-        skeletonHtml += `
-        <article class="produto-card">
-            <div class="produto-img-wrap skeleton"></div>
-            <div class="produto-info">
-                <span class="skeleton" style="width: 50%; height: 12px; display: block; margin-bottom: 8px;"></span>
-                <span class="skeleton" style="width: 80%; height: 20px; display: block;"></span>
-                <div class="produto-preco-row">
-                    <span class="skeleton" style="width: 60px; height: 24px; display: block;"></span>
-                    <div class="skeleton" style="width: 44px; height: 44px; border-radius: 50%;"></div>
-                </div>
-            </div>
-        </article>`;
-    }
-    grid.innerHTML = skeletonHtml;
+    persistirCarrinhoComDebounce(); atualizarBadgesDOM(id, novaQtd);
+    atualizarLinhaCarrinhoDOM(id, novaQtd, fmt(p.preco * novaQtd)); atualizarRodapeCarrinhoDOM();
 };
 
 const construirCardsIniciais = () => {
@@ -271,8 +196,8 @@ const construirCardsIniciais = () => {
         return `
         <article class="produto-card" data-action="detalhe" data-id="${p.id}" data-cat="${escapeHTML(p.cat)}" data-nome="${p.nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()}" style="display: flex;">
             <div class="produto-img-wrap">
-                ${p.foto ? `<img src="${escapeHTML(p.foto)}" loading="lazy" width="200" height="200" alt="${escapeHTML(p.nome)}">` : '<div class="produto-img-placeholder skeleton" style="width:100%;height:100%"></div>'}
-                <button class="btn-fav ${favActive}" data-action="fav" data-id="${p.id}" aria-label="Favoritar">❤️</button>
+                ${p.foto ? `<img src="${escapeHTML(p.foto)}" loading="lazy" width="200" height="200">` : '<div class="produto-img-placeholder skeleton" style="width:100%;height:100%"></div>'}
+                <button class="btn-fav ${favActive}" data-action="fav" data-id="${p.id}">❤️</button>
                 <span class="produto-unidade-tag">${escapeHTML(p.unidade || 'un')}</span>
                 <div class="card-badge ${qtdNoCarrinho > 0 ? 'visivel':''}" id="badge-${p.id}">${badgeTexto}</div>
             </div>
@@ -280,8 +205,8 @@ const construirCardsIniciais = () => {
                 <span class="produto-categoria">${escapeHTML(p.cat)}</span>
                 <h3 class="produto-nome">${escapeHTML(p.nome)}</h3>
                 <div class="produto-preco-row">
-                    <span class="produto-preco">${fmt(p.preco)}<br><span style="font-size: 0.8rem; color: var(--text-light); font-weight: 600;">por ${escapeHTML(p.unidade || 'un')}</span></span>
-                    <button class="btn-add" data-action="add" data-id="${p.id}" aria-label="Adicionar">+</button>
+                    <span class="produto-preco">${fmt(p.preco)}<br><span style="font-size: 0.8rem; font-weight: 600;">por ${escapeHTML(p.unidade || 'un')}</span></span>
+                    <button class="btn-add" data-action="add" data-id="${p.id}">+</button>
                 </div>
             </div>
         </article>`;
@@ -292,7 +217,6 @@ const construirCardsIniciais = () => {
 const renderLoja = (forcarRebuild = false) => {
     const grid = document.getElementById('lista-produtos');
     if(!STATE.lojaRenderizada || forcarRebuild) construirCardsIniciais();
-
     const termo = STATE.busca.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     const cards = grid.querySelectorAll('.produto-card');
     let itensVisiveis = 0;
@@ -303,10 +227,9 @@ const renderLoja = (forcarRebuild = false) => {
         if(matchBusca && matchCat) { card.style.display = 'flex'; itensVisiveis++; } 
         else { card.style.display = 'none'; }
     });
-
     const emptyId = 'empty-grid-msg'; let emptyMsg = document.getElementById(emptyId);
     if (itensVisiveis === 0) {
-        if(!emptyMsg) grid.insertAdjacentHTML('beforeend', `<div id="${emptyId}" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Nenhum produto encontrado</p></div>`);
+        if(!emptyMsg) grid.insertAdjacentHTML('beforeend', `<div id="${emptyId}" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Nenhum produto</p></div>`);
     } else if(emptyMsg) { emptyMsg.remove(); }
 };
 
@@ -317,450 +240,107 @@ const renderCategorias = () => {
 
 let buscaTimeout;
 document.getElementById('busca-input').addEventListener('input', (e) => {
-    clearTimeout(buscaTimeout);
-    buscaTimeout = setTimeout(() => { STATE.busca = e.target.value; renderLoja(); }, 150);
+    clearTimeout(buscaTimeout); buscaTimeout = setTimeout(() => { STATE.busca = e.target.value; renderLoja(); }, 150);
 });
 
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (SpeechRecognition) {
-    const recognition = new SpeechRecognition(); recognition.lang = 'pt-BR';
-    document.getElementById('btn-voz').addEventListener('click', () => { document.getElementById('btn-voz').classList.add('gravando'); recognition.start(); });
-    recognition.onresult = (event) => { STATE.busca = event.results[0][0].transcript; document.getElementById('busca-input').value = STATE.busca; renderLoja(); };
-    recognition.onerror = () => { document.getElementById('btn-voz').classList.remove('gravando'); showToast("Erro no reconhecimento de voz.", true); }
-    recognition.onend = () => document.getElementById('btn-voz').classList.remove('gravando');
-} else document.getElementById('btn-voz').style.display = 'none';
-
 const iniciarRealTimeSync = () => {
-    if (!navigator.onLine) document.getElementById('banner-offline').classList.add('visivel');
-    
-    renderSkeletons(); // Ativa os skeletons antes do primeiro pacote do Firebase chegar
-
     const unsubConfig = onSnapshot(doc(db, "loja", "config"), (snap) => {
         if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()}; atualizarRodapeCarrinhoDOM();
     });
     unsubscribes.push(unsubConfig);
-    
     const unsubProdutos = onSnapshot(collection(db, "produtos"), (snap) => {
         STATE.produtos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.ativo);
         renderCategorias(); renderLoja(true); syncCarrinhoComPrecosAoVivo(); 
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
-    }, (error) => console.error("Erro Realtime:", error));
+    });
     unsubscribes.push(unsubProdutos);
 };
 
-// [UX - FASE 2] Modal de Detalhe Rico Injetado Dinamicamente (2.03)
-const injetarModalDetalheSeNecessario = () => {
-    if(document.getElementById('modal-detalhe-produto')) return;
-    document.body.insertAdjacentHTML('beforeend', `
-        <div class="modal-overlay" id="modal-detalhe-produto" aria-hidden="true">
-            <div class="modal">
-                <div class="modal-head">
-                    <h2 id="md-nome">Produto</h2>
-                    <button class="btn-fechar" data-fechar="modal-detalhe-produto">×</button>
-                </div>
-                <div class="modal-body" style="padding: 0 24px 24px 24px;">
-                    <div class="produto-detalhe-hero">
-                        <img id="md-img" src="" alt="">
-                    </div>
-                    <span id="md-tag" class="produto-detalhe-tag"></span>
-                    <p id="md-desc" class="produto-detalhe-desc"></p>
-                    <div style="display:flex; justify-content: space-between; align-items:center; border-top: 1px solid var(--parchment); padding-top: 16px;">
-                        <span id="md-preco" class="produto-preco" style="font-size: 2rem;"></span>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button id="md-btn-add" class="btn btn-primary w-100" style="font-size:1.1rem; padding: 18px;">Adicionar ao Pedido</button>
-                </div>
-            </div>
-        </div>
-    `);
-};
-
+// Modais e Eventos Base
 document.body.addEventListener('click', async (e) => {
     const actionTarget = e.target.closest('[data-action]'); 
     if (actionTarget) {
         const action = actionTarget.dataset.action; const id = actionTarget.dataset.id;
-        
-        // Bloqueia a propagação para evitar abrir o detalhe ao clicar em favoritar ou add
-        if(action === 'add' || action === 'inc' || action === 'dec' || action === 'fav') {
-            e.stopPropagation();
-        }
+        if(action === 'add' || action === 'inc' || action === 'dec' || action === 'fav') e.stopPropagation();
 
         if (action === 'add' || action === 'inc') { modificarCarrinho(id, 1); if(action === 'add') animarFeedbackBtn(actionTarget); }
         else if (action === 'dec') { modificarCarrinho(id, -1); }
-        else if (action === 'detalhe') {
-            const p = STATE.produtos.find(x => x.id === id);
-            if(!p) return;
-            injetarModalDetalheSeNecessario();
-            document.getElementById('md-nome').textContent = p.nome;
-            document.getElementById('md-img').src = p.foto || '';
-            document.getElementById('md-tag').textContent = `Em Destaque • Categoria: ${p.cat}`;
-            document.getElementById('md-desc').textContent = p.descricao || "Produto fresco selecionado com carinho pela nossa equipe direto para a sua casa."; // O admin gerará via IA na parte 2
-            document.getElementById('md-preco').innerHTML = `${fmt(p.preco)} <span style="font-size:1rem;color:var(--text-light)">/${p.unidade||'un'}</span>`;
-            
-            const btnAdicionar = document.getElementById('md-btn-add');
-            btnAdicionar.onclick = () => { modificarCarrinho(p.id, 1); showToast("Adicionado!"); closeModal('modal-detalhe-produto'); };
-            openModal('modal-detalhe-produto');
-        }
-        else if (action === 'cat') { 
-            STATE.catAtiva = actionTarget.dataset.cat; 
-            document.querySelectorAll('.cat-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.cat === STATE.catAtiva));
-            renderLoja(); 
-        }
+        else if (action === 'cat') { STATE.catAtiva = actionTarget.dataset.cat; renderLoja(); }
         else if (action === 'fav') { 
-            if(STATE.favoritos.includes(id)) { STATE.favoritos = STATE.favoritos.filter(f => f !== id); actionTarget.classList.remove('ativo'); } 
-            else { STATE.favoritos.push(id); actionTarget.classList.add('ativo'); }
+            if(STATE.favoritos.includes(id)) STATE.favoritos = STATE.favoritos.filter(f => f !== id);
+            else STATE.favoritos.push(id);
             localStorage.setItem('banca_favs', JSON.stringify(STATE.favoritos)); 
             if(STATE.catAtiva === 'favoritos') renderLoja(); 
         }
-        else if (action === 'open-historico') { renderHistorico(); openModal('modal-historico'); }
-        else if (action === 'repetir-pedido') { repetirPedido(id); }
         else if (action === 'toggle-troco') {
             const valor = actionTarget.dataset.value;
-            const btnSim = document.querySelector('[data-value="sim"]'); const btnNao = document.querySelector('[data-value="nao"]');
             const inputArea = document.getElementById('input-troco-area'); const cliTroco = document.getElementById('cli-troco');
-            if(valor === 'nao') {
-                cliTroco.value = 'Não preciso'; btnNao.classList.add('active'); btnSim.classList.remove('active'); inputArea.style.display = 'none';
-            } else {
-                cliTroco.value = ''; btnSim.classList.add('active'); btnNao.classList.remove('active'); inputArea.style.display = 'block'; cliTroco.focus();
-            }
+            if(valor === 'nao') { cliTroco.value = 'Não preciso'; inputArea.style.display = 'none'; } 
+            else { cliTroco.value = ''; inputArea.style.display = 'block'; cliTroco.focus(); }
         }
         return;
     }
     const fecharTarget = e.target.closest('[data-fechar]');
-    if (fecharTarget) {
-        const modalId = fecharTarget.dataset.fechar; closeModal(modalId);
-        if (history.state && history.state.modal === modalId) history.back();
-        else if (window.location.hash === `#${modalId}`) history.replaceState(null, '', ' ');
-        return;
-    }
+    if (fecharTarget) closeModal(fecharTarget.dataset.fechar);
 });
 
-document.getElementById('carrinho-itens').addEventListener('input', (e) => {
-    if(e.target.classList.contains('qtd-input')) {
-        const id = e.target.dataset.id; const p = STATE.produtos.find(x => x.id === id);
-        let val = parseFloat(e.target.value.replace(',', '.'));
-        if(isNaN(val) || val < 0) return; 
-        val = (p && !isFracionavel(p.unidade)) ? Math.round(val) : fixFloat(val);
-        modificarCarrinho(id, val, true);
-    }
-});
-
-window.addEventListener('popstate', (e) => { 
-    document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('aberto'));
-    document.getElementById('carrinho-overlay').classList.remove('aberto');
-    document.getElementById('carrinho').classList.remove('aberto');
-    document.body.style.overflow = '';
-    if (e.state) {
-        if (e.state.modal) openModal(e.state.modal);
-        if (e.state.cart) {
-            document.getElementById('carrinho').classList.add('aberto');
-            document.getElementById('carrinho-overlay').classList.add('aberto');
-            document.body.style.overflow = 'hidden';
-        }
-    }
-});
-
-const toggleCartMobile = (abrir) => {
-    if(window.innerWidth > 900) return;
-    if (abrir) { 
-        document.getElementById('carrinho').classList.add('aberto'); document.getElementById('carrinho-overlay').classList.add('aberto'); 
-        document.body.style.overflow = 'hidden'; history.pushState({cart: true}, ''); 
-    } else { 
-        if(history.state && history.state.cart) history.back();
-    }
-};
-document.getElementById('btn-carrinho-mobile').addEventListener('click', () => toggleCartMobile(true));
-document.getElementById('carrinho-overlay').addEventListener('click', () => history.back());
-
-document.getElementById('btn-limpar-carrinho').addEventListener('click', async () => {
-    if (STATE.carrinho.length === 0) return;
-    if (await customConfirm("Esvaziar Pedido", "Tem certeza que deseja esvaziar todo o pedido?")) {
-        STATE.carrinho = []; dbStorage.set('banca_cart', {v: CART_VERSION, items: []}); 
-        renderCarrinhoCompleto(); showToast("🛒 Carrinho esvaziado!");
-        if (window.innerWidth <= 900 && document.getElementById('carrinho').classList.contains('aberto')) history.back();
-    }
-});
-
+// UI Checkout
 document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
-    const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
-    if (clientes.length > 0) {
-        document.getElementById('cli-nome').value = clientes[0].nome || '';
-        document.getElementById('cli-quadra').value = clientes[0].quadra || '';
-        document.getElementById('cli-lote').value = clientes[0].lote || '';
+    STATE.checkoutSessionId = crypto.randomUUID(); 
+    
+    // Injeção do Campo de Cupão da IA (FASE 3)
+    const pagamentoArea = document.getElementById('cli-pagamento')?.closest('.form-group');
+    if(pagamentoArea && !document.getElementById('form-group-cupom')) {
+        pagamentoArea.insertAdjacentHTML('afterend', `
+            <div class="form-group" id="form-group-cupom">
+                <label>Cupão de Desconto (IA)</label>
+                <input type="text" id="cli-cupom" placeholder="Ex: IA-DESCONTO-10" style="text-transform: uppercase;">
+            </div>
+        `);
     }
-    STATE.checkoutSessionId = crypto.randomUUID(); openModal('modal-checkout');
+    openModal('modal-checkout');
 });
 
-// [UX - FASE 2] Tracker Real-Time de Pedido Ativo (2.07)
-const renderHistorico = async () => {
-    const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
-    const lista = document.getElementById('lista-meus-pedidos');
-    
-    if(meusPedidos.length === 0) { lista.innerHTML = `<div class="empty-state">${iconeHistoricoVazio}<p>Sem pedidos</p></div>`; return; }
-
-    // Verifica o status REAL na nuvem do pedido mais recente para mostrar o Tracker
-    let statusRealTime = 'pendente';
-    const ultimoPedido = meusPedidos[0];
-    const umDiaEmMs = 86400000;
-
-    if (Date.now() - new Date(ultimoPedido.data).getTime() < umDiaEmMs) {
-        try {
-            const docRef = await getDoc(doc(db, "pedidos", ultimoPedido.id));
-            if(docRef.exists()) statusRealTime = docRef.data().status;
-        } catch(e) { console.warn("Sem acesso ao status em tempo real do pedido."); }
-    } else {
-        statusRealTime = 'arquivado';
-    }
-
-    const htmlTracker = statusRealTime !== 'arquivado' ? `
-        <div class="status-tracker">
-            <div class="status-step ${statusRealTime === 'pendente' || statusRealTime === 'preparando' || statusRealTime === 'enviado' ? 'ativo' : ''}">
-                <div class="step-icon">📋</div>
-                <div><div class="step-text">Pedido Recebido</div><div class="step-subtext">Aguardando a equipe visualizar.</div></div>
-            </div>
-            <div class="status-step ${statusRealTime === 'preparando' || statusRealTime === 'enviado' ? 'ativo' : ''}">
-                <div class="step-icon">📦</div>
-                <div><div class="step-text">Em Separação</div><div class="step-subtext">Estamos escolhendo os melhores itens.</div></div>
-            </div>
-            <div class="status-step ${statusRealTime === 'enviado' ? 'ativo' : ''}">
-                <div class="step-icon">🛵</div>
-                <div><div class="step-text">A Caminho!</div><div class="step-subtext">Seu pedido já saiu para entrega.</div></div>
-            </div>
-        </div>
-    ` : '';
-
-    lista.innerHTML = htmlTracker + meusPedidos.map(p => `
-        <article style="border: 1px solid var(--parchment); border-radius: 12px; padding: 16px; margin-bottom: 12px; background:var(--warm-white);">
-            <div style="display:flex; justify-content: space-between; margin-bottom: 8px;">
-                <strong style="color:var(--forest);">${new Date(p.data).toLocaleDateString('pt-BR')}</strong>
-                <span style="color:var(--forest); font-weight:900;">${fmt(p.total)}</span>
-            </div>
-            <p style="font-size:0.9rem; color:var(--text-mid); line-height:1.4;">${escapeHTML(p.descItens || 'Itens do pedido')}</p>
-            <button class="btn btn-outline w-100 mt-3" data-action="repetir-pedido" data-id="${p.id}">Repetir Pedido</button>
-        </article>
-    `).join('');
-};
-
-const repetirPedido = (pedId) => {
-    const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
-    const ped = meusPedidos.find(p => String(p.id) === String(pedId)); 
-    if(!ped || !ped.itens) return;
-
-    let itensAdicionados = 0; let itensEsgotados = []; STATE.carrinho = [];
-    
-    ped.itens.forEach(i => {
-        const prodAtualizado = STATE.produtos.find(px => px.id === i.id);
-        if(prodAtualizado && prodAtualizado.ativo) { 
-            STATE.carrinho.push({...prodAtualizado, qtd: i.qtd}); itensAdicionados++;
-        } else { itensEsgotados.push(i.nome || 'Produto Indisponível'); }
-    });
-
-    if (itensAdicionados > 0) {
-        persistirCarrinhoComDebounce(); renderCarrinhoCompleto(); closeModal('modal-historico'); toggleCartMobile(true);
-        let msgToast = "🛒 Itens adicionados com preços atualizados!";
-        if(itensEsgotados.length > 0) msgToast = `🛒 Alguns itens foram adicionados. Faltaram: ${itensEsgotados.join(', ')} (Esgotados)`;
-        showToast(msgToast, itensEsgotados.length > 0);
-    } else { showToast("❌ Todos os itens deste pedido encontram-se esgotados.", true); }
-};
-
-document.getElementById('cli-pagamento').addEventListener('change', (e) => { 
-    const isDinheiro = e.target.value === 'Dinheiro';
-    document.getElementById('troco-group').style.display = isDinheiro ? 'block' : 'none'; 
-    if(!isDinheiro) document.getElementById('cli-troco').value = '';
-});
-
+// Processamento Logístico do Checkout
 document.getElementById('btn-enviar-pedido').addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    if (btn.disabled) return;
-
+    const btn = e.currentTarget; if (btn.disabled) return;
     const nome = document.getElementById('cli-nome').value.trim();
     const quadra = document.getElementById('cli-quadra').value.trim();
     const lote = document.getElementById('cli-lote').value.trim();
     const pag = document.getElementById('cli-pagamento').value;
-    const trocoRaw = document.getElementById('cli-troco').value.trim();
-    const obs = document.getElementById('cli-obs').value.trim();
+    const cupom = document.getElementById('cli-cupom')?.value.trim().toUpperCase() || '';
+    
+    if(!nome || !quadra || !lote) return showToast("⚠️ Preencha nome, quadra e lote!", true);
 
-    if(!nome || !quadra || !lote) { showToast("⚠️ Preencha nome, quadra e lote!", true); return; }
-
-    btn.disabled = true; btn.textContent = 'Processando pedido... ⏳';
+    btn.disabled = true; btn.textContent = 'A processar pedido... ⏳';
 
     try {
         const payload = {
-            nome, quadra, lote, pag, troco: trocoRaw, obs,
+            nome, quadra, lote, pag, cupom,
             itens: STATE.carrinho.map(item => ({ id: item.id, qtd: item.qtd })),
             clientTotal: STATE.carrinho.reduce((acc, item) => acc + (item.preco * item.qtd), 0),
-            idempotencyKey: STATE.checkoutSessionId,
-            userId: STATE.uid 
+            idempotencyKey: STATE.checkoutSessionId, userId: STATE.uid 
         };
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
-
         const response = await fetch('/api/checkout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            signal: controller.signal
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
 
-        clearTimeout(timeoutId);
-
-        let data;
-        try { data = await response.json(); } catch(e) { throw new Error(`Falha grave de processamento (Status HTTP: ${response.status})`); }
-        
-        if (!response.ok) throw new Error(data.error || "Ocorreu um erro ao enviar o pedido.");
+        const data = await response.json();
         if (!data.sucesso) throw new Error(data.error || "Falha ao processar pedido.");
-
-        const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
-        const idx = clientes.findIndex(c => c.nome.toLowerCase() === nome.toLowerCase());
-        if(idx >= 0) { clientes[idx] = {nome, quadra, lote}; } else { clientes.unshift({nome, quadra, lote}); }
-        localStorage.setItem('banca_clientes', JSON.stringify(clientes.slice(0, 5)));
-
-        const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
-        meusPedidos.unshift({
-            id: data.pedido.id, data: new Date().toISOString(), total: data.pedido.total,
-            descItens: STATE.carrinho.map(i => isFracionavel(i.unidade) ? `${formatarQuantidadeVisual(i.qtd, true)}${i.unidade} ${i.nome}` : `${i.qtd}x ${i.nome}`).join(', '),
-            itens: STATE.carrinho.map(item => ({ id: item.id, qtd: item.qtd, nome: item.nome }))
-        });
-        localStorage.setItem('banca_meus_pedidos', JSON.stringify(meusPedidos.slice(0, 10)));
 
         window.open(data.pedido.whatsappMsg, '_blank');
         closeModal('modal-checkout');
-        setTimeout(() => openModal('modal-sucesso'), 300); 
         STATE.carrinho = []; dbStorage.set('banca_cart', {v: CART_VERSION, items: []});
-        renderCarrinhoCompleto(); document.getElementById('cli-obs').value = ''; document.getElementById('cli-troco').value = '';
+        renderCarrinhoCompleto(); 
+        showToast("Pedido enviado com sucesso!");
 
     } catch(err) {
-        if(err.name === 'AbortError') showToast("Sua internet falhou. Verifique o sinal e tente novamente.", true);
-        else showToast(err.message, true);
+        showToast(err.message, true);
     } finally {
         btn.disabled = false; btn.textContent = 'Enviar Pedido 🚀';
     }
 });
 
-window.addEventListener('online', () => document.getElementById('banner-offline').classList.remove('visivel'));
-window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
-
-document.getElementById('btn-ia-flutuante').addEventListener('click', () => { 
-    openModal('modal-ia-chat'); 
-    document.getElementById('btn-ia-flutuante').classList.remove('pulse-anim'); // Reseta o tracker se abrir
-});
-
-const enviarMensagemParaIA = async () => {
-    const input = document.getElementById('input-ia-mensagem');
-    const texto = input.value.trim();
-    if (!texto) return;
-
-    const corpoChat = document.getElementById('chat-ia-corpo');
-    const containerSugestoes = document.getElementById('ia-sugestoes-container');
-    const btnEnviar = document.getElementById('btn-ia-enviar');
-
-    corpoChat.insertAdjacentHTML('beforeend', `
-        <div style="align-self: flex-end; background: var(--forest); color: white; padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; box-shadow: var(--shadow-sm);">
-            ${escapeHTML(texto)}
-        </div>
-    `);
-    
-    STATE.historicoChat.push({ role: 'user', content: texto });
-    input.value = ''; containerSugestoes.innerHTML = '';
-    btnEnviar.disabled = true; btnEnviar.textContent = '⏱️...';
-
-    const txtLimpo = texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    if (txtLimpo.includes('horario') || txtLimpo.includes('que horas')) {
-        const msgH = `Nosso horário de funcionamento é das 08h às 18h. E olha, a loja está atualmente ${STATE.config.lojaAberta ? 'ABERTA ✅' : 'FECHADA ❌'}. Posso ajudar com mais algo?`;
-        corpoChat.insertAdjacentHTML('beforeend', `
-            <div style="align-self: flex-start; background: white; color: var(--text-dark); padding: 14px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); line-height: 1.5;">
-                🤖 ${msgH}
-            </div>
-        `);
-        STATE.historicoChat.push({ role: 'ia', content: msgH });
-        btnEnviar.disabled = false; btnEnviar.textContent = 'Enviar';
-        corpoChat.scrollTop = corpoChat.scrollHeight;
-        return;
-    }
-
-    const idDigitando = 'typing-' + Date.now();
-    corpoChat.insertAdjacentHTML('beforeend', `
-        <div id="${idDigitando}" style="align-self: flex-start; background: white; padding: 14px 20px; border-radius: var(--radius-sm); border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); display: flex; gap: 6px; align-items: center;">
-            <span style="width: 6px; height: 6px; background: var(--forest); border-radius: 50%; animation: fadeIn 0.6s infinite alternate;"></span>
-            <span style="width: 6px; height: 6px; background: var(--forest); border-radius: 50%; animation: fadeIn 0.6s infinite alternate 0.2s;"></span>
-            <span style="width: 6px; height: 6px; background: var(--forest); border-radius: 50%; animation: fadeIn 0.6s infinite alternate 0.4s;"></span>
-        </div>
-    `);
-    corpoChat.scrollTop = corpoChat.scrollHeight;
-
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-        const payloadParams = {
-            mensagemCliente: texto,
-            historico: STATE.historicoChat.slice(-8), 
-            carrinho: STATE.carrinho.map(i => ({id: i.id, nome: i.nome, qtd: i.qtd, unidade: i.unidade}))
-        };
-
-        const response = await fetch('/api/assistente', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payloadParams),
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        const bolhaDigitando = document.getElementById(idDigitando);
-        if (bolhaDigitando) bolhaDigitando.remove();
-
-        let data;
-        try { data = await response.json(); } catch(e) { throw new Error(`Falha do Engine (Status: ${response.status})`); }
-
-        if (!response.ok) {
-            if (response.status === 429) throw new Error("RATE_LIMIT");
-            throw new Error(data.error || `Erro interno (Status: ${response.status})`);
-        }
-
-        const respostaSegura = escapeHTML(data.resposta).replace(/\n/g, '<br>');
-        STATE.historicoChat.push({ role: 'ia', content: data.resposta });
-
-        corpoChat.insertAdjacentHTML('beforeend', `
-            <div style="align-self: flex-start; background: white; color: var(--text-dark); padding: 14px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); line-height: 1.5;">
-                ${respostaSegura}
-            </div>
-        `);
-
-        if (data.sugestoes && data.sugestoes.length > 0) {
-            let botoesHtml = '';
-            data.sugestoes.forEach(prodId => {
-                const produtoNoBanco = STATE.produtos.find(p => String(p.id) === String(prodId));
-                if (produtoNoBanco) {
-                    botoesHtml += `
-                        <button class="btn btn-outline" style="padding: 6px 12px; font-size: 0.85rem; white-space: nowrap; border-color: var(--earth); color: var(--earth);" data-action="add" data-id="${produtoNoBanco.id}">
-                            🛒 + ${escapeHTML(produtoNoBanco.nome)}
-                        </button>
-                    `;
-                }
-            });
-            containerSugestoes.innerHTML = botoesHtml;
-        }
-
-    } catch (err) {
-        const bolhaDigitando = document.getElementById(idDigitando);
-        if (bolhaDigitando) bolhaDigitando.remove();
-
-        let msgErro = `🚨 ${escapeHTML(err.message)}`; 
-        if (err.name === 'AbortError') msgErro = "O assistente demorou muito para responder (Timeout).";
-        if (err.message === "RATE_LIMIT") msgErro = "Você enviou muitas mensagens. Aguarde alguns segundos.";
-
-        corpoChat.insertAdjacentHTML('beforeend', `
-            <div style="align-self: flex-start; background: var(--danger-light); color: var(--danger); padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; border: 1px solid #fca5a5;">
-                ${msgErro}
-            </div>
-        `);
-    } finally {
-        btnEnviar.disabled = false; btnEnviar.textContent = 'Enviar';
-        corpoChat.scrollTop = corpoChat.scrollHeight;
-    }
-};
-
-document.getElementById('btn-ia-enviar').addEventListener('click', enviarMensagemParaIA);
-document.getElementById('input-ia-mensagem').addEventListener('keydown', (e) => { if (e.key === 'Enter') enviarMensagemParaIA(); });
+// Arranca com a IA Modularizada e injeta o estado principal nela
+initIA(STATE);
