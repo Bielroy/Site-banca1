@@ -84,3 +84,25 @@
     .controles-admin { flex-direction: column; align-items: stretch; }
     .btn-ia-action { justify-content: center; padding: 10px; width: 100%; margin-top: 8px; }
 }
+/* Adicione no final do seu admin.css atual, mantendo todo o código anterior */
+
+/* FASE 3: Controlo de Stock & IA Avançada */
+.badge-estoque { display: inline-block; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 0.8rem; margin-top: 6px; }
+.badge-estoque.alto { background: var(--success-light); color: var(--success); }
+.badge-estoque.baixo { background: var(--warning-light); color: var(--warning); border: 1px solid #fcd34d; animation: pulseBaixo 2s infinite; }
+.badge-estoque.esgotado { background: var(--danger-light); color: var(--danger); }
+
+@keyframes pulseBaixo { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+
+.ia-relatorio-box { background: linear-gradient(145deg, #ffffff, #f9f9f9); border: 1px solid var(--mint); border-radius: 12px; padding: 24px; box-shadow: var(--shadow-sm); margin-bottom: 24px; color: var(--text-dark); line-height: 1.6; }
+.ia-relatorio-box h3, .ia-relatorio-box h4 { color: var(--forest); margin-top: 12px; font-family: 'Fraunces', serif; }
+.ia-relatorio-box ul { padding-left: 20px; margin: 12px 0; }
+.ia-relatorio-box li { margin-bottom: 8px; }
+
+.btn-social-media { background: #e83e8c; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: 0.2s; }
+.btn-social-media:hover { background: #d63384; transform: scale(1.05); }
+
+/* Ajuste do grid do modal de produto para acomodar o Stock Quantitativo */
+.form-group-estoque { background: var(--warm-white); padding: 12px; border-radius: 8px; border: 1px dashed var(--mint); margin-top: 12px; }
+.form-group-estoque label { color: var(--forest); }
+.form-group-estoque input { font-family: 'Fraunces', serif; font-size: 1.2rem; color: var(--forest); font-weight: bold; }
