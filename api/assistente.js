@@ -27,7 +27,7 @@ const bootFirebase = () => {
 
 let cachedCatalog = null;
 let cacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // Cache de 5 minutos para economizar leituras no banco
+const CACHE_TTL = 5 * 60 * 1000;
 
 const rateLimitMap = new Map();
 
@@ -41,7 +41,6 @@ module.exports = async function handler(req, res) {
     if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'POST') return res.status(405).json({ sucesso: false, error: 'Método não permitido' });
 
-    // Proteção contra ataques e spam
     const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
     const agora = Date.now();
     if (rateLimitMap.has(ip) && agora - rateLimitMap.get(ip) < 3000) {
@@ -87,12 +86,43 @@ MENSAGEM DO CLIENTE:
 ${mensagemCliente}
 `;
         
-        // Usando a versão de produção mais rápida e barata do Gemini
-        const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
-        const result = await model.generateContent(promptUniversal);
-        let textoResposta = result.response.text();
+        let textoResposta = "";
+
+        try {
+            // Tenta o modelo padrão recomendado
+            const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+            const result = await model.generateContent(promptUniversal);
+            textoResposta = result.response.text();
+        } catch (errApi) {
+            // 🚨 A MÁGICA ACONTECE AQUI: SE O GOOGLE DER 404, O SISTEMA SE AUTO-CURA
+            console.warn("Modelo padrão falhou. Iniciando varredura na conta do Google...");
+            
+            const respostaModelos = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanApiKey}`);
+            const dadosModelos = await respostaModelos.json();
+
+            if (!dadosModelos.models) {
+                throw new Error("A sua chave não possui acesso a nenhum modelo da Google.");
+            }
+
+            // Descobre dinamicamente qual é o modelo exato que o Google liberou para você
+            const modeloValido = dadosModelos.models.find(m => 
+                m.supportedGenerationMethods && 
+                m.supportedGenerationMethods.includes("generateContent") && 
+                m.name.includes("gemini")
+            );
+
+            if (modeloValido) {
+                const nomeRealDoModelo = modeloValido.name.replace('models/', '');
+                console.log(`Modelo encontrado pela IA! Usando: ${nomeRealDoModelo}`);
+                
+                const modelFallback = ai.getGenerativeModel({ model: nomeRealDoModelo });
+                const resultFallback = await modelFallback.generateContent(promptUniversal);
+                textoResposta = resultFallback.response.text();
+            } else {
+                throw new Error("Nenhum modelo de texto foi encontrado na sua conta do Google.");
+            }
+        }
         
-        // Previne que a IA envie código quebrado
         textoResposta = textoResposta.replace(/```json/g, '').replace(/```/g, '').trim();
         const jsonResposta = JSON.parse(textoResposta);
 
