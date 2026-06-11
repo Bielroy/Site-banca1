@@ -1,10 +1,12 @@
 import { auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL, query, orderBy, limit, writeBatch, where } from './firebase.js';
 import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal, customConfirm } from './utils.js';
+// [FASE 2] Dependência npm exigida: npm install chart.js
+import Chart from 'chart.js/auto';
 
 let produtosAtuais = [];
 let pedidosGerais = [];
 let unsubscribes = []; 
-let adminBuscaTermo = ""; // [ADMIN - FASE 1] Termo de busca global
+let adminBuscaTermo = ""; 
 
 const placeholderSVG = `<div class="prod-img-placeholder skeleton" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-light);font-size:0.8rem">Sem Foto</div>`;
 
@@ -64,6 +66,7 @@ onAuthStateChanged(auth, (user) => {
     if (user) {
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('dashboard').style.display = 'block';
+        iniciarIAFeaturesDOM(); // Inicializa os botões e interface visual da Inteligência Artificial
         iniciarRealTimeSync(); 
     } else {
         document.getElementById('login-screen').style.display = 'block';
@@ -81,7 +84,7 @@ document.getElementById('btn-login').addEventListener('click', async () => {
     
     isLoginProcessing = true;
     document.getElementById('btn-login').disabled = true;
-    msg.textContent = "Enviando link..."; msg.style.color = "var(--text-dark)";
+    msg.textContent = "A enviar link..."; msg.style.color = "var(--text-dark)";
     
     try {
         await sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true });
@@ -128,7 +131,6 @@ document.querySelectorAll('[data-fechar]').forEach(btn => {
     btn.addEventListener('click', (e) => { closeModal(e.currentTarget.dataset.fechar); }); 
 });
 
-// [ADMIN - FASE 1] Notificação WebAudio (1.07)
 const playAlertaPedido = () => {
     try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -167,7 +169,6 @@ const iniciarRealTimeSync = () => {
     let cargaInicial = true;
 
     const unsubPedidos = onSnapshot(pedQuery, (snap) => {
-        // [ADMIN - FASE 1] Detecção de novos pedidos (1.07)
         const temNovoPendente = snap.docChanges().some(change => change.type === 'added' && change.doc.data().status === 'pendente');
         
         if (!cargaInicial && temNovoPendente) {
@@ -182,11 +183,9 @@ const iniciarRealTimeSync = () => {
     });
     unsubscribes.push(unsubPedidos);
     
-    // Solicita permissão apenas no load do painel, caso ainda não tenha sido dada
     if (Notification.permission !== "denied") Notification.requestPermission();
 };
 
-// [ADMIN - FASE 1] Filtro global do catálogo em tempo real (1.09)
 document.getElementById('admin-busca-input')?.addEventListener('input', (e) => {
     adminBuscaTermo = e.target.value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     renderProdutos();
@@ -221,10 +220,9 @@ const renderProdutos = () => {
     document.getElementById('lista-produtos').innerHTML = html || "<p style='color:var(--text-light)'>Nenhum produto encontrado na busca.</p>";
 };
 
-// [ADMIN - FASE 1] Preview imediato de imagem (1.08)
 document.getElementById('edit-foto')?.addEventListener('change', (e) => {
     const file = e.target.files[0];
-    const previewContainer = document.getElementById('preview-foto-wrapper'); // Requer container no HTML
+    const previewContainer = document.getElementById('preview-foto-wrapper'); 
     if(file && previewContainer) {
         const reader = new FileReader();
         reader.onload = (ev) => {
@@ -242,6 +240,8 @@ document.body.addEventListener('click', async (e) => {
         if(action === 'novo-produto') {
             document.getElementById('modal-titulo').textContent = 'Novo Produto';
             ['edit-id', 'edit-nome', 'edit-preco', 'edit-cat', 'edit-foto', 'edit-foto-url'].forEach(i => document.getElementById(i).value = '');
+            if(document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = '';
+            
             const previewContainer = document.getElementById('preview-foto-wrapper');
             if(previewContainer) previewContainer.innerHTML = placeholderSVG;
             document.getElementById('btn-excluir-produto').style.display = 'none';
@@ -259,6 +259,8 @@ document.body.addEventListener('click', async (e) => {
             document.getElementById('edit-cat').value = p.cat || '';
             document.getElementById('edit-foto').value = ''; 
             document.getElementById('edit-foto-url').value = ''; 
+            
+            if(document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = p.descricao || '';
             
             const previewContainer = document.getElementById('preview-foto-wrapper');
             if(previewContainer) previewContainer.innerHTML = p.foto ? `<img src="${escapeHTML(p.foto)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">` : placeholderSVG;
@@ -298,9 +300,97 @@ document.body.addEventListener('click', async (e) => {
     }
 });
 
+// [FASE 2] Integração Inteligência Artificial no Painel 
+const iniciarIAFeaturesDOM = () => {
+    // 1. Injetar campo de descrição no formulário de edição (Feature 2.05)
+    const catInput = document.getElementById('edit-cat');
+    if(catInput && !document.getElementById('form-group-descricao')) {
+        catInput.closest('.form-group').insertAdjacentHTML('afterend', `
+            <div class="form-group w-100" id="form-group-descricao">
+                <label style="display:flex; justify-content:space-between; align-items:center;">
+                    Descrição (Exibida no detalhe do produto)
+                    <button type="button" id="btn-ia-descricao" class="btn-ia-action">✨ IA Copywriter</button>
+                </label>
+                <textarea id="edit-descricao" rows="3" placeholder="Deixe a nossa IA redigir um texto de conversão irresistível para este produto..." style="resize: vertical;"></textarea>
+            </div>
+        `);
+        
+        document.getElementById('btn-ia-descricao').addEventListener('click', async (e) => {
+            const nome = document.getElementById('edit-nome').value;
+            const cat = document.getElementById('edit-cat').value;
+            if(!nome || !cat) return showToast("⚠️ Preencha Nome e Categoria primeiro para dar contexto à IA.", true);
+            
+            const btn = e.currentTarget;
+            const originText = btn.innerHTML;
+            btn.innerHTML = "A gerar... ⏳"; btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/assistente', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'gerar_descricao', produtoInfo: { nome, cat } })
+                });
+                const data = await res.json();
+                if(!data.sucesso) throw new Error(data.error);
+                
+                document.getElementById('edit-descricao').value = data.descricao;
+                showToast("✨ Descrição de Alta Conversão gerada!");
+            } catch(err) {
+                showToast("Falha na geração via IA.", true);
+            } finally {
+                btn.innerHTML = originText; btn.disabled = false;
+            }
+        });
+    }
+
+    // 2. Injetar botão global para "Montar Kit Inteligente" (Feature 2.06)
+    const dashboardControls = document.querySelector('.dash-header');
+    if(dashboardControls && !document.getElementById('btn-ia-kit')) {
+        dashboardControls.insertAdjacentHTML('beforeend', `
+            <button id="btn-ia-kit" class="btn-ia-action" style="padding: 12px 24px; font-size: 1rem; border-radius: 8px;">
+                🪄 Criar Kit Promocional c/ IA
+            </button>
+        `);
+
+        document.getElementById('btn-ia-kit').addEventListener('click', async (e) => {
+            if(produtosAtuais.length < 5) return showToast("É necessário ter mais produtos no catálogo para montar kits.", true);
+            const btn = e.currentTarget;
+            const originText = btn.innerHTML;
+            btn.innerHTML = "🪄 A arquitetar kit ideal... ⏳"; btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/assistente', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ action: 'gerar_kit' })
+                });
+                const data = await res.json();
+                if(!data.sucesso) throw new Error(data.error);
+                
+                // Pré-preenche o Modal de Novo Produto com a Recomendação da IA
+                document.getElementById('modal-titulo').textContent = '⭐ ' + data.kit.nome;
+                document.getElementById('edit-id').value = '';
+                document.getElementById('edit-nome').value = data.kit.nome;
+                document.getElementById('edit-preco').value = data.kit.preco;
+                document.getElementById('edit-cat').value = 'Kits Inteligentes';
+                document.getElementById('edit-unidade').value = 'kit';
+                
+                if(document.getElementById('edit-descricao')) {
+                    document.getElementById('edit-descricao').value = `${data.kit.descricao}\n\n📦 O que inclui:\n${data.kit.itensInclusos}`;
+                }
+                
+                openModal('modal-produto');
+                showToast("✨ Kit formulado! Ajuste o preço e guarde.");
+            } catch(err) {
+                showToast("Falha ao analisar catálogo e montar kit.", true);
+            } finally {
+                btn.innerHTML = originText; btn.disabled = false;
+            }
+        });
+    }
+};
+
 document.getElementById('btn-salvar-produto').addEventListener('click', async () => {
     const btn = document.getElementById('btn-salvar-produto'); 
-    btn.textContent = "Salvando... ⏳"; btn.disabled = true;
+    btn.textContent = "A guardar... ⏳"; btn.disabled = true;
 
     try {
         const id = document.getElementById('edit-id').value || crypto.randomUUID();
@@ -309,6 +399,7 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
             preco: parseFloat(document.getElementById('edit-preco').value), 
             unidade: document.getElementById('edit-unidade').value, 
             cat: document.getElementById('edit-cat').value.trim().toLowerCase(), 
+            descricao: document.getElementById('edit-descricao') ? document.getElementById('edit-descricao').value.trim() : '',
             ativo: true,
             ultimaModificacao: Date.now()
         };
@@ -319,7 +410,7 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
         const urlInput = document.getElementById('edit-foto-url').value.trim();
 
         if (fileInput.files.length > 0) { 
-            showToast("Otimizando imagem...", false);
+            showToast("A otimizar imagem...", false);
             const optimizedFile = await compressImageToJPG(fileInput.files[0], 800, 0.8);
             const storageRef = ref(storage, `fotos_produtos/${id}.jpg`); 
             await uploadBytes(storageRef, optimizedFile); 
@@ -335,9 +426,9 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
         }
         
         await setDoc(doc(db, "produtos", id), pData, { merge: true });
-        closeModal('modal-produto'); showToast("Produto salvo com sucesso!");
+        closeModal('modal-produto'); showToast("Produto guardado com sucesso!");
     } catch (erro) {
-        showToast(erro.message || "Erro ao salvar o produto.", true);
+        showToast(erro.message || "Erro ao guardar o produto.", true);
     } finally {
         btn.textContent = "💾 Gravar no Banco"; btn.disabled = false;
     }
@@ -431,9 +522,66 @@ const renderRelatoriosMaster = () => {
     document.getElementById('stat-pedidos').textContent = pedidosGerais.length;
     document.getElementById('stat-receita').textContent = fmt(stats.totalReceita);
 
+    // [FASE 2] Injeção dinâmica do Canvas para o Gráfico Chart.js (2.04)
+    let containerGrafico = document.getElementById('area-grafico-receita');
+    if(!containerGrafico) {
+        const rankingContainer = document.getElementById('ranking-dias')?.closest('.rankings-grid');
+        if(rankingContainer) {
+            rankingContainer.insertAdjacentHTML('beforebegin', `
+                <div id="area-grafico-receita" class="chart-wrapper">
+                    <h3>📊 Receita Logística Recente</h3>
+                    <canvas id="receita-chart" height="70"></canvas>
+                </div>
+            `);
+        }
+    }
+
+    // Processamento de dados temporal (últimos 15 dias operacionais na fila)
+    if (document.getElementById('receita-chart')) {
+        const historicoMap = {};
+        pedidosGerais.forEach(p => {
+            const dataObj = new Date(p.data);
+            if(!isNaN(dataObj.getTime())) {
+                const label = dataObj.toLocaleDateString('pt-BR', {day: '2-digit', month: 'short'});
+                historicoMap[label] = (historicoMap[label] || 0) + p.total;
+            }
+        });
+        
+        const labels = Object.keys(historicoMap).reverse(); 
+        const valores = Object.values(historicoMap).reverse();
+
+        if (window.graficoAdmin) window.graficoAdmin.destroy();
+        
+        const ctx = document.getElementById('receita-chart').getContext('2d');
+        window.graficoAdmin = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Faturação (R$)',
+                    data: valores,
+                    borderColor: '#1a3a2a', // --forest
+                    backgroundColor: 'rgba(74, 148, 103, 0.2)', // --leaf alpha
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#4a9467',
+                    pointRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#f2ede3' } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    }
+
     renderRankingGenerico(stats.countProdutos, 'ranking-produtos', val => val % 1 !== 0 ? `${val.toFixed(2).replace('.',',')} med.` : `${val} un.`);
     renderRankingGenerico(stats.countClientes, 'ranking-clientes', val => fmt(val));
-    // [ADMIN - FASE 1] Correção do Bug de renderização (1.02)
     renderRankingGenerico(stats.countDias, 'ranking-dias', val => fmt(val));
 
     listDiv.innerHTML = renderHtmlPedidos(pedidosGerais);
@@ -473,7 +621,7 @@ document.getElementById('btn-limpar-hist').addEventListener('click', async () =>
 
 document.getElementById('btn-salvar-config').addEventListener('click', async () => {
     const btn = document.getElementById('btn-salvar-config'); 
-    btn.textContent = "Salvando... ⏳"; btn.disabled = true;
+    btn.textContent = "A guardar... ⏳"; btn.disabled = true;
 
     try {
         let wpp = document.getElementById('config-wpp').value.replace(/\D/g, ''); 
