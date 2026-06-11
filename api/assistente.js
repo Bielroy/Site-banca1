@@ -27,13 +27,11 @@ const bootFirebase = () => {
 
 let cachedCatalog = null;
 let cacheTimestamp = 0;
-// TTL reduzido para garantir sincronia mais fina do catálogo no backend
 const CACHE_TTL = 3 * 60 * 1000; 
 
 const rateLimitMap = new Map();
 
 module.exports = async function handler(req, res) {
-    // [SEGURANÇA - FASE 1] Restringir CORS em Produção
     const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
@@ -46,7 +44,6 @@ module.exports = async function handler(req, res) {
     const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
     const agora = Date.now();
     
-    // Cleanup do rate limit para evitar vazamento de memória e zeragem global abrupta (S04 Parcial)
     if (rateLimitMap.size > 2000) {
         const excesso = agora - 60000;
         for (let [k, v] of rateLimitMap.entries()) {
@@ -68,11 +65,8 @@ module.exports = async function handler(req, res) {
         
         bootFirebase();
 
-        // Novo payload suportando histórico e contexto do carrinho (I01, I02)
-        const { mensagemCliente, historico = [], carrinho = [] } = req.body;
-        if (!mensagemCliente || typeof mensagemCliente !== 'string') {
-            return res.status(400).json({ sucesso: false, error: 'Mensagem inválida.' });
-        }
+        // [IA - FASE 2] Routing de Ações (action) para suportar Admin Tools
+        const { action = 'chat', mensagemCliente, historico = [], carrinho = [], produtoInfo } = req.body;
 
         if (!cachedCatalog || (agora - cacheTimestamp > CACHE_TTL)) {
             const snap = await db.collection('produtos').where('ativo', '==', true).get();
@@ -85,7 +79,56 @@ module.exports = async function handler(req, res) {
             cacheTimestamp = agora;
         }
 
-        // Prompt Engineering Avançado: Instrução do Sistema separada do contexto do usuário
+        // ---------------------------------------------------------------------
+        // FEATURE 2.05: Gerador de Descrição de Produto
+        // ---------------------------------------------------------------------
+        if (action === 'gerar_descricao') {
+            const prompt = `Atue como um Especialista em Marketing Gastronómico. Crie uma descrição extremamente apetitosa e persuasiva (máximo 2 frases) para o produto: "${produtoInfo?.nome}" (Categoria: ${produtoInfo?.cat}).
+Foque na frescura, origem ou qualidade. Pode usar no máximo 1 emoji. 
+Responda APENAS com o texto da descrição. Sem aspas ou formatações extras.`;
+            
+            const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+            const result = await model.generateContent(prompt);
+            return res.status(200).json({ sucesso: true, descricao: result.response.text().trim() });
+        }
+
+        // ---------------------------------------------------------------------
+        // FEATURE 2.06: Montador de Kits Inteligentes
+        // ---------------------------------------------------------------------
+        if (action === 'gerar_kit') {
+            const promptKit = `Atue como Estrategista de Retalho. Analise este catálogo de produtos:
+${JSON.stringify(cachedCatalog)}
+
+Crie um "Kit Promocional" agrupando produtos que combinam perfeitamente (ex: Kit Salada Completa, Kit Sumos Detox, Kit Sopa de Inverno).
+Regras:
+1. Use APENAS produtos existentes no catálogo acima.
+2. O "preco" do kit deve ter um desconto de aproximadamente 10% a 15% em relação à soma dos itens individuais.
+3. Retorne a resposta OBRIGATORIAMENTE num JSON válido.
+
+Formato esperado:
+{
+  "nome": "Nome criativo do Kit",
+  "descricao": "Texto persuasivo a vender a ideia do kit",
+  "preco": valor_float_com_desconto,
+  "itensInclusos": "2x Tomate, 1x Alface, 1x Cebola (apenas os nomes que usou)"
+}`;
+            const modelKit = ai.getGenerativeModel({ 
+                model: 'gemini-1.5-flash', 
+                systemInstruction: "Devolva ESTRITAMENTE o JSON solicitado, sem blocos de markdown.",
+                generationConfig: { responseMimeType: "application/json" }
+            });
+            const resultKit = await modelKit.generateContent(promptKit);
+            const kitData = JSON.parse(resultKit.response.text());
+            return res.status(200).json({ sucesso: true, kit: kitData });
+        }
+
+        // ---------------------------------------------------------------------
+        // FUNCIONAMENTO PADRÃO (Atendimento ao Cliente - FASE 1)
+        // ---------------------------------------------------------------------
+        if (!mensagemCliente || typeof mensagemCliente !== 'string') {
+            return res.status(400).json({ sucesso: false, error: 'Mensagem inválida.' });
+        }
+
         const systemInstruction = `
 Você é o simpático e experiente sommelier de hortifruti da Banca Adair e Pedrina.
 Seu objetivo é ajudar clientes a escolher produtos, dar dicas de preparo, sugerir receitas rápidas e converter vendas de forma natural.
@@ -106,32 +149,22 @@ CATÁLOGO DISPONÍVEL HOJE:
 ${JSON.stringify(cachedCatalog)}
 `;
 
-        // Construção do contexto do Carrinho
         let resumoCarrinho = "O cliente ainda não colocou nada no carrinho.";
         if (carrinho && carrinho.length > 0) {
             const itensCart = carrinho.map(item => `${item.qtd}${item.unidade || 'un'} de ${item.nome}`).join(", ");
             resumoCarrinho = `ATENÇÃO: O cliente JÁ TEM no carrinho: ${itensCart}. Não sugira comprar o que ele já adicionou, a menos que faça sentido. Sugira complementos!`;
         }
 
-        // Histórico Multi-turn para o Gemini
         const formattedContents = [];
         historico.forEach(msg => {
-            formattedContents.push({
-                role: msg.role === 'ia' ? 'model' : 'user',
-                parts: [{ text: msg.content }]
-            });
+            formattedContents.push({ role: msg.role === 'ia' ? 'model' : 'user', parts: [{ text: msg.content }] });
         });
 
-        // Última mensagem com a injeção do carrinho invisível ao usuário, mas visível à IA
         const currentPrompt = `[CONTEXTO DO SISTEMA]\n${resumoCarrinho}\n\n[MENSAGEM DO CLIENTE]\n${mensagemCliente}`;
         formattedContents.push({ role: 'user', parts: [{ text: currentPrompt }] });
 
         let textoResposta = "";
-
-        const generationConfig = {
-            temperature: 0.7,
-            responseMimeType: "application/json", // Força o JSON Mode nativamente no Gemini 1.5
-        };
+        const generationConfig = { temperature: 0.7, responseMimeType: "application/json" };
 
         try {
             const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash', systemInstruction });
@@ -158,7 +191,6 @@ ${JSON.stringify(cachedCatalog)}
             }
         }
         
-        // Limpeza de segurança caso o Gemini ignore a tipagem
         textoResposta = textoResposta.replace(/```json/g, '').replace(/```/g, '').trim();
         const jsonResposta = JSON.parse(textoResposta);
 
