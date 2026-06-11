@@ -7,25 +7,35 @@ const formatPrivateKey = (key) => {
 };
 
 let db;
+let ai; 
 
-// Inicialização Blindada do Firebase
 const bootFirebase = () => {
   if (!admin.apps.length) {
-    const projectId = process.env.FIREBASE_PROJECT_ID;
-    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-    const privateKey = formatPrivateKey(process.env.FIREBASE_PRIVATE_KEY);
-
-    if (!projectId || !clientEmail || !privateKey) throw new Error("Variáveis do Firebase ausentes.");
-
-    admin.initializeApp({
-      credential: admin.credential.cert({ projectId, clientEmail, privateKey })
-    });
+    let credential;
+    
+    // Tenta formato 1 (Chaves Separadas como no Checkout)
+    if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+        credential = admin.credential.cert({
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+            privateKey: formatPrivateKey(process.env.FIREBASE_PRIVATE_KEY)
+        });
+    } 
+    // Tenta formato 2 (Chave Única como no seu Assistente Antigo)
+    else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        try {
+            credential = admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT));
+        } catch (e) {
+            throw new Error("Sua chave FIREBASE_SERVICE_ACCOUNT existe, mas o JSON está formatado incorretamente.");
+        }
+    } else {
+        throw new Error("As credenciais do Firebase não estão configuradas nas Environment Variables da Vercel.");
+    }
+    
+    admin.initializeApp({ credential });
   }
   if (!db) db = admin.firestore();
 };
-
-// Instancia a IA
-const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 let cachedCatalog = null;
 let cacheTimestamp = 0;
@@ -41,10 +51,7 @@ module.exports = async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
     if (req.method === 'OPTIONS') return res.status(200).end();
-
-    if (req.method !== 'POST') {
-        return res.status(405).json({ sucesso: false, error: 'Método não permitido' });
-    }
+    if (req.method !== 'POST') return res.status(405).json({ sucesso: false, error: 'Método não permitido' });
 
     const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
     const agora = Date.now();
@@ -57,6 +64,9 @@ module.exports = async function handler(req, res) {
     if (rateLimitMap.size > 2000) rateLimitMap.clear();
 
     try {
+        if (!process.env.GEMINI_API_KEY) throw new Error("A GEMINI_API_KEY não foi encontrada na Vercel.");
+        if (!ai) ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
         bootFirebase();
 
         const { mensagemCliente } = req.body;
@@ -68,39 +78,28 @@ module.exports = async function handler(req, res) {
         if (!cachedCatalog || (agora - cacheTimestamp > CACHE_TTL)) {
             const produtosSnap = await db.collection('produtos').where('ativo', '==', true).get();
             const tempCatalog = [];
-            
             produtosSnap.forEach(doc => {
                 const data = doc.data();
                 tempCatalog.push({
-                    id: doc.id,
-                    nome: data.nome,
-                    preco: data.preco,
-                    unidade: data.unidade || 'un',
-                    cat: data.cat
+                    id: doc.id, nome: data.nome, preco: data.preco, unidade: data.unidade || 'un', cat: data.cat
                 });
             });
             cachedCatalog = tempCatalog;
             cacheTimestamp = agora;
         }
 
-        const catalogoDisponivel = cachedCatalog;
-
         const systemInstruction = `
         Você é o assistente virtual e sommelier de hortifruti da "Banca Adair e Pedrina".
         Seu objetivo é ajudar o cliente a escolher produtos, sugerir receitas baseadas no estoque atual e impulsionar vendas.
         
         Regras fundamentais:
-        1. Seja sempre cordial, prestativo e focado em alimentação saudável.
-        2. Use APENAS os produtos listados no catálogo abaixo. Se o cliente pedir algo fora do catálogo, diga educadamente que não possui no momento.
-        3. Você deve obrigatoriamente responder em formato JSON estrito, contendo duas chaves:
-           - "respostaTextual": Uma string contendo o texto amigável e formatado em Markdown que será exibido ao cliente.
-           - "produtosSugeridos": Um array contendo os IDs dos produtos do catálogo que você mencionou ou sugeriu na resposta (máximo 3).
-        
-        CATÁLOGO DE PRODUTOS DISPONÍVEIS AGORA NO ESTOQUE:
-        ${JSON.stringify(catalogoDisponivel)}
-        `;
+        1. Seja cordial e focado em alimentação saudável.
+        2. Use APENAS os produtos listados abaixo.
+        3. Você deve obrigatoriamente responder em formato JSON estrito, contendo:
+           - "respostaTextual": string do texto amigável.
+           - "produtosSugeridos": array de IDs.
+        CATÁLOGO: ${JSON.stringify(cachedCatalog)}`;
 
-        // ⚠️ CORREÇÃO DA ARQUITETURA AQUI: systemInstruction agora vai no lugar correto
         const model = ai.getGenerativeModel({ 
             model: 'gemini-1.5-flash',
             systemInstruction: systemInstruction 
@@ -108,17 +107,11 @@ module.exports = async function handler(req, res) {
 
         const resultado = await model.generateContent({
             contents: [{ role: 'user', parts: [{ text: mensagemCliente }] }],
-            generationConfig: {
-                responseMimeType: "application/json",
-                temperature: 0.3
-            }
+            generationConfig: { responseMimeType: "application/json", temperature: 0.3 }
         });
 
         let textoResposta = resultado.response.text();
-        
-        // ⚠️ BLINDAGEM EXTRA: Remove marcações markdown que o Gemini às vezes envia por engano
         textoResposta = textoResposta.replace(/```json/g, '').replace(/```/g, '').trim();
-        
         const jsonResposta = JSON.parse(textoResposta);
 
         return res.status(200).json({
@@ -128,10 +121,10 @@ module.exports = async function handler(req, res) {
         });
 
     } catch (error) {
-        console.error("Erro interno no Assistente Gemini:", error);
+        console.error("CRASH NO SERVIDOR:", error.message);
         return res.status(500).json({ 
             sucesso: false, 
-            error: error.message, // Incluído para depuração caso falhe
+            error: error.message, // ENVIANDO O ERRO EXATO PARA O FRONT-END
             resposta: "Desculpe, tive um soluço técnico.",
             sugestoes: [] 
         });
