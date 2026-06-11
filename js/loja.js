@@ -1,4 +1,4 @@
-import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc } from './firebase.js';
+import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc } from './firebase.js';
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage } from './utils.js';
 
 const CART_VERSION = "2.3"; 
@@ -14,8 +14,28 @@ const STATE = {
     favoritos: JSON.parse(localStorage.getItem('banca_favs') || '[]'),
     lojaRenderizada: false,
     checkoutSessionId: null,
-    historicoChat: [] // [IA - FASE 1] Memória de sessão do cliente
+    historicoChat: []
 };
+
+// [UX - FASE 2] Timer para Recuperação de Carrinho Abandonado (2.10)
+let inatividadeTimer;
+const resetInatividadeTimer = () => {
+    clearTimeout(inatividadeTimer);
+    // Ativa IA apenas se houver itens no carrinho e o usuário não estiver já no checkout ou chat
+    if (STATE.carrinho.length > 0 && !document.getElementById('modal-checkout')?.classList.contains('aberto') && !document.getElementById('modal-ia-chat')?.classList.contains('aberto')) {
+        inatividadeTimer = setTimeout(() => {
+            showToast("🤖 O assistente tem uma sugestão para o seu pedido. Que tal dar uma olhada?", false);
+            const btnIA = document.getElementById('btn-ia-flutuante');
+            if(btnIA) {
+                btnIA.classList.add('pulse-anim');
+                // Remove o pulso após 10 segundos
+                setTimeout(() => btnIA.classList.remove('pulse-anim'), 10000);
+            }
+        }, 180000); // 3 minutos de inatividade engatilha a intervenção
+    }
+};
+// Escuta global para rastrear atividade do usuário
+['click', 'touchstart', 'scroll', 'keydown'].forEach(evt => document.addEventListener(evt, resetInatividadeTimer, { passive: true }));
 
 const carregarCarrinhoDB = async () => {
     try { 
@@ -23,6 +43,7 @@ const carregarCarrinhoDB = async () => {
         if(raw && raw.v === CART_VERSION) { 
             STATE.carrinho = raw.items; 
             renderCarrinhoCompleto();
+            resetInatividadeTimer();
         }
     } catch(e) { console.warn("Cache vazio/inválido."); }
 };
@@ -133,6 +154,7 @@ const atualizarRodapeCarrinhoDOM = () => {
         }
     }
     renderUpsell();
+    resetInatividadeTimer();
 };
 
 const renderUpsell = () => {
@@ -219,6 +241,27 @@ const modificarCarrinho = (id, delta, fixo = false) => {
     atualizarRodapeCarrinhoDOM();
 };
 
+// [UX - FASE 2] Skeleton Premium Injector (2.09)
+const renderSkeletons = () => {
+    const grid = document.getElementById('lista-produtos');
+    let skeletonHtml = '';
+    for(let i=0; i<8; i++) {
+        skeletonHtml += `
+        <article class="produto-card">
+            <div class="produto-img-wrap skeleton"></div>
+            <div class="produto-info">
+                <span class="skeleton" style="width: 50%; height: 12px; display: block; margin-bottom: 8px;"></span>
+                <span class="skeleton" style="width: 80%; height: 20px; display: block;"></span>
+                <div class="produto-preco-row">
+                    <span class="skeleton" style="width: 60px; height: 24px; display: block;"></span>
+                    <div class="skeleton" style="width: 44px; height: 44px; border-radius: 50%;"></div>
+                </div>
+            </div>
+        </article>`;
+    }
+    grid.innerHTML = skeletonHtml;
+};
+
 const construirCardsIniciais = () => {
     const grid = document.getElementById('lista-produtos');
     const html = STATE.produtos.map(p => {
@@ -226,7 +269,7 @@ const construirCardsIniciais = () => {
         const badgeTexto = isFracionavel(p.unidade) && qtdNoCarrinho > 0 ? formatarQuantidadeVisual(qtdNoCarrinho, true) : qtdNoCarrinho;
         const favActive = STATE.favoritos.includes(p.id) ? 'ativo' : '';
         return `
-        <article class="produto-card" data-produto-id="${p.id}" data-cat="${escapeHTML(p.cat)}" data-nome="${p.nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()}" style="display: flex;">
+        <article class="produto-card" data-action="detalhe" data-id="${p.id}" data-cat="${escapeHTML(p.cat)}" data-nome="${p.nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()}" style="display: flex;">
             <div class="produto-img-wrap">
                 ${p.foto ? `<img src="${escapeHTML(p.foto)}" loading="lazy" width="200" height="200" alt="${escapeHTML(p.nome)}">` : '<div class="produto-img-placeholder skeleton" style="width:100%;height:100%"></div>'}
                 <button class="btn-fav ${favActive}" data-action="fav" data-id="${p.id}" aria-label="Favoritar">❤️</button>
@@ -290,6 +333,8 @@ if (SpeechRecognition) {
 const iniciarRealTimeSync = () => {
     if (!navigator.onLine) document.getElementById('banner-offline').classList.add('visivel');
     
+    renderSkeletons(); // Ativa os skeletons antes do primeiro pacote do Firebase chegar
+
     const unsubConfig = onSnapshot(doc(db, "loja", "config"), (snap) => {
         if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()}; atualizarRodapeCarrinhoDOM();
     });
@@ -303,13 +348,60 @@ const iniciarRealTimeSync = () => {
     unsubscribes.push(unsubProdutos);
 };
 
+// [UX - FASE 2] Modal de Detalhe Rico Injetado Dinamicamente (2.03)
+const injetarModalDetalheSeNecessario = () => {
+    if(document.getElementById('modal-detalhe-produto')) return;
+    document.body.insertAdjacentHTML('beforeend', `
+        <div class="modal-overlay" id="modal-detalhe-produto" aria-hidden="true">
+            <div class="modal">
+                <div class="modal-head">
+                    <h2 id="md-nome">Produto</h2>
+                    <button class="btn-fechar" data-fechar="modal-detalhe-produto">×</button>
+                </div>
+                <div class="modal-body" style="padding: 0 24px 24px 24px;">
+                    <div class="produto-detalhe-hero">
+                        <img id="md-img" src="" alt="">
+                    </div>
+                    <span id="md-tag" class="produto-detalhe-tag"></span>
+                    <p id="md-desc" class="produto-detalhe-desc"></p>
+                    <div style="display:flex; justify-content: space-between; align-items:center; border-top: 1px solid var(--parchment); padding-top: 16px;">
+                        <span id="md-preco" class="produto-preco" style="font-size: 2rem;"></span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="md-btn-add" class="btn btn-primary w-100" style="font-size:1.1rem; padding: 18px;">Adicionar ao Pedido</button>
+                </div>
+            </div>
+        </div>
+    `);
+};
+
 document.body.addEventListener('click', async (e) => {
     const actionTarget = e.target.closest('[data-action]'); 
     if (actionTarget) {
         const action = actionTarget.dataset.action; const id = actionTarget.dataset.id;
         
+        // Bloqueia a propagação para evitar abrir o detalhe ao clicar em favoritar ou add
+        if(action === 'add' || action === 'inc' || action === 'dec' || action === 'fav') {
+            e.stopPropagation();
+        }
+
         if (action === 'add' || action === 'inc') { modificarCarrinho(id, 1); if(action === 'add') animarFeedbackBtn(actionTarget); }
         else if (action === 'dec') { modificarCarrinho(id, -1); }
+        else if (action === 'detalhe') {
+            const p = STATE.produtos.find(x => x.id === id);
+            if(!p) return;
+            injetarModalDetalheSeNecessario();
+            document.getElementById('md-nome').textContent = p.nome;
+            document.getElementById('md-img').src = p.foto || '';
+            document.getElementById('md-tag').textContent = `Em Destaque • Categoria: ${p.cat}`;
+            document.getElementById('md-desc').textContent = p.descricao || "Produto fresco selecionado com carinho pela nossa equipe direto para a sua casa."; // O admin gerará via IA na parte 2
+            document.getElementById('md-preco').innerHTML = `${fmt(p.preco)} <span style="font-size:1rem;color:var(--text-light)">/${p.unidade||'un'}</span>`;
+            
+            const btnAdicionar = document.getElementById('md-btn-add');
+            btnAdicionar.onclick = () => { modificarCarrinho(p.id, 1); showToast("Adicionado!"); closeModal('modal-detalhe-produto'); };
+            openModal('modal-detalhe-produto');
+        }
         else if (action === 'cat') { 
             STATE.catAtiva = actionTarget.dataset.cat; 
             document.querySelectorAll('.cat-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.cat === STATE.catAtiva));
@@ -400,11 +492,45 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     STATE.checkoutSessionId = crypto.randomUUID(); openModal('modal-checkout');
 });
 
-const renderHistorico = () => {
+// [UX - FASE 2] Tracker Real-Time de Pedido Ativo (2.07)
+const renderHistorico = async () => {
     const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
     const lista = document.getElementById('lista-meus-pedidos');
+    
     if(meusPedidos.length === 0) { lista.innerHTML = `<div class="empty-state">${iconeHistoricoVazio}<p>Sem pedidos</p></div>`; return; }
-    lista.innerHTML = meusPedidos.map(p => `
+
+    // Verifica o status REAL na nuvem do pedido mais recente para mostrar o Tracker
+    let statusRealTime = 'pendente';
+    const ultimoPedido = meusPedidos[0];
+    const umDiaEmMs = 86400000;
+
+    if (Date.now() - new Date(ultimoPedido.data).getTime() < umDiaEmMs) {
+        try {
+            const docRef = await getDoc(doc(db, "pedidos", ultimoPedido.id));
+            if(docRef.exists()) statusRealTime = docRef.data().status;
+        } catch(e) { console.warn("Sem acesso ao status em tempo real do pedido."); }
+    } else {
+        statusRealTime = 'arquivado';
+    }
+
+    const htmlTracker = statusRealTime !== 'arquivado' ? `
+        <div class="status-tracker">
+            <div class="status-step ${statusRealTime === 'pendente' || statusRealTime === 'preparando' || statusRealTime === 'enviado' ? 'ativo' : ''}">
+                <div class="step-icon">📋</div>
+                <div><div class="step-text">Pedido Recebido</div><div class="step-subtext">Aguardando a equipe visualizar.</div></div>
+            </div>
+            <div class="status-step ${statusRealTime === 'preparando' || statusRealTime === 'enviado' ? 'ativo' : ''}">
+                <div class="step-icon">📦</div>
+                <div><div class="step-text">Em Separação</div><div class="step-subtext">Estamos escolhendo os melhores itens.</div></div>
+            </div>
+            <div class="status-step ${statusRealTime === 'enviado' ? 'ativo' : ''}">
+                <div class="step-icon">🛵</div>
+                <div><div class="step-text">A Caminho!</div><div class="step-subtext">Seu pedido já saiu para entrega.</div></div>
+            </div>
+        </div>
+    ` : '';
+
+    lista.innerHTML = htmlTracker + meusPedidos.map(p => `
         <article style="border: 1px solid var(--parchment); border-radius: 12px; padding: 16px; margin-bottom: 12px; background:var(--warm-white);">
             <div style="display:flex; justify-content: space-between; margin-bottom: 8px;">
                 <strong style="color:var(--forest);">${new Date(p.data).toLocaleDateString('pt-BR')}</strong>
@@ -516,7 +642,10 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 window.addEventListener('online', () => document.getElementById('banner-offline').classList.remove('visivel'));
 window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
 
-document.getElementById('btn-ia-flutuante').addEventListener('click', () => { openModal('modal-ia-chat'); });
+document.getElementById('btn-ia-flutuante').addEventListener('click', () => { 
+    openModal('modal-ia-chat'); 
+    document.getElementById('btn-ia-flutuante').classList.remove('pulse-anim'); // Reseta o tracker se abrir
+});
 
 const enviarMensagemParaIA = async () => {
     const input = document.getElementById('input-ia-mensagem');
@@ -527,7 +656,6 @@ const enviarMensagemParaIA = async () => {
     const containerSugestoes = document.getElementById('ia-sugestoes-container');
     const btnEnviar = document.getElementById('btn-ia-enviar');
 
-    // Echo da mensagem do cliente
     corpoChat.insertAdjacentHTML('beforeend', `
         <div style="align-self: flex-end; background: var(--forest); color: white; padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; box-shadow: var(--shadow-sm);">
             ${escapeHTML(texto)}
@@ -538,7 +666,6 @@ const enviarMensagemParaIA = async () => {
     input.value = ''; containerSugestoes.innerHTML = '';
     btnEnviar.disabled = true; btnEnviar.textContent = '⏱️...';
 
-    // [IA - FASE 1] Interceptador Local (FAQ rápido para evitar custo de API)
     const txtLimpo = texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (txtLimpo.includes('horario') || txtLimpo.includes('que horas')) {
         const msgH = `Nosso horário de funcionamento é das 08h às 18h. E olha, a loja está atualmente ${STATE.config.lojaAberta ? 'ABERTA ✅' : 'FECHADA ❌'}. Posso ajudar com mais algo?`;
@@ -592,7 +719,6 @@ const enviarMensagemParaIA = async () => {
             throw new Error(data.error || `Erro interno (Status: ${response.status})`);
         }
 
-        // [SEGURANÇA - FASE 1] Prevenção de XSS Crítico (S01/1.01)
         const respostaSegura = escapeHTML(data.resposta).replace(/\n/g, '<br>');
         STATE.historicoChat.push({ role: 'ia', content: data.resposta });
 
