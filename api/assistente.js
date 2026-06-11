@@ -1,13 +1,11 @@
 const admin = require('firebase-admin');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// Utilitário para limpar quebras de linha das chaves do Firebase
 const formatPrivateKey = (key) => key ? key.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '';
 
 let db;
 let ai;
 
-// 1. INICIALIZAÇÃO SEGURA DO FIREBASE
 const bootFirebase = () => {
     if (!admin.apps.length) {
         let credential;
@@ -34,7 +32,6 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 const rateLimitMap = new Map();
 
 module.exports = async function handler(req, res) {
-    // CORS
     const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
@@ -44,7 +41,6 @@ module.exports = async function handler(req, res) {
     if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'POST') return res.status(405).json({ sucesso: false, error: 'Método não permitido' });
 
-    // Prevenção de DDoS (Spam na IA)
     const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
     const agora = Date.now();
     if (rateLimitMap.has(ip) && agora - rateLimitMap.get(ip) < 3000) {
@@ -54,7 +50,6 @@ module.exports = async function handler(req, res) {
     if (rateLimitMap.size > 2000) rateLimitMap.clear();
 
     try {
-        // 2. BLINDAGEM DA CHAVE DO GOOGLE GEMINI (Remove espaços invisíveis e aspas)
         const rawApiKey = process.env.GEMINI_API_KEY || "";
         const cleanApiKey = rawApiKey.replace(/['"]/g, '').trim(); 
         
@@ -66,7 +61,6 @@ module.exports = async function handler(req, res) {
         const { mensagemCliente } = req.body;
         if (!mensagemCliente) return res.status(400).json({ sucesso: false, error: 'Mensagem inválida.' });
 
-        // 3. RECUPERA OS PRODUTOS (COM CACHE PARA ECONOMIZAR)
         if (!cachedCatalog || (agora - cacheTimestamp > CACHE_TTL)) {
             const snap = await db.collection('produtos').where('ativo', '==', true).get();
             const temp = [];
@@ -78,39 +72,53 @@ module.exports = async function handler(req, res) {
             cacheTimestamp = agora;
         }
 
-        const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-        // 4. CHAMADA BRUTA (Ignora configurações avançadas da SDK que causam bugs)
-        const promptBlindado = `
+        // PROMPT UNIVERSAL (Funciona em 100% das versões do Gemini sem dar conflito de parâmetros)
+        const promptUniversal = `
 Você é o sommelier de hortifruti da Banca Adair e Pedrina.
-Use APENAS os produtos do catálogo.
-Responda OBRIGATORIAMENTE em JSON com duas chaves: "respostaTextual" e "produtosSugeridos" (array de IDs).
+Use APENAS os produtos do catálogo abaixo.
+Responda OBRIGATORIAMENTE em formato JSON estrito contendo APENAS duas chaves: 
+1. "respostaTextual": string com a resposta amigável para o cliente.
+2. "produtosSugeridos": array contendo os IDs numéricos ou textuais dos produtos sugeridos.
 
-CATÁLOGO: ${JSON.stringify(cachedCatalog)}
+CATÁLOGO DISPONÍVEL: 
+${JSON.stringify(cachedCatalog)}
 
-MENSAGEM DO CLIENTE: ${mensagemCliente}
+MENSAGEM DO CLIENTE: 
+${mensagemCliente}
 `;
         
-        const resultado = await model.generateContent(promptBlindado);
-        let textoResposta = resultado.response.text();
+        let textoResposta = "";
+
+        try {
+            // TENTATIVA 1: Gemini 1.5 Flash (Rápido, mas pode dar 404 na sua conta)
+            const model15 = ai.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+            const result = await model15.generateContent(promptUniversal);
+            textoResposta = result.response.text();
+        } catch (err15) {
+            console.warn("Modelo 1.5 bloqueado pelo Google. Ativando Resiliência para 1.0 Pro:", err15.message);
+            
+            // TENTATIVA 2: Fallback Absoluto (O Gemini Pro Universal)
+            const model10 = ai.getGenerativeModel({ model: 'gemini-pro' });
+            const result = await model10.generateContent(promptUniversal);
+            textoResposta = result.response.text();
+        }
         
-        // Remove marcações markdown (```json) se o modelo adicionar por acidente
+        // Limpa sujeiras de markdown que a IA possa enviar por acidente
         textoResposta = textoResposta.replace(/```json/g, '').replace(/```/g, '').trim();
         const jsonResposta = JSON.parse(textoResposta);
 
         return res.status(200).json({ 
             sucesso: true, 
-            resposta: jsonResposta.respostaTextual, 
-            sugestoes: jsonResposta.produtosSugeridos 
+            resposta: jsonResposta.respostaTextual || "Aqui estão as minhas sugestões de hoje!", 
+            sugestoes: jsonResposta.produtosSugeridos || []
         });
 
     } catch (error) {
-        // Agora o erro exato vai parar nos Logs da Vercel
         console.error("CRASH NO SERVIDOR:", error.message);
         return res.status(500).json({ 
             sucesso: false, 
             error: error.message,
-            resposta: "Desculpe, tive um soluço técnico.",
+            resposta: "Desculpe, tive um pequeno soluço técnico agora.",
             sugestoes: [] 
         });
     }
