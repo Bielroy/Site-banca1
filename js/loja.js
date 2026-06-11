@@ -1,7 +1,7 @@
 import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc } from './firebase.js';
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage } from './utils.js';
 
-const CART_VERSION = "2.3"; // Atualizado para invalidar caches legados defeituosos
+const CART_VERSION = "2.3"; 
 let unsubscribes = []; 
 
 const STATE = {
@@ -16,7 +16,6 @@ const STATE = {
     checkoutSessionId: null 
 };
 
-// 1. CARREGAMENTO ULTRA RÁPIDO DO CARRINHO (INDEXED DB)
 const carregarCarrinhoDB = async () => {
     try { 
         const raw = await dbStorage.get('banca_cart');
@@ -28,38 +27,29 @@ const carregarCarrinhoDB = async () => {
 };
 carregarCarrinhoDB(); 
 
-// =========================================================
-// CONTROLE DE INICIALIZAÇÃO E AUTENTICAÇÃO (CORRIGIDO)
-// =========================================================
 let realTimeSyncIniciado = false;
 
 onAuthStateChanged(auth, (user) => {
     if (user) {
         STATE.uid = user.uid;
-        
-        // Se a aplicação já estiver ouvindo o banco, mantém a conexão viva sem reiniciar listeners
         if (!realTimeSyncIniciado) {
             iniciarRealTimeSync();
             realTimeSyncIniciado = true;
         }
     } else {
-        // Modo Visitante Segurado: Se o Auth falhar ou deslogar, limpa tudo e força o sync público
         unsubscribes.forEach(unsub => unsub());
         unsubscribes = [];
         realTimeSyncIniciado = false;
 
-        // Dispara o sync imediatamente (as regras do Firestore permitem leitura sem login)
         iniciarRealTimeSync();
         realTimeSyncIniciado = true;
 
-        // Tenta autenticar anonimamente em segundo plano para recursos logísticos e persistência
         signInAnonymously(auth).catch(err => {
             console.warn("⚠️ Firebase Anonymous Auth desativado ou lento. Rodando de forma estável como visitante público:", err);
         });
     }
 });
 
-// 2. PROTEÇÃO DE PREÇO E ESTOQUE (NOVO - SEGURANÇA EMPRESARIAL)
 const syncCarrinhoComPrecosAoVivo = () => {
     if (STATE.carrinho.length === 0 || STATE.produtos.length === 0) return;
     
@@ -74,7 +64,6 @@ const syncCarrinhoComPrecosAoVivo = () => {
                 modificou = true;
             }
         } else {
-            // Produto foi inativado ou deletado do banco
             itemCart.qtd = 0; 
             itensRemovidos++;
             modificou = true;
@@ -173,7 +162,6 @@ const renderUpsell = () => {
     if(sugestoes.length === 0) sugestoes = STATE.produtos.filter(p => p.ativo && !idsNoCarrinho.includes(p.id));
 
     if (sugestoes.length > 0) {
-        // Prioriza mostrar favoritos no upsell
         sugestoes.sort((a,b) => (STATE.favoritos.includes(b.id) ? -1 : 1));
         const up = sugestoes[0];
         upsellCont.innerHTML = `<div class="upsell-box"><span>Que tal levar <b>${escapeHTML(up.nome)}</b>?</span><button class="btn btn-outline" style="padding: 6px 12px;" data-action="add" data-id="${up.id}">+ Add</button></div>`;
@@ -347,7 +335,7 @@ const iniciarRealTimeSync = () => {
         STATE.produtos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.ativo);
         renderCategorias(); 
         renderLoja(true); 
-        syncCarrinhoComPrecosAoVivo(); // Segurança e Sincronização ao vivo
+        syncCarrinhoComPrecosAoVivo(); 
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
     }, (error) => console.error("Erro Realtime:", error));
     unsubscribes.push(unsubProdutos);
@@ -465,7 +453,7 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
         document.getElementById('cli-quadra').value = clientes[0].quadra || '';
         document.getElementById('cli-lote').value = clientes[0].lote || '';
     }
-    STATE.checkoutSessionId = crypto.randomUUID(); // Idempotência
+    STATE.checkoutSessionId = crypto.randomUUID(); 
     openModal('modal-checkout');
 });
 
@@ -487,7 +475,6 @@ const renderHistorico = () => {
     `).join('');
 };
 
-// 3. RECOMPRA INTELIGENTE E VALIDAÇÃO
 const repetirPedido = (pedId) => {
     const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
     const ped = meusPedidos.find(p => String(p.id) === String(pedId)); 
@@ -496,14 +483,11 @@ const repetirPedido = (pedId) => {
     let itensAdicionados = 0;
     let itensEsgotados = [];
     
-    // Zera o carrinho atual (Comportamento padrão iFood para repetir pedido)
     STATE.carrinho = [];
     
     ped.itens.forEach(i => {
-        // Verifica se o produto AINDA EXISTE e está ATIVO no banco de dados atual
         const prodAtualizado = STATE.produtos.find(px => px.id === i.id);
         if(prodAtualizado && prodAtualizado.ativo) { 
-            // Adiciona pegando o PREÇO NOVO, não o preço antigo do histórico
             STATE.carrinho.push({...prodAtualizado, qtd: i.qtd});
             itensAdicionados++;
         } else {
@@ -531,7 +515,6 @@ document.getElementById('cli-pagamento').addEventListener('change', (e) => {
     if(!isDinheiro) document.getElementById('cli-troco').value = '';
 });
 
-// INTEGRAÇÃO SERVERLESS BLINDADA COM FALLBACK
 document.getElementById('btn-enviar-pedido').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     if (btn.disabled) return;
@@ -610,8 +593,9 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 window.addEventListener('online', () => document.getElementById('banner-offline').classList.remove('visivel'));
 window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
 
+
 // =========================================================
-// INTEGRAÇÃO COMPLETA DO ASSISTENTE CHAT GEMINI (RECONSTRUÍDA)
+// INTEGRAÇÃO DA IA - CAPTURA DE ERRO APERFEIÇOADA
 // =========================================================
 
 document.getElementById('btn-ia-flutuante').addEventListener('click', () => {
@@ -627,7 +611,6 @@ const enviarMensagemParaIA = async () => {
     const containerSugestoes = document.getElementById('ia-sugestoes-container');
     const btnEnviar = document.getElementById('btn-ia-enviar');
 
-    // Renderiza mensagem do usuário no chat
     corpoChat.insertAdjacentHTML('beforeend', `
         <div style="align-self: flex-end; background: var(--forest); color: white; padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; box-shadow: var(--shadow-sm);">
             ${escapeHTML(texto)}
@@ -639,7 +622,6 @@ const enviarMensagemParaIA = async () => {
     btnEnviar.disabled = true;
     btnEnviar.textContent = '⏱️...';
 
-    // UI/UX: Indicador de digitação (Skeleton Bubble)
     const idDigitando = 'typing-' + Date.now();
     corpoChat.insertAdjacentHTML('beforeend', `
         <div id="${idDigitando}" style="align-self: flex-start; background: white; padding: 14px 20px; border-radius: var(--radius-sm); border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); display: flex; gap: 6px; align-items: center;">
@@ -651,7 +633,6 @@ const enviarMensagemParaIA = async () => {
     corpoChat.scrollTop = corpoChat.scrollHeight;
 
     try {
-        // Proteção contra Timeout do Servidor (AbortController de 15s)
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
 
@@ -664,26 +645,23 @@ const enviarMensagemParaIA = async () => {
 
         clearTimeout(timeoutId);
 
-        // Remove o indicador de digitação
         const bolhaDigitando = document.getElementById(idDigitando);
         if (bolhaDigitando) bolhaDigitando.remove();
 
-        // Validação estrita da resposta para evitar quebra do JSON.parse(HTML)
         if (!response.ok) {
             if (response.status === 429) throw new Error("RATE_LIMIT");
-            throw new Error(`Erro na rede (Status: ${response.status})`);
+            // Agora o erro joga o status HTTP real capturado do servidor
+            throw new Error(`Erro na rede (Status HTTP: ${response.status})`);
         }
 
         const data = await response.json();
         
-        // Renderiza a resposta textual da IA
         corpoChat.insertAdjacentHTML('beforeend', `
             <div style="align-self: flex-start; background: white; color: var(--text-dark); padding: 14px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); line-height: 1.5;">
                 ${data.resposta}
             </div>
         `);
 
-        // Renderiza botões de ação rápida para o carrinho
         if (data.sugestoes && data.sugestoes.length > 0) {
             let botoesHtml = '';
             data.sugestoes.forEach(prodId => {
@@ -700,12 +678,12 @@ const enviarMensagemParaIA = async () => {
         }
 
     } catch (err) {
-        // Fallback e limpeza visual
         const bolhaDigitando = document.getElementById(idDigitando);
         if (bolhaDigitando) bolhaDigitando.remove();
 
-        let msgErro = "Erro ao conectar com o assistente. Verifique sua conexão.";
-        if (err.name === 'AbortError') msgErro = "O assistente demorou muito para responder. Tente enviar de novo.";
+        // ⚠️ MUDANÇA AQUI: Mostramos o err.message real gerado no bloco acima.
+        let msgErro = `Falha na conexão: ${err.message}`;
+        if (err.name === 'AbortError') msgErro = "O assistente demorou muito para responder (Timeout).";
         if (err.message === "RATE_LIMIT") msgErro = "Você enviou muitas mensagens. Aguarde alguns segundos.";
 
         corpoChat.insertAdjacentHTML('beforeend', `
