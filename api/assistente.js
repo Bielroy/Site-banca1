@@ -27,11 +27,13 @@ const bootFirebase = () => {
 
 let cachedCatalog = null;
 let cacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000;
+// TTL reduzido para garantir sincronia mais fina do catálogo no backend
+const CACHE_TTL = 3 * 60 * 1000; 
 
 const rateLimitMap = new Map();
 
 module.exports = async function handler(req, res) {
+    // [SEGURANÇA - FASE 1] Restringir CORS em Produção
     const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
@@ -43,11 +45,19 @@ module.exports = async function handler(req, res) {
 
     const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
     const agora = Date.now();
+    
+    // Cleanup do rate limit para evitar vazamento de memória e zeragem global abrupta (S04 Parcial)
+    if (rateLimitMap.size > 2000) {
+        const excesso = agora - 60000;
+        for (let [k, v] of rateLimitMap.entries()) {
+            if (v < excesso) rateLimitMap.delete(k);
+        }
+    }
+
     if (rateLimitMap.has(ip) && agora - rateLimitMap.get(ip) < 3000) {
         return res.status(429).json({ sucesso: false, resposta: "Aguarde uns segundos para mandar outra mensagem.", sugestoes: [] });
     }
     rateLimitMap.set(ip, agora);
-    if (rateLimitMap.size > 2000) rateLimitMap.clear();
 
     try {
         const rawApiKey = process.env.GEMINI_API_KEY || "";
@@ -58,71 +68,97 @@ module.exports = async function handler(req, res) {
         
         bootFirebase();
 
-        const { mensagemCliente } = req.body;
-        if (!mensagemCliente) return res.status(400).json({ sucesso: false, error: 'Mensagem inválida.' });
+        // Novo payload suportando histórico e contexto do carrinho (I01, I02)
+        const { mensagemCliente, historico = [], carrinho = [] } = req.body;
+        if (!mensagemCliente || typeof mensagemCliente !== 'string') {
+            return res.status(400).json({ sucesso: false, error: 'Mensagem inválida.' });
+        }
 
         if (!cachedCatalog || (agora - cacheTimestamp > CACHE_TTL)) {
             const snap = await db.collection('produtos').where('ativo', '==', true).get();
             const temp = [];
             snap.forEach(doc => { 
                 const d = doc.data(); 
-                temp.push({ id: doc.id, nome: d.nome, preco: d.preco, cat: d.cat }); 
+                temp.push({ id: doc.id, nome: d.nome, preco: d.preco, cat: d.cat, unidade: d.unidade || 'un' }); 
             });
             cachedCatalog = temp;
             cacheTimestamp = agora;
         }
 
-        const promptUniversal = `
-Você é o sommelier de hortifruti da Banca Adair e Pedrina.
-Use APENAS os produtos do catálogo abaixo.
-Responda OBRIGATORIAMENTE em formato JSON estrito contendo APENAS duas chaves: 
-1. "respostaTextual": string com a resposta amigável para o cliente.
-2. "produtosSugeridos": array contendo os IDs numéricos ou textuais dos produtos sugeridos.
+        // Prompt Engineering Avançado: Instrução do Sistema separada do contexto do usuário
+        const systemInstruction = `
+Você é o simpático e experiente sommelier de hortifruti da Banca Adair e Pedrina.
+Seu objetivo é ajudar clientes a escolher produtos, dar dicas de preparo, sugerir receitas rápidas e converter vendas de forma natural.
 
-CATÁLOGO DISPONÍVEL: 
+REGRAS DE OURO:
+1. Use APENAS os produtos disponíveis no catálogo. Nunca invente produtos.
+2. Seja prestativo, caloroso e use emojis com moderação.
+3. Se o cliente pedir dicas para uma receita, sugira os itens do catálogo que combinam.
+4. OBRIGATÓRIO: Retorne a resposta ESTRITAMENTE em formato JSON.
+
+FORMATO DE SAÍDA EXIGIDO:
+{
+  "respostaTextual": "Sua resposta humanizada e amigável aqui.",
+  "produtosSugeridos": ["ID_DO_PRODUTO_1", "ID_DO_PRODUTO_2"]
+}
+
+CATÁLOGO DISPONÍVEL HOJE: 
 ${JSON.stringify(cachedCatalog)}
-
-MENSAGEM DO CLIENTE: 
-${mensagemCliente}
 `;
-        
+
+        // Construção do contexto do Carrinho
+        let resumoCarrinho = "O cliente ainda não colocou nada no carrinho.";
+        if (carrinho && carrinho.length > 0) {
+            const itensCart = carrinho.map(item => `${item.qtd}${item.unidade || 'un'} de ${item.nome}`).join(", ");
+            resumoCarrinho = `ATENÇÃO: O cliente JÁ TEM no carrinho: ${itensCart}. Não sugira comprar o que ele já adicionou, a menos que faça sentido. Sugira complementos!`;
+        }
+
+        // Histórico Multi-turn para o Gemini
+        const formattedContents = [];
+        historico.forEach(msg => {
+            formattedContents.push({
+                role: msg.role === 'ia' ? 'model' : 'user',
+                parts: [{ text: msg.content }]
+            });
+        });
+
+        // Última mensagem com a injeção do carrinho invisível ao usuário, mas visível à IA
+        const currentPrompt = `[CONTEXTO DO SISTEMA]\n${resumoCarrinho}\n\n[MENSAGEM DO CLIENTE]\n${mensagemCliente}`;
+        formattedContents.push({ role: 'user', parts: [{ text: currentPrompt }] });
+
         let textoResposta = "";
 
+        const generationConfig = {
+            temperature: 0.7,
+            responseMimeType: "application/json", // Força o JSON Mode nativamente no Gemini 1.5
+        };
+
         try {
-            // Tenta o modelo padrão recomendado
-            const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
-            const result = await model.generateContent(promptUniversal);
+            const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash', systemInstruction });
+            const result = await model.generateContent({ contents: formattedContents, generationConfig });
             textoResposta = result.response.text();
         } catch (errApi) {
-            // 🚨 A MÁGICA ACONTECE AQUI: SE O GOOGLE DER 404, O SISTEMA SE AUTO-CURA
-            console.warn("Modelo padrão falhou. Iniciando varredura na conta do Google...");
-            
+            console.warn("Modelo padrão falhou. Iniciando varredura na conta da Google...");
             const respostaModelos = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanApiKey}`);
             const dadosModelos = await respostaModelos.json();
 
-            if (!dadosModelos.models) {
-                throw new Error("A sua chave não possui acesso a nenhum modelo da Google.");
-            }
+            if (!dadosModelos.models) throw new Error("Chave sem acesso a modelos.");
 
-            // Descobre dinamicamente qual é o modelo exato que o Google liberou para você
             const modeloValido = dadosModelos.models.find(m => 
-                m.supportedGenerationMethods && 
-                m.supportedGenerationMethods.includes("generateContent") && 
-                m.name.includes("gemini")
+                m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent") && m.name.includes("gemini")
             );
 
             if (modeloValido) {
                 const nomeRealDoModelo = modeloValido.name.replace('models/', '');
-                console.log(`Modelo encontrado pela IA! Usando: ${nomeRealDoModelo}`);
-                
-                const modelFallback = ai.getGenerativeModel({ model: nomeRealDoModelo });
-                const resultFallback = await modelFallback.generateContent(promptUniversal);
+                const modelFallback = ai.getGenerativeModel({ model: nomeRealDoModelo, systemInstruction });
+                const resultFallback = await modelFallback.generateContent({ contents: formattedContents, generationConfig });
                 textoResposta = resultFallback.response.text();
             } else {
-                throw new Error("Nenhum modelo de texto foi encontrado na sua conta do Google.");
+                throw new Error("Nenhum modelo compatível encontrado.");
             }
         }
         
+        // Limpeza de segurança caso o Gemini ignore a tipagem
         textoResposta = textoResposta.replace(/```json/g, '').replace(/```/g, '').trim();
         const jsonResposta = JSON.parse(textoResposta);
 
@@ -133,11 +169,11 @@ ${mensagemCliente}
         });
 
     } catch (error) {
-        console.error("CRASH NO SERVIDOR:", error.message);
+        console.error("ERRO ASSISTENTE:", error.message);
         return res.status(500).json({ 
             sucesso: false, 
             error: error.message,
-            resposta: "Desculpe, tive um pequeno soluço técnico agora.",
+            resposta: "Desculpe, a nossa rede de hortifruti deu um pequeno curto-circuito. Pode repetir?",
             sugestoes: [] 
         });
     }
