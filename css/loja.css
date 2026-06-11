@@ -39,7 +39,7 @@ header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; 
 .produtos-grid { flex: 2; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 18px; }
 
 /* Microinterações nos Cards */
-.produto-card { background: var(--warm-white); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); border: 1.5px solid transparent; display: flex; flex-direction: column; position: relative; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2), box-shadow 0.3s; }
+.produto-card { background: var(--warm-white); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); border: 1.5px solid transparent; display: flex; flex-direction: column; position: relative; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2), box-shadow 0.3s; cursor: pointer;}
 .produto-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-md); border-color: var(--sage); }
 
 .produto-img-wrap { width: 100%; aspect-ratio: 1; background: var(--foam); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
@@ -55,10 +55,10 @@ header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; 
 .card-badge.visivel { opacity: 1; transform: scale(1); }
 
 .produto-unidade-tag { position: absolute; top: 12px; left: 12px; background: rgba(26,58,42,0.85); backdrop-filter: blur(8px); color: var(--mint); font-size: 0.7rem; font-weight: 700; padding: 4px 12px; border-radius: 20px; text-transform: uppercase; z-index: 10; }
-.produto-info { padding: 16px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.produto-info { padding: 16px; flex: 1; display: flex; flex-direction: column; gap: 4px; pointer-events: none;}
 .produto-categoria { font-size: 0.75rem; font-weight: 700; color: var(--mint-dark); text-transform: uppercase; letter-spacing: 1px; }
 .produto-nome { font-size: 1rem; color: var(--text-dark); line-height: 1.2; font-weight: 700; }
-.produto-preco-row { display: flex; align-items: flex-end; justify-content: space-between; margin-top: auto; padding-top: 8px; }
+.produto-preco-row { display: flex; align-items: flex-end; justify-content: space-between; margin-top: auto; padding-top: 8px; pointer-events: auto;}
 .produto-preco { font-family: 'Fraunces', serif; font-size: 1.55rem; font-weight: 800; color: var(--forest); letter-spacing: -0.5px; line-height: 1; }
 .produto-preco span { font-size: 0.8rem; font-weight: 600; color: var(--text-light); }
 
@@ -122,26 +122,36 @@ header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; 
 /* Forms */
 .form-group { margin-bottom: 16px; }
 .form-group label { display: block; font-size: 0.8rem; font-weight: 700; color: var(--text-mid); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-.form-group input, .form-group select, .form-group textarea { width: 100%; padding: 14px; border: 1.5px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; background: var(--parchment); transition: 0.2s; color: var(--text-dark); font-size: 16px; /* Evita zoom automático no iOS */ }
+.form-group input, .form-group select, .form-group textarea { width: 100%; padding: 14px; border: 1.5px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; background: var(--parchment); transition: 0.2s; color: var(--text-dark); font-size: 16px; }
 .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--forest); background: white; box-shadow: 0 0 0 3px rgba(26,58,42,0.1); }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
-/* Modal Sucesso */
-.modal-center { text-align: center; padding-bottom: 0; max-width: 400px; }
-.circulo-sucesso { width: 80px; height: 80px; background: #dcfce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: var(--success); font-size: 40px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.2); animation: scaleIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.2); }
-@keyframes scaleIn { from { transform: scale(0); } to { transform: scale(1); } }
-.title-success { font-family: 'Fraunces', serif; color: var(--forest); margin-bottom: 12px; font-size: 1.8rem; }
-.text-success { color: var(--text-mid); margin-bottom: 24px; line-height: 1.5; font-size: 1.05rem; }
+/* ========================================= */
+/* NOVOS ESTILOS: FASE 2 - UI Premium */
+/* ========================================= */
 
-/* Toast System e Float Btn */
-.btn-flutuante-carrinho { display: none; }
-.toast { position: fixed; bottom: calc(var(--safe-bottom) + 80px); left: 50%; transform: translateX(-50%) translateY(100px); opacity: 0; background: var(--forest); color: white; padding: 14px 28px; border-radius: 40px; font-weight: 700; font-size: 0.95rem; z-index: 9999; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2); box-shadow: var(--shadow-lg); pointer-events: none; text-align: center; white-space: nowrap; }
-.toast.visivel { transform: translateX(-50%) translateY(0); opacity: 1; }
+/* Detalhe do Produto Modal (2.03) */
+.produto-detalhe-hero { width: 100%; height: 250px; background: var(--parchment); position: relative; border-radius: 12px; overflow: hidden; margin-bottom: 20px; }
+.produto-detalhe-hero img { width: 100%; height: 100%; object-fit: cover; }
+.produto-detalhe-tag { display: inline-block; background: var(--foam); color: var(--forest-mid); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; margin-bottom: 12px; border: 1px solid var(--sage); }
+.produto-detalhe-desc { color: var(--text-mid); line-height: 1.6; font-size: 1.05rem; margin-bottom: 20px; }
+
+/* Status do Pedido Timeline (2.07) */
+.status-tracker { display: flex; flex-direction: column; gap: 16px; margin: 20px 0; padding: 20px; background: var(--warm-white); border-radius: 12px; border: 1px solid var(--parchment); }
+.status-step { display: flex; align-items: center; gap: 16px; opacity: 0.4; transition: 0.3s ease; }
+.status-step.ativo { opacity: 1; }
+.status-step.ativo .step-icon { background: var(--forest); color: white; border-color: var(--forest); box-shadow: 0 0 0 4px var(--foam); }
+.step-icon { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--text-light); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.9rem; background: white; z-index: 2; transition: 0.3s; }
+.step-text { font-weight: 700; font-size: 1rem; color: var(--text-dark); }
+.step-subtext { font-size: 0.8rem; color: var(--text-light); }
+
+/* IA Pulse Animation (2.10) */
+@keyframes pulseIA { 0% { box-shadow: 0 0 0 0 rgba(74,148,103, 0.7); } 70% { box-shadow: 0 0 0 15px rgba(74,148,103, 0); } 100% { box-shadow: 0 0 0 0 rgba(74,148,103, 0); } }
+.pulse-anim { animation: pulseIA 2s infinite; background: var(--success) !important;}
 
 /* ========================================= */
 /* MEDIA QUERIES (Resiliência Mobile Extrema) */
 /* ========================================= */
-
 @media (min-width: 601px) and (max-width: 1024px) {
     .layout { flex-direction: column; padding: 24px 20px; }
     .produtos-grid { width: 100%; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
@@ -151,7 +161,6 @@ header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; 
 
 @media (max-width: 600px) {
     .layout { padding: 20px 16px calc(var(--safe-bottom) + 100px); flex-direction: column; }
-    /* Correção de Grid (Auto-fit com minmax reduzido para acomodar 2 itens no iPhone SE) */
     .produtos-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); width: 100%; gap: 12px; }
     .produto-nome { font-size: 0.95rem; }
     .produto-preco { font-size: 1.3rem; }
@@ -167,7 +176,6 @@ header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; 
     .toast { z-index: 9999; bottom: calc(var(--safe-bottom) + 90px); } 
     header h1 { font-size: 2rem; }
     
-    /* Prevenção de Esmagamento do Teclado no Modal */
     .modal-overlay { padding: 0; align-items: flex-end; }
     .modal { max-height: 95dvh; border-radius: 20px 20px 0 0; }
     .modal-body { padding-bottom: calc(24px + var(--safe-bottom)); }
