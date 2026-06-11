@@ -13,7 +13,8 @@ const STATE = {
     config: { minimo: 0, wpp: '5562999999999', lojaAberta: true, diasAbertos: [0,1,2,3,4,5,6] },
     favoritos: JSON.parse(localStorage.getItem('banca_favs') || '[]'),
     lojaRenderizada: false,
-    checkoutSessionId: null 
+    checkoutSessionId: null,
+    historicoChat: [] // [IA - FASE 1] Memória de sessão do cliente
 };
 
 const carregarCarrinhoDB = async () => {
@@ -443,11 +444,6 @@ document.getElementById('cli-pagamento').addEventListener('change', (e) => {
     if(!isDinheiro) document.getElementById('cli-troco').value = '';
 });
 
-
-// =========================================================
-// CORREÇÃO CRÍTICA DE FRONT-END NO CHECKOUT
-// Agora ele não morre cego no "Servidor ocupado" se der erro
-// =========================================================
 document.getElementById('btn-enviar-pedido').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     if (btn.disabled) return;
@@ -484,13 +480,8 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
         clearTimeout(timeoutId);
 
-        // BLINDAGEM DO JSON AQUI TAMBÉM
         let data;
-        try {
-            data = await response.json();
-        } catch(e) {
-            throw new Error(`Falha grave de processamento (Status HTTP: ${response.status})`);
-        }
+        try { data = await response.json(); } catch(e) { throw new Error(`Falha grave de processamento (Status HTTP: ${response.status})`); }
         
         if (!response.ok) throw new Error(data.error || "Ocorreu um erro ao enviar o pedido.");
         if (!data.sucesso) throw new Error(data.error || "Falha ao processar pedido.");
@@ -525,10 +516,6 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 window.addEventListener('online', () => document.getElementById('banner-offline').classList.remove('visivel'));
 window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
 
-
-// =========================================================
-// CORREÇÃO CRÍTICA DO FRONT-END DA IA
-// =========================================================
 document.getElementById('btn-ia-flutuante').addEventListener('click', () => { openModal('modal-ia-chat'); });
 
 const enviarMensagemParaIA = async () => {
@@ -540,14 +527,31 @@ const enviarMensagemParaIA = async () => {
     const containerSugestoes = document.getElementById('ia-sugestoes-container');
     const btnEnviar = document.getElementById('btn-ia-enviar');
 
+    // Echo da mensagem do cliente
     corpoChat.insertAdjacentHTML('beforeend', `
         <div style="align-self: flex-end; background: var(--forest); color: white; padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; box-shadow: var(--shadow-sm);">
             ${escapeHTML(texto)}
         </div>
     `);
     
+    STATE.historicoChat.push({ role: 'user', content: texto });
     input.value = ''; containerSugestoes.innerHTML = '';
     btnEnviar.disabled = true; btnEnviar.textContent = '⏱️...';
+
+    // [IA - FASE 1] Interceptador Local (FAQ rápido para evitar custo de API)
+    const txtLimpo = texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (txtLimpo.includes('horario') || txtLimpo.includes('que horas')) {
+        const msgH = `Nosso horário de funcionamento é das 08h às 18h. E olha, a loja está atualmente ${STATE.config.lojaAberta ? 'ABERTA ✅' : 'FECHADA ❌'}. Posso ajudar com mais algo?`;
+        corpoChat.insertAdjacentHTML('beforeend', `
+            <div style="align-self: flex-start; background: white; color: var(--text-dark); padding: 14px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); line-height: 1.5;">
+                🤖 ${msgH}
+            </div>
+        `);
+        STATE.historicoChat.push({ role: 'ia', content: msgH });
+        btnEnviar.disabled = false; btnEnviar.textContent = 'Enviar';
+        corpoChat.scrollTop = corpoChat.scrollHeight;
+        return;
+    }
 
     const idDigitando = 'typing-' + Date.now();
     corpoChat.insertAdjacentHTML('beforeend', `
@@ -563,10 +567,16 @@ const enviarMensagemParaIA = async () => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
 
+        const payloadParams = {
+            mensagemCliente: texto,
+            historico: STATE.historicoChat.slice(-8), 
+            carrinho: STATE.carrinho.map(i => ({id: i.id, nome: i.nome, qtd: i.qtd, unidade: i.unidade}))
+        };
+
         const response = await fetch('/api/assistente', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mensagemCliente: texto }),
+            body: JSON.stringify(payloadParams),
             signal: controller.signal
         });
         clearTimeout(timeoutId);
@@ -574,30 +584,28 @@ const enviarMensagemParaIA = async () => {
         const bolhaDigitando = document.getElementById(idDigitando);
         if (bolhaDigitando) bolhaDigitando.remove();
 
-        // ⚠️ O PULO DO GATO: LER O JSON ANTES DE AVALIAR O ERRO
         let data;
-        try {
-            data = await response.json();
-        } catch(e) {
-            throw new Error(`Falha do Vercel Engine (Status HTTP: ${response.status})`);
-        }
+        try { data = await response.json(); } catch(e) { throw new Error(`Falha do Engine (Status: ${response.status})`); }
 
         if (!response.ok) {
             if (response.status === 429) throw new Error("RATE_LIMIT");
-            // Agora finalmente ele exibe a mensagem de erro que vem do banco de dados/backend
             throw new Error(data.error || `Erro interno (Status: ${response.status})`);
         }
 
+        // [SEGURANÇA - FASE 1] Prevenção de XSS Crítico (S01/1.01)
+        const respostaSegura = escapeHTML(data.resposta).replace(/\n/g, '<br>');
+        STATE.historicoChat.push({ role: 'ia', content: data.resposta });
+
         corpoChat.insertAdjacentHTML('beforeend', `
             <div style="align-self: flex-start; background: white; color: var(--text-dark); padding: 14px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); line-height: 1.5;">
-                ${data.resposta}
+                ${respostaSegura}
             </div>
         `);
 
         if (data.sugestoes && data.sugestoes.length > 0) {
             let botoesHtml = '';
             data.sugestoes.forEach(prodId => {
-                const produtoNoBanco = STATE.produtos.find(p => p.id === prodId);
+                const produtoNoBanco = STATE.produtos.find(p => String(p.id) === String(prodId));
                 if (produtoNoBanco) {
                     botoesHtml += `
                         <button class="btn btn-outline" style="padding: 6px 12px; font-size: 0.85rem; white-space: nowrap; border-color: var(--earth); color: var(--earth);" data-action="add" data-id="${produtoNoBanco.id}">
@@ -613,7 +621,7 @@ const enviarMensagemParaIA = async () => {
         const bolhaDigitando = document.getElementById(idDigitando);
         if (bolhaDigitando) bolhaDigitando.remove();
 
-        let msgErro = `🚨 ${err.message}`; // <--- ESTE É O ERRO REAL QUE VAMOS VER AGORA!
+        let msgErro = `🚨 ${escapeHTML(err.message)}`; 
         if (err.name === 'AbortError') msgErro = "O assistente demorou muito para responder (Timeout).";
         if (err.message === "RATE_LIMIT") msgErro = "Você enviou muitas mensagens. Aguarde alguns segundos.";
 
