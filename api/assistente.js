@@ -1,29 +1,39 @@
-import { getApps, initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-import { GoogleGenAI } from '@google/generative-ai';
+const admin = require('firebase-admin');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// [3] Inicialização Estável do Firebase Admin (Evita Cold Start Crashes)
-if (!getApps().length) {
-    initializeApp({
-        credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))
+const formatPrivateKey = (key) => {
+  if (!key) return '';
+  return key.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim();
+};
+
+let db;
+
+// Inicialização Blindada do Firebase
+const bootFirebase = () => {
+  if (!admin.apps.length) {
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const privateKey = formatPrivateKey(process.env.FIREBASE_PRIVATE_KEY);
+
+    if (!projectId || !clientEmail || !privateKey) throw new Error("Variáveis do Firebase ausentes.");
+
+    admin.initializeApp({
+      credential: admin.credential.cert({ projectId, clientEmail, privateKey })
     });
-}
+  }
+  if (!db) db = admin.firestore();
+};
 
-const db = getFirestore();
+// Instancia a IA
+const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Inicializa o SDK do Gemini
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-// [2] Cache In-Memory Serverless (Economia absurda de custos de leitura no Firestore)
 let cachedCatalog = null;
 let cacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // O cache expira a cada 5 minutos
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
-// [4] Rate Limit Básico em Memória (Evita Spam Bots)
 const rateLimitMap = new Map();
 
-export default async function handler(req, res) {
-    // Configurações CORS
+module.exports = async function handler(req, res) {
     const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
@@ -36,7 +46,6 @@ export default async function handler(req, res) {
         return res.status(405).json({ sucesso: false, error: 'Método não permitido' });
     }
 
-    // Rate Limiting por IP (Máximo de 1 mensagem a cada 3 segundos por usuário)
     const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
     const agora = Date.now();
     if (rateLimitMap.has(ip)) {
@@ -45,18 +54,17 @@ export default async function handler(req, res) {
         }
     }
     rateLimitMap.set(ip, agora);
-    // Prevenção de memory leak no Map
     if (rateLimitMap.size > 2000) rateLimitMap.clear();
 
     try {
+        bootFirebase();
+
         const { mensagemCliente } = req.body;
         
-        // Validação de Payload (Evita tokens excessivos)
         if (!mensagemCliente || typeof mensagemCliente !== 'string' || mensagemCliente.length > 500) {
             return res.status(400).json({ sucesso: false, error: 'Mensagem inválida ou muito longa.' });
         }
 
-        // Lógica de Cache (Só bate no banco se o cache não existir ou estiver vencido)
         if (!cachedCatalog || (agora - cacheTimestamp > CACHE_TTL)) {
             const produtosSnap = await db.collection('produtos').where('ativo', '==', true).get();
             const tempCatalog = [];
@@ -77,9 +85,6 @@ export default async function handler(req, res) {
 
         const catalogoDisponivel = cachedCatalog;
 
-        // Instancia o modelo
-        const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
         const systemInstruction = `
         Você é o assistente virtual e sommelier de hortifruti da "Banca Adair e Pedrina".
         Seu objetivo é ajudar o cliente a escolher produtos, sugerir receitas baseadas no estoque atual e impulsionar vendas.
@@ -95,16 +100,25 @@ export default async function handler(req, res) {
         ${JSON.stringify(catalogoDisponivel)}
         `;
 
+        // ⚠️ CORREÇÃO DA ARQUITETURA AQUI: systemInstruction agora vai no lugar correto
+        const model = ai.getGenerativeModel({ 
+            model: 'gemini-1.5-flash',
+            systemInstruction: systemInstruction 
+        });
+
         const resultado = await model.generateContent({
             contents: [{ role: 'user', parts: [{ text: mensagemCliente }] }],
             generationConfig: {
-                systemInstruction: systemInstruction,
                 responseMimeType: "application/json",
                 temperature: 0.3
             }
         });
 
-        const textoResposta = resultado.response.text();
+        let textoResposta = resultado.response.text();
+        
+        // ⚠️ BLINDAGEM EXTRA: Remove marcações markdown que o Gemini às vezes envia por engano
+        textoResposta = textoResposta.replace(/```json/g, '').replace(/```/g, '').trim();
+        
         const jsonResposta = JSON.parse(textoResposta);
 
         return res.status(200).json({
@@ -114,11 +128,12 @@ export default async function handler(req, res) {
         });
 
     } catch (error) {
-        console.error("Erro no Assistente Gemini:", error);
+        console.error("Erro interno no Assistente Gemini:", error);
         return res.status(500).json({ 
             sucesso: false, 
-            resposta: "Olá! Desculpe, tive um pequeno soluço técnico na minha IA. Como posso te ajudar com os nossos vegetais frescos hoje?",
+            error: error.message, // Incluído para depuração caso falhe
+            resposta: "Desculpe, tive um soluço técnico.",
             sugestoes: [] 
         });
     }
-}
+};
