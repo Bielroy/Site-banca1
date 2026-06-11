@@ -7,7 +7,6 @@ const formatPrivateKey = (key) => {
 
 let db;
 
-// [3] Inicialização Estável
 const bootFirebase = () => {
   if (!admin.apps.length) {
     const projectId = process.env.FIREBASE_PROJECT_ID;
@@ -28,13 +27,16 @@ const bootFirebase = () => {
 const paraCentavos = (valor) => Math.round(valor * 100);
 const paraFlutuante = (centavos) => parseFloat((centavos / 100).toFixed(2));
 
-const sanitizeString = (str, maxLength) => {
+// [SEGURANÇA - FASE 1] Sanitização aprimorada para evitar NoSQL Injection e XSS Stored (S05)
+const sanitizeString = (str, maxLength, isAlphaNumeric = false) => {
     if (!str) return '';
-    const cleanStr = String(str).trim();
+    let cleanStr = String(str).trim();
+    if (isAlphaNumeric) {
+        cleanStr = cleanStr.replace(/[^a-zA-Z0-9\s-]/g, ''); // Permite apenas letras, números, espaços e hífen
+    }
     return cleanStr.length > maxLength ? cleanStr.substring(0, maxLength) : cleanStr;
 };
 
-// [4] Rate Limit Básico para Checkout
 const rateLimitMap = new Map();
 
 module.exports = async function handler(req, res) {
@@ -47,14 +49,20 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ sucesso: false, error: 'Método não permitido.' });
 
-  // Rate Limiting (Previne flood de pedidos falsos pelo mesmo IP)
   const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
   const agora = Date.now();
+  
+  if (rateLimitMap.size > 2000) {
+      const excesso = agora - 60000;
+      for (let [k, v] of rateLimitMap.entries()) {
+          if (v < excesso) rateLimitMap.delete(k);
+      }
+  }
+
   if (rateLimitMap.has(ip) && agora - rateLimitMap.get(ip) < 5000) {
       return res.status(429).json({ sucesso: false, error: 'Processando muitos pedidos. Aguarde alguns segundos.' });
   }
   rateLimitMap.set(ip, agora);
-  if (rateLimitMap.size > 2000) rateLimitMap.clear();
 
   try { bootFirebase(); } catch (bootError) { return res.status(500).json({ sucesso: false, error: "Erro interno no servidor." }); }
 
@@ -68,14 +76,14 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ sucesso: false, error: 'Dados incompletos.' });
   }
 
+  // Reforço aplicado nas chaves de identificação do endereço
   nome = sanitizeString(nome, 100);
-  quadra = sanitizeString(quadra, 20);
-  lote = sanitizeString(lote, 20);
+  quadra = sanitizeString(quadra, 30, true);
+  lote = sanitizeString(lote, 30, true);
   obs = sanitizeString(obs, 500);
 
   try {
     const resultado = await db.runTransaction(async (transaction) => {
-      // 1. CHECAGEM DE IDEMPOTÊNCIA
       const pedidoRef = db.collection("pedidos").doc(idempotencyKey);
       const pedidoSnap = await transaction.get(pedidoRef);
       
@@ -114,7 +122,6 @@ module.exports = async function handler(req, res) {
 
       const totalFinalFlutuante = paraFlutuante(totalAcumuladoCentavos);
       
-      // 2. CHECAGEM DE PREÇO (Segurança Financeira)
       const clientTotalVal = parseFloat(clientTotal);
       if (Math.abs(totalFinalFlutuante - clientTotalVal) > 0.05) {
           throw new Error(`Houve alteração nos preços (Atual: R$ ${totalFinalFlutuante.toFixed(2).replace('.',',')}). Atualize o carrinho.`);
@@ -133,7 +140,7 @@ module.exports = async function handler(req, res) {
       
       const dadosPedido = {
         id: pedidoRef.id, 
-        userId: userId || "anonimo", // Integração com Firestore Security Rules
+        userId: userId || "anonimo",
         nome, 
         quadra, 
         lote, 
