@@ -4,10 +4,10 @@ import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal
 let produtosAtuais = [];
 let pedidosGerais = [];
 let unsubscribes = []; 
+let adminBuscaTermo = ""; // [ADMIN - FASE 1] Termo de busca global
 
-const placeholderSVG = `<div class="prod-img-placeholder skeleton" style="width:100%;height:100%"></div>`;
+const placeholderSVG = `<div class="prod-img-placeholder skeleton" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-light);font-size:0.8rem">Sem Foto</div>`;
 
-// 1. UTILITÁRIO DE ALTA PERFORMANCE (NOVO) - COMPRESSÃO DE IMAGEM CLIENT-SIDE
 const compressImageToJPG = (file, maxWidth = 800, quality = 0.8) => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -128,6 +128,22 @@ document.querySelectorAll('[data-fechar]').forEach(btn => {
     btn.addEventListener('click', (e) => { closeModal(e.currentTarget.dataset.fechar); }); 
 });
 
+// [ADMIN - FASE 1] Notificação WebAudio (1.07)
+const playAlertaPedido = () => {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 850;
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.3);
+    } catch(e) {}
+};
+
 const iniciarRealTimeSync = () => {
     const unsubProd = onSnapshot(collection(db, "produtos"), (snap) => {
         produtosAtuais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
@@ -147,17 +163,44 @@ const iniciarRealTimeSync = () => {
     });
     unsubscribes.push(unsubConfig);
 
-    // 2. QUERY AMPLIADA PARA KANBAN LOGÍSTICO
     const pedQuery = query(collection(db, "pedidos"), where("status", "in", ["pendente", "preparando", "enviado"]), orderBy("data", "desc"), limit(100));
+    let cargaInicial = true;
+
     const unsubPedidos = onSnapshot(pedQuery, (snap) => {
+        // [ADMIN - FASE 1] Detecção de novos pedidos (1.07)
+        const temNovoPendente = snap.docChanges().some(change => change.type === 'added' && change.doc.data().status === 'pendente');
+        
+        if (!cargaInicial && temNovoPendente) {
+            playAlertaPedido();
+            showToast("🔔 NOVO PEDIDO NA FILA!", false);
+            if (Notification.permission === "granted") new Notification("Banca", { body: "Novo pedido chegou!" });
+        }
+        cargaInicial = false;
+
         pedidosGerais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         if(document.getElementById('aba-relatorios').classList.contains('active')) renderRelatoriosMaster();
     });
     unsubscribes.push(unsubPedidos);
+    
+    // Solicita permissão apenas no load do painel, caso ainda não tenha sido dada
+    if (Notification.permission !== "denied") Notification.requestPermission();
 };
 
+// [ADMIN - FASE 1] Filtro global do catálogo em tempo real (1.09)
+document.getElementById('admin-busca-input')?.addEventListener('input', (e) => {
+    adminBuscaTermo = e.target.value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    renderProdutos();
+});
+
 const renderProdutos = () => {
-    const html = produtosAtuais.map(p => `
+    const listaFiltrada = produtosAtuais.filter(p => {
+        if(!adminBuscaTermo) return true;
+        const nomeNorm = p.nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const catNorm = p.cat ? p.cat.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '';
+        return nomeNorm.includes(adminBuscaTermo) || catNorm.includes(adminBuscaTermo);
+    });
+
+    const html = listaFiltrada.map(p => `
         <article class="card-produto ${p.ativo ? '' : 'esgotado'}">
             <div class="prod-info-grande">
                 <div class="prod-img-grande">${p.foto ? `<img src="${escapeHTML(p.foto)}" loading="lazy">` : placeholderSVG}</div>
@@ -168,15 +211,28 @@ const renderProdutos = () => {
             </div>
             <div class="botoes-acao">
                 ${p.ativo 
-                    ? `<button class="btn btn-outline flex-1" style="border-color:var(--danger); color:var(--danger);" data-action="toggle-estoque" data-id="${p.id}" data-status="false">Esgotar Produto</button>`
-                    : `<button class="btn btn-outline flex-1" style="background:var(--success); border-color:var(--success); color:white;" data-action="toggle-estoque" data-id="${p.id}" data-status="true">Voltar p/ Estoque</button>`
+                    ? `<button class="btn btn-outline flex-1" style="border-color:var(--danger); color:var(--danger);" data-action="toggle-estoque" data-id="${p.id}" data-status="false">Esgotar</button>`
+                    : `<button class="btn btn-outline flex-1" style="background:var(--success); border-color:var(--success); color:white;" data-action="toggle-estoque" data-id="${p.id}" data-status="true">Em Estoque</button>`
                 }
                 <button class="btn btn-outline" style="background: var(--parchment); color: var(--text-dark); border-color: #e0dcd4;" data-action="editar-produto" data-id="${p.id}">Editar</button>
             </div>
         </article>
     `).join('');
-    document.getElementById('lista-produtos').innerHTML = html;
+    document.getElementById('lista-produtos').innerHTML = html || "<p style='color:var(--text-light)'>Nenhum produto encontrado na busca.</p>";
 };
+
+// [ADMIN - FASE 1] Preview imediato de imagem (1.08)
+document.getElementById('edit-foto')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    const previewContainer = document.getElementById('preview-foto-wrapper'); // Requer container no HTML
+    if(file && previewContainer) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            previewContainer.innerHTML = `<img src="${ev.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">`;
+        };
+        reader.readAsDataURL(file);
+    }
+});
 
 document.body.addEventListener('click', async (e) => {
     const target = e.target.closest('[data-action]'); if(!target) return;
@@ -186,6 +242,8 @@ document.body.addEventListener('click', async (e) => {
         if(action === 'novo-produto') {
             document.getElementById('modal-titulo').textContent = 'Novo Produto';
             ['edit-id', 'edit-nome', 'edit-preco', 'edit-cat', 'edit-foto', 'edit-foto-url'].forEach(i => document.getElementById(i).value = '');
+            const previewContainer = document.getElementById('preview-foto-wrapper');
+            if(previewContainer) previewContainer.innerHTML = placeholderSVG;
             document.getElementById('btn-excluir-produto').style.display = 'none';
             openModal('modal-produto');
         }
@@ -201,6 +259,10 @@ document.body.addEventListener('click', async (e) => {
             document.getElementById('edit-cat').value = p.cat || '';
             document.getElementById('edit-foto').value = ''; 
             document.getElementById('edit-foto-url').value = ''; 
+            
+            const previewContainer = document.getElementById('preview-foto-wrapper');
+            if(previewContainer) previewContainer.innerHTML = p.foto ? `<img src="${escapeHTML(p.foto)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">` : placeholderSVG;
+            
             document.getElementById('btn-excluir-produto').style.display = 'block';
             openModal('modal-produto');
         }
@@ -216,7 +278,6 @@ document.body.addEventListener('click', async (e) => {
             showToast(novoStatus ? "Produto disponível!" : "Produto esgotado.");
         }
         
-        // 3. NOVO FLUXO DE KANBAN PARA PEDIDOS
         else if (action === 'avancar-pedido') {
             const id = target.dataset.id;
             const nextStatus = target.dataset.next;
@@ -258,7 +319,6 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
         const urlInput = document.getElementById('edit-foto-url').value.trim();
 
         if (fileInput.files.length > 0) { 
-            // 4. INTEGRAÇÃO DA COMPRESSÃO (ECONOMIA DE STORAGE)
             showToast("Otimizando imagem...", false);
             const optimizedFile = await compressImageToJPG(fileInput.files[0], 800, 0.8);
             const storageRef = ref(storage, `fotos_produtos/${id}.jpg`); 
@@ -315,7 +375,6 @@ const extrairEstatisticas = (pedidos) => {
     return { totalReceita, countProdutos, countClientes, countDias };
 };
 
-// 5. RENDERIZAÇÃO DO KANBAN DE ESTADOS (UI PREMIUM DE GESTÃO)
 const renderHtmlPedidos = (pedidos) => {
     const dicsStatus = {
         'pendente': { tag: '🚨 NOVO', classColor: 'var(--danger)', nextBtn: 'Aceitar e Preparar', nextAction: 'preparando' },
@@ -354,7 +413,8 @@ const renderHtmlPedidos = (pedidos) => {
 const renderRankingGenerico = (dados, divId, formatador) => { 
     const arr = Object.entries(dados).sort((a,b) => b[1] - a[1]).slice(0,5); 
     const html = arr.length ? arr.map(i => `<div class="ranking-item"><span>${escapeHTML(i[0])}</span> <strong>${formatador(i[1])}</strong></div>`).join('') : '<p style="color: var(--text-light)">Sem dados.</p>'; 
-    document.getElementById(divId).innerHTML = html;
+    const cont = document.getElementById(divId);
+    if(cont) cont.innerHTML = html;
 };
 
 const renderRelatoriosMaster = () => {
@@ -373,6 +433,8 @@ const renderRelatoriosMaster = () => {
 
     renderRankingGenerico(stats.countProdutos, 'ranking-produtos', val => val % 1 !== 0 ? `${val.toFixed(2).replace('.',',')} med.` : `${val} un.`);
     renderRankingGenerico(stats.countClientes, 'ranking-clientes', val => fmt(val));
+    // [ADMIN - FASE 1] Correção do Bug de renderização (1.02)
+    renderRankingGenerico(stats.countDias, 'ranking-dias', val => fmt(val));
 
     listDiv.innerHTML = renderHtmlPedidos(pedidosGerais);
 };
