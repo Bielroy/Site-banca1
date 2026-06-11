@@ -51,162 +51,119 @@ module.exports = async function handler(req, res) {
         }
     }
 
-    if (rateLimitMap.has(ip) && agora - rateLimitMap.get(ip) < 3000) {
-        return res.status(429).json({ sucesso: false, resposta: "Aguarde uns segundos para mandar outra mensagem.", sugestoes: [] });
+    // Abrandámos o Rate Limit para a IA conseguir responder a análises profundas do Admin
+    if (rateLimitMap.has(ip) && agora - rateLimitMap.get(ip) < 2000) {
+        return res.status(429).json({ sucesso: false, resposta: "Aguarde uns segundos para nova ação." });
     }
     rateLimitMap.set(ip, agora);
 
     try {
         const rawApiKey = process.env.GEMINI_API_KEY || "";
         const cleanApiKey = rawApiKey.replace(/['"]/g, '').trim(); 
-        
-        if (!cleanApiKey) throw new Error("A chave GEMINI_API_KEY não existe na Vercel.");
+        if (!cleanApiKey) throw new Error("A chave GEMINI_API_KEY não existe.");
         if (!ai) ai = new GoogleGenerativeAI(cleanApiKey);
         
         bootFirebase();
 
-        // [IA - FASE 2] Routing de Ações (action) para suportar Admin Tools
-        const { action = 'chat', mensagemCliente, historico = [], carrinho = [], produtoInfo } = req.body;
+        const { action = 'chat', mensagemCliente, historico = [], carrinho = [], produtoInfo, historicoVendas } = req.body;
 
         if (!cachedCatalog || (agora - cacheTimestamp > CACHE_TTL)) {
             const snap = await db.collection('produtos').where('ativo', '==', true).get();
             const temp = [];
             snap.forEach(doc => { 
                 const d = doc.data(); 
-                temp.push({ id: doc.id, nome: d.nome, preco: d.preco, cat: d.cat, unidade: d.unidade || 'un' }); 
+                temp.push({ id: doc.id, nome: d.nome, preco: d.preco, cat: d.cat, unidade: d.unidade || 'un', estoque: d.estoque || 0 }); 
             });
             cachedCatalog = temp;
             cacheTimestamp = agora;
         }
 
+        const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
         // ---------------------------------------------------------------------
-        // FEATURE 2.05: Gerador de Descrição de Produto
+        // FASE 3: Gerador de Posts para Redes Sociais (3.05)
+        // ---------------------------------------------------------------------
+        if (action === 'social_post') {
+            const promptPost = `Atue como um Especialista em Social Media focado em E-commerce Local de hortifruti.
+Crie um post altamente engajador para WhatsApp Status e Instagram sobre o produto: "${produtoInfo?.nome}".
+Categoria: ${produtoInfo?.cat} | Preço: R$ ${produtoInfo?.preco}.
+Inclua: 1. Gatilho de desejo visual (texto). 2. Chamada para ação (Compre na nossa loja online). 3. Emojis bem distribuídos e 3 hashtags relevantes.
+O texto deve ser curto, direto e irresistível.`;
+            
+            const result = await model.generateContent(promptPost);
+            return res.status(200).json({ sucesso: true, post: result.response.text().trim() });
+        }
+
+        // ---------------------------------------------------------------------
+        // FASE 3: Previsão de Demanda (3.08)
+        // ---------------------------------------------------------------------
+        if (action === 'demand_prediction') {
+            const promptAnalise = `Atue como um Analista de Dados e Especialista em Cadeia de Suprimentos.
+Analise este resumo das vendas logísticas recentes da banca:
+${JSON.stringify(historicoVendas)}
+
+O seu objetivo é fornecer um relatório Executivo e Rápido com:
+1. "Top Produtos em Alerta": Quais produtos estão a vender mais rápido e precisam de reforço de stock com urgência.
+2. "Dias de Pico": Qual é o dia da semana que exige mais capacidade de entrega.
+3. "Ação Sugerida": Uma sugestão estratégica (ex: "faça um desconto no produto X que está a sair pouco", ou "Compre mais Y para o fim de semana").
+Use formato HTML simples com <b>, <ul>, <li> para eu exibir no painel de administração da loja. Vá direto ao ponto, não diga 'Aqui está a análise'.`;
+
+            const modelDemand = ai.getGenerativeModel({ model: 'gemini-1.5-flash', generationConfig: { temperature: 0.4 } });
+            const resultAnalise = await modelDemand.generateContent(promptAnalise);
+            return res.status(200).json({ sucesso: true, relatorio: resultAnalise.response.text().trim() });
+        }
+
+        // ---------------------------------------------------------------------
+        // FASE 2: Gerador de Descrição de Produto
         // ---------------------------------------------------------------------
         if (action === 'gerar_descricao') {
             const prompt = `Atue como um Especialista em Marketing Gastronómico. Crie uma descrição extremamente apetitosa e persuasiva (máximo 2 frases) para o produto: "${produtoInfo?.nome}" (Categoria: ${produtoInfo?.cat}).
 Foque na frescura, origem ou qualidade. Pode usar no máximo 1 emoji. 
 Responda APENAS com o texto da descrição. Sem aspas ou formatações extras.`;
-            
-            const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
             const result = await model.generateContent(prompt);
             return res.status(200).json({ sucesso: true, descricao: result.response.text().trim() });
         }
 
         // ---------------------------------------------------------------------
-        // FEATURE 2.06: Montador de Kits Inteligentes
+        // FASE 2: Montador de Kits Inteligentes
         // ---------------------------------------------------------------------
         if (action === 'gerar_kit') {
-            const promptKit = `Atue como Estrategista de Retalho. Analise este catálogo de produtos:
-${JSON.stringify(cachedCatalog)}
-
-Crie um "Kit Promocional" agrupando produtos que combinam perfeitamente (ex: Kit Salada Completa, Kit Sumos Detox, Kit Sopa de Inverno).
-Regras:
-1. Use APENAS produtos existentes no catálogo acima.
-2. O "preco" do kit deve ter um desconto de aproximadamente 10% a 15% em relação à soma dos itens individuais.
-3. Retorne a resposta OBRIGATORIAMENTE num JSON válido.
-
-Formato esperado:
-{
-  "nome": "Nome criativo do Kit",
-  "descricao": "Texto persuasivo a vender a ideia do kit",
-  "preco": valor_float_com_desconto,
-  "itensInclusos": "2x Tomate, 1x Alface, 1x Cebola (apenas os nomes que usou)"
-}`;
+            const promptKit = `Atue como Estrategista de Retalho. Analise este catálogo: ${JSON.stringify(cachedCatalog)}
+Crie um "Kit Promocional" agrupando produtos que combinam perfeitamente.
+Regras: 1. Apenas produtos do catálogo. 2. Desconto de ~10% a 15% na soma. 3. JSON VÁLIDO OBRIGATÓRIO.
+Formato: {"nome": "Kit...", "descricao": "...", "preco": 0.00, "itensInclusos": "..."}`;
+            
             const modelKit = ai.getGenerativeModel({ 
-                model: 'gemini-1.5-flash', 
-                systemInstruction: "Devolva ESTRITAMENTE o JSON solicitado, sem blocos de markdown.",
+                model: 'gemini-1.5-flash', systemInstruction: "Devolva ESTRITAMENTE JSON.",
                 generationConfig: { responseMimeType: "application/json" }
             });
             const resultKit = await modelKit.generateContent(promptKit);
-            const kitData = JSON.parse(resultKit.response.text());
-            return res.status(200).json({ sucesso: true, kit: kitData });
+            return res.status(200).json({ sucesso: true, kit: JSON.parse(resultKit.response.text()) });
         }
 
         // ---------------------------------------------------------------------
-        // FUNCIONAMENTO PADRÃO (Atendimento ao Cliente - FASE 1)
+        // Atendimento ao Cliente Chat (Padrão)
         // ---------------------------------------------------------------------
-        if (!mensagemCliente || typeof mensagemCliente !== 'string') {
-            return res.status(400).json({ sucesso: false, error: 'Mensagem inválida.' });
-        }
+        const systemInstruction = `Você é o sommelier de hortifruti da Banca Adair e Pedrina. Ajude a escolher produtos.
+REGRAS: 1. Use APENAS o catálogo. 2. Seja caloroso. 3. JSON VÁLIDO ESTRITO.
+Formato: {"respostaTextual": "...", "produtosSugeridos": ["ID1", "ID2"]}
+CATÁLOGO DE HOJE: ${JSON.stringify(cachedCatalog)}`;
 
-        const systemInstruction = `
-Você é o simpático e experiente sommelier de hortifruti da Banca Adair e Pedrina.
-Seu objetivo é ajudar clientes a escolher produtos, dar dicas de preparo, sugerir receitas rápidas e converter vendas de forma natural.
+        let resumoCarrinho = carrinho && carrinho.length > 0 
+            ? `ATENÇÃO: O cliente JÁ TEM no carrinho: ${carrinho.map(item => `${item.qtd} de ${item.nome}`).join(", ")}.` 
+            : "O cliente ainda não colocou nada no carrinho.";
 
-REGRAS DE OURO:
-1. Use APENAS os produtos disponíveis no catálogo. Nunca invente produtos.
-2. Seja prestativo, caloroso e use emojis com moderação.
-3. Se o cliente pedir dicas para uma receita, sugira os itens do catálogo que combinam.
-4. OBRIGATÓRIO: Retorne a resposta ESTRITAMENTE em formato JSON.
+        const formattedContents = historico.map(msg => ({ role: msg.role === 'ia' ? 'model' : 'user', parts: [{ text: msg.content }] }));
+        formattedContents.push({ role: 'user', parts: [{ text: `[CONTEXTO]\n${resumoCarrinho}\n\n[MENSAGEM DO CLIENTE]\n${mensagemCliente}` }] });
 
-FORMATO DE SAÍDA EXIGIDO:
-{
-  "respostaTextual": "Sua resposta humanizada e amigável aqui.",
-  "produtosSugeridos": ["ID_DO_PRODUTO_1", "ID_DO_PRODUTO_2"]
-}
-
-CATÁLOGO DISPONÍVEL HOJE: 
-${JSON.stringify(cachedCatalog)}
-`;
-
-        let resumoCarrinho = "O cliente ainda não colocou nada no carrinho.";
-        if (carrinho && carrinho.length > 0) {
-            const itensCart = carrinho.map(item => `${item.qtd}${item.unidade || 'un'} de ${item.nome}`).join(", ");
-            resumoCarrinho = `ATENÇÃO: O cliente JÁ TEM no carrinho: ${itensCart}. Não sugira comprar o que ele já adicionou, a menos que faça sentido. Sugira complementos!`;
-        }
-
-        const formattedContents = [];
-        historico.forEach(msg => {
-            formattedContents.push({ role: msg.role === 'ia' ? 'model' : 'user', parts: [{ text: msg.content }] });
-        });
-
-        const currentPrompt = `[CONTEXTO DO SISTEMA]\n${resumoCarrinho}\n\n[MENSAGEM DO CLIENTE]\n${mensagemCliente}`;
-        formattedContents.push({ role: 'user', parts: [{ text: currentPrompt }] });
-
-        let textoResposta = "";
-        const generationConfig = { temperature: 0.7, responseMimeType: "application/json" };
-
-        try {
-            const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash', systemInstruction });
-            const result = await model.generateContent({ contents: formattedContents, generationConfig });
-            textoResposta = result.response.text();
-        } catch (errApi) {
-            console.warn("Modelo padrão falhou. Iniciando varredura na conta da Google...");
-            const respostaModelos = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanApiKey}`);
-            const dadosModelos = await respostaModelos.json();
-
-            if (!dadosModelos.models) throw new Error("Chave sem acesso a modelos.");
-
-            const modeloValido = dadosModelos.models.find(m => 
-                m.supportedGenerationMethods && m.supportedGenerationMethods.includes("generateContent") && m.name.includes("gemini")
-            );
-
-            if (modeloValido) {
-                const nomeRealDoModelo = modeloValido.name.replace('models/', '');
-                const modelFallback = ai.getGenerativeModel({ model: nomeRealDoModelo, systemInstruction });
-                const resultFallback = await modelFallback.generateContent({ contents: formattedContents, generationConfig });
-                textoResposta = resultFallback.response.text();
-            } else {
-                throw new Error("Nenhum modelo compatível encontrado.");
-            }
-        }
+        const modelChat = ai.getGenerativeModel({ model: 'gemini-1.5-flash', systemInstruction });
+        const resultChat = await modelChat.generateContent({ contents: formattedContents, generationConfig: { responseMimeType: "application/json" } });
         
-        textoResposta = textoResposta.replace(/```json/g, '').replace(/```/g, '').trim();
-        const jsonResposta = JSON.parse(textoResposta);
-
-        return res.status(200).json({ 
-            sucesso: true, 
-            resposta: jsonResposta.respostaTextual || "Aqui estão as minhas sugestões de hoje!", 
-            sugestoes: jsonResposta.produtosSugeridos || []
-        });
+        const jsonResposta = JSON.parse(resultChat.response.text().replace(/```json/g, '').replace(/```/g, '').trim());
+        return res.status(200).json({ sucesso: true, resposta: jsonResposta.respostaTextual, sugestoes: jsonResposta.produtosSugeridos || [] });
 
     } catch (error) {
         console.error("ERRO ASSISTENTE:", error.message);
-        return res.status(500).json({ 
-            sucesso: false, 
-            error: error.message,
-            resposta: "Desculpe, a nossa rede de hortifruti deu um pequeno curto-circuito. Pode repetir?",
-            sugestoes: [] 
-        });
+        return res.status(500).json({ sucesso: false, error: error.message, resposta: "Tivemos um problema de ligação. Tente novamente." });
     }
 };
