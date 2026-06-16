@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { resolve } from 'path';
 
 export default defineConfig({
   plugins: [
@@ -36,11 +37,11 @@ export default defineConfig({
   ],
   build: {
     target: 'esnext',
-    // Correção: Caminhos diretos sem __dirname
+    // Configuração blindada usando process.cwd()
     rollupOptions: {
       input: {
-        main: 'index.html',
-        admin: 'admin.html'
+        main: resolve(process.cwd(), 'index.html'),
+        admin: resolve(process.cwd(), 'admin.html')
       }
     }
   }
