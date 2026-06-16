@@ -1,20 +1,22 @@
 {
-  "name": "banca-adair-pedrina",
-  "version": "2.0.0",
+  "name": "banca-adair-e-pedrina",
+  "version": "3.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    "start": "serve dist"
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
+    "@google/generative-ai": "^0.1.1",
+    "@vercel/kv": "^1.0.1",
+    "chart.js": "^4.4.2",
     "firebase": "^10.8.1",
     "firebase-admin": "^12.0.0"
   },
   "devDependencies": {
     "vite": "^5.1.4",
-    "vite-plugin-pwa": "^0.19.8"
+    "vite-plugin-pwa": "^0.19.0"
   }
 }
