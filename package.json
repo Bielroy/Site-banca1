@@ -2,7 +2,6 @@
   "name": "banca-adair-e-pedrina",
   "version": "3.0.0",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
