@@ -352,8 +352,44 @@ const repetirPedido = (pedId) => {
     } else { showToast("❌ Todos os itens deste pedido encontram-se esgotados.", true); }
 };
 
-// O DELEGATE MASTER TOTALMENTE RESTAURADO (Foi isto que cortou o Carrinho e os Modais)
+// =========================================================
+// O DELEGADOR GLOBAL (O QUE CORRIGE TODOS OS SEUS CLIQUES)
+// =========================================================
 document.body.addEventListener('click', async (e) => {
+    
+    // 1. Intercetar Botão IA Flutuante
+    const btnIA = e.target.closest('#btn-ia-flutuante');
+    if (btnIA) {
+        openModal('modal-ia-chat');
+        btnIA.classList.remove('pulse-anim');
+        return;
+    }
+
+    // 2. Intercetar Limpar Carrinho
+    const btnLimpar = e.target.closest('#btn-limpar-carrinho');
+    if (btnLimpar) {
+        if (STATE.carrinho.length === 0) return;
+        if (await customConfirm("Esvaziar Pedido", "Tem certeza que deseja esvaziar todo o pedido?")) {
+            STATE.carrinho = []; dbStorage.set('banca_cart', {v: CART_VERSION, items: []}); 
+            renderCarrinhoCompleto(); showToast("🛒 Carrinho esvaziado!");
+            if (window.innerWidth <= 900 && document.getElementById('carrinho')?.classList.contains('aberto')) history.back();
+        }
+        return;
+    }
+
+    // 3. Intercetar o Fechar de Qualquer Modal/Histórico ("X")
+    const fecharTarget = e.target.closest('[data-fechar], .btn-fechar');
+    if (fecharTarget) {
+        const modalId = fecharTarget.dataset.fechar || fecharTarget.closest('.modal-overlay')?.id;
+        if(modalId) {
+            closeModal(modalId);
+            if (history.state && history.state.modal === modalId) history.back();
+            else if (window.location.hash === `#${modalId}`) history.replaceState(null, '', ' ');
+        }
+        return;
+    }
+
+    // 4. Intercetar Outras Ações
     const actionTarget = e.target.closest('[data-action]'); 
     if (actionTarget) {
         const action = actionTarget.dataset.action; const id = actionTarget.dataset.id;
@@ -389,18 +425,7 @@ document.body.addEventListener('click', async (e) => {
             if(valor === 'nao') { cliTroco.value = 'Não preciso'; inputArea.style.display = 'none'; } 
             else { cliTroco.value = ''; inputArea.style.display = 'block'; cliTroco.focus(); }
         }
-        return; // SE FOR UMA AÇÃO, EXECUTA E PARA AQUI
-    }
-
-    // SE FOR UM FECHAR, ELE FECHA O MODAL CORRETAMENTE
-    const fecharTarget = e.target.closest('[data-fechar]');
-    if (fecharTarget) {
-        const modalId = fecharTarget.dataset.fechar; 
-        closeModal(modalId);
-        // Só volta no histórico do navegador se o modal foi aberto pelo pushState
-        if (history.state && history.state.modal === modalId) history.back();
-        else if (window.location.hash === `#${modalId}`) history.replaceState(null, '', ' ');
-        return;
+        return; 
     }
 });
 
@@ -414,7 +439,7 @@ document.getElementById('carrinho-itens').addEventListener('input', (e) => {
     }
 });
 
-// A ROTA DE VOLTAR RESTAURADA
+// A ROTA DE VOLTAR RESTAURADA (History API)
 window.addEventListener('popstate', (e) => { 
     document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('aberto'));
     document.getElementById('carrinho-overlay')?.classList.remove('aberto');
@@ -430,7 +455,6 @@ window.addEventListener('popstate', (e) => {
     }
 });
 
-// O BOTÃO DE ABRIR O CARRINHO NO MOBILE RESTAURADO
 const toggleCartMobile = (abrir) => {
     if(window.innerWidth > 900) return;
     if (abrir) { 
@@ -443,22 +467,13 @@ const toggleCartMobile = (abrir) => {
 document.getElementById('btn-carrinho-mobile')?.addEventListener('click', () => toggleCartMobile(true));
 document.getElementById('carrinho-overlay')?.addEventListener('click', () => history.back());
 
-document.getElementById('btn-limpar-carrinho').addEventListener('click', async () => {
-    if (STATE.carrinho.length === 0) return;
-    if (await customConfirm("Esvaziar Pedido", "Tem certeza que deseja esvaziar todo o pedido?")) {
-        STATE.carrinho = []; dbStorage.set('banca_cart', {v: CART_VERSION, items: []}); 
-        renderCarrinhoCompleto(); showToast("🛒 Carrinho esvaziado!");
-        if (window.innerWidth <= 900 && document.getElementById('carrinho').classList.contains('aberto')) history.back();
-    }
-});
-
 document.getElementById('cli-pagamento').addEventListener('change', (e) => { 
     const isDinheiro = e.target.value === 'Dinheiro';
     document.getElementById('troco-group').style.display = isDinheiro ? 'block' : 'none'; 
     if(!isDinheiro) document.getElementById('cli-troco').value = '';
 });
 
-// UI Checkout (Com Cupão)
+// UI Checkout
 document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
     if (clientes.length > 0) {
@@ -480,7 +495,7 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     openModal('modal-checkout');
 });
 
-// Processamento Logístico do Checkout
+// Envio de Pedido
 document.getElementById('btn-enviar-pedido').addEventListener('click', async (e) => {
     const btn = e.currentTarget; if (btn.disabled) return;
     const nome = document.getElementById('cli-nome').value.trim();
@@ -539,5 +554,4 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 window.addEventListener('online', () => document.getElementById('banner-offline').classList.remove('visivel'));
 window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
 
-// Arranca com a IA
 initIA(STATE);
