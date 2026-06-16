@@ -1,7 +1,6 @@
 import { escapeHTML, showToast } from './utils.js';
 
 export const initIA = (STATE) => {
-    const btnIaFlutuante = document.getElementById('btn-ia-flutuante');
     const inputMsg = document.getElementById('input-ia-mensagem');
     const btnEnviar = document.getElementById('btn-ia-enviar');
     const corpoChat = document.getElementById('chat-ia-corpo');
@@ -10,7 +9,7 @@ export const initIA = (STATE) => {
     if(inputMsg && !document.getElementById('btn-ia-camera')) {
         inputMsg.insertAdjacentHTML('beforebegin', `
             <input type="file" id="ia-vision-upload" accept="image/*" style="display: none;">
-            <button id="btn-ia-camera" style="background:none; border:none; font-size:1.4rem; cursor:pointer; padding:0 10px; color:var(--text-mid);" title="Enviar foto">📷</button>
+            <button id="btn-ia-camera" style="background:none; border:none; font-size:1.4rem; cursor:pointer; padding:0 10px; color:var(--text-mid);" title="Enviar foto do que procura">📷</button>
         `);
     }
 
