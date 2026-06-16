@@ -1,4 +1,3 @@
-// Módulo de Inteligência Artificial e Conversação
 import { escapeHTML, showToast } from './utils.js';
 
 export const initIA = (STATE) => {
@@ -8,19 +7,16 @@ export const initIA = (STATE) => {
     const corpoChat = document.getElementById('chat-ia-corpo');
     const containerSugestoes = document.getElementById('ia-sugestoes-container');
     
-    // Injeção do botão de Câmera (Gemini Vision)
     if(inputMsg && !document.getElementById('btn-ia-camera')) {
         inputMsg.insertAdjacentHTML('beforebegin', `
             <input type="file" id="ia-vision-upload" accept="image/*" style="display: none;">
-            <button id="btn-ia-camera" style="background:none; border:none; font-size:1.4rem; cursor:pointer; padding:0 10px; color:var(--text-mid);" title="Enviar foto do que procura">📷</button>
+            <button id="btn-ia-camera" style="background:none; border:none; font-size:1.4rem; cursor:pointer; padding:0 10px; color:var(--text-mid);" title="Enviar foto">📷</button>
         `);
     }
 
     const inputCamera = document.getElementById('ia-vision-upload');
     const btnCamera = document.getElementById('btn-ia-camera');
-
-    let base64Image = null;
-    let mimeTypeImage = null;
+    let base64Image = null; let mimeTypeImage = null;
 
     if(btnCamera) {
         btnCamera.addEventListener('click', () => inputCamera.click());
@@ -29,19 +25,10 @@ export const initIA = (STATE) => {
             if(!file) return;
             const reader = new FileReader();
             reader.onload = (ev) => {
-                base64Image = ev.target.result.split(',')[1];
-                mimeTypeImage = file.type;
-                showToast("📸 Imagem anexada à sua mensagem!");
-                btnCamera.style.color = "var(--forest)";
+                base64Image = ev.target.result.split(',')[1]; mimeTypeImage = file.type;
+                showToast("📸 Imagem anexada!"); btnCamera.style.color = "var(--forest)";
             };
             reader.readAsDataURL(file);
-        });
-    }
-
-    if(btnIaFlutuante) {
-        btnIaFlutuante.addEventListener('click', () => {
-            document.getElementById('modal-ia-chat')?.classList.add('aberto');
-            btnIaFlutuante.classList.remove('pulse-anim'); 
         });
     }
 
@@ -70,36 +57,34 @@ export const initIA = (STATE) => {
 
         try {
             const payload = {
-                action: 'chat_stream',
-                mensagemCliente: texto,
+                action: 'chat_stream', mensagemCliente: texto,
                 historico: STATE.historicoChat.slice(-6), 
                 carrinho: STATE.carrinho.map(i => ({id: i.id, nome: i.nome, qtd: i.qtd, unidade: i.unidade})),
                 imagem: base64Image ? { data: base64Image, mimeType: mimeTypeImage } : null
             };
 
-            // Reset da imagem após envio
             base64Image = null; mimeTypeImage = null;
             if(btnCamera) btnCamera.style.color = "var(--text-mid)";
 
             const response = await fetch('/api/assistente', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
             });
 
-            if (!response.ok) throw new Error(response.status === 429 ? "RATE_LIMIT" : "Erro no Servidor");
+            if (!response.ok) {
+                let errorMsg = "Erro no Servidor";
+                try { const errorData = await response.json(); errorMsg = errorData.error || errorMsg; } catch(e){}
+                throw new Error(response.status === 429 ? "Muitas mensagens. Aguarde." : errorMsg);
+            }
 
-            // [FASE 3] Processamento do Server-Sent Events (SSE) (3.01)
             const reader = response.body.getReader();
             const decoder = new TextDecoder("utf-8");
-            let textoAcumulado = "";
-            bolhaEl.innerHTML = ""; // Limpa o "A pensar..."
+            let textoAcumulado = ""; bolhaEl.innerHTML = "";
 
             while (true) {
                 const { value, done } = await reader.read();
                 if (done) break;
-                
                 const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\\n');
+                const lines = chunk.split('\n');
                 
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
@@ -109,8 +94,7 @@ export const initIA = (STATE) => {
                             const parsed = JSON.parse(dataStr);
                             if (parsed.text) {
                                 textoAcumulado += parsed.text;
-                                // Atualiza a UI em tempo real protegendo de XSS
-                                bolhaEl.innerHTML = escapeHTML(textoAcumulado.replace(/\\[SUGESTOES:.*?\\]/g, '')).replace(/\\n/g, '<br>');
+                                bolhaEl.innerHTML = escapeHTML(textoAcumulado.replace(/\[SUGESTOES:.*?\]/g, '')).replace(/\n/g, '<br>');
                                 corpoChat.scrollTop = corpoChat.scrollHeight;
                             }
                         } catch(e) {}
@@ -118,30 +102,23 @@ export const initIA = (STATE) => {
                 }
             }
 
-            // Extração Regex dos Produtos Sugeridos e Cupão
             STATE.historicoChat.push({ role: 'ia', content: textoAcumulado });
             
-            const matchSugestoes = textoAcumulado.match(/\\[SUGESTOES:(.*?)\\]/);
+            const matchSugestoes = textoAcumulado.match(/\[SUGESTOES:(.*?)\]/);
             if (matchSugestoes && matchSugestoes[1]) {
                 const ids = matchSugestoes[1].split(',').map(s => s.trim());
                 let botoesHtml = '';
                 ids.forEach(prodId => {
                     const produtoNoBanco = STATE.produtos.find(p => String(p.id) === String(prodId));
                     if (produtoNoBanco) {
-                        botoesHtml += `
-                            <button class="btn btn-outline" style="padding: 6px 12px; font-size: 0.85rem; border-color: var(--earth); color: var(--earth);" data-action="add" data-id="${produtoNoBanco.id}">
-                                🛒 + ${escapeHTML(produtoNoBanco.nome)}
-                            </button>
-                        `;
+                        botoesHtml += `<button class="btn btn-outline" style="padding: 6px 12px; font-size: 0.85rem; border-color: var(--earth); color: var(--earth);" data-action="add" data-id="${produtoNoBanco.id}">🛒 + ${escapeHTML(produtoNoBanco.nome)}</button>`;
                     }
                 });
                 containerSugestoes.innerHTML = botoesHtml;
             }
 
         } catch (err) {
-            let msgErro = `🚨 ${escapeHTML(err.message)}`; 
-            if (err.message === "RATE_LIMIT") msgErro = "Muitas mensagens. Aguarde uns segundos.";
-            bolhaEl.innerHTML = `<span style="color:var(--danger)">${msgErro}</span>`;
+            bolhaEl.innerHTML = `<span style="color:var(--danger)">🚨 ${escapeHTML(err.message)}</span>`;
         } finally {
             btnEnviar.disabled = false; btnEnviar.textContent = 'Enviar';
         }
