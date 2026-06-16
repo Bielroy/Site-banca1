@@ -353,7 +353,7 @@ const repetirPedido = (pedId) => {
 };
 
 // =========================================================
-// O DELEGADOR GLOBAL (O QUE CORRIGE TODOS OS SEUS CLIQUES)
+// DELEGADOR GLOBAL BLINDADO (CORRIGE TODOS OS CLIQUES)
 // =========================================================
 document.body.addEventListener('click', async (e) => {
     
@@ -365,8 +365,8 @@ document.body.addEventListener('click', async (e) => {
         return;
     }
 
-    // 2. Intercetar Limpar Carrinho
-    const btnLimpar = e.target.closest('#btn-limpar-carrinho');
+    // 2. Intercetar Limpar Carrinho (Esvaziar)
+    const btnLimpar = e.target.closest('#btn-limpar-carrinho') || e.target.closest('.btn-limpar');
     if (btnLimpar) {
         if (STATE.carrinho.length === 0) return;
         if (await customConfirm("Esvaziar Pedido", "Tem certeza que deseja esvaziar todo o pedido?")) {
@@ -377,10 +377,16 @@ document.body.addEventListener('click', async (e) => {
         return;
     }
 
-    // 3. Intercetar o Fechar de Qualquer Modal/Histórico ("X")
-    const fecharTarget = e.target.closest('[data-fechar], .btn-fechar');
+    // 3. Intercetar o Fechar de Qualquer Modal ("X") de Forma Agressiva
+    const fecharTarget = e.target.closest('[data-fechar]') || e.target.closest('.btn-fechar');
     if (fecharTarget) {
-        const modalId = fecharTarget.dataset.fechar || fecharTarget.closest('.modal-overlay')?.id;
+        let modalId = fecharTarget.dataset.fechar;
+        if (!modalId) {
+            // Se o botão não tiver o data-fechar, ele procura o pai (o modal) e pega o ID dele
+            const modalPai = fecharTarget.closest('.modal-overlay');
+            if (modalPai) modalId = modalPai.id;
+        }
+        
         if(modalId) {
             closeModal(modalId);
             if (history.state && history.state.modal === modalId) history.back();
@@ -389,7 +395,7 @@ document.body.addEventListener('click', async (e) => {
         return;
     }
 
-    // 4. Intercetar Outras Ações
+    // 4. Intercetar Outras Ações (Adicionar, Diminuir, Favoritar)
     const actionTarget = e.target.closest('[data-action]'); 
     if (actionTarget) {
         const action = actionTarget.dataset.action; const id = actionTarget.dataset.id;
@@ -439,7 +445,6 @@ document.getElementById('carrinho-itens').addEventListener('input', (e) => {
     }
 });
 
-// A ROTA DE VOLTAR RESTAURADA (History API)
 window.addEventListener('popstate', (e) => { 
     document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('aberto'));
     document.getElementById('carrinho-overlay')?.classList.remove('aberto');
@@ -495,7 +500,7 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     openModal('modal-checkout');
 });
 
-// Envio de Pedido
+// Processamento Logístico do Checkout
 document.getElementById('btn-enviar-pedido').addEventListener('click', async (e) => {
     const btn = e.currentTarget; if (btn.disabled) return;
     const nome = document.getElementById('cli-nome').value.trim();
