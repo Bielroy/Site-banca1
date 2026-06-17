@@ -7,7 +7,8 @@ try { kv = require('@vercel/kv').kv; } catch(e) {}
 const formatPrivateKey = (key) => key ? key.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '';
 
 let db;
-let activeModelName = null;
+// Definimos o modelo mais rápido, moderno e 100% gratuito da Google!
+const MODEL_NAME = 'gemini-1.5-flash';
 
 const bootFirebase = () => {
     if (!admin.apps.length) {
@@ -58,23 +59,6 @@ module.exports = async function handler(req, res) {
         const cleanKey = rawKey.replace(/['"]/g, '').trim();
         if (!cleanKey) throw new Error("A chave GEMINI_API_KEY não está na Vercel.");
 
-        // [O NOVO RADAR BLINDADO] - Ele já está aqui e faz tudo sozinho!
-        if (!activeModelName) {
-            try {
-                const discoveryRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
-                const discoveryData = await discoveryRes.json();
-                if (discoveryData && discoveryData.models) {
-                    const valid = discoveryData.models.filter(m => m.supportedGenerationMethods?.includes('generateContent'));
-                    const flash = valid.find(m => m.name.includes('1.5-flash'));
-                    const pro = valid.find(m => m.name.includes('gemini-pro') || m.name.includes('1.0-pro'));
-                    const fallback = valid.find(m => m.name.includes('gemini'));
-                    const chosen = flash || pro || fallback;
-                    if (chosen) activeModelName = chosen.name.replace('models/', '');
-                }
-            } catch(e) { console.warn("Falha no radar", e); }
-            if (!activeModelName) activeModelName = 'gemini-1.5-flash-latest';
-        }
-
         const ai = new GoogleGenerativeAI(cleanKey);
 
         if (!cachedCatalog || (Date.now() - cacheTimestamp > 180000)) {
@@ -86,7 +70,7 @@ module.exports = async function handler(req, res) {
             }
         }
 
-        // [STREAMING DA IA]
+        // [STREAMING DA IA - LIGAÇÃO DIRETA]
         if (action === 'chat_stream') {
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
@@ -104,7 +88,7 @@ module.exports = async function handler(req, res) {
 
             const promptFinal = `${sysInst}\n\n[HISTÓRICO]\n${conversaCompilada || 'Vazio.'}\n\n[CARRINHO]\n${carrinho && carrinho.length > 0 ? JSON.stringify(carrinho) : 'Vazio'}\n\n[MENSAGEM]: ${mensagemCliente}`;
 
-            const model = ai.getGenerativeModel({ model: activeModelName });
+            const model = ai.getGenerativeModel({ model: MODEL_NAME });
             
             const userParts = [{ text: promptFinal }];
             if (imagem && imagem.data) userParts.push({ inlineData: { data: imagem.data, mimeType: imagem.mimeType } });
@@ -117,24 +101,15 @@ module.exports = async function handler(req, res) {
                 res.write(`data: [DONE]\n\n`);
                 return res.end();
             } catch (streamErr) {
-                // [O PLANO B DE EMERGÊNCIA] Se der erro 404 de novo, força o modelo universal!
-                if (streamErr.message.includes('404') || streamErr.message.includes('not found')) {
-                     const fallbackModel = ai.getGenerativeModel({ model: 'gemini-pro' });
-                     const fallbackResult = await fallbackModel.generateContentStream({ contents: [{ role: 'user', parts: userParts }] });
-                     for await (const chunk of fallbackResult.stream) {
-                        res.write(`data: ${JSON.stringify({ text: chunk.text() })}\n\n`);
-                     }
-                     res.write(`data: [DONE]\n\n`);
-                     return res.end();
-                } else {
-                    res.write(`data: ${JSON.stringify({ text: `\n[Erro na API: ${streamErr.message}]` })}\n\n`);
-                    res.write(`data: [DONE]\n\n`);
-                    return res.end();
-                }
+                let errMsg = streamErr.message;
+                if(errMsg.includes('429')) errMsg = "Atingiu o limite de mensagens da Google ou a chave é inválida.";
+                res.write(`data: ${JSON.stringify({ text: `\n[Erro na API: ${errMsg}]` })}\n\n`);
+                res.write(`data: [DONE]\n\n`);
+                return res.end();
             }
         }
 
-        const modelStandard = ai.getGenerativeModel({ model: activeModelName });
+        const modelStandard = ai.getGenerativeModel({ model: MODEL_NAME });
 
         if (action === 'social_post') {
             const result = await modelStandard.generateContent(`Crie um post engajador para Instagram sobre o produto: "${produtoInfo?.nome}". Categoria: ${produtoInfo?.cat}. Preço: R$ ${produtoInfo?.preco}. Use emojis e 3 hashtags.`);
