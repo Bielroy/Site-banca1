@@ -8,6 +8,7 @@ const formatPrivateKey = (key) => key ? key.replace(/\\n/g, '\n').replace(/^"|"$
 
 let db;
 let ai;
+let activeModelName = null; // Guardará o nome correto do modelo após o "Radar"
 
 const bootFirebase = () => {
     if (!admin.apps.length) {
@@ -42,7 +43,9 @@ module.exports = async function handler(req, res) {
 
     try {
         bootFirebase();
-        if(!ai) ai = new GoogleGenerativeAI((process.env.GEMINI_API_KEY || "").replace(/['"]/g, '').trim());
+        const rawKey = process.env.GEMINI_API_KEY || "";
+        const cleanKey = rawKey.replace(/['"]/g, '').trim();
+        if(!ai) ai = new GoogleGenerativeAI(cleanKey);
 
         if (!cachedCatalog || (Date.now() - cacheTimestamp > 180000)) {
             if(db) {
@@ -53,7 +56,21 @@ module.exports = async function handler(req, res) {
             }
         }
 
-        // [STREAMING DA IA - CORRIGIDO CONTRA CRASHES DA GOOGLE]
+        // [O RADAR DE AUTO-DESCOBERTA] Descobre o nome exato do modelo na sua conta Google
+        if (!activeModelName) {
+            try {
+                const discoveryRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+                const discoveryData = await discoveryRes.json();
+                if (discoveryData && discoveryData.models) {
+                    let found = discoveryData.models.find(m => m.name.includes('1.5-flash') && m.supportedGenerationMethods.includes('generateContent'));
+                    if (!found) found = discoveryData.models.find(m => m.name.includes('gemini') && m.supportedGenerationMethods.includes('generateContent'));
+                    if (found) activeModelName = found.name.replace('models/', '');
+                }
+            } catch(e) { console.warn("Radar falhou, usando fallback"); }
+            if (!activeModelName) activeModelName = 'gemini-1.5-flash-latest';
+        }
+
+        // [STREAMING DA IA]
         if (action === 'chat_stream') {
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
@@ -64,7 +81,7 @@ module.exports = async function handler(req, res) {
 2. [NEGOCIAÇÃO]: Se o cliente pedir desconto, gera um cupão de até 10%. Diz para inserir 'IA-DESCONTO-10'.
 3. IMPORTANTE: Para sugerir produtos, escreve EXATAMENTE no final da resposta: [SUGESTOES: ID_DO_PRODUTO_1, ID_DO_PRODUTO_2]`;
 
-            // Construção Segura: Fundir todo o histórico num único texto!
+            // Funde o histórico para a Google não dar "crash"
             let conversaCompilada = "";
             if (historico && historico.length > 0) {
                 historico.forEach(msg => {
@@ -83,7 +100,7 @@ ${carrinho && carrinho.length > 0 ? JSON.stringify(carrinho) : 'Carrinho Vazio'}
 
 [MENSAGEM ATUAL DO CLIENTE]: ${mensagemCliente}`;
 
-            const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+            const model = ai.getGenerativeModel({ model: activeModelName });
             
             const userParts = [{ text: promptFinal }];
             if (imagem && imagem.data) userParts.push({ inlineData: { data: imagem.data, mimeType: imagem.mimeType } });
@@ -96,13 +113,13 @@ ${carrinho && carrinho.length > 0 ? JSON.stringify(carrinho) : 'Carrinho Vazio'}
                 res.write(`data: [DONE]\n\n`);
                 return res.end();
             } catch (streamErr) {
-                res.write(`data: ${JSON.stringify({ text: `\n[Erro na IA: ${streamErr.message}]` })}\n\n`);
+                res.write(`data: ${JSON.stringify({ text: `\n[Erro na Google API: ${streamErr.message}]` })}\n\n`);
                 res.write(`data: [DONE]\n\n`);
                 return res.end();
             }
         }
 
-        const modelStandard = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const modelStandard = ai.getGenerativeModel({ model: activeModelName });
 
         if (action === 'social_post') {
             const result = await modelStandard.generateContent(`Crie um post engajador para Instagram sobre o produto: "${produtoInfo?.nome}". Categoria: ${produtoInfo?.cat}. Preço: R$ ${produtoInfo?.preco}. Use emojis e 3 hashtags.`);
@@ -117,9 +134,9 @@ ${carrinho && carrinho.length > 0 ? JSON.stringify(carrinho) : 'Carrinho Vazio'}
             return res.status(200).json({ sucesso: true, descricao: result.response.text().trim() });
         }
         if (action === 'gerar_kit') {
-            const modelKit = ai.getGenerativeModel({ model: 'gemini-1.5-flash', generationConfig: { responseMimeType: "application/json" } });
-            const resultKit = await modelKit.generateContent(`Analise catálogo: ${JSON.stringify(cachedCatalog)}. Crie "Kit Promocional". JSON VÁLIDO: {"nome":"", "descricao":"", "preco":0.00, "itensInclusos":""}`);
-            return res.status(200).json({ sucesso: true, kit: JSON.parse(resultKit.response.text()) });
+            const resultKit = await modelStandard.generateContent(`Analise catálogo: ${JSON.stringify(cachedCatalog)}. Crie "Kit Promocional". JSON VÁLIDO: {"nome":"", "descricao":"", "preco":0.00, "itensInclusos":""}`);
+            let kitJson = resultKit.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+            return res.status(200).json({ sucesso: true, kit: JSON.parse(kitJson) });
         }
 
         return res.status(400).json({ error: "Ação não suportada." });
