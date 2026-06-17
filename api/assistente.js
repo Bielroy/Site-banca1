@@ -7,8 +7,7 @@ try { kv = require('@vercel/kv').kv; } catch(e) {}
 const formatPrivateKey = (key) => key ? key.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '';
 
 let db;
-let ai;
-let activeModelName = null; // Guardará o nome correto do modelo após o "Radar"
+let activeModelName = null;
 
 const bootFirebase = () => {
     if (!admin.apps.length) {
@@ -38,6 +37,18 @@ module.exports = async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
     const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+    
+    try {
+        if (kv && process.env.KV_REST_API_URL) {
+            const limit = await kv.incr(`rate:ia:${ip}`);
+            if (limit === 1) await kv.expire(`rate:ia:${ip}`, 10);
+            if (limit > 5) return res.status(429).json({ error: 'Muitas requisições. Abrandar.' });
+        } else {
+            const agora = Date.now();
+            if (rateLimitMap.has(ip) && agora - rateLimitMap.get(ip) < 2000) return res.status(429).json({ error: 'Muitas requisições.' });
+            rateLimitMap.set(ip, agora);
+        }
+    } catch(e) {}
 
     const { action, mensagemCliente, historico = [], carrinho = [], imagem, produtoInfo, historicoVendas } = req.body;
 
@@ -45,7 +56,26 @@ module.exports = async function handler(req, res) {
         bootFirebase();
         const rawKey = process.env.GEMINI_API_KEY || "";
         const cleanKey = rawKey.replace(/['"]/g, '').trim();
-        if(!ai) ai = new GoogleGenerativeAI(cleanKey);
+        if (!cleanKey) throw new Error("A chave GEMINI_API_KEY não está na Vercel.");
+
+        // [O NOVO RADAR BLINDADO] - Ele já está aqui e faz tudo sozinho!
+        if (!activeModelName) {
+            try {
+                const discoveryRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+                const discoveryData = await discoveryRes.json();
+                if (discoveryData && discoveryData.models) {
+                    const valid = discoveryData.models.filter(m => m.supportedGenerationMethods?.includes('generateContent'));
+                    const flash = valid.find(m => m.name.includes('1.5-flash'));
+                    const pro = valid.find(m => m.name.includes('gemini-pro') || m.name.includes('1.0-pro'));
+                    const fallback = valid.find(m => m.name.includes('gemini'));
+                    const chosen = flash || pro || fallback;
+                    if (chosen) activeModelName = chosen.name.replace('models/', '');
+                }
+            } catch(e) { console.warn("Falha no radar", e); }
+            if (!activeModelName) activeModelName = 'gemini-1.5-flash-latest';
+        }
+
+        const ai = new GoogleGenerativeAI(cleanKey);
 
         if (!cachedCatalog || (Date.now() - cacheTimestamp > 180000)) {
             if(db) {
@@ -54,20 +84,6 @@ module.exports = async function handler(req, res) {
                 snap.forEach(d => cachedCatalog.push({ id: d.id, nome: d.data().nome, preco: d.data().preco }));
                 cacheTimestamp = Date.now();
             }
-        }
-
-        // [O RADAR DE AUTO-DESCOBERTA] Descobre o nome exato do modelo na sua conta Google
-        if (!activeModelName) {
-            try {
-                const discoveryRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
-                const discoveryData = await discoveryRes.json();
-                if (discoveryData && discoveryData.models) {
-                    let found = discoveryData.models.find(m => m.name.includes('1.5-flash') && m.supportedGenerationMethods.includes('generateContent'));
-                    if (!found) found = discoveryData.models.find(m => m.name.includes('gemini') && m.supportedGenerationMethods.includes('generateContent'));
-                    if (found) activeModelName = found.name.replace('models/', '');
-                }
-            } catch(e) { console.warn("Radar falhou, usando fallback"); }
-            if (!activeModelName) activeModelName = 'gemini-1.5-flash-latest';
         }
 
         // [STREAMING DA IA]
@@ -81,24 +97,12 @@ module.exports = async function handler(req, res) {
 2. [NEGOCIAÇÃO]: Se o cliente pedir desconto, gera um cupão de até 10%. Diz para inserir 'IA-DESCONTO-10'.
 3. IMPORTANTE: Para sugerir produtos, escreve EXATAMENTE no final da resposta: [SUGESTOES: ID_DO_PRODUTO_1, ID_DO_PRODUTO_2]`;
 
-            // Funde o histórico para a Google não dar "crash"
             let conversaCompilada = "";
             if (historico && historico.length > 0) {
-                historico.forEach(msg => {
-                    conversaCompilada += `[${msg.role === 'ia' ? 'ASSISTENTE' : 'CLIENTE'}]: ${msg.content}\n`;
-                });
+                historico.forEach(msg => { conversaCompilada += `[${msg.role === 'ia' ? 'ASSISTENTE' : 'CLIENTE'}]: ${msg.content}\n`; });
             }
 
-            const promptFinal = `
-${sysInst}
-
-[HISTÓRICO DA CONVERSA RECENTE]
-${conversaCompilada || 'Nenhuma conversa anterior.'}
-
-[CARRINHO ATUAL DO CLIENTE]
-${carrinho && carrinho.length > 0 ? JSON.stringify(carrinho) : 'Carrinho Vazio'}
-
-[MENSAGEM ATUAL DO CLIENTE]: ${mensagemCliente}`;
+            const promptFinal = `${sysInst}\n\n[HISTÓRICO]\n${conversaCompilada || 'Vazio.'}\n\n[CARRINHO]\n${carrinho && carrinho.length > 0 ? JSON.stringify(carrinho) : 'Vazio'}\n\n[MENSAGEM]: ${mensagemCliente}`;
 
             const model = ai.getGenerativeModel({ model: activeModelName });
             
@@ -113,9 +117,20 @@ ${carrinho && carrinho.length > 0 ? JSON.stringify(carrinho) : 'Carrinho Vazio'}
                 res.write(`data: [DONE]\n\n`);
                 return res.end();
             } catch (streamErr) {
-                res.write(`data: ${JSON.stringify({ text: `\n[Erro na Google API: ${streamErr.message}]` })}\n\n`);
-                res.write(`data: [DONE]\n\n`);
-                return res.end();
+                // [O PLANO B DE EMERGÊNCIA] Se der erro 404 de novo, força o modelo universal!
+                if (streamErr.message.includes('404') || streamErr.message.includes('not found')) {
+                     const fallbackModel = ai.getGenerativeModel({ model: 'gemini-pro' });
+                     const fallbackResult = await fallbackModel.generateContentStream({ contents: [{ role: 'user', parts: userParts }] });
+                     for await (const chunk of fallbackResult.stream) {
+                        res.write(`data: ${JSON.stringify({ text: chunk.text() })}\n\n`);
+                     }
+                     res.write(`data: [DONE]\n\n`);
+                     return res.end();
+                } else {
+                    res.write(`data: ${JSON.stringify({ text: `\n[Erro na API: ${streamErr.message}]` })}\n\n`);
+                    res.write(`data: [DONE]\n\n`);
+                    return res.end();
+                }
             }
         }
 
