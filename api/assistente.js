@@ -7,8 +7,6 @@ try { kv = require('@vercel/kv').kv; } catch(e) {}
 const formatPrivateKey = (key) => key ? key.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '';
 
 let db;
-// Definimos o modelo mais rápido, moderno e 100% gratuito da Google!
-const MODEL_NAME = 'gemini-1.5-flash';
 
 const bootFirebase = () => {
     if (!admin.apps.length) {
@@ -70,7 +68,28 @@ module.exports = async function handler(req, res) {
             }
         }
 
-        // [STREAMING DA IA - LIGAÇÃO DIRETA]
+        // BATERIA DE MODELOS: A Lista de Sobrevivência
+        const modelosDisponiveis = [
+            'gemini-1.5-flash-latest', 
+            'gemini-1.5-flash', 
+            'gemini-1.0-pro-latest', 
+            'gemini-pro'
+        ];
+
+        // Helper Blindado para Ações do Painel Admin
+        const tentarGerarTexto = async (prompt) => {
+            let ultimoErro = null;
+            for (const nomeModelo of modelosDisponiveis) {
+                try {
+                    const model = ai.getGenerativeModel({ model: nomeModelo });
+                    const result = await model.generateContent(prompt);
+                    return result;
+                } catch (e) { ultimoErro = e; }
+            }
+            throw ultimoErro;
+        };
+
+        // [STREAMING DA IA NO CHAT]
         if (action === 'chat_stream') {
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
@@ -88,43 +107,61 @@ module.exports = async function handler(req, res) {
 
             const promptFinal = `${sysInst}\n\n[HISTÓRICO]\n${conversaCompilada || 'Vazio.'}\n\n[CARRINHO]\n${carrinho && carrinho.length > 0 ? JSON.stringify(carrinho) : 'Vazio'}\n\n[MENSAGEM]: ${mensagemCliente}`;
 
-            const model = ai.getGenerativeModel({ model: MODEL_NAME });
-            
             const userParts = [{ text: promptFinal }];
             if (imagem && imagem.data) userParts.push({ inlineData: { data: imagem.data, mimeType: imagem.mimeType } });
 
-            try {
-                const resultStream = await model.generateContentStream({ contents: [{ role: 'user', parts: userParts }] });
-                for await (const chunk of resultStream.stream) {
-                    res.write(`data: ${JSON.stringify({ text: chunk.text() })}\n\n`);
+            let resultStream = null;
+            let erroFinal = "";
+
+            // O SEGREDO CONTRA ERROS: Testa os modelos um por um até um funcionar!
+            for (const nomeModelo of modelosDisponiveis) {
+                try {
+                    const model = ai.getGenerativeModel({ model: nomeModelo });
+                    resultStream = await model.generateContentStream({ contents: [{ role: 'user', parts: userParts }] });
+                    break; // Se funcionou, cancela o loop de erros!
+                } catch (err) {
+                    erroFinal = err.message;
                 }
-                res.write(`data: [DONE]\n\n`);
-                return res.end();
-            } catch (streamErr) {
-                let errMsg = streamErr.message;
-                if(errMsg.includes('429')) errMsg = "Atingiu o limite de mensagens da Google ou a chave é inválida.";
-                res.write(`data: ${JSON.stringify({ text: `\n[Erro na API: ${errMsg}]` })}\n\n`);
+            }
+
+            // Se TODOS os modelos falharem, exibe uma mensagem amigável explicando o motivo
+            if (!resultStream) {
+                let amigavel = "Erro de conexão com a IA.";
+                if (erroFinal.includes('429') || erroFinal.includes('quota') || erroFinal.includes('limit')) {
+                    amigavel = "A sua chave da Google esgotou o plano gratuito. Precisa de ativar a faturação (Billing) na Google Cloud ou criar uma chave com uma conta Google nova.";
+                } else if (erroFinal.includes('404')) {
+                    amigavel = "A sua chave não tem permissão para os modelos mais recentes. Crie uma chave nova no AI Studio.";
+                } else if (erroFinal.includes('API_KEY_INVALID')) {
+                    amigavel = "A chave da API fornecida nas configurações da Vercel é inválida.";
+                }
+                res.write(`data: ${JSON.stringify({ text: `\n🚨 **[ERRO]**: ${amigavel}**\n*(Detalhe Técnico: ${erroFinal})*` })}\n\n`);
                 res.write(`data: [DONE]\n\n`);
                 return res.end();
             }
+
+            // Se um modelo funcionou, envia a resposta fluída
+            for await (const chunk of resultStream.stream) {
+                res.write(`data: ${JSON.stringify({ text: chunk.text() })}\n\n`);
+            }
+            res.write(`data: [DONE]\n\n`);
+            return res.end();
         }
 
-        const modelStandard = ai.getGenerativeModel({ model: MODEL_NAME });
-
+        // Outras Ações Administrativas
         if (action === 'social_post') {
-            const result = await modelStandard.generateContent(`Crie um post engajador para Instagram sobre o produto: "${produtoInfo?.nome}". Categoria: ${produtoInfo?.cat}. Preço: R$ ${produtoInfo?.preco}. Use emojis e 3 hashtags.`);
+            const result = await tentarGerarTexto(`Crie um post engajador para Instagram sobre o produto: "${produtoInfo?.nome}". Categoria: ${produtoInfo?.cat}. Preço: R$ ${produtoInfo?.preco}. Use emojis e 3 hashtags.`);
             return res.status(200).json({ sucesso: true, post: result.response.text().trim() });
         }
         if (action === 'demand_prediction') {
-            const result = await modelStandard.generateContent(`Analise este resumo logístico: ${JSON.stringify(historicoVendas)}. Forneça relatório HTML: 1. Alertas de Reposição, 2. Dias de Pico, 3. Sugestão.`);
+            const result = await tentarGerarTexto(`Analise este resumo logístico: ${JSON.stringify(historicoVendas)}. Forneça relatório HTML: 1. Alertas de Reposição, 2. Dias de Pico, 3. Sugestão.`);
             return res.status(200).json({ sucesso: true, relatorio: result.response.text().trim() });
         }
         if (action === 'gerar_descricao') {
-            const result = await modelStandard.generateContent(`Crie descrição persuasiva para: "${produtoInfo?.nome}". Responda APENAS com a descrição.`);
+            const result = await tentarGerarTexto(`Crie descrição persuasiva para: "${produtoInfo?.nome}". Responda APENAS com a descrição.`);
             return res.status(200).json({ sucesso: true, descricao: result.response.text().trim() });
         }
         if (action === 'gerar_kit') {
-            const resultKit = await modelStandard.generateContent(`Analise catálogo: ${JSON.stringify(cachedCatalog)}. Crie "Kit Promocional". JSON VÁLIDO: {"nome":"", "descricao":"", "preco":0.00, "itensInclusos":""}`);
+            const resultKit = await tentarGerarTexto(`Analise catálogo: ${JSON.stringify(cachedCatalog)}. Crie "Kit Promocional". JSON VÁLIDO: {"nome":"", "descricao":"", "preco":0.00, "itensInclusos":""}`);
             let kitJson = resultKit.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
             return res.status(200).json({ sucesso: true, kit: JSON.parse(kitJson) });
         }
