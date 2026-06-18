@@ -1,4 +1,4 @@
-import { auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL, query, orderBy, limit, writeBatch, where } from './firebase.js';
+import { auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL, query, orderBy, limit, writeBatch, where, updateDoc } from './firebase.js';
 import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal, customConfirm } from './utils.js';
 import Chart from 'chart.js/auto';
 
@@ -143,11 +143,11 @@ const iniciarRealTimeSync = () => {
     });
     unsubscribes.push(unsubConfig);
 
-    const pedQuery = query(collection(db, "pedidos"), where("status", "in", ["pendente", "preparando", "enviado"]), orderBy("data", "desc"), limit(100));
+    const pedQuery = query(collection(db, "pedidos"), where("status", "in", ["pendente", "aguardando_pesagem", "preparando", "enviado"]), orderBy("data", "desc"), limit(100));
     let cargaInicial = true;
 
     const unsubPedidos = onSnapshot(pedQuery, (snap) => {
-        const temNovoPendente = snap.docChanges().some(change => change.type === 'added' && change.doc.data().status === 'pendente');
+        const temNovoPendente = snap.docChanges().some(change => change.type === 'added' && (change.doc.data().status === 'pendente' || change.doc.data().status === 'aguardando_pesagem'));
         if (!cargaInicial && temNovoPendente) {
             playAlertaPedido();
             showToast("🔔 NOVO PEDIDO NA FILA!", false);
@@ -220,7 +220,6 @@ document.getElementById('edit-foto')?.addEventListener('change', (e) => {
     }
 });
 
-// [FASE 3] Injetor do Sistema de Stock na UI do Modal (3.03)
 const injetarEstoqueUI = () => {
     if(!document.getElementById('edit-estoque-fisico')) {
         const precoRow = document.getElementById('edit-preco')?.closest('.grid-2');
@@ -236,6 +235,74 @@ const injetarEstoqueUI = () => {
     }
 };
 
+// ==========================================
+// LÓGICA DO PICKING GUIADO E INJEÇÃO DO MODAL
+// ==========================================
+const PICKING_STATE = { pedidoId: null, itensAPesar: [], indiceAtual: 0, pedidoOriginal: null, totalOriginal: 0, valorExtraPesado: 0 };
+
+const injetarModalPickingSeNecessario = () => {
+    if(document.getElementById('modal-picking')) return;
+    document.body.insertAdjacentHTML('beforeend', `
+        <div class="modal-overlay" id="modal-picking" aria-hidden="true">
+            <div class="modal" style="max-width: 500px; text-align: center;">
+                <div class="modal-head" style="background: var(--forest); color: white;">
+                    <h2 id="picking-title">Separação de Pedido</h2>
+                    <button class="btn-fechar" data-fechar="modal-picking" style="color: white;">×</button>
+                </div>
+                <div class="modal-body" style="padding: 30px 20px;">
+                    <div id="picking-step-container">
+                        <span id="picking-contador" style="background: var(--foam); color: var(--forest); padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 0.9rem; margin-bottom: 15px; display: inline-block;"></span>
+                        <h3 id="picking-nome-produto" style="font-size: 1.8rem; margin-bottom: 5px; color: var(--text-dark);"></h3>
+                        <p id="picking-qtd-pedida" style="font-size: 1.2rem; color: var(--earth); font-weight: bold; margin-bottom: 25px;"></p>
+                        
+                        <div style="background: var(--warm-white); border: 2px dashed var(--parchment); padding: 20px; border-radius: 12px; margin-bottom: 25px;">
+                            <label style="display: block; font-weight: 600; margin-bottom: 10px; color: var(--text-mid);">Coloque na balança e digite o peso (Kg):</label>
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                                <input type="number" id="picking-input-peso" step="0.001" placeholder="Ex: 1.250" style="width: 150px; font-size: 1.5rem; text-align: center; padding: 15px; border: 2px solid var(--forest); border-radius: 8px;">
+                                <span style="font-size: 1.5rem; font-weight: bold; color: var(--text-light);">kg</span>
+                            </div>
+                        </div>
+                        <button class="btn-outline" style="background: var(--forest); color: white; width: 100%; padding: 18px; font-size: 1.2rem;" data-action="picking-proximo">Salvar Peso e Avançar ➔</button>
+                    </div>
+
+                    <div id="picking-resumo-container" style="display: none;">
+                        <div style="font-size: 3rem; margin-bottom: 10px;">✅</div>
+                        <h3 style="font-size: 1.5rem; color: var(--forest); margin-bottom: 15px;">Tudo Separado e Pesado!</h3>
+                        <div style="background: var(--foam); padding: 20px; border-radius: 12px; text-align: left; margin-bottom: 25px;">
+                            <p style="margin-bottom: 8px; color: var(--text-mid);">Valor S/ Pesagem: <span id="resumo-valor-antigo" style="float: right; text-decoration: line-through;"></span></p>
+                            <p style="font-size: 1.3rem; font-weight: 900; color: var(--text-dark); border-top: 1px solid var(--sage); padding-top: 8px; margin-top: 8px;">Novo Valor Exato: <span id="resumo-valor-novo" style="float: right; color: var(--forest);"></span></p>
+                        </div>
+                        <button class="btn-outline" style="background: #25D366; color: white; border-color: #25D366; width: 100%; padding: 18px; font-size: 1.2rem;" data-action="picking-finalizar">Concluir e Avisar Cliente 🚀</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `);
+};
+
+const renderPickingStep = () => {
+    const itemAtual = PICKING_STATE.itensAPesar[PICKING_STATE.indiceAtual];
+    document.getElementById('picking-contador').textContent = `Produto ${PICKING_STATE.indiceAtual + 1} de ${PICKING_STATE.itensAPesar.length}`;
+    document.getElementById('picking-nome-produto').textContent = itemAtual.nome;
+    document.getElementById('picking-qtd-pedida').textContent = `O cliente quer: ${itemAtual.qtd} unidades`;
+    
+    const inputPeso = document.getElementById('picking-input-peso');
+    inputPeso.value = ''; 
+    setTimeout(() => inputPeso.focus(), 100);
+};
+
+const mostrarResumoPicking = () => {
+    document.getElementById('picking-step-container').style.display = 'none';
+    document.getElementById('picking-resumo-container').style.display = 'block';
+
+    const novoTotalExato = PICKING_STATE.totalOriginal + PICKING_STATE.valorExtraPesado;
+    document.getElementById('resumo-valor-antigo').textContent = fmt(PICKING_STATE.totalOriginal);
+    document.getElementById('resumo-valor-novo').textContent = fmt(novoTotalExato);
+};
+
+// ==========================================
+// DELEGADOR GLOBAL DE CLIQUES
+// ==========================================
 document.body.addEventListener('click', async (e) => {
     const target = e.target.closest('[data-action]'); if(!target) return;
     const action = target.dataset.action;
@@ -277,7 +344,6 @@ document.body.addEventListener('click', async (e) => {
             openModal('modal-produto');
         }
 
-        // [FASE 3] Feature: Gerar Post Redes Sociais (3.05)
         else if(action === 'gerar-post') {
             const p = produtosAtuais.find(x => x.id === target.dataset.id);
             if(!p) return;
@@ -291,7 +357,6 @@ document.body.addEventListener('click', async (e) => {
                 const data = await res.json();
                 if(!data.sucesso) throw new Error("Falha na IA");
                 
-                // Exibe o post num Modal simples ou no Clipboard
                 await navigator.clipboard.writeText(data.post);
                 showToast("✨ Texto copiado para a Área de Transferência!");
                 alert(`Post Gerado Pela IA (Já Copiado!):\n\n${data.post}`);
@@ -311,6 +376,86 @@ document.body.addEventListener('click', async (e) => {
             }
             await setDoc(doc(db, "produtos", id), { ativo: novoStatus, ultimaModificacao: Date.now() }, { merge: true });
             showToast(novoStatus ? "Produto disponível!" : "Produto esgotado.");
+        }
+
+        // --- AÇÕES DE LOGÍSTICA KANBAN ---
+        else if (action === 'iniciar-separacao') {
+            const pedidoId = target.dataset.id;
+            const pedido = pedidosGerais.find(p => p.id === pedidoId);
+            if(!pedido) return showToast("Pedido não encontrado", true);
+
+            const itensParaBalanca = pedido.itens.filter(item => item.aPesar === true);
+            
+            PICKING_STATE.pedidoId = pedido.id;
+            PICKING_STATE.pedidoOriginal = pedido;
+            PICKING_STATE.itensAPesar = JSON.parse(JSON.stringify(itensParaBalanca)); 
+            PICKING_STATE.indiceAtual = 0;
+            PICKING_STATE.totalOriginal = pedido.clientTotal || pedido.total || 0;
+            PICKING_STATE.valorExtraPesado = 0;
+
+            injetarModalPickingSeNecessario();
+            document.getElementById('picking-title').textContent = `Separar: ${pedido.nome.split(' ')[0]}`;
+            
+            if (PICKING_STATE.itensAPesar.length > 0) {
+                document.getElementById('picking-step-container').style.display = 'block';
+                document.getElementById('picking-resumo-container').style.display = 'none';
+                renderPickingStep();
+            } else {
+                document.getElementById('picking-step-container').style.display = 'none';
+                mostrarResumoPicking();
+            }
+            openModal('modal-picking');
+        }
+
+        else if (action === 'picking-proximo') {
+            const inputPeso = document.getElementById('picking-input-peso');
+            const pesoInformado = parseFloat(inputPeso.value.replace(',', '.'));
+            
+            if (isNaN(pesoInformado) || pesoInformado <= 0) return showToast("⚠️ Digite um peso válido marcado na balança!", true);
+
+            const itemAtual = PICKING_STATE.itensAPesar[PICKING_STATE.indiceAtual];
+            const valorDesteItem = pesoInformado * itemAtual.precoOriginal;
+            
+            PICKING_STATE.valorExtraPesado += valorDesteItem;
+            itemAtual.pesoFinal = pesoInformado;
+            itemAtual.precoFinalCalculado = valorDesteItem;
+            itemAtual.aPesar = false; 
+
+            PICKING_STATE.indiceAtual++;
+            if (PICKING_STATE.indiceAtual >= PICKING_STATE.itensAPesar.length) mostrarResumoPicking();
+            else renderPickingStep();
+        }
+
+        else if (action === 'picking-finalizar') {
+            const btn = target;
+            btn.disabled = true; btn.textContent = 'A processar... ⏳';
+
+            const novoTotalExato = PICKING_STATE.totalOriginal + PICKING_STATE.valorExtraPesado;
+            const itensAtualizados = PICKING_STATE.pedidoOriginal.itens.map(itemOri => {
+                const itemPesado = PICKING_STATE.itensAPesar.find(ip => ip.id === itemOri.id);
+                return itemPesado ? itemPesado : itemOri;
+            });
+
+            try {
+                await updateDoc(doc(db, "pedidos", PICKING_STATE.pedidoId), {
+                    itens: itensAtualizados,
+                    totalExato: novoTotalExato,
+                    total: novoTotalExato, // Atualiza para o painel de finanças ler corretamente
+                    status: 'preparando' 
+                });
+
+                fetch('/api/whatsapp-trigger', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'notificar_peso_concluido', pedidoId: PICKING_STATE.pedidoId, novoTotal: fmt(novoTotalExato) })
+                }).catch(() => {});
+
+                showToast("✅ Pedido pesado e finalizado!");
+                closeModal('modal-picking');
+            } catch (e) {
+                showToast("Erro ao finalizar pedido.", true);
+            } finally {
+                btn.disabled = false; btn.textContent = 'Concluir e Avisar Cliente 🚀';
+            }
         }
         
         else if (action === 'avancar-pedido') {
@@ -334,7 +479,6 @@ document.body.addEventListener('click', async (e) => {
 });
 
 const iniciarIAFeaturesDOM = () => {
-    // 1. Descrição IA (Mantida da Fase 2)
     const catInput = document.getElementById('edit-cat');
     if(catInput && !document.getElementById('form-group-descricao')) {
         catInput.closest('.form-group').insertAdjacentHTML('afterend', `
@@ -367,7 +511,6 @@ const iniciarIAFeaturesDOM = () => {
         });
     }
 
-    // 2. Kits (Mantida da Fase 2)
     const dashboardControls = document.querySelector('.dash-header');
     if(dashboardControls && !document.getElementById('btn-ia-kit')) {
         dashboardControls.insertAdjacentHTML('beforeend', `
@@ -407,7 +550,6 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
 
     try {
         const id = document.getElementById('edit-id').value || crypto.randomUUID();
-        // [FASE 3] Integração da gravação do valor do Stock
         let rawEstoque = document.getElementById('edit-estoque-fisico') ? document.getElementById('edit-estoque-fisico').value : '';
         let estoqueFinal = rawEstoque === '' ? null : parseInt(rawEstoque);
 
@@ -418,7 +560,7 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
             cat: document.getElementById('edit-cat').value.trim().toLowerCase(), 
             descricao: document.getElementById('edit-descricao') ? document.getElementById('edit-descricao').value.trim() : '',
             estoqueFisico: estoqueFinal,
-            ativo: estoqueFinal !== null ? (estoqueFinal > 0) : true, // Desativa logo se o stock inserido for 0
+            ativo: estoqueFinal !== null ? (estoqueFinal > 0) : true, 
             ultimaModificacao: Date.now()
         };
         
@@ -481,39 +623,78 @@ const extrairEstatisticas = (pedidos) => {
     return { totalReceita, countProdutos, countClientes, countDias };
 };
 
+// ==========================================
+// RENDERIZAÇÃO KANBAN DENTRO DA ABA EXISTENTE
+// ==========================================
 const renderHtmlPedidos = (pedidos) => {
     const dicsStatus = {
         'pendente': { tag: '🚨 NOVO', classColor: 'var(--danger)', nextBtn: 'Aceitar e Preparar', nextAction: 'preparando' },
+        'aguardando_pesagem': { tag: '⚖️ A PESAR', classColor: 'var(--earth)', nextBtn: 'Lançar Pesos na Balança', nextAction: 'iniciar-separacao' },
         'preparando': { tag: '📦 PREPARANDO', classColor: 'var(--warning)', nextBtn: 'Despachar (Enviado)', nextAction: 'enviado' },
         'enviado': { tag: '🛵 A CAMINHO', classColor: 'var(--info)', nextBtn: 'Marcar como Entregue', nextAction: 'arquivado' }
     };
 
-    return pedidos.map(p => {
+    let colNovos = '', colPrep = '', colEnv = '';
+
+    pedidos.forEach(p => {
         const dateObj = new Date(p.data);
         const dataFmt = isNaN(dateObj.getTime()) ? "Desconhecida" : dateObj.toLocaleString('pt-BR');
-        const itensStr = p.itens ? p.itens.map(i => `${formatarQtdRelatorio(i.qtd, i.unidade)} ${escapeHTML(i.nome)}`).join(', ') : '';
-        const st = dicsStatus[p.status] || dicsStatus['pendente'];
         
-        return `
-        <article class="card-pedido" style="border-left: 5px solid ${st.classColor};">
-            <div class="card-pedido-topo">
-                <span class="card-pedido-cliente">👤 ${escapeHTML(p.nome)} (Q${escapeHTML(p.quadra)} L${escapeHTML(p.lote)})</span>
-                <span class="card-pedido-total">${fmt(p.total||0)}</span>
+        // Formata os itens e adiciona a tag "A Pesar" na lista se necessário
+        const itensStr = p.itens ? p.itens.map(i => {
+            const extra = i.aPesar ? ' <span style="color:var(--earth);font-weight:bold;">(A Pesar)</span>' : '';
+            return `${formatarQtdRelatorio(i.qtd, i.unidade)} ${escapeHTML(i.nome)}${extra}`;
+        }).join('<br> • ') : '';
+
+        // Deteta se o status é pendente mas tem coisas para pesar
+        const isAPesar = p.status === 'aguardando_pesagem' || (p.itens && p.itens.some(i => i.aPesar));
+        const stKey = isAPesar && p.status === 'pendente' ? 'aguardando_pesagem' : p.status;
+        const st = dicsStatus[stKey] || dicsStatus['pendente'];
+        
+        const cardHtml = `
+        <article class="card-pedido" style="border-left: 5px solid ${st.classColor}; background: var(--warm-white); border-radius: 8px; padding: 15px; margin-bottom: 15px; border-right: 1px solid var(--parchment); border-top: 1px solid var(--parchment); border-bottom: 1px solid var(--parchment);">
+            <div style="display:flex; justify-content: space-between; margin-bottom: 5px;">
+                <h3 style="font-size: 1.1rem; color: var(--forest); margin: 0;">${escapeHTML(p.nome)}</h3>
+                <strong style="font-size: 1.1rem;">${fmt(p.total||0)}</strong>
             </div>
-            <div class="card-pedido-meta">
-                <span style="background: ${st.classColor}; color: white; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.75rem; margin-right: 8px;">${st.tag}</span>
-                📅 ${dataFmt} | 💳 ${escapeHTML(p.pag)}
+            <p style="font-size: 0.85rem; color: var(--text-mid); margin-bottom: 8px;">📍 Q${escapeHTML(p.quadra)} - L${escapeHTML(p.lote)}</p>
+            <div style="margin-bottom: 10px; font-size: 0.8rem;">
+                <span style="background: ${st.classColor}; color: white; padding: 3px 8px; border-radius: 12px; font-weight: bold; margin-right: 5px;">${st.tag}</span>
+                <span>📅 ${dataFmt}</span>
             </div>
-            <div class="card-pedido-itens">📦 ${itensStr}</div>
+            <div style="font-size: 0.9rem; color: var(--text-dark); margin-bottom: 15px; background: white; padding: 10px; border-radius: 6px; border: 1px solid #eee;">
+                • ${itensStr}
+            </div>
             
-            <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <div style="display: flex; gap: 8px;">
                 ${st.nextAction === 'arquivado' 
-                    ? `<button class="btn btn-outline flex-1" style="border-color: var(--success); color: var(--success);" data-action="excluir-pedido" data-id="${escapeHTML(p.id)}">${st.nextBtn}</button>` 
-                    : `<button class="btn btn-primary flex-1" style="background: ${st.classColor}; border-color: ${st.classColor};" data-action="avancar-pedido" data-next="${st.nextAction}" data-id="${escapeHTML(p.id)}">${st.nextBtn}</button>`
+                    ? `<button class="btn-outline flex-1" style="border-color: var(--success); color: var(--success); width: 100%; padding: 10px;" data-action="excluir-pedido" data-id="${escapeHTML(p.id)}">${st.nextBtn}</button>` 
+                    : `<button class="btn-outline flex-1" style="background: ${st.classColor}; color: white; border: none; width: 100%; padding: 10px;" data-action="${st.nextAction}" data-next="${st.nextAction}" data-id="${escapeHTML(p.id)}">${st.nextBtn}</button>`
                 }
             </div>
         </article>`;
-    }).join('');
+
+        if (stKey === 'pendente' || stKey === 'aguardando_pesagem') colNovos += cardHtml;
+        else if (stKey === 'preparando') colPrep += cardHtml;
+        else if (stKey === 'enviado') colEnv += cardHtml;
+    });
+
+    // Injeta o CSS Grid Híbrido (Kanban) dentro da sua lista antiga
+    return `
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+        <div style="background: white; padding: 15px; border-radius: 12px; border: 1px solid var(--parchment); box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+            <h3 style="border-bottom: 2px solid var(--foam); padding-bottom: 10px; margin-bottom: 15px; display: flex; justify-content: space-between;">Novos & A Pesar <span style="background: var(--forest); color: white; border-radius: 12px; padding: 2px 10px; font-size: 0.9rem;">Fila</span></h3>
+            ${colNovos || '<p style="color:var(--text-light); text-align:center; padding: 20px 0;">Sem pedidos novos.</p>'}
+        </div>
+        <div style="background: white; padding: 15px; border-radius: 12px; border: 1px solid var(--parchment); box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+            <h3 style="border-bottom: 2px solid var(--foam); padding-bottom: 10px; margin-bottom: 15px; display: flex; justify-content: space-between;">Em Preparação <span style="background: var(--warning); color: white; border-radius: 12px; padding: 2px 10px; font-size: 0.9rem;">Na Bancada</span></h3>
+            ${colPrep || '<p style="color:var(--text-light); text-align:center; padding: 20px 0;">Nada na bancada.</p>'}
+        </div>
+        <div style="background: white; padding: 15px; border-radius: 12px; border: 1px solid var(--parchment); box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+            <h3 style="border-bottom: 2px solid var(--foam); padding-bottom: 10px; margin-bottom: 15px; display: flex; justify-content: space-between;">Enviados Hoje <span style="background: var(--info); color: white; border-radius: 12px; padding: 2px 10px; font-size: 0.9rem;">Na Rua</span></h3>
+            ${colEnv || '<p style="color:var(--text-light); text-align:center; padding: 20px 0;">Nenhum envio hoje.</p>'}
+        </div>
+    </div>`;
 };
 
 const renderRankingGenerico = (dados, divId, formatador) => { 
@@ -523,7 +704,6 @@ const renderRankingGenerico = (dados, divId, formatador) => {
     if(cont) cont.innerHTML = html;
 };
 
-// [FASE 3] Injetor do Botão e Lógica do Relatório Analítico da IA (3.08)
 const acoplarRelatorioIADemanda = (historicoMap) => {
     let painelArea = document.getElementById('area-grafico-receita');
     if(!painelArea) return;
@@ -540,7 +720,6 @@ const acoplarRelatorioIADemanda = (historicoMap) => {
             const btn = e.currentTarget;
             btn.innerHTML = "A analisar cruzamento de dados... ⏳"; btn.disabled = true;
             
-            // Compila o histórico leve para a IA ler sem estourar o payload
             const historicoLeve = Object.entries(historicoMap).map(i => ({ data: i[0], faturacao_dia: i[1] }));
             
             try {
@@ -607,7 +786,7 @@ const renderRelatoriosMaster = () => {
             }
         });
         
-        acoplarRelatorioIADemanda(historicoMap); // Chama a injeção da Feature 3.08
+        acoplarRelatorioIADemanda(historicoMap); 
         
         const labels = Object.keys(historicoMap).reverse(); 
         const valores = Object.values(historicoMap).reverse();
@@ -636,6 +815,7 @@ const renderRelatoriosMaster = () => {
     renderRankingGenerico(stats.countClientes, 'ranking-clientes', val => fmt(val));
     renderRankingGenerico(stats.countDias, 'ranking-dias', val => fmt(val));
 
+    // Aqui o milagre visual acontece: em vez de lista, gera o Kanban
     listDiv.innerHTML = renderHtmlPedidos(pedidosGerais);
 };
 
