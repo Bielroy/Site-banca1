@@ -2,122 +2,186 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Painel Admin - Banca Adair</title>
-    <style>
-        :root {
-            --forest: #1a3a2a; --forest-mid: #2c5542; --sage: #8ba888;
-            --foam: #e8f0e8; --earth: #c86b3e; --parchment: #e0d5c1;
-            --warm-white: #faf7f2; --text-dark: #1c1c1c; --text-mid: #4a4a4a;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, system-ui, sans-serif; }
-        body { background-color: var(--warm-white); color: var(--text-dark); padding: 20px; }
-        
-        /* Cabeçalho */
-        .admin-header { display: flex; justify-content: space-between; align-items: center; background: var(--forest); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
-        .admin-header h1 { font-size: 1.5rem; }
-        
-        /* Grid Kanban (Pedidos) */
-        .kanban-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
-        .kanban-col { background: white; border-radius: 12px; padding: 15px; border: 1px solid var(--parchment); box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .kanban-col h2 { font-size: 1.2rem; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid var(--foam); display: flex; justify-content: space-between; }
-        
-        /* Cartão de Pedido */
-        .pedido-card { background: var(--warm-white); border: 1px solid var(--sage); border-radius: 8px; padding: 15px; margin-bottom: 15px; }
-        .pedido-card h3 { font-size: 1.1rem; margin-bottom: 5px; color: var(--forest); }
-        .pedido-card p { font-size: 0.9rem; color: var(--text-mid); margin-bottom: 5px; line-height: 1.4; }
-        .pedido-card .tags { display: flex; gap: 8px; margin: 10px 0; }
-        .tag { padding: 4px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold; }
-        .tag.alerta { background: var(--earth); color: white; }
-        
-        /* Botões */
-        .btn { padding: 10px 15px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; text-align: center; width: 100%; transition: 0.2s; }
-        .btn-primary { background: var(--forest); color: white; }
-        .btn-warning { background: var(--earth); color: white; }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-        /* Modais */
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: center; z-index: 1000; }
-        .modal-overlay.aberto { display: flex; }
-        .modal { background: white; border-radius: 16px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto; position: relative; }
-        .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 20px; border-bottom: 1px solid var(--parchment); }
-        .btn-fechar { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-mid); }
-        
-        /* Toast (Notificações) */
-        #toast { position: fixed; bottom: -100px; left: 50%; transform: translateX(-50%); background: var(--forest); color: white; padding: 12px 24px; border-radius: 30px; font-weight: 600; transition: 0.3s; z-index: 9999; text-align: center; width: 90%; max-width: 400px; }
-        #toast.show { bottom: 20px; }
-        #toast.erro { background: var(--earth); }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Painel Enterprise - Banca Adair e Pedrina</title>
+    
+    <meta name="robots" content="noindex, nofollow"> <!-- Evita indexação do painel admin pelo Google -->
+    <meta name="theme-color" content="#1a3a2a">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="./css/variables.css">
+    <link rel="stylesheet" href="./css/shared.css">
+    <link rel="stylesheet" href="./css/admin.css">
 </head>
 <body>
 
-    <div class="admin-header">
-        <h1>📦 Painel Admin - Banca Adair</h1>
-        <div style="display:flex; gap: 10px;">
-            <button class="btn" style="background:var(--foam); color:var(--forest); padding: 8px 15px;" onclick="window.location.href='/'">Ver Loja</button>
-        </div>
-    </div>
-
-    <div class="kanban-board">
-        <div class="kanban-col">
-            <h2>Novos Pedidos <span id="count-novos">0</span></h2>
-            <div id="coluna-novos"></div>
-        </div>
-
-        <div class="kanban-col">
-            <h2>Em Preparação <span id="count-prep">0</span></h2>
-            <div id="coluna-prep"></div>
-        </div>
-
-        <div class="kanban-col">
-            <h2>Enviados Hoje <span id="count-env">0</span></h2>
-            <div id="coluna-env"></div>
-        </div>
-    </div>
-
-    <div id="toast">Notificação</div>
-
-    <div class="modal-overlay" id="modal-picking">
-        <div class="modal" style="text-align: center;">
-            <div class="modal-head" style="background: var(--forest); color: white;">
-                <h2 id="picking-title">Separação de Pedido</h2>
-                <button class="btn-fechar" onclick="fecharModal('modal-picking')" style="color: white;">×</button>
+    <!-- Transformado em section para não conflitar com o main principal -->
+    <section id="login-screen">
+        <div class="login-box">
+            <h2>Gestão da Banca</h2>
+            <p class="login-sub">Acesso restrito. Insira o e-mail autorizado.</p>
+            <div class="form-group">
+                <label for="email">E-mail Administrativo</label>
+                <input type="email" id="email" placeholder="admin@exemplo.com">
             </div>
+            <!-- Usa classes padronizadas do shared -->
+            <button class="btn-outline" style="background: var(--forest); color: white; width: 100%; padding: 14px;" id="btn-login">Receber Link Seguro</button>
+            <p id="login-msg" class="login-msg"></p>
+        </div>
+    </section>
+
+    <!-- Único main do documento -->
+    <main id="dashboard" style="display: none;">
+        <header class="dash-header">
+            <h2>Painel de Controle</h2>
+            <button class="btn-outline" id="btn-logout" style="padding: 10px 20px;">Desconectar</button>
+        </header>
+
+        <nav class="tabs" aria-label="Abas do Painel">
+            <button class="tab active" data-aba="produtos">🥦 Produtos e Estoque</button>
+            <button class="tab" data-aba="relatorios">📊 Dashboard Financeiro</button>
+            <button class="tab" data-aba="config">⚙️ Operacional</button>
+        </nav>
+
+        <section id="aba-produtos" class="aba-content active">
+            <button class="btn-outline" style="background: var(--forest); color: white; padding: 14px; margin-bottom: 24px;" data-action="novo-produto">+ Adicionar Novo Produto</button>
+            <div id="lista-produtos" class="produtos-grid">Carregando catálogo...</div>
+        </section>
+
+        <section id="aba-relatorios" class="aba-content">
+            <header class="relatorios-header">
+                <h3>Visão Consolidada</h3>
+                <div class="relatorios-actions">
+                    <button class="btn-export" id="btn-exportar">📥 Exportar Dados</button>
+                    <button class="btn-limpar-hist" id="btn-limpar-hist">Apagar Histórico</button>
+                </div>
+            </header>
             
-            <div class="modal-body" style="padding: 30px 20px;">
-                
-                <div id="picking-step-container">
-                    <span id="picking-contador" style="background: var(--foam); color: var(--forest); padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 0.9rem; margin-bottom: 15px; display: inline-block;">Item 1 de X</span>
-                    
-                    <h3 id="picking-nome-produto" style="font-size: 1.8rem; margin-bottom: 5px; color: var(--text-dark);">Nome do Produto</h3>
-                    <p id="picking-qtd-pedida" style="font-size: 1.2rem; color: var(--earth); font-weight: bold; margin-bottom: 25px;">Pedido: 5 unidades</p>
-                    
-                    <div style="background: var(--warm-white); border: 2px dashed var(--parchment); padding: 20px; border-radius: 12px; margin-bottom: 25px;">
-                        <label style="display: block; font-weight: 600; margin-bottom: 10px; color: var(--text-mid);">Coloque na balança e digite o peso (Kg):</label>
-                        <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-                            <input type="number" id="picking-input-peso" step="0.001" placeholder="Ex: 1.250" style="width: 150px; font-size: 1.5rem; text-align: center; padding: 15px; border: 2px solid var(--forest); border-radius: 8px;">
-                            <span style="font-size: 1.5rem; font-weight: bold; color: var(--text-light);">kg</span>
-                        </div>
-                    </div>
-                    
-                    <button id="btn-picking-proximo" class="btn btn-primary" style="font-size: 1.2rem; padding: 18px;">Salvar Peso e Avançar ➔</button>
+            <div class="stats-grid">
+                <article class="stat-box">
+                    <span class="stat-label">TOTAL DE VENDAS</span>
+                    <strong class="stat-val" id="stat-pedidos">0</strong>
+                </article>
+                <article class="stat-box">
+                    <span class="stat-label">RECEITA GLOBAL</span>
+                    <strong class="stat-val" id="stat-receita">R$ 0,00</strong>
+                </article>
+            </div>
+
+            <div class="ranking-container">
+                <article class="ranking-box"><h3>🏆 Top Produtos</h3><div id="ranking-produtos"></div></article>
+                <article class="ranking-box"><h3>🌟 Top Clientes</h3><div id="ranking-clientes"></div></article>
+                <article class="ranking-box"><h3>📅 Dias mais Fortes</h3><div id="ranking-dias"></div></article>
+            </div>
+
+            <h3 class="historico-titulo">Últimos 50 Pedidos (Logística)</h3>
+            <div id="lista-historico">Buscando inteligência de dados...</div>
+        </section>
+
+        <section id="aba-config" class="aba-content">
+            <h3 style="font-family: 'Fraunces', serif; color: var(--forest); font-size: 1.5rem; margin-bottom: 8px;">Parâmetros da Loja</h3>
+            <p class="config-sub">Ações sincronizadas em tempo real com todos os clientes.</p>
+            
+            <article class="config-card">
+                <div class="form-group border-bottom">
+                    <label class="danger-label">🛑 Disjuntor Principal (Master Switch)</label>
+                    <select id="config-status-loja">
+                        <option value="aberta">A Loja está ABERTA (Recebendo pedidos)</option>
+                        <option value="fechada">A Loja está FECHADA (Checkout bloqueado)</option>
+                    </select>
                 </div>
 
-                <div id="picking-resumo-container" style="display: none;">
-                    <div style="font-size: 3rem; margin-bottom: 10px;">✅</div>
-                    <h3 style="font-size: 1.5rem; color: var(--forest); margin-bottom: 15px;">Tudo Separado e Pesado!</h3>
-                    
-                    <div style="background: var(--foam); padding: 20px; border-radius: 12px; text-align: left; margin-bottom: 25px;">
-                        <p style="margin-bottom: 8px; color: var(--text-mid);">Valor Original (S/ Pesagem): <span id="resumo-valor-antigo" style="float: right; text-decoration: line-through;">R$ 0,00</span></p>
-                        <p style="font-size: 1.3rem; font-weight: 900; color: var(--text-dark); border-top: 1px solid var(--sage); padding-top: 8px; margin-top: 8px;">Novo Valor Exato: <span id="resumo-valor-novo" style="float: right; color: var(--forest);">R$ 0,00</span></p>
+                <div class="form-group" style="width: 100%;">
+                    <label>📅 Dias de Abertura Automática</label>
+                    <div class="dias-semana">
+                        <label class="dia-label"><input type="checkbox" value="0" class="chk-dia"> Dom</label>
+                        <label class="dia-label"><input type="checkbox" value="1" class="chk-dia"> Seg</label>
+                        <label class="dia-label"><input type="checkbox" value="2" class="chk-dia"> Ter</label>
+                        <label class="dia-label"><input type="checkbox" value="3" class="chk-dia"> Qua</label>
+                        <label class="dia-label"><input type="checkbox" value="4" class="chk-dia"> Qui</label>
+                        <label class="dia-label"><input type="checkbox" value="5" class="chk-dia"> Sex</label>
+                        <label class="dia-label"><input type="checkbox" value="6" class="chk-dia"> Sáb</label>
                     </div>
+                </div>
 
-                    <button id="btn-picking-finalizar" class="btn btn-primary" style="font-size: 1.2rem; padding: 18px; background: #25D366; border-color: #25D366;">Concluir e Avisar Cliente 🚀</button>
+                <div class="grid-2" style="width: 100%;">
+                    <div class="form-group"><label>📱 Número de Atendimento (WhatsApp)</label><input type="text" id="config-wpp" placeholder="55DD9XXXXXXXX"></div>
+                    <div class="form-group"><label>💰 Ticket Mínimo (R$)</label><input type="number" id="config-minimo" step="0.5"></div>
+                </div>
+                
+                <button class="btn-salvar-config" id="btn-salvar-config">💾 Gravar Definições</button>
+            </article>
+        </section>
+    </main>
+
+    <!-- Modais usando shared.css -->
+    <div class="modal-overlay" id="modal-produto">
+        <div class="modal">
+            <header class="modal-head">
+                <h2 id="modal-titulo">Editar Produto</h2>
+                <button class="btn-fechar" data-fechar="modal-produto">&times;</button>
+            </header>
+            <div class="modal-body">
+                <input type="hidden" id="edit-id">
+                <div class="form-group">
+                    <label>Imagem Otimizada</label>
+                    <input type="file" id="edit-foto" accept="image/*">
+                    <p class="ou-divisor">OU</p>
+                    <input type="url" id="edit-foto-url" placeholder="Insira a URL pública da imagem">
+                </div>
+                <div class="form-group"><label>Nomenclatura Oficial</label><input type="text" id="edit-nome"></div>
+                <div class="grid-2">
+                    <div class="form-group"><label>Preço Base (R$)</label><input type="number" id="edit-preco" step="0.10"></div>
+                    <div class="form-group">
+                        <label>Métrica de Venda</label>
+                        <select id="edit-unidade">
+                            <option value="kg">Quilo (kg)</option><option value="un">Unidade (un)</option><option value="maço">Maço</option><option value="bdj">Bandeja</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group"><label>Classificação (Categoria)</label><input type="text" id="edit-cat"></div>
+            </div>
+            <footer class="modal-footer" style="display: flex; flex-direction: column; gap: 10px;">
+                <button class="btn-outline" style="background: var(--forest); color: white; padding: 14px;" id="btn-salvar-produto">💾 Gravar no Banco</button>
+                <button class="btn-outline" style="color: var(--danger); border-color: var(--danger); padding: 14px;" id="btn-excluir-produto">🗑 Destruir Registro</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Modal Elegante de Verificação de Email -->
+    <div class="modal-overlay" id="modal-email-verify">
+        <div class="modal" style="max-width: 380px; text-align: center;">
+            <div class="modal-body" style="padding: 30px 24px;">
+                <h2 style="color: var(--forest); margin-bottom: 12px; font-size: 1.4rem;">Confirmação de Segurança</h2>
+                <p style="color: var(--text-mid); font-size: 0.95rem; margin-bottom: 20px;">Por favor, confirme seu e-mail para validar o acesso.</p>
+                <div class="form-group"><input type="email" id="verify-email-input" placeholder="seu@email.com"></div>
+                <div style="display: flex; gap: 12px; margin-top: 10px;">
+                    <button class="btn-outline" id="btn-verify-cancel" style="flex: 1; padding: 12px; border-color: #e0dcd4; color: var(--text-dark);">Cancelar</button>
+                    <button class="btn-outline" id="btn-verify-ok" style="flex: 1; padding: 12px; background: var(--forest); color: white;">Acessar</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <script type="module" src="/admin.js"></script>
+    <!-- Modal Compartilhado Custom Confirm -->
+    <div class="modal-overlay" id="overlay-confirm">
+        <div class="modal" style="max-width: 380px; text-align: center;">
+            <div class="modal-body" style="padding: 30px 24px;">
+                <h2 id="confirm-title" style="color: var(--forest); margin-bottom: 12px; font-size: 1.6rem;">Atenção</h2>
+                <p id="confirm-msg" style="color: var(--text-mid); font-size: 1.05rem;">Confirma a operação?</p>
+                <div style="display: flex; gap: 12px; margin-top: 24px;">
+                    <button class="btn-outline" id="btn-confirm-cancel" style="flex: 1; padding: 12px; border-color: #e0dcd4; color: var(--text-dark);">Cancelar</button>
+                    <button class="btn-outline" id="btn-confirm-ok" style="flex: 1; padding: 12px; background: var(--danger); color: white; border-color: var(--danger);">Confirmar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="toast" id="toast"></div>
+
+    <script type="module" src="./js/admin.js"></script>
 </body>
 </html>
