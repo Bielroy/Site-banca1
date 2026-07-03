@@ -57,7 +57,10 @@ const syncCarrinhoComPrecosAoVivo = () => {
     });
     if (modificou) {
         STATE.carrinho = STATE.carrinho.filter(i => i.qtd > 0);
-        persistirCarrinhoComDebounce(); renderCarrinhoCompleto();
+        persistirCarrinhoComDebounce();
+        // [PATCH 2] Não reconstrói o carrinho inteiro se o cliente está digitando a quantidade
+        const editando = document.activeElement?.classList.contains('qtd-input');
+        if (editando) atualizarRodapeCarrinhoDOM(); else renderCarrinhoCompleto();
         if (itensRemovidos > 0) showToast(`⚠️ ${itensRemovidos} item(ns) esgotaram.`, true);
     }
 };
@@ -276,7 +279,8 @@ const renderLoja = (forcarRebuild = false) => {
 
     cards.forEach(card => {
         const matchBusca = card.dataset.nome.includes(termo);
-        const matchCat = (STATE.catAtiva === 'todas') || (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(card.dataset.produtoId)) || (card.dataset.cat === STATE.catAtiva);
+        // [PATCH 1] Favoritos: usar card.dataset.id (o data-id existe; produtoId não existia)
+        const matchCat = (STATE.catAtiva === 'todas') || (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(card.dataset.id)) || (card.dataset.cat === STATE.catAtiva);
         if(matchBusca && matchCat) { card.style.display = 'flex'; itensVisiveis++; } 
         else { card.style.display = 'none'; }
     });
@@ -302,9 +306,16 @@ const iniciarRealTimeSync = () => {
         if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()}; atualizarRodapeCarrinhoDOM();
     });
     unsubscribes.push(unsubConfig);
+
+    // [PATCH 3] Só reconstrói o grid quando o catálogo realmente muda (evita reflows/lag)
+    let _assinaturaProdutos = '';
     const unsubProdutos = onSnapshot(collection(db, "produtos"), (snap) => {
         STATE.produtos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.ativo);
-        renderCategorias(); renderLoja(true); syncCarrinhoComPrecosAoVivo(); 
+        const assinatura = STATE.produtos.map(p => `${p.id}:${p.preco}:${p.foto || ''}:${p.nome}`).join('|');
+        if (assinatura !== _assinaturaProdutos) {
+            renderCategorias(); renderLoja(true); _assinaturaProdutos = assinatura;
+        }
+        syncCarrinhoComPrecosAoVivo(); 
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
     });
     unsubscribes.push(unsubProdutos);
@@ -639,5 +650,19 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
 window.addEventListener('online', () => document.getElementById('banner-offline').classList.remove('visivel'));
 window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
+
+// [PATCH 4] Swipe para baixo fecha o carrinho no mobile (padrão iFood/Uber)
+(() => {
+  const cart = document.getElementById('carrinho');
+  if (!cart) return;
+  let y0 = null;
+  cart.addEventListener('touchstart', (e) => { y0 = e.touches[0].clientY; }, { passive: true });
+  cart.addEventListener('touchmove', (e) => {
+    if (y0 === null) return;
+    const dy = e.touches[0].clientY - y0;
+    if (dy > 90 && cart.scrollTop <= 0) { y0 = null; if (history.state?.cart) history.back(); }
+  }, { passive: true });
+  cart.addEventListener('touchend', () => { y0 = null; }, { passive: true });
+})();
 
 initIA(STATE);
