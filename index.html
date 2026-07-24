@@ -34,6 +34,8 @@
 <div class="banner-aviso fechado" id="banner-offline" aria-live="assertive">📵 Você está sem internet. Usando dados salvos.</div>
 <div class="banner-aviso fechado" id="banner-fechado" aria-live="polite">🚫 Estamos fechados no momento. Voltamos em breve!</div>
 <div class="banner-aviso minimo" id="banner-minimo" aria-live="polite"></div>
+<!-- Comunicado configurado no painel (aviso fixo ou mensagem do dia) -->
+<div class="banner-aviso comunicado" id="banner-comunicado" aria-live="polite"></div>
 
 <header id="header-principal">
     <div class="header-inner">
@@ -102,6 +104,10 @@
             <div class="grid-2">
                 <div class="form-group"><label for="cli-quadra">Quadra</label><input type="text" inputmode="numeric" id="cli-quadra"></div>
                 <div class="form-group"><label for="cli-lote">Casa/Lote</label><input type="text" inputmode="numeric" id="cli-lote"></div>
+            </div>
+            <div class="form-group">
+                <label for="cli-telefone">WhatsApp (para avisarmos quando ficar pronto)</label>
+                <input type="tel" id="cli-telefone" inputmode="numeric" placeholder="62 9 9999-9999" autocomplete="tel">
             </div>
             <div class="form-group">
                 <label for="cli-pagamento">Forma de Pagamento</label>
