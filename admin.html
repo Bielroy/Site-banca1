@@ -16,6 +16,8 @@
     <link rel="stylesheet" href="./css/variables.css">
     <link rel="stylesheet" href="./css/shared.css">
     <link rel="stylesheet" href="./css/admin.css">
+    <!-- NOVO: esteira de separação em tela cheia + comunicados -->
+    <link rel="stylesheet" href="./css/admin-picking.css">
 </head>
 <body>
 
@@ -41,6 +43,8 @@
         <nav class="tabs" aria-label="Abas do Painel">
             <button class="tab active" data-aba="produtos">🥦 Produtos e Estoque</button>
             <button class="tab" data-aba="relatorios">📊 Dashboard Financeiro</button>
+            <button class="tab" data-aba="balanco">💰 Balanço Geral</button>
+            <button class="tab" data-aba="comunicados">📢 Comunicados</button>
             <button class="tab" data-aba="config">⚙️ Operacional</button>
         </nav>
 
@@ -87,6 +91,31 @@
                        style="flex:1; min-width:220px; padding:12px; border:1.5px solid #e0dcd4; border-radius:var(--radius-sm); background:var(--parchment); font-size:16px;">
             </div>
             <div id="lista-historico">Buscando inteligência de dados...</div>
+        </section>
+
+        <section id="aba-balanco" class="aba-content">
+            <header class="relatorios-header">
+                <h3>Balanço Geral</h3>
+                <div class="relatorios-actions" style="display:flex; gap:10px; align-items:center;">
+                    <label for="balanco-periodo" style="font-size:.85rem; color:var(--text-mid);">Período:</label>
+                    <select id="balanco-periodo" style="padding:10px; border-radius:10px; border:1.5px solid #e0dcd4; font-size:15px;">
+                        <option value="7">7 dias</option>
+                        <option value="30" selected>30 dias</option>
+                        <option value="90">90 dias</option>
+                        <option value="365">1 ano</option>
+                    </select>
+                    <button class="btn-export" id="btn-atualizar-balanco">🔄 Atualizar</button>
+                </div>
+            </header>
+            <p class="config-sub" style="margin-bottom:20px;">Inclui os pedidos já arquivados — é o número real do caixa, não só a fila de hoje.</p>
+            <div id="balanco-conteudo"></div>
+        </section>
+
+        <section id="aba-comunicados" class="aba-content">
+            <h3 style="font-family:'Fraunces',serif; color:var(--forest); font-size:1.5rem; margin-bottom:8px;">Comunicados na Loja</h3>
+            <p class="config-sub">A mensagem aparece no topo da loja para todos os clientes, em tempo real.</p>
+            <div id="lista-comunicados" style="margin:20px 0;"></div>
+            <button class="btn-salvar-config" id="btn-salvar-comunicados">💾 Gravar Comunicados</button>
         </section>
 
         <section id="aba-config" class="aba-content">
