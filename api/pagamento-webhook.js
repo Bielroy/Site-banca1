@@ -1,24 +1,33 @@
 // =====================================================================
-//  /api/pagamento-webhook.js  —  MODELO DE REFERÊNCIA (Fase 2)
+//  /api/pagamento-webhook.js  —  VERSÃO PAGBANK
 //
-//  Recebe a notificação do gateway quando o PIX é pago e, de forma
-//  idempotente e transacional:
-//    1) Verifica a assinatura (anti-fraude / anti-replay).
-//    2) Consulta o pagamento na API do gateway (fonte de verdade —
-//       nunca confie só no corpo do webhook).
-//    3) Se 'approved' e ainda não processado: baixa o estoque dos itens
-//       de valor fechado e move o pedido para a fila (pendente /
-//       aguardando_pesagem). Tudo dentro de uma transação.
+//  Recebe a notificação do PagBank quando o status do pedido muda
+//  (ex.: PIX pago) e, de forma idempotente e transacional, baixa o
+//  estoque e libera o pedido para a fila de preparo.
 //
-//  Responder 200 rápido é essencial — o gateway reenvia em caso de erro.
+//  VALIDAÇÃO DE ASSINATURA (documentação oficial do PagBank):
+//    assinatura = SHA256( TOKEN_DA_CONTA + "-" + corpo_bruto_da_requisicao )
+//    header recebido: x-authenticity-token
+//  Ou seja, o PagBank NÃO usa um "secret" separado — reaproveita o
+//  mesmo token que você usa pra chamar a API (PAGBANK_API_TOKEN).
+//
+//  IMPORTANTE: para calcular esse hash corretamente, precisamos do
+//  corpo da requisição *exatamente como chegou* (string bruta), antes
+//  de qualquer parse. Por isso desligamos o bodyParser automático da
+//  Vercel abaixo (`config.api.bodyParser = false`) e lemos o stream
+//  manualmente.
 //
 //  Variáveis de ambiente:
-//    MP_ACCESS_TOKEN, MP_WEBHOOK_SECRET
+//    PAGBANK_API_TOKEN (mesmo token do pagamento-pix.js)
+//    PAGBANK_ENV        "sandbox" ou "production"
 //    FIREBASE_PROJECT_ID / _CLIENT_EMAIL / _PRIVATE_KEY
 // =====================================================================
 
 const admin = require('firebase-admin');
 const crypto = require('crypto');
+
+// Desliga o parse automático — precisamos do corpo bruto pra assinatura
+module.exports.config = { api: { bodyParser: false } };
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -35,97 +44,111 @@ const bootFirebase = () => {
   if (!db) db = admin.firestore();
 };
 
-const isFracionavel = (u) =>
-  ['kg', 'kilo', 'quilograma', 'g', 'grama', 'l', 'litro'].includes(String(u || '').toLowerCase());
+const PAGBANK_BASE_URL = process.env.PAGBANK_ENV === 'sandbox'
+  ? 'https://sandbox.api.pagseguro.com'
+  : 'https://api.pagseguro.com';
 
-// Validação de assinatura do Mercado Pago (header x-signature: "ts=...,v1=...")
-function assinaturaValida(req) {
-  const secret = process.env.MP_WEBHOOK_SECRET;
-  if (!secret) return true; // se não configurou segredo, não bloqueia (dev)
-  try {
-    const sig = req.headers['x-signature'] || '';
-    const reqId = req.headers['x-request-id'] || '';
-    const parts = Object.fromEntries(sig.split(',').map((p) => p.trim().split('=')));
-    const ts = parts.ts; const v1 = parts.v1;
-    const dataId = (req.query && req.query['data.id']) || req.body?.data?.id || '';
-    const manifest = `id:${dataId};request-id:${reqId};ts:${ts};`;
-    const hmac = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
-    return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(v1 || ''));
-  } catch (e) {
+// Lê o corpo bruto da requisição (necessário p/ validar a assinatura)
+function lerCorpoCru(req) {
+  return new Promise((resolve, reject) => {
+    let dados = '';
+    req.on('data', (chunk) => { dados += chunk; });
+    req.on('end', () => resolve(dados));
+    req.on('error', reject);
+  });
+}
+
+function assinaturaValida(rawBody, headerRecebido) {
+  const token = process.env.PAGBANK_API_TOKEN;
+  // CORRIGIDO (era falha ABERTA): sem token configurado, recusa tudo.
+  // Antes o código retornava true aqui, então se a variável de ambiente
+  // sumisse, qualquer pessoa na internet poderia fingir um pagamento.
+  if (!token) {
+    console.error('[webhook] PAGBANK_API_TOKEN ausente — recusando notificação.');
     return false;
+  }
+  if (!headerRecebido) return false;
+  const hash = crypto.createHash('sha256').update(`${token}-${rawBody}`).digest('hex');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(headerRecebido));
+  } catch (e) {
+    return false; // tamanhos diferentes = inválido
   }
 }
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  // Responde 200 mesmo em erro de assinatura para não gerar retries infinitos,
-  // mas NÃO processa nada se a assinatura for inválida.
-  if (!assinaturaValida(req)) return res.status(200).json({ ignorado: 'assinatura' });
+  const rawBody = await lerCorpoCru(req);
+  const assinaturaHeader = req.headers['x-authenticity-token'];
+
+  // Assinatura inválida: responde 200 (evita retries infinitos) mas NÃO processa nada
+  if (!assinaturaValida(rawBody, assinaturaHeader)) {
+    return res.status(200).json({ ignorado: 'assinatura_invalida' });
+  }
+
+  let payload;
+  try { payload = JSON.parse(rawBody); } catch (e) { return res.status(200).json({ ok: true }); }
 
   try {
     bootFirebase();
 
-    const paymentId = req.body?.data?.id || (req.query && req.query['data.id']);
-    const tipo = req.body?.type || req.body?.topic;
-    if (!paymentId || (tipo && tipo !== 'payment')) return res.status(200).json({ ok: true });
+    // Do corpo do webhook só aproveitamos o ID do pedido no PagBank.
+    // Todo o resto vem da re-consulta abaixo, que é a fonte confiável.
+    const orderId = payload.id;          // ex.: "ORDE_..."
+    if (!orderId) return res.status(200).json({ ok: true });
 
-    // 2) Fonte de verdade: consulta o pagamento no gateway
-    const mpResp = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
-      headers: { Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}` },
+    // 2) Fonte de verdade: reconsulta o pedido na API (nunca confia só no corpo do webhook)
+    const consulta = await fetch(`${PAGBANK_BASE_URL}/orders/${orderId}`, {
+      headers: { Authorization: `Bearer ${process.env.PAGBANK_API_TOKEN}` },
     });
-    const pay = await mpResp.json();
-    if (!mpResp.ok) return res.status(200).json({ ok: true }); // não trava a fila do gateway
+    const order = await consulta.json();
+    if (!consulta.ok) return res.status(200).json({ ok: true });
 
-    const pedidoId = pay.external_reference;
+    // CORRIGIDO: o pedidoId agora vem da resposta da API (confiável), e não
+    // do corpo do webhook (que qualquer um poderia ter escrito).
+    const pedidoId = order.reference_id;
     if (!pedidoId) return res.status(200).json({ ok: true });
 
-    if (pay.status !== 'approved') {
-      // pending/rejected/cancelled -> só atualiza o rótulo do pagamento
+    const charges = order.charges || [];
+    const pago = charges.some((c) => c.status === 'PAID');
+
+    if (!pago) {
+      // WAITING / DECLINED / CANCELED / IN_ANALYSIS -> só atualiza o rótulo
       await db.collection('pedidos').doc(pedidoId).set(
-        { pagamento: { status: pay.status } }, { merge: true }
+        { pagamento: { status: charges[0]?.status || 'WAITING' } }, { merge: true }
       );
       return res.status(200).json({ ok: true });
     }
 
-    // 3) Transação idempotente: baixa estoque + libera pedido uma única vez
+    // 3) Confirma o pagamento de forma idempotente.
+    //
+    // CORRIGIDO — ANTES ESTE BLOCO BAIXAVA O ESTOQUE DE NOVO.
+    // O checkout.js já baixa o estoque no momento em que o pedido é criado,
+    // qualquer que seja a forma de pagamento. Como o webhook fazia a mesma
+    // baixa, todo produto com estoque controlado teria saído em DOBRO em
+    // cada venda no PIX. Fonte única de verdade agora: checkout.js.
     await db.runTransaction(async (t) => {
       const pedidoRef = db.collection('pedidos').doc(pedidoId);
       const pedidoSnap = await t.get(pedidoRef);
       if (!pedidoSnap.exists) return;
 
       const pedido = pedidoSnap.data();
-      if (pedido.pagamento && pedido.pagamento.status === 'approved') return; // já processado
-
-      const itensFechados = (pedido.itens || []).filter((i) => !i.aPesar);
-      const prodSnaps = await Promise.all(
-        itensFechados.map((i) => t.get(db.doc(`produtos/${i.id}`)))
-      );
-
-      const updates = [];
-      itensFechados.forEach((item, idx) => {
-        const snap = prodSnaps[idx];
-        if (!snap.exists) return;
-        const p = snap.data();
-        if (p.estoqueFisico !== null && p.estoqueFisico !== undefined && p.estoqueFisico !== '') {
-          const novo = Math.round((Number(p.estoqueFisico) - Number(item.qtd)) * 1000) / 1000;
-          updates.push([snap.ref, { estoqueFisico: Math.max(novo, 0), ativo: novo > 0 }]);
-        }
-      });
-
-      updates.forEach(([ref, patch]) => t.update(ref, patch));
+      if (pedido.pagamento && pedido.pagamento.status === 'PAID') return; // já processado
 
       const novoStatus = pedido.temItensAPesar ? 'aguardando_pesagem' : 'pendente';
       t.update(pedidoRef, {
         status: novoStatus,
-        pagamento: { ...(pedido.pagamento || {}), status: 'approved', pagoEm: new Date().toISOString() },
+        pagamento: Object.assign({}, pedido.pagamento || {}, {
+          status: 'PAID',
+          pagoEm: new Date().toISOString(),
+        }),
       });
     });
 
     return res.status(200).json({ ok: true });
   } catch (err) {
-    // 200 evita retries em loop; o erro fica logado para inspeção
-    console.error('Webhook erro:', err);
-    return res.status(200).json({ ok: true });
+    console.error('Webhook PagBank erro:', err);
+    return res.status(200).json({ ok: true }); // 200 evita retries em loop
   }
 };
