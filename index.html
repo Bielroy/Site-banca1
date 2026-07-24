@@ -2,25 +2,30 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
-    
+    <!-- Zoom liberado: maximum-scale/user-scalable=no bloqueava o pinch-to-zoom
+         (falha de acessibilidade WCAG 1.4.4). Removidos. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+
     <title>Banca Adair e Pedrina | Frescor Todo Dia</title>
     <meta name="description" content="Compre frutas, verduras e hortaliças frescas com entrega rápida no seu condomínio.">
     <meta name="theme-color" content="#1a3a2a">
-    
+
     <meta property="og:title" content="Banca Adair e Pedrina">
     <meta property="og:description" content="Produtos frescos direto para sua mesa. Entrega em condomínios.">
     <meta property="og:type" content="website">
     <meta name="robots" content="index, follow">
-    
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-    
+
     <link rel="stylesheet" href="./css/variables.css">
     <link rel="stylesheet" href="./css/shared.css">
     <link rel="stylesheet" href="./css/loja.css">
-    
+    <!-- NOVO: estilos do seletor de quantidade (peso × unidade).
+         Precisa vir DEPOIS do loja.css para prevalecer. -->
+    <link rel="stylesheet" href="./css/produto-modal.css">
+
     <link rel="icon" href="./icon-192.png">
     <link rel="manifest" href="./manifest.json">
 </head>
@@ -47,9 +52,10 @@
 <section class="controles" aria-label="Controles de Busca e Filtro">
     <div class="controles-inner">
         <div class="busca-wrap">
-            <svg class="busca-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/></svg>
+            <svg class="busca-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/></svg>
             <input type="text" id="busca-input" class="busca-input" placeholder="Buscar batata, alface, tomate..." aria-label="Buscar produtos">
-            <button class="btn-voz" id="btn-voz" aria-label="Pesquisa por voz">🎤</button>
+            <!-- Começa oculto: só aparece se o navegador suportar reconhecimento de voz -->
+            <button class="btn-voz" id="btn-voz" aria-label="Pesquisa por voz" hidden>🎤</button>
         </div>
         <nav class="categorias" id="categorias" aria-label="Filtro de Categorias">
             <button class="cat-btn skeleton" style="width:80px;height:38px"></button>
@@ -59,23 +65,22 @@
 </section>
 
 <main class="layout">
-    <section class="produtos-grid" id="lista-produtos" aria-label="Lista de Produtos">
-        </section>
+    <section class="produtos-grid" id="lista-produtos" aria-label="Lista de Produtos"></section>
 
     <button class="btn-flutuante-carrinho" id="btn-carrinho-mobile" aria-label="Ver Carrinho">
         🛒 Ver Pedido (<span id="qtd-flutuante">0</span>)
     </button>
     <div class="carrinho-overlay" id="carrinho-overlay"></div>
 
-    <aside class="carrinho" id="carrinho" aria-label="Seu Carrinho de Compras">
+    <aside class="carrinho" id="carrinho" aria-label="Seu Carrinho de Compras" tabindex="-1">
         <header class="carrinho-topo">
             <h3 class="carrinho-titulo">Meu Pedido <span class="carrinho-titulo-badge" id="qtd-badge">0</span></h3>
             <button class="btn-limpar" id="btn-limpar-carrinho">Esvaziar</button>
         </header>
-        
+
         <div class="carrinho-itens" id="carrinho-itens"></div>
         <div id="upsell-container"></div>
-        
+
         <footer class="carrinho-rodape">
             <div class="total-box">
                 <span class="total-label">Total</span>
@@ -86,14 +91,14 @@
     </aside>
 </main>
 
-<div class="modal-overlay" id="modal-checkout" role="dialog" aria-modal="true">
+<div class="modal-overlay" id="modal-checkout" role="dialog" aria-modal="true" aria-labelledby="checkout-titulo">
     <div class="modal">
         <header class="modal-head">
-            <h2>📦 Dados da Entrega</h2>
+            <h2 id="checkout-titulo">📦 Dados da Entrega</h2>
             <button class="btn-fechar" data-fechar="modal-checkout" aria-label="Fechar">&times;</button>
         </header>
         <div class="modal-body">
-            <div class="form-group"><label for="cli-nome">Como devemos te chamar?</label><input type="text" id="cli-nome" placeholder="Seu nome"></div>
+            <div class="form-group"><label for="cli-nome">Como devemos te chamar?</label><input type="text" id="cli-nome" placeholder="Seu nome" autocomplete="name"></div>
             <div class="grid-2">
                 <div class="form-group"><label for="cli-quadra">Quadra</label><input type="text" inputmode="numeric" id="cli-quadra"></div>
                 <div class="form-group"><label for="cli-lote">Casa/Lote</label><input type="text" inputmode="numeric" id="cli-lote"></div>
@@ -106,7 +111,7 @@
                     <option value="Dinheiro">Dinheiro</option>
                 </select>
             </div>
-            
+
             <div class="form-group troco-container" id="troco-group" style="display:none; background: var(--parchment); padding: 12px; border-radius: 8px;">
                 <label style="margin-bottom: 12px;">Vai precisar de troco?</label>
                 <div style="display: flex; gap: 12px; margin-bottom: 12px;">
@@ -114,10 +119,11 @@
                     <button type="button" class="btn btn-outline" data-action="toggle-troco" data-value="sim" style="flex:1; padding: 10px; font-size: 0.9rem;">Sim, preciso</button>
                 </div>
                 <div id="input-troco-area" style="display:none;">
+                    <label for="cli-troco" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);">Troco para quanto</label>
                     <input type="text" inputmode="decimal" id="cli-troco" placeholder="Troco para quanto? Ex: 50,00">
                 </div>
             </div>
-            
+
             <div class="form-group" style="margin-bottom: 0;">
                 <label for="cli-obs">Observações (opcional)</label>
                 <textarea id="cli-obs" rows="2" placeholder="Ex: tomates bem maduros, deixar na portaria..."></textarea>
@@ -129,11 +135,11 @@
     </div>
 </div>
 
-<div class="modal-overlay" id="modal-historico" role="dialog" aria-modal="true">
+<div class="modal-overlay" id="modal-historico" role="dialog" aria-modal="true" aria-labelledby="historico-titulo">
     <div class="modal">
         <header class="modal-head">
-            <h2>📜 Meus Pedidos</h2>
-            <button class="btn-fechar" data-fechar="modal-historico">&times;</button>
+            <h2 id="historico-titulo">📜 Meus Pedidos</h2>
+            <button class="btn-fechar" data-fechar="modal-historico" aria-label="Fechar">&times;</button>
         </header>
         <div class="modal-body" id="lista-meus-pedidos"></div>
     </div>
@@ -152,11 +158,11 @@
 
 <button id="btn-ia-flutuante" style="position: fixed; bottom: calc(var(--safe-bottom) + 90px); right: 20px; width: 56px; height: 56px; background: var(--earth); color: white; border: none; border-radius: 50%; box-shadow: var(--shadow-lg); z-index: var(--z-sticky); cursor: pointer; font-size: 24px; display: flex; align-items: center; justify-content: center; transition: var(--transition);" aria-label="Falar com Assistente">✨</button>
 
-<div class="modal-overlay" id="modal-ia-chat" role="dialog" aria-modal="true">
+<div class="modal-overlay" id="modal-ia-chat" role="dialog" aria-modal="true" aria-labelledby="ia-titulo">
     <div class="modal" style="max-width: 450px; height: 75dvh;">
         <header class="modal-head">
-            <h2>✨ Assistente de Receitas</h2>
-            <button class="btn-fechar" data-fechar="modal-ia-chat">&times;</button>
+            <h2 id="ia-titulo">✨ Assistente de Receitas</h2>
+            <button class="btn-fechar" data-fechar="modal-ia-chat" aria-label="Fechar">&times;</button>
         </header>
         <div class="modal-body" id="chat-ia-corpo" style="display: flex; flex-direction: column; gap: 16px; background: var(--parchment); overflow-y: auto;">
             <div style="background: white; padding: 14px; border-radius: var(--radius-sm); border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); font-size: 0.95rem; line-height: 1.5;">
@@ -166,6 +172,7 @@
         <div id="ia-sugestoes-container" style="padding: 10px 16px; background: white; display: flex; gap: 8px; overflow-x: auto; border-top: 1px solid var(--parchment);"></div>
         <footer class="modal-footer" style="padding: 12px 16px; background: white;">
             <div style="display: flex; gap: 8px; width: 100%;">
+                <label for="input-ia-mensagem" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);">Mensagem para o assistente</label>
                 <input type="text" id="input-ia-mensagem" placeholder="Pergunte sobre uma receita ou produto..." style="flex: 1; padding: 12px; border: 1.5px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; font-size: 16px;">
                 <button class="btn btn-primary" id="btn-ia-enviar" style="padding: 12px 20px;">Enviar</button>
             </div>
@@ -176,6 +183,38 @@
 <div class="toast" id="toast" role="alert"></div>
 
 <script type="module" src="./js/loja.js"></script>
+
+<!-- Busca por voz: o botão 🎤 existia mas não tinha função nenhuma.
+     Agora funciona onde há suporte e permanece oculto onde não há. -->
+<script>
+(() => {
+    const Reconhecimento = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const botao = document.getElementById('btn-voz');
+    const campo = document.getElementById('busca-input');
+    if (!Reconhecimento || !botao || !campo) return; // sem suporte: botão fica oculto
+
+    botao.hidden = false;
+    const rec = new Reconhecimento();
+    rec.lang = 'pt-BR';
+    rec.continuous = false;
+    rec.interimResults = false;
+
+    let ouvindo = false;
+    botao.addEventListener('click', () => {
+        if (ouvindo) { rec.stop(); return; }
+        try { rec.start(); } catch (e) {}
+    });
+
+    rec.onstart = () => { ouvindo = true; botao.classList.add('gravando'); };
+    rec.onend = () => { ouvindo = false; botao.classList.remove('gravando'); };
+    rec.onerror = () => { ouvindo = false; botao.classList.remove('gravando'); };
+    rec.onresult = (evento) => {
+        const texto = evento.results[0][0].transcript;
+        campo.value = texto;
+        campo.dispatchEvent(new Event('input', { bubbles: true })); // dispara a busca já existente
+    };
+})();
+</script>
 
 <script>
     if ('serviceWorker' in navigator) {
