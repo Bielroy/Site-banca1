@@ -28,6 +28,14 @@
 
     <link rel="icon" href="./icon-192.png">
     <link rel="manifest" href="./manifest.json">
+
+    <!-- iOS ignora o manifest.json para o ícone da tela de início. Sem estas
+         tags, ao "Adicionar à Tela de Início" num iPhone o atalho fica com um
+         ícone genérico (um print da página) em vez da logo da banca. -->
+    <link rel="apple-touch-icon" href="./icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Banca Adair">
 </head>
 <body>
 
@@ -133,6 +141,11 @@
             <div class="form-group" style="margin-bottom: 0;">
                 <label for="cli-obs">Observações (opcional)</label>
                 <textarea id="cli-obs" rows="2" placeholder="Ex: tomates bem maduros, deixar na portaria..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="cli-cupom">Cupom de desconto (opcional)</label>
+                <input type="text" id="cli-cupom" placeholder="Digite o código, se tiver" autocapitalize="characters" autocomplete="off" spellcheck="false" style="text-transform: uppercase;">
             </div>
         </div>
         <footer class="modal-footer">
