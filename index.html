@@ -10,14 +10,52 @@
     <meta name="description" content="Compre frutas, verduras e hortaliças frescas com entrega rápida no seu condomínio.">
     <meta name="theme-color" content="#1a3a2a">
 
-    <meta property="og:title" content="Banca Adair e Pedrina">
-    <meta property="og:description" content="Produtos frescos direto para sua mesa. Entrega em condomínios.">
-    <meta property="og:type" content="website">
+    <link rel="canonical" href="https://www.bancaadairepedrina.com.br/">
     <meta name="robots" content="index, follow">
+
+    <!-- Compartilhamento em WhatsApp, Facebook e Instagram.
+         Sem a og:image, o link colado no grupo do condomínio aparecia
+         só como texto, sem miniatura — o que reduz muito o clique.
+         A imagem é 1200x630, a proporção que essas redes esperam. -->
+    <meta property="og:site_name" content="Banca Adair e Pedrina">
+    <meta property="og:title" content="Banca Adair e Pedrina | Frescor Todo Dia">
+    <meta property="og:description" content="Frutas, verduras e legumes frescos, escolhidos no dia e entregues no seu condomínio.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://www.bancaadairepedrina.com.br/">
+    <meta property="og:locale" content="pt_BR">
+    <meta property="og:image" content="https://www.bancaadairepedrina.com.br/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Banca Adair e Pedrina — hortifruti com entrega no condomínio">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Banca Adair e Pedrina | Frescor Todo Dia">
+    <meta name="twitter:description" content="Frutas, verduras e legumes frescos, escolhidos no dia.">
+    <meta name="twitter:image" content="https://www.bancaadairepedrina.com.br/og-image.png">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+
+
+    <!-- Dado estruturado (JSON-LD): descreve o negócio em linguagem que o
+         Google entende, o que ajuda a aparecer em buscas locais do tipo
+         "hortifruti perto de mim". É um bloco de DADOS, não de código:
+         o navegador não executa nada daqui. -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "GroceryStore",
+      "name": "Banca Adair e Pedrina",
+      "description": "Hortifruti com frutas, verduras e legumes frescos e entrega em condomínios.",
+      "url": "https://www.bancaadairepedrina.com.br/",
+      "image": "https://www.bancaadairepedrina.com.br/og-image.png",
+      "priceRange": "$",
+      "currenciesAccepted": "BRL",
+      "paymentAccepted": "Dinheiro, PIX, Cartão",
+      "areaServed": { "@type": "AdministrativeArea", "name": "Goiânia e região" }
+    }
+    </script>
 
     <link rel="stylesheet" href="./css/variables.css">
     <link rel="stylesheet" href="./css/shared.css">
@@ -27,7 +65,12 @@
     <link rel="stylesheet" href="./css/produto-modal.css">
 
     <link rel="icon" href="./icon-192.png">
-    <link rel="manifest" href="./manifest.json">
+    <!-- O <link rel="manifest"> não é escrito aqui. O vite-plugin-pwa
+         gera o manifest a partir do vite.config.js e injeta a tag no
+         build. Antes existiam DOIS manifests com dados diferentes
+         (nome curto "Banca" contra "Banca Adair", cores diferentes) e
+         qual deles valia dependia da ordem do build. Fonte única agora:
+         vite.config.js. -->
 
     <!-- iOS ignora o manifest.json para o ícone da tela de início. Sem estas
          tags, ao "Adicionar à Tela de Início" num iPhone o atalho fica com um
@@ -100,6 +143,14 @@
         </footer>
     </aside>
 </main>
+
+<!-- Rodapé com o link da política de privacidade. A LGPD pede que a
+     informação esteja acessível de onde os dados são coletados. -->
+<footer class="site-rodape">
+    <a href="/privacidade.html">Privacidade</a>
+    <span aria-hidden="true">·</span>
+    <span>Banca Adair e Pedrina</span>
+</footer>
 
 <div class="modal-overlay" id="modal-checkout" role="dialog" aria-modal="true" aria-labelledby="checkout-titulo">
     <div class="modal">
@@ -203,45 +254,19 @@
 
 <script type="module" src="./js/loja.js"></script>
 
-<!-- Busca por voz: o botão 🎤 existia mas não tinha função nenhuma.
-     Agora funciona onde há suporte e permanece oculto onde não há. -->
-<script>
-(() => {
-    const Reconhecimento = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const botao = document.getElementById('btn-voz');
-    const campo = document.getElementById('busca-input');
-    if (!Reconhecimento || !botao || !campo) return; // sem suporte: botão fica oculto
+<!-- Busca por voz. O código saiu de dentro deste arquivo para
+     ./js/busca-voz.js: JavaScript solto no HTML impede ativar a
+     Content-Security-Policy, que é a proteção contra código injetado. -->
+<script type="module" src="./js/busca-voz.js"></script>
 
-    botao.hidden = false;
-    const rec = new Reconhecimento();
-    rec.lang = 'pt-BR';
-    rec.continuous = false;
-    rec.interimResults = false;
-
-    let ouvindo = false;
-    botao.addEventListener('click', () => {
-        if (ouvindo) { rec.stop(); return; }
-        try { rec.start(); } catch (e) {}
-    });
-
-    rec.onstart = () => { ouvindo = true; botao.classList.add('gravando'); };
-    rec.onend = () => { ouvindo = false; botao.classList.remove('gravando'); };
-    rec.onerror = () => { ouvindo = false; botao.classList.remove('gravando'); };
-    rec.onresult = (evento) => {
-        const texto = evento.results[0][0].transcript;
-        campo.value = texto;
-        campo.dispatchEvent(new Event('input', { bubbles: true })); // dispara a busca já existente
-    };
-})();
-</script>
-
-<script>
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js').catch(err => console.error('Erro PWA:', err));
-        });
-    }
-</script>
+<!-- O registro do service worker foi REMOVIDO daqui de propósito.
+     O vite-plugin-pwa já injeta o registro no build (ver vite.config.js).
+     Chamar register('/sw.js') de novo aqui era redundante: o navegador
+     devolve a mesma inscrição para a mesma URL, então não quebrava nada.
+     O motivo real de tirar é outro: JavaScript solto dentro do HTML
+     impede ativar a Content-Security-Policy sem abrir uma exceção
+     ('unsafe-inline') que enfraqueceria justamente a proteção que ela
+     existe para dar. Sem script inline nenhum, a CSP pode ser estrita. -->
 
 </body>
 </html>
