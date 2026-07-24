@@ -134,6 +134,8 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
         document.getElementById(`aba-${e.target.dataset.aba}`).classList.add('active');
 
         if (e.target.dataset.aba === 'relatorios') renderRelatoriosMaster();
+        if (e.target.dataset.aba === 'balanco') carregarBalanco(Number(document.getElementById('balanco-periodo')?.value || 30));
+        if (e.target.dataset.aba === 'comunicados') renderComunicados();
     }
 });
 
@@ -172,6 +174,12 @@ const iniciarRealTimeSync = () => {
         }
     });
     unsubscribes.push(unsubConfig);
+
+    const unsubComunicados = onSnapshot(doc(db, "loja", "comunicados"), (snap) => {
+        if (snap.exists()) comunicadosAtuais = { dias: {}, fixo: { ativo: false, texto: '' }, ...snap.data() };
+        renderComunicados();
+    });
+    unsubscribes.push(unsubComunicados);
 
     // ATENÇÃO: esta consulta combina "where in" + "orderBy", o que exige um
     // ÍNDICE COMPOSTO no Firestore. Se aparecer erro no console com um link,
@@ -296,90 +304,345 @@ const injetarEstoqueUI = () => {
     }
 };
 
-// ==========================================
-// LÓGICA DO PICKING GUIADO
-// ==========================================
-const PICKING_STATE = { pedidoId: null, itensAPesar: [], indiceAtual: 0, pedidoOriginal: null, totalOriginal: 0, valorExtraPesado: 0 };
+// =====================================================================
+// ESTEIRA DE SEPARAÇÃO — tela cheia, um produto por vez
+// Fluxo: foto grande -> peso (ou valor automático) -> seta avança ->
+//        tela de conferência -> envia pro WhatsApp da cliente.
+// =====================================================================
+const ESTEIRA = {
+    pedido: null,
+    itens: [],        // cópia de trabalho, com pesoFinal/subtotal preenchidos
+    indice: 0,
+    conferindo: false
+};
 
-const injetarModalPickingSeNecessario = () => {
-    if (document.getElementById('modal-picking')) return;
+const ehItemDeBalanca = (item) => item.aPesar === true;
+
+const valorDoItem = (item) => {
+    if (ehItemDeBalanca(item)) {
+        return item.pesoFinal > 0 ? item.pesoFinal * (item.precoOriginal || 0) : 0;
+    }
+    return (item.precoOriginal || 0) * (item.qtd || 0);
+};
+
+const totalDaEsteira = () => ESTEIRA.itens.reduce((soma, i) => soma + valorDoItem(i), 0);
+
+const fotoDoProduto = (item) => {
+    const p = produtosAtuais.find(x => x.id === item.id);
+    return p && p.foto ? p.foto : null;
+};
+
+const injetarEsteira = () => {
+    if (document.getElementById('picking-palco')) return;
     document.body.insertAdjacentHTML('beforeend', `
-        <div class="modal-overlay" id="modal-picking" aria-hidden="true">
-            <div class="modal" style="max-width: 500px; text-align: center;">
-                <div class="modal-head" style="background: var(--forest); color: white;">
-                    <h2 id="picking-title" style="color:white;">Separação de Pedido</h2>
-                    <button class="btn-fechar" data-fechar="modal-picking" style="color: white;">×</button>
-                </div>
-                <div class="modal-body" style="padding: 30px 20px;">
-                    <div id="picking-step-container">
-                        <span id="picking-contador" style="background: var(--foam); color: var(--forest); padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 0.9rem; margin-bottom: 15px; display: inline-block;"></span>
-                        <h3 id="picking-nome-produto" style="font-size: 1.8rem; margin-bottom: 5px; color: var(--text-dark);"></h3>
-                        <p id="picking-qtd-pedida" style="font-size: 1.2rem; color: var(--earth); font-weight: bold; margin-bottom: 8px;"></p>
-                        <p id="picking-estimativa" style="font-size: 0.95rem; color: var(--text-light); margin-bottom: 20px;"></p>
-
-                        <div style="background: var(--warm-white); border: 2px dashed var(--parchment); padding: 20px; border-radius: 12px; margin-bottom: 25px;">
-                            <label for="picking-input-peso" style="display: block; font-weight: 600; margin-bottom: 10px; color: var(--text-mid);">Coloque na balança e digite o peso (Kg):</label>
-                            <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-                                <input type="number" id="picking-input-peso" step="0.001" placeholder="Ex: 1.250" style="width: 150px; font-size: 1.5rem; text-align: center; padding: 15px; border: 2px solid var(--forest); border-radius: 8px;">
-                                <span style="font-size: 1.5rem; font-weight: bold; color: var(--text-light);">kg</span>
-                            </div>
-                            <p id="picking-preview-valor" style="margin-top:12px; font-weight:700; color:var(--forest); min-height:22px;"></p>
-                        </div>
-                        <button class="btn-outline" style="background: var(--forest); color: white; width: 100%; padding: 18px; font-size: 1.2rem;" data-action="picking-proximo">Salvar Peso e Avançar ➔</button>
-                    </div>
-
-                    <div id="picking-resumo-container" style="display: none;">
-                        <div style="font-size: 3rem; margin-bottom: 10px;">✅</div>
-                        <h3 style="font-size: 1.5rem; color: var(--forest); margin-bottom: 15px;">Tudo Separado e Pesado!</h3>
-                        <div style="background: var(--foam); padding: 20px; border-radius: 12px; text-align: left; margin-bottom: 25px;">
-                            <p style="margin-bottom: 8px; color: var(--text-mid);">Valor S/ Pesagem: <span id="resumo-valor-antigo" style="float: right; text-decoration: line-through;"></span></p>
-                            <p style="font-size: 1.3rem; font-weight: 900; color: var(--text-dark); border-top: 1px solid var(--sage); padding-top: 8px; margin-top: 8px;">Novo Valor Exato: <span id="resumo-valor-novo" style="float: right; color: var(--forest);"></span></p>
-                        </div>
-                        <button class="btn-outline" style="background: #25D366; color: white; border-color: #25D366; width: 100%; padding: 18px; font-size: 1.2rem;" data-action="picking-finalizar">Concluir e Avisar Cliente 🚀</button>
-                    </div>
-                </div>
+    <div class="picking-palco" id="picking-palco" role="dialog" aria-modal="true" aria-label="Separação de pedido">
+        <div class="pk-topo">
+            <button class="pk-sair" id="pk-sair" aria-label="Fechar separação">&times;</button>
+            <div class="pk-cliente">
+                <strong id="pk-cliente-nome">Cliente</strong>
+                <span id="pk-cliente-end"></span>
             </div>
         </div>
-    `);
+        <div class="pk-trilha" id="pk-trilha"></div>
+        <div class="pk-corpo" id="pk-corpo"></div>
+        <div class="pk-rodape" id="pk-rodape"></div>
+    </div>`);
 
-    // Prévia do valor enquanto digita o peso — evita erro de digitação
-    document.getElementById('picking-input-peso').addEventListener('input', (e) => {
-        const item = PICKING_STATE.itensAPesar[PICKING_STATE.indiceAtual];
-        const peso = parseFloat(String(e.target.value).replace(',', '.'));
-        const alvo = document.getElementById('picking-preview-valor');
-        if (item && Number.isFinite(peso) && peso > 0) {
-            alvo.textContent = `= ${fmt(peso * item.precoOriginal)}`;
-        } else { alvo.textContent = ''; }
+    document.getElementById('pk-sair').addEventListener('click', async () => {
+        const ok = await customConfirm('Sair da separação?', 'Os pesos digitados até agora serão perdidos.');
+        if (ok) fecharEsteira();
+    });
+
+    // Arrastar para os lados troca de produto (igual carrossel)
+    const corpo = document.getElementById('pk-corpo');
+    let x0 = null;
+    corpo.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+    corpo.addEventListener('touchend', (e) => {
+        if (x0 === null) return;
+        const dx = e.changedTouches[0].clientX - x0;
+        x0 = null;
+        if (ESTEIRA.conferindo) return;
+        if (dx < -70) avancarEsteira();
+        else if (dx > 70) voltarEsteira();
+    }, { passive: true });
+
+    // Enter no campo de peso avança
+    corpo.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.id === 'pk-peso') { e.preventDefault(); avancarEsteira(); }
     });
 };
 
-const renderPickingStep = () => {
-    const itemAtual = PICKING_STATE.itensAPesar[PICKING_STATE.indiceAtual];
-    document.getElementById('picking-contador').textContent = `Produto ${PICKING_STATE.indiceAtual + 1} de ${PICKING_STATE.itensAPesar.length}`;
-    document.getElementById('picking-nome-produto').textContent = itemAtual.nome;
-    document.getElementById('picking-qtd-pedida').textContent = `O cliente quer: ${itemAtual.qtd} unidade(s)`;
-
-    // Se o produto tem peso médio cadastrado, mostra quanto deveria dar
-    const prod = produtosAtuais.find(p => p.id === itemAtual.id);
-    const estimativa = document.getElementById('picking-estimativa');
-    if (prod && prod.pesoMedio > 0) {
-        const kgEsperado = (prod.pesoMedio * itemAtual.qtd) / 1000;
-        estimativa.textContent = `Esperado: ≈ ${kgEsperado.toFixed(2).replace('.', ',')} kg`;
-    } else { estimativa.textContent = ''; }
-
-    const inputPeso = document.getElementById('picking-input-peso');
-    inputPeso.value = '';
-    document.getElementById('picking-preview-valor').textContent = '';
-    setTimeout(() => inputPeso.focus(), 100);
+const fecharEsteira = () => {
+    document.getElementById('picking-palco')?.classList.remove('aberto');
+    document.body.style.overflow = '';
 };
 
-const mostrarResumoPicking = () => {
-    document.getElementById('picking-step-container').style.display = 'none';
-    document.getElementById('picking-resumo-container').style.display = 'block';
+const renderTrilha = () => {
+    const trilha = document.getElementById('pk-trilha');
+    trilha.innerHTML = ESTEIRA.itens.map((item, i) => {
+        const pronto = ehItemDeBalanca(item) ? item.pesoFinal > 0 : true;
+        const classe = ESTEIRA.conferindo ? (pronto ? 'feito' : '')
+                     : i === ESTEIRA.indice ? 'atual' : (pronto ? 'feito' : '');
+        return `<button class="pk-passo ${classe}" data-ir="${i}" aria-label="Ir para item ${i + 1}"></button>`;
+    }).join('');
+    trilha.querySelectorAll('[data-ir]').forEach(b => {
+        b.addEventListener('click', () => { ESTEIRA.conferindo = false; ESTEIRA.indice = Number(b.dataset.ir); renderEsteira(); });
+    });
+};
 
-    const novoTotalExato = PICKING_STATE.totalOriginal + PICKING_STATE.valorExtraPesado;
-    document.getElementById('resumo-valor-antigo').textContent = fmt(PICKING_STATE.totalOriginal);
-    document.getElementById('resumo-valor-novo').textContent = fmt(novoTotalExato);
+const renderItemAtual = () => {
+    const item = ESTEIRA.itens[ESTEIRA.indice];
+    const corpo = document.getElementById('pk-corpo');
+    const rodape = document.getElementById('pk-rodape');
+    const foto = fotoDoProduto(item);
+    const prod = produtosAtuais.find(p => p.id === item.id);
+
+    const blocoFoto = foto
+        ? `<img class="pk-foto" src="${escapeHTML(foto)}" alt="${escapeHTML(item.nome)}">`
+        : `<div class="pk-foto pk-foto-vazia">🥬</div>`;
+
+    if (ehItemDeBalanca(item)) {
+        // Se há peso médio cadastrado, sugere quanto deve dar
+        let esperado = '';
+        if (prod && prod.pesoMedio > 0) {
+            const kg = (prod.pesoMedio * item.qtd) / 1000;
+            esperado = `Deve dar por volta de ${kg.toFixed(2).replace('.', ',')} kg`;
+        }
+        const valorAtual = item.pesoFinal > 0 ? fmt(item.pesoFinal * item.precoOriginal) : '';
+
+        corpo.innerHTML = `
+            <span class="pk-contador">Produto ${ESTEIRA.indice + 1} de ${ESTEIRA.itens.length}</span>
+            ${blocoFoto}
+            <h2 class="pk-nome">${escapeHTML(item.nome)}</h2>
+            <p class="pk-pedido-cliente">A cliente pediu ${item.qtd} ${item.qtd === 1 ? 'unidade' : 'unidades'}</p>
+            <p class="pk-esperado">${esperado}</p>
+            <div class="pk-balanca">
+                <label for="pk-peso">Coloque na balança e digite o peso</label>
+                <div class="pk-input-linha">
+                    <input type="number" id="pk-peso" class="pk-input-peso" step="0.001" inputmode="decimal"
+                           placeholder="0,000" value="${item.pesoFinal || ''}">
+                    <span class="pk-unid-balanca">kg</span>
+                </div>
+                <div class="pk-atalhos">
+                    ${[0.25, 0.5, 0.75, 1, 1.5, 2].map(v =>
+                        `<button class="pk-atalho" data-peso="${v}">${v < 1 ? (v * 1000) + 'g' : String(v).replace('.', ',') + 'kg'}</button>`
+                    ).join('')}
+                </div>
+                <div class="pk-valor-vivo" id="pk-valor">${valorAtual}</div>
+            </div>`;
+
+        const campo = document.getElementById('pk-peso');
+        const alvo = document.getElementById('pk-valor');
+        const btnAvancar = () => document.getElementById('pk-avancar');
+
+        const atualizar = () => {
+            const peso = parseFloat(String(campo.value).replace(',', '.'));
+            if (Number.isFinite(peso) && peso > 0) {
+                item.pesoFinal = peso;
+                alvo.textContent = fmt(peso * item.precoOriginal);
+                if (btnAvancar()) btnAvancar().disabled = false;
+            } else {
+                item.pesoFinal = 0;
+                alvo.textContent = '';
+                if (btnAvancar()) btnAvancar().disabled = true;
+            }
+            renderTrilha();
+        };
+
+        campo.addEventListener('input', atualizar);
+        corpo.querySelectorAll('.pk-atalho').forEach(b => {
+            b.addEventListener('click', () => { campo.value = b.dataset.peso; atualizar(); campo.focus(); });
+        });
+        setTimeout(() => campo.focus(), 120);
+
+    } else {
+        // Item de valor fechado (unidade, maço, bandeja): calcula sozinho
+        const total = (item.precoOriginal || 0) * (item.qtd || 0);
+        corpo.innerHTML = `
+            <span class="pk-contador">Produto ${ESTEIRA.indice + 1} de ${ESTEIRA.itens.length}</span>
+            ${blocoFoto}
+            <h2 class="pk-nome">${escapeHTML(item.nome)}</h2>
+            <p class="pk-pedido-cliente">${formatarQtdRelatorio(item.qtd, item.unidade)} ${escapeHTML(item.unidade || 'un')}</p>
+            <div class="pk-fixo">
+                <small>Este item não vai à balança — o valor já é fechado.</small>
+                <div class="pk-valor-vivo">${fmt(total)}</div>
+                <small>Só confira se separou a quantidade certa.</small>
+            </div>`;
+    }
+
+    const primeiro = ESTEIRA.indice === 0;
+    const ultimo = ESTEIRA.indice === ESTEIRA.itens.length - 1;
+    const bloqueado = ehItemDeBalanca(item) && !(item.pesoFinal > 0);
+
+    rodape.innerHTML = `
+        <button class="pk-nav" id="pk-voltar" ${primeiro ? 'disabled' : ''} aria-label="Produto anterior">‹</button>
+        <button class="pk-avancar" id="pk-avancar" ${bloqueado ? 'disabled' : ''}>
+            ${ultimo ? 'Conferir pedido ✓' : 'Próximo produto ›'}
+        </button>`;
+    document.getElementById('pk-voltar').addEventListener('click', voltarEsteira);
+    document.getElementById('pk-avancar').addEventListener('click', avancarEsteira);
+};
+
+const renderConferencia = () => {
+    const corpo = document.getElementById('pk-corpo');
+    const rodape = document.getElementById('pk-rodape');
+    const total = totalDaEsteira();
+    const estimado = Number(ESTEIRA.pedido.clientTotal || 0);
+
+    const linhas = ESTEIRA.itens.map((item, i) => {
+        const foto = fotoDoProduto(item);
+        const detalhe = ehItemDeBalanca(item)
+            ? `${item.qtd} un • pesou ${String(item.pesoFinal).replace('.', ',')} kg × ${fmt(item.precoOriginal)}`
+            : `${formatarQtdRelatorio(item.qtd, item.unidade)} × ${fmt(item.precoOriginal)}`;
+        return `
+        <div class="pk-linha">
+            ${foto ? `<img class="pk-linha-foto" src="${escapeHTML(foto)}" alt="">`
+                   : `<div class="pk-linha-foto"></div>`}
+            <div class="pk-linha-info">
+                <div class="pk-linha-nome">${escapeHTML(item.nome)}</div>
+                <div class="pk-linha-detalhe">${detalhe}</div>
+                <button class="pk-linha-editar" data-corrigir="${i}">corrigir</button>
+            </div>
+            <div class="pk-linha-valor">${fmt(valorDoItem(item))}</div>
+        </div>`;
+    }).join('');
+
+    corpo.innerHTML = `
+        <div class="pk-conferencia">
+            <h2>Confira antes de enviar</h2>
+            <p class="pk-sub">Toque em "corrigir" se algum peso ficou errado.</p>
+            ${linhas}
+            <div class="pk-total">
+                <div class="pk-total-linha"><span>Estimado no pedido</span><span>${fmt(estimado)}</span></div>
+                <div class="pk-total-final"><span>Valor exato</span><strong>${fmt(total)}</strong></div>
+            </div>
+            <div class="pk-acoes-finais">
+                <button class="pk-btn-enviar" id="pk-enviar">📲 Enviar para a cliente</button>
+                <button class="pk-btn-secundario" id="pk-reconferir">🔄 Reconferir desde o início</button>
+                <button class="pk-btn-secundario" id="pk-salvar-sem-enviar">Salvar sem avisar agora</button>
+            </div>
+        </div>`;
+    rodape.innerHTML = '';
+
+    corpo.querySelectorAll('[data-corrigir]').forEach(b => {
+        b.addEventListener('click', () => {
+            ESTEIRA.conferindo = false;
+            ESTEIRA.indice = Number(b.dataset.corrigir);
+            renderEsteira();
+        });
+    });
+    document.getElementById('pk-reconferir').addEventListener('click', () => {
+        ESTEIRA.conferindo = false; ESTEIRA.indice = 0; renderEsteira();
+    });
+    document.getElementById('pk-enviar').addEventListener('click', (e) => finalizarEsteira(e.currentTarget, true));
+    document.getElementById('pk-salvar-sem-enviar').addEventListener('click', (e) => finalizarEsteira(e.currentTarget, false));
+};
+
+const renderEsteira = () => {
+    renderTrilha();
+    if (ESTEIRA.conferindo) renderConferencia(); else renderItemAtual();
+};
+
+const avancarEsteira = () => {
+    const item = ESTEIRA.itens[ESTEIRA.indice];
+    if (ehItemDeBalanca(item) && !(item.pesoFinal > 0)) {
+        return showToast('⚠️ Digite o peso marcado na balança.', true);
+    }
+    if (ESTEIRA.indice < ESTEIRA.itens.length - 1) ESTEIRA.indice++;
+    else ESTEIRA.conferindo = true;
+    renderEsteira();
+};
+
+const voltarEsteira = () => {
+    if (ESTEIRA.indice > 0) { ESTEIRA.indice--; renderEsteira(); }
+};
+
+const abrirEsteira = (pedido) => {
+    injetarEsteira();
+    ESTEIRA.pedido = pedido;
+    ESTEIRA.itens = JSON.parse(JSON.stringify(pedido.itens || []));
+    ESTEIRA.itens.forEach(i => { if (!i.pesoFinal) i.pesoFinal = 0; });
+    ESTEIRA.indice = 0;
+    ESTEIRA.conferindo = false;
+
+    document.getElementById('pk-cliente-nome').textContent = pedido.nome || 'Cliente';
+    document.getElementById('pk-cliente-end').textContent =
+        `Quadra ${pedido.quadra || '?'} • Lote ${pedido.lote || '?'}`;
+
+    if (ESTEIRA.itens.length === 0) return showToast('Este pedido não tem itens.', true);
+
+    document.getElementById('picking-palco').classList.add('aberto');
+    document.body.style.overflow = 'hidden';
+    renderEsteira();
+};
+
+// Monta a mensagem final que a cliente recebe
+const montarMensagemCliente = () => {
+    const p = ESTEIRA.pedido;
+    let msg = `*Banca Adair e Pedrina*\\n`;
+    msg += `Olá, ${String(p.nome || '').split(' ')[0]}! Seu pedido já foi separado e pesado 🌿\\n\\n`;
+    msg += `*Seu pedido:*\\n`;
+
+    ESTEIRA.itens.forEach(item => {
+        if (ehItemDeBalanca(item)) {
+            msg += `• ${item.nome} — ${item.qtd} un (pesou ${String(item.pesoFinal).replace('.', ',')} kg) = ${fmt(valorDoItem(item))}\\n`;
+        } else {
+            msg += `• ${item.nome} — ${formatarQtdRelatorio(item.qtd, item.unidade)} = ${fmt(valorDoItem(item))}\\n`;
+        }
+    });
+
+    msg += `\\n*Total: ${fmt(totalDaEsteira())}*\\n`;
+    msg += `Pagamento: ${p.pag || 'a combinar'}\\n`;
+    if (p.troco) msg += `Troco para: ${p.troco}\\n`;
+    msg += `Entrega: Quadra ${p.quadra} • Lote ${p.lote}\\n\\n`;
+    msg += `Qualquer coisa é só chamar. Obrigado pela preferência! 💚`;
+    return msg;
+};
+
+const finalizarEsteira = async (btn, enviarWhats) => {
+    const textoOriginal = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Salvando... ⏳';
+
+    const totalExato = totalDaEsteira();
+    const itensFinais = ESTEIRA.itens.map(i => ({
+        ...i,
+        aPesar: false,
+        subtotal: valorDoItem(i),
+        precoFinalCalculado: valorDoItem(i)
+    }));
+
+    try {
+        await updateDoc(doc(db, 'pedidos', ESTEIRA.pedido.id), {
+            itens: itensFinais,
+            total: totalExato,
+            totalExato,
+            temItensAPesar: false,
+            status: 'preparando',
+            pesadoEm: new Date().toISOString()
+        });
+
+        if (enviarWhats) {
+            const msg = montarMensagemCliente();
+            const fone = String(ESTEIRA.pedido.telefone || '').replace(/\D/g, '');
+            // Se o pedido tem telefone, abre a conversa direto.
+            // Se não tem, abre o WhatsApp para escolher o contato — e o
+            // texto já vai copiado para colar.
+            try { await navigator.clipboard.writeText(msg); } catch (_) {}
+            const url = fone
+                ? `https://wa.me/${fone.startsWith('55') ? fone : '55' + fone}?text=${encodeURIComponent(msg)}`
+                : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+            window.open(url, '_blank');
+            if (!fone) showToast('Texto copiado — escolha a conversa da cliente.', false);
+        } else {
+            showToast('✅ Pedido salvo com os valores exatos.');
+        }
+
+        fecharEsteira();
+    } catch (e) {
+        console.error(e);
+        showToast('Erro ao salvar o pedido.', true);
+        btn.disabled = false; btn.textContent = textoOriginal;
+    }
 };
 
 // ==========================================
@@ -466,84 +729,9 @@ document.body.addEventListener('click', async (e) => {
 
         // --- AÇÕES DE LOGÍSTICA KANBAN ---
         else if (action === 'iniciar-separacao') {
-            const pedidoId = target.dataset.id;
-            const pedido = pedidosGerais.find(p => p.id === pedidoId);
+            const pedido = pedidosGerais.find(p => p.id === target.dataset.id);
             if (!pedido) return showToast("Pedido não encontrado", true);
-
-            const itensParaBalanca = (pedido.itens || []).filter(item => item.aPesar === true);
-
-            PICKING_STATE.pedidoId = pedido.id;
-            PICKING_STATE.pedidoOriginal = pedido;
-            PICKING_STATE.itensAPesar = JSON.parse(JSON.stringify(itensParaBalanca));
-            PICKING_STATE.indiceAtual = 0;
-            PICKING_STATE.totalOriginal = pedido.clientTotal || pedido.total || 0;
-            PICKING_STATE.valorExtraPesado = 0;
-
-            injetarModalPickingSeNecessario();
-            document.getElementById('picking-title').textContent = `Separar: ${String(pedido.nome || '').split(' ')[0]}`;
-
-            if (PICKING_STATE.itensAPesar.length > 0) {
-                document.getElementById('picking-step-container').style.display = 'block';
-                document.getElementById('picking-resumo-container').style.display = 'none';
-                renderPickingStep();
-            } else {
-                document.getElementById('picking-step-container').style.display = 'none';
-                mostrarResumoPicking();
-            }
-            openModal('modal-picking');
-        }
-
-        else if (action === 'picking-proximo') {
-            const inputPeso = document.getElementById('picking-input-peso');
-            const pesoInformado = parseFloat(String(inputPeso.value).replace(',', '.'));
-
-            if (isNaN(pesoInformado) || pesoInformado <= 0) return showToast("⚠️ Digite um peso válido marcado na balança!", true);
-
-            const itemAtual = PICKING_STATE.itensAPesar[PICKING_STATE.indiceAtual];
-            const valorDesteItem = pesoInformado * itemAtual.precoOriginal;
-
-            PICKING_STATE.valorExtraPesado += valorDesteItem;
-            itemAtual.pesoFinal = pesoInformado;
-            itemAtual.precoFinalCalculado = valorDesteItem;
-            itemAtual.subtotal = valorDesteItem;
-            itemAtual.aPesar = false;
-
-            PICKING_STATE.indiceAtual++;
-            if (PICKING_STATE.indiceAtual >= PICKING_STATE.itensAPesar.length) mostrarResumoPicking();
-            else renderPickingStep();
-        }
-
-        else if (action === 'picking-finalizar') {
-            const btn = target;
-            btn.disabled = true; btn.textContent = 'A processar... ⏳';
-
-            const novoTotalExato = PICKING_STATE.totalOriginal + PICKING_STATE.valorExtraPesado;
-            const itensAtualizados = PICKING_STATE.pedidoOriginal.itens.map(itemOri => {
-                const itemPesado = PICKING_STATE.itensAPesar.find(ip => ip.id === itemOri.id);
-                return itemPesado ? itemPesado : itemOri;
-            });
-
-            try {
-                await updateDoc(doc(db, "pedidos", PICKING_STATE.pedidoId), {
-                    itens: itensAtualizados,
-                    totalExato: novoTotalExato,
-                    total: novoTotalExato,
-                    temItensAPesar: false,
-                    status: 'preparando'
-                });
-
-                fetch('/api/whatsapp-trigger', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'notificar_peso_concluido', pedidoId: PICKING_STATE.pedidoId, novoTotal: fmt(novoTotalExato) })
-                }).catch(() => {});
-
-                showToast("✅ Pedido pesado e finalizado!");
-                closeModal('modal-picking');
-            } catch (e) {
-                showToast("Erro ao finalizar pedido.", true);
-            } finally {
-                btn.disabled = false; btn.textContent = 'Concluir e Avisar Cliente 🚀';
-            }
+            abrirEsteira(pedido);
         }
 
         // CORRIGIDO: antes o botão era renderizado com data-action="preparando"
@@ -1009,6 +1197,190 @@ document.getElementById('btn-limpar-hist').addEventListener('click', async () =>
             console.error(error); showToast("Erro ao processar lote.", true);
         }
     }
+});
+
+
+// =====================================================================
+// COMUNICADOS — mensagem automática por dia da semana + aviso fixo
+// Guardado em loja/comunicados. A loja lê e mostra no topo.
+// =====================================================================
+const DIAS_NOMES = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+let comunicadosAtuais = { dias: {}, fixo: { ativo: false, texto: '' } };
+
+const renderComunicados = () => {
+    const cont = document.getElementById('lista-comunicados');
+    if (!cont) return;
+    const hoje = new Date().getDay();
+
+    const blocoFixo = `
+        <div class="com-dia" style="border-color: var(--earth);">
+            <div class="com-dia-topo">
+                <span class="com-dia-nome">📢 Aviso fixo / Oferta do momento</span>
+                <label class="com-switch">
+                    <input type="checkbox" id="com-fixo-ativo" ${comunicadosAtuais.fixo?.ativo ? 'checked' : ''}> mostrar
+                </label>
+            </div>
+            <textarea id="com-fixo-texto" placeholder="Ex: 🍓 Morango na promoção hoje: R$ 8,90 a bandeja!">${escapeHTML(comunicadosAtuais.fixo?.texto || '')}</textarea>
+            <small style="color:var(--text-light); font-size:.78rem;">Aparece sempre que estiver ligado, em qualquer dia. Tem prioridade sobre a mensagem do dia.</small>
+        </div>`;
+
+    const blocosDias = DIAS_NOMES.map((nome, i) => {
+        const d = comunicadosAtuais.dias?.[i] || { ativo: false, texto: '' };
+        return `
+        <div class="com-dia">
+            <div class="com-dia-topo">
+                <span class="com-dia-nome">${nome} ${i === hoje ? '<span class="com-hoje-tag">HOJE</span>' : ''}</span>
+                <label class="com-switch">
+                    <input type="checkbox" class="com-dia-ativo" data-dia="${i}" ${d.ativo ? 'checked' : ''}> mostrar
+                </label>
+            </div>
+            <textarea class="com-dia-texto" data-dia="${i}" placeholder="Ex: Chegou verdura fresquinha hoje!">${escapeHTML(d.texto || '')}</textarea>
+        </div>`;
+    }).join('');
+
+    cont.innerHTML = blocoFixo + blocosDias;
+};
+
+const salvarComunicados = async () => {
+    const btn = document.getElementById('btn-salvar-comunicados');
+    btn.disabled = true; btn.textContent = 'Salvando... ⏳';
+    try {
+        const dias = {};
+        document.querySelectorAll('.com-dia-texto').forEach(t => {
+            const i = t.dataset.dia;
+            const chk = document.querySelector(`.com-dia-ativo[data-dia="${i}"]`);
+            dias[i] = { ativo: !!chk?.checked, texto: t.value.trim().slice(0, 220) };
+        });
+        const fixo = {
+            ativo: !!document.getElementById('com-fixo-ativo')?.checked,
+            texto: (document.getElementById('com-fixo-texto')?.value || '').trim().slice(0, 220)
+        };
+        await setDoc(doc(db, 'loja', 'comunicados'), { dias, fixo, atualizadoEm: Date.now() }, { merge: true });
+        showToast('📢 Comunicados atualizados!');
+    } catch (e) {
+        showToast('Erro ao salvar comunicados.', true);
+    } finally {
+        btn.disabled = false; btn.textContent = '💾 Gravar Comunicados';
+    }
+};
+document.getElementById('btn-salvar-comunicados')?.addEventListener('click', salvarComunicados);
+
+// =====================================================================
+// BALANÇO GERAL — carrega TODOS os pedidos do período (inclusive
+// arquivados), porque o Kanban só traz os que estão em andamento.
+// Carrega sob demanda para não gastar leituras à toa.
+// =====================================================================
+let balancoCache = [];
+
+const carregarBalanco = async (dias = 30) => {
+    const alvo = document.getElementById('balanco-conteudo');
+    if (!alvo) return;
+    alvo.innerHTML = '<p style="color:var(--text-light)">Somando os números... ⏳</p>';
+
+    const desde = new Date(Date.now() - dias * 86400000).toISOString();
+    try {
+        const q = query(collection(db, 'pedidos'), where('data', '>=', desde), orderBy('data', 'desc'), limit(800));
+
+        // Busca única. Se o seu firebase.js ainda não exporta getDocs,
+        // cai automaticamente num onSnapshot que se desinscreve na 1ª resposta —
+        // assim funciona sem você precisar editar o firebase.js.
+        const mod = await import('./firebase.js');
+        const snap = mod.getDocs
+            ? await mod.getDocs(q)
+            : await new Promise((resolve, reject) => {
+                const parar = onSnapshot(q, (s) => { parar(); resolve(s); }, reject);
+              });
+
+        balancoCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        renderBalanco(dias);
+    } catch (e) {
+        console.error(e);
+        alvo.innerHTML = `<p style="color:var(--danger)">Não consegui carregar o balanço.<br><small>Se o console mostrar um link de índice do Firestore, clique nele para criar.</small></p>`;
+    }
+};
+
+const renderBalanco = async (dias) => {
+    const alvo = document.getElementById('balanco-conteudo');
+    const validos = balancoCache.filter(p => p.status !== 'cancelado');
+
+    const hojeStr = new Date().toDateString();
+    const inicioSemana = Date.now() - 7 * 86400000;
+
+    let totalPeriodo = 0, totalHoje = 0, totalSemana = 0;
+    let nHoje = 0, nSemana = 0;
+    let aReceber = 0, jaPago = 0;
+    const porDia = {};
+    const porProduto = {};
+
+    validos.forEach(p => {
+        const v = Number(p.total) || 0;
+        const d = new Date(p.data);
+        totalPeriodo += v;
+        if (!isNaN(d.getTime())) {
+            if (d.toDateString() === hojeStr) { totalHoje += v; nHoje++; }
+            if (d.getTime() >= inicioSemana) { totalSemana += v; nSemana++; }
+            const rot = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            porDia[rot] = (porDia[rot] || 0) + v;
+        }
+        if (p.pagamento?.status === 'PAID') jaPago += v; else aReceber += v;
+        (p.itens || []).forEach(i => {
+            const q = Number(i.qtd) || 0;
+            porProduto[i.nome] = (porProduto[i.nome] || 0) + q;
+        });
+    });
+
+    const ticket = validos.length ? totalPeriodo / validos.length : 0;
+
+    const cartao = (rotulo, valor, sub, cor) => `
+        <article class="stat-box" style="border-left:4px solid ${cor};">
+            <span class="stat-label">${rotulo}</span>
+            <strong class="stat-val">${valor}</strong>
+            ${sub ? `<small style="color:var(--text-light); font-size:.78rem;">${sub}</small>` : ''}
+        </article>`;
+
+    alvo.innerHTML = `
+        <div class="stats-grid" style="margin-bottom:20px;">
+            ${cartao('HOJE', fmt(totalHoje), `${nHoje} pedido(s)`, 'var(--success)')}
+            ${cartao('ÚLTIMOS 7 DIAS', fmt(totalSemana), `${nSemana} pedido(s)`, 'var(--forest)')}
+            ${cartao(`PERÍODO (${dias} DIAS)`, fmt(totalPeriodo), `${validos.length} pedido(s)`, 'var(--info)')}
+            ${cartao('TICKET MÉDIO', fmt(ticket), 'por pedido', 'var(--earth)')}
+        </div>
+        <div class="stats-grid" style="margin-bottom:20px;">
+            ${cartao('JÁ PAGO (PIX)', fmt(jaPago), 'confirmado pelo banco', 'var(--success)')}
+            ${cartao('A RECEBER', fmt(aReceber), 'dinheiro, cartão ou PIX pendente', 'var(--warning)')}
+        </div>
+        <div class="chart-wrapper" style="margin-bottom:20px;">
+            <h3>📈 Faturamento por dia</h3>
+            <canvas id="balanco-chart" height="90"></canvas>
+        </div>
+        <div class="ranking-box">
+            <h3>🥇 Mais vendidos no período</h3>
+            <div id="balanco-ranking"></div>
+        </div>`;
+
+    // Gráfico em ordem cronológica
+    const rotulos = Object.keys(porDia).reverse();
+    const valores = Object.values(porDia).reverse();
+    const ChartLib = await carregarChart();
+    if (window.graficoBalanco) window.graficoBalanco.destroy();
+    window.graficoBalanco = new ChartLib(document.getElementById('balanco-chart').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: rotulos,
+            datasets: [{ label: 'R$', data: valores, backgroundColor: 'rgba(74,148,103,.75)', borderRadius: 6 }]
+        },
+        options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: '#f2ede3' } }, x: { grid: { display: false } } } }
+    });
+
+    renderRankingGenerico(porProduto, 'balanco-ranking',
+        val => val % 1 !== 0 ? `${val.toFixed(2).replace('.', ',')} kg` : `${val} un.`);
+};
+
+document.getElementById('balanco-periodo')?.addEventListener('change', (e) => {
+    carregarBalanco(Number(e.target.value));
+});
+document.getElementById('btn-atualizar-balanco')?.addEventListener('click', () => {
+    carregarBalanco(Number(document.getElementById('balanco-periodo')?.value || 30));
 });
 
 document.getElementById('btn-salvar-config').addEventListener('click', async () => {
