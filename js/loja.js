@@ -510,30 +510,147 @@ const injetarModalDetalheSeNecessario = () => {
     });
 };
 
+// =====================================================================
+// MEUS PEDIDOS
+//
+// CORRIGIDO — ANTES ESTA TELA MOSTRAVA O VALOR ERRADO.
+// O total ficava guardado no aparelho no momento do envio. Quando a banca
+// pesava os itens, o valor certo era gravado no banco, mas a tela continuava
+// exibindo a estimativa antiga — a cliente via um número diferente do que
+// realmente pagou. Agora buscamos o pedido no banco e mostramos o valor real.
+//
+// Também ganhou: linha do tempo do status e cancelamento na janela inicial.
+// =====================================================================
+
+const MINUTOS_PARA_CANCELAR = 5;
+
+const ETAPAS = [
+    { chave: 'recebido',   rotulo: 'Recebido',   emoji: '📝' },
+    { chave: 'separando',  rotulo: 'Separando',  emoji: '⚖️' },
+    { chave: 'a_caminho',  rotulo: 'A caminho',  emoji: '🛵' },
+];
+
+// Traduz o status do banco para a etapa da linha do tempo
+const etapaDoStatus = (status) => {
+    if (status === 'enviado') return 2;
+    if (status === 'preparando') return 1;
+    if (status === 'aguardando_pesagem') return 1;
+    return 0; // pendente, aguardando_pagamento
+};
+
+const ROTULO_STATUS = {
+    pendente: 'Pedido recebido',
+    aguardando_pagamento: 'Aguardando o pagamento',
+    aguardando_pesagem: 'Na balança',
+    preparando: 'Separando seu pedido',
+    enviado: 'Saiu para entrega',
+    cancelado: 'Pedido cancelado',
+    arquivado: 'Pedido concluído',
+};
+
+const renderLinhaDoTempo = (status) => {
+    if (status === 'cancelado' || status === 'arquivado') return '';
+    const atual = etapaDoStatus(status);
+    const passos = ETAPAS.map((et, i) => {
+        const feito = i <= atual;
+        return `
+            <div class="timeline-passo ${feito ? 'feito' : ''} ${i === atual ? 'atual' : ''}">
+                <span class="timeline-bola">${et.emoji}</span>
+                <span class="timeline-rotulo">${et.rotulo}</span>
+            </div>`;
+    }).join('<span class="timeline-linha"></span>');
+    return `<div class="timeline">${passos}</div>`;
+};
+
 const renderHistorico = async () => {
     const meusPedidos = JSON.parse(localStorage.getItem('banca_meus_pedidos') || '[]');
     const lista = document.getElementById('lista-meus-pedidos');
-    
-    if(meusPedidos.length === 0) { lista.innerHTML = `<div class="empty-state">${iconeHistoricoVazio}<p>Sem pedidos</p></div>`; return; }
+    if (!lista) return;
 
-    let statusRealTime = 'pendente'; const ultimoPedido = meusPedidos[0];
-    if (Date.now() - new Date(ultimoPedido.data).getTime() < 86400000) {
+    if (meusPedidos.length === 0) {
+        lista.innerHTML = `<div class="empty-state">${iconeHistoricoVazio}<p>Sem pedidos</p></div>`;
+        return;
+    }
+
+    // Busca no banco os pedidos das últimas 24h, para pegar status e valor
+    // atualizados. Os mais antigos ficam com o que está salvo no aparelho.
+    const recentes = meusPedidos.filter(p => Date.now() - new Date(p.data).getTime() < 86400000);
+    const doBanco = {};
+
+    await Promise.all(recentes.slice(0, 5).map(async (p) => {
         try {
-            const docRef = await getDoc(doc(db, "pedidos", ultimoPedido.id));
-            if(docRef.exists()) statusRealTime = docRef.data().status;
-        } catch(e) {}
-    } else { statusRealTime = 'arquivado'; }
+            const ref = await getDoc(doc(db, "pedidos", p.id));
+            if (ref.exists()) doBanco[p.id] = ref.data();
+        } catch (e) { /* offline ou sem permissão: usa o que tem no aparelho */ }
+    }));
 
-    lista.innerHTML = meusPedidos.map(p => `
-        <article style="border: 1px solid var(--parchment); border-radius: 12px; padding: 16px; margin-bottom: 12px; background:var(--warm-white);">
-            <div style="display:flex; justify-content: space-between; margin-bottom: 8px;">
-                <strong style="color:var(--forest);">${new Date(p.data).toLocaleDateString('pt-BR')}</strong>
-                <span style="color:var(--forest); font-weight:900;">${fmt(p.total)}</span>
+    lista.innerHTML = meusPedidos.map(p => {
+        const vivo = doBanco[p.id];
+        const antigo = Date.now() - new Date(p.data).getTime() >= 86400000;
+        const status = vivo ? vivo.status : (antigo ? 'arquivado' : 'pendente');
+
+        // Valor: o do banco é a verdade. O do aparelho é só estimativa.
+        const totalReal = vivo && typeof vivo.total === 'number' ? vivo.total : p.total;
+        const foiPesado = vivo && vivo.temItensAPesar === false && p.total !== totalReal;
+
+        const minutos = (Date.now() - new Date(p.data).getTime()) / 60000;
+        const podeCancelar = vivo
+            && ['pendente', 'aguardando_pesagem', 'aguardando_pagamento'].includes(status)
+            && !(vivo.pagamento && vivo.pagamento.status === 'PAID')
+            && minutos <= MINUTOS_PARA_CANCELAR;
+
+        const corStatus = status === 'cancelado' ? 'var(--danger)'
+                        : status === 'enviado' ? 'var(--success)'
+                        : 'var(--forest)';
+
+        return `
+        <article class="pedido-card ${status === 'cancelado' ? 'cancelado' : ''}">
+            <div class="pedido-topo">
+                <strong>${new Date(p.data).toLocaleDateString('pt-BR')}</strong>
+                <span class="pedido-total">${fmt(totalReal)}</span>
             </div>
-            <p style="font-size:0.9rem; color:var(--text-mid); line-height:1.4;">${escapeHTML(p.descItens || 'Itens do pedido')}</p>
-            <button class="btn btn-outline w-100 mt-3" data-action="repetir-pedido" data-id="${p.id}">Repetir Pedido</button>
-        </article>
-    `).join('');
+
+            <span class="pedido-status" style="color:${corStatus};">
+                ${escapeHTML(ROTULO_STATUS[status] || status)}
+            </span>
+
+            ${foiPesado ? '<p class="pedido-aviso-peso">⚖️ Valor final já com os itens pesados</p>' : ''}
+
+            ${renderLinhaDoTempo(status)}
+
+            <p class="pedido-itens">${escapeHTML(p.descItens || 'Itens do pedido')}</p>
+
+            <div class="pedido-acoes">
+                <button class="btn btn-outline flex-1" data-action="repetir-pedido" data-id="${escapeHTML(p.id)}">Repetir Pedido</button>
+                ${podeCancelar ? `<button class="btn btn-danger" data-action="cancelar-pedido" data-id="${escapeHTML(p.id)}">Cancelar</button>` : ''}
+            </div>
+        </article>`;
+    }).join('');
+};
+
+// Cancelamento pela loja: o servidor confere prazo, dono e devolve o estoque.
+const cancelarPedido = async (pedidoId) => {
+    const ok = await customConfirm(
+        'Cancelar este pedido?',
+        'Os itens voltam para o estoque da banca. Se quiser pedir de novo depois, sem problema.'
+    );
+    if (!ok) return;
+
+    showToast('Cancelando...');
+    try {
+        const resp = await fetch('/api/cancelar-pedido', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pedidoId, userId: STATE.uid })
+        });
+        const dados = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(dados.error || 'Não foi possível cancelar.');
+
+        showToast('✅ Pedido cancelado');
+        renderHistorico();
+    } catch (e) {
+        showToast(e.message, true);
+    }
 };
 
 const repetirPedido = (pedId) => {
@@ -649,6 +766,7 @@ document.body.addEventListener('click', async (e) => {
         }
         else if (action === 'open-historico') { renderHistorico(); openModal('modal-historico'); }
         else if (action === 'repetir-pedido') { repetirPedido(id); }
+        else if (action === 'cancelar-pedido') { cancelarPedido(id); }
         else if (action === 'toggle-troco') {
             const valor = actionTarget.dataset.value;
             const inputArea = document.getElementById('input-troco-area'); const cliTroco = document.getElementById('cli-troco');
@@ -727,6 +845,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     const pag = document.getElementById('cli-pagamento').value;
     const trocoRaw = document.getElementById('cli-troco')?.value.trim();
     const obs = document.getElementById('cli-obs').value.trim();
+    const cupom = (document.getElementById('cli-cupom')?.value || '').trim().toUpperCase();
     
     if(!nome || !quadra || !lote) return showToast("⚠️ Preencha nome, quadra e lote!", true);
     btn.disabled = true; btn.textContent = 'A processar pedido... ⏳';
@@ -748,7 +867,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         });
 
         const payload = {
-            nome, quadra, lote, telefone, pag, troco: trocoRaw, obs,
+            nome, quadra, lote, telefone, pag, troco: trocoRaw, obs, cupom,
             itens: itensFormatados,
             clientTotal: totalEstimado, // Manda só o valor do que é exato
             status: itensFormatados.some(i => i.aPesar) ? 'aguardando_pesagem' : 'pendente', // Avisa o Admin!
@@ -780,7 +899,11 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         closeModal('modal-checkout');
         setTimeout(() => openModal('modal-sucesso'), 300); 
         STATE.carrinho = []; dbStorage.set('banca_cart', {v: CART_VERSION, items: []});
-        renderCarrinhoCompleto(); document.getElementById('cli-obs').value = ''; 
+        renderCarrinhoCompleto();
+        document.getElementById('cli-obs').value = '';
+        const campoCupom = document.getElementById('cli-cupom');
+        if (campoCupom) campoCupom.value = '';
+        
 
     } catch(err) {
         showToast(err.message, true);
@@ -817,10 +940,26 @@ const iniciarComunicados = () => {
     const unsub = onSnapshot(doc(db, "loja", "comunicados"), (snap) => {
         if (!snap.exists()) { alvo.classList.remove('visivel'); return; }
         const dados = snap.data();
+
+        // Um aviso pode ter data de validade. Depois dela, some sozinho —
+        // assim uma oferta "de hoje" não fica no ar semana que vem porque
+        // ninguém lembrou de desligar.
+        const noPrazo = (bloco) => {
+            if (!bloco?.validoAte) return true;          // sem validade = vale sempre
+            // A data chega como "2026-07-24" (só o dia). Interpretada crua, ela
+            // vira meia-noite em UTC — que no Brasil é 21h do dia ANTERIOR, e o
+            // aviso sumiria um dia antes do combinado. Por isso fixamos o fim
+            // do dia no horário de Brasília.
+            const limite = new Date(`${bloco.validoAte}T23:59:59-03:00`);
+            if (isNaN(limite)) return true;
+            return new Date() <= limite;
+        };
+
         // O aviso fixo tem prioridade sobre a mensagem do dia
         const doDia = dados.dias?.[String(new Date().getDay())];
-        const escolhido = (dados.fixo?.ativo && dados.fixo?.texto) ? dados.fixo.texto
-                        : (doDia?.ativo && doDia?.texto) ? doDia.texto : '';
+        const fixoVale = dados.fixo?.ativo && dados.fixo?.texto && noPrazo(dados.fixo);
+        const diaVale  = doDia?.ativo && doDia?.texto && noPrazo(doDia);
+        const escolhido = fixoVale ? dados.fixo.texto : (diaVale ? doDia.texto : '');
         if (escolhido) { alvo.textContent = escolhido; alvo.classList.add('visivel'); }
         else { alvo.classList.remove('visivel'); }
     });
