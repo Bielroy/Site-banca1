@@ -186,7 +186,7 @@ const renderCarrinhoCompleto = () => {
 
         html += `
         <article class="carrinho-item" id="cart-row-${item.id}">
-            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(item.foto)}" loading="lazy" width="48" height="48">` : `<div class="item-emoji skeleton"></div>`}</div>
+            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(item.foto)}" alt="${escapeHTML(item.nome)}" loading="lazy" width="48" height="48">` : `<div class="item-emoji skeleton"></div>`}</div>
             <div class="item-meio">
                 <h3 class="item-nome">${escapeHTML(item.nome)} ${item.tipo === 'un' && isFracionavel(item.unidade) ? '<span style="font-size:0.75rem; color:var(--text-mid);">(Unidades)</span>' : ''}</h3>
                 <div class="qtd-ctrl">
@@ -252,7 +252,7 @@ const construirCardsIniciais = () => {
         return `
         <article class="produto-card" data-action="detalhe" data-id="${p.id}" data-cat="${escapeHTML(p.cat)}" data-nome="${p.nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()}" style="display: flex;">
             <div class="produto-img-wrap">
-                ${p.foto ? `<img src="${escapeHTML(p.foto)}" loading="lazy" width="200" height="200">` : '<div class="produto-img-placeholder skeleton" style="width:100%;height:100%"></div>'}
+                ${p.foto ? `<img src="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="lazy" width="200" height="200">` : '<div class="produto-img-placeholder skeleton" style="width:100%;height:100%"></div>'}
                 <button class="btn-fav ${favActive}" data-action="fav" data-id="${p.id}">❤️</button>
                 <span class="produto-unidade-tag">${escapeHTML(p.unidade || 'un')}</span>
                 <div class="card-badge ${qtdNoCarrinho > 0 ? 'visivel':''}" id="badge-${p.id}">${badgeTexto}</div>
@@ -510,6 +510,83 @@ const injetarModalDetalheSeNecessario = () => {
     });
 };
 
+
+// =====================================================================
+// PONTE COM O SERVIDOR
+//
+// Duas coisas que faltavam e apareciam para a cliente como erro cru:
+//
+// 1) TOKEN — as APIs agora provam quem está pedindo pelo token assinado
+//    do Firebase, em vez de acreditar num campo enviado pelo navegador.
+//    Esta função pega o token da sessão anônima atual.
+//
+// 2) MENSAGEM DE ERRO — quando a internet caía no meio do envio, o
+//    navegador devolvia "Failed to fetch" e isso ia direto para a tela,
+//    em inglês. Agora traduzimos para algo que a pessoa entende e possa
+//    resolver.
+// =====================================================================
+
+const pegarTokenSessao = async () => {
+    try {
+        const usuario = auth.currentUser;
+        if (!usuario) return '';
+        return await usuario.getIdToken();
+    } catch (e) {
+        return ''; // sem token a venda continua; só o cancelamento fica indisponível
+    }
+};
+
+const MSG_SEM_CONEXAO = '📵 Sem conexão agora. Verifique a internet e tente de novo.';
+
+// Traduz falhas técnicas em frases que ajudam a pessoa a agir
+const mensagemDeErroAmigavel = (erro) => {
+    let texto = String(erro?.message || '').trim();
+    // String(new Error('')) devolve o texto "Error", que não diz nada para a
+    // cliente. Se não houver mensagem de verdade, cai no texto genérico.
+    if (!texto || texto === 'Error') texto = '';
+
+    // "Failed to fetch" / "Load failed" / "NetworkError" = internet caiu
+    if (/failed to fetch|load failed|networkerror|network request failed/i.test(texto)) {
+        return MSG_SEM_CONEXAO;
+    }
+    if (/timeout|timed out|aborted/i.test(texto)) {
+        return '⏳ O servidor demorou para responder. Tente de novo em instantes.';
+    }
+    // Os erros que o próprio servidor escreveu já vêm em português e são
+    // úteis ("Este cupom já venceu", "Batata está esgotada"): repassa direto.
+    if (texto) return texto;
+    return 'Não consegui concluir agora. Tente de novo, por favor.';
+};
+
+// fetch com aviso antecipado de offline e tempo limite
+const chamarApi = async (url, corpo, { comToken = false, limiteMs = 20000 } = {}) => {
+    if (!navigator.onLine) throw new Error(MSG_SEM_CONEXAO);
+
+    const cabecalhos = { 'Content-Type': 'application/json' };
+    if (comToken) {
+        const token = await pegarTokenSessao();
+        if (token) cabecalhos['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Sem isto, um celular com sinal fraco fica "processando" para sempre
+    const controle = new AbortController();
+    const relogio = setTimeout(() => controle.abort(), limiteMs);
+
+    try {
+        const resposta = await fetch(url, {
+            method: 'POST',
+            headers: cabecalhos,
+            body: JSON.stringify(corpo),
+            signal: controle.signal,
+        });
+        const dados = await resposta.json().catch(() => ({}));
+        if (!resposta.ok) throw new Error(dados.error || 'Não foi possível concluir a operação.');
+        return dados;
+    } finally {
+        clearTimeout(relogio);
+    }
+};
+
 // =====================================================================
 // MEUS PEDIDOS
 //
@@ -638,18 +715,13 @@ const cancelarPedido = async (pedidoId) => {
 
     showToast('Cancelando...');
     try {
-        const resp = await fetch('/api/cancelar-pedido', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pedidoId, userId: STATE.uid })
-        });
-        const dados = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(dados.error || 'Não foi possível cancelar.');
-
+        // comToken: o servidor exige o token do Firebase para provar que o
+        // pedido é desta sessão. Sem isso ele recusa, e é assim que deve ser.
+        await chamarApi('/api/cancelar-pedido', { pedidoId }, { comToken: true });
         showToast('✅ Pedido cancelado');
         renderHistorico();
     } catch (e) {
-        showToast(e.message, true);
+        showToast(mensagemDeErroAmigavel(e), true);
     }
 };
 
@@ -871,16 +943,14 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             itens: itensFormatados,
             clientTotal: totalEstimado, // Manda só o valor do que é exato
             status: itensFormatados.some(i => i.aPesar) ? 'aguardando_pesagem' : 'pendente', // Avisa o Admin!
-            idempotencyKey: STATE.checkoutSessionId, userId: STATE.uid 
+            idempotencyKey: STATE.checkoutSessionId
+            // userId saiu daqui de propósito: o servidor tira o dono do pedido
+            // do token de autenticação, que é assinado e não pode ser forjado.
         };
 
-        const response = await fetch('/api/checkout', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-        });
-
-        let data = {};
-        try { data = await response.json(); } catch(err){}
-        if (!response.ok) throw new Error(data.error || "Ocorreu um erro ao enviar o pedido.");
+        // comToken faz a requisição levar o token da sessão. É ele que permite
+        // à cliente cancelar o pedido depois pela própria loja.
+        const data = await chamarApi('/api/checkout', payload, { comToken: true });
 
         const clientes = JSON.parse(localStorage.getItem('banca_clientes') || '[]');
         const idx = clientes.findIndex(c => c.nome.toLowerCase() === nome.toLowerCase());
@@ -906,7 +976,8 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         
 
     } catch(err) {
-        showToast(err.message, true);
+        // Antes ia "Failed to fetch" cru, em inglês, para a tela da cliente
+        showToast(mensagemDeErroAmigavel(err), true);
     } finally {
         btn.disabled = false; btn.textContent = 'Enviar Pedido 🚀';
     }
