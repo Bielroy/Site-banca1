@@ -145,7 +145,7 @@ module.exports = async function handler(req, res) {
   catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
 
   // Validação de entrada
-  let { nome, quadra, lote, pag, troco, obs, cupom, itens, idempotencyKey, userId } = req.body || {};
+  let { nome, quadra, lote, telefone, pag, troco, obs, cupom, itens, idempotencyKey, userId } = req.body || {};
   if (!idempotencyKey || !nome || !quadra || !lote || !Array.isArray(itens) || itens.length === 0) {
     return res.status(400).json({ error: 'Dados do pedido incompletos.' });
   }
@@ -153,6 +153,8 @@ module.exports = async function handler(req, res) {
 
   nome   = sanitizeString(nome, 100);
   quadra = sanitizeString(quadra, 30);
+  // Telefone é opcional; guardamos só dígitos para montar o link do WhatsApp depois.
+  telefone = String(telefone || '').replace(/\D/g, '').slice(0, 13);
   lote   = sanitizeString(lote, 30);
   pag    = sanitizeString(pag, 30);
   troco  = sanitizeString(troco, 40);
@@ -243,7 +245,7 @@ module.exports = async function handler(req, res) {
       const dadosPedido = {
         id: pedidoRef.id,
         userId: userId || 'anonimo',
-        nome, quadra, lote, pag, troco: troco || '', obs: obsFinal || '',
+        nome, quadra, lote, telefone: telefone || '', pag, troco: troco || '', obs: obsFinal || '',
         itens: itensValidados,
         total: totalExato,        // total dos itens de valor fechado
         clientTotal: totalExato,  // usado pelo painel de pesagem como base
