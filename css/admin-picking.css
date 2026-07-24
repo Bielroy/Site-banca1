@@ -277,3 +277,32 @@
 @media (prefers-reduced-motion: reduce) {
   .pk-passo, .pk-atalho, .pk-nav, .pk-avancar { transition: none; }
 }
+
+/* ---------- Validade dos comunicados ---------- */
+.com-validade {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: .8rem;
+  color: var(--text-mid);
+  font-weight: 600;
+}
+.com-validade input[type="date"] {
+  padding: 7px 10px;
+  border: 1.5px solid #e0dcd4;
+  border-radius: 8px;
+  background: var(--warm-white);
+  font-size: .85rem;
+  color: var(--text-dark);
+}
+.com-vencido-tag {
+  background: var(--danger, #dc2626);
+  color: #fff;
+  font-size: .62rem;
+  font-weight: 900;
+  padding: 2px 7px;
+  border-radius: 20px;
+  letter-spacing: .5px;
+  vertical-align: middle;
+}
