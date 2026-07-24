@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  sitemap.xml — ARQUIVO NOVO
+
+  O robots.txt do projeto já apontava para este endereço, mas o arquivo
+  não existia: o Google pedia e recebia erro 404. Agora existe.
+
+  O painel admin fica de fora de propósito (é área restrita, e o
+  robots.txt também o bloqueia).
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://www.bancaadairepedrina.com.br/</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://www.bancaadairepedrina.com.br/privacidade.html</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+</urlset>
