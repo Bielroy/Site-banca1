@@ -11,7 +11,8 @@
 //   devolve o estoque na mesma transação.
 //
 //  REGRAS DE CANCELAMENTO
-//   - só quem criou o pedido (mesmo userId anônimo) pode cancelar
+//   - só quem criou o pedido pode cancelar, e isso é provado por TOKEN
+//     do Firebase (não por um campo enviado no corpo da requisição)
 //   - só dentro de MINUTOS_PARA_CANCELAR minutos após o envio
 //   - só se ninguém tiver começado a mexer (status pendente, aguardando
 //     pesagem ou aguardando pagamento)
@@ -25,14 +26,44 @@ const admin = require('firebase-admin');
 const MINUTOS_PARA_CANCELAR = 5;
 const STATUS_CANCELAVEIS = ['pendente', 'aguardando_pesagem', 'aguardando_pagamento'];
 
-const ORIGEM_PADRAO = 'https://site-banca1.vercel.app';
-const aplicarCors = (res) => {
-  const permitida = process.env.ALLOWED_ORIGIN
-    || (process.env.VERCEL_ENV === 'production' ? ORIGEM_PADRAO : '*');
-  res.setHeader('Access-Control-Allow-Origin', permitida);
+// ---------------------------------------------------------------------
+// CORS — lista de origens confiáveis
+//
+// POR QUE NÃO DEPENDE MAIS DE VARIÁVEL DE AMBIENTE:
+// a versão anterior usava ALLOWED_ORIGIN e, se ela estivesse errada ou
+// ausente, o site bloqueava a si mesmo — o navegador da cliente manda a
+// requisição de um domínio e o servidor autoriza outro. Como a banca tem
+// três endereços válidos (domínio próprio com e sem "www", mais o da
+// Vercel), agora conferimos de qual deles a chamada veio e devolvemos
+// exatamente esse. Funciona nos três sem configurar nada.
+//
+// ALLOWED_ORIGIN continua sendo lida e ACRESCENTA origens à lista
+// (aceita várias separadas por vírgula), mas não é mais obrigatória.
+// ---------------------------------------------------------------------
+const ORIGENS_CONFIAVEIS = [
+  'https://www.bancaadairepedrina.com.br',
+  'https://bancaadairepedrina.com.br',
+  'https://site-banca1.vercel.app',
+];
+
+const aplicarCors = (req, res, metodos) => {
+  const extras = String(process.env.ALLOWED_ORIGIN || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+  const permitidas = ORIGENS_CONFIAVEIS.concat(extras);
+  const origem = req.headers && req.headers.origin;
+
+  if (origem && permitidas.indexOf(origem) !== -1) {
+    res.setHeader('Access-Control-Allow-Origin', origem);
+  } else if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') {
+    res.setHeader('Access-Control-Allow-Origin', '*'); // preview e dev
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', permitidas[0]);
+  }
+
+  // Sem o Vary, um proxy poderia servir a resposta de um domínio para outro.
   res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', metodos || 'OPTIONS,POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 };
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
@@ -54,15 +85,42 @@ const bootFirebase = () => {
 const fixFloat = (n) => Math.round(n * 1000) / 1000;
 
 module.exports = async function handler(req, res) {
-  aplicarCors(res);
+  aplicarCors(req, res, 'OPTIONS,POST');
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
 
-  const { pedidoId, userId } = req.body || {};
+  const { pedidoId } = req.body || {};
   if (!pedidoId) return res.status(400).json({ error: 'pedidoId é obrigatório.' });
 
   try { bootFirebase(); }
   catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
+
+  // -------------------------------------------------------------------
+  // QUEM ESTÁ PEDINDO O CANCELAMENTO?
+  //
+  // A versão anterior aceitava um `userId` enviado no corpo da requisição
+  // e só comparava texto com texto. Isso é fraco: quem descobrisse o
+  // userId de outra pessoa (num link compartilhado sem querer, por
+  // exemplo) conseguiria cancelar o pedido dela.
+  //
+  // Agora exigimos o token de autenticação do Firebase. Ele é assinado
+  // pelo Google, expira sozinho e é impossível de forjar. O uid sai de
+  // DENTRO do token verificado — nunca do que o navegador afirmou ser.
+  // -------------------------------------------------------------------
+  const cabecalho = String((req.headers && req.headers.authorization) || '');
+  const token = cabecalho.startsWith('Bearer ') ? cabecalho.slice(7).trim() : '';
+
+  if (!token) {
+    return res.status(401).json({ error: 'Sessão não identificada. Recarregue a página e tente de novo.' });
+  }
+
+  let uidVerificado;
+  try {
+    const decodificado = await admin.auth().verifyIdToken(token);
+    uidVerificado = decodificado.uid;
+  } catch (e) {
+    return res.status(401).json({ error: 'Sessão expirada. Recarregue a página e tente de novo.' });
+  }
 
   try {
     const resultado = await db.runTransaction(async (t) => {
@@ -72,9 +130,19 @@ module.exports = async function handler(req, res) {
 
       const pedido = pedidoSnap.data();
 
-      // Só a dona do pedido cancela o próprio pedido
-      if (pedido.userId && pedido.userId !== 'anonimo' && pedido.userId !== userId) {
-        throw new Error('Este pedido não pertence a este dispositivo.');
+      // Só a dona do pedido cancela o próprio pedido.
+      // O uid vem do token verificado, não do corpo da requisição.
+      //
+      // Pedidos antigos (feitos antes desta versão) podem ter sido gravados
+      // com 'anonimo' no lugar do uid. Nesses casos não há como provar quem
+      // é a dona, então o cancelamento automático é recusado — de propósito.
+      // É melhor recusar e mandar chamar a banca do que arriscar cancelar o
+      // pedido da pessoa errada.
+      if (!pedido.userId || pedido.userId === 'anonimo') {
+        throw new Error('Não consigo confirmar que este pedido é seu. Chame a banca no WhatsApp, por favor.');
+      }
+      if (pedido.userId !== uidVerificado) {
+        throw new Error('Este pedido não pertence a esta sessão.');
       }
 
       if (pedido.status === 'cancelado') {
