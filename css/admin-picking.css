@@ -306,3 +306,93 @@
   letter-spacing: .5px;
   vertical-align: middle;
 }
+
+/* =====================================================================
+   CUPONS DE DESCONTO
+   Estes estilos faltavam: a aba foi entregue antes sem CSS nenhum,
+   então os cartões apareciam como texto solto, sem caixa nem cor.
+   ===================================================================== */
+
+.cupom-form {
+  background: var(--warm-white, #fefcf8);
+  border: 1px solid var(--parchment, #f2ede3);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.cupom-card {
+  border: 1px solid var(--parchment, #f2ede3);
+  border-left: 5px solid var(--leaf, #4a9467);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 12px;
+  background: var(--warm-white, #fefcf8);
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition);
+}
+/* Cupom desligado, vencido ou esgotado fica visivelmente apagado,
+   para não dar a impressão de que ainda está valendo. */
+.cupom-card.inativo {
+  border-left-color: var(--disabled, #94a3b8);
+  opacity: .68;
+  background: var(--parchment, #f2ede3);
+}
+
+.cupom-card-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cupom-codigo {
+  font-family: 'DejaVu Sans Mono', ui-monospace, monospace;
+  font-size: 1.06rem;
+  font-weight: 900;
+  letter-spacing: 1px;
+  color: var(--forest, #1a3a2a);
+  word-break: break-all;
+}
+
+.cupom-tag {
+  flex-shrink: 0;
+  background: var(--disabled, #94a3b8);
+  color: #fff;
+  font-size: .62rem;
+  font-weight: 900;
+  letter-spacing: .6px;
+  padding: 4px 9px;
+  border-radius: 20px;
+}
+.cupom-tag.ativo { background: var(--success, #16a34a); }
+
+.cupom-desconto {
+  margin-top: 7px;
+  font-size: .96rem;
+  font-weight: 700;
+  color: var(--earth, #c4773a);
+}
+
+.cupom-meta {
+  margin-top: 5px;
+  font-size: .8rem;
+  color: var(--text-light, #707065);
+  line-height: 1.55;
+}
+
+.cupom-acoes {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.cupom-acoes .btn {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: .86rem;
+}
+
+@media (max-width: 600px) {
+  .cupom-form { padding: 16px; }
+  .cupom-card-topo { flex-wrap: wrap; }
+}
