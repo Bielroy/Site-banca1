@@ -136,6 +136,7 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
         if (e.target.dataset.aba === 'relatorios') renderRelatoriosMaster();
         if (e.target.dataset.aba === 'balanco') carregarBalanco(Number(document.getElementById('balanco-periodo')?.value || 30));
         if (e.target.dataset.aba === 'comunicados') renderComunicados();
+        if (e.target.dataset.aba === 'cupons') renderCupons();
     }
 });
 
@@ -253,6 +254,8 @@ const iniciarRealTimeSync = () => {
         renderComunicados();
     });
     unsubscribes.push(unsubComunicados);
+
+    iniciarCupons();
 
     // ATENÇÃO: esta consulta combina "where in" + "orderBy", o que exige um
     // ÍNDICE COMPOSTO no Firestore. Se aparecer erro no console com um link,
@@ -932,6 +935,26 @@ document.body.addEventListener('click', async (e) => {
             showToast(`Pedido movido para: ${nextStatus.toUpperCase()}`);
         }
 
+        else if (action === 'toggle-cupom') {
+            const codigo = target.dataset.id;
+            const atual = cuponsAtuais.find(c => c.codigo === codigo);
+            const ligar = atual?.ativo === false;
+            target.disabled = true;
+            await setDoc(doc(db, 'cupons', codigo), { ativo: ligar }, { merge: true });
+            showToast(ligar ? `Cupom ${codigo} ligado` : `Cupom ${codigo} desligado`);
+        }
+
+        else if (action === 'excluir-cupom') {
+            const codigo = target.dataset.id;
+            if (await customConfirm(
+                `Excluir o cupom ${codigo}?`,
+                'Quem já usou continua com o desconto no pedido. Novos pedidos não vão mais aceitar este código.'
+            )) {
+                await deleteDoc(doc(db, 'cupons', codigo));
+                showToast(`Cupom ${codigo} excluído`);
+            }
+        }
+
         else if (action === 'excluir-pedido') {
             const id = target.dataset.id;
             if (await customConfirm("Concluir e Arquivar", "Deseja finalizar este pedido e retirá-lo da logística visual? (Os dados financeiros serão mantidos).")) {
@@ -1395,12 +1418,161 @@ document.getElementById('btn-limpar-hist').addEventListener('click', async () =>
 });
 
 
+
+// =====================================================================
+// CUPONS DE DESCONTO
+//
+// Substituem o cupom que antes estava fixo no código do servidor
+// ('IA-DESCONTO-10'), que dava 10% para sempre, sem validade e sem limite —
+// e que não aparecia em tela nenhuma, então só era alcançável por quem
+// chamasse a API por fora do site.
+//
+// Agora cada cupom é um documento em "cupons", com o código como ID.
+// Quem valida é o /api/checkout: o navegador não tem permissão de ler esta
+// coleção, justamente para ninguém conseguir listar todos os códigos.
+// =====================================================================
+let cuponsAtuais = [];
+
+const iniciarCupons = () => {
+    const unsub = onSnapshot(collection(db, 'cupons'), (snap) => {
+        cuponsAtuais = snap.docs.map(d => ({ codigo: d.id, ...d.data() }));
+        renderCupons();
+    }, (e) => {
+        console.error('cupons:', e);
+        const alvo = document.getElementById('lista-cupons');
+        if (alvo) alvo.innerHTML = '<p style="color:var(--text-light)">Não consegui carregar os cupons.</p>';
+    });
+    unsubscribes.push(unsub);
+};
+
+const cupomVencido = (c) => {
+    if (!c.validoAte) return false;
+    // Mesma regra de fuso usada no servidor (checkout.js), para o painel não
+    // dizer "VENCIDO" enquanto o cupom ainda funciona de verdade.
+    const limite = new Date(`${c.validoAte}T23:59:59-03:00`);
+    if (isNaN(limite)) return false;
+    return new Date() > limite;
+};
+
+const renderCupons = () => {
+    const alvo = document.getElementById('lista-cupons');
+    if (!alvo) return;
+
+    if (cuponsAtuais.length === 0) {
+        alvo.innerHTML = `
+            <div style="text-align:center; padding:30px 20px; color:var(--text-light);">
+                <div style="font-size:2rem; margin-bottom:8px;">🎁</div>
+                <p style="font-weight:700; color:var(--text-mid);">Nenhum cupom criado</p>
+                <p style="font-size:.86rem; margin-top:6px;">Crie um acima para começar a oferecer desconto.</p>
+            </div>`;
+        return;
+    }
+
+    alvo.innerHTML = cuponsAtuais
+        .sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)))
+        .map(c => {
+            const usos = Number(c.usos || 0);
+            const limite = (c.limiteUsos === null || c.limiteUsos === undefined || c.limiteUsos === '')
+                ? null : Number(c.limiteUsos);
+            const esgotado = limite !== null && usos >= limite;
+            const vencido = cupomVencido(c);
+            const desligado = c.ativo === false;
+            const inativo = esgotado || vencido || desligado;
+
+            const desconto = Number(c.percentual) > 0
+                ? `${c.percentual}% de desconto`
+                : Number(c.valorFixo) > 0
+                    ? `${fmt(c.valorFixo)} de desconto`
+                    : 'sem desconto definido';
+
+            let motivo = '';
+            if (desligado) motivo = 'DESLIGADO';
+            else if (vencido) motivo = 'VENCIDO';
+            else if (esgotado) motivo = 'ESGOTADO';
+
+            return `
+            <div class="cupom-card ${inativo ? 'inativo' : ''}">
+                <div class="cupom-card-topo">
+                    <strong class="cupom-codigo">${escapeHTML(c.codigo)}</strong>
+                    ${motivo ? `<span class="cupom-tag">${motivo}</span>` : '<span class="cupom-tag ativo">ATIVO</span>'}
+                </div>
+                <p class="cupom-desconto">${escapeHTML(desconto)}</p>
+                <p class="cupom-meta">
+                    Usado ${usos}${limite !== null ? ` de ${limite}` : ' vez(es)'}
+                    ${Number(c.minimoCompra) > 0 ? ` • mínimo ${fmt(c.minimoCompra)}` : ''}
+                    ${c.validoAte ? ` • até ${new Date(c.validoAte + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}
+                </p>
+                <div class="cupom-acoes">
+                    <button class="btn btn-outline" data-action="toggle-cupom" data-id="${escapeHTML(c.codigo)}">
+                        ${desligado ? 'Ligar' : 'Desligar'}
+                    </button>
+                    <button class="btn btn-danger" data-action="excluir-cupom" data-id="${escapeHTML(c.codigo)}">Excluir</button>
+                </div>
+            </div>`;
+        }).join('');
+};
+
+const salvarCupom = async () => {
+    const btn = document.getElementById('btn-salvar-cupom');
+    const codigo = (document.getElementById('cup-codigo').value || '').trim().toUpperCase();
+
+    if (!/^[A-Z0-9-]{3,40}$/.test(codigo)) {
+        return showToast('O código deve ter de 3 a 40 caracteres: letras, números ou hífen.', true);
+    }
+
+    const percentual = Number(document.getElementById('cup-percentual').value) || 0;
+    const valorFixo = Number(document.getElementById('cup-valorfixo').value) || 0;
+
+    if (percentual <= 0 && valorFixo <= 0) {
+        return showToast('Defina o desconto: em % ou em reais.', true);
+    }
+    if (percentual > 90) {
+        return showToast('Desconto acima de 90% provavelmente é engano.', true);
+    }
+
+    const limiteRaw = document.getElementById('cup-limite').value;
+
+    btn.disabled = true; btn.textContent = 'Gravando... ⏳';
+    try {
+        await setDoc(doc(db, 'cupons', codigo), {
+            percentual,
+            valorFixo,
+            minimoCompra: Number(document.getElementById('cup-minimo').value) || 0,
+            limiteUsos: limiteRaw === '' ? null : Number(limiteRaw),
+            validoAte: document.getElementById('cup-validade').value || '',
+            ativo: true,
+            criadoEm: new Date().toISOString(),
+        }, { merge: true });   // merge preserva a contagem de usos se já existir
+
+        showToast(`🎁 Cupom ${codigo} gravado!`);
+        ['cup-codigo', 'cup-percentual', 'cup-valorfixo', 'cup-minimo', 'cup-limite', 'cup-validade']
+            .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    } catch (e) {
+        console.error(e);
+        showToast('Erro ao gravar o cupom.', true);
+    } finally {
+        btn.disabled = false; btn.textContent = '💾 Gravar Cupom';
+    }
+};
+
+
 // =====================================================================
 // COMUNICADOS — mensagem automática por dia da semana + aviso fixo
 // Guardado em loja/comunicados. A loja lê e mostra no topo.
 // =====================================================================
 const DIAS_NOMES = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 let comunicadosAtuais = { dias: {}, fixo: { ativo: false, texto: '' } };
+
+// Um comunicado com data passada não aparece mais na loja. O painel avisa
+// disso, senão parece que está no ar e não está.
+const jaVenceu = (bloco) => {
+    if (!bloco?.validoAte) return false;
+    // Fim do dia no horário de Brasília — ver comentário igual no loja.js.
+    const limite = new Date(`${bloco.validoAte}T23:59:59-03:00`);
+    if (isNaN(limite)) return false;
+    return new Date() > limite;
+};
+const SELO_VENCIDO = '<span class="com-vencido-tag">VENCIDO</span>';
 
 const renderComunicados = () => {
     const cont = document.getElementById('lista-comunicados');
@@ -1410,13 +1582,17 @@ const renderComunicados = () => {
     const blocoFixo = `
         <div class="com-dia" style="border-color: var(--earth);">
             <div class="com-dia-topo">
-                <span class="com-dia-nome">📢 Aviso fixo / Oferta do momento</span>
+                <span class="com-dia-nome">📢 Aviso fixo / Oferta do momento ${jaVenceu(comunicadosAtuais.fixo) ? SELO_VENCIDO : ''}</span>
                 <label class="com-switch">
                     <input type="checkbox" id="com-fixo-ativo" ${comunicadosAtuais.fixo?.ativo ? 'checked' : ''}> mostrar
                 </label>
             </div>
             <textarea id="com-fixo-texto" placeholder="Ex: 🍓 Morango na promoção hoje: R$ 8,90 a bandeja!">${escapeHTML(comunicadosAtuais.fixo?.texto || '')}</textarea>
-            <small style="color:var(--text-light); font-size:.78rem;">Aparece sempre que estiver ligado, em qualquer dia. Tem prioridade sobre a mensagem do dia.</small>
+            <label class="com-validade">
+                Some sozinho depois de
+                <input type="date" id="com-fixo-validade" value="${escapeHTML(comunicadosAtuais.fixo?.validoAte || '')}">
+            </label>
+            <small style="color:var(--text-light); font-size:.78rem;">Aparece sempre que estiver ligado, em qualquer dia. Tem prioridade sobre a mensagem do dia. Deixe a data em branco para não expirar.</small>
         </div>`;
 
     const blocosDias = DIAS_NOMES.map((nome, i) => {
@@ -1424,12 +1600,16 @@ const renderComunicados = () => {
         return `
         <div class="com-dia">
             <div class="com-dia-topo">
-                <span class="com-dia-nome">${nome} ${i === hoje ? '<span class="com-hoje-tag">HOJE</span>' : ''}</span>
+                <span class="com-dia-nome">${nome} ${i === hoje ? '<span class="com-hoje-tag">HOJE</span>' : ''} ${jaVenceu(d) ? SELO_VENCIDO : ''}</span>
                 <label class="com-switch">
                     <input type="checkbox" class="com-dia-ativo" data-dia="${i}" ${d.ativo ? 'checked' : ''}> mostrar
                 </label>
             </div>
             <textarea class="com-dia-texto" data-dia="${i}" placeholder="Ex: Chegou verdura fresquinha hoje!">${escapeHTML(d.texto || '')}</textarea>
+            <label class="com-validade">
+                Some sozinho depois de
+                <input type="date" class="com-dia-validade" data-dia="${i}" value="${escapeHTML(d.validoAte || '')}">
+            </label>
         </div>`;
     }).join('');
 
@@ -1437,18 +1617,90 @@ const renderComunicados = () => {
 };
 
 const salvarComunicados = async () => {
-    const btn = document.getElementById('btn-salvar-comunicados');
+    const btn = 
+document.getElementById('btn-salvar-cupom')?.addEventListener('click', salvarCupom);
+
+// ---------------------------------------------------------------------
+// EXPORTAR O BALANÇO
+//
+// Gera um CSV que o Excel e o Google Planilhas abrem direto — é o formato
+// que um contador consegue usar sem instalar nada. Vão duas partes no mesmo
+// arquivo: o resumo por dia e a lista de pedidos do período.
+// ---------------------------------------------------------------------
+document.getElementById('btn-exportar-balanco')?.addEventListener('click', () => {
+    if (!balancoCache || balancoCache.length === 0) {
+        return showToast('Carregue um período antes de exportar.', true);
+    }
+
+    const validos = balancoCache.filter(p => p.status !== 'cancelado');
+
+    // --- Parte 1: total por dia ---
+    const porDia = {};
+    validos.forEach(p => {
+        const dia = String(p.data || '').slice(0, 10);
+        if (!dia) return;
+        if (!porDia[dia]) porDia[dia] = { receita: 0, pedidos: 0 };
+        porDia[dia].receita += Number(p.total) || 0;
+        porDia[dia].pedidos += 1;
+    });
+
+    let csv = 'RESUMO POR DIA\n';
+    csv += 'Dia,Pedidos,Receita\n';
+    Object.keys(porDia).sort().forEach(dia => {
+        const d = porDia[dia];
+        csv += [dia, d.pedidos, d.receita.toFixed(2).replace('.', ',')].map(csvCampo).join(',') + '\n';
+    });
+
+    const receitaTotal = validos.reduce((soma, p) => soma + (Number(p.total) || 0), 0);
+    csv += '\n';
+    csv += ['TOTAL', validos.length, receitaTotal.toFixed(2).replace('.', ',')].map(csvCampo).join(',') + '\n';
+
+    // --- Parte 2: pedido por pedido ---
+    csv += '\nPEDIDOS DO PERÍODO\n';
+    csv += 'Data,Cliente,Quadra,Lote,Status,Pagamento,Pago via PIX,Cupom,Total,Itens\n';
+    validos
+        .slice()
+        .sort((a, b) => String(a.data).localeCompare(String(b.data)))
+        .forEach(p => {
+            const itensTxt = (p.itens || [])
+                .map(i => `${formatarQtdRelatorio(i.qtd, i.unidade)} ${i.nome}`).join(' | ');
+            const pago = p.pagamento && p.pagamento.status === 'PAID' ? 'sim' : 'nao';
+            const cupom = p.cupom && p.cupom.codigo
+                ? `${p.cupom.codigo} (-${Number(p.cupom.desconto || 0).toFixed(2).replace('.', ',')})`
+                : '';
+            csv += [
+                p.data, p.nome, p.quadra, p.lote, p.status, p.pag, pago, cupom,
+                (Number(p.total) || 0).toFixed(2).replace('.', ','), itensTxt
+            ].map(csvCampo).join(',') + '\n';
+        });
+
+    const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8;' }));
+    link.download = `Balanco_Banca_${hoje}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    showToast('📄 Balanço exportado!');
+});
+
+document.getElementById('btn-salvar-comunicados');
     btn.disabled = true; btn.textContent = 'Salvando... ⏳';
     try {
         const dias = {};
         document.querySelectorAll('.com-dia-texto').forEach(t => {
             const i = t.dataset.dia;
             const chk = document.querySelector(`.com-dia-ativo[data-dia="${i}"]`);
-            dias[i] = { ativo: !!chk?.checked, texto: t.value.trim().slice(0, 220) };
+            const val = document.querySelector(`.com-dia-validade[data-dia="${i}"]`);
+            dias[i] = {
+                ativo: !!chk?.checked,
+                texto: t.value.trim().slice(0, 220),
+                validoAte: val?.value || ''   // vazio = não expira
+            };
         });
         const fixo = {
             ativo: !!document.getElementById('com-fixo-ativo')?.checked,
-            texto: (document.getElementById('com-fixo-texto')?.value || '').trim().slice(0, 220)
+            texto: (document.getElementById('com-fixo-texto')?.value || '').trim().slice(0, 220),
+            validoAte: document.getElementById('com-fixo-validade')?.value || ''
         };
         await setDoc(doc(db, 'loja', 'comunicados'), { dias, fixo, atualizadoEm: Date.now() }, { merge: true });
         showToast('📢 Comunicados atualizados!');
