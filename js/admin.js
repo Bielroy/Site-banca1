@@ -685,27 +685,105 @@ const abrirEsteira = (pedido) => {
     renderEsteira();
 };
 
-// Monta a mensagem final que a cliente recebe
+// =====================================================================
+// MENSAGEM PARA A CLIENTE
+// Formatada para o WhatsApp: negrito com *asteriscos*, blocos separados
+// e um emoji por produto para facilitar a leitura no celular.
+// =====================================================================
+
+// Emoji por tipo de produto. A busca é por pedaço do nome já sem acento,
+// então "Tomate Saladete" e "tomatinho cereja" caem os dois em 🍅.
+const EMOJI_PRODUTO = [
+    ['batata doce', '🍠'], ['batata', '🥔'], ['alho', '🧄'], ['cebola', '🧅'],
+    ['tomatinho', '🍅'], ['tomate', '🍅'], ['cenoura', '🥕'], ['alface', '🥬'], ['couve', '🥬'],
+    ['repolho', '🥬'], ['rucula', '🥬'], ['espinafre', '🥬'], ['agriao', '🥬'],
+    ['banana', '🍌'], ['maca', '🍎'], ['laranja', '🍊'], ['tangerina', '🍊'],
+    ['mexerica', '🍊'], ['limao', '🍋'], ['uva', '🍇'], ['morango', '🍓'],
+    ['melancia', '🍉'], ['melao', '🍈'], ['abacaxi', '🍍'], ['manga', '🥭'],
+    ['abacate', '🥑'], ['pepino', '🥒'], ['pimentao', '🫑'], ['pimenta', '🌶️'],
+    ['milho', '🌽'], ['brocolis', '🥦'], ['couve-flor', '🥦'], ['berinjela', '🍆'],
+    ['cogumelo', '🍄'], ['champignon', '🍄'], ['ovo', '🥚'], ['coco', '🥥'],
+    ['pera', '🍐'], ['pessego', '🍑'], ['ameixa', '🍑'], ['cereja', '🍒'],
+    ['kiwi', '🥝'], ['abobora', '🎃'], ['moranga', '🎃'], ['gengibre', '🫚'],
+    ['salsa', '🌿'], ['cheiro verde', '🌿'], ['coentro', '🌿'], ['manjericao', '🌿'],
+    ['hortela', '🌿'], ['cebolinha', '🌿'], ['feijao', '🫘'], ['ervilha', '🫛'],
+    ['vagem', '🫛'], ['mandioca', '🥔'], ['inhame', '🥔'], ['beterraba', '🥬'],
+    ['chuchu', '🥒'], ['quiabo', '🥒'], ['maracuja', '🍈'], ['goiaba', '🍈'],
+    ['mamao', '🧡'], ['acerola', '🍒'], ['kit', '🧺'], ['cesta', '🧺']
+];
+
+const emojiDoProduto = (nome) => {
+    const limpo = String(nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const achou = EMOJI_PRODUTO.find(([chave]) => limpo.includes(chave));
+    return achou ? achou[1] : '🥬';
+};
+
+// "said" -> "Said" | "maria clara" -> "Maria"
+const primeiroNomeBonito = (nomeCompleto) => {
+    const primeiro = String(nomeCompleto || '').trim().split(/\s+/)[0] || '';
+    return primeiro.charAt(0).toUpperCase() + primeiro.slice(1).toLowerCase();
+};
+
+const kgBonito = (valor) => String(valor).replace('.', ',');
+
 const montarMensagemCliente = () => {
     const p = ESTEIRA.pedido;
-    let msg = `*Banca Adair e Pedrina*\\n`;
-    msg += `Olá, ${String(p.nome || '').split(' ')[0]}! Seu pedido já foi separado e pesado 🌿\\n\\n`;
-    msg += `*Seu pedido:*\\n`;
+    const risco = '━━━━━━━━━━━━━━';
+    const L = [];
+
+    L.push('🥬 *Banca Adair e Pedrina*');
+    L.push('');
+    L.push(`Olá, ${primeiroNomeBonito(p.nome)}! 👋`);
+    L.push('');
+    L.push('Seu pedido já foi separado e pesado com sucesso.');
+    L.push('');
+    L.push(risco);
+    L.push('📦 *ITENS DO PEDIDO*');
+    L.push('');
 
     ESTEIRA.itens.forEach(item => {
+        const unid = String(item.unidade || '').toLowerCase();
+        const porPeso = ['kg', 'g', 'grama', 'quilo', 'l', 'litro'].includes(unid);
+
+        L.push(`${emojiDoProduto(item.nome)} *${item.nome}*`);
+
         if (ehItemDeBalanca(item)) {
-            msg += `• ${item.nome} — ${item.qtd} un (pesou ${String(item.pesoFinal).replace('.', ',')} kg) = ${fmt(valorDoItem(item))}\\n`;
+            // Pediu por unidade, mas foi para a balança: mostra os dois dados
+            L.push(`• Quantidade: ${item.qtd} un`);
+            L.push(`• Peso: ${kgBonito(item.pesoFinal)} kg`);
+        } else if (porPeso) {
+            L.push(`• Peso: ${kgBonito(item.qtd)} ${unid}`);
         } else {
-            msg += `• ${item.nome} — ${formatarQtdRelatorio(item.qtd, item.unidade)} = ${fmt(valorDoItem(item))}\\n`;
+            L.push(`• Quantidade: ${item.qtd}`);
         }
+
+        L.push(`• Valor: ${fmt(valorDoItem(item))}`);
+        L.push('');
     });
 
-    msg += `\\n*Total: ${fmt(totalDaEsteira())}*\\n`;
-    msg += `Pagamento: ${p.pag || 'a combinar'}\\n`;
-    if (p.troco) msg += `Troco para: ${p.troco}\\n`;
-    msg += `Entrega: Quadra ${p.quadra} • Lote ${p.lote}\\n\\n`;
-    msg += `Qualquer coisa é só chamar. Obrigado pela preferência! 💚`;
-    return msg;
+    L.push(risco);
+    L.push(`💰 *Total: ${fmt(totalDaEsteira())}*`);
+    L.push('');
+    L.push(`💳 Pagamento: ${p.pag || 'a combinar'}`);
+
+    if (p.troco) {
+        L.push(`💵 Troco para: ${p.troco}`);
+    }
+
+    L.push('');
+    L.push('📍 *Endereço de entrega:*');
+    L.push(`Quadra ${p.quadra} • Lote ${p.lote}`);
+
+    if (p.obs) {
+        L.push('');
+        L.push(`📝 *Observação:* ${p.obs}`);
+    }
+
+    L.push('');
+    L.push('🌱 Obrigado pela preferência!');
+    L.push('Qualquer dúvida ou alteração, é só chamar.');
+
+    return L.join('\n');
 };
 
 const finalizarEsteira = async (btn, enviarWhats) => {
