@@ -155,6 +155,79 @@ const playAlertaPedido = () => {
     } catch (e) {}
 };
 
+
+// =====================================================================
+// Quando o Firestore recusa uma consulta, a mensagem de erro costuma
+// trazer um LINK que cria o índice necessário automaticamente. No
+// celular ninguém vai abrir o console para achar isso — então
+// mostramos o link direto na tela.
+// =====================================================================
+const mostrarErroConsulta = (erro, alvoId) => {
+    const alvo = document.getElementById(alvoId);
+    if (!alvo) return;
+
+    const texto = String(erro?.message || erro || '');
+    const link = (texto.match(/https:\/\/console\.firebase\.google\.com\S+/) || [])[0];
+    const semPermissao = /permission|insufficient/i.test(texto);
+
+    if (link) {
+        alvo.innerHTML = `
+            <div style="background:var(--warning-light); border:1px solid var(--warning); border-radius:12px; padding:20px; text-align:center;">
+                <div style="font-size:2rem; margin-bottom:8px;">🗂️</div>
+                <h3 style="color:var(--warning); margin-bottom:8px;">Falta criar um índice no banco</h3>
+                <p style="color:var(--text-mid); font-size:.92rem; line-height:1.6; margin-bottom:16px;">
+                    O Firestore precisa de um índice para esta consulta. É automático:
+                    toque no botão, confirme no Firebase e volte aqui em ~1 minuto.
+                </p>
+                <a href="${link}" target="_blank" rel="noopener"
+                   style="display:inline-block; background:var(--forest); color:#fff; padding:14px 24px; border-radius:12px; font-weight:800; text-decoration:none;">
+                   Criar índice agora →
+                </a>
+            </div>`;
+    } else if (semPermissao) {
+        alvo.innerHTML = `
+            <div style="background:var(--danger-light); border:1px solid var(--danger); border-radius:12px; padding:20px; text-align:center;">
+                <div style="font-size:2rem; margin-bottom:8px;">🔒</div>
+                <h3 style="color:var(--danger); margin-bottom:8px;">Sem permissão para ler os pedidos</h3>
+                <p style="color:var(--text-mid); font-size:.92rem; line-height:1.6;">
+                    As regras do Firestore exigem a permissão de administrador.
+                    Saia da conta e entre de novo para renovar o acesso — se continuar,
+                    é sinal de que o passo do <b>set-admin</b> não foi concluído.
+                </p>
+            </div>`;
+    } else {
+        alvo.innerHTML = `
+            <div style="background:var(--parchment); border-radius:12px; padding:20px;">
+                <h3 style="color:var(--text-dark); margin-bottom:8px;">Não consegui carregar os pedidos</h3>
+                <p style="color:var(--text-mid); font-size:.88rem; word-break:break-word;">${escapeHTML(texto)}</p>
+            </div>`;
+    }
+};
+
+
+// Status que contam como "pedido em andamento" (aparecem no Kanban)
+const STATUS_NA_FILA = ['pendente', 'aguardando_pesagem', 'aguardando_pagamento', 'preparando', 'enviado'];
+
+// Faixa discreta no topo avisando que o painel está no modo sem índice.
+// Não bloqueia nada: o painel funciona, só está lendo mais que o preciso.
+// Traz o link que cria o índice, para resolver de vez.
+const avisarModoSimples = (erro) => {
+    if (document.getElementById('faixa-modo-simples')) return;
+    const link = (String(erro?.message || '').match(/https:\/\/console\.firebase\.google\.com\S+/) || [])[0];
+    const secao = document.getElementById('aba-relatorios');
+    if (!secao) return;
+
+    const acao = link
+        ? `<a href="${link}" target="_blank" rel="noopener" style="color:#92400e; font-weight:800;">Criar o índice agora →</a>`
+        : `<span style="color:#92400e;">Peça para criar o índice composto de <b>status</b> + <b>data</b>.</span>`;
+
+    secao.insertAdjacentHTML('afterbegin', `
+        <div id="faixa-modo-simples" style="background:#fef3c7; border:1px solid #d97706; border-radius:12px; padding:14px 16px; margin-bottom:18px; font-size:.9rem; line-height:1.6; color:#4a4a44;">
+            ⚙️ <b>Modo simplificado.</b> A fila está funcionando normalmente, mas o banco
+            ainda não tem o índice ideal — por isso o carregamento fica um pouco mais pesado. ${acao}
+        </div>`);
+};
+
 const iniciarRealTimeSync = () => {
     const unsubProd = onSnapshot(collection(db, "produtos"), (snap) => {
         produtosAtuais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
@@ -184,29 +257,65 @@ const iniciarRealTimeSync = () => {
     // ATENÇÃO: esta consulta combina "where in" + "orderBy", o que exige um
     // ÍNDICE COMPOSTO no Firestore. Se aparecer erro no console com um link,
     // clique nele: o Firebase cria o índice sozinho (leva ~1 min).
-    const pedQuery = query(
-        collection(db, "pedidos"),
-        where("status", "in", ["pendente", "aguardando_pesagem", "aguardando_pagamento", "preparando", "enviado"]),
-        orderBy("data", "desc"), limit(100)
-    );
+    // -----------------------------------------------------------------
+    // ESCUTA DOS PEDIDOS DA FILA
+    //
+    // A consulta ideal filtra por status E ordena por data. Como são
+    // campos diferentes, o Firestore exige um ÍNDICE COMPOSTO.
+    // Enquanto esse índice não existir, caímos num plano B que ordena
+    // só por data e filtra no navegador — o painel funciona igual,
+    // apenas lendo mais documentos do que o necessário.
+    // -----------------------------------------------------------------
     let cargaInicial = true;
 
-    const unsubPedidos = onSnapshot(pedQuery, (snap) => {
-        const temNovoPendente = snap.docChanges().some(change =>
-            change.type === 'added' &&
-            ['pendente', 'aguardando_pesagem'].includes(change.doc.data().status)
+    const aplicarPedidos = (docs) => {
+        pedidosGerais = docs;
+        if (document.getElementById('aba-relatorios')?.classList.contains('active')) {
+            renderRelatoriosMaster();
+        }
+    };
+
+    // A campainha vale para os dois modos: é o que avisa que chegou pedido.
+    const avisarSeChegouPedido = (snap) => {
+        const chegou = snap.docChanges().some(c =>
+            c.type === 'added' && ['pendente', 'aguardando_pesagem'].includes(c.doc.data().status)
         );
-        if (!cargaInicial && temNovoPendente) {
+        if (!cargaInicial && chegou) {
             playAlertaPedido();
             showToast("🔔 NOVO PEDIDO NA FILA!", false);
             if (Notification.permission === "granted") new Notification("Banca", { body: "Novo pedido chegou!" });
         }
-        cargaInicial = false;
-        pedidosGerais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        if (document.getElementById('aba-relatorios').classList.contains('active')) renderRelatoriosMaster();
+        cargaInicial = false; // só a PRIMEIRA carga é silenciosa
+    };
+
+    const escutarSemIndice = (motivo) => {
+        avisarModoSimples(motivo);
+        const qSimples = query(collection(db, "pedidos"), orderBy("data", "desc"), limit(300));
+        // O unsubscribe é guardado — sem isso o listener sobreviveria ao logout.
+        const unsub = onSnapshot(qSimples, (snap) => {
+            avisarSeChegouPedido(snap);
+            aplicarPedidos(
+                snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                         .filter(p => STATUS_NA_FILA.includes(p.status))
+            );
+        }, (e) => mostrarErroConsulta(e, 'lista-historico'));
+        unsubscribes.push(unsub);
+    };
+
+    const qComIndice = query(
+        collection(db, "pedidos"),
+        where("status", "in", STATUS_NA_FILA),
+        orderBy("data", "desc"), limit(100)
+    );
+
+    const unsubPedidos = onSnapshot(qComIndice, (snap) => {
+        avisarSeChegouPedido(snap);
+        aplicarPedidos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, (erro) => {
-        console.error('Erro na consulta de pedidos:', erro);
-        showToast("Erro ao carregar pedidos. Verifique o índice do Firestore.", true);
+        console.error('Consulta de pedidos falhou:', erro);
+        // failed-precondition é o código que o Firestore usa para "falta índice"
+        if (erro?.code === 'failed-precondition') escutarSemIndice(erro);
+        else mostrarErroConsulta(erro, 'lista-historico');
     });
     unsubscribes.push(unsubPedidos);
 
@@ -1098,7 +1207,15 @@ const acoplarRelatorioIADemanda = (historicoMap) => {
 const renderRelatoriosMaster = async () => {
     const listDiv = document.getElementById('lista-historico');
     if (pedidosGerais.length === 0) {
-        listDiv.innerHTML = "<p style='color:var(--text-light)'>A fila está limpa! Nenhum pedido em andamento.</p>";
+        listDiv.innerHTML = `
+            <div style="text-align:center; padding:40px 20px; color:var(--text-light);">
+                <div style="font-size:2.5rem; margin-bottom:10px;">📭</div>
+                <p style="font-weight:700; color:var(--text-mid); font-size:1.05rem;">Nenhum pedido na fila</p>
+                <p style="font-size:.88rem; margin-top:6px; line-height:1.6;">
+                    Só aparecem aqui pedidos em andamento.<br>
+                    Os já concluídos ficam em <b>💰 Balanço Geral</b>.
+                </p>
+            </div>`;
         document.getElementById('stat-pedidos').textContent = "0";
         document.getElementById('stat-receita').textContent = "R$ 0,00";
         return;
@@ -1295,7 +1412,7 @@ const carregarBalanco = async (dias = 30) => {
         renderBalanco(dias);
     } catch (e) {
         console.error(e);
-        alvo.innerHTML = `<p style="color:var(--danger)">Não consegui carregar o balanço.<br><small>Se o console mostrar um link de índice do Firestore, clique nele para criar.</small></p>`;
+        mostrarErroConsulta(e, 'balanco-conteudo');
     }
 };
 
