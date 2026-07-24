@@ -723,6 +723,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     const nome = document.getElementById('cli-nome').value.trim();
     const quadra = document.getElementById('cli-quadra').value.trim();
     const lote = document.getElementById('cli-lote').value.trim();
+    const telefone = (document.getElementById('cli-telefone')?.value || '').replace(/\D/g, '');
     const pag = document.getElementById('cli-pagamento').value;
     const trocoRaw = document.getElementById('cli-troco')?.value.trim();
     const obs = document.getElementById('cli-obs').value.trim();
@@ -747,7 +748,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         });
 
         const payload = {
-            nome, quadra, lote, pag, troco: trocoRaw, obs,
+            nome, quadra, lote, telefone, pag, troco: trocoRaw, obs,
             itens: itensFormatados,
             clientTotal: totalEstimado, // Manda só o valor do que é exato
             status: itensFormatados.some(i => i.aPesar) ? 'aguardando_pesagem' : 'pendente', // Avisa o Admin!
@@ -805,4 +806,26 @@ window.addEventListener('offline', () => document.getElementById('banner-offline
   cart.addEventListener('touchend', () => { y0 = null; }, { passive: true });
 })();
 
+
+// =====================================================================
+// COMUNICADO DA LOJA — aviso fixo ou mensagem do dia da semana,
+// configurado pelo painel admin (loja/comunicados).
+// =====================================================================
+const iniciarComunicados = () => {
+    const alvo = document.getElementById('banner-comunicado');
+    if (!alvo) return;
+    const unsub = onSnapshot(doc(db, "loja", "comunicados"), (snap) => {
+        if (!snap.exists()) { alvo.classList.remove('visivel'); return; }
+        const dados = snap.data();
+        // O aviso fixo tem prioridade sobre a mensagem do dia
+        const doDia = dados.dias?.[String(new Date().getDay())];
+        const escolhido = (dados.fixo?.ativo && dados.fixo?.texto) ? dados.fixo.texto
+                        : (doDia?.ativo && doDia?.texto) ? doDia.texto : '';
+        if (escolhido) { alvo.textContent = escolhido; alvo.classList.add('visivel'); }
+        else { alvo.classList.remove('visivel'); }
+    });
+    unsubscribes.push(unsub);
+};
+
+iniciarComunicados();
 initIA(STATE);
