@@ -325,9 +325,13 @@ const lerJSON = (t) => JSON.parse(String(t).replace(/^```(?:json)?/i, '').replac
 // Handler
 // ---------------------------------------------------------------------
 module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGIN || '*');
+  // CORS: sem ALLOWED_ORIGIN, em produção usa o domínio próprio em vez de "*"
+  const origemPermitida = process.env.ALLOWED_ORIGIN
+    || (process.env.VERCEL_ENV === 'production' ? 'https://site-banca1.vercel.app' : '*');
+  res.setHeader('Access-Control-Allow-Origin', origemPermitida);
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'OPTIONS, POST, GET');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-diagnostico');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -335,6 +339,13 @@ module.exports = async function handler(req, res) {
   if (req.method === 'GET') {
     if (!req.query || !req.query.diagnostico) {
       return res.status(405).json({ sucesso: false, error: 'Use POST.' });
+    }
+    // O diagnóstico mostra quais modelos a chave aceita. Não vaza a chave,
+    // mas também não precisa ficar aberto a qualquer visitante.
+    // Configure DIAGNOSTICO_SECRET na Vercel e chame com &secret=...
+    const segredo = process.env.DIAGNOSTICO_SECRET;
+    if (segredo && req.query.secret !== segredo) {
+      return res.status(403).json({ sucesso: false, error: 'Diagnóstico protegido. Informe o parâmetro secret.' });
     }
     if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({ sucesso: false, error: 'GEMINI_API_KEY não está configurada na Vercel.' });
