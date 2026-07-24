@@ -54,20 +54,43 @@ const resolveWpp = (configSnap) => {
 };
 
 // ---------------------------------------------------------------------
-// CORS
+// CORS — lista de origens confiáveis
 //
-// Antes o código caía para "*" quando ALLOWED_ORIGIN não estava definida —
-// ou seja, qualquer site conseguia chamar a API em nome do visitante.
-// Agora, em produção, sem a variável definida o padrão é o domínio próprio.
+// POR QUE NÃO DEPENDE MAIS DE VARIÁVEL DE AMBIENTE:
+// a versão anterior usava ALLOWED_ORIGIN e, se ela estivesse errada ou
+// ausente, o site bloqueava a si mesmo — o navegador da cliente manda a
+// requisição de um domínio e o servidor autoriza outro. Como a banca tem
+// três endereços válidos (domínio próprio com e sem "www", mais o da
+// Vercel), agora conferimos de qual deles a chamada veio e devolvemos
+// exatamente esse. Funciona nos três sem configurar nada.
+//
+// ALLOWED_ORIGIN continua sendo lida e ACRESCENTA origens à lista
+// (aceita várias separadas por vírgula), mas não é mais obrigatória.
 // ---------------------------------------------------------------------
-const ORIGEM_PADRAO = 'https://site-banca1.vercel.app';
-const aplicarCors = (res) => {
-  const permitida = process.env.ALLOWED_ORIGIN
-    || (process.env.VERCEL_ENV === 'production' ? ORIGEM_PADRAO : '*');
-  res.setHeader('Access-Control-Allow-Origin', permitida);
+const ORIGENS_CONFIAVEIS = [
+  'https://www.bancaadairepedrina.com.br',
+  'https://bancaadairepedrina.com.br',
+  'https://site-banca1.vercel.app',
+];
+
+const aplicarCors = (req, res, metodos) => {
+  const extras = String(process.env.ALLOWED_ORIGIN || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+  const permitidas = ORIGENS_CONFIAVEIS.concat(extras);
+  const origem = req.headers && req.headers.origin;
+
+  if (origem && permitidas.indexOf(origem) !== -1) {
+    res.setHeader('Access-Control-Allow-Origin', origem);
+  } else if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') {
+    res.setHeader('Access-Control-Allow-Origin', '*'); // preview e dev
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', permitidas[0]);
+  }
+
+  // Sem o Vary, um proxy poderia servir a resposta de um domínio para outro.
   res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', metodos || 'OPTIONS,POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 };
 
 // ---------------------------------------------------------------------
@@ -136,7 +159,7 @@ function montarTextoWhatsApp(pedido, numero) {
 // Handler
 // ---------------------------------------------------------------------
 module.exports = async function handler(req, res) {
-  aplicarCors(res);
+  aplicarCors(req, res, 'OPTIONS,POST');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
@@ -162,8 +185,33 @@ module.exports = async function handler(req, res) {
   try { bootFirebase(); }
   catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
 
+  // -------------------------------------------------------------------
+  // DE QUEM É ESTE PEDIDO?
+  //
+  // O `userId` do corpo da requisição serve só como pista. Quem manda é o
+  // token do Firebase, assinado pelo Google: dele tiramos o uid de verdade.
+  // Isso importa porque o cancelamento pela loja compara o dono do pedido
+  // com o uid do token — se aqui a gente aceitasse qualquer texto enviado
+  // pelo navegador, alguém poderia registrar um pedido no nome de outra
+  // pessoa, ou tornar o próprio pedido impossível de cancelar.
+  //
+  // Sem token (ex.: login anônimo falhou), o pedido entra como 'anonimo':
+  // a venda acontece normalmente, só não dá para cancelar pelo site depois.
+  // -------------------------------------------------------------------
+  let donoVerificado = 'anonimo';
+  const cabecalhoAuth = String((req.headers && req.headers.authorization) || '');
+  if (cabecalhoAuth.startsWith('Bearer ')) {
+    try {
+      const decodificado = await admin.auth().verifyIdToken(cabecalhoAuth.slice(7).trim());
+      donoVerificado = decodificado.uid;
+    } catch (e) {
+      console.warn('[checkout] token inválido; pedido seguirá como anônimo.');
+    }
+  }
+
   // Validação de entrada
-  let { nome, quadra, lote, telefone, pag, troco, obs, cupom, itens, idempotencyKey, userId } = req.body || {};
+  // Nota: userId NÃO é lido do corpo de propósito — ver donoVerificado acima.
+  let { nome, quadra, lote, telefone, pag, troco, obs, cupom, itens, idempotencyKey } = req.body || {};
   if (!idempotencyKey || !nome || !quadra || !lote || !Array.isArray(itens) || itens.length === 0) {
     return res.status(400).json({ error: 'Dados do pedido incompletos.' });
   }
@@ -310,7 +358,7 @@ module.exports = async function handler(req, res) {
 
       const dadosPedido = {
         id: pedidoRef.id,
-        userId: userId || 'anonimo',
+        userId: donoVerificado,
         nome, quadra, lote, telefone: telefone || '', pag, troco: troco || '', obs: obsFinal || '',
         itens: itensValidados,
         total: totalExato,        // total dos itens de valor fechado
