@@ -1,1 +1,313 @@
+/* =====================================================================
+   produto-modal.css  —  Seletor de quantidade (peso × unidade)
+   ARQUIVO NOVO E ADITIVO: não substitui nada do seu loja.css.
+   Basta adicionar no <head> do index.html, DEPOIS do loja.css:
+       <link rel="stylesheet" href="/css/produto-modal.css">
+   (ajuste o caminho conforme sua pasta de CSS)
 
+   Usa as variáveis que já existem no seu variables.css
+   (--forest, --foam, --earth, --parchment, --text-mid, --danger...).
+   Se alguma não existir, o fallback depois da vírgula assume.
+   ===================================================================== */
+
+/* ---------- Estrutura do modal de produto ---------- */
+.modal-produto {
+  max-width: 460px;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.md-fechar-flutuante {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(6px);
+  color: var(--text-dark, #2c2c2c);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+}
+
+/* ---------- Hero da imagem ---------- */
+.md-hero {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: var(--parchment, #f2efe8);
+  overflow: hidden;
+}
+.md-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.md-tag {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--forest, #1f5c3d);
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: capitalize;
+}
+
+/* ---------- Corpo ---------- */
+.md-corpo {
+  padding: 20px 22px 8px;
+}
+.md-corpo h2 {
+  font-size: 1.55rem;
+  color: var(--forest, #1f5c3d);
+  margin: 0 0 6px;
+  line-height: 1.2;
+}
+.md-desc {
+  color: var(--text-mid, #6b6b6b);
+  font-size: 0.98rem;
+  line-height: 1.55;
+  margin: 0 0 14px;
+}
+.md-preco-base {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--forest, #1f5c3d);
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--parchment, #f2efe8);
+  margin-bottom: 16px;
+}
+.md-preco-unid {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-light, #9a9a9a);
+}
+
+/* ---------- Segmented control (peso × unidade) ---------- */
+.md-segmented {
+  position: relative;
+  display: flex;
+  gap: 0;
+  background: var(--foam, #eef5f0);
+  border-radius: 14px;
+  padding: 5px;
+  margin-bottom: 16px;
+}
+.md-segmented-pill {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 0;
+  background: var(--forest, #1f5c3d);
+  border-radius: 10px;
+  transition: transform 0.28s cubic-bezier(0.34, 1.3, 0.64, 1), width 0.28s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+.btn-tipo-compra {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 12px 8px;
+  border: none;
+  background: transparent;
+  color: var(--forest, #1f5c3d);
+  font-weight: 700;
+  font-size: 0.95rem;
+  font-family: inherit;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: color 0.22s ease;
+  min-height: 46px; /* alvo de toque confortável */
+}
+.btn-tipo-compra.active {
+  color: #fff;
+}
+.md-seg-ico {
+  font-size: 1.05rem;
+}
+
+/* ---------- Atalhos rápidos ---------- */
+.md-presets {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.md-presets::-webkit-scrollbar { display: none; }
+
+.md-preset {
+  flex: 1 0 auto;
+  min-width: 64px;
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--parchment, #e0dcd4);
+  background: #fff;
+  color: var(--text-dark, #2c2c2c);
+  border-radius: 11px;
+  font-weight: 700;
+  font-size: 0.92rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+.md-preset:hover { border-color: var(--forest, #1f5c3d); }
+.md-preset.ativo {
+  background: var(--forest, #1f5c3d);
+  border-color: var(--forest, #1f5c3d);
+  color: #fff;
+  transform: scale(1.03);
+}
+
+/* ---------- Stepper grande ---------- */
+.md-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: var(--foam, #eef5f0);
+  border-radius: 14px;
+  padding: 8px;
+  margin-bottom: 14px;
+}
+.md-step-btn {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  border: none;
+  background: #fff;
+  color: var(--forest, #1f5c3d);
+  font-size: 1.7rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07);
+  transition: transform 0.12s ease, opacity 0.2s ease;
+}
+.md-step-btn:active { transform: scale(0.92); }
+.md-step-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.md-qtd-display {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.md-qtd-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-size: 1.75rem;
+  font-weight: 900;
+  color: var(--forest, #1f5c3d);
+  font-family: inherit;
+  padding: 0;
+  /* 16px+ evita o zoom automático do iOS ao focar o campo */
+}
+.md-qtd-input:focus { outline: none; }
+.md-qtd-unid {
+  font-size: 0.82rem;
+  color: var(--text-mid, #6b6b6b);
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+/* ---------- Resumo do valor ---------- */
+.md-resumo {
+  border-radius: 12px;
+  padding: 13px 15px;
+  margin-bottom: 6px;
+  animation: mdFade 0.25s ease;
+}
+@keyframes mdFade {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.md-resumo-linha {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 1rem;
+}
+.md-resumo-linha strong { font-size: 1.3rem; font-weight: 900; }
+.md-resumo small {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.83rem;
+  line-height: 1.45;
+}
+
+/* Valor fechado (compra por peso) */
+.md-resumo-exato {
+  background: var(--foam, #eef5f0);
+  color: var(--forest, #1f5c3d);
+}
+/* Estimativa (unidade com peso médio cadastrado) */
+.md-resumo-estimado {
+  background: #fdf6e9;
+  color: var(--earth, #8a6d3b);
+  border: 1px dashed rgba(138, 109, 59, 0.35);
+}
+/* Sem estimativa possível — só aviso de pesagem */
+.md-resumo-pesar {
+  background: #fdf6e9;
+  color: var(--earth, #8a6d3b);
+}
+
+/* ---------- Rodapé ---------- */
+.md-rodape {
+  padding: 14px 22px calc(18px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--parchment, #f2efe8);
+  background: #fff;
+}
+.md-btn-add {
+  font-size: 1.08rem;
+  padding: 17px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+/* ---------- Mobile: modal vira folha deslizante ---------- */
+@media (max-width: 560px) {
+  .modal-produto {
+    max-width: 100%;
+    width: 100%;
+    border-radius: 22px 22px 0 0;
+    max-height: 92vh;
+    max-height: 92dvh;
+    display: flex;
+    flex-direction: column;
+  }
+  .md-hero { aspect-ratio: 16 / 9; }
+  .md-corpo { overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
+  .md-rodape { position: sticky; bottom: 0; }
+}
+
+/* ---------- Respeita quem prefere menos movimento ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .md-segmented-pill,
+  .md-preset,
+  .md-step-btn,
+  .md-resumo { transition: none; animation: none; }
+}
