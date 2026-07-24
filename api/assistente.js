@@ -35,6 +35,15 @@ const admin = require('firebase-admin');
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const MODELO_PADRAO = 'gemini-flash-latest';
 
+
+// Espera um tempo aleatório + exponencial (back-off) antes de tentar de novo.
+// 1ª falha: 1-3 seg, 2ª: 3-7 seg, 3ª: 7-15 seg...
+async function dormirComJitter(tentativa) {
+  const baseMs = Math.pow(2, tentativa) * 1000;
+  const jitterMs = Math.random() * baseMs;
+  await new Promise(r => setTimeout(r, jitterMs));
+}
+
 // Se o modelo escolhido sumir, tenta estes na ordem.
 const ALTERNATIVAS = [
   'gemini-flash-latest',
@@ -207,37 +216,97 @@ async function chamar(modelo, corpo, streaming) {
     throw e;
   }
 
-  const metodo = streaming ? 'streamGenerateContent?alt=sse&' : 'generateContent?';
-  const resp = await fetch(`${BASE}/models/${modelo}:${metodo}key=${chave}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(corpo)
-  });
+  // Retry automático para 429 (sobrecarregado) e 500 (erro temporário)
+  for (let tent = 0; tent < 3; tent++) {
+    const metodo = streaming ? 'streamGenerateContent?alt=sse&' : 'generateContent?';
+    const resp = await fetch(`${BASE}/models/${modelo}:${metodo}key=${chave}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corpo)
+    });
 
-  if (!resp.ok) {
-    let msg = `HTTP ${resp.status}`;
+    if (resp.ok) return resp;
+
+    const statusCode = resp.status;
+    let msg = `HTTP ${statusCode}`;
     try { const e = await resp.json(); msg = (e && e.error && e.error.message) || msg; } catch (_) {}
+
+    // Se for 429 ou 500, tenta de novo depois de esperar
+    if ((statusCode === 429 || statusCode === 500) && tent < 2) {
+      await dormirComJitter(tent);
+      continue;
+    }
+
+    // Se não for temporário, desiste já
     const erro = new Error(msg);
-    erro.status = resp.status;
+    erro.status = statusCode;
     throw erro;
   }
-  return resp;
 }
 
 // Percorre a fila de modelos até um responder.
+// Códigos que significam "tenta de novo, o problema é passageiro":
+// 429 = muitas requisições, 500/502/503/504 = servidor ocupado ou instável.
+const TRANSITORIO = [429, 500, 502, 503, 504];
+// Códigos que significam "esse modelo não serve": vale tentar outro nome.
+const MODELO_RUIM = [400, 403, 404];
+
+const dormir = (ms) => new Promise(r => setTimeout(r, ms));
+
 async function comFallback(corpo, streaming) {
   const preferido = process.env.GEMINI_MODEL || MODELO_PADRAO;
   const fila = [preferido].concat(ALTERNATIVAS.filter(m => m !== preferido));
+
+  // Orçamento de tempo: a função serverless tem limite, então não adianta
+  // insistir para sempre. Paramos de tentar perto dos 20 segundos.
+  const prazoFinal = Date.now() + 20000;
   let ultimo;
-  for (const modelo of fila) {
-    try { return await chamar(modelo, corpo, streaming); }
-    catch (e) {
-      ultimo = e;
-      // Só faz sentido tentar outro modelo se o problema foi o modelo em si
-      if (e.status !== 404 && e.status !== 400) throw e;
+
+  for (let i = 0; i < fila.length; i++) {
+    const modelo = fila[i];
+
+    // Para CADA modelo, tenta até 3 vezes se o erro for passageiro.
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
+      try {
+        return await chamar(modelo, corpo, streaming);
+      } catch (e) {
+        ultimo = e;
+
+        if (MODELO_RUIM.indexOf(e.status) !== -1) break;      // troca de modelo
+        if (TRANSITORIO.indexOf(e.status) === -1) throw e;    // erro de verdade
+
+        // Sobrecarga: espera um pouco e tenta de novo (0,4s -> 1,2s)
+        const espera = 400 * Math.pow(3, tentativa);
+        if (Date.now() + espera > prazoFinal) break;
+        await dormir(espera);
+      }
     }
+
+    if (Date.now() > prazoFinal) break;
+    // Modelo esgotado: o próximo da fila pode estar com capacidade livre.
   }
+
   throw ultimo || new Error('Nenhum modelo disponível.');
+}
+
+// Traduz o erro técnico em algo que o cliente da banca entenda.
+function mensagemAmigavel(e) {
+  const msg = String((e && e.message) || e || '');
+  const status = e && e.status;
+
+  if (status === 429 || /quota|rate limit/i.test(msg)) {
+    return 'O assistente recebeu muitos pedidos agora há pouco. Espere alguns segundos e tente de novo.';
+  }
+  if (TRANSITORIO.indexOf(status) !== -1 || /overload|high demand|unavailable|try again/i.test(msg)) {
+    return 'O assistente está sobrecarregado neste momento. Isso costuma passar rápido — tente de novo em instantes.';
+  }
+  if (/not found|404/i.test(msg)) {
+    return 'O modelo de IA configurado não existe mais. Abra /api/assistente?diagnostico=1 para ver os disponíveis.';
+  }
+  if (/API key|PERMISSION|403/i.test(msg)) {
+    return 'A chave da IA parece inválida ou sem permissão. Gere outra no Google AI Studio.';
+  }
+  return msg;
 }
 
 async function textoUnico(prompt, opcoes) {
@@ -325,12 +394,12 @@ module.exports = async function handler(req, res) {
     } catch (e) {
       // Ainda não começou a transmitir, então dá para responder JSON normal
       console.error('[assistente] chat:', e);
-      const msg = String(e.message || e);
-      return res.status(e.status === 429 ? 429 : 500).json({
+      const sobrecarga = TRANSITORIO.indexOf(e.status) !== -1;
+      // 503 avisa ao navegador que vale a pena tentar de novo daqui a pouco
+      return res.status(sobrecarga ? 503 : 500).json({
         sucesso: false,
-        error: /not found|404/i.test(msg)
-          ? 'O modelo de IA configurado não existe mais. Abra /api/assistente?diagnostico=1'
-          : msg
+        error: mensagemAmigavel(e),
+        podeRepetir: sobrecarga
       });
     }
 
@@ -392,12 +461,11 @@ module.exports = async function handler(req, res) {
     if (action === 'gerar_kit')         return res.status(200).json({ sucesso: true, kit: lerJSON(texto) });
   } catch (e) {
     console.error('[assistente]', action, e);
-    const msg = String(e.message || e);
-    const dica = /not found|404/i.test(msg)
-      ? 'Nenhum modelo conhecido respondeu. Abra /api/assistente?diagnostico=1 para ver os que a sua chave aceita e defina GEMINI_MODEL na Vercel.'
-      : /API key|PERMISSION|403/i.test(msg)
-        ? 'A GEMINI_API_KEY parece inválida ou sem permissão. Gere outra no Google AI Studio.'
-        : null;
-    return res.status(500).json({ sucesso: false, error: msg, dica });
+    const sobrecarga = TRANSITORIO.indexOf(e.status) !== -1;
+    return res.status(sobrecarga ? 503 : 500).json({
+      sucesso: false,
+      error: mensagemAmigavel(e),
+      podeRepetir: sobrecarga
+    });
   }
 };
