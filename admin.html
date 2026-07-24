@@ -8,6 +8,9 @@
 
     <meta name="robots" content="noindex, nofollow"> <!-- Evita indexação do painel admin pelo Google -->
     <meta name="theme-color" content="#1a3a2a">
+    <link rel="apple-touch-icon" href="./icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Banca Admin">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -45,6 +48,7 @@
             <button class="tab" data-aba="relatorios">📊 Dashboard Financeiro</button>
             <button class="tab" data-aba="balanco">💰 Balanço Geral</button>
             <button class="tab" data-aba="comunicados">📢 Comunicados</button>
+            <button class="tab" data-aba="cupons">🎁 Cupons</button>
             <button class="tab" data-aba="config">⚙️ Operacional</button>
         </nav>
 
@@ -105,6 +109,7 @@
                         <option value="365">1 ano</option>
                     </select>
                     <button class="btn-export" id="btn-atualizar-balanco">🔄 Atualizar</button>
+                    <button class="btn-export" id="btn-exportar-balanco">📄 Exportar</button>
                 </div>
             </header>
             <p class="config-sub" style="margin-bottom:20px;">Inclui os pedidos já arquivados — é o número real do caixa, não só a fila de hoje.</p>
@@ -116,6 +121,52 @@
             <p class="config-sub">A mensagem aparece no topo da loja para todos os clientes, em tempo real.</p>
             <div id="lista-comunicados" style="margin:20px 0;"></div>
             <button class="btn-salvar-config" id="btn-salvar-comunicados">💾 Gravar Comunicados</button>
+        </section>
+
+        <section id="aba-cupons" class="aba-content">
+            <header class="relatorios-header">
+                <h3>Cupons de Desconto</h3>
+            </header>
+            <p class="config-sub" style="margin-bottom:20px;">
+                O código é validado no servidor a cada pedido. Um cupom só funciona se
+                estiver ligado, dentro da validade e com usos disponíveis.
+            </p>
+
+            <div class="cupom-form">
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="cup-codigo">Código</label>
+                        <input type="text" id="cup-codigo" placeholder="Ex: BEMVINDO10" style="text-transform:uppercase;" autocapitalize="characters" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="cup-percentual">Desconto em %</label>
+                        <input type="number" id="cup-percentual" min="0" max="90" step="1" placeholder="10">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="cup-valorfixo">Ou desconto em R$</label>
+                        <input type="number" id="cup-valorfixo" min="0" step="0.50" placeholder="5,00">
+                    </div>
+                    <div class="form-group">
+                        <label for="cup-minimo">Pedido mínimo (R$)</label>
+                        <input type="number" id="cup-minimo" min="0" step="1" placeholder="0">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="cup-limite">Limite de usos</label>
+                        <input type="number" id="cup-limite" min="1" step="1" placeholder="deixe vazio = sem limite">
+                    </div>
+                    <div class="form-group">
+                        <label for="cup-validade">Válido até</label>
+                        <input type="date" id="cup-validade">
+                    </div>
+                </div>
+                <button class="btn btn-primary w-100" id="btn-salvar-cupom">💾 Gravar Cupom</button>
+            </div>
+
+            <div id="lista-cupons" style="margin-top:24px;"></div>
         </section>
 
         <section id="aba-config" class="aba-content">
