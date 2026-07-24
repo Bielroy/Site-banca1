@@ -68,12 +68,66 @@ export const animarFeedbackBtn = (btn) => {
 // --------- Modais (com foco + ESC) ---------
 let ultimoFocado = null;
 
+const SELETOR_FOCAVEL = [
+  'a[href]', 'button:not([disabled])', 'input:not([type=hidden]):not([disabled])',
+  'select:not([disabled])', 'textarea:not([disabled])', '[tabindex]:not([tabindex="-1"])'
+].join(', ');
+
 const focarPrimeiroElemento = (modal) => {
   const alvo = modal.querySelector(
     'input:not([type=hidden]), select, textarea, button:not(.btn-fechar)'
   ) || modal.querySelector('[data-fechar], .btn-fechar');
   if (alvo) setTimeout(() => alvo.focus({ preventScroll: true }), 60);
 };
+
+// ---------------------------------------------------------------------
+// PRISÃO DE FOCO
+//
+// Antes, com o modal aberto, apertar Tab várias vezes levava o foco para os
+// botões da página ATRÁS do modal — quem navega por teclado ou usa leitor de
+// tela ficava perdido, ativando coisas que não estava vendo.
+//
+// A prisão é calculada NA HORA em que a pessoa aperta Tab, e sempre no modal
+// que está por cima. Isso importa porque a caixa de confirmação abre em cima
+// de outro modal: se o foco ficasse preso no de baixo, os botões "Sim/Não"
+// seriam inalcançáveis pelo teclado.
+// ---------------------------------------------------------------------
+const SELETOR_MODAL = '.modal-overlay.aberto, .carrinho.aberto, .picking-palco.aberto';
+
+const modalDoTopo = () => {
+  const abertos = Array.from(document.querySelectorAll(SELETOR_MODAL))
+    .filter(el => el.offsetParent !== null);
+  return abertos.length ? abertos[abertos.length - 1] : null;
+};
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab') return;
+  const modal = modalDoTopo();
+  if (!modal) return;
+
+  const focaveis = Array.from(modal.querySelectorAll(SELETOR_FOCAVEL))
+    .filter(el => el.offsetParent !== null);
+  if (focaveis.length === 0) return;
+
+  const primeiro = focaveis[0];
+  const ultimo = focaveis[focaveis.length - 1];
+
+  // Foco fora do modal do topo: traz de volta para dentro
+  if (!modal.contains(document.activeElement)) {
+    e.preventDefault();
+    primeiro.focus({ preventScroll: true });
+    return;
+  }
+
+  if (e.shiftKey && document.activeElement === primeiro) {
+    e.preventDefault();
+    ultimo.focus({ preventScroll: true });
+  } else if (!e.shiftKey && document.activeElement === ultimo) {
+    e.preventDefault();
+    primeiro.focus({ preventScroll: true });
+  }
+}, true);
+
 
 export const openModal = (id) => {
   const modal = document.getElementById(id);
@@ -83,6 +137,8 @@ export const openModal = (id) => {
   modal.setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
   history.pushState({ modal: id }, '', `#${id}`);
+  modal.setAttribute('role', modal.getAttribute('role') || 'dialog');
+  modal.setAttribute('aria-modal', 'true');
   focarPrimeiroElemento(modal);
 };
 
@@ -91,6 +147,7 @@ export const closeModal = (id) => {
   if (!modal) return;
   modal.classList.remove('aberto');
   modal.setAttribute('aria-hidden', 'true');
+  modal.setAttribute('aria-modal', 'false');
   document.body.style.overflow = '';
   if (ultimoFocado && typeof ultimoFocado.focus === 'function') {
     ultimoFocado.focus({ preventScroll: true });
