@@ -27,6 +27,9 @@ const paraFlutuante  = (c) => parseFloat((c / 100).toFixed(2));
 const fixFloat       = (n) => Math.round(n * 1000) / 1000;
 const fmtBRL         = (v) => `R$ ${Number(v).toFixed(2).replace('.', ',')}`;
 
+// Teto padrão de quantidade por item em um pedido
+const LIMITE_POR_ITEM = 50;
+
 // Unidades que são vendidas por peso/volume (fracionáveis)
 const FRACIONAVEIS = ['kg', 'kilo', 'quilograma', 'g', 'grama', 'l', 'litro'];
 const isFracionavel = (u) => FRACIONAVEIS.includes(String(u || '').toLowerCase());
@@ -48,6 +51,23 @@ const resolveWpp = (configSnap) => {
   const raw = configSnap && configSnap.exists ? configSnap.data().wpp : null;
   const digits = String(raw || '').replace(/\D/g, '');
   return digits.length >= 10 ? digits : WPP_FALLBACK;
+};
+
+// ---------------------------------------------------------------------
+// CORS
+//
+// Antes o código caía para "*" quando ALLOWED_ORIGIN não estava definida —
+// ou seja, qualquer site conseguia chamar a API em nome do visitante.
+// Agora, em produção, sem a variável definida o padrão é o domínio próprio.
+// ---------------------------------------------------------------------
+const ORIGEM_PADRAO = 'https://site-banca1.vercel.app';
+const aplicarCors = (res) => {
+  const permitida = process.env.ALLOWED_ORIGIN
+    || (process.env.VERCEL_ENV === 'production' ? ORIGEM_PADRAO : '*');
+  res.setHeader('Access-Control-Allow-Origin', permitida);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 };
 
 // ---------------------------------------------------------------------
@@ -116,9 +136,7 @@ function montarTextoWhatsApp(pedido, numero) {
 // Handler
 // ---------------------------------------------------------------------
 module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGIN || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  aplicarCors(res);
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
@@ -187,6 +205,11 @@ module.exports = async function handler(req, res) {
 
       const prodSnaps = await Promise.all(itens.map((i) => t.get(db.doc(`produtos/${i.id}`))));
 
+      // O cupom também é lido AQUI: no Firestore, toda leitura de uma
+      // transação tem que acontecer antes da primeira escrita.
+      const codigoCupom = cupom ? String(cupom).trim().toUpperCase().slice(0, 40) : '';
+      const cupomSnap = codigoCupom ? await t.get(db.doc(`cupons/${codigoCupom}`)) : null;
+
       // ---- Cálculo (ainda sem escrever) ----
       let totalExatoCentavos = 0;
       const itensValidados = [];
@@ -206,6 +229,12 @@ module.exports = async function handler(req, res) {
         // qtd inteira para unidade; float para peso
         let qtd = Number(String(item.qtd).replace(',', '.'));
         if (!Number.isFinite(qtd) || qtd <= 0) throw new Error(`Quantidade inválida para "${p.nome}".`);
+        // Teto por item: evita pedido absurdo ("999999 kg de tomate") entrando
+        // na fila. O limite pode ser afrouxado por produto com maxPorPedido.
+        const teto = Number(p.maxPorPedido) > 0 ? Number(p.maxPorPedido) : LIMITE_POR_ITEM;
+        if (qtd > teto) {
+          throw new Error(`O máximo por pedido de "${p.nome}" é ${teto}. Para quantidade maior, chame no WhatsApp.`);
+        }
         qtd = (aPesar || !fracionavel) ? Math.round(qtd) : fixFloat(qtd);
 
         if (aPesar) {
@@ -231,12 +260,49 @@ module.exports = async function handler(req, res) {
         }
       });
 
-      // Cupom (opcional). Em produção, valide contra uma coleção "cupons".
+      // ---- Cupom ----
+      // CORRIGIDO: antes existia um cupom fixo no código ('IA-DESCONTO-10')
+      // que dava 10% para sempre, sem validade nem limite de uso, e que nem
+      // aparecia na tela — só era alcançável chamando a API por fora do site.
+      // Agora o cupom precisa existir na coleção "cupons" do Firestore,
+      // estar ativo, dentro da validade e com usos disponíveis.
       let obsFinal = obs;
-      if (cupom && String(cupom).toUpperCase() === 'IA-DESCONTO-10') {
-        const descC = Math.round(totalExatoCentavos * 0.10);
-        totalExatoCentavos -= descC;
-        obsFinal = `${obs ? obs + ' | ' : ''}🎁 Cupom IA-DESCONTO (-${fmtBRL(paraFlutuante(descC))})`;
+      let cupomAplicado = null;
+
+      if (cupomSnap && cupomSnap.exists) {
+        const c = cupomSnap.data();
+        const agora = new Date();
+        // A data vem como "2026-07-24" (só o dia). new Date() nesse formato
+        // devolve meia-noite em UTC, que no Brasil é 21h do dia ANTERIOR —
+        // então um cupom "válido até 24" morreria durante todo o dia 24.
+        // Empurramos para o fim do dia no horário de Brasília (UTC-3).
+        const validoAte = c.validoAte ? new Date(`${c.validoAte}T23:59:59-03:00`) : null;
+        const usos = Number(c.usos || 0);
+        const limite = c.limiteUsos === null || c.limiteUsos === undefined ? Infinity : Number(c.limiteUsos);
+        const minimo = paraCentavos(c.minimoCompra || 0);
+
+        if (c.ativo === false)                    throw new Error('Este cupom está desativado.');
+        if (validoAte && !isNaN(validoAte) && agora > validoAte) throw new Error('Este cupom já venceu.');
+        if (usos >= limite)                       throw new Error('Este cupom atingiu o limite de usos.');
+        if (totalExatoCentavos < minimo)          throw new Error(`Este cupom vale para pedidos a partir de ${fmtBRL(c.minimoCompra)}.`);
+
+        // Desconto: percentual OU valor fixo (o que estiver cadastrado)
+        let descC = 0;
+        if (Number(c.percentual) > 0) {
+          descC = Math.round(totalExatoCentavos * (Number(c.percentual) / 100));
+        } else if (Number(c.valorFixo) > 0) {
+          descC = paraCentavos(c.valorFixo);
+        }
+        // Nunca deixa o total ficar negativo
+        descC = Math.min(descC, totalExatoCentavos);
+
+        if (descC > 0) {
+          totalExatoCentavos -= descC;
+          cupomAplicado = { codigo: cupomSnap.id, desconto: paraFlutuante(descC), ref: cupomSnap.ref };
+          obsFinal = `${obs ? obs + ' | ' : ''}🎁 Cupom ${cupomSnap.id} (-${fmtBRL(paraFlutuante(descC))})`;
+        }
+      } else if (cupom) {
+        throw new Error('Cupom não encontrado.');
       }
 
       const totalExato = paraFlutuante(totalExatoCentavos);
@@ -250,6 +316,7 @@ module.exports = async function handler(req, res) {
         total: totalExato,        // total dos itens de valor fechado
         clientTotal: totalExato,  // usado pelo painel de pesagem como base
         temItensAPesar,
+        cupom: cupomAplicado ? { codigo: cupomAplicado.codigo, desconto: cupomAplicado.desconto } : null,
         status: temItensAPesar ? 'aguardando_pesagem' : 'pendente',
         data: new Date().toISOString(),
         origem: 'whatsapp',
@@ -257,10 +324,26 @@ module.exports = async function handler(req, res) {
 
       // ---- Agora sim, as escritas ----
       estoqueUpdates.forEach(([ref, patch]) => t.update(ref, patch));
+      if (cupomAplicado) {
+        t.update(cupomAplicado.ref, { usos: admin.firestore.FieldValue.increment(1) });
+      }
       t.set(pedidoRef, dadosPedido);
       t.set(db.doc('analytics/dashboard'), {
         receitaTotal: admin.firestore.FieldValue.increment(totalExato),
         totalPedidos: admin.firestore.FieldValue.increment(1),
+      }, { merge: true });
+
+      // Resumo por dia (ex.: resumos/2026-07-24).
+      // Hoje o Balanço ainda lê os pedidos um por um, o que funciona bem no
+      // volume atual. Estes resumos começam a acumular a partir de agora para
+      // que, quando houver histórico longo, o Balanço possa somar 30 documentos
+      // em vez de reler centenas de pedidos.
+      const diaChave = new Date().toISOString().slice(0, 10);
+      t.set(db.doc(`resumos/${diaChave}`), {
+        dia: diaChave,
+        receita: admin.firestore.FieldValue.increment(totalExato),
+        pedidos: admin.firestore.FieldValue.increment(1),
+        atualizadoEm: new Date().toISOString(),
       }, { merge: true });
 
       return { id: pedidoRef.id, total: totalExato, temItensAPesar,
