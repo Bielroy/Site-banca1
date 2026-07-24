@@ -289,7 +289,7 @@
 }
 
 /* ---------- Mobile: modal vira folha deslizante ---------- */
-@media (max-width: 560px) {
+@media (max-width: 600px) {
   .modal-produto {
     max-width: 100%;
     width: 100%;
@@ -310,4 +310,12 @@
   .md-preset,
   .md-step-btn,
   .md-resumo { transition: none; animation: none; }
+}
+
+/* Banner de comunicado da loja (mensagem do dia / oferta) */
+.banner-aviso.comunicado {
+  background: var(--foam, #e8f5ee);
+  color: var(--forest, #1a3a2a);
+  border-bottom: 2px solid var(--sage, #b8dfc8);
+  font-weight: 700;
 }
