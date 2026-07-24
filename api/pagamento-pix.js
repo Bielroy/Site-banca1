@@ -47,10 +47,48 @@ const PAGBANK_BASE_URL = process.env.PAGBANK_ENV === 'sandbox'
 
 const paraCentavos = (v) => Math.round(Number(v) * 100);
 
-module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGIN
-    || (process.env.VERCEL_ENV === 'production' ? 'https://site-banca1.vercel.app' : '*'));
+// ---------------------------------------------------------------------
+// CORS — lista de origens confiáveis
+//
+// POR QUE NÃO DEPENDE MAIS DE VARIÁVEL DE AMBIENTE:
+// a versão anterior usava ALLOWED_ORIGIN e, se ela estivesse errada ou
+// ausente, o site bloqueava a si mesmo — o navegador da cliente manda a
+// requisição de um domínio e o servidor autoriza outro. Como a banca tem
+// três endereços válidos (domínio próprio com e sem "www", mais o da
+// Vercel), agora conferimos de qual deles a chamada veio e devolvemos
+// exatamente esse. Funciona nos três sem configurar nada.
+//
+// ALLOWED_ORIGIN continua sendo lida e ACRESCENTA origens à lista
+// (aceita várias separadas por vírgula), mas não é mais obrigatória.
+// ---------------------------------------------------------------------
+const ORIGENS_CONFIAVEIS = [
+  'https://www.bancaadairepedrina.com.br',
+  'https://bancaadairepedrina.com.br',
+  'https://site-banca1.vercel.app',
+];
+
+const aplicarCors = (req, res, metodos) => {
+  const extras = String(process.env.ALLOWED_ORIGIN || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+  const permitidas = ORIGENS_CONFIAVEIS.concat(extras);
+  const origem = req.headers && req.headers.origin;
+
+  if (origem && permitidas.indexOf(origem) !== -1) {
+    res.setHeader('Access-Control-Allow-Origin', origem);
+  } else if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') {
+    res.setHeader('Access-Control-Allow-Origin', '*'); // preview e dev
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', permitidas[0]);
+  }
+
+  // Sem o Vary, um proxy poderia servir a resposta de um domínio para outro.
   res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', metodos || 'OPTIONS,POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+};
+
+module.exports = async function handler(req, res) {
+  aplicarCors(req, res, 'OPTIONS,POST');
   res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -105,6 +143,25 @@ module.exports = async function handler(req, res) {
     // no formulário de checkout).
     if (cpf) customer.tax_id = String(cpf).replace(/\D/g, '');
 
+    // -------------------------------------------------------------------
+    // ENDEREÇO DO WEBHOOK
+    //
+    // Se PUBLIC_BASE_URL não estiver definida na Vercel, o template
+    // literal produzia a string "undefined/api/pagamento-webhook" — uma
+    // URL inválida que o PagBank aceitaria sem reclamar na criação do
+    // pedido, mas para a qual nunca conseguiria avisar o pagamento.
+    // Resultado: cliente paga, dinheiro entra, e o pedido fica travado
+    // "aguardando pagamento" para sempre, sem erro visível em lugar nenhum.
+    // Melhor falhar agora, alto e claro, do que perder uma venda em silêncio.
+    // -------------------------------------------------------------------
+    const baseUrl = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
+    if (!/^https:\/\/[^\s]+$/.test(baseUrl)) {
+      console.error('[pix] PUBLIC_BASE_URL ausente ou inválida:', JSON.stringify(process.env.PUBLIC_BASE_URL));
+      return res.status(500).json({
+        error: 'Pagamento por PIX indisponível no momento. Escolha outra forma de pagamento.'
+      });
+    }
+
     const orderResp = await fetch(`${PAGBANK_BASE_URL}/orders`, {
       method: 'POST',
       headers: {
@@ -116,7 +173,7 @@ module.exports = async function handler(req, res) {
         customer,
         items: [{ name: `Pedido Banca Adair e Pedrina`, quantity: 1, unit_amount: valorCentavos }],
         qr_codes: [{ amount: { value: valorCentavos }, expiration_date: expiracao }],
-        notification_urls: [`${process.env.PUBLIC_BASE_URL}/api/pagamento-webhook`],
+        notification_urls: [`${baseUrl}/api/pagamento-webhook`],
       }),
     });
 
