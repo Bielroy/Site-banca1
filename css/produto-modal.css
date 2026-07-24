@@ -319,3 +319,120 @@
   border-bottom: 2px solid var(--sage, #b8dfc8);
   font-weight: 700;
 }
+
+/* =====================================================================
+   MEUS PEDIDOS — cartão, status e linha do tempo
+   Usado pela função renderHistorico() do loja.js.
+   ===================================================================== */
+
+.pedido-card {
+  border: 1px solid var(--parchment);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 12px;
+  background: var(--warm-white);
+  box-shadow: var(--shadow-sm);
+}
+.pedido-card.cancelado { opacity: .62; }
+
+.pedido-topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+.pedido-topo strong { color: var(--forest); font-size: .95rem; }
+.pedido-total {
+  color: var(--forest);
+  font-weight: 900;
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums; /* números não "dançam" ao atualizar */
+}
+
+.pedido-status {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: .84rem;
+  font-weight: 800;
+  letter-spacing: .2px;
+}
+.pedido-card.cancelado .pedido-total { text-decoration: line-through; }
+
+.pedido-aviso-peso {
+  margin-top: 6px;
+  font-size: .78rem;
+  color: var(--earth);
+  font-weight: 700;
+}
+
+.pedido-itens {
+  font-size: .88rem;
+  color: var(--text-mid);
+  line-height: 1.45;
+  margin-top: 10px;
+}
+
+.pedido-acoes {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.pedido-acoes .btn { padding: 11px 14px; font-size: .88rem; }
+
+/* ---------- Linha do tempo (Recebido → Separando → A caminho) ---------- */
+.timeline {
+  display: flex;
+  align-items: center;
+  margin: 14px 0 4px;
+}
+.timeline-passo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.timeline-bola {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  background: var(--parchment);
+  filter: grayscale(1) opacity(.55);
+  transition: var(--transition);
+}
+.timeline-passo.feito .timeline-bola {
+  background: var(--foam);
+  filter: none;
+}
+.timeline-passo.atual .timeline-bola {
+  background: var(--sage);
+  box-shadow: 0 0 0 4px rgba(74, 148, 103, .18);
+}
+.timeline-rotulo {
+  font-size: .68rem;
+  font-weight: 700;
+  color: var(--text-light);
+  text-align: center;
+  white-space: nowrap;
+}
+.timeline-passo.feito .timeline-rotulo { color: var(--forest); }
+
+.timeline-linha {
+  flex: 1;
+  height: 2px;
+  background: var(--parchment);
+  margin: 0 4px;
+  margin-bottom: 18px; /* alinha com o centro das bolinhas, não com o texto */
+}
+
+/* Pulsa só na etapa atual, e apenas para quem não pediu menos animação */
+@media (prefers-reduced-motion: no-preference) {
+  .timeline-passo.atual .timeline-bola { animation: pulsoEtapa 2s ease-in-out infinite; }
+  @keyframes pulsoEtapa {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(74, 148, 103, .18); }
+    50%      { box-shadow: 0 0 0 8px rgba(74, 148, 103, .07); }
+  }
+}
