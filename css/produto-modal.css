@@ -436,3 +436,31 @@
     50%      { box-shadow: 0 0 0 8px rgba(74, 148, 103, .07); }
   }
 }
+
+/* =====================================================================
+   RODAPÉ DO SITE — link da política de privacidade (LGPD)
+   ===================================================================== */
+.site-rodape {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 26px 20px calc(26px + var(--safe-bottom));
+  font-size: .82rem;
+  color: var(--text-light);
+  border-top: 1px solid var(--parchment);
+  margin-top: 40px;
+  /* Espaço extra no mobile: a barra do carrinho é fixa e cobriria o link */
+  margin-bottom: 90px;
+}
+.site-rodape a {
+  color: var(--forest);
+  font-weight: 700;
+  text-decoration: none;
+}
+.site-rodape a:hover { text-decoration: underline; }
+
+@media (min-width: 901px) {
+  .site-rodape { margin-bottom: 0; }
+}
