@@ -1,5 +1,5 @@
 import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc } from './firebase.js';
-import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage } from './utils.js';
+import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage } from './utils.js';
 import { initIA } from './ia.js';
 
 const CART_VERSION = "3.0"; // Atualizado para suportar o Carrinho Híbrido
@@ -10,7 +10,7 @@ const STATE = {
     config: { minimo: 0, wpp: '5562999999999', lojaAberta: true, diasAbertos: [0,1,2,3,4,5,6] },
     favoritos: JSON.parse(localStorage.getItem('banca_favs') || '[]'),
     lojaRenderizada: false, checkoutSessionId: null, historicoChat: [],
-    modalProdutoAtual: null, modalTipoCompra: 'kg' // Estado do Slider
+    modalProdutoAtual: null, modalTipoCompra: 'kg', modalQtd: 1 // Estado do seletor do modal
 };
 
 let inatividadeTimer;
@@ -327,57 +327,186 @@ const iniciarRealTimeSync = () => {
 const injetarModalDetalheSeNecessario = () => {
     if(document.getElementById('modal-detalhe-produto')) return;
     document.body.insertAdjacentHTML('beforeend', `
-        <div class="modal-overlay" id="modal-detalhe-produto" aria-hidden="true">
-            <div class="modal">
-                <div class="modal-head">
+        <div class="modal-overlay" id="modal-detalhe-produto" role="dialog" aria-modal="true" aria-labelledby="md-nome" aria-hidden="true">
+            <div class="modal modal-produto">
+                <button class="btn-fechar md-fechar-flutuante" data-fechar="modal-detalhe-produto" aria-label="Fechar">&times;</button>
+
+                <div class="md-hero">
+                    <img id="md-img" src="" alt="">
+                    <span id="md-tag" class="md-tag"></span>
+                </div>
+
+                <div class="modal-body md-corpo">
                     <h2 id="md-nome">Produto</h2>
-                    <button class="btn-fechar" data-fechar="modal-detalhe-produto">×</button>
-                </div>
-                <div class="modal-body" style="padding: 0 24px 24px 24px;">
-                    <div class="produto-detalhe-hero"><img id="md-img" src="" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:12px;"></div>
-                    <span id="md-tag" style="background:var(--foam);color:var(--forest-mid);padding:4px 12px;border-radius:20px;font-size:0.8rem;font-weight:bold;margin-bottom:12px;display:inline-block;border:1px solid var(--sage);"></span>
-                    <p id="md-desc" style="color:var(--text-mid);line-height:1.6;font-size:1.05rem;margin-bottom:20px;"></p>
-                    
-                    <div style="display:flex; justify-content: space-between; align-items:center; border-top: 1px solid var(--parchment); padding-top: 16px; margin-bottom: 16px;">
-                        <span id="md-preco" class="produto-preco" style="font-size: 2rem;"></span>
+                    <p id="md-desc" class="md-desc"></p>
+                    <div class="md-preco-base"><span id="md-preco"></span></div>
+
+                    <!-- Seletor de modo: Quilo x Unidade -->
+                    <div id="md-tipo-compra-container" class="md-segmented" role="tablist" aria-label="Como você quer comprar">
+                        <span class="md-segmented-pill" id="md-pill"></span>
+                        <button class="btn-tipo-compra active" data-tipo="kg" role="tab" aria-selected="true">
+                            <span class="md-seg-ico">⚖️</span><span>Por peso</span>
+                        </button>
+                        <button class="btn-tipo-compra" data-tipo="un" role="tab" aria-selected="false">
+                            <span class="md-seg-ico">🥔</span><span>Por unidade</span>
+                        </button>
                     </div>
 
-                    <div id="md-tipo-compra-container" style="display:none; margin-bottom: 15px; background: var(--foam); padding: 10px; border-radius: 8px;">
-                        <div style="display: flex; gap: 10px; margin-bottom: 8px;">
-                            <button class="btn-tipo-compra active" data-tipo="kg" style="flex:1; padding: 10px; border: 2px solid var(--forest); background: var(--forest); color: white; border-radius: 8px; font-weight: bold; cursor: pointer;">⚖️ Por Quilo</button>
-                            <button class="btn-tipo-compra" data-tipo="un" style="flex:1; padding: 10px; border: 2px solid var(--forest); background: transparent; color: var(--forest); border-radius: 8px; font-weight: bold; cursor: pointer;">🥔 Por Unidade</button>
+                    <!-- Atalhos rápidos (muda conforme o modo) -->
+                    <div class="md-presets" id="md-presets" role="group" aria-label="Quantidades rápidas"></div>
+
+                    <!-- Stepper grande -->
+                    <div class="md-stepper" role="group" aria-label="Ajustar quantidade">
+                        <button class="md-step-btn" id="md-menos" aria-label="Diminuir">−</button>
+                        <div class="md-qtd-display">
+                            <input id="md-qtd" class="md-qtd-input" type="text" inputmode="decimal" value="1" aria-label="Quantidade">
+                            <span class="md-qtd-unid" id="md-qtd-unid">kg</span>
                         </div>
-                        <small id="md-aviso-un" style="display:none; color: var(--earth); font-size: 0.85rem; font-weight: 600; text-align: center; display: block; margin-top: 8px;">* O valor exato será calculado após a pesagem das unidades.</small>
+                        <button class="md-step-btn" id="md-mais" aria-label="Aumentar">+</button>
                     </div>
 
+                    <!-- Resumo do valor ao vivo -->
+                    <div class="md-resumo" id="md-resumo" aria-live="polite"></div>
                 </div>
-                <div class="modal-footer">
-                    <button id="md-btn-add" class="btn btn-primary w-100" style="font-size:1.1rem; padding: 18px;">Adicionar ao Pedido</button>
+
+                <div class="modal-footer md-rodape">
+                    <button id="md-btn-add" class="btn btn-primary w-100 md-btn-add">Adicionar ao pedido</button>
                 </div>
             </div>
         </div>
     `);
 
-    // Lógica do Slider
+    const $ = (id) => document.getElementById(id);
+
+    // ---------- Núcleo: recalcula presets, rótulos e preço ----------
+    const PRESETS_KG = [
+        { rotulo: '250g', valor: 0.25 }, { rotulo: '500g', valor: 0.5 },
+        { rotulo: '1kg',  valor: 1 },    { rotulo: '2kg',  valor: 2 },
+    ];
+    const PRESETS_UN = [1, 2, 3, 5, 10];
+
+    const modoPeso = () => {
+        const p = STATE.modalProdutoAtual;
+        return p && isFracionavel(p.unidade) && STATE.modalTipoCompra === 'kg';
+    };
+
+    const passo = () => (modoPeso() ? 0.1 : 1);
+
+    const renderPresets = () => {
+        const cont = $('md-presets');
+        if (modoPeso()) {
+            cont.innerHTML = PRESETS_KG.map(pr =>
+                `<button class="md-preset" data-valor="${pr.valor}">${pr.rotulo}</button>`).join('');
+        } else {
+            cont.innerHTML = PRESETS_UN.map(n =>
+                `<button class="md-preset" data-valor="${n}">${n} un</button>`).join('');
+        }
+        marcarPresetAtivo();
+    };
+
+    const marcarPresetAtivo = () => {
+        document.querySelectorAll('#md-presets .md-preset').forEach(b => {
+            b.classList.toggle('ativo', parseFloat(b.dataset.valor) === STATE.modalQtd);
+        });
+    };
+
+    const atualizarResumo = () => {
+        const p = STATE.modalProdutoAtual; if (!p) return;
+        const qtd = STATE.modalQtd;
+        const resumo = $('md-resumo');
+        const btn = $('md-btn-add');
+        const fracionavel = isFracionavel(p.unidade);
+
+        $('md-qtd').value = formatarQuantidadeVisual(qtd, modoPeso());
+        $('md-qtd-unid').textContent = modoPeso() ? (p.unidade || 'kg') : (qtd === 1 ? 'unidade' : 'unidades');
+        $('md-menos').disabled = qtd <= passo();
+        marcarPresetAtivo();
+
+        if (fracionavel && STATE.modalTipoCompra === 'un') {
+            // Pedido por unidade de item vendido a peso: preço só após a balança.
+            // Se o admin cadastrou peso médio (em gramas), mostramos uma ESTIMATIVA honesta.
+            const pesoMedio = Number(p.pesoMedio || 0); // gramas por unidade
+            if (pesoMedio > 0) {
+                const kgEstimado = (pesoMedio * qtd) / 1000;
+                const valorEstimado = kgEstimado * p.preco;
+                resumo.className = 'md-resumo md-resumo-estimado';
+                resumo.innerHTML = `
+                    <div class="md-resumo-linha">
+                        <span>≈ ${kgEstimado.toFixed(2).replace('.', ',')} kg</span>
+                        <strong>~ ${fmt(valorEstimado)}</strong>
+                    </div>
+                    <small>⚖️ Valor estimado. O preço final sai na balança, na hora de separar seu pedido.</small>`;
+            } else {
+                resumo.className = 'md-resumo md-resumo-pesar';
+                resumo.innerHTML = `<small>⚖️ Vamos pesar ${qtd} ${qtd === 1 ? 'unidade' : 'unidades'} e o valor final entra no seu pedido.</small>`;
+            }
+            btn.textContent = `Adicionar ${qtd} ${qtd === 1 ? 'unidade' : 'unidades'}`;
+        } else {
+            const total = p.preco * qtd;
+            resumo.className = 'md-resumo md-resumo-exato';
+            resumo.innerHTML = `<div class="md-resumo-linha"><span>Total</span><strong>${fmt(total)}</strong></div>`;
+            btn.textContent = `Adicionar • ${fmt(total)}`;
+        }
+    };
+
+    const setQtd = (valor) => {
+        const min = passo();
+        let v = Number(valor);
+        if (!Number.isFinite(v) || v < min) v = min;
+        STATE.modalQtd = modoPeso() ? fixFloat(v) : Math.round(v);
+        atualizarResumo();
+    };
+
+    // Exposto para o handler que abre o modal
+    window.__mdSincronizar = () => { renderPresets(); atualizarResumo(); };
+    window.__mdSetQtd = setQtd;
+
+    // ---------- Eventos ----------
+    const moverPill = (btn) => {
+        const pill = $('md-pill');
+        const cont = $('md-tipo-compra-container');
+        if (!pill || !btn || !cont) return;
+        pill.style.width = `${btn.offsetWidth}px`;
+        pill.style.transform = `translateX(${btn.offsetLeft - cont.clientLeft}px)`;
+    };
+
     document.querySelectorAll('.btn-tipo-compra').forEach(btn => {
         btn.addEventListener('click', (e) => {
+            const clicado = e.currentTarget;
             document.querySelectorAll('.btn-tipo-compra').forEach(b => {
-                b.style.background = 'transparent'; b.style.color = 'var(--forest)'; b.classList.remove('active');
+                b.classList.remove('active'); b.setAttribute('aria-selected', 'false');
             });
-            const clicked = e.currentTarget;
-            clicked.style.background = 'var(--forest)'; clicked.style.color = 'white'; clicked.classList.add('active');
-            
-            STATE.modalTipoCompra = clicked.dataset.tipo;
-            
-            const aviso = document.getElementById('md-aviso-un');
-            if(STATE.modalTipoCompra === 'un') {
-                aviso.style.display = 'block';
-                document.getElementById('md-btn-add').textContent = 'Adicionar (A Pesar)';
-            } else {
-                aviso.style.display = 'none';
-                document.getElementById('md-btn-add').textContent = 'Adicionar ao Pedido';
-            }
+            clicado.classList.add('active');
+            clicado.setAttribute('aria-selected', 'true');
+            moverPill(clicado);
+            hapticFeedback();
+
+            STATE.modalTipoCompra = clicado.dataset.tipo;
+            // Ao trocar de modo, reinicia numa quantidade que faz sentido
+            STATE.modalQtd = (STATE.modalTipoCompra === 'kg') ? 1 : 1;
+            renderPresets();
+            atualizarResumo();
         });
+    });
+
+    $('md-presets').addEventListener('click', (e) => {
+        const b = e.target.closest('.md-preset'); if (!b) return;
+        setQtd(parseFloat(b.dataset.valor)); hapticFeedback();
+    });
+
+    $('md-mais').addEventListener('click', () => { setQtd(STATE.modalQtd + passo()); hapticFeedback(); });
+    $('md-menos').addEventListener('click', () => { setQtd(STATE.modalQtd - passo()); hapticFeedback(); });
+
+    $('md-qtd').addEventListener('input', (e) => {
+        const v = parseFloat(String(e.target.value).replace(',', '.'));
+        if (Number.isFinite(v) && v > 0) { STATE.modalQtd = modoPeso() ? fixFloat(v) : Math.round(v); atualizarResumo(); }
+    });
+    $('md-qtd').addEventListener('blur', () => setQtd(STATE.modalQtd));
+
+    // Reposiciona a pilha do segmented control quando a tela muda de tamanho
+    window.addEventListener('resize', () => {
+        const ativo = document.querySelector('.btn-tipo-compra.active');
+        if (ativo && document.getElementById('modal-detalhe-produto')?.classList.contains('aberto')) moverPill(ativo);
     });
 };
 
@@ -468,36 +597,47 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'detalhe') {
             const p = STATE.produtos.find(x => x.id === id);
             if(!p) return;
-            
+
             STATE.modalProdutoAtual = p;
             injetarModalDetalheSeNecessario();
-            
+
             document.getElementById('md-nome').textContent = p.nome;
-            document.getElementById('md-img').src = p.foto || '';
-            document.getElementById('md-tag').textContent = `Em Destaque • Categoria: ${p.cat}`;
-            document.getElementById('md-desc').textContent = p.descricao || "Produto fresco selecionado com carinho."; 
-            document.getElementById('md-preco').innerHTML = `${fmt(p.preco)} <span style="font-size:1rem;color:var(--text-light)">/${p.unidade||'un'}</span>`;
-            
-            // Lógica do Slider Baseada no Produto
-            const sliderCont = document.getElementById('md-tipo-compra-container');
-            const avisoUn = document.getElementById('md-aviso-un');
-            if (isFracionavel(p.unidade)) {
-                sliderCont.style.display = 'block';
-                // Reseta para Kg por padrão
-                document.querySelector('[data-tipo="kg"]').click(); 
+            const img = document.getElementById('md-img');
+            img.src = p.foto || ''; img.alt = p.nome;
+            document.getElementById('md-tag').textContent = p.cat || '';
+            document.getElementById('md-desc').textContent = p.descricao || "Produto fresco, selecionado no dia.";
+            document.getElementById('md-preco').innerHTML =
+                `${fmt(p.preco)} <span class="md-preco-unid">/ ${escapeHTML(p.unidade || 'un')}</span>`;
+
+            // Se o cliente JÁ tem esse item no carrinho, o modal abre no estado atual dele
+            const jaNoCarrinho = STATE.carrinho.find(c => c.id === p.id);
+            const seletor = document.getElementById('md-tipo-compra-container');
+            const fracionavel = isFracionavel(p.unidade);
+
+            if (fracionavel) {
+                seletor.style.display = 'flex';
+                const tipoInicial = jaNoCarrinho ? jaNoCarrinho.tipo : 'kg';
+                const btnAlvo = document.querySelector(`.btn-tipo-compra[data-tipo="${tipoInicial}"]`)
+                             || document.querySelector('.btn-tipo-compra[data-tipo="kg"]');
+                btnAlvo.click(); // já dispara renderPresets + atualizarResumo
             } else {
-                sliderCont.style.display = 'none';
-                STATE.modalTipoCompra = 'un'; // Produto que só vende por unidade
-                document.getElementById('md-btn-add').textContent = 'Adicionar ao Pedido';
+                seletor.style.display = 'none';
+                STATE.modalTipoCompra = 'un';
             }
 
-            const btnAdicionar = document.getElementById('md-btn-add');
-            btnAdicionar.onclick = () => { 
-                // Passa a quantidade (1) e o TIPO escolhido no slider!
-                modificarCarrinho(p.id, 1, false, STATE.modalTipoCompra); 
-                showToast(STATE.modalTipoCompra === 'un' && isFracionavel(p.unidade) ? "🛒 Adicionado! (Será pesado)" : "🛒 Adicionado!"); 
-                closeModal('modal-detalhe-produto'); 
+            // Quantidade inicial: o que já está no carrinho, senão o padrão do modo
+            STATE.modalQtd = jaNoCarrinho ? jaNoCarrinho.qtd : (fracionavel && STATE.modalTipoCompra === 'kg' ? 1 : 1);
+            window.__mdSincronizar();
+
+            document.getElementById('md-btn-add').onclick = () => {
+                // fixo=true: usa exatamente a quantidade escolhida (não incrementa)
+                modificarCarrinho(p.id, STATE.modalQtd, true, STATE.modalTipoCompra);
+                const aPesar = STATE.modalTipoCompra === 'un' && isFracionavel(p.unidade);
+                showToast(aPesar ? `🛒 ${STATE.modalQtd} un adicionada(s) — será pesado` : "🛒 Adicionado ao pedido!");
+                closeModal('modal-detalhe-produto');
+                if (history.state && history.state.modal === 'modal-detalhe-produto') history.back();
             };
+
             openModal('modal-detalhe-produto');
         }
         else if (action === 'cat') { STATE.catAtiva = actionTarget.dataset.cat; renderLoja(); }
