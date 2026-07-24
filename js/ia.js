@@ -63,17 +63,22 @@ export const initIA = (STATE) => {
         if (btnCamera) btnCamera.style.color = 'var(--text-mid)';
     };
 
-    const enviarMensagemParaIA = async () => {
-        const texto = inputMsg.value.trim();
-        if (!texto && !base64Image) return;
+    let ultimoEnvio = null; // guarda o que foi mandado, p/ o botão "tentar de novo"
 
-        corpoChat.insertAdjacentHTML('beforeend', `
-            <div style="align-self: flex-end; background: var(--forest); color: white; padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; box-shadow: var(--shadow-sm); margin-bottom: 8px;">
-                ${base64Image ? '📸 [Imagem anexada]<br>' : ''}${escapeHTML(texto)}
-            </div>
-        `);
+    const enviarMensagemParaIA = async (repetindo) => {
+        const texto = repetindo ? repetindo.texto : inputMsg.value.trim();
+        const anexo = repetindo ? repetindo.imagem : (base64Image ? { data: base64Image, mimeType: mimeTypeImage } : null);
+        if (!texto && !anexo) return;
 
-        STATE.historicoChat.push({ role: 'user', content: texto + (base64Image ? ' [Enviou uma imagem]' : '') });
+        if (!repetindo) {
+            corpoChat.insertAdjacentHTML('beforeend', `
+                <div style="align-self: flex-end; background: var(--forest); color: white; padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; box-shadow: var(--shadow-sm); margin-bottom: 8px;">
+                    ${anexo ? '📸 [Imagem anexada]<br>' : ''}${escapeHTML(texto)}
+                </div>
+            `);
+            STATE.historicoChat.push({ role: 'user', content: texto + (anexo ? ' [Enviou uma imagem]' : '') });
+        }
+        ultimoEnvio = { texto: texto, imagem: anexo };
         inputMsg.value = '';
         containerSugestoes.innerHTML = '';
         btnEnviar.disabled = true;
@@ -88,7 +93,7 @@ export const initIA = (STATE) => {
         corpoChat.scrollTop = corpoChat.scrollHeight;
         const bolhaEl = document.getElementById(idBolha);
 
-        const imagemDoEnvio = base64Image ? { data: base64Image, mimeType: mimeTypeImage } : null;
+        const imagemDoEnvio = anexo;
         limparAnexo();
 
         try {
@@ -108,11 +113,15 @@ export const initIA = (STATE) => {
 
             if (!response.ok) {
                 let errorMsg = 'Erro no servidor';
+                let podeRepetir = response.status === 429 || response.status === 503;
                 try {
                     const errorData = await response.json();
-                    errorMsg = errorData.dica || errorData.error || errorMsg;
+                    errorMsg = errorData.error || errorMsg;
+                    if (errorData.podeRepetir !== undefined) podeRepetir = errorData.podeRepetir;
                 } catch (e) {}
-                throw new Error(response.status === 429 ? 'Muitas mensagens. Aguarde um instante.' : errorMsg);
+                const erro = new Error(errorMsg);
+                erro.podeRepetir = podeRepetir;
+                throw erro;
             }
 
             const reader = response.body.getReader();
@@ -176,14 +185,27 @@ export const initIA = (STATE) => {
             }
 
         } catch (err) {
-            bolhaEl.innerHTML = `<span style="color:var(--danger)">🚨 ${escapeHTML(err.message)}</span>`;
+            // Sobrecarga da IA é passageira: oferece repetir sem redigitar.
+            const passageiro = err.podeRepetir === true;
+            bolhaEl.innerHTML = `
+                <div style="color:${passageiro ? 'var(--text-mid)' : 'var(--danger)'};">
+                    ${passageiro ? '⏳' : '🚨'} ${escapeHTML(err.message)}
+                </div>
+                ${passageiro ? '<button class="btn btn-outline btn-repetir-ia" style="margin-top:10px; padding:8px 14px; font-size:.85rem;">🔄 Tentar de novo</button>' : ''}`;
+            const btnRepetir = bolhaEl.querySelector('.btn-repetir-ia');
+            if (btnRepetir) {
+                btnRepetir.addEventListener('click', () => {
+                    bolhaEl.remove();
+                    enviarMensagemParaIA(ultimoEnvio);
+                });
+            }
         } finally {
             btnEnviar.disabled = false;
             btnEnviar.textContent = 'Enviar';
         }
     };
 
-    if (btnEnviar) btnEnviar.addEventListener('click', enviarMensagemParaIA);
+    if (btnEnviar) btnEnviar.addEventListener('click', () => enviarMensagemParaIA());
     if (inputMsg) inputMsg.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); enviarMensagemParaIA(); }
     });
