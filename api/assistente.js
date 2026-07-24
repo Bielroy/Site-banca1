@@ -324,14 +324,48 @@ const lerJSON = (t) => JSON.parse(String(t).replace(/^```(?:json)?/i, '').replac
 // ---------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------
-module.exports = async function handler(req, res) {
-  // CORS: sem ALLOWED_ORIGIN, em produção usa o domínio próprio em vez de "*"
-  const origemPermitida = process.env.ALLOWED_ORIGIN
-    || (process.env.VERCEL_ENV === 'production' ? 'https://site-banca1.vercel.app' : '*');
-  res.setHeader('Access-Control-Allow-Origin', origemPermitida);
+// ---------------------------------------------------------------------
+// CORS — lista de origens confiáveis
+//
+// POR QUE NÃO DEPENDE MAIS DE VARIÁVEL DE AMBIENTE:
+// a versão anterior usava ALLOWED_ORIGIN e, se ela estivesse errada ou
+// ausente, o site bloqueava a si mesmo — o navegador da cliente manda a
+// requisição de um domínio e o servidor autoriza outro. Como a banca tem
+// três endereços válidos (domínio próprio com e sem "www", mais o da
+// Vercel), agora conferimos de qual deles a chamada veio e devolvemos
+// exatamente esse. Funciona nos três sem configurar nada.
+//
+// ALLOWED_ORIGIN continua sendo lida e ACRESCENTA origens à lista
+// (aceita várias separadas por vírgula), mas não é mais obrigatória.
+// ---------------------------------------------------------------------
+const ORIGENS_CONFIAVEIS = [
+  'https://www.bancaadairepedrina.com.br',
+  'https://bancaadairepedrina.com.br',
+  'https://site-banca1.vercel.app',
+];
+
+const aplicarCors = (req, res, metodos) => {
+  const extras = String(process.env.ALLOWED_ORIGIN || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+  const permitidas = ORIGENS_CONFIAVEIS.concat(extras);
+  const origem = req.headers && req.headers.origin;
+
+  if (origem && permitidas.indexOf(origem) !== -1) {
+    res.setHeader('Access-Control-Allow-Origin', origem);
+  } else if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') {
+    res.setHeader('Access-Control-Allow-Origin', '*'); // preview e dev
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', permitidas[0]);
+  }
+
+  // Sem o Vary, um proxy poderia servir a resposta de um domínio para outro.
   res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'OPTIONS, POST, GET');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-diagnostico');
+  res.setHeader('Access-Control-Allow-Methods', metodos || 'OPTIONS,POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+};
+
+module.exports = async function handler(req, res) {
+  aplicarCors(req, res, 'OPTIONS, POST, GET');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
