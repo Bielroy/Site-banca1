@@ -1,0 +1,76 @@
+:root {
+    /* Cores Primárias */
+    --forest: #1a3a2a;
+    --forest-mid: #2c5f45;
+    --leaf: #4a9467;
+    
+    /* Cores Secundárias */
+    --mint: #7ec8a0; 
+    --mint-dark: #2a6a4a; 
+    --sage: #b8dfc8;
+    --foam: #e8f5ee;
+    
+    /* Tons Terrosos */
+    --earth: #c4773a;
+    --earth-light: #e8a96a;
+    
+    /* Neutros */
+    --cream: #faf7f2;
+    --parchment: #f2ede3;
+    --warm-white: #fefcf8;
+    --text-dark: #1a1a18;
+    --text-mid: #4a4a44;
+    --text-light: #707065;
+    
+    /* Utilitários & Status Logístico (NOVO) */
+    --danger: #dc2626;
+    --danger-light: #fef2f2;
+    --success: #16a34a;
+    --success-light: #dcfce7;
+    --info: #0284c7;
+    --warning: #d97706;
+    --warning-light: #fef3c7;
+    --disabled: #94a3b8;
+    
+    /* Sombras Elevadas */
+    --shadow-sm: 0 2px 12px hsl(148, 30%, 15%, 0.04);
+    --shadow-md: 0 8px 24px hsl(148, 30%, 15%, 0.08);
+    --shadow-lg: 0 20px 40px hsl(148, 30%, 15%, 0.12);
+    
+    /* Layout & Sistema de Z-Index */
+    --radius: 20px;
+    --radius-sm: 12px;
+    --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    --safe-bottom: env(safe-area-inset-bottom, 20px);
+    
+    --z-base: 10;
+    --z-sticky: 100;
+    --z-overlay: 900;
+    --z-modal: 1000;
+    --z-toast: 9999;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body { 
+    font-family: 'Plus Jakarta Sans', sans-serif; 
+    background: var(--cream); 
+    color: var(--text-dark); 
+    min-height: 100vh; 
+    -webkit-tap-highlight-color: transparent; 
+}
+
+button, input, select, textarea { 
+    font-family: inherit; 
+    font-size: 16px; 
+}
+
+/* Tratamento Global de Acessibilidade */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
