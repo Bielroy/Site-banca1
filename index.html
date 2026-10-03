@@ -63,6 +63,7 @@
     <!-- NOVO: estilos do seletor de quantidade (peso × unidade).
          Precisa vir DEPOIS do loja.css para prevalecer. -->
     <link rel="stylesheet" href="./css/produto-modal.css">
+    <link rel="stylesheet" href="./css/melhorias.css">
 
     <link rel="icon" href="./icon-192.png">
     <!-- O <link rel="manifest"> não é escrito aqui. O vite-plugin-pwa
@@ -81,6 +82,13 @@
     <meta name="apple-mobile-web-app-title" content="Banca Adair">
 </head>
 <body>
+
+<!-- Tela de entrada enquanto a vitrine carrega (some sozinha: ver js/melhorias-ui.js) -->
+<div id="splash-feira" aria-hidden="true">
+    <div class="splash-cesto">🧺</div>
+    <div class="splash-frutas"><span>🍅</span><span>🥕</span><span>🍋</span></div>
+    <p>Separando o que tem de fresquinho...</p>
+</div>
 
 <div class="banner-aviso fechado" id="banner-offline" aria-live="assertive">📵 Você está sem internet. Usando dados salvos.</div>
 <div class="banner-aviso fechado" id="banner-fechado" aria-live="polite">🚫 Estamos fechados no momento. Voltamos em breve!</div>
@@ -220,31 +228,51 @@
         <div class="modal-body" style="padding-top: 40px; text-align: center;">
             <div class="circulo-sucesso" style="width: 80px; height: 80px; background: #dcfce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: var(--success); font-size: 40px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.2); animation: scaleIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.2);">✓</div>
             <h2 class="title-success" style="font-family: 'Fraunces', serif; color: var(--forest); margin-bottom: 12px; font-size: 1.8rem;">Pedido Registrado!</h2>
-            <p class="text-success" style="color: var(--text-mid); margin-bottom: 24px; line-height: 1.5; font-size: 1.05rem;">Você será redirecionado para o nosso WhatsApp para finalizar. Caso a janela não abra, clique no botão abaixo.</p>
+            <p class="text-success" id="sucesso-texto" style="color: var(--text-mid); margin-bottom: 18px; line-height: 1.5; font-size: 1.05rem;">Você será redirecionado para o nosso WhatsApp para finalizar. Caso a janela não abra, clique no botão abaixo.</p>
+            <div id="sucesso-whatsapps" class="sucesso-whatsapps"></div>
             <button class="btn-finalizar" data-fechar="modal-sucesso">Voltar para a Loja</button>
         </div>
     </div>
 </div>
 
-<button id="btn-ia-flutuante" style="position: fixed; bottom: calc(var(--safe-bottom) + 90px); right: 20px; width: 56px; height: 56px; background: var(--earth); color: white; border: none; border-radius: 50%; box-shadow: var(--shadow-lg); z-index: var(--z-sticky); cursor: pointer; font-size: 24px; display: flex; align-items: center; justify-content: center; transition: var(--transition);" aria-label="Falar com Assistente">✨</button>
+<button id="btn-ia-flutuante" class="ia-fab" aria-label="Falar com o Ajudante da Banca">
+    <svg viewBox="0 0 48 48" width="30" height="30" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 20h32l-3.4 17.2a4 4 0 0 1-3.9 3.2H15.3a4 4 0 0 1-3.9-3.2L8 20Z" fill="rgba(255,255,255,.18)"/>
+        <path d="M16 20c0-6 3.6-10 8-10s8 4 8 10"/>
+        <path d="M17 27v8M24 27v8M31 27v8"/>
+        <path d="M30 10c3-.2 5.4-1.6 6.4-4.2-3.2-.6-6 .8-6.4 4.2Z" fill="currentColor" stroke="none"/>
+    </svg>
+    <span class="ia-fab-rotulo">Ajuda</span>
+</button>
 
 <div class="modal-overlay" id="modal-ia-chat" role="dialog" aria-modal="true" aria-labelledby="ia-titulo">
-    <div class="modal" style="max-width: 450px; height: 75dvh;">
-        <header class="modal-head">
-            <h2 id="ia-titulo">✨ Assistente de Receitas</h2>
+    <div class="modal ia-modal">
+        <header class="modal-head ia-topo">
+            <div class="ia-topo-info">
+                <span class="ia-topo-cesto" aria-hidden="true">🧺</span>
+                <div>
+                    <h2 id="ia-titulo">Ajudante da Banca</h2>
+                    <p class="ia-topo-sub">Receitas, dicas e o que levar para a mesa</p>
+                </div>
+            </div>
             <button class="btn-fechar" data-fechar="modal-ia-chat" aria-label="Fechar">&times;</button>
         </header>
-        <div class="modal-body" id="chat-ia-corpo" style="display: flex; flex-direction: column; gap: 16px; background: var(--parchment); overflow-y: auto;">
-            <div style="background: white; padding: 14px; border-radius: var(--radius-sm); border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); font-size: 0.95rem; line-height: 1.5;">
-                🥦 <b>Banca Adair e Pedrina:</b> Olá! Sou o seu sommelier de receitas. O que planeja cozinhar hoje? Pode me pedir dicas como: <i>"O que preciso para fazer um vinagrete completo?"</i> ou <i>"Ideia de sobremesa com frutas"</i>!
+        <div class="modal-body ia-corpo" id="chat-ia-corpo">
+            <div class="ia-msg ia-msg--bot">
+                <p>Oi, vizinho! Sou o ajudante da banca. Me conta o que você quer cozinhar hoje que eu separo os ingredientes fresquinhos.</p>
+                <div class="ia-etiquetas">
+                    <button type="button" class="ia-etiqueta" data-prompt="O que preciso para fazer um vinagrete completo?">🍅 Vinagrete</button>
+                    <button type="button" class="ia-etiqueta" data-prompt="Ideia de sobremesa com frutas">🍓 Sobremesa</button>
+                    <button type="button" class="ia-etiqueta" data-prompt="O que posso fazer de almoço rápido com legumes?">🥕 Almoço rápido</button>
+                </div>
             </div>
         </div>
-        <div id="ia-sugestoes-container" style="padding: 10px 16px; background: white; display: flex; gap: 8px; overflow-x: auto; border-top: 1px solid var(--parchment);"></div>
-        <footer class="modal-footer" style="padding: 12px 16px; background: white;">
-            <div style="display: flex; gap: 8px; width: 100%;">
-                <label for="input-ia-mensagem" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);">Mensagem para o assistente</label>
-                <input type="text" id="input-ia-mensagem" placeholder="Pergunte sobre uma receita ou produto..." style="flex: 1; padding: 12px; border: 1.5px solid #e0dcd4; border-radius: var(--radius-sm); outline: none; font-size: 16px;">
-                <button class="btn btn-primary" id="btn-ia-enviar" style="padding: 12px 20px;">Enviar</button>
+        <div id="ia-sugestoes-container" class="ia-sugestoes"></div>
+        <footer class="modal-footer ia-rodape">
+            <div class="ia-form">
+                <label for="input-ia-mensagem" class="sr-only">Mensagem para o ajudante</label>
+                <input type="text" id="input-ia-mensagem" placeholder="O que vamos cozinhar hoje?" autocomplete="off">
+                <button class="ia-enviar" id="btn-ia-enviar" aria-label="Enviar">Enviar</button>
             </div>
         </footer>
     </div>
