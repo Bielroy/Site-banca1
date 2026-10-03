@@ -16,6 +16,9 @@
 // =====================================================================
 const admin = require('firebase-admin');
 const C = require('./config');
+// Janela padrão lida UMA vez: o motor reescreve C.JANELA_DIAS a cada execução,
+// e depois de um "importar 365 dias" todo cálculo seguinte relia o ano inteiro.
+const JANELA_PADRAO = C.JANELA_DIAS;
 const { diaDeTs, isoDeDia } = require('./normalize');
 
 let _db;
@@ -51,7 +54,7 @@ async function carregarEntradas(db, { janelaDias } = {}) {
   const [cfgP, evP, cfgLoja] = await Promise.all([db.doc('analytics_config/params').get(), db.doc('analytics_config/eventos').get(), db.doc('loja/config').get()]);
   const parametros = cfgP.exists ? cfgP.data() : {};
   const eventos = evP.exists ? (evP.data().lista || []) : [];
-  const dias = Math.min(Math.max(Number(janelaDias) || Number(parametros.JANELA_DIAS) || C.JANELA_DIAS, 14), 900);
+  const dias = Math.min(Math.max(Number(janelaDias) || Number(parametros.JANELA_DIAS) || JANELA_PADRAO, 14), 900);
 
   const agora = Date.now(), hoje = diaDeTs(agora);
   // início do 1º dia da janela em horário de Brasília → ISO UTC
@@ -95,7 +98,9 @@ async function persistir(db, r) {
   set('analytics_global/atual', { meta: r.meta, global: r.global, catalogo: r.catalogo });
   set('analytics_previsoes/painel', { meta: r.meta, dashboard: r.dashboard, esperados: r.esperados, categorias: r.categorias, loja: r.loja, indiceClientes: r.indiceClientes });
 
-  const chunks = fatiar(r.previsoes, 500000);
+  // 250 KB por documento: fatias maiores chegavam perto do limite de 40 mil
+  // campos indexados por documento do Firestore com ~100 produtos previstos.
+  const chunks = fatiar(r.previsoes, 250000);
   chunks.forEach((c, i) => set(`analytics_previsoes_chunks/c${i}`, { n: i, produtos: c, geradoEm: ts }));
   const antigos = await db.collection('analytics_previsoes_chunks').get();
   antigos.docs.forEach((d) => { if (Number(d.id.slice(1)) >= chunks.length) ops.push({ tipo: 'delete', ref: d.ref }); });
@@ -173,4 +178,3 @@ async function lerClientePorId(db, id) {
 }
 
 module.exports = { obterDb, carregarEntradas, persistir, recalcular, lerGlobal, lerClientePorUid, lerPainel, lerClientePorId, fatiar, limpo };
-
