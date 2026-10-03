@@ -1,1 +1,153 @@
+/* =====================================================================
+   melhorias.css — estabilidade de rolagem, loaders, transições e o visual
+   do "Ajudante da Banca". Carregado DEPOIS dos demais CSS.
+   ===================================================================== */
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---------- 1) ROLAGEM: evita elementos "sumindo" ----------
+   Cada card tinha 2-3 camadas de backdrop-filter + transform no hover:
+   em celular isso estoura a memória da GPU e o navegador deixa de pintar
+   o que está fora da tela por um instante. Mantemos o visual sem o blur. */
+.produto-card .btn-fav,
+.produto-card .produto-unidade-tag { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.produto-card .btn-fav { background: rgba(255,255,255,.96); }
+.produto-card .produto-unidade-tag { background: rgba(26,58,42,.92); }
+.produto-card { contain: layout style; -webkit-tap-highlight-color: transparent; }
+.produto-img-wrap img { content-visibility: auto; }
+@media (hover: none) {
+    .produto-card:hover { transform: none; box-shadow: var(--shadow-sm); border-color: transparent; }
+    .produto-card:hover .produto-img-wrap img { transform: none; }
+}
+/* o carrinho/overlay não precisam de blur enquanto estão fechados */
+.modal-overlay:not(.aberto) { backdrop-filter: none; }
+
+/* ---------- 2) TELA DE ENTRADA ---------- */
+#splash-feira {
+    position: fixed; inset: 0; z-index: 99999; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+    background: radial-gradient(ellipse at 50% 30%, #2c5f45 0%, var(--forest) 70%);
+    color: var(--sage); transition: opacity .45s ease, visibility .45s ease;
+}
+#splash-feira.saindo { opacity: 0; visibility: hidden; pointer-events: none; }
+#splash-feira p { font-family: 'Fraunces', serif; font-size: 1.05rem; letter-spacing: .3px; opacity: .9; }
+.splash-cesto { font-size: 3.6rem; animation: splashBalanca 1.6s ease-in-out infinite; transform-origin: 50% 0; }
+.splash-frutas { display: flex; gap: 14px; font-size: 1.6rem; }
+.splash-frutas span { animation: splashPula 1s ease-in-out infinite; }
+.splash-frutas span:nth-child(2) { animation-delay: .15s; }
+.splash-frutas span:nth-child(3) { animation-delay: .3s; }
+@keyframes splashBalanca { 0%,100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
+@keyframes splashPula { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+
+/* ---------- 3) BOTÕES OCUPADOS: spinner no lugar do "⏳" ---------- */
+.btn-carregando { position: relative; pointer-events: none; opacity: .85; }
+.btn-carregando::after {
+    content: ''; display: inline-block; width: 14px; height: 14px; margin-left: 8px; vertical-align: -2px;
+    border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+    animation: giraGira .7s linear infinite;
+}
+@keyframes giraGira { to { transform: rotate(360deg); } }
+
+/* ---------- 4) TRANSIÇÕES SUAVES ---------- */
+.produto-card { animation: cardEntra .35s ease both; }
+@keyframes cardEntra { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.cat-btn { transition: background .2s ease, color .2s ease, border-color .2s ease, transform .15s ease; }
+.cat-btn:active { transform: scale(.95); }
+.modal-overlay.aberto { animation: fadeIn .22s ease; }
+.modal-overlay.aberto .modal { animation: slideUp .32s cubic-bezier(.16,1,.3,1); }
+.toast { transition: transform .35s cubic-bezier(.16,1,.3,1), opacity .25s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* ---------- 5) AJUDANTE DA BANCA (tema feira / cozinha) ---------- */
+.ia-fab {
+    position: fixed; bottom: calc(var(--safe-bottom) + 90px); right: 16px; z-index: var(--z-sticky);
+    width: 62px; height: 62px; border: 0; border-radius: 50% 50% 46% 54% / 56% 52% 48% 44%;
+    background: linear-gradient(145deg, #d98a4a, var(--earth)); color: #fff; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
+    box-shadow: 0 10px 22px rgba(196,119,58,.38), inset 0 -3px 0 rgba(0,0,0,.12);
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+.ia-fab:active { transform: scale(.92); }
+.ia-fab-rotulo { font-size: .6rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; margin-top: -2px; }
+
+.ia-modal { max-width: 450px; height: 78dvh; background: var(--cream); }
+.ia-topo {
+    background: var(--forest); border-bottom: 0; padding: 14px 18px; position: relative; color: #fff;
+}
+/* barra de "toalha de feira" xadrez embaixo do topo */
+.ia-topo::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: -8px; height: 8px; z-index: 3;
+    background: repeating-linear-gradient(90deg, #c4773a 0 12px, #faf7f2 12px 24px);
+    mask: radial-gradient(circle 6px at 12px 0, transparent 98%, #000) 0 0 / 24px 8px repeat-x;
+    -webkit-mask: radial-gradient(circle 6px at 12px 0, transparent 98%, #000) 0 0 / 24px 8px repeat-x;
+}
+.ia-topo-info { display: flex; align-items: center; gap: 12px; }
+.ia-topo-cesto { width: 42px; height: 42px; display: grid; place-items: center; font-size: 1.5rem; border-radius: 14px 14px 18px 18px; background: rgba(255,255,255,.12); }
+.ia-topo .ia-topo-info h2 { color: #fff; font-size: 1.2rem; line-height: 1.1; }
+.ia-topo-sub { font-size: .74rem; color: var(--sage); margin-top: 2px; }
+.ia-topo .btn-fechar { color: #fff; background: rgba(255,255,255,.14); }
+
+.ia-corpo {
+    display: flex; flex-direction: column; gap: 12px; padding: 22px 16px 16px; overflow-y: auto;
+    background:
+        radial-gradient(circle at 20% 10%, rgba(126,200,160,.14), transparent 40%),
+        radial-gradient(circle at 90% 85%, rgba(232,169,106,.16), transparent 40%),
+        var(--cream);
+}
+.ia-msg { max-width: 88%; padding: 12px 14px; font-size: .94rem; line-height: 1.5; box-shadow: var(--shadow-sm); animation: cardEntra .3s ease both; overflow-wrap: anywhere; }
+.ia-msg p { margin: 0; }
+.ia-msg--bot { align-self: flex-start; background: #fffaf0; color: var(--text-dark); border: 1px solid #eadfc8; border-radius: 4px 18px 18px 18px; }
+.ia-msg--eu { align-self: flex-end; background: var(--forest-mid); color: #fff; border-radius: 18px 4px 18px 18px; }
+.ia-msg--erro { color: var(--text-mid); }
+.ia-msg--erro.fatal { color: var(--danger); }
+.ia-etiquetas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.ia-etiqueta {
+    border: 1.5px dashed var(--earth); background: #fff; color: var(--earth); font-weight: 700; font-size: .8rem;
+    padding: 7px 12px; border-radius: 10px 14px 10px 14px; cursor: pointer; transition: transform .15s ease, background .15s ease;
+}
+.ia-etiqueta:active { transform: scale(.95); background: #fff3e6; }
+.ia-tentar { margin-top: 10px; border: 1.5px solid var(--earth); background: #fff; color: var(--earth); font-weight: 700; padding: 8px 14px; border-radius: 12px; cursor: pointer; }
+
+/* digitando: três frutas pulando */
+.ia-digitando { display: inline-flex; gap: 6px; font-size: 1.1rem; }
+.ia-digitando span { animation: splashPula .9s ease-in-out infinite; }
+.ia-digitando span:nth-child(2) { animation-delay: .15s; }
+.ia-digitando span:nth-child(3) { animation-delay: .3s; }
+
+/* sugestões = etiquetinhas de preço de feira com pílula − 1 + */
+.ia-sugestoes { display: flex; gap: 10px; overflow-x: auto; padding: 10px 14px; background: #fff; border-top: 1px dashed #e0d5bd; scrollbar-width: none; }
+.ia-sugestoes:empty { display: none; }
+.ia-sugestoes::-webkit-scrollbar { display: none; }
+.ia-pill {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 8px; background: #fffaf0; border: 1.5px solid #eadfc8;
+    border-radius: 999px; padding: 4px 4px 4px 12px; max-width: 78vw;
+}
+.ia-pill-nome { font-size: .84rem; font-weight: 700; color: var(--text-dark); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ia-pill-add, .ia-pill-qtd { border-radius: 999px; }
+.ia-pill-add { border: 0; background: var(--forest); color: #fff; font-weight: 800; font-size: .8rem; padding: 8px 14px; cursor: pointer; white-space: nowrap; transition: transform .15s ease; }
+.ia-pill-add:active { transform: scale(.94); }
+.ia-pill-qtd { display: flex; align-items: center; background: var(--forest); color: #fff; padding: 2px; }
+.ia-pill-qtd[hidden], .ia-pill-add[hidden] { display: none; }
+.ia-pill-qtd button { width: 32px; height: 32px; border: 0; border-radius: 50%; background: rgba(255,255,255,.16); color: #fff; font-size: 1.1rem; font-weight: 800; cursor: pointer; transition: background .15s ease, transform .12s ease; }
+.ia-pill-qtd button:active { background: rgba(255,255,255,.32); transform: scale(.88); }
+.ia-pill-valor { min-width: 54px; text-align: center; font-weight: 800; font-size: .82rem; font-variant-numeric: tabular-nums; }
+
+.ia-rodape { padding: 10px 14px calc(10px + var(--safe-bottom)); background: #fff; }
+.ia-form { display: flex; gap: 8px; width: 100%; align-items: center; }
+.ia-form input[type=text] { flex: 1; min-width: 0; padding: 12px 14px; border: 1.5px solid #e0d5bd; border-radius: 999px; background: var(--cream); outline: none; font-size: 16px; }
+.ia-form input[type=text]:focus { border-color: var(--leaf); background: #fff; }
+.ia-enviar { border: 0; background: var(--earth); color: #fff; font-weight: 800; padding: 12px 18px; border-radius: 999px; cursor: pointer; }
+.ia-enviar:disabled { opacity: .6; }
+#btn-ia-camera { background: none; border: 0; font-size: 1.35rem; cursor: pointer; padding: 0 6px; color: var(--text-mid); }
+
+/* ---------- 6) Tela de sucesso: um botão por WhatsApp ---------- */
+.sucesso-whatsapps { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+.btn-wpp { display: block; text-decoration: none; background: #25d366; color: #fff; font-weight: 800; padding: 14px 16px; border-radius: 14px; text-align: center; transition: transform .15s ease, opacity .2s ease; }
+.btn-wpp small { font-weight: 600; opacity: .85; }
+.btn-wpp:active { transform: scale(.97); }
+.btn-wpp.enviado { background: var(--success-light); color: #166534; }
+.btn-wpp.enviado::after { content: ' ✓ aberto'; font-weight: 700; }
 
