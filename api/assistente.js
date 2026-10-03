@@ -56,7 +56,8 @@ const ALTERNATIVAS = [
 // ---------------------------------------------------------------------
 // Firebase (opcional) — só para a IA saber o que existe no catálogo
 // ---------------------------------------------------------------------
-const formatPrivateKey = (k) => String(k || '').replace(/\\n/g, '\n');
+// Igual às outras funções: aceita a chave colada com aspas em volta
+const formatPrivateKey = (k) => String(k || '').replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim();
 
 let firebasePronto = false;
 function iniciarFirebase() {
@@ -74,8 +75,8 @@ function iniciarFirebase() {
 let catalogoCache = { em: 0, lista: [] };
 async function lerCatalogo() {
   if (Date.now() - catalogoCache.em < 5 * 60 * 1000) return catalogoCache.lista;
-  if (!iniciarFirebase()) return [];
   try {
+    if (!iniciarFirebase()) return [];      // dentro do try: chave mal formatada não derruba o chat
     const snap = await admin.firestore().collection('produtos').get();
     // Categorias ocultas no painel não podem ser sugeridas pela IA
     const semAcento = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -88,7 +89,8 @@ async function lerCatalogo() {
       em: Date.now(),
       lista: snap.docs
         .map(d => Object.assign({ id: d.id }, d.data()))
-        .filter(p => p.ativo !== false && !ocultas.has(semAcento(p.cat)))
+        // mesmo critério da vitrine (ativo verdadeiro): o que a loja não mostra, a IA não sugere
+        .filter(p => p.ativo && p.nome && !ocultas.has(semAcento(p.cat)))
         .map(p => ({ id: p.id, nome: p.nome, cat: p.cat, preco: p.preco, unidade: p.unidade }))
     };
   } catch (e) {
@@ -176,8 +178,11 @@ REGRAS:
   temos hoje, diga com clareza em vez de improvisar.
 - Nunca invente preço: use os do catálogo.
 - Se fizer sentido sugerir produtos, termine a resposta com uma linha no
-  formato exato [SUGESTOES:id1,id2,id3] usando os IDs do catálogo.
-  No máximo 4 IDs. Se não houver o que sugerir, não escreva essa linha.
+  formato exato [SUGESTOES:id1,id2,id3] usando os IDs do catálogo (a primeira
+  coluna), copiados sem aspas, sem crase e sem negrito. Escreva SUGESTOES
+  assim mesmo, sem acento. No máximo 4 IDs. Se não houver o que sugerir, não
+  escreva essa linha.
+- Não use Markdown (nada de ** ou #): o chat mostra texto simples.
 - Se o cliente enviar uma foto, diga o que reconhece e relacione com o catálogo.
 
 Mensagem do cliente: "${dados.mensagem || '(sem texto, veja a imagem)'}"`;
@@ -187,13 +192,22 @@ Mensagem do cliente: "${dados.mensagem || '(sem texto, veja a imagem)'}"`;
 // Chamadas ao Gemini
 // ---------------------------------------------------------------------
 function montarCorpo(opcoes) {
-  const contents = [];
+  let contents = [];
 
-  (opcoes.historico || []).slice(-6).forEach(h => {
-    const texto = String(h.content || '').trim();
+  (Array.isArray(opcoes.historico) ? opcoes.historico : []).slice(-6).forEach(h => {
+    // a marcação de sugestões é coisa nossa; não precisa voltar para o modelo
+    const texto = String((h && h.content) || '').replace(/\[\s*SUGEST[^\]]*\]?/gi, '').trim().slice(0, 2000);
     if (!texto) return;
-    contents.push({ role: h.role === 'ia' ? 'model' : 'user', parts: [{ text: texto }] });
+    const role = h.role === 'ia' ? 'model' : 'user';
+    const ultimo = contents[contents.length - 1];
+    if (ultimo && ultimo.role === role) ultimo.parts[0].text += '\n' + texto;   // dois turnos seguidos do mesmo lado viram um
+    else contents.push({ role, parts: [{ text: texto }] });
   });
+  // O Gemini espera a conversa alternando, começando pelo cliente e terminando
+  // na resposta da IA (a pergunta atual entra logo abaixo). Versões antigas da
+  // loja mandavam a pergunta atual também dentro do histórico: tiramos a sobra.
+  while (contents.length && contents[0].role !== 'user') contents.shift();
+  while (contents.length && contents[contents.length - 1].role !== 'model') contents.pop();
 
   const partes = [{ text: opcoes.prompt }];
   if (opcoes.imagem && opcoes.imagem.data) {
@@ -208,7 +222,9 @@ function montarCorpo(opcoes) {
 
   const generationConfig = {
     temperature: opcoes.temperatura === undefined ? 0.8 : opcoes.temperatura,
-    maxOutputTokens: 1200
+    // folga: em alguns modelos o "raciocínio" também gasta deste limite, e a
+    // linha [SUGESTOES:...] é a última — era a primeira a ser cortada
+    maxOutputTokens: 2048
   };
   if (opcoes.json) generationConfig.responseMimeType = 'application/json';
 
@@ -501,6 +517,12 @@ module.exports = async function handler(req, res) {
   // =================================================================
   const montar = PROMPTS[action];
   if (!montar) return res.status(400).json({ sucesso: false, error: 'Ação desconhecida: ' + action });
+
+  // Estas ações também gastam a cota da IA: mesmo freio por IP do chat
+  const ipAdmin = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'anon';
+  if (passouDoLimite('adm:' + ipAdmin, 12)) {
+    return res.status(429).json({ sucesso: false, error: 'Muitos pedidos à IA seguidos. Aguarde um minuto.', podeRepetir: true });
+  }
 
   try {
     const dados = Object.assign({}, corpoReq.produtoInfo || {}, { historicoVendas: corpoReq.historicoVendas });
