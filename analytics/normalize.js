@@ -79,6 +79,7 @@ function normalizarPedidos(pedidos, catalogo = []) {
   // 1ª passada: quantos kg pesa, em média, 1 unidade de cada produto fracionável
   const amostrasKg = new Map();
   for (const p of validos) for (const it of p.itens) {
+    if (!it || !it.id) continue;                 // item estragado no banco não derruba o cálculo inteiro
     const r = qtdItem(it);
     if (r && r.kgPorUn) { if (!amostrasKg.has(it.id)) amostrasKg.set(it.id, []); amostrasKg.get(it.id).push(r.kgPorUn); }
   }
