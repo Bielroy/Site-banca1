@@ -3,7 +3,7 @@ import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal
 import { exigirAdmin, iniciarLogoutPorInatividade } from './admin-guard.js';
 import { abrirPrevisao } from './admin-previsao.js';
 import { abrirFechamento } from './admin-fechamento.js';
-import { iniciarCategoriasAdmin, abrirCategorias } from './admin-categorias.js';
+import { iniciarCategoriasAdmin, abrirCategorias, chaveDaCategoria, nomeDaCategoria, normalizarWpp } from './admin-categorias.js';
 
 // Chart.js agora é carregado sob demanda (só ao abrir o Dashboard).
 // Isso tira ~200KB do carregamento inicial do painel.
@@ -103,6 +103,7 @@ document.getElementById('btn-login').addEventListener('click', async () => {
 
     try {
         await sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true });
+        try { window.localStorage.setItem('emailForSignIn', email); } catch (_) {}
         window.sessionStorage.setItem('emailForSignIn', email);
         msg.textContent = "✅ Link enviado! Verifique o e-mail."; msg.style.color = "var(--success)";
     } catch (error) {
@@ -113,15 +114,22 @@ document.getElementById('btn-login').addEventListener('click', async () => {
 });
 
 if (isSignInWithEmailLink(auth, window.location.href)) {
+    // localStorage: o link do e-mail costuma abrir em OUTRA aba, onde o sessionStorage vem vazio
     let email = window.sessionStorage.getItem('emailForSignIn');
+    try { email = email || window.localStorage.getItem('emailForSignIn'); } catch (_) {}
+    const linkCompleto = window.location.href;
     const processLogin = async () => {
         if (!email) email = prompt("Por segurança, confirme o seu e-mail:");
         if (email) {
             try {
-                await signInWithEmailLink(auth, email, window.location.href);
+                await signInWithEmailLink(auth, email, linkCompleto);
                 window.sessionStorage.removeItem('emailForSignIn');
-            } catch (e) { showToast("Link expirado ou inválido.", true); }
+                try { window.localStorage.removeItem('emailForSignIn'); } catch (_) {}
+            } catch (e) { showToast("Link expirado ou inválido. Peça um novo.", true); }
         }
+        // Tira o código de uso único da barra de endereço: sem isso, cada
+        // recarga da página tentava entrar de novo com um link já gasto.
+        history.replaceState(null, '', window.location.pathname);
     };
     processLogin();
 }
@@ -129,21 +137,30 @@ if (isSignInWithEmailLink(auth, window.location.href)) {
 document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
 
 document.querySelector('.tabs').addEventListener('click', (e) => {
-    if (e.target.classList.contains('tab')) {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.aba-content').forEach(c => c.classList.remove('active'));
+    const tab = e.target.closest('.tab');
+    if (!tab) return;
+    const aba = tab.dataset.aba;
+    document.querySelectorAll('.tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+    document.querySelectorAll('.aba-content').forEach(c => c.classList.remove('active'));
 
-        e.target.classList.add('active');
-        document.getElementById(`aba-${e.target.dataset.aba}`).classList.add('active');
+    tab.classList.add('active'); tab.setAttribute('aria-selected', 'true');
+    document.getElementById(`aba-${aba}`).classList.add('active');
 
-        if (e.target.dataset.aba === 'relatorios') renderRelatoriosMaster();
-        if (e.target.dataset.aba === 'balanco') carregarBalanco(Number(document.getElementById('balanco-periodo')?.value || 30));
-        if (e.target.dataset.aba === 'previsao') abrirPrevisao();
-        if (e.target.dataset.aba === 'fechamento') abrirFechamento(produtosAtuais);
-        if (e.target.dataset.aba === 'categorias') abrirCategorias();
-        if (e.target.dataset.aba === 'comunicados') renderComunicados();
-        if (e.target.dataset.aba === 'cupons') renderCupons();
-    }
+    if (aba === 'relatorios') renderRelatoriosMaster();
+    if (aba === 'balanco') carregarBalanco(Number(document.getElementById('balanco-periodo')?.value || 30));
+    if (aba === 'previsao') abrirPrevisao();
+    if (aba === 'fechamento') abrirFechamento(produtosAtuais);
+    if (aba === 'categorias') abrirCategorias();
+    if (aba === 'comunicados') renderComunicados();
+    if (aba === 'cupons') renderCupons();
+});
+
+// Atalhos "ir para a aba X" espalhados pelo painel (ex.: Operacional → Categorias)
+document.getElementById('dashboard').addEventListener('click', (e) => {
+    const ir = e.target.closest('[data-ir-aba]');
+    if (!ir) return;
+    document.querySelector(`.tab[data-aba="${ir.dataset.irAba}"]`)?.click();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
 document.querySelectorAll('[data-fechar]').forEach(btn => {
@@ -240,7 +257,7 @@ const iniciarRealTimeSync = () => {
         produtosAtuais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
             .sort((a, b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
         renderProdutos();
-    });
+    }, (e) => mostrarErroConsulta(e, 'lista-produtos'));
     unsubscribes.push(unsubProd);
 
     const unsubConfig = onSnapshot(doc(db, "loja", "config"), (snap) => {
@@ -285,6 +302,18 @@ const iniciarRealTimeSync = () => {
         }
     };
 
+    // No Android, "new Notification()" lança erro (lá só funciona via service
+    // worker). Como isso rodava ANTES de desenhar a fila, o pedido novo tocava a
+    // campainha e não aparecia na tela. Agora nada aqui pode interromper a fila.
+    const notificarNovoPedido = () => {
+        try {
+            if (!('Notification' in window) || Notification.permission !== 'granted') return;
+            const aviso = { body: 'Novo pedido chegou!', icon: '/icon-192.png', tag: 'novo-pedido' };
+            if (navigator.serviceWorker?.ready) navigator.serviceWorker.ready.then(r => r.showNotification('Banca', aviso)).catch(() => {});
+            else new Notification('Banca', aviso);
+        } catch (_) { /* sem notificação: a campainha e o aviso na tela já tocaram */ }
+    };
+
     // A campainha vale para os dois modos: é o que avisa que chegou pedido.
     const avisarSeChegouPedido = (snap) => {
         const chegou = snap.docChanges().some(c =>
@@ -293,7 +322,7 @@ const iniciarRealTimeSync = () => {
         if (!cargaInicial && chegou) {
             playAlertaPedido();
             showToast("🔔 NOVO PEDIDO NA FILA!", false);
-            if (Notification.permission === "granted") new Notification("Banca", { body: "Novo pedido chegou!" });
+            notificarNovoPedido();
         }
         cargaInicial = false; // só a PRIMEIRA carga é silenciosa
     };
@@ -303,11 +332,11 @@ const iniciarRealTimeSync = () => {
         const qSimples = query(collection(db, "pedidos"), orderBy("data", "desc"), limit(300));
         // O unsubscribe é guardado — sem isso o listener sobreviveria ao logout.
         const unsub = onSnapshot(qSimples, (snap) => {
-            avisarSeChegouPedido(snap);
             aplicarPedidos(
                 snap.docs.map(d => ({ id: d.id, ...d.data() }))
                          .filter(p => STATUS_NA_FILA.includes(p.status))
             );
+            avisarSeChegouPedido(snap);
         }, (e) => mostrarErroConsulta(e, 'lista-historico'));
         unsubscribes.push(unsub);
     };
@@ -319,8 +348,8 @@ const iniciarRealTimeSync = () => {
     );
 
     const unsubPedidos = onSnapshot(qComIndice, (snap) => {
-        avisarSeChegouPedido(snap);
         aplicarPedidos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        avisarSeChegouPedido(snap);
     }, (erro) => {
         console.error('Consulta de pedidos falhou:', erro);
         // failed-precondition é o código que o Firestore usa para "falta índice"
@@ -329,7 +358,7 @@ const iniciarRealTimeSync = () => {
     });
     unsubscribes.push(unsubPedidos);
 
-    if (Notification.permission !== "denied") Notification.requestPermission();
+    try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch (_) { /* navegador sem suporte */ }
 };
 
 document.getElementById('admin-busca-input')?.addEventListener('input', (e) => {
@@ -410,6 +439,19 @@ const ROTULOS_PRECO = {
 };
 
 // Mostra/esconde o campo de peso médio conforme a métrica de venda
+// Põe a métrica no seletor. Se o produto tem uma métrica que não está na lista
+// ("kit", "L", "Kg"...), ela é ACRESCENTADA — antes o seletor ficava vazio e
+// salvar gravava unidade "" (produto de quilo virava produto de unidade).
+const definirUnidade = (valor) => {
+    const sel = document.getElementById('edit-unidade');
+    if (!sel) return;
+    let v = String(valor || 'un').trim();
+    const igual = [...sel.options].find(o => o.value.toLowerCase() === v.toLowerCase());
+    if (igual) v = igual.value;
+    else sel.add(new Option(v, v));
+    sel.value = v;
+};
+
 const alternarCampoPesoMedio = () => {
     const grupo = document.getElementById('form-group-peso-medio');
     const unidade = document.getElementById('edit-unidade')?.value;
@@ -868,6 +910,7 @@ document.body.addEventListener('click', async (e) => {
             if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = '';
             if (document.getElementById('edit-estoque-fisico')) document.getElementById('edit-estoque-fisico').value = '';
             if (document.getElementById('edit-peso-medio')) document.getElementById('edit-peso-medio').value = '';
+            definirUnidade('kg');          // produto novo começa sempre em "Quilo" (antes herdava o do último aberto)
             alternarCampoPesoMedio();
 
             const previewContainer = document.getElementById('preview-foto-wrapper');
@@ -884,8 +927,8 @@ document.body.addEventListener('click', async (e) => {
             document.getElementById('edit-id').value = p.id;
             document.getElementById('edit-nome').value = p.nome;
             document.getElementById('edit-preco').value = p.preco;
-            document.getElementById('edit-unidade').value = p.unidade || 'un';
-            document.getElementById('edit-cat').value = p.cat || '';
+            definirUnidade(p.unidade || 'un');
+            document.getElementById('edit-cat').value = nomeDaCategoria(p.cat);   // mostra o NOME da categoria; a chave é resolvida ao salvar
             document.getElementById('edit-foto').value = '';
             document.getElementById('edit-foto-url').value = '';
 
@@ -1075,7 +1118,7 @@ const iniciarIAFeaturesDOM = () => {
                 document.getElementById('edit-id').value = ''; document.getElementById('edit-nome').value = data.kit.nome;
                 document.getElementById('edit-preco').value = data.kit.preco;
                 document.getElementById('edit-cat').value = 'Kits Inteligentes';
-                document.getElementById('edit-unidade').value = 'kit';
+                definirUnidade('kit');
                 alternarCampoPesoMedio();
                 if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = `${data.kit.descricao}\n\n📦 O que inclui:\n${data.kit.itensInclusos}`;
                 openModal('modal-produto');
@@ -1091,7 +1134,9 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
     btn.textContent = "A guardar... ⏳"; btn.disabled = true;
 
     try {
-        const id = document.getElementById('edit-id').value || crypto.randomUUID();
+        const idExistente = document.getElementById('edit-id').value;
+        const id = idExistente || (crypto.randomUUID ? crypto.randomUUID() : `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`);
+        const antigo = idExistente ? produtosAtuais.find(x => x.id === idExistente) : null;
         const rawEstoque = document.getElementById('edit-estoque-fisico') ? document.getElementById('edit-estoque-fisico').value : '';
         const estoqueFinal = rawEstoque === '' ? null : parseFloat(rawEstoque);
 
@@ -1102,15 +1147,20 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
             nome: document.getElementById('edit-nome').value.trim(),
             preco: parseFloat(document.getElementById('edit-preco').value),
             unidade: document.getElementById('edit-unidade').value,
-            cat: document.getElementById('edit-cat').value.trim().toLowerCase(),
+            // aceita o nome que aparece na loja OU a chave; grava sempre a chave da categoria cadastrada
+            cat: chaveDaCategoria(document.getElementById('edit-cat').value).toLowerCase(),
             descricao: document.getElementById('edit-descricao') ? document.getElementById('edit-descricao').value.trim() : '',
             estoqueFisico: estoqueFinal,
             pesoMedio: pesoMedioFinal, // gramas por unidade — alimenta a estimativa na loja
-            ativo: estoqueFinal !== null ? (estoqueFinal > 0) : true,
+            // Sem controle de estoque: mantém o que estava. Antes, editar um produto
+            // marcado como "Esgotado" o colocava de volta à venda sem ninguém pedir.
+            ativo: estoqueFinal !== null ? (estoqueFinal > 0) : (antigo ? antigo.ativo !== false : true),
             ultimaModificacao: Date.now()
         };
 
         if (!pData.nome) throw new Error("Preencha o nome do produto.");
+        if (!pData.unidade) throw new Error("Escolha a métrica de venda (quilo, unidade...).");
+        if (!pData.cat) throw new Error("Escolha a categoria do produto.");
         if (isNaN(pData.preco) || pData.preco <= 0) throw new Error("Informe um preço válido.");
 
         const fileInput = document.getElementById('edit-foto');
@@ -1401,6 +1451,21 @@ const renderRelatoriosMaster = async () => {
 
 // Escapa campo de CSV: aspas duplicadas e prefixo contra injeção de fórmula
 // (um nome começando com "=" seria executado como fórmula ao abrir no Excel)
+// O Excel em português separa colunas por ";". Com vírgula, tudo caía numa coluna só.
+const CSV_SEP = ';';
+const baixarCsv = (csv, nome) => {
+    const url = URL.createObjectURL(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8;' }));
+    const link = document.createElement('a');
+    link.href = url; link.download = nome; link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    // Soltar a URL na hora cancelava o download em alguns Androids
+    setTimeout(() => { URL.revokeObjectURL(url); link.remove(); }, 4000);
+};
+// Dia do pedido no horário de Brasília (pedido das 22h não pula para o dia seguinte)
+const diaBR = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? new Date(t - 3 * 3600000).toISOString().slice(0, 10) : ''; };
+const dataHoraBR = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? new Date(t).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : String(iso || ''); };
+
 const csvCampo = (valor) => {
     let txt = String(valor ?? '');
     if (/^[=+\-@]/.test(txt)) txt = `'${txt}`;
@@ -1409,16 +1474,14 @@ const csvCampo = (valor) => {
 
 document.getElementById('btn-exportar').addEventListener('click', () => {
     if (pedidosGerais.length === 0) return showToast("Não há pedidos para exportar.", true);
-    let csv = "Data,Cliente,Quadra,Lote,Status,Pagamento,Total,Itens\n";
+    let csv = ['Data', 'Cliente', 'Quadra', 'Lote', 'Status', 'Pagamento', 'Total', 'Itens'].join(CSV_SEP) + "\n";
     pedidosGerais.forEach(p => {
         const itensTxt = p.itens ? p.itens.map(i => `${formatarQtdRelatorio(i.qtd, i.unidade)} ${i.nome}`).join(' | ') : '';
         const total = (Number(p.total) || 0).toFixed(2).replace('.', ',');
-        csv += [p.data, p.nome, p.quadra, p.lote, p.status, p.pag, total, itensTxt].map(csvCampo).join(',') + "\n";
+        csv += [dataHoraBR(p.data), p.nome, p.quadra, p.lote, p.status, p.pag, total, itensTxt].map(csvCampo).join(CSV_SEP) + "\n";
     });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: 'text/csv;charset=utf-8;' }));
-    link.download = `Vendas_Logistica_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`;
-    link.click();
+    baixarCsv(csv, `Vendas_Logistica_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`);
+    showToast('📥 Planilha gerada. Veja em Downloads.');
 });
 
 document.getElementById('btn-limpar-hist').addEventListener('click', async () => {
@@ -1653,7 +1716,7 @@ document.getElementById('btn-exportar-balanco')?.addEventListener('click', () =>
     // --- Parte 1: total por dia ---
     const porDia = {};
     validos.forEach(p => {
-        const dia = String(p.data || '').slice(0, 10);
+        const dia = diaBR(p.data);
         if (!dia) return;
         if (!porDia[dia]) porDia[dia] = { receita: 0, pedidos: 0 };
         porDia[dia].receita += Number(p.total) || 0;
@@ -1661,19 +1724,19 @@ document.getElementById('btn-exportar-balanco')?.addEventListener('click', () =>
     });
 
     let csv = 'RESUMO POR DIA\n';
-    csv += 'Dia,Pedidos,Receita\n';
+    csv += ['Dia', 'Pedidos', 'Receita'].join(CSV_SEP) + '\n';
     Object.keys(porDia).sort().forEach(dia => {
         const d = porDia[dia];
-        csv += [dia, d.pedidos, d.receita.toFixed(2).replace('.', ',')].map(csvCampo).join(',') + '\n';
+        csv += [dia.split('-').reverse().join('/'), d.pedidos, d.receita.toFixed(2).replace('.', ',')].map(csvCampo).join(CSV_SEP) + '\n';
     });
 
     const receitaTotal = validos.reduce((soma, p) => soma + (Number(p.total) || 0), 0);
     csv += '\n';
-    csv += ['TOTAL', validos.length, receitaTotal.toFixed(2).replace('.', ',')].map(csvCampo).join(',') + '\n';
+    csv += ['TOTAL', validos.length, receitaTotal.toFixed(2).replace('.', ',')].map(csvCampo).join(CSV_SEP) + '\n';
 
     // --- Parte 2: pedido por pedido ---
     csv += '\nPEDIDOS DO PERÍODO\n';
-    csv += 'Data,Cliente,Quadra,Lote,Status,Pagamento,Pago via PIX,Cupom,Total,Itens\n';
+    csv += ['Data', 'Cliente', 'Quadra', 'Lote', 'Status', 'Pagamento', 'Pago via PIX', 'Cupom', 'Total', 'Itens'].join(CSV_SEP) + '\n';
     validos
         .slice()
         .sort((a, b) => String(a.data).localeCompare(String(b.data)))
@@ -1685,18 +1748,14 @@ document.getElementById('btn-exportar-balanco')?.addEventListener('click', () =>
                 ? `${p.cupom.codigo} (-${Number(p.cupom.desconto || 0).toFixed(2).replace('.', ',')})`
                 : '';
             csv += [
-                p.data, p.nome, p.quadra, p.lote, p.status, p.pag, pago, cupom,
+                dataHoraBR(p.data), p.nome, p.quadra, p.lote, p.status, p.pag, pago, cupom,
                 (Number(p.total) || 0).toFixed(2).replace('.', ','), itensTxt
-            ].map(csvCampo).join(',') + '\n';
+            ].map(csvCampo).join(CSV_SEP) + '\n';
         });
 
     const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8;' }));
-    link.download = `Balanco_Banca_${hoje}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-    showToast('📄 Balanço exportado!');
+    baixarCsv(csv, `Balanco_Banca_${hoje}.csv`);
+    showToast(`📄 Balanço exportado (${validos.length} pedidos). Veja em Downloads.`);
 });
 
 const salvarComunicados = async () => {
@@ -1743,7 +1802,8 @@ const carregarBalanco = async (dias = 30) => {
 
     const desde = new Date(Date.now() - dias * 86400000).toISOString();
     try {
-        const q = query(collection(db, 'pedidos'), where('data', '>=', desde), orderBy('data', 'desc'), limit(800));
+        const LIMITE_BALANCO = 2000;
+        const q = query(collection(db, 'pedidos'), where('data', '>=', desde), orderBy('data', 'desc'), limit(LIMITE_BALANCO));
 
         // Busca única. Se o seu firebase.js ainda não exporta getDocs,
         // cai automaticamente num onSnapshot que se desinscreve na 1ª resposta —
@@ -1757,6 +1817,10 @@ const carregarBalanco = async (dias = 30) => {
 
         balancoCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         renderBalanco(dias);
+        // Antes cortava em 800 sem avisar: o total do período saía menor que o real.
+        if (snap.size >= LIMITE_BALANCO) {
+            alvo.insertAdjacentHTML('afterbegin', `<p class="aviso-limite">⚠️ Este período tem mais de ${LIMITE_BALANCO} pedidos. Os totais abaixo consideram só os ${LIMITE_BALANCO} mais recentes — escolha um período menor para o número exato.</p>`);
+        }
     } catch (e) {
         console.error(e);
         mostrarErroConsulta(e, 'balanco-conteudo');
@@ -1852,12 +1916,13 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
     btn.textContent = "A guardar... ⏳"; btn.disabled = true;
 
     try {
-        const wpp = document.getElementById('config-wpp').value.replace(/\D/g, '');
+        const wpp = normalizarWpp(document.getElementById('config-wpp').value);   // "62 99999-8888" vira 5562999998888
         const minimo = parseFloat(document.getElementById('config-minimo').value) || 0;
         const lojaAberta = document.getElementById('config-status-loja').value === "aberta";
         const diasAbertos = Array.from(document.querySelectorAll('.chk-dia:checked')).map(chk => parseInt(chk.value));
 
-        if (wpp.length < 10) throw new Error("Número de WhatsApp muito curto.");
+        if (!wpp) throw new Error("Número de WhatsApp inválido. Digite com DDD, ex.: 62 99999-8888.");
+        if (diasAbertos.length === 0) throw new Error("Marque pelo menos um dia de abertura (ou feche a loja no disjuntor).");
 
         await setDoc(doc(db, "loja", "config"), { wpp, minimo, lojaAberta, diasAbertos }, { merge: true });
         showToast("Configurações atualizadas!");
