@@ -16,12 +16,20 @@ const STATE = {
     modalProdutoAtual: null, modalTipoCompra: 'kg', modalQtd: 1 // Estado do seletor do modal
 };
 
+// Celular = carrinho em gaveta. Tem de ser a MESMA medida do CSS (600px);
+// antes o JS usava 900px e travava a rolagem entre 601 e 900px (celular deitado).
+const ehCelular = () => window.matchMedia('(max-width: 600px)').matches;
+const semAcento = (t) => String(t || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+// crypto.randomUUID não existe em iPhone antigo / navegador dentro de app
+const novoId = () => (crypto.randomUUID ? crypto.randomUUID()
+    : '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
+
 let inatividadeTimer;
 const resetInatividadeTimer = () => {
     clearTimeout(inatividadeTimer);
     if (STATE.carrinho.length > 0 && !document.getElementById('modal-checkout')?.classList.contains('aberto') && !document.getElementById('modal-ia-chat')?.classList.contains('aberto')) {
         inatividadeTimer = setTimeout(() => {
-            showToast("🤖 O assistente tem uma sugestão para o seu pedido. Que tal olhar?", false);
+            showToast("🧺 Quer uma ideia de receita com o que já está no pedido? Toque no Ajudante.", false);
             const btnIA = document.getElementById('btn-ia-flutuante');
             if(btnIA) { btnIA.classList.add('pulse-anim'); setTimeout(() => btnIA.classList.remove('pulse-anim'), 10000); }
         }, 180000); 
@@ -32,8 +40,9 @@ const resetInatividadeTimer = () => {
 const carregarCarrinhoDB = async () => {
     try { 
         const raw = await dbStorage.get('banca_cart');
-        if(raw && raw.v === CART_VERSION) { STATE.carrinho = raw.items; renderCarrinhoCompleto(); resetInatividadeTimer(); }
+        if(raw && raw.v === CART_VERSION && Array.isArray(raw.items)) { STATE.carrinho = raw.items; resetInatividadeTimer(); }
     } catch(e) {}
+    renderCarrinhoCompleto();   // desenha também o "pedido vazio" na primeira visita
 };
 carregarCarrinhoDB(); 
 
@@ -113,7 +122,7 @@ const renderUpsell = () => {
     if (sugestoes.length > 0) {
         sugestoes.sort((a,b) => (scoreDe(b.id) - scoreDe(a.id)) || ((STATE.favoritos.includes(b.id) ? 1 : 0) - (STATE.favoritos.includes(a.id) ? 1 : 0)));
         const up = sugestoes[0];
-        upsellCont.innerHTML = `<div class="upsell-box"><span>Que tal levar <b>${escapeHTML(up.nome)}</b>?</span><button class="btn btn-outline" style="padding: 6px 12px;" data-action="add" data-id="${up.id}">+ Add</button></div>`;
+        upsellCont.innerHTML = `<div class="upsell-box"><span>Que tal levar <b>${escapeHTML(up.nome)}</b>?</span><button class="btn btn-outline" style="padding: 6px 12px;" data-action="add" data-id="${up.id}">Adicionar</button></div>`;
     } else { upsellCont.innerHTML = ''; }
 };
 
@@ -135,6 +144,15 @@ const atualizarRodapeCarrinhoDOM = () => {
     const totalStr = `${fmt(totalExato)} ${temItensAPesar ? '<br><span style="font-size:0.85rem; color:var(--earth); font-weight:normal;">+ Itens a pesar na balança</span>' : ''}`;
     document.getElementById('total-val').innerHTML = totalStr;
     document.getElementById('qtd-flutuante').textContent = Math.ceil(qtdDistinta); 
+    // Barra "Ver Pedido": some com o carrinho vazio (antes ficava tapando o preço dos produtos à toa) e mostra o valor
+    const barra = document.getElementById('btn-carrinho-mobile');
+    if (barra) {
+        barra.classList.toggle('vazio', STATE.carrinho.length === 0);
+        document.body.classList.toggle('tem-pedido', STATE.carrinho.length > 0);
+        let valor = barra.querySelector('.barra-valor');
+        if (!valor) { valor = document.createElement('span'); valor.className = 'barra-valor'; barra.appendChild(valor); }
+        valor.textContent = totalExato > 0 ? fmt(totalExato) + (temItensAPesar ? ' +' : '') : (temItensAPesar ? 'a pesar' : '');
+    }
     document.getElementById('qtd-badge').textContent = Math.ceil(qtdDistinta);
 
     const btnF = document.getElementById('btn-abrir-checkout');
@@ -194,9 +212,10 @@ const renderCarrinhoCompleto = () => {
             <div class="item-meio">
                 <h3 class="item-nome">${escapeHTML(item.nome)} ${item.tipo === 'un' && isFracionavel(item.unidade) ? '<span style="font-size:0.75rem; color:var(--text-mid);">(Unidades)</span>' : ''}</h3>
                 <div class="qtd-ctrl">
-                    <button class="btn-qtd" data-action="dec" data-id="${item.id}">−</button>
-                    <input class="qtd-input" type="text" inputmode="decimal" value="${formatarQuantidadeVisual(item.qtd, isPeso)}" data-id="${item.id}">
-                    <button class="btn-qtd" data-action="inc" data-id="${item.id}">+</button>
+                    <button class="btn-qtd" data-action="dec" data-id="${item.id}" aria-label="Diminuir ${escapeHTML(item.nome)}">−</button>
+                    <input class="qtd-input" type="text" inputmode="decimal" value="${formatarQuantidadeVisual(item.qtd, isPeso)}" data-id="${item.id}" aria-label="Quantidade de ${escapeHTML(item.nome)}" enterkeyhint="done">
+                    <button class="btn-qtd" data-action="inc" data-id="${item.id}" aria-label="Aumentar ${escapeHTML(item.nome)}">+</button>
+                    <span class="qtd-unid">${isPeso ? escapeHTML(String(item.unidade || 'kg').toLowerCase()) : 'un'}</span>
                 </div>
             </div>
             ${precoHtml}
@@ -254,10 +273,10 @@ const construirCardsIniciais = () => {
         const badgeTexto = qtdNoCarrinho > 0 ? formatarQuantidadeVisual(qtdNoCarrinho, isPeso) : '';
         const favActive = STATE.favoritos.includes(p.id) ? 'ativo' : '';
         return `
-        <article class="produto-card" data-action="detalhe" data-id="${p.id}" data-cat="${escapeHTML(p.cat)}" data-nome="${p.nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()}" style="display: flex;">
+        <article class="produto-card" data-action="detalhe" data-id="${p.id}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}" style="display: flex;">
             <div class="produto-img-wrap">
                 ${p.foto ? `<img src="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="lazy" width="200" height="200">` : '<div class="produto-img-placeholder skeleton" style="width:100%;height:100%"></div>'}
-                <button class="btn-fav ${favActive}" data-action="fav" data-id="${p.id}">❤️</button>
+                <button class="btn-fav ${favActive}" data-action="fav" data-id="${p.id}" aria-label="Favoritar" aria-pressed="${favActive ? 'true' : 'false'}">❤️</button>
                 <span class="produto-unidade-tag">${escapeHTML(p.unidade || 'un')}</span>
                 <div class="card-badge ${qtdNoCarrinho > 0 ? 'visivel':''}" id="badge-${p.id}">${badgeTexto}</div>
             </div>
@@ -266,7 +285,7 @@ const construirCardsIniciais = () => {
                 <h3 class="produto-nome">${escapeHTML(p.nome)}</h3>
                 <div class="produto-preco-row">
                     <span class="produto-preco">${fmt(p.preco)}<br><span style="font-size: 0.8rem; font-weight: 600;">por ${escapeHTML(p.unidade || 'un')}</span></span>
-                    <button class="btn-add" data-action="detalhe" data-id="${p.id}">+</button>
+                    <button class="btn-add" data-action="detalhe" data-id="${p.id}" aria-label="Adicionar ${escapeHTML(p.nome)}">+</button>
                 </div>
             </div>
         </article>`;
@@ -277,21 +296,26 @@ const construirCardsIniciais = () => {
 const renderLoja = (forcarRebuild = false) => {
     const grid = document.getElementById('lista-produtos');
     if(!STATE.lojaRenderizada || forcarRebuild) construirCardsIniciais();
-    const termo = STATE.busca.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const termo = semAcento(STATE.busca).trim();
     const cards = grid.querySelectorAll('.produto-card');
     let itensVisiveis = 0;
 
     cards.forEach(card => {
-        const matchBusca = card.dataset.nome.includes(termo);
+        const matchBusca = (card.dataset.nome || '').includes(termo);
         // [PATCH 1] Favoritos: usar card.dataset.id (o data-id existe; produtoId não existia)
-        const matchCat = (STATE.catAtiva === 'todas') || (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(card.dataset.id)) || (card.dataset.cat === STATE.catAtiva);
+        const matchCat = !!termo || (STATE.catAtiva === 'todas') || (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(card.dataset.id)) || (card.dataset.cat === STATE.catAtiva);
         if(matchBusca && matchCat) { card.style.display = 'flex'; itensVisiveis++; } 
         else { card.style.display = 'none'; }
     });
-    const emptyId = 'empty-grid-msg'; let emptyMsg = document.getElementById(emptyId);
-    if (itensVisiveis === 0) {
-        if(!emptyMsg) grid.insertAdjacentHTML('beforeend', `<div id="${emptyId}" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Nenhum produto</p></div>`);
-    } else if(emptyMsg) { emptyMsg.remove(); }
+    // aviso de "nada aqui": sempre refeito, para o texto acompanhar busca/aba
+    document.getElementById('empty-grid-msg')?.remove();
+    if (itensVisiveis === 0 && cards.length > 0) {
+        const titulo = termo ? 'Não achei esse produto' : (STATE.catAtiva === 'favoritos' ? 'Nenhum favorito ainda' : 'Nenhum produto aqui hoje');
+        const dica = termo ? 'Tente outro nome.' : (STATE.catAtiva === 'favoritos' ? 'Toque no ❤️ de um produto para guardar aqui.' : '');
+        grid.insertAdjacentHTML('beforeend', `<div id="empty-grid-msg" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>${titulo}</p><span>${dica}</span></div>`);
+    } else if (cards.length === 0) {
+        grid.insertAdjacentHTML('beforeend', `<div id="empty-grid-msg" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>A banca está sem produtos no momento</p><span>Volte daqui a pouco.</span></div>`);
+    }
 };
 
 // Pedido com itens de mais de um atendimento (ex.: banca + artesanais) gera
@@ -302,11 +326,18 @@ const mostrarLinksWhatsApp = (pedido) => {
     const texto = document.getElementById('sucesso-texto');
     if (area) {
         area.innerHTML = links.map((l, i) => `<a class="btn-wpp" href="${escapeHTML(l.url)}" target="_blank" rel="noopener noreferrer">💬 ${links.length > 1 ? `Enviar para ${escapeHTML(l.nome)}` : 'Abrir WhatsApp'}${l.qtdItens && links.length > 1 ? ` <small>(${l.qtdItens} ${l.qtdItens === 1 ? 'item' : 'itens'})</small>` : ''}</a>`).join('');
-        area.onclick = (e) => { const a = e.target.closest('.btn-wpp'); if (a) a.classList.add('enviado'); };
+        area.onclick = (e) => {
+            const a = e.target.closest('.btn-wpp'); if (!a) return;
+            a.classList.add('enviado');
+            const faltam = area.querySelectorAll('.btn-wpp:not(.enviado)').length;
+            if (texto && links.length > 1) texto.textContent = faltam
+                ? `Falta enviar ${faltam === 1 ? 'a outra parte' : `${faltam} partes`}: volte aqui e toque no botão verde.`
+                : 'Pronto! Todas as partes do pedido foram para o WhatsApp.';
+        };
     }
     if (texto) texto.textContent = links.length > 1
-        ? 'Seu pedido tem itens de mais de um atendimento. Toque em cada botão para enviar a parte correspondente:'
-        : 'Você será redirecionado para o nosso WhatsApp para finalizar. Caso a janela não abra, toque no botão abaixo.';
+        ? `Seu pedido tem itens de ${links.length} atendimentos da banca. Toque nos ${links.length} botões, um de cada vez, para enviar tudo:`
+        : 'Vamos abrir o WhatsApp da banca com o seu pedido pronto. Se não abrir sozinho, toque no botão abaixo.';
     if (links.length === 1) window.open(links[0].url, '_blank');
 };
 
@@ -326,7 +357,7 @@ const iniciarRealTimeSync = () => {
     renderSkeletons();
     const unsubConfig = onSnapshot(doc(db, "loja", "config"), (snap) => {
         if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()}; atualizarRodapeCarrinhoDOM();
-    });
+    }, (e) => console.warn('[loja] config:', e?.code || e));
     unsubscribes.push(unsubConfig);
 
     // [PATCH 3] Só reconstrói o grid quando o catálogo realmente muda (evita reflows/lag)
@@ -348,6 +379,10 @@ const iniciarRealTimeSync = () => {
     const unsubProdutos = onSnapshot(collection(db, "produtos"), (snap) => {
         _produtosBrutos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.ativo);
         aplicarCatalogo();
+    }, (e) => {
+        console.warn('[loja] produtos:', e?.code || e);
+        if (STATE.lojaRenderizada) return;      // já tem vitrine na tela: mantém
+        document.getElementById('lista-produtos').innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Não consegui carregar os produtos</p><span>Verifique a internet e tente de novo.</span><button class="btn btn-primary" style="margin-top:14px" data-action="recarregar">Tentar de novo</button></div>`;
     });
     unsubscribes.push(unsubProdutos);
     unsubscribes.push(iniciarCategorias(() => { _catsProntas = true; aplicarCatalogo(); }));
@@ -772,7 +807,7 @@ const repetirPedido = (pedId) => {
 
     if (itensAdicionados > 0) {
         persistirCarrinhoComDebounce(); renderCarrinhoCompleto(); closeModal('modal-historico'); 
-        if(window.innerWidth <= 900) toggleCartMobile(true);
+        if (ehCelular()) toggleCartMobile(true);
         let msgToast = "🛒 Itens adicionados com preços atualizados!";
         showToast(msgToast, itensEsgotados.length > 0);
     } else { showToast("❌ Todos os itens deste pedido encontram-se esgotados.", true); }
@@ -792,7 +827,7 @@ document.body.addEventListener('click', async (e) => {
         if (await customConfirm("Esvaziar Pedido", "Tem certeza que deseja esvaziar todo o pedido?")) {
             STATE.carrinho = []; dbStorage.set('banca_cart', {v: CART_VERSION, items: []}); 
             renderCarrinhoCompleto(); showToast("🛒 Carrinho esvaziado!");
-            if (window.innerWidth <= 900 && document.getElementById('carrinho')?.classList.contains('aberto')) history.back();
+            if (ehCelular() && document.getElementById('carrinho')?.classList.contains('aberto') && history.state?.cart) history.back();
         }
         return;
     }
@@ -814,7 +849,7 @@ document.body.addEventListener('click', async (e) => {
         const action = actionTarget.dataset.action; const id = actionTarget.dataset.id;
         if(action === 'add' || action === 'inc' || action === 'dec' || action === 'fav') e.stopPropagation();
 
-        if (action === 'add' || action === 'inc') { modificarCarrinho(id, 1); if(action === 'add') animarFeedbackBtn(actionTarget); }
+        if (action === 'add' || action === 'inc') { modificarCarrinho(id, 1); if(action === 'add' && !actionTarget.classList.contains('ia-pill-add')) animarFeedbackBtn(actionTarget); }
         else if (action === 'dec') { modificarCarrinho(id, -1); }
         else if (action === 'detalhe') {
             const p = STATE.produtos.find(x => x.id === id);
@@ -825,7 +860,8 @@ document.body.addEventListener('click', async (e) => {
 
             document.getElementById('md-nome').textContent = p.nome;
             const img = document.getElementById('md-img');
-            img.src = p.foto || ''; img.alt = p.nome;
+            if (p.foto) { img.src = p.foto; img.style.visibility = ''; } else { img.removeAttribute('src'); img.style.visibility = 'hidden'; }
+            img.alt = p.nome;
             document.getElementById('md-tag').textContent = p.cat || '';
             document.getElementById('md-desc').textContent = p.descricao || "Produto fresco, selecionado no dia.";
             document.getElementById('md-preco').innerHTML =
@@ -835,6 +871,11 @@ document.body.addEventListener('click', async (e) => {
             const jaNoCarrinho = STATE.carrinho.find(c => c.id === p.id);
             const seletor = document.getElementById('md-tipo-compra-container');
             const fracionavel = isFracionavel(p.unidade);
+
+            // O modal precisa estar visível antes do clique abaixo: o destaque do
+            // seletor é medido na tela, e medir escondido dava largura zero
+            // ("Por peso" ficava branco no branco).
+            openModal('modal-detalhe-produto');
 
             if (fracionavel) {
                 seletor.style.display = 'flex';
@@ -859,16 +900,26 @@ document.body.addEventListener('click', async (e) => {
                 closeModal('modal-detalhe-produto');
                 if (history.state && history.state.modal === 'modal-detalhe-produto') history.back();
             };
-
-            openModal('modal-detalhe-produto');
         }
-        else if (action === 'cat') { STATE.catAtiva = actionTarget.dataset.cat; renderLoja(); }
+        else if (action === 'cat') {
+            STATE.catAtiva = actionTarget.dataset.cat;
+            // destaca a aba tocada (antes "Todos" ficava marcado para sempre)
+            document.querySelectorAll('#categorias .cat-btn').forEach(b => b.classList.toggle('active', b === actionTarget));
+            actionTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+            renderLoja();
+        }
         else if (action === 'fav') { 
-            if(STATE.favoritos.includes(id)) STATE.favoritos = STATE.favoritos.filter(f => f !== id);
+            const eraFav = STATE.favoritos.includes(id);
+            if(eraFav) STATE.favoritos = STATE.favoritos.filter(f => f !== id);
             else STATE.favoritos.push(id);
-            localStorage.setItem('banca_favs', JSON.stringify(STATE.favoritos)); 
+            try { localStorage.setItem('banca_favs', JSON.stringify(STATE.favoritos)); } catch (_) {}
+            // o coração muda na hora (antes só mudava ao recarregar a vitrine)
+            actionTarget.classList.toggle('ativo', !eraFav);
+            actionTarget.setAttribute('aria-pressed', String(!eraFav));
+            hapticFeedback();
             if(STATE.catAtiva === 'favoritos') renderLoja(); 
         }
+        else if (action === 'recarregar') { location.reload(); }
         else if (action === 'open-historico') { renderHistorico(); openModal('modal-historico'); }
         else if (action === 'repetir-pedido') { repetirPedido(id); }
         else if (action === 'cancelar-pedido') { cancelarPedido(id); }
@@ -882,12 +933,20 @@ document.body.addEventListener('click', async (e) => {
     }
 });
 
-document.getElementById('carrinho-itens').addEventListener('input', (e) => {
+// 'change' (ao sair do campo / OK do teclado), não 'input': aplicando a cada
+// tecla, "1,5" virava 15 kg e digitar "0" apagava o item no meio da digitação.
+document.getElementById('carrinho-itens').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.classList.contains('qtd-input')) { e.preventDefault(); e.target.blur(); }
+});
+document.getElementById('carrinho-itens').addEventListener('focusin', (e) => {
+    if (e.target.classList.contains('qtd-input')) e.target.select?.();
+});
+document.getElementById('carrinho-itens').addEventListener('change', (e) => {
     if(e.target.classList.contains('qtd-input')) {
         const id = e.target.dataset.id; const p = STATE.produtos.find(x => x.id === id);
         const itemCart = STATE.carrinho.find(x => x.id === id);
         let val = parseFloat(e.target.value.replace(',', '.'));
-        if(isNaN(val) || val < 0) return; 
+        if(isNaN(val) || val < 0) { renderCarrinhoCompleto(); return; }   // texto inválido: volta ao valor anterior
         
         // Se o cliente escolheu Unidade no Slider, não deixa colocar gramas no input
         val = (p && !isFracionavel(p.unidade) || (itemCart && itemCart.tipo === 'un')) ? Math.round(val) : fixFloat(val);
@@ -895,23 +954,44 @@ document.getElementById('carrinho-itens').addEventListener('input', (e) => {
     }
 });
 
-window.addEventListener('popstate', (e) => { 
-    document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('aberto'));
+// BOTÃO VOLTAR
+// Antes: ao voltar para uma entrada de modal, o modal era REABERTO com
+// openModal(), que cria outra entrada no histórico. Depois de um pedido
+// enviado, fechar a tela de sucesso reabria o formulário, e o X dele o
+// reabria de novo, sem fim. Agora uma entrada de modal que já não está na
+// tela é só pulada.
+const mostrarSemHistorico = (el) => {
+    el.classList.add('aberto'); el.setAttribute('aria-hidden', 'false'); document.body.style.overflow = 'hidden';
+};
+window.addEventListener('popstate', (e) => {
+    // confirmação aberta: "voltar" equivale a Cancelar (senão a pergunta ficava pendurada)
+    if (document.querySelector('#overlay-confirm.aberto')) document.getElementById('btn-confirm-cancel')?.click();
+
+    const abertos = new Set([...document.querySelectorAll('.modal-overlay.aberto')].map(m => m.id));
+    document.querySelectorAll('.modal-overlay').forEach(m => { m.classList.remove('aberto'); m.setAttribute('aria-hidden', 'true'); });
     document.getElementById('carrinho-overlay')?.classList.remove('aberto');
     document.getElementById('carrinho')?.classList.remove('aberto');
     document.body.style.overflow = '';
-    if (e.state) {
-        if (e.state.modal) openModal(e.state.modal);
-        if (e.state.cart) {
+
+    const st = e.state;
+    if (!st) return;
+    if (st.modal) {
+        const el = document.getElementById(st.modal);
+        if (el && abertos.has(st.modal)) mostrarSemHistorico(el);   // estava por baixo de outro: continua
+        else history.back();                                        // entrada velha: pula
+        return;
+    }
+    if (st.cart) {
+        if (ehCelular() && STATE.carrinho.length > 0) {
             document.getElementById('carrinho')?.classList.add('aberto');
             document.getElementById('carrinho-overlay')?.classList.add('aberto');
             document.body.style.overflow = 'hidden';
-        }
+        } else history.back();                                      // carrinho vazio (pedido já enviado): pula
     }
 });
 
 const toggleCartMobile = (abrir) => {
-    if(window.innerWidth > 900) return;
+    if (!ehCelular()) return;
     if (abrir) { 
         document.getElementById('carrinho').classList.add('aberto'); document.getElementById('carrinho-overlay').classList.add('aberto'); 
         document.body.style.overflow = 'hidden'; history.pushState({cart: true}, ''); 
@@ -920,7 +1000,7 @@ const toggleCartMobile = (abrir) => {
     }
 };
 document.getElementById('btn-carrinho-mobile')?.addEventListener('click', () => toggleCartMobile(true));
-document.getElementById('carrinho-overlay')?.addEventListener('click', () => history.back());
+document.getElementById('carrinho-overlay')?.addEventListener('click', () => { if (history.state?.cart) history.back(); });
 
 document.getElementById('cli-pagamento').addEventListener('change', (e) => { 
     const isDinheiro = e.target.value === 'Dinheiro';
@@ -936,7 +1016,7 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
         document.getElementById('cli-quadra').value = clientes[0].quadra || '';
         document.getElementById('cli-lote').value = clientes[0].lote || '';
     }
-    STATE.checkoutSessionId = crypto.randomUUID(); 
+    STATE.checkoutSessionId = novoId(); 
     openModal('modal-checkout');
 });
 
@@ -1018,17 +1098,24 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
 window.addEventListener('online', () => document.getElementById('banner-offline').classList.remove('visivel'));
 window.addEventListener('offline', () => document.getElementById('banner-offline').classList.add('visivel'));
+if (!navigator.onLine) document.getElementById('banner-offline')?.classList.add('visivel');
 
 // [PATCH 4] Swipe para baixo fecha o carrinho no mobile (padrão iFood/Uber)
 (() => {
   const cart = document.getElementById('carrinho');
   if (!cart) return;
   let y0 = null;
-  cart.addEventListener('touchstart', (e) => { y0 = e.touches[0].clientY; }, { passive: true });
+  cart.addEventListener('touchstart', (e) => {
+    // Quem rola é a LISTA de itens, não a gaveta. Se o toque começou na lista
+    // já rolada (ou num campo), é rolagem/edição — não é para fechar.
+    const lista = e.target.closest('.carrinho-itens');
+    const editando = e.target.closest('input, textarea, select');
+    y0 = (editando || (lista && lista.scrollTop > 0)) ? null : e.touches[0].clientY;
+  }, { passive: true });
   cart.addEventListener('touchmove', (e) => {
     if (y0 === null) return;
     const dy = e.touches[0].clientY - y0;
-    if (dy > 90 && cart.scrollTop <= 0) { y0 = null; if (history.state?.cart) history.back(); }
+    if (dy > 110) { y0 = null; if (history.state?.cart) history.back(); }
   }, { passive: true });
   cart.addEventListener('touchend', () => { y0 = null; }, { passive: true });
 })();
@@ -1041,7 +1128,7 @@ window.addEventListener('offline', () => document.getElementById('banner-offline
 const iniciarComunicados = () => {
     const alvo = document.getElementById('banner-comunicado');
     if (!alvo) return;
-    const unsub = onSnapshot(doc(db, "loja", "comunicados"), (snap) => {
+    onSnapshot(doc(db, "loja", "comunicados"), (snap) => {
         if (!snap.exists()) { alvo.classList.remove('visivel'); return; }
         const dados = snap.data();
 
@@ -1066,8 +1153,9 @@ const iniciarComunicados = () => {
         const escolhido = fixoVale ? dados.fixo.texto : (diaVale ? doDia.texto : '');
         if (escolhido) { alvo.textContent = escolhido; alvo.classList.add('visivel'); }
         else { alvo.classList.remove('visivel'); }
-    });
-    unsubscribes.push(unsub);
+    }, (e) => console.warn('[loja] comunicados:', e?.code || e));
+    // NÃO vai para "unsubscribes": aquela lista é desligada logo no primeiro
+    // carregamento (antes do login anônimo) e o aviso nunca aparecia na 1ª visita.
 };
 
 iniciarComunicados();
