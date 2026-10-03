@@ -26,8 +26,8 @@
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 
-// Desliga o parse automático — precisamos do corpo bruto pra assinatura
-module.exports.config = { api: { bodyParser: false } };
+// (o "config" que desliga o parse automático é exportado no FIM do arquivo:
+//  aqui em cima ele era apagado pelo "module.exports = handler" logo abaixo)
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -152,3 +152,6 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true }); // 200 evita retries em loop
   }
 };
+
+// Desliga o parse automático — precisamos do corpo bruto pra conferir a assinatura
+module.exports.config = { api: { bodyParser: false } };
