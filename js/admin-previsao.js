@@ -13,7 +13,7 @@ const HORIZONTES = [
 ];
 const ORDENS = [['valor', 'Maior faturamento'], ['falta', 'Maior risco de falta'], ['conf', 'Menor confiança'], ['nome', 'A–Z']];
 
-const S = { dados: null, horizonte: 'amanha', ordem: 'valor', busca: '', esperadosDia: 'hoje', carregando: false };
+const S = { dados: null, horizonte: 'amanha', ordem: 'valor', busca: '', esperadosDia: 'hoje', carregando: false, erro: '' };
 
 const num = (v, casas = 1) => (v == null || !Number.isFinite(Number(v))) ? '–' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: casas });
 const pct = (v) => (v == null ? '–' : `${Math.round(v * 100)}%`);
@@ -155,7 +155,20 @@ const render = () => {
     const alvo = document.getElementById('previsao-conteudo'); if (!alvo) return;
     const d = S.dados;
     if (S.carregando && !d) { alvo.innerHTML = '<p class="pv-vazio">Carregando previsões… ⏳</p>'; return; }
-    if (!d || d.vazio) { alvo.innerHTML = `<div class="pv-vazio-box"><div style="font-size:2.4rem">🔮</div><p><b>Ainda não há previsões calculadas.</b></p><p>Toque em “Recalcular” para gerar a primeira análise a partir dos seus pedidos.</p></div>`; return; }
+    // Falhou ao ler: diz o que houve (antes mostrava "ainda não há previsões", que não era verdade)
+    if (!d && S.erro) {
+        alvo.innerHTML = `<div class="pv-vazio-box"><div style="font-size:2.4rem">⚠️</div><p><b>Não consegui abrir as previsões.</b></p><p>${escapeHTML(S.erro)}</p>
+            <button class="btn-ia-action pv-btn-grande" id="pv-tentar">Tentar de novo</button></div>`;
+        return;
+    }
+    // Nunca calculado: o botão para o PRIMEIRO cálculo fica aqui (antes ele só existia depois de já haver dados)
+    if (!d || d.vazio) {
+        alvo.innerHTML = `<div class="pv-vazio-box"><div style="font-size:2.4rem">🔮</div><p><b>Ainda não há previsões calculadas.</b></p>
+            <p>O sistema lê os pedidos dos últimos meses e estima quanto cada produto deve vender hoje, amanhã e na semana, com sugestão de compra.</p>
+            <button class="btn-ia-action pv-btn-grande" id="pv-recalc">🔮 Calcular agora</button>
+            <p class="pv-dica">Leva alguns segundos. Com menos de 4 dias de vendas de um produto, ele aparece como "dados insuficientes".</p></div>`;
+        return;
+    }
 
     const m = d.meta || {}, db = d.dashboard || {}, av = resumoErro(d.avaliacoes);
     const conf = db.confiancaMedia;
@@ -203,8 +216,8 @@ const render = () => {
 // ------------------------- ações -------------------------
 const carregar = async () => {
     S.carregando = true; render();
-    try { S.dados = await chamar({ acao: 'painel' }); }
-    catch (e) { console.error(e); showToast(e.message || 'Não foi possível carregar as previsões.', true); }
+    try { S.dados = await chamar({ acao: 'painel' }); S.erro = ''; }
+    catch (e) { console.error(e); S.erro = e.message || 'Não foi possível carregar as previsões.'; if (S.dados) showToast(S.erro, true); }
     finally { S.carregando = false; render(); }
 };
 
@@ -224,6 +237,7 @@ const ligarEventos = () => {
         const hz = e.target.closest('[data-pv-hz]'); if (hz) { S.horizonte = hz.dataset.pvHz; render(); return; }
         const esp = e.target.closest('[data-pv-esp]'); if (esp) { S.esperadosDia = esp.dataset.pvEsp; render(); return; }
         if (e.target.id === 'pv-recalc') return recalcular(e.target);
+        if (e.target.id === 'pv-tentar') return carregar();
         if (e.target.id === 'pv-backfill') return recalcular(e.target, 365);
         const cli = e.target.closest('[data-pv-cli]');
         if (cli) {
@@ -240,4 +254,5 @@ const ligarEventos = () => {
     raiz.addEventListener('change', (e) => { if (e.target.id === 'pv-ordem') { S.ordem = e.target.value; const l = document.getElementById('pv-lista'); if (l) l.innerHTML = listaProdutos(); } });
 };
 
-export const abrirPrevisao = () => { ligarEventos(); if (!S.dados && !S.carregando) carregar(); else render(); };
+// Sem dados (ou só o "vazio"): consulta de novo a cada abertura da aba — o cálculo diário pode ter rodado.
+export const abrirPrevisao = () => { ligarEventos(); if ((!S.dados || S.dados.vazio) && !S.carregando) carregar(); else render(); };
