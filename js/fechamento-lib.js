@@ -12,7 +12,7 @@
 export const DIAS_CURTOS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 export const DIAS_LONGOS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 
-const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
 /** Data de hoje em Brasília (UTC−3) como AAAA-MM-DD. */
 export const hojeBR = (agora = Date.now()) => new Date(agora - 3 * 3600000).toISOString().slice(0, 10);
@@ -95,4 +95,3 @@ export const padraoDoDiaDaSemana = (registros, diaRef, produtoId, maxSemanas = 8
     }
     return { n, sobrou, acabou };
 };
-
