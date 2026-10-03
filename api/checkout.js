@@ -46,12 +46,9 @@ const sanitizeString = (str, maxLength = 120) => {
     .slice(0, maxLength);
 };
 
+const { resolverDestinos } = require('../lib/roteamentoWhatsapp');
+
 const WPP_FALLBACK = process.env.WHATSAPP_FALLBACK || '5562999999999';
-const resolveWpp = (configSnap) => {
-  const raw = configSnap && configSnap.exists ? configSnap.data().wpp : null;
-  const digits = String(raw || '').replace(/\D/g, '');
-  return digits.length >= 10 ? digits : WPP_FALLBACK;
-};
 
 // ---------------------------------------------------------------------
 // CORS — lista de origens confiáveis
@@ -146,13 +143,29 @@ function montarTextoWhatsApp(pedido, numero) {
     }
   });
 
-  msg += `\n*Subtotal (itens já pesados): ${fmtBRL(pedido.total)}*`;
+  const dividido = pedido.parte && pedido.parte.de > 1;
+  msg += `\n*${dividido ? 'Subtotal desta parte' : 'Subtotal'} (itens já pesados): ${fmtBRL(pedido.total)}*`;
+  if (dividido) {
+    msg += `\n📦 _Parte ${pedido.parte.n} de ${pedido.parte.de}: os outros itens do pedido foram enviados a outro número. Total do pedido: ${fmtBRL(pedido.totalGeral)}._`;
+  }
   if (pedido.temItensAPesar) {
     msg += `\n➕ _Os itens marcados com ⚖️ serão pesados e o valor final ajustado._`;
   }
   if (pedido.obs) msg += `\n\n📝 Obs: ${pedido.obs}`;
 
   return `https://wa.me/${numero}?text=${encodeURIComponent(msg)}`;
+}
+
+
+// Monta 1 link por número de destino (ver lib/roteamentoWhatsapp.js)
+function montarLinksWhatsApp(pedido, categorias, config) {
+  const destinos = resolverDestinos({ itens: pedido.itens, categorias, config, fallback: WPP_FALLBACK });
+  return destinos.map((d, i) => {
+    const sub = d.itens.reduce((t, it) => t + (it.aPesar ? 0 : Number(it.subtotal) || 0), 0);
+    const parte = { ...pedido, itens: d.itens, total: Math.round(sub * 100) / 100,
+      temItensAPesar: d.itens.some((it) => it.aPesar), parte: { n: i + 1, de: destinos.length }, totalGeral: pedido.total };
+    return { nome: d.nome, qtdItens: d.itens.length, url: montarTextoWhatsApp(parte, d.numero) };
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -232,16 +245,17 @@ module.exports = async function handler(req, res) {
       const configRef = db.doc('loja/config');
 
       // ---- TODAS as leituras ANTES de qualquer escrita (regra do Firestore) ----
-      const [pedidoSnap, configSnap] = await Promise.all([t.get(pedidoRef), t.get(configRef)]);
+      const [pedidoSnap, configSnap, catsSnap] = await Promise.all([t.get(pedidoRef), t.get(configRef), t.get(db.collection('categorias'))]);
+      const categoriasCfg = catsSnap.docs.map((c) => c.data());
+      const configCfg = configSnap.exists ? configSnap.data() : {};
 
       // Idempotência: pedido já criado -> retorna o mesmo resultado
       if (pedidoSnap.exists) {
         const d = pedidoSnap.data();
+        const links = montarLinksWhatsApp(d, categoriasCfg, configCfg);
         return { id: pedidoRef.id, total: d.total, temItensAPesar: !!d.temItensAPesar,
-                 whatsappMsg: montarTextoWhatsApp(d, resolveWpp(configSnap)) };
+                 whatsappMsg: links[0].url, whatsapps: links };
       }
-
-      const wpp = resolveWpp(configSnap);
 
       // Loja fechada? (defesa extra além do front)
       if (configSnap.exists) {
@@ -288,14 +302,14 @@ module.exports = async function handler(req, res) {
         if (aPesar) {
           // NÃO soma no total (preço só após pesagem) e NÃO baixa estoque por unidade
           itensValidados.push({
-            id: item.id, nome: p.nome, qtd, tipo: 'un', aPesar: true,
+            id: item.id, nome: p.nome, cat: p.cat || '', qtd, tipo: 'un', aPesar: true,
             precoOriginal: p.preco, unidade: p.unidade || 'un', subtotal: 0,
           });
         } else {
           const subC = Math.round(paraCentavos(p.preco) * qtd);
           totalExatoCentavos += subC;
           itensValidados.push({
-            id: item.id, nome: p.nome, qtd, tipo, aPesar: false,
+            id: item.id, nome: p.nome, cat: p.cat || '', qtd, tipo, aPesar: false,
             preco: p.preco, precoOriginal: p.preco, unidade: p.unidade || 'un',
             subtotal: paraFlutuante(subC),
           });
@@ -394,8 +408,9 @@ module.exports = async function handler(req, res) {
         atualizadoEm: new Date().toISOString(),
       }, { merge: true });
 
+      const links = montarLinksWhatsApp(dadosPedido, categoriasCfg, configCfg);
       return { id: pedidoRef.id, total: totalExato, temItensAPesar,
-               whatsappMsg: montarTextoWhatsApp(dadosPedido, wpp) };
+               whatsappMsg: links[0].url, whatsapps: links };
     });
 
     return res.status(200).json({ sucesso: true, pedido: resultado });
