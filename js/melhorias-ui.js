@@ -2,24 +2,29 @@
 // Não mexe em dados nem em regra de negócio.
 
 // ---- Tela de entrada (some assim que os produtos aparecem) ----
+// O CSS só a deixa visível depois de 0,35 s e a esconde sozinho aos 10 s.
 const splash = document.getElementById('splash-feira');
+const grid = document.getElementById('lista-produtos');
 let splashFechada = false;
 const fecharSplash = () => {
     if (splashFechada || !splash) return;
     splashFechada = true;
+    if (performance.now() < 400) { splash.remove(); return; }     // carregou rápido: nem chegou a aparecer
     splash.classList.add('saindo');
-    setTimeout(() => splash.remove(), 600);
+    setTimeout(() => splash.remove(), 500);
 };
-if (splash) {
-    const grid = document.getElementById('lista-produtos');
-    if (grid) {
-        const obs = new MutationObserver(() => {
-            if (grid.querySelector('.produto-card[data-id]')) { obs.disconnect(); setTimeout(fecharSplash, 250); }
-        });
-        obs.observe(grid, { childList: true, subtree: true });
-    }
-    setTimeout(fecharSplash, 6000);       // nunca prende o cliente fora da loja
+if (grid) {
+    // animação de entrada dos cards: só nesta primeira carga
+    grid.classList.add('primeira-carga');
+    const obs = new MutationObserver(() => {
+        if (!grid.querySelector('.produto-card[data-id], .empty-state')) return;
+        obs.disconnect();
+        setTimeout(fecharSplash, 150);
+        setTimeout(() => grid.classList.remove('primeira-carga'), 1200);
+    });
+    obs.observe(grid, { childList: true, subtree: true });
 }
+if (splash) setTimeout(fecharSplash, 6000);   // nunca prende o cliente fora da loja
 
 // ---- Botão desabilitado com texto de "carregando" ganha spinner ----
 const TEXTO_OCUPADO = /⏳|Enviando|Salvando|Calculando|Processando|Gerando|Carregando|\.\.\.|…/;
