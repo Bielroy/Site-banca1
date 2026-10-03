@@ -1,10 +1,10 @@
 /* Header */
-header { background: var(--forest); color: white; position: relative; overflow: hidden; padding: 0; }
-header::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(ellipse 80% 60% at 70% 20%, rgba(78,148,103,0.25) 0%, transparent 60%), radial-gradient(ellipse 50% 80% at 10% 80%, rgba(200,120,58,0.15) 0%, transparent 50%); z-index: 0; }
+#header-principal { background: var(--forest); color: white; position: relative; overflow: hidden; padding: 0; }
+#header-principal::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(ellipse 80% 60% at 70% 20%, rgba(78,148,103,0.25) 0%, transparent 60%), radial-gradient(ellipse 50% 80% at 10% 80%, rgba(200,120,58,0.15) 0%, transparent 50%); z-index: 0; }
 .header-inner { position: relative; z-index: 1; padding: 36px 28px 28px; max-width: 1260px; margin: 0 auto; }
 .header-eyebrow { display: inline-flex; align-items: center; gap: 6px; background: rgba(126,200,160,0.2); border: 1px solid rgba(126,200,160,0.3); color: var(--mint); font-size: 0.72rem; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 5px 14px; border-radius: 30px; margin-bottom: 14px; }
-header h1 { font-family: 'Fraunces', serif; font-size: clamp(2.2rem, 5vw, 3.2rem); font-weight: 900; line-height: 1.05; letter-spacing: -1px; margin-bottom: 6px; }
-header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; }
+#header-principal h1 { font-family: 'Fraunces', serif; font-size: clamp(2.2rem, 5vw, 3.2rem); font-weight: 900; line-height: 1.05; letter-spacing: -1px; margin-bottom: 6px; }
+#header-principal h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; }
 .header-subtitle { font-size: 1.05rem; font-weight: 500; color: var(--sage); margin-bottom: 20px; }
 .header-pills { display: flex; gap: 8px; flex-wrap: wrap; }
 .pill { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.85); padding: 6px 16px; border-radius: 30px; font-size: 0.8rem; font-weight: 500; backdrop-filter: blur(10px); }
@@ -174,9 +174,13 @@ header h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; 
     .btn-flutuante-carrinho:active { transform: translateX(-50%) scale(0.95); }
     
     .toast { z-index: 9999; bottom: calc(var(--safe-bottom) + 90px); } 
-    header h1 { font-size: 2rem; }
+    #header-principal h1 { font-size: 2rem; }
     
     .modal-overlay { padding: 0; align-items: flex-end; }
     .modal { max-height: 95dvh; border-radius: 20px 20px 0 0; }
     .modal-body { padding-bottom: calc(24px + var(--safe-bottom)); }
 }
+
+/* ===== Ranking personalizado (js/ranking-loja.js) ===== */
+.rec-tag { position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 16px); padding: 3px 9px; border-radius: 12px; font-size: 0.72rem; font-weight: 700; line-height: 1.3; background: var(--forest); color: #fff; box-shadow: var(--shadow-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.rec-tag--repor { background: var(--earth); }
