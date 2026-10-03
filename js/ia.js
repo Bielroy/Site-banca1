@@ -1,4 +1,4 @@
-import { escapeHTML, showToast } from './utils.js';
+import { escapeHTML, showToast, isFracionavel } from './utils.js';
 
 export const initIA = (STATE) => {
     const inputMsg = document.getElementById('input-ia-mensagem');
@@ -9,7 +9,7 @@ export const initIA = (STATE) => {
     if (inputMsg && !document.getElementById('btn-ia-camera')) {
         inputMsg.insertAdjacentHTML('beforebegin', `
             <input type="file" id="ia-vision-upload" accept="image/*" style="display: none;">
-            <button id="btn-ia-camera" style="background:none; border:none; font-size:1.4rem; cursor:pointer; padding:0 10px; color:var(--text-mid);" title="Enviar foto do que procura" aria-label="Enviar foto">📷</button>
+            <button type="button" id="btn-ia-camera" title="Enviar foto do que procura" aria-label="Enviar foto">📷</button>
         `);
     }
 
@@ -63,6 +63,53 @@ export const initIA = (STATE) => {
         if (btnCamera) btnCamera.style.color = 'var(--text-mid)';
     };
 
+    // ---------- Pílula de quantidade: [ + Adicionar ] vira [ − 1 kg + ] ----------
+    const textoQtd = (item) => {
+        const frac = isFracionavel(item.unidade);
+        if (frac && item.tipo === 'kg') return `${String(item.qtd).replace('.', ',')} kg`;
+        if (frac) return `${item.qtd} un`;
+        return `${item.qtd} ${item.unidade && item.unidade !== 'un' ? item.unidade : 'un'}`;
+    };
+
+    const montarPilula = (p) => `
+        <div class="ia-pill" data-pill="${escapeHTML(p.id)}">
+            <span class="ia-pill-nome" title="${escapeHTML(p.nome)}">${escapeHTML(p.nome)}</span>
+            <button type="button" class="ia-pill-add" data-action="add" data-id="${escapeHTML(p.id)}">+ Adicionar</button>
+            <div class="ia-pill-qtd" hidden>
+                <button type="button" data-action="dec" data-id="${escapeHTML(p.id)}" aria-label="Tirar um">−</button>
+                <span class="ia-pill-valor" aria-live="polite"></span>
+                <button type="button" data-action="inc" data-id="${escapeHTML(p.id)}" aria-label="Colocar mais um">+</button>
+            </div>
+        </div>`;
+
+    const sincronizarPilulas = () => {
+        containerSugestoes.querySelectorAll('.ia-pill').forEach(pill => {
+            const item = STATE.carrinho.find(i => String(i.id) === pill.dataset.pill);
+            const add = pill.querySelector('.ia-pill-add');
+            const qtd = pill.querySelector('.ia-pill-qtd');
+            add.textContent = '+ Adicionar';          // o feedback global troca o texto por ✓/+
+            add.hidden = !!item;
+            qtd.hidden = !item;
+            if (item) pill.querySelector('.ia-pill-valor').textContent = textoQtd(item);
+        });
+    };
+
+    // O clique em add/inc/dec é tratado pelo delegador global (loja.js);
+    // aqui só esperamos ele mexer no carrinho para refletir na pílula.
+    containerSugestoes.addEventListener('click', (e) => {
+        if (e.target.closest('[data-action]')) setTimeout(sincronizarPilulas, 0);
+    });
+    const modalIA = document.getElementById('modal-ia-chat');
+    if (modalIA) new MutationObserver(sincronizarPilulas).observe(modalIA, { attributes: true, attributeFilter: ['class'] });
+
+    // Etiquetas de sugestão ("Vinagrete", "Sobremesa"...) mandam a pergunta pronta
+    corpoChat.addEventListener('click', (e) => {
+        const chip = e.target.closest('[data-prompt]');
+        if (!chip) return;
+        inputMsg.value = chip.dataset.prompt;
+        enviarMensagemParaIA();
+    });
+
     let ultimoEnvio = null; // guarda o que foi mandado, p/ o botão "tentar de novo"
 
     const enviarMensagemParaIA = async (repetindo) => {
@@ -72,9 +119,7 @@ export const initIA = (STATE) => {
 
         if (!repetindo) {
             corpoChat.insertAdjacentHTML('beforeend', `
-                <div style="align-self: flex-end; background: var(--forest); color: white; padding: 12px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; box-shadow: var(--shadow-sm); margin-bottom: 8px;">
-                    ${anexo ? '📸 [Imagem anexada]<br>' : ''}${escapeHTML(texto)}
-                </div>
+                <div class="ia-msg ia-msg--eu">${anexo ? '📸 [Imagem anexada]<br>' : ''}${escapeHTML(texto)}</div>
             `);
             STATE.historicoChat.push({ role: 'user', content: texto + (anexo ? ' [Enviou uma imagem]' : '') });
         }
@@ -82,12 +127,12 @@ export const initIA = (STATE) => {
         inputMsg.value = '';
         containerSugestoes.innerHTML = '';
         btnEnviar.disabled = true;
-        btnEnviar.textContent = '⏱️...';
+        btnEnviar.textContent = '...';
 
         const idBolha = 'msg-' + Date.now();
         corpoChat.insertAdjacentHTML('beforeend', `
-            <div id="${idBolha}" style="align-self: flex-start; background: white; color: var(--text-dark); padding: 14px; border-radius: var(--radius-sm); max-width: 85%; font-size: 0.95rem; border: 1px solid #e0dcd4; box-shadow: var(--shadow-sm); line-height: 1.5; margin-bottom: 8px;">
-                <span class="typing-indicator" style="animation: pulse 1s infinite;">A pensar...</span>
+            <div id="${idBolha}" class="ia-msg ia-msg--bot">
+                <span class="ia-digitando" aria-label="Pensando"><span>🍅</span><span>🥕</span><span>🧅</span></span>
             </div>
         `);
         corpoChat.scrollTop = corpoChat.scrollHeight;
@@ -164,7 +209,7 @@ export const initIA = (STATE) => {
             }
 
             if (!textoAcumulado.trim()) {
-                bolhaEl.innerHTML = '<span style="color:var(--text-light)">Não consegui responder agora. Tenta de novo?</span>';
+                bolhaEl.innerHTML = '<span class="ia-msg--erro">Não consegui responder agora. Tenta de novo?</span>';
             } else {
                 pintar();
                 STATE.historicoChat.push({ role: 'ia', content: textoAcumulado });
@@ -177,21 +222,18 @@ export const initIA = (STATE) => {
                 let botoesHtml = '';
                 ids.forEach(prodId => {
                     const produtoNoBanco = STATE.produtos.find(p => String(p.id) === String(prodId));
-                    if (produtoNoBanco) {
-                        botoesHtml += `<button class="btn btn-outline" style="padding: 6px 12px; font-size: 0.85rem; border-color: var(--earth); color: var(--earth); white-space: nowrap;" data-action="add" data-id="${escapeHTML(produtoNoBanco.id)}">🛒 + ${escapeHTML(produtoNoBanco.nome)}</button>`;
-                    }
+                    if (produtoNoBanco) botoesHtml += montarPilula(produtoNoBanco);
                 });
                 containerSugestoes.innerHTML = botoesHtml;
+                sincronizarPilulas();
             }
 
         } catch (err) {
             // Sobrecarga da IA é passageira: oferece repetir sem redigitar.
             const passageiro = err.podeRepetir === true;
             bolhaEl.innerHTML = `
-                <div style="color:${passageiro ? 'var(--text-mid)' : 'var(--danger)'};">
-                    ${passageiro ? '⏳' : '🚨'} ${escapeHTML(err.message)}
-                </div>
-                ${passageiro ? '<button class="btn btn-outline btn-repetir-ia" style="margin-top:10px; padding:8px 14px; font-size:.85rem;">🔄 Tentar de novo</button>' : ''}`;
+                <div class="ia-msg--erro ${passageiro ? '' : 'fatal'}">${passageiro ? '⏳' : '🚨'} ${escapeHTML(err.message)}</div>
+                ${passageiro ? '<button type="button" class="ia-tentar btn-repetir-ia">🔄 Tentar de novo</button>' : ''}`;
             const btnRepetir = bolhaEl.querySelector('.btn-repetir-ia');
             if (btnRepetir) {
                 btnRepetir.addEventListener('click', () => {
