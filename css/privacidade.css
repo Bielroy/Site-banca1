@@ -1,0 +1,17 @@
+/* Página de privacidade — leitura simples, mesma identidade da loja. */
+*, *::before, *::after { box-sizing: border-box; }
+.pv-pagina { margin: 0; background: var(--cream, #faf7f2); color: var(--text-dark, #1f2a24); font-family: 'Plus Jakarta Sans', system-ui, sans-serif; line-height: 1.65; }
+.pv-topo { background: var(--forest, #1a3a2a); color: #fff; padding: calc(env(safe-area-inset-top, 0px) + 20px) 20px 28px; }
+.pv-topo > * { max-width: 680px; margin-left: auto; margin-right: auto; }
+.pv-voltar { display: inline-block; color: #d5eadd; font-weight: 700; text-decoration: none; padding: 10px 0; min-height: 44px; }
+.pv-voltar:hover, .pv-voltar:focus-visible { text-decoration: underline; }
+.pv-topo h1 { font-family: 'Fraunces', Georgia, serif; font-size: 2rem; line-height: 1.15; margin: 6px auto 8px; }
+.pv-topo p { margin-top: 0; margin-bottom: 0; color: #d5eadd; }
+.pv-texto { max-width: 680px; margin: 0 auto; padding: 24px 20px calc(env(safe-area-inset-bottom, 0px) + 48px); }
+.pv-texto section { background: #fff; border: 1px solid #ece7dc; border-radius: 16px; padding: 18px 20px; margin-bottom: 14px; }
+.pv-texto h2 { font-family: 'Fraunces', Georgia, serif; color: var(--forest, #1a3a2a); font-size: 1.25rem; margin: 0 0 8px; }
+.pv-texto p { margin: 0 0 10px; }
+.pv-texto p:last-child { margin-bottom: 0; }
+.pv-texto ul { margin: 0 0 10px; padding-left: 20px; }
+.pv-texto li { margin-bottom: 6px; }
+.pv-rodape { text-align: center; color: var(--text-light, #7a857e); font-size: .85rem; margin-top: 24px; }
