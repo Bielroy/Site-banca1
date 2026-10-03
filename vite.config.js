@@ -17,9 +17,48 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { resolve } from 'path';
+import { existsSync, readFileSync } from 'fs';
+
+const raiz = process.cwd();
+
+// ---------------------------------------------------------------------
+// PÁGINAS DO SITE
+//
+// O build parava TODO quando uma página desta lista não existia no
+// repositório — foi o que aconteceu com o privacidade.html: de 24/07 em
+// diante nenhum deploy entrou no ar. Agora só entra na lista a página que
+// existe de verdade; a que faltar fica de fora e o resto do site sobe.
+// ---------------------------------------------------------------------
+const PAGINAS = { main: 'index.html', admin: 'admin.html', privacidade: 'privacidade.html' };
+const paginasExistentes = Object.fromEntries(
+  Object.entries(PAGINAS)
+    .filter(([, arquivo]) => existsSync(resolve(raiz, arquivo)))
+    .map(([nome, arquivo]) => [nome, resolve(raiz, arquivo)])
+);
+
+// ---------------------------------------------------------------------
+// ARQUIVOS SOLTOS DA RAIZ
+//
+// O Vite só copia sozinho o que está numa pasta "public/". Estes arquivos
+// ficam na raiz do projeto, então não iam para o site publicado: o ícone do
+// atalho (manifest), a imagem de compartilhamento, o robots.txt e o
+// sitemap.xml davam erro 404. Este mini-plugin os copia com o mesmo nome.
+// ---------------------------------------------------------------------
+const ARQUIVOS_DA_RAIZ = ['icon-192.png', 'icon-512.png', 'og-image.png', 'robots.txt', 'sitemap.xml'];
+const copiarArquivosDaRaiz = () => ({
+  name: 'banca-copiar-arquivos-da-raiz',
+  apply: 'build',
+  generateBundle() {
+    for (const arquivo of ARQUIVOS_DA_RAIZ) {
+      const caminho = resolve(raiz, arquivo);
+      if (existsSync(caminho)) this.emitFile({ type: 'asset', fileName: arquivo, source: readFileSync(caminho) });
+    }
+  },
+});
 
 export default defineConfig({
   plugins: [
+    copiarArquivosDaRaiz(),
     VitePWA({
       registerType: 'autoUpdate',
 
@@ -108,11 +147,7 @@ export default defineConfig({
   build: {
     target: 'esnext',
     rollupOptions: {
-      input: {
-        main: resolve(process.cwd(), 'index.html'),
-        admin: resolve(process.cwd(), 'admin.html'),
-        privacidade: resolve(process.cwd(), 'privacidade.html'),
-      },
+      input: paginasExistentes,
     },
   },
 });
