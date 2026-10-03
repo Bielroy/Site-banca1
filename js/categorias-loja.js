@@ -13,7 +13,7 @@
 // =====================================================================
 import { db, collection, onSnapshot } from './firebase.js';
 
-const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
 let categorias = [];
 
@@ -47,4 +47,3 @@ export const abasDeCategoria = (produtos) => {
 
 /** Assinatura curta: muda quando algo visível das categorias muda (para re-renderizar). */
 export const assinaturaCategorias = () => categorias.map((c) => `${c.chave}:${c.nome}:${c.ordem}:${c.visivel !== false}`).join('|');
-
