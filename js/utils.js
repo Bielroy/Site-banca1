@@ -54,7 +54,9 @@ export const showToast = (msg, isError = false) => {
   t.classList.add('visivel');
   hapticFeedback(isError ? 'heavy' : 'light');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('visivel'), 3000);
+  // erro e texto comprido ficam mais tempo na tela (3 s não dava para ler)
+  const tempo = Math.min(7000, Math.max(isError ? 4500 : 3000, String(msg).length * 55));
+  toastTimer = setTimeout(() => t.classList.remove('visivel'), tempo);
 };
 
 export const animarFeedbackBtn = (btn) => {
@@ -230,8 +232,37 @@ export const customConfirm = (title, msg) => {
 // --------- Rede: erros globais ---------
 window.addEventListener('unhandledrejection', (event) => {
   console.error('Unhandled Promise:', event.reason);
-  showToast('Erro de conexão. Tente novamente.', true);
+  // Só fala em "conexão" quando é mesmo conexão; outros erros não culpam a internet de quem está usando.
+  const txt = String((event.reason && (event.reason.code || event.reason.message)) || event.reason || '');
+  const rede = !navigator.onLine || /network|fetch|unavailable|offline|timeout|deadline/i.test(txt);
+  showToast(rede ? 'Erro de conexão. Tente novamente.' : 'Algo não saiu como esperado. Tente de novo.', true);
 });
+
+// --------- Versão nova do site: entra sozinha ---------
+// Depois de um deploy, o celular ainda abria a versão guardada e só mostrava a
+// nova na SEGUNDA abertura. Agora, quando a versão nova assume, a página
+// recarrega uma vez — mas nunca no meio de um pedido ou de um formulário.
+if ('serviceWorker' in navigator) {
+  const jaTinhaVersao = !!navigator.serviceWorker.controller;   // 1ª visita não recarrega
+  let recarregou = false;
+  const ocupado = () => !!document.querySelector('.modal-overlay.aberto, .carrinho.aberto, .picking-palco.aberto')
+    || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement && document.activeElement.tagName) || '');
+  let pendente = false;
+  const tentarRecarregar = () => {
+    if (recarregou || !pendente || ocupado()) return;
+    recarregou = true; window.location.reload();
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!jaTinhaVersao) return;
+    pendente = true; tentarRecarregar();
+  });
+  // App aberto há dias (atalho na tela inicial): ao voltar para ele, confere se há versão nova
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    tentarRecarregar();
+    navigator.serviceWorker.getRegistration().then((r) => r && r.update()).catch(() => {});
+  });
+}
 
 // --------- IndexedDB wrapper (não bloqueante) ---------
 export const dbStorage = {
