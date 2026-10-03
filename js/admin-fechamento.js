@@ -12,6 +12,7 @@
 // =====================================================================
 import { db, collection, doc, getDoc, getDocs, setDoc, query, where } from './firebase.js';
 import { escapeHTML, showToast, customConfirm } from './utils.js';
+import { nomeDaCategoria } from './admin-categorias.js';
 import {
     DIAS_CURTOS, hojeBR, addDias, semanaDe, dataCurta, dataLonga, diaDaSemana, DIAS_LONGOS,
     proximoDiaAberto, ordenarProdutos, resumoDia, gerarListaCeasa, padraoDoDiaDaSemana
@@ -24,7 +25,7 @@ const S = {
 };
 const timers = new Map();
 const el = () => document.getElementById('fechamento-conteudo');
-const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 const ref = (dia) => doc(db, 'fechamentos', dia);
 
 // ------------------------------------------------------------ dados
@@ -53,55 +54,74 @@ async function carregarDia(dia) {
     render();
 }
 
-function gravar(id) {
+const msgErroGravar = (e) => (e && e.code === 'permission-denied'
+    ? 'Sem permissão para salvar. Publique as regras novas do Firestore (fechamentos).'
+    : 'Não consegui salvar. Confira a internet.');
+
+// O dia e o valor são capturados na hora do toque. Antes, a gravação atrasada
+// (600 ms da anotação) lia S.dia/S.itens depois de a pessoa já ter trocado de
+// dia, não achava nada e a última anotação se perdia.
+function gravar(id, dia = S.dia, v = S.itens[id]) {
     const p = S.produtos.find((x) => x.id === id);
-    const v = S.itens[id];
     if (!p || !v) return;
     S.estado = 'salvando'; pintarEstado();
-    return setDoc(ref(S.dia), {
-        dia: S.dia, atualizadoEm: new Date().toISOString(),
+    const temMarca = Object.values(S.itens).some((x) => x && x.tem != null);
+    return setDoc(ref(dia), {
+        dia, atualizadoEm: new Date().toISOString(),
         itens: { [id]: { tem: v.tem ?? null, obs: String(v.obs || '').slice(0, 80), nome: p.nome, cat: p.cat || 'outros' } },
     }, { merge: true }).then(() => {
+        if (dia !== S.dia) return;                         // já estamos em outro dia: nada a pintar
         S.estado = 'salvo';
-        if (Object.values(S.itens).some((x) => x && x.tem != null)) S.marcados.add(S.dia); else S.marcados.delete(S.dia);
+        if (temMarca) S.marcados.add(dia); else S.marcados.delete(dia);
         pintarEstado(); pintarSemana();
-    }).catch((e) => { console.error(e); S.estado = 'erro'; pintarEstado(); showToast('Não consegui salvar. Confira a internet.', true); });
+    }).catch((e) => { console.error(e); S.estado = 'erro'; pintarEstado(); showToast(msgErroGravar(e), true); });
 }
 
 const agendar = (id, ms = 0) => {
-    clearTimeout(timers.get(id));
-    if (!ms) return gravar(id);
-    timers.set(id, setTimeout(() => gravar(id), ms));
+    clearTimeout(timers.get(id)?.t);
+    const dia = S.dia, v = { ...S.itens[id] };
+    if (!ms) { timers.delete(id); return gravar(id, dia, v); }
+    timers.set(id, { dia, v, t: setTimeout(() => { timers.delete(id); gravar(id, dia, v); }, ms) });
+};
+
+// Antes de trocar de dia (ou sair da aba): grava já o que estava esperando.
+const gravarPendentes = () => {
+    for (const [id, pend] of timers) { clearTimeout(pend.t); gravar(id, pend.dia, pend.v); }
+    timers.clear();
 };
 
 // ------------------------------------------------------------ ações
 function marcar(id, valor) {                           // valor: true | false
     const atual = S.itens[id] || {};
     const novo = atual.tem === valor ? null : valor;     // tocar de novo desmarca
-    S.itens[id] = { ...atual, tem: novo, obs: novo === true ? (atual.obs || '') : '' };
-    pintarLinha(id); pintarResumo();
+    // a anotação fica guardada mesmo trocando para "Não tem" (toque errado não apaga o que foi escrito)
+    S.itens[id] = { ...atual, tem: novo, obs: atual.obs || '' };
+    pintarLinha(id); pintarResumo(); pintarCeasa();
     agendar(id);
 }
 
 function anotar(id, texto) {
     const atual = S.itens[id] || {};
     S.itens[id] = { ...atual, tem: true, obs: texto.slice(0, 80) };
+    pintarCeasa();
     agendar(id, 600);
 }
 
 async function restantesNaoTem() {
+    if (S.estado === 'erro-leitura' || S.carregando) return;
     const faltam = S.produtos.filter((p) => !S.itens[p.id] || S.itens[p.id].tem == null);
     if (!faltam.length) return showToast('Todos os produtos já estão marcados.');
-    if (!(await customConfirm('Marcar restantes', `Marcar ${faltam.length} produto(s) sem marcação como "Não tem"?`))) return;
-    faltam.forEach((p) => { S.itens[p.id] = { ...(S.itens[p.id] || {}), tem: false, obs: '' }; });
-    S.estado = 'salvando';
-    try {
-        const mapa = {};
-        faltam.forEach((p) => { mapa[p.id] = { tem: false, obs: '', nome: p.nome, cat: p.cat || 'outros' }; });
-        await setDoc(ref(S.dia), { dia: S.dia, atualizadoEm: new Date().toISOString(), itens: mapa }, { merge: true });
-        S.estado = 'salvo'; S.marcados.add(S.dia);
-    } catch (e) { console.error(e); S.estado = 'erro'; showToast('Não consegui salvar.', true); }
-    render();
+    if (!(await customConfirm('Marcar restantes', `Marcar ${faltam.length} produto(s) sem marcação como "Não tem"? Vale para a lista inteira, não só para a busca.`))) return;
+    const dia = S.dia, mapa = {};
+    faltam.forEach((p) => {
+        S.itens[p.id] = { ...(S.itens[p.id] || {}), tem: false };
+        mapa[p.id] = { tem: false, obs: String(S.itens[p.id].obs || ''), nome: p.nome, cat: p.cat || 'outros' };
+    });
+    // mostra na hora; a gravação segue por trás (sem internet a tela não ficava parada esperando)
+    S.estado = 'salvando'; S.marcados.add(dia); render();
+    setDoc(ref(dia), { dia, atualizadoEm: new Date().toISOString(), itens: mapa }, { merge: true })
+        .then(() => { if (dia === S.dia) { S.estado = 'salvo'; pintarEstado(); } })
+        .catch((e) => { console.error(e); if (dia === S.dia) { S.estado = 'erro'; pintarEstado(); } showToast(msgErroGravar(e), true); });
 }
 
 const textoLista = () => gerarListaCeasa({
@@ -109,17 +129,26 @@ const textoLista = () => gerarListaCeasa({
     paraDia: proximoDiaAberto(S.dia, S.diasAbertos),
 });
 
-async function copiar() {
+async function copiar(aviso = '📋 Lista copiada!') {
     const { texto } = textoLista();
-    try { await navigator.clipboard.writeText(texto); showToast('📋 Lista copiada!'); }
+    try { await navigator.clipboard.writeText(texto); showToast(aviso); return true; }
     catch (e) {
-        const ta = document.getElementById('fc-texto'); if (ta) { ta.select(); document.execCommand?.('copy'); showToast('📋 Lista copiada!'); }
+        const ta = document.getElementById('fc-texto');
+        let ok = false;
+        if (ta) { ta.focus(); ta.select(); try { ok = document.execCommand('copy'); } catch (_) { ok = false; } }
+        showToast(ok ? aviso : 'Não consegui copiar sozinho. Segure o dedo no texto da lista e escolha "Copiar".', !ok);
+        return ok;
     }
 }
 async function compartilhar() {
     const { texto } = textoLista();
-    if (navigator.share) { try { await navigator.share({ text: texto }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
-    window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
+    if (navigator.share) {
+        try { await navigator.share({ text: texto }); return; }
+        catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    // Sem o menu de compartilhar: abre o WhatsApp direto (o toque ainda vale aqui)
+    const w = window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
+    if (!w) copiar('📋 Lista copiada. Agora é só colar no WhatsApp.');
 }
 
 // ------------------------------------------------------------ tela
@@ -128,8 +157,9 @@ const rotuloEstado = () => ({ salvando: 'Salvando…', salvo: '✓ Salvo', erro:
 function htmlLinha(p) {
     const v = S.itens[p.id] || {};
     const pad = padraoDoDiaDaSemana(S.historico, S.dia, p.id);
+    const dow = diaDaSemana(S.dia), masc = dow === 0 || dow === 6;     // "os sábados", "as segundas"
     const dica = pad.n >= 2
-        ? `<small class="fc-padrao">Nas últimas ${pad.n} ${DIAS_LONGOS[diaDaSemana(S.dia)].replace('-feira', '')}s: sobrou ${pad.sobrou}× · acabou ${pad.acabou}×</small>` : '';
+        ? `<small class="fc-padrao">${masc ? 'Nos últimos' : 'Nas últimas'} ${pad.n} ${DIAS_LONGOS[dow].replace('-feira', '')}s: sobrou ${pad.sobrou}× · acabou ${pad.acabou}×</small>` : '';
     return `<div class="fc-item" data-id="${escapeHTML(p.id)}" data-estado="${v.tem === true ? 'sim' : v.tem === false ? 'nao' : ''}">
         <div class="fc-linha">
             <div class="fc-nome"><strong>${escapeHTML(p.nome)}</strong>${p.ativo === false ? '<span class="fc-esgotado">esgotado na loja</span>' : ''}${dica}</div>
@@ -138,11 +168,12 @@ function htmlLinha(p) {
                 <button type="button" class="fc-nao ${v.tem === false ? 'on' : ''}" data-fc="nao" aria-pressed="${v.tem === false}">Não tem</button>
             </div>
         </div>
-        <input class="fc-obs" type="text" maxlength="80" value="${escapeHTML(v.obs || '')}" placeholder="Quanto sobrou? (opcional) ex.: meia caixa" aria-label="Quanto sobrou de ${escapeHTML(p.nome)}" ${v.tem === true ? '' : 'hidden'}>
+        <input class="fc-obs" type="text" maxlength="80" value="${escapeHTML(v.obs || '')}" placeholder="Quanto sobrou? (opcional) ex.: meia caixa" enterkeyhint="done" aria-label="Quanto sobrou de ${escapeHTML(p.nome)}" ${v.tem === true ? '' : 'hidden'}>
     </div>`;
 }
 
 function htmlLista() {
+    if (S.estado === 'erro-leitura') return `<div class="fc-erro"><p>⚠️ Não consegui abrir este dia.</p><small>Sem ler o que já foi salvo, marcar agora poderia apagar anotações. Confira a internet e tente de novo.</small><button type="button" data-fc="recarregar">Tentar de novo</button></div>`;
     const termo = norm(S.busca);
     let lista = ordenarProdutos(S.produtos).filter((p) => !termo || norm(p.nome).includes(termo) || norm(p.cat).includes(termo));
     if (S.soFaltam) lista = lista.filter((p) => !S.itens[p.id] || S.itens[p.id].tem == null);
@@ -150,7 +181,7 @@ function htmlLista() {
     let cat = null, out = '';
     for (const p of lista) {
         const c = p.cat || 'outros';
-        if (c !== cat) { cat = c; out += `<h4 class="fc-cat">${escapeHTML(c)}</h4>`; }
+        if (norm(c) !== norm(cat)) { cat = c; out += `<h4 class="fc-cat">${escapeHTML(c)}</h4>`; }
         out += htmlLinha(p);
     }
     return out;
@@ -200,7 +231,7 @@ function render() {
         <div class="fc-ctrl">
             <input id="fc-busca" type="search" placeholder="Buscar produto…" value="${escapeHTML(S.busca)}" aria-label="Buscar produto">
             <label class="fc-check"><input type="checkbox" id="fc-sofaltam" ${S.soFaltam ? 'checked' : ''}> Só os que faltam marcar</label>
-            <button type="button" class="fc-lote" data-fc="restantes">Marcar o resto como "Não tem"</button>
+            <button type="button" class="fc-lote" data-fc="restantes" ${S.estado === 'erro-leitura' ? 'disabled' : ''}>Marcar o resto como "Não tem"</button>
         </div>
 
         <div id="fc-lista" class="${S.carregando ? 'fc-carregando' : ''}">${htmlLista()}</div>
@@ -211,6 +242,12 @@ function render() {
 
 function pintarEstado() { const e = document.getElementById('fc-estado'); if (e) e.textContent = rotuloEstado(); }
 function pintarResumo() { const e = document.getElementById('fc-resumo'); if (e) e.innerHTML = htmlResumo(); }
+function pintarCeasa() {                               // lista aberta acompanha cada toque (antes ficava velha até "Atualizar")
+    const atual = document.getElementById('fc-ceasa'); if (!atual || !S.listaAberta) return;
+    const y = document.getElementById('fc-texto')?.scrollTop || 0;
+    atual.outerHTML = htmlListaCeasa();
+    const ta = document.getElementById('fc-texto'); if (ta) ta.scrollTop = y;
+}
 function pintarSemana() { const e = document.getElementById('fc-dias'); if (e) e.innerHTML = htmlSemana(); }
 function pintarLinha(id) {
     const linha = document.querySelector(`#fc-lista .fc-item[data-id="${CSS.escape(id)}"]`); if (!linha) return;
@@ -219,9 +256,16 @@ function pintarLinha(id) {
     const sim = linha.querySelector('.fc-sim'), nao = linha.querySelector('.fc-nao'), obs = linha.querySelector('.fc-obs');
     sim.classList.toggle('on', v.tem === true); sim.setAttribute('aria-pressed', v.tem === true);
     nao.classList.toggle('on', v.tem === false); nao.setAttribute('aria-pressed', v.tem === false);
-    obs.hidden = v.tem !== true; if (v.tem !== true) obs.value = '';
-    else if (document.activeElement !== obs) setTimeout(() => obs.focus({ preventScroll: true }), 0);
-    if (S.soFaltam && v.tem != null) linha.hidden = true;
+    // Sem foco automático: a conferência é toque-toque-toque; abrir o teclado a
+    // cada "Tem" tapava a lista. A linha também fica na tela com o filtro
+    // "só os que faltam" ligado, para dar tempo de anotar quanto sobrou.
+    obs.hidden = v.tem !== true;
+}
+
+function trocarDia(dia) {
+    gravarPendentes();
+    S.dia = dia; S.listaAberta = false; S.itens = {}; S.estado = ''; S.carregando = true;
+    render(); carregarDia(dia);
 }
 
 function ligar() {
@@ -231,21 +275,23 @@ function ligar() {
         const b = e.target.closest('[data-fc]'); if (!b) return;
         const acao = b.dataset.fc;
         const id = b.closest('.fc-item')?.dataset.id;
-        if (acao === 'sim') marcar(id, true);
-        else if (acao === 'nao') marcar(id, false);
-        else if (acao === 'dia') { S.dia = b.dataset.dia; S.listaAberta = false; S.itens = {}; render(); carregarDia(S.dia); }
-        else if (acao === 'semana-ant' || acao === 'semana-prox') {
-            S.dia = addDias(S.dia, acao === 'semana-ant' ? -7 : 7); S.listaAberta = false; S.itens = {}; render(); carregarDia(S.dia);
-        }
+        if (acao === 'sim' || acao === 'nao') { if (S.estado !== 'erro-leitura' && !S.carregando) marcar(id, acao === 'sim'); }
+        else if (acao === 'dia') { if (b.dataset.dia !== S.dia) trocarDia(b.dataset.dia); }
+        else if (acao === 'semana-ant' || acao === 'semana-prox') trocarDia(addDias(S.dia, acao === 'semana-ant' ? -7 : 7));
+        else if (acao === 'recarregar') trocarDia(S.dia);
         else if (acao === 'gerar') { S.listaAberta = true; render(); document.getElementById('fc-ceasa')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
         else if (acao === 'copiar') copiar();
         else if (acao === 'compartilhar') compartilhar();
         else if (acao === 'restantes') restantesNaoTem();
     });
     raiz.addEventListener('input', (e) => {
-        if (e.target.classList.contains('fc-obs')) anotar(e.target.closest('.fc-item').dataset.id, e.target.value);
+        if (e.target.classList.contains('fc-obs')) { if (S.estado !== 'erro-leitura') anotar(e.target.closest('.fc-item').dataset.id, e.target.value); }
         else if (e.target.id === 'fc-busca') { S.busca = e.target.value; document.getElementById('fc-lista').innerHTML = htmlLista(); }
     });
+    raiz.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.classList.contains('fc-obs')) e.target.blur(); });
+    // sair do campo, da aba ou do app: não deixa anotação esperando
+    raiz.addEventListener('focusout', (e) => { if (e.target.classList.contains('fc-obs')) gravarPendentes(); });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) gravarPendentes(); });
     raiz.addEventListener('change', (e) => {
         if (e.target.id === 'fc-sofaltam') { S.soFaltam = e.target.checked; document.getElementById('fc-lista').innerHTML = htmlLista(); }
         else if (e.target.id === 'fc-incluir') { S.incluirNaoMarcados = e.target.checked; render(); document.getElementById('fc-ceasa')?.scrollIntoView({ block: 'start' }); }
@@ -254,7 +300,9 @@ function ligar() {
 
 /** Ao abrir a aba. `produtos` = lista atual de produtos do painel. */
 export const abrirFechamento = async (produtos) => {
-    S.produtos = (produtos || []).map((p) => ({ id: p.id, nome: p.nome || p.id, cat: p.cat || 'outros', ativo: p.ativo }));
+    gravarPendentes();
+    // categoria pelo NOME que aparece na loja (e uma só por categoria, mesmo com maiúsculas diferentes nos produtos)
+    S.produtos = (produtos || []).map((p) => ({ id: p.id, nome: p.nome || p.id, cat: nomeDaCategoria(p.cat) || 'outros', ativo: p.ativo }));
     ligar();
     if (S.diasAbertos === null) {
         try { const c = await getDoc(doc(db, 'loja', 'config')); S.diasAbertos = c.exists() ? (c.data().diasAbertos || []) : []; }
@@ -263,4 +311,3 @@ export const abrirFechamento = async (produtos) => {
     render();
     carregarDia(S.dia);
 };
-
