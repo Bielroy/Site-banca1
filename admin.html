@@ -46,15 +46,15 @@
         </header>
 
         <nav class="tabs" aria-label="Abas do Painel">
-            <button class="tab active" data-aba="produtos">🥦 Produtos e Estoque</button>
-            <button class="tab" data-aba="relatorios">📊 Dashboard Financeiro</button>
-            <button class="tab" data-aba="balanco">💰 Balanço Geral</button>
-            <button class="tab" data-aba="fechamento">🧾 Fechamento</button>
-            <button class="tab" data-aba="categorias">🏷️ Categorias</button>
-            <button class="tab" data-aba="previsao">🔮 Previsão</button>
-            <button class="tab" data-aba="comunicados">📢 Comunicados</button>
-            <button class="tab" data-aba="cupons">🎁 Cupons</button>
-            <button class="tab" data-aba="config">⚙️ Operacional</button>
+            <button class="tab active" data-aba="produtos"><span class="tab-ico" aria-hidden="true">🥦</span><span class="tab-txt">Produtos</span></button>
+            <button class="tab" data-aba="relatorios"><span class="tab-ico" aria-hidden="true">📊</span><span class="tab-txt">Dashboard</span></button>
+            <button class="tab" data-aba="balanco"><span class="tab-ico" aria-hidden="true">💰</span><span class="tab-txt">Balanço</span></button>
+            <button class="tab" data-aba="fechamento"><span class="tab-ico" aria-hidden="true">🧾</span><span class="tab-txt">Fechamento</span></button>
+            <button class="tab" data-aba="categorias"><span class="tab-ico" aria-hidden="true">🏷️</span><span class="tab-txt">Categorias</span></button>
+            <button class="tab" data-aba="previsao"><span class="tab-ico" aria-hidden="true">🔮</span><span class="tab-txt">Previsão</span></button>
+            <button class="tab" data-aba="comunicados"><span class="tab-ico" aria-hidden="true">📢</span><span class="tab-txt">Comunicados</span></button>
+            <button class="tab" data-aba="cupons"><span class="tab-ico" aria-hidden="true">🎁</span><span class="tab-txt">Cupons</span></button>
+            <button class="tab" data-aba="config"><span class="tab-ico" aria-hidden="true">⚙️</span><span class="tab-txt">Operacional</span></button>
         </nav>
 
         <section id="aba-produtos" class="aba-content active">
@@ -213,7 +213,11 @@
                 </div>
 
                 <div class="grid-2" style="width: 100%;">
-                    <div class="form-group"><label for="config-wpp">📱 Número de Atendimento (WhatsApp)</label><input type="text" id="config-wpp" placeholder="55DD9XXXXXXXX" inputmode="numeric"></div>
+                    <div class="form-group">
+                        <label for="config-wpp">📱 Número de Atendimento (WhatsApp padrão)</label>
+                        <input type="tel" id="config-wpp" placeholder="62 99999-8888" inputmode="tel">
+                        <small class="dica-campo">Recebe todos os pedidos. Tem outro WhatsApp para parte dos produtos (artesanais, molhos...)? <button type="button" data-ir-aba="categorias">Cadastre na aba 🏷️ Categorias</button></small>
+                    </div>
                     <div class="form-group"><label for="config-minimo">💰 Ticket Mínimo (R$)</label><input type="number" id="config-minimo" step="0.5"></div>
                 </div>
 
@@ -226,7 +230,7 @@
         <div class="modal">
             <header class="modal-head">
                 <h2 id="modal-titulo">Editar Produto</h2>
-                <button class="btn-fechar" data-fechar="modal-produto">&times;</button>
+                <button class="btn-fechar" data-fechar="modal-produto" aria-label="Fechar">&times;</button>
             </header>
             <div class="modal-body">
                 <input type="hidden" id="edit-id">
@@ -247,6 +251,7 @@
                             <option value="un">Unidade (un)</option>
                             <option value="maço">Maço</option>
                             <option value="bdj">Bandeja</option>
+                            <option value="kit">Kit / Cesta</option>
                         </select>
                     </div>
                 </div>
@@ -263,7 +268,11 @@
                     </small>
                 </div>
 
-                <div class="form-group"><label for="edit-cat">Classificação (Categoria)</label><input type="text" id="edit-cat"></div>
+                <div class="form-group">
+                    <label for="edit-cat">Categoria (aba da loja)</label>
+                    <input type="text" id="edit-cat" autocomplete="off" placeholder="Toque para escolher ou digite uma nova">
+                    <small class="dica-campo">As categorias são criadas e ordenadas na aba 🏷️ Categorias.</small>
+                </div>
             </div>
             <footer class="modal-footer" style="display: flex; flex-direction: column; gap: 10px;">
                 <button class="btn-outline" style="background: var(--forest); color: white; padding: 14px;" id="btn-salvar-produto">💾 Gravar no Banco</button>
