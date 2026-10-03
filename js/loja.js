@@ -1,6 +1,9 @@
 import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc } from './firebase.js';
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage } from './utils.js';
 import { initIA } from './ia.js';
+import { iniciarRanking, aplicarOrdem, scoreDe } from './ranking-loja.js';
+import './melhorias-ui.js';
+import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
 
 const CART_VERSION = "3.0"; // Atualizado para suportar o Carrinho Híbrido
 let unsubscribes = []; 
@@ -39,6 +42,7 @@ onAuthStateChanged(auth, (user) => {
     if (user) {
         STATE.uid = user.uid;
         if (!realTimeSyncIniciado) { iniciarRealTimeSync(); realTimeSyncIniciado = true; }
+        iniciarRanking(); // ordena a vitrine para este cliente (falha em silêncio)
     } else {
         unsubscribes.forEach(u => u()); unsubscribes = []; realTimeSyncIniciado = false;
         iniciarRealTimeSync(); realTimeSyncIniciado = true;
@@ -107,7 +111,7 @@ const renderUpsell = () => {
     let sugestoes = STATE.produtos.filter(p => p.ativo && !idsNoCarrinho.includes(p.id) && catsNoCarrinho.includes(p.cat));
     if(sugestoes.length === 0) sugestoes = STATE.produtos.filter(p => p.ativo && !idsNoCarrinho.includes(p.id));
     if (sugestoes.length > 0) {
-        sugestoes.sort((a,b) => (STATE.favoritos.includes(b.id) ? -1 : 1));
+        sugestoes.sort((a,b) => (scoreDe(b.id) - scoreDe(a.id)) || ((STATE.favoritos.includes(b.id) ? 1 : 0) - (STATE.favoritos.includes(a.id) ? 1 : 0)));
         const up = sugestoes[0];
         upsellCont.innerHTML = `<div class="upsell-box"><span>Que tal levar <b>${escapeHTML(up.nome)}</b>?</span><button class="btn btn-outline" style="padding: 6px 12px;" data-action="add" data-id="${up.id}">+ Add</button></div>`;
     } else { upsellCont.innerHTML = ''; }
@@ -290,9 +294,27 @@ const renderLoja = (forcarRebuild = false) => {
     } else if(emptyMsg) { emptyMsg.remove(); }
 };
 
+// Pedido com itens de mais de um atendimento (ex.: banca + artesanais) gera
+// um botão por número. Com um só número, abre direto como sempre foi.
+const mostrarLinksWhatsApp = (pedido) => {
+    const links = (pedido.whatsapps && pedido.whatsapps.length) ? pedido.whatsapps : [{ nome: 'WhatsApp', url: pedido.whatsappMsg }];
+    const area = document.getElementById('sucesso-whatsapps');
+    const texto = document.getElementById('sucesso-texto');
+    if (area) {
+        area.innerHTML = links.map((l, i) => `<a class="btn-wpp" href="${escapeHTML(l.url)}" target="_blank" rel="noopener noreferrer">💬 ${links.length > 1 ? `Enviar para ${escapeHTML(l.nome)}` : 'Abrir WhatsApp'}${l.qtdItens && links.length > 1 ? ` <small>(${l.qtdItens} ${l.qtdItens === 1 ? 'item' : 'itens'})</small>` : ''}</a>`).join('');
+        area.onclick = (e) => { const a = e.target.closest('.btn-wpp'); if (a) a.classList.add('enviado'); };
+    }
+    if (texto) texto.textContent = links.length > 1
+        ? 'Seu pedido tem itens de mais de um atendimento. Toque em cada botão para enviar a parte correspondente:'
+        : 'Você será redirecionado para o nosso WhatsApp para finalizar. Caso a janela não abra, toque no botão abaixo.';
+    if (links.length === 1) window.open(links[0].url, '_blank');
+};
+
 const renderCategorias = () => {
-    const cats = ['todas', 'favoritos', ...new Set(STATE.produtos.map(p => p.cat))].filter(Boolean);
-    document.getElementById('categorias').innerHTML = cats.map(c => `<button class="cat-btn ${c === STATE.catAtiva ? 'active' : ''}" data-action="cat" data-cat="${escapeHTML(c)}">${c === 'todas' ? 'Todos' : c === 'favoritos' ? '❤️ Favoritos' : escapeHTML(c)}</button>`).join('');
+    const abas = [{ chave: 'todas', nome: 'Todos' }, { chave: 'favoritos', nome: '❤️ Favoritos' }, ...abasDeCategoria(STATE.produtos)];
+    // se a categoria aberta sumiu (ocultada no painel), volta para "Todos"
+    if (!abas.some(a => a.chave === STATE.catAtiva)) STATE.catAtiva = 'todas';
+    document.getElementById('categorias').innerHTML = abas.map(a => `<button class="cat-btn ${a.chave === STATE.catAtiva ? 'active' : ''}" data-action="cat" data-cat="${escapeHTML(a.chave)}">${escapeHTML(a.nome)}</button>`).join('');
 };
 
 let buscaTimeout;
@@ -309,16 +331,27 @@ const iniciarRealTimeSync = () => {
 
     // [PATCH 3] Só reconstrói o grid quando o catálogo realmente muda (evita reflows/lag)
     let _assinaturaProdutos = '';
-    const unsubProdutos = onSnapshot(collection(db, "produtos"), (snap) => {
-        STATE.produtos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.ativo);
-        const assinatura = STATE.produtos.map(p => `${p.id}:${p.preco}:${p.foto || ''}:${p.nome}`).join('|');
+    let _produtosBrutos = [];
+    let _catsProntas = false;      // espera a 1ª resposta das categorias p/ não "piscar" produto de categoria oculta
+    // Junta produtos + categorias do painel (ocultas somem; renomear/ordenar reflete na hora)
+    const aplicarCatalogo = () => {
+        if (!_catsProntas) return;
+        STATE.produtos = aplicarCategorias(_produtosBrutos);
+        const assinatura = STATE.produtos.map(p => `${p.id}:${p.preco}:${p.foto || ''}:${p.nome}:${p.cat}`).join('|') + '#' + assinaturaCategorias();
         if (assinatura !== _assinaturaProdutos) {
             renderCategorias(); renderLoja(true); _assinaturaProdutos = assinatura;
+            aplicarOrdem();
         }
-        syncCarrinhoComPrecosAoVivo(); 
+        syncCarrinhoComPrecosAoVivo();
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
+    };
+    const unsubProdutos = onSnapshot(collection(db, "produtos"), (snap) => {
+        _produtosBrutos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.ativo);
+        aplicarCatalogo();
     });
     unsubscribes.push(unsubProdutos);
+    unsubscribes.push(iniciarCategorias(() => { _catsProntas = true; aplicarCatalogo(); }));
+    setTimeout(() => { if (!_catsProntas) { _catsProntas = true; aplicarCatalogo(); } }, 2500);   // offline/sem resposta: segue sem categorias
 };
 
 // ==========================================
@@ -965,7 +998,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         });
         localStorage.setItem('banca_meus_pedidos', JSON.stringify(meusPedidos.slice(0, 10)));
 
-        window.open(data.pedido.whatsappMsg, '_blank');
+        mostrarLinksWhatsApp(data.pedido);
         closeModal('modal-checkout');
         setTimeout(() => openModal('modal-sucesso'), 300); 
         STATE.carrinho = []; dbStorage.set('banca_cart', {v: CART_VERSION, items: []});
