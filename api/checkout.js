@@ -37,13 +37,15 @@ const isFracionavel = (u) => FRACIONAVEIS.includes(String(u || '').toLowerCase()
 // Preserva letras acentuadas; remove só o que é perigoso p/ layout/injeção
 const sanitizeString = (str, maxLength = 120) => {
   if (str === null || str === undefined) return '';
-  return String(str)
+  const limpo = String(str)
     .normalize('NFC')
     .replace(/[<>]/g, '')     // evita quebrar HTML no painel
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/\s{2,}/g, ' ')
-    .trim()
-    .slice(0, maxLength);
+    .trim();
+  // Corta por CARACTERE, não por unidade UTF-16: cortar um emoji ao meio deixava
+  // meio caractere solto e a montagem do link do WhatsApp derrubava o pedido.
+  return Array.from(limpo).slice(0, maxLength).join('').trim();
 };
 
 const { resolverDestinos } = require('../lib/roteamentoWhatsapp');
@@ -125,35 +127,54 @@ const pruneRateLimit = () => {
 // ---------------------------------------------------------------------
 // Montagem da mensagem de WhatsApp (agora com "a pesar", troco e obs)
 // ---------------------------------------------------------------------
+// Texto sem meio-caractere solto (encodeURIComponent lança erro nesses casos)
+const textoSeguro = (t) => (typeof t.toWellFormed === 'function' ? t.toWellFormed() : t.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, ''));
+
+// Hoje no horário de Brasília (o servidor roda em UTC: sem isto, das 21h à
+// meia-noite ele já estava "amanhã" — recusava pedido de sábado à noite com
+// "a loja não abre hoje" e somava a venda no resumo do dia seguinte).
+const agoraBrasilia = () => new Date(Date.now() - 3 * 3600000);
+
 function montarTextoWhatsApp(pedido, numero) {
-  let msg = `*NOVO PEDIDO*\n`;
+  const dividido = pedido.parte && pedido.parte.de > 1;
+  const primeira = !dividido || pedido.parte.n === 1;
+  // Observação do cliente vai em todas as partes; a linha do cupom, só na 1ª
+  const cupom = pedido.cupom && pedido.cupom.codigo ? pedido.cupom : null;
+  const obsCliente = cupom ? String(pedido.obs || '').replace(/\s*\|?\s*🎁 Cupom .*$/u, '').trim() : String(pedido.obs || '');
+
+  let msg = dividido ? `*NOVO PEDIDO — parte ${pedido.parte.n} de ${pedido.parte.de}*\n` : `*NOVO PEDIDO*\n`;
   msg += `👤 ${pedido.nome}\n`;
   msg += `📍 Quadra ${pedido.quadra} • Lote ${pedido.lote}\n`;
   msg += `💳 Pagamento: ${pedido.pag || 'A combinar'}\n`;
-  if (pedido.troco) msg += `💵 Troco para: ${pedido.troco}\n`;
-  msg += `\n*ITENS:*\n`;
+  // Pedido dividido: troco e cupom aparecem UMA vez (na 1ª parte), para dois
+  // atendimentos não darem o mesmo troco nem o mesmo desconto.
+  if (pedido.troco && primeira) msg += `💵 Troco para: ${pedido.troco}\n`;
+  msg += `\n*ITENS${dividido ? ' DESTA PARTE' : ''}:*\n`;
 
   (pedido.itens || []).forEach((i) => {
     if (i.aPesar) {
       msg += `• ${i.qtd} un de ${i.nome}  ⚖️ _(a pesar na balança)_\n`;
     } else {
-      const und = isFracionavel(i.unidade) ? ` ${i.unidade}` : 'x';
-      const rotulo = isFracionavel(i.unidade) ? `${i.qtd}${und}` : `${i.qtd}x`;
+      const rotulo = isFracionavel(i.unidade) ? `${String(i.qtd).replace('.', ',')} ${i.unidade}` : `${i.qtd}x`;
       msg += `• ${rotulo} ${i.nome} — ${fmtBRL(i.subtotal)}\n`;
     }
   });
 
-  const dividido = pedido.parte && pedido.parte.de > 1;
-  msg += `\n*${dividido ? 'Subtotal desta parte' : 'Subtotal'} (itens já pesados): ${fmtBRL(pedido.total)}*`;
   if (dividido) {
-    msg += `\n📦 _Parte ${pedido.parte.n} de ${pedido.parte.de}: os outros itens do pedido foram enviados a outro número. Total do pedido: ${fmtBRL(pedido.totalGeral)}._`;
+    msg += `\n*Itens desta parte: ${fmtBRL(pedido.total)}*`;
+    if (cupom && primeira) msg += `\n🎁 Cupom ${cupom.codigo}: -${fmtBRL(cupom.desconto)} no total do pedido`;
+    msg += `\n🧾 Total do pedido inteiro${cupom ? ' (já com o cupom)' : ''}: ${fmtBRL(pedido.totalGeral)}`;
+    msg += `\n📦 _Os outros itens foram para outro WhatsApp da banca.${primeira ? '' : ' Troco e cupom, se houver, estão na parte 1.'}_`;
+  } else {
+    if (cupom) msg += `\n🎁 Cupom ${cupom.codigo}: -${fmtBRL(cupom.desconto)}`;
+    msg += `\n*${cupom ? 'Total' : 'Subtotal'} (itens já pesados): ${fmtBRL(pedido.total)}*`;
   }
   if (pedido.temItensAPesar) {
     msg += `\n➕ _Os itens marcados com ⚖️ serão pesados e o valor final ajustado._`;
   }
-  if (pedido.obs) msg += `\n\n📝 Obs: ${pedido.obs}`;
+  if (obsCliente) msg += `\n\n📝 Obs: ${obsCliente}`;
 
-  return `https://wa.me/${numero}?text=${encodeURIComponent(msg)}`;
+  return `https://wa.me/${numero}?text=${encodeURIComponent(textoSeguro(msg))}`;
 }
 
 
@@ -162,7 +183,9 @@ function montarLinksWhatsApp(pedido, categorias, config) {
   const destinos = resolverDestinos({ itens: pedido.itens, categorias, config, fallback: WPP_FALLBACK });
   return destinos.map((d, i) => {
     const sub = d.itens.reduce((t, it) => t + (it.aPesar ? 0 : Number(it.subtotal) || 0), 0);
-    const parte = { ...pedido, itens: d.itens, total: Math.round(sub * 100) / 100,
+    const unico = destinos.length === 1;
+    const parte = { ...pedido, itens: d.itens,
+      total: unico ? pedido.total : Math.round(sub * 100) / 100,     // com 1 destino, o total já vem com o cupom
       temItensAPesar: d.itens.some((it) => it.aPesar), parte: { n: i + 1, de: destinos.length }, totalGeral: pedido.total };
     return { nome: d.nome, qtdItens: d.itens.length, url: montarTextoWhatsApp(parte, d.numero) };
   });
@@ -262,7 +285,14 @@ module.exports = async function handler(req, res) {
         const cfg = configSnap.data();
         if (cfg.lojaAberta === false) throw new Error('A loja está fechada no momento.');
         const diasAbertos = cfg.diasAbertos || [0, 1, 2, 3, 4, 5, 6];
-        if (!diasAbertos.includes(new Date().getDay())) throw new Error('A loja não abre hoje.');
+        if (!diasAbertos.includes(agoraBrasilia().getUTCDay())) throw new Error('A loja não abre hoje.');
+      }
+
+      // O mesmo produto duas vezes no pedido baixaria o estoque só pela última linha
+      const idsVistos = new Set();
+      for (const i of itens) {
+        if (idsVistos.has(i.id)) throw new Error('Há um produto repetido no pedido. Atualize a página e monte o carrinho de novo.');
+        idsVistos.add(i.id);
       }
 
       const prodSnaps = await Promise.all(itens.map((i) => t.get(db.doc(`produtos/${i.id}`))));
@@ -298,6 +328,8 @@ module.exports = async function handler(req, res) {
           throw new Error(`O máximo por pedido de "${p.nome}" é ${teto}. Para quantidade maior, chame no WhatsApp.`);
         }
         qtd = (aPesar || !fracionavel) ? Math.round(qtd) : fixFloat(qtd);
+        // "0,4 unidade" arredondava para zero e entrava no pedido como quantidade 0
+        if (qtd <= 0) throw new Error(`Quantidade inválida para "${p.nome}".`);
 
         if (aPesar) {
           // NÃO soma no total (preço só após pesagem) e NÃO baixa estoque por unidade
@@ -400,7 +432,7 @@ module.exports = async function handler(req, res) {
       // volume atual. Estes resumos começam a acumular a partir de agora para
       // que, quando houver histórico longo, o Balanço possa somar 30 documentos
       // em vez de reler centenas de pedidos.
-      const diaChave = new Date().toISOString().slice(0, 10);
+      const diaChave = agoraBrasilia().toISOString().slice(0, 10);   // dia no horário de Brasília
       t.set(db.doc(`resumos/${diaChave}`), {
         dia: diaChave,
         receita: admin.firestore.FieldValue.increment(totalExato),
