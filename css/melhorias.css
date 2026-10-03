@@ -14,7 +14,8 @@
 .produto-card .btn-fav { background: rgba(255,255,255,.96); }
 .produto-card .produto-unidade-tag { background: rgba(26,58,42,.92); }
 .produto-card { contain: layout style; -webkit-tap-highlight-color: transparent; }
-.produto-img-wrap img { content-visibility: auto; }
+/* (content-visibility na foto foi retirado: com loading="lazy" não ajudava e
+   podia deixar a foto em branco durante uma rolagem rápida) */
 @media (hover: none) {
     .produto-card:hover { transform: none; box-shadow: var(--shadow-sm); border-color: transparent; }
     .produto-card:hover .produto-img-wrap img { transform: none; }
@@ -27,9 +28,19 @@
     position: fixed; inset: 0; z-index: 99999; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 14px;
     background: radial-gradient(ellipse at 50% 30%, #2c5f45 0%, var(--forest) 70%);
-    color: var(--sage); transition: opacity .45s ease, visibility .45s ease;
+    color: var(--sage);
+    /* Só aparece se a loja demorar (0,35 s): em quem já tem o site guardado no
+       celular, não pisca mais uma tela escura a cada abertura.
+       Trava de segurança: aos 10 s some SOZINHA, só com CSS — se o JavaScript
+       falhar (sinal fraco, celular antigo), ela não fica na frente para sempre. */
+    opacity: 0;
+    animation: splashAparece .25s ease .35s forwards, splashFim 1s linear 10s forwards;
 }
-#splash-feira.saindo { opacity: 0; visibility: hidden; pointer-events: none; }
+#splash-feira.saindo { animation: splashSai .4s ease forwards; pointer-events: none; }
+@keyframes splashAparece { to { opacity: 1; } }
+@keyframes splashSai { from { opacity: 1; } to { opacity: 0; } }
+/* início e fim iguais de propósito: "visibility" só troca no ponto exato do fim, e um arredondamento a deixava visível */
+@keyframes splashFim { from, to { visibility: hidden; } }
 #splash-feira p { font-family: 'Fraunces', serif; font-size: 1.05rem; letter-spacing: .3px; opacity: .9; }
 .splash-cesto { font-size: 3.6rem; animation: splashBalanca 1.6s ease-in-out infinite; transform-origin: 50% 0; }
 .splash-frutas { display: flex; gap: 14px; font-size: 1.6rem; }
@@ -49,7 +60,10 @@
 @keyframes giraGira { to { transform: rotate(360deg); } }
 
 /* ---------- 4) TRANSIÇÕES SUAVES ---------- */
-.produto-card { animation: cardEntra .35s ease both; }
+/* A entrada animada vale só na PRIMEIRA carga. Antes rodava a cada vez que a
+   vitrine era refeita (preço/estoque mudou, categoria ocultada): todos os cards
+   voltavam a opacidade 0 e "sumiam" por um instante, inclusive no meio da rolagem. */
+.produtos-grid.primeira-carga .produto-card { animation: cardEntra .35s ease backwards; }
 @keyframes cardEntra { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .cat-btn { transition: background .2s ease, color .2s ease, border-color .2s ease, transform .15s ease; }
 .cat-btn:active { transform: scale(.95); }
@@ -63,15 +77,15 @@
 
 /* ---------- 5) AJUDANTE DA BANCA (tema feira / cozinha) ---------- */
 .ia-fab {
-    position: fixed; bottom: calc(var(--safe-bottom) + 90px); right: 16px; z-index: var(--z-sticky);
-    width: 62px; height: 62px; border: 0; border-radius: 50% 50% 46% 54% / 56% 52% 48% 44%;
+    position: fixed; bottom: calc(var(--safe-bottom) + 20px); right: 16px; z-index: var(--z-sticky);
+    width: 58px; height: 58px; border: 0; border-radius: 50% 50% 46% 54% / 56% 52% 48% 44%;
     background: linear-gradient(145deg, #d98a4a, var(--earth)); color: #fff; cursor: pointer;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
     box-shadow: 0 10px 22px rgba(196,119,58,.38), inset 0 -3px 0 rgba(0,0,0,.12);
     transition: transform .2s ease, box-shadow .2s ease;
 }
 .ia-fab:active { transform: scale(.92); }
-.ia-fab-rotulo { font-size: .6rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; margin-top: -2px; }
+.ia-fab-rotulo { font-size: .66rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; margin-top: -2px; }
 
 .ia-modal { max-width: 450px; height: 78dvh; background: var(--cream); }
 .ia-topo {
@@ -89,6 +103,7 @@
 .ia-topo .ia-topo-info h2 { color: #fff; font-size: 1.2rem; line-height: 1.1; }
 .ia-topo-sub { font-size: .74rem; color: var(--sage); margin-top: 2px; }
 .ia-topo .btn-fechar { color: #fff; background: rgba(255,255,255,.14); }
+.ia-topo .ia-topo-sub { color: #d5eadd; }
 
 .ia-corpo {
     display: flex; flex-direction: column; gap: 12px; padding: 22px 16px 16px; overflow-y: auto;
@@ -105,11 +120,11 @@
 .ia-msg--erro.fatal { color: var(--danger); }
 .ia-etiquetas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .ia-etiqueta {
-    border: 1.5px dashed var(--earth); background: #fff; color: var(--earth); font-weight: 700; font-size: .8rem;
-    padding: 7px 12px; border-radius: 10px 14px 10px 14px; cursor: pointer; transition: transform .15s ease, background .15s ease;
+    border: 1.5px dashed var(--earth); background: #fff; color: var(--earth-forte); font-weight: 700; font-size: .84rem;
+    min-height: 44px; padding: 8px 14px; border-radius: 10px 14px 10px 14px; cursor: pointer; transition: transform .15s ease, background .15s ease;
 }
 .ia-etiqueta:active { transform: scale(.95); background: #fff3e6; }
-.ia-tentar { margin-top: 10px; border: 1.5px solid var(--earth); background: #fff; color: var(--earth); font-weight: 700; padding: 8px 14px; border-radius: 12px; cursor: pointer; }
+.ia-tentar { margin-top: 10px; border: 1.5px solid var(--earth); background: #fff; color: var(--earth-forte); font-weight: 700; min-height: 44px; padding: 8px 16px; border-radius: 12px; cursor: pointer; }
 
 /* digitando: três frutas pulando */
 .ia-digitando { display: inline-flex; gap: 6px; font-size: 1.1rem; }
@@ -118,36 +133,91 @@
 .ia-digitando span:nth-child(3) { animation-delay: .3s; }
 
 /* sugestões = etiquetinhas de preço de feira com pílula − 1 + */
-.ia-sugestoes { display: flex; gap: 10px; overflow-x: auto; padding: 10px 14px; background: #fff; border-top: 1px dashed #e0d5bd; scrollbar-width: none; }
+.ia-sugestoes { display: flex; gap: 10px; overflow-x: auto; padding: 10px 14px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; background: #fff; border-top: 1px dashed #e0d5bd; scrollbar-width: none; }
 .ia-sugestoes:empty { display: none; }
 .ia-sugestoes::-webkit-scrollbar { display: none; }
 .ia-pill {
     flex: 0 0 auto; display: flex; align-items: center; gap: 8px; background: #fffaf0; border: 1.5px solid #eadfc8;
-    border-radius: 999px; padding: 4px 4px 4px 12px; max-width: 78vw;
+    border-radius: 999px; padding: 4px 4px 4px 14px; max-width: 82vw; scroll-snap-align: start;
 }
+/* mais de uma sugestão: a última fica cortada de propósito, mostrando que dá para arrastar */
+.ia-sugestoes.tem-mais .ia-pill { max-width: 74vw; }
 .ia-pill-nome { font-size: .84rem; font-weight: 700; color: var(--text-dark); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ia-pill-add, .ia-pill-qtd { border-radius: 999px; }
-.ia-pill-add { border: 0; background: var(--forest); color: #fff; font-weight: 800; font-size: .8rem; padding: 8px 14px; cursor: pointer; white-space: nowrap; transition: transform .15s ease; }
+.ia-pill-add { border: 0; background: var(--forest); color: #fff; font-weight: 800; font-size: .84rem; min-height: 44px; padding: 8px 16px; cursor: pointer; white-space: nowrap; transition: transform .15s ease; }
 .ia-pill-add:active { transform: scale(.94); }
 .ia-pill-qtd { display: flex; align-items: center; background: var(--forest); color: #fff; padding: 2px; }
 .ia-pill-qtd[hidden], .ia-pill-add[hidden] { display: none; }
-.ia-pill-qtd button { width: 32px; height: 32px; border: 0; border-radius: 50%; background: rgba(255,255,255,.16); color: #fff; font-size: 1.1rem; font-weight: 800; cursor: pointer; transition: background .15s ease, transform .12s ease; }
+.ia-pill-qtd button { width: 40px; height: 40px; border: 0; border-radius: 50%; background: rgba(255,255,255,.16); color: #fff; font-size: 1.1rem; font-weight: 800; cursor: pointer; transition: background .15s ease, transform .12s ease; }
 .ia-pill-qtd button:active { background: rgba(255,255,255,.32); transform: scale(.88); }
-.ia-pill-valor { min-width: 54px; text-align: center; font-weight: 800; font-size: .82rem; font-variant-numeric: tabular-nums; }
+.ia-pill-valor { min-width: 56px; padding: 0 2px; text-align: center; font-weight: 800; font-size: .82rem; font-variant-numeric: tabular-nums; }
 
 .ia-rodape { padding: 10px 14px calc(10px + var(--safe-bottom)); background: #fff; }
 .ia-form { display: flex; gap: 8px; width: 100%; align-items: center; }
 .ia-form input[type=text] { flex: 1; min-width: 0; padding: 12px 14px; border: 1.5px solid #e0d5bd; border-radius: 999px; background: var(--cream); outline: none; font-size: 16px; }
 .ia-form input[type=text]:focus { border-color: var(--leaf); background: #fff; }
-.ia-enviar { border: 0; background: var(--earth); color: #fff; font-weight: 800; padding: 12px 18px; border-radius: 999px; cursor: pointer; }
+.ia-enviar { border: 0; background: var(--earth-forte); color: #fff; font-weight: 800; min-height: 46px; padding: 12px 18px; border-radius: 999px; cursor: pointer; }
 .ia-enviar:disabled { opacity: .6; }
-#btn-ia-camera { background: none; border: 0; font-size: 1.35rem; cursor: pointer; padding: 0 6px; color: var(--text-mid); }
+#btn-ia-camera { background: none; border: 0; font-size: 1.35rem; cursor: pointer; min-width: 44px; min-height: 44px; padding: 0; color: var(--text-mid); }
+#btn-ia-camera:disabled, .ia-form input:disabled { opacity: .55; }
 
 /* ---------- 6) Tela de sucesso: um botão por WhatsApp ---------- */
 .sucesso-whatsapps { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
-.btn-wpp { display: block; text-decoration: none; background: #25d366; color: #fff; font-weight: 800; padding: 14px 16px; border-radius: 14px; text-align: center; transition: transform .15s ease, opacity .2s ease; }
+/* verde mais escuro que o do WhatsApp: branco sobre #25d366 não dava leitura */
+.btn-wpp { display: block; text-decoration: none; background: #0f7a4d; color: #fff; font-weight: 800; padding: 14px 16px; border-radius: 14px; text-align: center; transition: transform .15s ease, opacity .2s ease; }
 .btn-wpp small { font-weight: 600; opacity: .85; }
 .btn-wpp:active { transform: scale(.97); }
 .btn-wpp.enviado { background: var(--success-light); color: #166534; }
 .btn-wpp.enviado::after { content: ' ✓ aberto'; font-weight: 700; }
 
+
+/* ---------- 7) Ajustes de acabamento (auditoria) ---------- */
+:root { --earth-forte: #9a5320; }
+
+/* Aviso (toast): texto comprido quebra linha em vez de sair pelos lados da tela */
+.toast { white-space: normal; width: max-content; max-width: calc(100vw - 32px); line-height: 1.35; }
+
+/* O botão "Ver Pedido" só existe no celular (antes aparecia solto, sem estilo, em telas grandes) */
+.btn-flutuante-carrinho { display: none; }
+.qtd-unid { font-size: .78rem; font-weight: 700; color: var(--text-light); margin-left: 2px; }
+.upsell-box button { white-space: nowrap; min-height: 40px; }
+.site-rodape a { display: inline-block; padding: 10px 6px; }
+#modal-checkout .form-group { margin-bottom: 16px !important; }
+
+/* Alvos de toque de pelo menos 44px */
+.btn-fechar { width: 44px; height: 44px; }
+.produto-card .btn-fav { width: 40px; height: 40px; top: 8px; right: 8px; }
+.produto-card .card-badge { right: 54px; }
+.btn-qtd { width: 44px; height: 44px; }
+.qtd-input { height: 44px; width: 56px; }
+.btn-limpar { min-height: 44px; padding: 8px 12px; }
+.cat-btn { min-height: 44px; }
+
+@media (max-width: 600px) {
+    /* Doca de baixo: [ Ver Pedido · R$ ] [cesto]. Antes eram dois botões flutuantes
+       empilhados, tapando o nome e o "+" dos produtos; com o carrinho vazio a
+       barra nem aparece. */
+    .btn-flutuante-carrinho {
+        display: flex; left: 16px; right: 86px; transform: none; min-width: 0; padding: 0 18px; height: 58px; gap: 0;
+        justify-content: flex-start; white-space: nowrap; font-size: 1rem; bottom: calc(var(--safe-bottom) + 20px);
+    }
+    .btn-flutuante-carrinho:active { transform: scale(.97); }
+    .btn-flutuante-carrinho.vazio { display: none; }
+    .barra-valor { margin-left: auto; padding-left: 10px; font-family: 'Fraunces', serif; font-weight: 800; }
+    .barra-valor:empty { display: none; }
+    .layout { padding-bottom: calc(var(--safe-bottom) + 110px); }
+
+    /* Aviso em cima no celular: embaixo ele tapava o total do carrinho e o botão de enviar */
+    .toast { top: calc(env(safe-area-inset-top, 0px) + 12px); bottom: auto; transform: translateX(-50%) translateY(-160%); }
+    .toast.visivel { transform: translateX(-50%) translateY(0); }
+
+    /* Campo com letra menor que 16px faz o iPhone dar zoom sozinho ao tocar */
+    .busca-input, .qtd-input, .md-qtd-input { font-size: 16px; }
+
+    /* Um resultado só (busca) não estica para a tela inteira */
+    .produtos-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 340px) { .produtos-grid { grid-template-columns: 1fr; } }
+
+/* Tela de sucesso: os botões do WhatsApp são a ação principal; "Voltar" fica discreto */
+.sucesso-whatsapps:not(:empty) + .btn-finalizar { background: transparent; color: var(--forest); border: 1.5px solid var(--forest); box-shadow: none; }
