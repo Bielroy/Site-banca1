@@ -77,11 +77,18 @@ async function lerCatalogo() {
   if (!iniciarFirebase()) return [];
   try {
     const snap = await admin.firestore().collection('produtos').get();
+    // Categorias ocultas no painel não podem ser sugeridas pela IA
+    const semAcento = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    let ocultas = new Set();
+    try {
+      const cs = await admin.firestore().collection('categorias').get();
+      ocultas = new Set(cs.docs.map(d => d.data()).filter(c => c.visivel === false).map(c => semAcento(c.chave)));
+    } catch (e) { /* sem categorias cadastradas: segue normal */ }
     catalogoCache = {
       em: Date.now(),
       lista: snap.docs
         .map(d => Object.assign({ id: d.id }, d.data()))
-        .filter(p => p.ativo !== false)
+        .filter(p => p.ativo !== false && !ocultas.has(semAcento(p.cat)))
         .map(p => ({ id: p.id, nome: p.nome, cat: p.cat, preco: p.preco, unidade: p.unidade }))
     };
   } catch (e) {
