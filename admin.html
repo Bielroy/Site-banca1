@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <!-- Zoom liberado: bloquear o pinch-to-zoom é falha de acessibilidade (WCAG 1.4.4) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+    <title>Painel Enterprise - Banca Adair e Pedrina</title>
+
+    <meta name="robots" content="noindex, nofollow"> <!-- Evita indexação do painel admin pelo Google -->
+    <meta name="theme-color" content="#1a3a2a">
+    <link rel="apple-touch-icon" href="./icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Banca Admin">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="./css/variables.css">
+    <link rel="stylesheet" href="./css/shared.css">
+    <link rel="stylesheet" href="./css/admin.css">
+    <!-- NOVO: esteira de separação em tela cheia + comunicados -->
+    <link rel="stylesheet" href="./css/admin-picking.css">
+    <link rel="stylesheet" href="./css/admin-previsao.css">
+    <link rel="stylesheet" href="./css/admin-modulo3.css">
+</head>
+<body>
+
+    <section id="login-screen">
+        <div class="login-box">
+            <h2>Gestão da Banca</h2>
+            <p class="login-sub">Acesso restrito. Insira o e-mail autorizado.</p>
+            <div class="form-group">
+                <label for="email">E-mail Administrativo</label>
+                <input type="email" id="email" placeholder="admin@exemplo.com" autocomplete="email">
+            </div>
+            <button class="btn-outline" style="background: var(--forest); color: white; width: 100%; padding: 14px;" id="btn-login">Receber Link Seguro</button>
+            <p id="login-msg" class="login-msg"></p>
+        </div>
+    </section>
+
+    <main id="dashboard" style="display: none;">
+        <header class="dash-header">
+            <h2>Painel de Controle</h2>
+            <button class="btn-outline" id="btn-logout" style="padding: 10px 20px;">Desconectar</button>
+        </header>
+
+        <nav class="tabs" aria-label="Abas do Painel">
+            <button class="tab active" data-aba="produtos">🥦 Produtos e Estoque</button>
+            <button class="tab" data-aba="relatorios">📊 Dashboard Financeiro</button>
+            <button class="tab" data-aba="balanco">💰 Balanço Geral</button>
+            <button class="tab" data-aba="fechamento">🧾 Fechamento</button>
+            <button class="tab" data-aba="categorias">🏷️ Categorias</button>
+            <button class="tab" data-aba="previsao">🔮 Previsão</button>
+            <button class="tab" data-aba="comunicados">📢 Comunicados</button>
+            <button class="tab" data-aba="cupons">🎁 Cupons</button>
+            <button class="tab" data-aba="config">⚙️ Operacional</button>
+        </nav>
+
+        <section id="aba-produtos" class="aba-content active">
+            <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:24px; align-items:center;">
+                <button class="btn-outline" style="background: var(--forest); color: white; padding: 14px;" data-action="novo-produto">+ Adicionar Novo Produto</button>
+                <input type="search" id="admin-busca-input" placeholder="🔎 Buscar produto ou categoria..."
+                       style="flex:1; min-width:220px; padding:14px; border:1.5px solid #e0dcd4; border-radius:var(--radius-sm); background:var(--parchment); font-size:16px;">
+            </div>
+            <div id="lista-produtos" class="produtos-grid">Carregando catálogo...</div>
+        </section>
+
+        <section id="aba-relatorios" class="aba-content">
+            <header class="relatorios-header">
+                <h3>Visão Consolidada</h3>
+                <div class="relatorios-actions">
+                    <button class="btn-export" id="btn-exportar">📥 Exportar Dados</button>
+                    <button class="btn-limpar-hist" id="btn-limpar-hist">Arquivar Pedidos</button>
+                </div>
+            </header>
+
+            <div class="stats-grid">
+                <article class="stat-box">
+                    <span class="stat-label">PEDIDOS EM ABERTO</span>
+                    <strong class="stat-val" id="stat-pedidos">0</strong>
+                </article>
+                <article class="stat-box">
+                    <!-- Rótulo corrigido: o painel só carrega pedidos ativos,
+                         então este valor NÃO é a receita histórica total. -->
+                    <span class="stat-label">VALOR EM ABERTO</span>
+                    <strong class="stat-val" id="stat-receita">R$ 0,00</strong>
+                </article>
+            </div>
+
+            <div class="ranking-container">
+                <article class="ranking-box"><h3>🏆 Top Produtos</h3><div id="ranking-produtos"></div></article>
+                <article class="ranking-box"><h3>🌟 Top Clientes</h3><div id="ranking-clientes"></div></article>
+                <article class="ranking-box"><h3>📅 Dias mais Fortes</h3><div id="ranking-dias"></div></article>
+            </div>
+
+            <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:24px 0 12px;">
+                <h3 class="historico-titulo" style="margin:0;">Logística de Pedidos</h3>
+                <input type="search" id="pedido-busca-input" placeholder="🔎 Filtrar por cliente, quadra ou lote..."
+                       style="flex:1; min-width:220px; padding:12px; border:1.5px solid #e0dcd4; border-radius:var(--radius-sm); background:var(--parchment); font-size:16px;">
+            </div>
+            <div id="lista-historico">Buscando inteligência de dados...</div>
+        </section>
+
+        <section id="aba-balanco" class="aba-content">
+            <header class="relatorios-header">
+                <h3>Balanço Geral</h3>
+                <div class="relatorios-actions" style="display:flex; gap:10px; align-items:center;">
+                    <label for="balanco-periodo" style="font-size:.85rem; color:var(--text-mid);">Período:</label>
+                    <select id="balanco-periodo" style="padding:10px; border-radius:10px; border:1.5px solid #e0dcd4; font-size:15px;">
+                        <option value="7">7 dias</option>
+                        <option value="30" selected>30 dias</option>
+                        <option value="90">90 dias</option>
+                        <option value="365">1 ano</option>
+                    </select>
+                    <button class="btn-export" id="btn-atualizar-balanco">🔄 Atualizar</button>
+                    <button class="btn-export" id="btn-exportar-balanco">📄 Exportar</button>
+                </div>
+            </header>
+            <p class="config-sub" style="margin-bottom:20px;">Inclui os pedidos já arquivados — é o número real do caixa, não só a fila de hoje.</p>
+            <div id="balanco-conteudo"></div>
+        </section>
+
+        <section id="aba-fechamento" class="aba-content">
+            <div id="fechamento-conteudo"></div>
+        </section>
+
+        <section id="aba-categorias" class="aba-content">
+            <div id="categorias-conteudo"></div>
+        </section>
+
+        <section id="aba-previsao" class="aba-content">
+            <div id="previsao-conteudo"></div>
+        </section>
+
+        <section id="aba-comunicados" class="aba-content">
+            <h3 style="font-family:'Fraunces',serif; color:var(--forest); font-size:1.5rem; margin-bottom:8px;">Comunicados na Loja</h3>
+            <p class="config-sub">A mensagem aparece no topo da loja para todos os clientes, em tempo real.</p>
+            <div id="lista-comunicados" style="margin:20px 0;"></div>
+            <button class="btn-salvar-config" id="btn-salvar-comunicados">💾 Gravar Comunicados</button>
+        </section>
+
+        <section id="aba-cupons" class="aba-content">
+            <header class="relatorios-header">
+                <h3>Cupons de Desconto</h3>
+            </header>
+            <p class="config-sub" style="margin-bottom:20px;">
+                O código é validado no servidor a cada pedido. Um cupom só funciona se
+                estiver ligado, dentro da validade e com usos disponíveis.
+            </p>
+
+            <div class="cupom-form">
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="cup-codigo">Código</label>
+                        <input type="text" id="cup-codigo" placeholder="Ex: BEMVINDO10" style="text-transform:uppercase;" autocapitalize="characters" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="cup-percentual">Desconto em %</label>
+                        <input type="number" id="cup-percentual" min="0" max="90" step="1" placeholder="10">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="cup-valorfixo">Ou desconto em R$</label>
+                        <input type="number" id="cup-valorfixo" min="0" step="0.50" placeholder="5,00">
+                    </div>
+                    <div class="form-group">
+                        <label for="cup-minimo">Pedido mínimo (R$)</label>
+                        <input type="number" id="cup-minimo" min="0" step="1" placeholder="0">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="cup-limite">Limite de usos</label>
+                        <input type="number" id="cup-limite" min="1" step="1" placeholder="deixe vazio = sem limite">
+                    </div>
+                    <div class="form-group">
+                        <label for="cup-validade">Válido até</label>
+                        <input type="date" id="cup-validade">
+                    </div>
+                </div>
+                <button class="btn btn-primary w-100" id="btn-salvar-cupom">💾 Gravar Cupom</button>
+            </div>
+
+            <div id="lista-cupons" style="margin-top:24px;"></div>
+        </section>
+
+        <section id="aba-config" class="aba-content">
+            <h3 style="font-family: 'Fraunces', serif; color: var(--forest); font-size: 1.5rem; margin-bottom: 8px;">Parâmetros da Loja</h3>
+            <p class="config-sub">Ações sincronizadas em tempo real com todos os clientes.</p>
+
+            <article class="config-card">
+                <div class="form-group border-bottom">
+                    <label class="danger-label" for="config-status-loja">🛑 Disjuntor Principal (Master Switch)</label>
+                    <select id="config-status-loja">
+                        <option value="aberta">A Loja está ABERTA (Recebendo pedidos)</option>
+                        <option value="fechada">A Loja está FECHADA (Checkout bloqueado)</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="width: 100%;">
+                    <label>📅 Dias de Abertura Automática</label>
+                    <div class="dias-semana">
+                        <label class="dia-label"><input type="checkbox" value="0" class="chk-dia"> Dom</label>
+                        <label class="dia-label"><input type="checkbox" value="1" class="chk-dia"> Seg</label>
+                        <label class="dia-label"><input type="checkbox" value="2" class="chk-dia"> Ter</label>
+                        <label class="dia-label"><input type="checkbox" value="3" class="chk-dia"> Qua</label>
+                        <label class="dia-label"><input type="checkbox" value="4" class="chk-dia"> Qui</label>
+                        <label class="dia-label"><input type="checkbox" value="5" class="chk-dia"> Sex</label>
+                        <label class="dia-label"><input type="checkbox" value="6" class="chk-dia"> Sáb</label>
+                    </div>
+                </div>
+
+                <div class="grid-2" style="width: 100%;">
+                    <div class="form-group"><label for="config-wpp">📱 Número de Atendimento (WhatsApp)</label><input type="text" id="config-wpp" placeholder="55DD9XXXXXXXX" inputmode="numeric"></div>
+                    <div class="form-group"><label for="config-minimo">💰 Ticket Mínimo (R$)</label><input type="number" id="config-minimo" step="0.5"></div>
+                </div>
+
+                <button class="btn-salvar-config" id="btn-salvar-config">💾 Gravar Definições</button>
+            </article>
+        </section>
+    </main>
+
+    <div class="modal-overlay" id="modal-produto">
+        <div class="modal">
+            <header class="modal-head">
+                <h2 id="modal-titulo">Editar Produto</h2>
+                <button class="btn-fechar" data-fechar="modal-produto">&times;</button>
+            </header>
+            <div class="modal-body">
+                <input type="hidden" id="edit-id">
+                <div class="form-group">
+                    <label for="edit-foto">Imagem Otimizada</label>
+                    <div id="preview-foto-wrapper" style="width:100%; height:160px; border-radius:12px; overflow:hidden; background:var(--parchment); margin-bottom:12px;"></div>
+                    <input type="file" id="edit-foto" accept="image/*">
+                    <p class="ou-divisor">OU</p>
+                    <input type="url" id="edit-foto-url" placeholder="Insira a URL pública da imagem">
+                </div>
+                <div class="form-group"><label for="edit-nome">Nomenclatura Oficial</label><input type="text" id="edit-nome"></div>
+                <div class="grid-2">
+                    <div class="form-group"><label for="edit-preco">Preço Base (R$)</label><input type="number" id="edit-preco" step="0.10" inputmode="decimal"></div>
+                    <div class="form-group">
+                        <label for="edit-unidade">Métrica de Venda</label>
+                        <select id="edit-unidade">
+                            <option value="kg">Quilo (kg)</option>
+                            <option value="un">Unidade (un)</option>
+                            <option value="maço">Maço</option>
+                            <option value="bdj">Bandeja</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- NOVO: peso médio por unidade. Alimenta a estimativa de preço
+                     que o cliente vê ao pedir "5 batatas" na loja. Só aparece
+                     quando a métrica de venda é por peso. -->
+                <div class="form-group" id="form-group-peso-medio" style="display:none; background:var(--foam); padding:14px; border-radius:var(--radius-sm);">
+                    <label for="edit-peso-medio">⚖️ Peso médio de 1 unidade (em gramas)</label>
+                    <input type="number" id="edit-peso-medio" min="1" step="1" placeholder="Ex: 150 (uma batata média)" inputmode="numeric">
+                    <small style="color:var(--text-mid); font-size:0.78rem; display:block; margin-top:6px; line-height:1.5;">
+                        Preenchendo isto, quem pedir "5 unidades" vê uma <b>estimativa de preço</b> na loja
+                        (ex.: 5 batatas ≈ 0,75 kg ≈ R$ 4,50). Em branco, o cliente vê apenas o aviso de pesagem.
+                    </small>
+                </div>
+
+                <div class="form-group"><label for="edit-cat">Classificação (Categoria)</label><input type="text" id="edit-cat"></div>
+            </div>
+            <footer class="modal-footer" style="display: flex; flex-direction: column; gap: 10px;">
+                <button class="btn-outline" style="background: var(--forest); color: white; padding: 14px;" id="btn-salvar-produto">💾 Gravar no Banco</button>
+                <button class="btn-outline" style="color: var(--danger); border-color: var(--danger); padding: 14px;" id="btn-excluir-produto">🗑 Destruir Registro</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Modal Compartilhado Custom Confirm -->
+    <div class="modal-overlay" id="overlay-confirm">
+        <div class="modal" style="max-width: 380px; text-align: center;">
+            <div class="modal-body" style="padding: 30px 24px;">
+                <h2 id="confirm-title" style="color: var(--forest); margin-bottom: 12px; font-size: 1.6rem;">Atenção</h2>
+                <p id="confirm-msg" style="color: var(--text-mid); font-size: 1.05rem;">Confirma a operação?</p>
+                <div style="display: flex; gap: 12px; margin-top: 24px;">
+                    <button class="btn-outline" id="btn-confirm-cancel" style="flex: 1; padding: 12px; border-color: #e0dcd4; color: var(--text-dark);">Cancelar</button>
+                    <button class="btn-outline" id="btn-confirm-ok" style="flex: 1; padding: 12px; background: var(--danger); color: white; border-color: var(--danger);">Confirmar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast" role="alert"></div>
+
+    <script type="module" src="./js/admin.js"></script>
+</body>
+</html>
