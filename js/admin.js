@@ -1,6 +1,9 @@
 import { auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL, query, orderBy, limit, writeBatch, where, updateDoc } from './firebase.js';
 import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal, customConfirm } from './utils.js';
 import { exigirAdmin, iniciarLogoutPorInatividade } from './admin-guard.js';
+import { abrirPrevisao } from './admin-previsao.js';
+import { abrirFechamento } from './admin-fechamento.js';
+import { iniciarCategoriasAdmin, abrirCategorias } from './admin-categorias.js';
 
 // Chart.js agora é carregado sob demanda (só ao abrir o Dashboard).
 // Isso tira ~200KB do carregamento inicial do painel.
@@ -135,6 +138,9 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
 
         if (e.target.dataset.aba === 'relatorios') renderRelatoriosMaster();
         if (e.target.dataset.aba === 'balanco') carregarBalanco(Number(document.getElementById('balanco-periodo')?.value || 30));
+        if (e.target.dataset.aba === 'previsao') abrirPrevisao();
+        if (e.target.dataset.aba === 'fechamento') abrirFechamento(produtosAtuais);
+        if (e.target.dataset.aba === 'categorias') abrirCategorias();
         if (e.target.dataset.aba === 'comunicados') renderComunicados();
         if (e.target.dataset.aba === 'cupons') renderCupons();
     }
@@ -256,6 +262,7 @@ const iniciarRealTimeSync = () => {
     unsubscribes.push(unsubComunicados);
 
     iniciarCupons();
+    unsubscribes.push(...iniciarCategoriasAdmin(() => produtosAtuais));
 
     // ATENÇÃO: esta consulta combina "where in" + "orderBy", o que exige um
     // ÍNDICE COMPOSTO no Firestore. Se aparecer erro no console com um link,
@@ -393,11 +400,22 @@ document.getElementById('edit-foto')?.addEventListener('change', (e) => {
     }
 });
 
+// Rótulo do preço acompanha a métrica de venda escolhida
+const ROTULOS_PRECO = {
+    kg: 'Preço por Quilo (R$/kg)',
+    un: 'Preço por Unidade (R$/un)',
+    'maço': 'Preço por Maço (R$/maço)',
+    bdj: 'Preço por Bandeja (R$/bandeja)',
+    kit: 'Preço do Kit (R$)'
+};
+
 // Mostra/esconde o campo de peso médio conforme a métrica de venda
 const alternarCampoPesoMedio = () => {
     const grupo = document.getElementById('form-group-peso-medio');
     const unidade = document.getElementById('edit-unidade')?.value;
     if (grupo) grupo.style.display = ehFracionavel(unidade) ? 'block' : 'none';
+    const lbl = document.querySelector('label[for="edit-preco"]');
+    if (lbl) lbl.textContent = ROTULOS_PRECO[unidade] || 'Preço Base (R$)';
 };
 document.getElementById('edit-unidade')?.addEventListener('change', alternarCampoPesoMedio);
 
@@ -1616,8 +1634,6 @@ const renderComunicados = () => {
     cont.innerHTML = blocoFixo + blocosDias;
 };
 
-const salvarComunicados = async () => {
-    const btn = 
 document.getElementById('btn-salvar-cupom')?.addEventListener('click', salvarCupom);
 
 // ---------------------------------------------------------------------
@@ -1683,7 +1699,8 @@ document.getElementById('btn-exportar-balanco')?.addEventListener('click', () =>
     showToast('📄 Balanço exportado!');
 });
 
-document.getElementById('btn-salvar-comunicados');
+const salvarComunicados = async () => {
+    const btn = document.getElementById('btn-salvar-comunicados');
     btn.disabled = true; btn.textContent = 'Salvando... ⏳';
     try {
         const dias = {};
