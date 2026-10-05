@@ -25,6 +25,7 @@ const admin = require('firebase-admin');
 
 const MINUTOS_PARA_CANCELAR = 5;
 const STATUS_CANCELAVEIS = ['pendente', 'aguardando_pesagem', 'aguardando_pagamento'];
+const PODEM_CANCELAR_NO_PAINEL = ['proprietario', 'administrador', 'funcionario', 'caixa'];
 
 // ---------------------------------------------------------------------
 // CORS — lista de origens confiáveis
@@ -123,13 +124,17 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: 'Sessão não identificada. Recarregue a página e tente de novo.' });
   }
 
-  let uidVerificado;
+  let uidVerificado, daEquipe = false, quem = '';
   try {
     const decodificado = await admin.auth().verifyIdToken(token);
     uidVerificado = decodificado.uid;
+    // Quem trabalha na loja cancela pelo painel, a qualquer momento (o cliente, só nos primeiros minutos).
+    daEquipe = T.temPapel(decodificado, tid, PODEM_CANCELAR_NO_PAINEL);
+    quem = decodificado.email || decodificado.uid;
   } catch (e) {
     return res.status(401).json({ error: 'Sessão expirada. Recarregue a página e tente de novo.' });
   }
+  const motivo = daEquipe ? String((req.body || {}).motivo || '').trim().slice(0, 200) : '';
 
   try {
     const resultado = await db.runTransaction(async (t) => {
@@ -147,6 +152,9 @@ module.exports = async function handler(req, res) {
       // é a dona, então o cancelamento automático é recusado — de propósito.
       // É melhor recusar e mandar chamar a banca do que arriscar cancelar o
       // pedido da pessoa errada.
+      if (daEquipe) {
+        if (pedido.status === 'cancelado') return { jaEstava: true };
+      } else {
       if (!pedido.userId || pedido.userId === 'anonimo') {
         throw new Error('Não consigo confirmar que este pedido é seu. Chame a banca no WhatsApp, por favor.');
       }
@@ -170,22 +178,28 @@ module.exports = async function handler(req, res) {
       if (!Number.isFinite(minutosPassados) || minutosPassados > MINUTOS_PARA_CANCELAR) {
         throw new Error(`O cancelamento pela loja só vale nos primeiros ${MINUTOS_PARA_CANCELAR} minutos. Chame no WhatsApp, por favor.`);
       }
+      }
 
-      // Devolve o estoque dos itens que foram baixados no checkout
-      // (os "a pesar" nunca baixaram estoque, então ficam de fora)
-      const itensFechados = (pedido.itens || []).filter((i) => !i.aPesar);
-      const prodSnaps = await Promise.all(
-        itensFechados.map((i) => t.get(T.docDe(db, tid, `produtos/${i.id}`)))
-      );
+      // Devolve o estoque que este pedido baixou:
+      //   item de valor fechado → a quantidade pedida (baixada no checkout)
+      //   item pesado           → o peso baixado na pesagem (pesoBaixado, em quilos)
+      //   item ainda "a pesar"  → nada (nunca baixou)
+      const aDevolver = new Map();                       // produtoId → quantidade
+      (pedido.itens || []).forEach((i) => {
+        const q = Number(i.pesoBaixado) > 0 ? Number(i.pesoBaixado) : (i.aPesar ? 0 : Number(i.qtd));
+        if (Number.isFinite(q) && q > 0 && i.id) aDevolver.set(String(i.id), fixFloat((aDevolver.get(String(i.id)) || 0) + q));
+      });
+      const ids = [...aDevolver.keys()];
+      const prodSnaps = await Promise.all(ids.map((id) => t.get(T.docDe(db, tid, `produtos/${id}`))));
 
       const devolucoes = [];
-      itensFechados.forEach((item, idx) => {
+      ids.forEach((id, idx) => {
         const snap = prodSnaps[idx];
         if (!snap || !snap.exists) return;
-        const p = snap.data();
+        const p = snap.data(), q = aDevolver.get(id);
         if (p.estoqueFisico !== null && p.estoqueFisico !== undefined && p.estoqueFisico !== '') {
-          const novo = fixFloat(Number(p.estoqueFisico) + Number(item.qtd));
-          devolucoes.push([snap.ref, { estoqueFisico: novo, ativo: novo > 0 }, { produtoId: item.id, nome: p.nome, unidade: p.unidade, delta: Number(item.qtd), saldo: novo, custoUnit: p.custo }]);
+          const novo = fixFloat(Number(p.estoqueFisico) + q);
+          devolucoes.push([snap.ref, { estoqueFisico: novo, ativo: novo > 0 }, { produtoId: id, nome: p.nome, unidade: p.unidade, delta: q, saldo: novo, custoUnit: p.custo, por: daEquipe ? quem : 'cliente' }]);
         }
       });
 
@@ -205,7 +219,8 @@ module.exports = async function handler(req, res) {
       t.update(pedidoRef, {
         status: 'cancelado',
         canceladoEm: new Date().toISOString(),
-        canceladoPor: 'cliente',
+        canceladoPor: daEquipe ? 'loja' : 'cliente',
+        ...(daEquipe ? { canceladoPorQuem: quem, canceladoMotivo: motivo } : {}),
       });
 
       // Reverte os números agregados
@@ -215,7 +230,9 @@ module.exports = async function handler(req, res) {
         totalPedidos: admin.firestore.FieldValue.increment(-1),
       }, { merge: true });
 
-      const diaChave = String(pedido.data || '').slice(0, 10);
+      // mesmo dia (horário de Brasília) em que o checkout somou a venda
+      const dt = new Date(pedido.data);
+      const diaChave = Number.isFinite(dt.getTime()) ? new Date(dt.getTime() - 3 * 3600000).toISOString().slice(0, 10) : '';
       if (diaChave) {
         t.set(T.docDe(db, tid, `resumos/${diaChave}`), {
           receita: admin.firestore.FieldValue.increment(-total),
@@ -224,7 +241,7 @@ module.exports = async function handler(req, res) {
         }, { merge: true });
       }
 
-      return { itensDevolvidos: devolucoes.length };
+      return { itensDevolvidos: devolucoes.length, estavaPago: !!(pedido.pagamento && pedido.pagamento.status === 'PAID') };
     });
 
     return res.status(200).json({ sucesso: true, ...resultado });

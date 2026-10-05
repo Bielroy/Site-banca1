@@ -221,3 +221,18 @@
 
 /* Tela de sucesso: os botões do WhatsApp são a ação principal; "Voltar" fica discreto */
 .sucesso-whatsapps:not(:empty) + .btn-finalizar { background: transparent; color: var(--forest); border: 1.5px solid var(--forest); box-shadow: none; }
+
+/* ---------- PIX automático ---------- */
+.sucesso-pix { margin-bottom: 14px; }
+.btn-pix { display: block; width: 100%; min-height: 48px; padding: 13px 16px; border-radius: 14px; border: 2px solid var(--forest); background: var(--superficie, #fff); color: var(--forest); font: 800 1rem/1.2 inherit; font-family: inherit; cursor: pointer; margin-top: 10px; }
+.btn-pix:active { transform: scale(.98); }
+.pedido-pago { margin-top: 10px; font-weight: 700; color: var(--success, #166534); }
+.pix-valor { font-size: 1.05rem; color: var(--text-mid); margin-bottom: 14px; }
+.pix-valor b { color: var(--forest); font-size: 1.25rem; white-space: nowrap; }
+.pix-qr { display: block; margin: 0 auto 14px; width: 220px; height: 220px; max-width: 100%; background: #fff; border-radius: 12px; }
+.pix-rotulo { display: block; font-weight: 700; margin-bottom: 6px; }
+.pix-codigo { width: 100%; font: 0.8rem/1.4 ui-monospace, monospace; padding: 10px; border-radius: 10px; border: 1.5px solid #e0dcd4; resize: none; word-break: break-all; margin-bottom: 10px; background: #fff; color: #222; }
+.pix-estado { margin: 14px 0 6px; font-weight: 600; color: var(--text-mid); }
+.pix-pago { text-align: center; padding: 18px 0; }
+.pix-pago b { display: block; font-size: 1.3rem; color: var(--success, #166534); margin-bottom: 8px; }
+.pix-pago p { color: var(--text-mid); margin-bottom: 18px; }

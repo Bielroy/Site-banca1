@@ -7,6 +7,7 @@ import './melhorias-ui.js';
 import { ICO } from './icones.js';
 import { iniciarTema } from './tema.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
+import { podePagarPix } from './pix-lib.js';
 import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
 
 const CART_VERSION = "3.0"; // Atualizado para suportar o Carrinho Híbrido
@@ -462,6 +463,21 @@ const mostrarLinksWhatsApp = (pedido) => {
     if (links.length === 1) window.open(links[0].url, '_blank');
 };
 
+// PIX automático: a tela (js/pix-loja.js) só é baixada quando alguém vai pagar.
+const pagarComPix = async (pedidoId, total) => {
+    try {
+        const { abrirPix } = await import('./pix-loja.js');
+        abrirPix({ pedidoId, total, chamarApi, erroAmigavel: mensagemDeErroAmigavel, aoPagar: () => { if (document.getElementById('modal-historico')?.classList.contains('aberto')) renderHistorico(); } });
+    } catch (e) { showToast('Não foi possível abrir o PIX. Combine o pagamento pelo WhatsApp.', true); }
+};
+// Depois de enviar o pedido: se a loja ligou o PIX automático e o valor já está fechado, oferece pagar na hora.
+const oferecerPixNoSucesso = (pedido) => {
+    const area = document.getElementById('sucesso-pix'); if (!area) return;
+    const pode = ehLojaOriginal && podePagarPix(STATE.config.pixAutomatico === true, pedido);
+    area.hidden = !pode;
+    area.innerHTML = pode ? `<button type="button" class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Pagar ${fmt(pedido.total)} com PIX agora</button>` : '';
+};
+
 const renderCategorias = () => {
     const abas = [{ chave: 'todas', nome: 'Todos' }, { chave: 'favoritos', nome: 'Favoritos' }, ...abasDeCategoria(STATE.produtos)];
     // se a categoria aberta sumiu (ocultada no painel), volta para "Todos"
@@ -891,6 +907,8 @@ const renderHistorico = async () => {
                 <button class="btn btn-outline flex-1" data-action="repetir-pedido" data-id="${escapeHTML(p.id)}">Repetir pedido</button>
                 ${podeCancelar ? `<button class="btn btn-danger" data-action="cancelar-pedido" data-id="${escapeHTML(p.id)}">Cancelar</button>` : ''}
             </div>
+            ${vivo && vivo.pagamento && vivo.pagamento.status === 'PAID' ? '<p class="pedido-pago">Pago por PIX</p>' : ''}
+            ${ehLojaOriginal && vivo && podePagarPix(STATE.config.pixAutomatico === true, vivo) ? `<button class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(p.id)}" data-total="${Number(totalReal) || 0}">Pagar ${fmt(totalReal)} com PIX</button>` : ''}
         </article>`;
     }).join('');
 };
@@ -899,7 +917,8 @@ const renderHistorico = async () => {
 const cancelarPedido = async (pedidoId) => {
     const ok = await customConfirm(
         'Cancelar este pedido?',
-        'Os itens voltam para o estoque da banca. Se quiser pedir de novo depois, sem problema.'
+        'Os itens voltam para o estoque da banca. Se quiser pedir de novo depois, sem problema.',
+        { ok: 'Cancelar o pedido', nao: 'Voltar' }
     );
     if (!ok) return;
 
@@ -1102,6 +1121,7 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'open-endereco') { endTopo.preencher(lerEnderecoSalvo()); openModal('modal-endereco'); }
         else if (action === 'repetir-pedido') { repetirPedido(id); }
         else if (action === 'cancelar-pedido') { cancelarPedido(id); }
+        else if (action === 'pagar-pix') { pagarComPix(id, Number(actionTarget.dataset.total) || 0); }
         else if (action === 'toggle-troco') {
             const valor = actionTarget.dataset.value;
             const inputArea = document.getElementById('input-troco-area'); const cliTroco = document.getElementById('cli-troco');
@@ -1262,6 +1282,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         localStorage.setItem(chave('banca_meus_pedidos'), JSON.stringify(meusPedidos.slice(0, 10)));
 
         mostrarLinksWhatsApp(data.pedido);
+        oferecerPixNoSucesso({ id: data.pedido.id, total: data.pedido.total, pag, status: 'pendente', temItensAPesar: itensFormatados.some(i => i.aPesar) });
         closeModal('modal-checkout');
         setTimeout(() => openModal('modal-sucesso'), 300); 
         STATE.carrinho = []; dbStorage.set(chave('banca_cart'), {v: CART_VERSION, items: []});

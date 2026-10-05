@@ -72,7 +72,7 @@ function render() {
     <div class="pf-secao"><h3>Feiras</h3><button class="btn-outline" data-pf="nova-feira"${d.lojas.length < 2 ? ' disabled' : ''}>+ Nova feira</button></div>
     ${S.novaFeira ? feiraHtml({ id: '', nome: '', lojas: [] }, d.lojas, true) : ''}
     ${d.feiras.length ? d.feiras.map((f) => feiraHtml(f, d.lojas, false)).join('') : (S.novaFeira ? '' : '<p class="config-sub">Nenhuma feira. Uma feira junta lojas na faixa do topo: o cliente troca de loja deslizando o dedo.</p>')}
-    <p class="config-sub cal-nota">O primeiro acesso de plataforma é dado pelo terminal, não por esta tela. Ao bloquear uma loja, ela para de receber pedidos, vender no balcão e mexer no estoque; o cadastro de produtos continua editável pelo proprietário.</p>`;
+    <p class="config-sub cal-nota">Ao bloquear uma loja, ela para de receber pedidos, vender no balcão e mexer no estoque; o cadastro de produtos continua editável pelo proprietário.</p>`;
 }
 async function carregar() { S.dados = await api({ acao: 'lojas' }); render(); }
 async function fazer(corpo, ok) {
@@ -142,7 +142,17 @@ onAuthStateChanged(auth, async (user) => {
     if (!user) return aviso('Entre primeiro pelo painel.', 'Depois de entrar com o seu e-mail, volte para esta página.', 'Ir para o painel');
     try {
         const { claims } = await user.getIdTokenResult(true);
-        if (claims.plataforma !== true) return aviso('Área do dono da plataforma.', 'Esta conta cuida de uma loja, não da plataforma.', 'Voltar ao painel');
+        if (claims.plataforma !== true) {
+            const donoDaOriginal = claims.admin === true || (claims.tenants && claims.tenants.banca === 'proprietario');
+            if (!donoDaOriginal) return aviso('Área do dono da plataforma.', 'Esta conta cuida de uma loja, não da plataforma.', 'Voltar ao painel');
+            el().innerHTML = `<div class="pf-vazio"><b>Assumir a plataforma</b><p>Daqui você cria outras lojas, escolhe o dono de cada uma e liga os módulos. Só uma conta pode ser a dona da plataforma, e esta escolha vale uma vez.</p><p><button class="btn-salvar-config" id="pf-assumir" style="margin-top:10px">Assumir com ${escapeHTML(user.email || 'esta conta')}</button></p></div>`;
+            $('pf-assumir').addEventListener('click', async (ev) => {
+                ev.target.disabled = true;
+                try { await api({ acao: 'assumir' }); await user.getIdToken(true); if (!ligado) { ligar(); ligado = true; } await carregar(); showToast('Pronto: esta conta agora cuida da plataforma.'); }
+                catch (e) { showToast(e.message, true); ev.target.disabled = false; }
+            });
+            return;
+        }
         if (!ligado) { ligar(); ligado = true; }
         await carregar();
     } catch (e) { aviso('Não consegui carregar.', escapeHTML(e.message || 'Confira a internet e recarregue a página.')); }

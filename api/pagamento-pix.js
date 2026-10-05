@@ -116,6 +116,11 @@ module.exports = async function handler(req, res) {
       dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '');
     } catch (e) { return res.status(401).json({ error: 'Sessão não identificada. Recarregue a página e tente de novo.' }); }
 
+    // Desligado até a loja ter a conta do PagBank configurada E ligar a opção no painel.
+    if (!process.env.PAGBANK_API_TOKEN) return res.status(503).json({ error: 'O PIX automático ainda não está ligado. Combine o pagamento pelo WhatsApp.' });
+    const cfg = await T.docDe(db, tid, 'loja/config').get();
+    if (!cfg.exists || cfg.data().pixAutomatico !== true) return res.status(503).json({ error: 'O PIX automático está desligado nesta loja. Combine o pagamento pelo WhatsApp.' });
+
     const pedidoRef = T.tdoc(db, tid, 'pedidos', pedidoId);
     const snap = await pedidoRef.get();
     if (!snap.exists) return res.status(404).json({ error: 'Pedido não encontrado.' });
@@ -161,7 +166,11 @@ module.exports = async function handler(req, res) {
     // CPF é frequentemente exigido pelo PagBank para orders. Só inclui
     // se o front mandou (campo opcional que você pode adicionar depois
     // no formulário de checkout).
-    if (cpf) customer.tax_id = String(cpf).replace(/\D/g, '');
+    if (cpf) {
+      const d = String(cpf).replace(/\D/g, '');
+      if (d.length !== 11) return res.status(400).json({ error: 'Confira o CPF: são 11 números.' });
+      customer.tax_id = d;
+    }
 
     // -------------------------------------------------------------------
     // ENDEREÇO DO WEBHOOK
@@ -201,11 +210,12 @@ module.exports = async function handler(req, res) {
     const data = await orderResp.json();
     if (!orderResp.ok) {
       // Devolve o erro exato do PagBank — essencial pra depurar (ex.: CPF ausente)
-      return res.status(502).json({ error: 'Falha ao gerar PIX no PagBank.', detalhe: data });
+      console.error('[pix] PagBank recusou:', JSON.stringify(data).slice(0, 600));
+      return res.status(502).json({ error: 'O banco não gerou o PIX agora. Confira o CPF ou combine o pagamento pelo WhatsApp.' });
     }
 
     const qr = data.qr_codes && data.qr_codes[0];
-    if (!qr) return res.status(502).json({ error: 'PagBank não retornou QR Code.', detalhe: data });
+    if (!qr) return res.status(502).json({ error: 'O banco não devolveu o código PIX. Combine o pagamento pelo WhatsApp.' });
 
     const qrPngUrl = qr.links?.find((l) => l.rel === 'QRCODE.PNG')?.href || null;
 
@@ -226,6 +236,7 @@ module.exports = async function handler(req, res) {
       qr_code_url: qrPngUrl,    // URL da imagem do QR (usar direto no <img src>)
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    console.error('[pix]', err && err.message);
+    return res.status(500).json({ error: 'Não foi possível gerar o PIX agora. Combine o pagamento pelo WhatsApp.' });
   }
 };

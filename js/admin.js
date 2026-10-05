@@ -134,7 +134,7 @@ const TODAS_AS_ABAS = [...document.querySelectorAll('.tab')].map((t) => t.datase
 let modulosDaLoja = null;                                // ficha.modulos: o que a plataforma ligou nesta loja
 const aplicarPapel = () => {
     const minhas = abasDoPapel(papelAtual, TODAS_AS_ABAS, modulosDaLoja), gestor = ehGestor(papelAtual);
-    const lp = document.getElementById('link-plataforma'); if (lp) lp.hidden = papelAtual !== 'plataforma';
+    const lp = document.getElementById('link-plataforma'); if (lp) lp.hidden = !(papelAtual === 'plataforma' || (papelAtual === 'proprietario' && ehLojaOriginal));
     document.querySelectorAll('.tab').forEach((t) => { t.hidden = !minhas.includes(t.dataset.aba); });
     document.body.classList.toggle('so-equipe', !gestor);
     const r = document.getElementById('papel-rotulo'); if (r) { r.textContent = rotuloDoPapel(papelAtual); r.hidden = papelAtual === 'proprietario'; }
@@ -312,6 +312,8 @@ const iniciarRealTimeSync = () => {
             const data = snap.data();
             document.getElementById('config-wpp').value = data.wpp || '';
             document.getElementById('config-minimo').value = data.minimo || 0;
+            const chkPix = document.getElementById('config-pix'); if (chkPix) chkPix.checked = data.pixAutomatico === true;
+            const grupoPix = document.getElementById('grupo-pix'); if (grupoPix) grupoPix.hidden = !ehLojaOriginal;   // a conta do PagBank no servidor é a da loja original
             document.getElementById('config-status-loja').value = data.lojaAberta === false ? "fechada" : "aberta";
             const diasSalvos = data.diasAbertos || [0, 1, 2, 3, 4, 5, 6];
             document.querySelectorAll('.chk-dia').forEach(chk => chk.checked = diasSalvos.includes(parseInt(chk.value)));
@@ -1083,6 +1085,23 @@ document.body.addEventListener('click', async (e) => {
             target.disabled = false;
         }
 
+        else if (action === 'cancelar-pedido-painel') {
+            const pedido = pedidosGerais.find(p => p.id === target.dataset.id);
+            if (!pedido) return showToast("Pedido não encontrado", true);
+            const pago = pedido.pagamento?.status === 'PAID';
+            if (!(await customConfirm(`Cancelar o pedido de ${pedido.nome || 'cliente'}?`,
+                'O estoque baixado por este pedido volta para a prateleira e a venda sai do caixa do dia.'
+                + (pago ? ' ATENÇÃO: este pedido já foi pago. O dinheiro NÃO é devolvido sozinho: devolva o PIX ao cliente.' : ''), { ok: 'Cancelar o pedido', nao: 'Voltar' }))) return;
+            target.disabled = true;
+            try {
+                const token = await auth.currentUser?.getIdToken();
+                const r = await fetch('/api/cancelar-pedido', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ pedidoId: pedido.id }) });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(d.error || 'Não foi possível cancelar.');
+                showToast(d.jaEstava ? 'Este pedido já estava cancelado.' : (d.estavaPago ? 'Pedido cancelado. Lembre de devolver o PIX ao cliente.' : 'Pedido cancelado e estoque devolvido.'));
+            } catch (e) { showToast(e.message, true); target.disabled = false; }
+        }
+
         else if (action === 'excluir-pedido') {
             const id = target.dataset.id;
             if (await customConfirm("Concluir e Arquivar", "Deseja finalizar este pedido e retirá-lo da logística visual? (Os dados financeiros serão mantidos).")) {
@@ -1372,6 +1391,7 @@ const renderHtmlPedidos = (pedidos) => {
             <div class="ped-imprimir">
                 <button type="button" data-action="imprimir-pedido" data-tipo="cupom" data-id="${escapeHTML(p.id)}"><i class="ic" data-i="impressora"></i> Cupom</button>
                 <button type="button" data-action="imprimir-pedido" data-tipo="etiqueta" data-id="${escapeHTML(p.id)}"><i class="ic" data-i="etiqueta"></i> Etiqueta da sacola</button>
+                <button type="button" class="ped-cancelar" data-action="cancelar-pedido-painel" data-id="${escapeHTML(p.id)}"><i class="ic" data-i="lixeira"></i> Cancelar pedido</button>
             </div>
         </article>`;
 
@@ -2051,7 +2071,8 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         if (diasAbertos.length === 0) throw new Error("Marque pelo menos um dia de abertura (ou feche a loja no disjuntor).");
 
         const condominios = lerCondominios();
-        await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios }, { merge: true });
+        const pixAutomatico = ehLojaOriginal && document.getElementById('config-pix')?.checked === true;
+        await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios, pixAutomatico }, { merge: true });
         showToast("Configurações atualizadas!");
     } catch (err) {
         showToast(err.message, true);

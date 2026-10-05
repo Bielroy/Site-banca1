@@ -188,11 +188,14 @@ const ensureConfirmModal = () => {
     </div>`);
 };
 
-export const customConfirm = (title, msg) => {
+export const customConfirm = (title, msg, rotulos = {}) => {
   ensureConfirmModal();
   const overlay = document.getElementById('overlay-confirm');
   document.getElementById('confirm-title').textContent = title;
   document.getElementById('confirm-msg').textContent = msg;
+  // quando a pergunta já tem a palavra "cancelar", os botões precisam dizer outra coisa
+  document.getElementById('btn-confirm-ok').textContent = rotulos.ok || 'Confirmar';
+  document.getElementById('btn-confirm-cancel').textContent = rotulos.nao || 'Cancelar';
 
   // abre sem mexer no history (não interfere no back-button dos outros modais)
   const focoAnterior = document.activeElement;

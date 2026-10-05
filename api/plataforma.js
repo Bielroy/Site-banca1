@@ -146,6 +146,20 @@ async function feira(req, res) {
   return res.status(200).json({ sucesso: true });
 }
 
+async function assumir(dec, res) {
+  const donoDaOriginal = dec.admin === true || (dec.tenants && dec.tenants[T.TENANT_PADRAO] === 'proprietario');
+  if (!donoDaOriginal && dec.plataforma !== true) throw falha(403, 'Só quem é dono da loja original pode assumir a plataforma.');
+  const ref = db.collection('plataforma').doc('dono');
+  await db.runTransaction(async (t) => {
+    const s = await t.get(ref);
+    if (s.exists && s.data().uid !== dec.uid) throw falha(403, 'A plataforma já tem dono. Peça a ele para criar a sua loja.');
+    if (!s.exists) t.set(ref, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() });
+  });
+  const u = await admin.auth().getUser(dec.uid);
+  await admin.auth().setCustomUserClaims(dec.uid, { ...(u.customClaims || {}), plataforma: true });
+  return res.status(200).json({ sucesso: true });
+}
+
 module.exports = async function handler(req, res) {
   cors(req, res);
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -156,6 +170,13 @@ module.exports = async function handler(req, res) {
     const cab = String((req.headers && req.headers.authorization) || '');
     dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '');
   } catch (e) { return res.status(401).json({ error: 'Entre no painel de novo.' }); }
+  // PRIMEIRO ACESSO, sem terminal: enquanto a plataforma não tem dono, quem já é dono da loja original
+  // (a conta antiga, admin: true, ou proprietário da 'banca') pode assumir. Vale UMA vez: fica gravado
+  // em plataforma/dono e ninguém mais passa por aqui.
+  if ((req.body || {}).acao === 'assumir') {
+    try { return await assumir(dec, res); }
+    catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[plataforma] assumir', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
+  }
   if (dec.plataforma !== true) return res.status(403).json({ error: 'Área restrita ao dono da plataforma.' });
   const acoes = { lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res) };
   const fn = acoes[(req.body || {}).acao];

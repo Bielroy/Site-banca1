@@ -453,6 +453,20 @@ teste('pesagem: calcula pelo peso, MANTÉM o cupom, baixa o estoque por quilo e 
   assert.strictEqual(db._dados.get('produtos/tomate').estoqueFisico, 10.3);
   assert.strictEqual((await pesar([{ i: 0, peso: 1 }], 'cliente')).status, 403, 'cliente não muda o valor do próprio pedido');
   assert.strictEqual((await pesar([{ i: 0, peso: 1 }], 'dono-espetinhos')).status, 403);
+  // cancelar pelo painel, depois da pesagem: devolve os quilos pesados e os ovos, e tira a venda do caixa
+  const cancelar = carregarApi(raiz('api/cancelar-pedido.js'), adm);
+  const canc = (token) => chamar(cancelar, { headers: { Authorization: `Bearer ${token}` }, body: { pedidoId: p.idempotencyKey } });
+  assert.notStrictEqual((await canc('cliente')).status, 200, 'cliente não cancela depois que a loja começou a preparar');
+  assert.notStrictEqual((await canc('dono-espetinhos')).status, 200, 'gente de outra loja não cancela');
+  const ovosAntes = db._dados.get('produtos/ovos').estoqueFisico;
+  const ok = await canc('func-banca'); assert.strictEqual(ok.status, 200, JSON.stringify(ok.corpo));
+  assert.strictEqual(db._dados.get('produtos/tomate').estoqueFisico, 11, 'voltou o que foi pesado');
+  assert.strictEqual(db._dados.get('produtos/ovos').estoqueFisico, ovosAntes + 1);
+  const cancelado = db._dados.get(`pedidos/${p.idempotencyKey}`);
+  assert.strictEqual(cancelado.status, 'cancelado'); assert.strictEqual(cancelado.canceladoPor, 'loja');
+  assert.ok(Math.abs(db._dados.get('analytics/dashboard').receitaTotal) < 0.001, 'o caixa voltou a zero');
+  assert.strictEqual((await canc('func-banca')).corpo.jaEstava, true, 'cancelar de novo não devolve em dobro');
+  assert.strictEqual(db._dados.get('produtos/tomate').estoqueFisico, 11);
 });
 
 // ------------------------------------------------------------------ clientes (CRM)
@@ -541,9 +555,24 @@ teste('copiloto: a IA recebe SÓ os dados da loja de quem pergunta, e só gestor
   } finally { global.fetch = fetchReal; delete process.env.COPILOTO_LIMITE_DIA; }
 });
 
+teste('PIX: CPF, máscara e quando o botão de pagar aparece', async () => {
+  const P = await import(raiz('js/pix-lib.js'));
+  assert.strictEqual(P.cpfValido('529.982.247-25'), true); assert.strictEqual(P.cpfValido('52998224725'), true);
+  for (const ruim of ['529.982.247-26', '111.111.111-11', '123', '', null, '5299822472a']) assert.strictEqual(P.cpfValido(ruim), false, String(ruim));
+  assert.strictEqual(P.mascararCpf('52998224725'), '529.982.247-25'); assert.strictEqual(P.mascararCpf('5299'), '529.9'); assert.strictEqual(P.mascararCpf('529982247259999'), '529.982.247-25');
+  const ped = { pag: 'PIX', status: 'pendente' };
+  assert.strictEqual(P.podePagarPix(true, ped), true);
+  assert.strictEqual(P.podePagarPix(false, ped), false, 'loja não ligou');
+  assert.strictEqual(P.podePagarPix(true, { ...ped, pag: 'Dinheiro' }), false);
+  assert.strictEqual(P.podePagarPix(true, { ...ped, temItensAPesar: true }), false, 'o valor ainda muda na balança');
+  assert.strictEqual(P.podePagarPix(true, { ...ped, pagamento: { status: 'PAID' } }), false);
+  assert.strictEqual(P.podePagarPix(true, { ...ped, status: 'cancelado' }), false);
+  assert.strictEqual(P.podePagarPix(true, { ...ped, status: 'preparando' }), true, 'depois da pesagem pode pagar');
+});
+
 // ------------------------------------------------------------------ auditoria de segurança
 teste('PIX: só o dono do pedido (ou a equipe) gera o QR, e só na loja original', async () => {
-  const db = criarBancoP({ ...semente(), 'pedidos/pedido-0001': { userId: 'c1', total: 20, status: 'pendente' }, 'tenants/espetinhos/pedidos/pedido-0002': { userId: 'c1', total: 20, status: 'pendente' } });
+  const db = criarBancoP({ ...semente(), 'loja/config': { ...(semente()['loja/config'] || {}), pixAutomatico: true }, 'pedidos/pedido-0001': { userId: 'c1', total: 20, status: 'pendente' }, 'tenants/espetinhos/pedidos/pedido-0002': { userId: 'c1', total: 20, status: 'pendente' } });
   process.env.PAGBANK_API_TOKEN = 'token-teste'; process.env.PUBLIC_BASE_URL = 'https://www.exemplo.com.br';
   const chamadas = [], fetchReal = global.fetch;
   global.fetch = async (url) => { chamadas.push(String(url)); return { ok: true, status: 200, json: async () => ({ id: 'ORDE_1', qr_codes: [{ text: 'pix-copia-e-cola', links: [] }] }) }; };
@@ -557,6 +586,16 @@ teste('PIX: só o dono do pedido (ou a equipe) gera o QR, e só na loja original
     assert.strictEqual(chamadas.length, 0, 'nenhuma dessas chegou ao PagBank');
     const ok = await pix('cliente', 'pedido-0001'); assert.strictEqual(ok.status, 200, JSON.stringify(ok.corpo)); assert.strictEqual(chamadas.length, 1);
     assert.strictEqual((await pix('func-banca', 'pedido-0001')).status, 200, 'a equipe da loja também pode');
+    // desligado no painel, ou sem a conta do banco no servidor: recusa sem chamar o PagBank
+    const antes = chamadas.length;
+    db._dados.set('loja/config', { ...db._dados.get('loja/config'), pixAutomatico: false });
+    assert.strictEqual((await pix('cliente', 'pedido-0001')).status, 503, 'a loja desligou');
+    db._dados.set('loja/config', { ...db._dados.get('loja/config'), pixAutomatico: true }); delete process.env.PAGBANK_API_TOKEN;
+    assert.strictEqual((await pix('cliente', 'pedido-0001')).status, 503, 'sem a conta do banco');
+    assert.strictEqual(chamadas.length, antes);
+    process.env.PAGBANK_API_TOKEN = 'token-teste';
+    const cpfRuim = await chamar(api, { headers: { Authorization: 'Bearer cliente' }, body: { pedidoId: 'pedido-0001', cpf: '123' } });
+    assert.ok([400, 200].includes(cpfRuim.status));
   } finally { global.fetch = fetchReal; }
 });
 teste('chat público: loja sem o módulo de IA não gasta a cota; entradas grandes são recusadas', async () => {
@@ -687,6 +726,15 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   for (const tk of ['dono', 'antigo']) for (const acao of ['lojas', 'criar-loja', 'ativo', 'modulos', 'proprietario', 'feira']) assert.strictEqual((await ch(tk, { acao, id: 'espetinhos', ativo: false })).status, 403, `${tk} × ${acao}`);
   assert.strictEqual((await ch('', { acao: 'lojas' })).status, 401);
   assert.strictEqual(db._dados.get('tenants/espetinhos').ativo, true, 'ninguém de fora bloqueou a loja');
+  // primeiro acesso pela tela: só o dono da loja original assume, e só uma vez
+  usuarios.push({ uid: 'a-1', email: 'antigo@x.com', customClaims: { admin: true } }, { uid: 'a-2', email: 'outro@x.com', customClaims: { admin: true } });
+  tokens.antigo2 = { uid: 'a-2', admin: true };
+  assert.strictEqual((await ch('dono', { acao: 'assumir' })).status, 403, 'dono de outra loja não assume');
+  assert.strictEqual((await ch('antigo', { acao: 'assumir' })).status, 200);
+  assert.deepStrictEqual(usuarios.find((u) => u.uid === 'a-1').customClaims, { admin: true, plataforma: true });
+  assert.strictEqual((await ch('antigo', { acao: 'assumir' })).status, 200, 'repetir não quebra');
+  assert.strictEqual((await ch('antigo2', { acao: 'assumir' })).status, 403, 'a segunda conta não assume');
+  assert.strictEqual(usuarios.find((u) => u.uid === 'a-2').customClaims.plataforma, undefined);
   // lista: a loja original aparece mesmo sem ficha; o movimento é só o do mês
   const l = (await ch('super', { acao: 'lojas' })).corpo;
   assert.deepStrictEqual(l.lojas.map((x) => x.id), ['banca', 'espetinhos']); assert.deepStrictEqual(l.lojas[1].mes, { receita: 150.5, pedidos: 4 });

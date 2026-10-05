@@ -1,12 +1,12 @@
 # Antes de publicar — lista de conferência
 
 Nada disto foi feito no ambiente em que o código foi escrito (sem acesso à internet,
-ao Firebase e à Vercel). Os testes automáticos (`npm test`, 54 testes) passam e as telas
+ao Firebase e à Vercel). Os testes automáticos (`npm test`, 55 testes) passam e as telas
 foram conferidas com dados simulados.
 
 ## 1. Build
 1. `npm install`
-2. `npm test` — deve terminar com "53 de 54 testes passaram".
+2. `npm test` — deve terminar com "55 de 55 testes passaram".
 3. `npm run build` — nunca foi rodado depois das mudanças. Se der erro, copie a mensagem inteira.
 4. `npm run preview` e abra: `/`, `/admin.html`, `/plataforma.html`.
 
@@ -28,11 +28,20 @@ foram conferidas com dados simulados.
 
 ## 4. Primeiro acesso
 - Sua conta antiga (`admin: true`) continua sendo proprietária da Banca.
-- Para a tela da plataforma, rode UMA vez no seu computador, com as variáveis do Firebase
-  (`FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`):
-  `node scripts/plataforma.js dono-da-plataforma seu@email.com`
-  Depois saia e entre de novo no painel: aparece o botão **Plataforma** no topo.
+- **Tela da plataforma, sem comando:** entre no painel, toque em **Plataforma** no topo e depois em
+  **Assumir a plataforma**. Vale uma vez: a primeira conta dona da loja original que tocar fica sendo a
+  dona da plataforma (gravado em `plataforma/dono`). Dali você cria lojas e define o dono de cada uma.
 - Equipe: aba **Equipe** do painel (e-mail + papel).
+
+## 4b. PIX automático (PagBank) — desligado até você configurar
+1. Tenha uma conta PagBank com a API liberada e copie o token.
+2. Na Vercel, crie `PAGBANK_API_TOKEN` (o token) e confira `PUBLIC_BASE_URL` (endereço do site, com https).
+   Para testar sem dinheiro de verdade, crie também `PAGBANK_ENV` = `sandbox` com o token de teste.
+3. No painel: **Configurações → PIX automático** → marque e salve.
+4. Faça um pedido de teste com PIX: aparece "Pagar com PIX agora", pede o CPF, mostra o QR Code e o
+   copia e cola. Pago, o pedido aparece como PAGO no painel sozinho.
+- Pedido com item a pesar só libera o PIX depois da pesagem (botão em **Meus pedidos**).
+- Cancelar um pedido já pago NÃO devolve o dinheiro: devolva o PIX pelo aplicativo do banco.
 
 ## 5. Testar com a loja de verdade
 - [ ] Pedido pela loja: preço, estoque, cupom, WhatsApp.
@@ -46,8 +55,7 @@ foram conferidas com dados simulados.
 - [ ] Fontes e gráficos (não carregam no ambiente de teste).
 
 ## 6. Limites conhecidos
-- Cancelar pedido pelo painel não devolve o estoque.
-- PIX automático só na loja original.
+- PIX automático só na loja original (a conta do banco no servidor é uma só) e nunca foi testado com o PagBank de verdade.
 - Limite de chamadas por minuto fica na memória do servidor (zera a cada reinício).
 - A rotina diária do motor roda as lojas em sequência (60 s no plano gratuito).
 - Loja bloqueada ainda deixa o proprietário editar produtos; Clientes, Calendário e Cupons desligados
