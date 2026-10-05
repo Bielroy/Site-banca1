@@ -31,13 +31,61 @@ const INV = require('./inventoryRecommendation');
 const { dowDeDia, semanaDeDia } = N;
 
 // ---------- série --------------------------------------------------
-function montarSerie(mapaDia, fim, abertos) {
+// rupturas (opcional): Set de dias em que o produto ACABOU (aba Fechamento, "Não tem")
+function montarSerie(mapaDia, fim, abertos, rupturas) {
   if (!mapaDia || !mapaDia.size) return [];
   const ini = Math.max(Math.min(...mapaDia.keys()), fim - C.JANELA_LONGA_DIAS);
   const s = [];
-  for (let d = ini; d <= fim; d++) if (abertos.has(dowDeDia(d))) s.push({ dia: d, y: mapaDia.get(d) || 0 });
-  return s;
+  for (let d = ini; d <= fim; d++) if (abertos.has(dowDeDia(d))) {
+    const o = { dia: d, y: mapaDia.get(d) || 0 };
+    if (rupturas && rupturas.has(d)) o.cens = true;
+    s.push(o);
+  }
+  return C.CORRIGIR_RUPTURA ? descensurar(s) : s;
 }
+
+// ---------- falta de produto ---------------------------------------
+// No dia em que o produto acabou, a venda (c) é só um PISO da procura real (D ≥ c).
+// Sem corrigir, o motor aprende "vende pouco" justamente no que mais falta.
+// Correção: troca a venda do dia pela procura ESPERADA sabendo que ela foi ≥ c,
+//     E[D | D ≥ c] = μ + σ · φ(z) / (1 − Φ(z)),   z = (c − μ) / σ
+// (média de uma normal truncada). μ = o que o próprio modelo esperava para o dia usando
+// só os dias anteriores (já corrigidos); σ = variação das vendas do mesmo dia da semana.
+// Feito em ordem de data, então cada correção melhora a referência das seguintes.
+// O resultado nunca fica abaixo da venda registrada e tem teto de c + 2,5σ.
+// `yObs` guarda a venda registrada.
+function descensurar(serie) {
+  if (!serie.some((o) => o.cens)) return serie;
+  const fi = (z) => Math.exp(-z * z / 2) / Math.sqrt(2 * Math.PI);
+  for (let i = 0; i < serie.length; i++) {
+    if (!serie[i].cens) continue;
+    const c = serie[i].y, r = nucleo(serie, serie[i].dia, i);
+    if (!Number.isFinite(r.pred)) continue;
+    const mu = r.pred;
+    const sdDow = r.mesmos && r.mesmos.length >= 3 ? S.stdev(r.mesmos) : NaN;
+    const sd = Math.max(Number.isFinite(sdDow) ? sdDow : 0, Math.sqrt(Math.max(mu, C.EPS_ESCALA)) * 0.5, 1e-6);
+    const z = (c - mu) / sd, cauda = 1 - S.normCdf(z);
+    const esperado = cauda > 1e-6 ? mu + sd * fi(z) / cauda : c;
+    const novo = Math.min(Math.max(c, esperado), c + 2.5 * sd);
+    if (novo > c) { serie[i].yObs = c; serie[i].y = novo; }
+  }
+  return serie;
+}
+
+// ---------- demanda intermitente (TSB) ------------------------------
+// Devolve a venda esperada por dia aberto = chance de vender × tamanho da venda.
+function tsb(ys) {
+  const pos = ys.filter((y) => y > 0);
+  if (!pos.length) return 0;
+  const ini = ys.slice(0, Math.min(ys.length, 14)), iniPos = ini.filter((y) => y > 0);
+  let p = (iniPos.length + 0.5) / (ini.length + 1), z = iniPos.length ? S.mean(iniPos) : pos[0];
+  for (const y of ys) {
+    if (y > 0) { z += C.TSB_ALFA * (y - z); p += C.TSB_BETA * (1 - p); }
+    else p += C.TSB_BETA * (0 - p);
+  }
+  return p * z;
+}
+const adi = (ys) => { const n = ys.filter((y) => y > 0).length; return n ? ys.length / n : Infinity; };
 
 // ---------- núcleo -------------------------------------------------
 const JANELA_LOOKBACK = 90;   // dias olhados pelo núcleo (cobre N_OBS_DOW semanas mesmo com loja fechada 1 dia)
@@ -61,16 +109,23 @@ function nucleo(serie, D, end = serie.length) {
   if (mAll > 0 && dl.length) fdow = (dl.length * (S.mean(dl.map((o) => o.y)) / mAll) + C.K_DOW_DEMANDA) / (dl.length + C.K_DOW_DEMANDA);
   const E2 = nivel * fdow;
 
-  if (!mesmos.length) return { pred: E2, nDow: 0, E1: null, E2, mesmos: [] };
+  // Produto intermitente: média entre o núcleo e o TSB (combinar métodos erra menos
+  // que escolher um só). Para produto que vende quase todo dia, nada muda.
+  const ys = W.map((o) => o.y);
+  const inter = C.TSB_ATIVO && C.PESO_TSB > 0 && ys.length >= 14 && adi(ys) > C.ADI_INTERMITENTE;
+  const misturar = (base) => (inter ? (1 - C.PESO_TSB) * base + C.PESO_TSB * tsb(ys) * fdow : base);
+
+  if (!mesmos.length) return { pred: misturar(E2), nDow: 0, E1: null, E2, mesmos: [], intermitente: inter };
   const E1 = S.mediaPonderada(mesmos.map((o) => o.y), S.pesosMeiaVida(mesmos.length, C.MEIA_VIDA_DEMANDA));
   const n1 = mesmos.length;
-  return { pred: (n1 * E1 + C.K_NUCLEO * E2) / (n1 + C.K_NUCLEO), nDow: n1, E1, E2, mesmos: mesmos.map((o) => o.y) };
+  return { pred: misturar((n1 * E1 + C.K_NUCLEO * E2) / (n1 + C.K_NUCLEO)), nDow: n1, E1, E2, mesmos: mesmos.map((o) => o.y), intermitente: inter };
 }
 
 // walk-forward: previsão de cada dia usando só dados anteriores (últimos 150 pontos bastam)
 function walkForward(serie) {
   const out = [];
   for (let i = Math.max(C.MIN_HIST_NUCLEO, serie.length - 150); i < serie.length; i++) {
+    if (serie[i].cens) continue;                 // dia com falta: a procura real é desconhecida, não mede erro
     const r = nucleo(serie, serie[i].dia, i);
     if (Number.isFinite(r.pred)) out.push({ dia: serie[i].dia, pred: r.pred, y: serie[i].y, res: serie[i].y - r.pred });
   }
@@ -131,7 +186,7 @@ function bottomUpDia(modelos, G, D, asOf, abertos, produtos) {
       por.set(pid, (por.get(pid) || 0) + e);
       itens.push({ id: pid, p: pc, qtd: mp.q.med, e });
     }
-    clientes.push({ id: m.id, nome: m.nome, quadra: m.quadra, lote: m.lote, p: S.arred(v.p, 3), ultimoDia: m.ultimoDia, nuMed: m.nuMed, itens });
+    clientes.push({ id: m.id, nome: m.nome, condominio: m.condominio || '', formatoEndereco: m.formatoEndereco || 'ql', quadra: m.quadra, lote: m.lote, p: S.arred(v.p, 3), ultimoDia: m.ultimoDia, nuMed: m.nuMed, itens });
   }
   return { por, clientes, pedidos };
 }
@@ -163,7 +218,7 @@ function pesosMetodos(ctx, walks) {
 }
 
 // ---------- previsão de uma série (produto, categoria ou loja) -----
-function preverSerie({ serie, hoje, hz, abertos, extras, bu, wBU, unidade, estoque, fracEstimada, wf: wfPre }) {
+function preverSerie({ serie, hoje, hz, abertos, extras, bu, wBU, unidade, estoque, fracEstimada, nivelServico, wf: wfPre }) {
   const wf = wfPre || walkForward(serie);
   const wape = (() => { const u = wf.filter((x) => x.dia > hoje - 1 - C.AVALIACAO_JANELA_DIAS); const s = S.sum(u.map((x) => x.y)); return s > 0 ? S.sum(u.map((x) => Math.abs(x.res))) / s : null; })();
   const efeitos = SZ.aprenderEfeitosEvento(serie, extras);
@@ -197,13 +252,13 @@ function preverSerie({ serie, hoje, hz, abertos, extras, bu, wBU, unidade, estoq
     let conf = cf.conf * (it.tipo === 'poisson' ? 0.8 : 1);
     // "saber quando NÃO sabe": com < MIN_OBS_DEMANDA observações do dia, a confiança nunca passa de 'baixa'
     if (nObs < C.MIN_OBS_DEMANDA) conf = Math.min(conf, C.CONF_BAIXA * 0.9);
-    const rec = INV.recomendar({ previsto: prev, q10, q90, conf, unidade, estoque });
+    const rec = INV.recomendar({ previsto: prev, q10, q90, conf, unidade, estoque, nivelServico });
     resultado[nome] = {
       dias: dias.length, previsto: S.arred(prev, 2), q10: S.arred(q10, 2), q90: S.arred(q90, 2), conf: S.arred(conf, 3),
       intervalo: it.tipo, nRes: it.nRes, nObs, componentes: Object.fromEntries(Object.entries(cf.componentes).map(([k, v]) => [k, S.arred(v, 2)])),
       td: S.arred(S.sum(ds.map((x) => x.td)), 2), bu: ds.every((x) => x.bu != null) ? S.arred(S.sum(ds.map((x) => x.bu)), 2) : null,
       fator: S.arred(fatMed, 3), recomendacao: rec,
-      _exp: dias.length === 1 ? { mesmos: ds[0].nu.mesmos, E1: S.arred(ds[0].nu.E1, 2), E2: S.arred(ds[0].nu.E2, 2), ev: ds[0].ev, ms: ds[0].ms } : null,
+      _exp: dias.length === 1 ? { mesmos: ds[0].nu.mesmos, E1: S.arred(ds[0].nu.E1, 2), E2: S.arred(ds[0].nu.E2, 2), ev: ds[0].ev, ms: ds[0].ms, intermitente: !!ds[0].nu.intermitente, faltas: serie.filter((o) => o.yObs != null && o.dia > hoje - 1 - C.JANELA_NIVEL).length } : null,
     };
   }
   return { horizontes: resultado, tendencia: tend, wape: S.arred(wape), nSerie: serie.length, residuos: wf.length };
@@ -221,10 +276,12 @@ function explicarDemanda(nome, h, tend, wBU, un, dowNome, clientesTop) {
   if (e && e.ms && e.ms.confiavel) m.push(`Efeito do mês: ×${S.arred(e.ms.fator, 2)}`);
   if (h.bu != null && wBU > 0) m.push(`Combina histórico agregado (${Math.round((1 - wBU) * 100)}%) com clientes recorrentes esperados (${Math.round(wBU * 100)}%): ${h.bu} ${un}`);
   if (clientesTop && clientesTop.length) m.push(`Clientes que mais puxam: ${clientesTop.join(', ')}`);
+  if (e && e.intermitente) m.push('Produto que passa dias sem vender: previsão suavizada (chance de vender × tamanho da venda)');
+  if (e && e.faltas) m.push(`Faltou em ${e.faltas} dia(s) recente(s): a previsão considera a procura que não foi atendida`);
   if (h.intervalo === 'poisson') m.push('Histórico curto: incerteza estimada por modelo de contagem, não pelos seus erros passados');
   if (h.nObs < 3) m.push(`Apenas ${h.nObs} observação(ões) deste dia — previsão de baixa confiança`);
   return m;
 }
 
-module.exports = { montarSerie, nucleo, walkForward, tendencia, intervalo, horizontes, modelosClientes, bottomUpDia, pesosMetodos, preverSerie, explicarDemanda };
+module.exports = { montarSerie, descensurar, tsb, adi, nucleo, walkForward, tendencia, intervalo, horizontes, modelosClientes, bottomUpDia, pesosMetodos, preverSerie, explicarDemanda };
 

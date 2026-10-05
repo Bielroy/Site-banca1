@@ -11,6 +11,7 @@
 //  As regras de cálculo ficam em ./fechamento-lib.js (testadas).
 // =====================================================================
 import { db, collection, doc, getDoc, getDocs, setDoc, query, where } from './firebase.js';
+import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { escapeHTML, showToast, customConfirm } from './utils.js';
 import { nomeDaCategoria } from './admin-categorias.js';
 import {
@@ -26,7 +27,7 @@ const S = {
 const timers = new Map();
 const el = () => document.getElementById('fechamento-conteudo');
 const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-const ref = (dia) => doc(db, 'fechamentos', dia);
+const ref = (dia) => tdoc('fechamentos', dia);
 
 // ------------------------------------------------------------ dados
 async function carregarDia(dia) {
@@ -36,8 +37,8 @@ async function carregarDia(dia) {
     try {
         const [snapDia, snapSemana, snapHist] = await Promise.all([
             getDoc(ref(dia)),
-            getDocs(query(collection(db, 'fechamentos'), where('dia', '>=', d0), where('dia', '<=', d6))),
-            getDocs(query(collection(db, 'fechamentos'), where('dia', '>=', addDias(dia, -56)), where('dia', '<', dia))),
+            getDocs(query(tcol('fechamentos'), where('dia', '>=', d0), where('dia', '<=', d6))),
+            getDocs(query(tcol('fechamentos'), where('dia', '>=', addDias(dia, -56)), where('dia', '<', dia))),
         ]);
         if (minha !== S.carga) return;                       // a pessoa já trocou de dia
         S.itens = snapDia.exists() ? (snapDia.data().itens || {}) : {};
@@ -129,7 +130,7 @@ const textoLista = () => gerarListaCeasa({
     paraDia: proximoDiaAberto(S.dia, S.diasAbertos),
 });
 
-async function copiar(aviso = '📋 Lista copiada!') {
+async function copiar(aviso = 'Lista copiada!') {
     const { texto } = textoLista();
     try { await navigator.clipboard.writeText(texto); showToast(aviso); return true; }
     catch (e) {
@@ -148,11 +149,11 @@ async function compartilhar() {
     }
     // Sem o menu de compartilhar: abre o WhatsApp direto (o toque ainda vale aqui)
     const w = window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
-    if (!w) copiar('📋 Lista copiada. Agora é só colar no WhatsApp.');
+    if (!w) copiar('Lista copiada. Agora é só colar no WhatsApp.');
 }
 
 // ------------------------------------------------------------ tela
-const rotuloEstado = () => ({ salvando: 'Salvando…', salvo: '✓ Salvo', erro: '⚠️ Não salvou', 'erro-leitura': '⚠️ Não consegui ler este dia' }[S.estado] || '');
+const rotuloEstado = () => ({ salvando: 'Salvando…', salvo: '✓ Salvo', erro: 'Não salvou', 'erro-leitura': 'Não consegui ler este dia' }[S.estado] || '');
 
 function htmlLinha(p) {
     const v = S.itens[p.id] || {};
@@ -173,7 +174,7 @@ function htmlLinha(p) {
 }
 
 function htmlLista() {
-    if (S.estado === 'erro-leitura') return `<div class="fc-erro"><p>⚠️ Não consegui abrir este dia.</p><small>Sem ler o que já foi salvo, marcar agora poderia apagar anotações. Confira a internet e tente de novo.</small><button type="button" data-fc="recarregar">Tentar de novo</button></div>`;
+    if (S.estado === 'erro-leitura') return `<div class="fc-erro"><p><i class="ic" data-i="alerta"></i> Não consegui abrir este dia.</p><small>Sem ler o que já foi salvo, marcar agora poderia apagar anotações. Confira a internet e tente de novo.</small><button type="button" data-fc="recarregar">Tentar de novo</button></div>`;
     const termo = norm(S.busca);
     let lista = ordenarProdutos(S.produtos).filter((p) => !termo || norm(p.nome).includes(termo) || norm(p.cat).includes(termo));
     if (S.soFaltam) lista = lista.filter((p) => !S.itens[p.id] || S.itens[p.id].tem == null);
@@ -202,14 +203,14 @@ function htmlListaCeasa() {
     const r = textoLista();
     const bloco = (titulo, grupos, comObs) => grupos.length ? `<h5>${titulo}</h5>` + grupos.map((g) => `<p class="fc-l-cat">${escapeHTML(g.cat)}</p><ul>${g.itens.map((i) => `<li>${escapeHTML(i.nome)}${comObs ? ` <em>— ${escapeHTML(i.obs)}</em>` : ''}${i.naoMarcado ? ' <em>(não conferido)</em>' : ''}</li>`).join('')}</ul>`).join('') : '';
     return `<section class="fc-ceasa" id="fc-ceasa">
-        <h4>🛒 Lista da Ceasa — ${escapeHTML(dataLonga(proximoDiaAberto(S.dia, S.diasAbertos)))}</h4>
+        <h4><i class="ic" data-i="sacola"></i> Lista da Ceasa — ${escapeHTML(dataLonga(proximoDiaAberto(S.dia, S.diasAbertos)))}</h4>
         <small>Baseada no fechamento de ${escapeHTML(dataLonga(S.dia))}</small>
         ${bloco(`Comprar (${r.comprar.length})`, r.grupos, false) || '<p class="fc-vazio">Nada marcado como "Não tem" neste dia.</p>'}
         ${bloco(`Já tenho — conferir antes de comprar (${r.jaTenho.length})`, r.gruposJaTenho, true)}
-        ${r.naoMarcados && !S.incluirNaoMarcados ? `<p class="fc-aviso">⚠️ ${r.naoMarcados} produto(s) sem marcação ficaram de fora.</p>` : ''}
+        ${r.naoMarcados && !S.incluirNaoMarcados ? `<p class="fc-aviso"><i class="ic" data-i="alerta"></i> ${r.naoMarcados} produto(s) sem marcação ficaram de fora.</p>` : ''}
         <label class="fc-check"><input type="checkbox" id="fc-incluir" ${S.incluirNaoMarcados ? 'checked' : ''}> Incluir produtos sem marcação na lista</label>
         <textarea id="fc-texto" class="fc-texto" readonly rows="6" aria-label="Texto da lista">${escapeHTML(r.texto)}</textarea>
-        <div class="fc-acoes"><button type="button" data-fc="copiar">📋 Copiar</button><button type="button" data-fc="compartilhar">📤 Enviar / Compartilhar</button></div>
+        <div class="fc-acoes"><button type="button" data-fc="copiar"><i class="ic" data-i="prancheta"></i> Copiar</button><button type="button" data-fc="compartilhar"><i class="ic" data-i="enviar"></i> Enviar / Compartilhar</button></div>
     </section>`;
 }
 
@@ -236,7 +237,7 @@ function render() {
 
         <div id="fc-lista" class="${S.carregando ? 'fc-carregando' : ''}">${htmlLista()}</div>
 
-        <div class="fc-barra"><button type="button" class="btn-salvar-config" data-fc="gerar">🛒 ${S.listaAberta ? 'Atualizar' : 'Gerar'} lista da Ceasa</button></div>
+        <div class="fc-barra"><button type="button" class="btn-salvar-config" data-fc="gerar"><i class="ic" data-i="sacola"></i> ${S.listaAberta ? 'Atualizar' : 'Gerar'} lista da Ceasa</button></div>
         ${S.listaAberta ? htmlListaCeasa() : ''}`;
 }
 
@@ -305,7 +306,7 @@ export const abrirFechamento = async (produtos) => {
     S.produtos = (produtos || []).map((p) => ({ id: p.id, nome: p.nome || p.id, cat: nomeDaCategoria(p.cat) || 'outros', ativo: p.ativo }));
     ligar();
     if (S.diasAbertos === null) {
-        try { const c = await getDoc(doc(db, 'loja', 'config')); S.diasAbertos = c.exists() ? (c.data().diasAbertos || []) : []; }
+        try { const c = await getDoc(tdoc('loja', 'config')); S.diasAbertos = c.exists() ? (c.data().diasAbertos || []) : []; }
         catch (e) { S.diasAbertos = []; }
     }
     render();

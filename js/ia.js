@@ -1,4 +1,5 @@
 import { escapeHTML, showToast, isFracionavel } from './utils.js';
+import { ICO } from './icones.js';
 
 export const initIA = (STATE) => {
     const inputMsg = document.getElementById('input-ia-mensagem');
@@ -9,7 +10,7 @@ export const initIA = (STATE) => {
     if (inputMsg && !document.getElementById('btn-ia-camera')) {
         inputMsg.insertAdjacentHTML('beforebegin', `
             <input type="file" id="ia-vision-upload" accept="image/*" style="display: none;">
-            <button type="button" id="btn-ia-camera" title="Enviar foto do que procura" aria-label="Enviar foto">📷</button>
+            <button type="button" id="btn-ia-camera" title="Enviar foto do que procura" aria-label="Enviar foto">${ICO.camera}</button>
         `);
     }
 
@@ -51,7 +52,7 @@ export const initIA = (STATE) => {
             if (!pronta) return showToast('Não consegui ler essa imagem.', true);
             base64Image = pronta.data;
             mimeTypeImage = pronta.mimeType;
-            showToast('📸 Imagem anexada!');
+            showToast('Foto anexada');
             btnCamera.style.color = 'var(--forest)';
         });
     }
@@ -151,7 +152,7 @@ export const initIA = (STATE) => {
 
         if (!repetindo) {
             corpoChat.insertAdjacentHTML('beforeend', `
-                <div class="ia-msg ia-msg--eu">${anexo ? '📸 [Imagem anexada]<br>' : ''}${escapeHTML(texto)}</div>
+                <div class="ia-msg ia-msg--eu">${anexo ? '[Foto anexada]<br>' : ''}${escapeHTML(texto)}</div>
             `);
             STATE.historicoChat.push({ role: 'user', content: texto + (anexo ? ' [Enviou uma imagem]' : '') });
         }
@@ -166,7 +167,7 @@ export const initIA = (STATE) => {
         const idBolha = 'msg-' + Date.now();
         corpoChat.insertAdjacentHTML('beforeend', `
             <div id="${idBolha}" class="ia-msg ia-msg--bot">
-                <span class="ia-digitando" aria-label="Pensando"><span>🍅</span><span>🥕</span><span>🧅</span></span>
+                <span class="ia-digitando" aria-label="Pensando"><span></span><span></span><span></span></span>
             </div>
         `);
         corpoChat.scrollTop = corpoChat.scrollHeight;
@@ -259,8 +260,8 @@ export const initIA = (STATE) => {
             // Sobrecarga da IA é passageira: oferece repetir sem redigitar.
             const passageiro = err.podeRepetir === true;
             bolhaEl.innerHTML = `
-                <div class="ia-msg--erro ${passageiro ? '' : 'fatal'}">${passageiro ? '⏳' : '🚨'} ${escapeHTML(err.message)}</div>
-                ${passageiro ? '<button type="button" class="ia-tentar btn-repetir-ia">🔄 Tentar de novo</button>' : ''}`;
+                <div class="ia-msg--erro ${passageiro ? '' : 'fatal'}">${escapeHTML(err.message)}</div>
+                ${passageiro ? '<button type="button" class="ia-tentar btn-repetir-ia">Tentar de novo</button>' : ''}`;
             const btnRepetir = bolhaEl.querySelector('.btn-repetir-ia');
             if (btnRepetir) {
                 btnRepetir.addEventListener('click', () => {

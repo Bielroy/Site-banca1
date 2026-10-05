@@ -106,3 +106,10 @@
 .form-group-estoque { background: var(--warm-white); padding: 12px; border-radius: 8px; border: 1px dashed var(--mint); margin-top: 12px; }
 .form-group-estoque label { color: var(--forest); }
 .form-group-estoque input { font-family: 'Fraunces', serif; font-size: 1.2rem; color: var(--forest); font-weight: bold; }
+
+/* Condomínios atendidos (aba Operacional) */
+.cond-linha { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+.cond-linha .cond-nome { flex: 1; min-width: 0; }
+.cond-linha .cond-formato { flex: 0 0 150px; }
+.cond-linha .cond-remover { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid #e0dcd4; background: #fff; color: var(--danger); font-size: 1.3rem; cursor: pointer; }
+@media (max-width: 600px) { .cond-linha { flex-wrap: wrap; } .cond-linha .cond-nome { flex-basis: 100%; } .cond-linha .cond-formato { flex: 1; } }

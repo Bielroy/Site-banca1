@@ -29,19 +29,37 @@ function metricas(pares) {
     vies: r(sum(err) / n),
     mape: nz.length ? r(sum(nz.map((p) => Math.abs(p.previsto - p.real) / p.real)) / nz.length) : null, mapeN: nz.length,
     cobertura: comInt.length ? r(comInt.filter((p) => p.real >= p.q10 && p.real <= p.q90).length / comInt.length) : null,
+    // PINBALL: erro da FAIXA (10%, 50%, 90%), não só do número central. Menor = melhor.
+    pinball: comInt.length ? r(sum(comInt.map((p) => (pinball(p.real, p.q10, 0.1) + pinball(p.real, p.previsto, 0.5) + pinball(p.real, p.q90, 0.9)) / 3)) / comInt.length) : null,
+    // MASE: erro do motor ÷ erro de "repetir a mesma venda de 7 dias atrás". Abaixo de 1 = o motor ganhou.
+    mase: (() => {
+      const c = v.filter((p) => Number.isFinite(p.ingenuo)); if (!c.length) return null;
+      const base = sum(c.map((p) => Math.abs(p.ingenuo - p.real)));
+      return base > 0 ? r(sum(c.map((p) => Math.abs(p.previsto - p.real))) / base) : null;
+    })(),
   };
 }
+const pinball = (real, q, tau) => (real >= q ? tau * (real - q) : (1 - tau) * (q - real));
 
 /** snapshot: {diaAlvo, itens:{pid:{previsto,q10,q90}}}  ×  realizado: Map(pid → qtd) */
-function avaliarSnapshot(snapshot, realizadoPorProduto) {
+/**
+ * opcoes.ingenuo  Map(pid → venda de 7 dias antes)  → permite o MASE
+ * opcoes.faltou   Set(pid) que ACABARAM no dia      → ficam fora das métricas:
+ *                 a venda registrada não mostra a procura real, e contar o dia
+ *                 "puniria" o motor por prever o que de fato teria sido vendido.
+ */
+function avaliarSnapshot(snapshot, realizadoPorProduto, opcoes = {}) {
   const pares = [], porProduto = {};
+  let comFalta = 0;
   for (const [pid, it] of Object.entries(snapshot.itens || {})) {
     const real = realizadoPorProduto.get(pid) || 0;
-    pares.push({ previsto: it.previsto, real, q10: it.q10, q90: it.q90 });
-    porProduto[pid] = { previsto: it.previsto, real: r(real), erro: r(it.previsto - real) };
+    const faltou = !!(opcoes.faltou && opcoes.faltou.has(pid));
+    porProduto[pid] = { previsto: it.previsto, real: r(real), erro: r(it.previsto - real), ...(faltou ? { faltou: true } : {}) };
+    if (faltou) { comFalta++; continue; }
+    pares.push({ previsto: it.previsto, real, q10: it.q10, q90: it.q90, ingenuo: opcoes.ingenuo ? (opcoes.ingenuo.get(pid) || 0) : undefined });
   }
-  return { diaAlvo: snapshot.diaAlvo, ...metricas(pares), porProduto };
+  return { diaAlvo: snapshot.diaAlvo, ...metricas(pares), comFalta, porProduto };
 }
 
-module.exports = { metricas, avaliarSnapshot };
+module.exports = { metricas, avaliarSnapshot, pinball };
 

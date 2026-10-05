@@ -71,18 +71,24 @@ function iniciarFirebase() {
   return true;
 }
 
+const T = require('../lib/tenant');
+const Copiloto = require('../lib/copiloto');
+const contextos = new Map();     // resumo dos dados de cada loja, por poucos minutos
+
 // O catálogo muda pouco; relê no máximo a cada 5 min para não pesar.
-let catalogoCache = { em: 0, lista: [] };
-async function lerCatalogo() {
+// Um catálogo guardado POR LOJA: a IA de uma loja nunca vê produto de outra.
+const catalogos = new Map();
+async function lerCatalogo(tid = T.TENANT_PADRAO) {
+  let catalogoCache = catalogos.get(tid) || { em: 0, lista: [] };
   if (Date.now() - catalogoCache.em < 5 * 60 * 1000) return catalogoCache.lista;
   try {
     if (!iniciarFirebase()) return [];      // dentro do try: chave mal formatada não derruba o chat
-    const snap = await admin.firestore().collection('produtos').get();
+    const snap = await T.tcol(admin.firestore(), tid, 'produtos').get();
     // Categorias ocultas no painel não podem ser sugeridas pela IA
     const semAcento = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
     let ocultas = new Set();
     try {
-      const cs = await admin.firestore().collection('categorias').get();
+      const cs = await T.tcol(admin.firestore(), tid, 'categorias').get();
       ocultas = new Set(cs.docs.map(d => d.data()).filter(c => c.visivel === false).map(c => semAcento(c.chave)));
     } catch (e) { /* sem categorias cadastradas: segue normal */ }
     catalogoCache = {
@@ -90,9 +96,10 @@ async function lerCatalogo() {
       lista: snap.docs
         .map(d => Object.assign({ id: d.id }, d.data()))
         // mesmo critério da vitrine (ativo verdadeiro): o que a loja não mostra, a IA não sugere
-        .filter(p => p.ativo && p.nome && !ocultas.has(semAcento(p.cat)))
+        .filter(p => p.ativo && !p.soInsumo && p.nome && !ocultas.has(semAcento(p.cat)))
         .map(p => ({ id: p.id, nome: p.nome, cat: p.cat, preco: p.preco, unidade: p.unidade }))
     };
+    catalogos.set(tid, catalogoCache);
   } catch (e) {
     console.error('[assistente] catalogo:', e.message);
   }
@@ -384,7 +391,7 @@ const aplicarCors = (req, res, metodos) => {
   // Sem o Vary, um proxy poderia servir a resposta de um domínio para outro.
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', metodos || 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Loja');
 };
 
 module.exports = async function handler(req, res) {
@@ -445,17 +452,43 @@ module.exports = async function handler(req, res) {
       return res.status(429).json({ sucesso: false, error: 'Muitas mensagens seguidas. Aguarde um instante.' });
     }
 
+    // Loja do chat. Fora da loja original, o Ajudante só responde se o módulo estiver ligado na ficha.
+    let tidChat = T.TENANT_PADRAO;
+    const semChat = (codigo, msg) => res.status(codigo).json({ sucesso: false, error: msg });
+    try {
+      if (iniciarFirebase()) {
+        const loja = await T.resolverLoja(admin.firestore(), req); tidChat = loja.tid;
+        if (tidChat !== T.TENANT_PADRAO && !(loja.ficha.modulos && loja.ficha.modulos.ia === true)) return semChat(403, 'O ajudante não está ligado nesta loja.');
+        // Teto diário por loja: o chat é aberto ao público, então alguém mal-intencionado poderia gastar a cota da IA.
+        const teto = Number(process.env.CHAT_LIMITE_DIA) || 1500, dia = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+        const usoRef = T.docDe(admin.firestore(), tidChat, `uso_ia/${dia}`);
+        const ok = await admin.firestore().runTransaction(async (t) => {
+          const s = await t.get(usoRef), n = (s.exists && Number(s.data().chat)) || 0;
+          if (n >= teto) return false;
+          t.set(usoRef, { chat: n + 1, dia }, { merge: true }); return true;
+        });
+        if (!ok) return semChat(429, 'O ajudante atingiu o limite de hoje. Chame a loja pelo WhatsApp.');
+      }
+    } catch (e) {
+      if (e.status) return semChat(e.status, e.message);       // loja inexistente ou bloqueada
+      console.warn('[assistente] sem controle de uso:', e && e.message);   // falha do contador não derruba o chat
+    }
+    // Entradas com tamanho limitado: texto de até 600 letras e foto de até ~1,5 MB em formato comum.
+    const img = corpoReq.imagem && typeof corpoReq.imagem === 'object' ? corpoReq.imagem : null;
+    if (img && (typeof img.data !== 'string' || img.data.length > 2000000 || !/^image\/(jpeg|png|webp)$/.test(String(img.mimeType || 'image/jpeg')))) return semChat(400, 'Envie uma foto menor (JPG ou PNG).');
+    const mensagemLimpa = String(corpoReq.mensagemCliente || '').slice(0, 600);
+
     let upstream;
     try {
-      const catalogo = await lerCatalogo();
+      const catalogo = await lerCatalogo(tidChat);
       const corpo = montarCorpo({
         prompt: promptDoChat({
-          mensagem: corpoReq.mensagemCliente,
-          carrinho: corpoReq.carrinho,
+          mensagem: mensagemLimpa,
+          carrinho: Array.isArray(corpoReq.carrinho) ? corpoReq.carrinho.slice(0, 60) : [],
           catalogo: catalogo
         }),
         historico: corpoReq.historico,
-        imagem: corpoReq.imagem,
+        imagem: img,
         temperatura: 0.7
       });
       upstream = await comFallback(corpo, true);
@@ -513,10 +546,74 @@ module.exports = async function handler(req, res) {
   }
 
   // =================================================================
+  // COPILOTO DO PAINEL — perguntas sobre os dados DA PRÓPRIA LOJA
+  // Só proprietário e administrador (são dados financeiros). A loja vem do
+  // cabeçalho, a permissão vem do login, e os dados são lidos com o banco
+  // limitado a essa loja: não existe caminho para ver dados de outra.
+  // =================================================================
+  if (action === 'copiloto') {
+    let dec, tid, ficha;
+    try {
+      if (!iniciarFirebase()) throw new Error('config');
+      const cab = String((req.headers && req.headers.authorization) || '');
+      dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '');
+    } catch (e) { return res.status(401).json({ sucesso: false, error: 'Entre no painel de novo para usar o copiloto.' }); }
+    const banco = admin.firestore();
+    try { ({ tid, ficha } = await T.resolverLoja(banco, req)); }
+    catch (e) { return res.status(e.status || 400).json({ sucesso: false, error: e.message }); }
+    if (!T.moduloAtivo(ficha, 'copiloto')) return res.status(403).json({ sucesso: false, error: 'O copiloto não está ligado nesta loja.' });
+    if (!T.temPapel(dec, tid, T.GESTORES)) return res.status(403).json({ sucesso: false, error: 'O copiloto é só para o proprietário e administradores desta loja.' });
+
+    const pergunta = String(corpoReq.pergunta || '').replace(/\s+/g, ' ').trim();
+    if (pergunta.length < 3 || pergunta.length > 500) return res.status(400).json({ sucesso: false, error: 'Escreva a pergunta (até 500 letras).' });
+    if (passouDoLimite('cop:' + dec.uid, 8)) return res.status(429).json({ sucesso: false, error: 'Muitas perguntas seguidas. Aguarde um minuto.', podeRepetir: true });
+
+    try {
+      // Teto diário por loja: protege a conta da IA de uso descontrolado.
+      const teto = Number(process.env.COPILOTO_LIMITE_DIA) || 150, dia = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+      const usoRef = T.docDe(banco, tid, `uso_ia/${dia}`);
+      const usados = await banco.runTransaction(async (t) => {
+        const s = await t.get(usoRef), n = (s.exists && Number(s.data().copiloto)) || 0;
+        if (n >= teto) return -1;
+        t.set(usoRef, { copiloto: n + 1, dia }, { merge: true }); return n + 1;
+      });
+      if (usados < 0) return res.status(429).json({ sucesso: false, error: 'O limite de perguntas de hoje foi atingido. Volta amanhã.' });
+
+      // os dados da loja ficam 3 minutos em memória: várias perguntas seguidas não releem o banco
+      let ctx = contextos.get(tid);
+      if (!ctx || Date.now() - ctx.em > 180000) {
+        const dados = await Copiloto.lerDados(T.escopo(banco, tid), { campoId: admin.firestore.FieldPath.documentId() });
+        ctx = { em: Date.now(), resumo: Copiloto.resumir({ loja: (ficha && ficha.nome) || (tid === T.TENANT_PADRAO ? 'Banca Adair e Pedrina' : tid), ...dados }) };
+        contextos.set(tid, ctx);
+      }
+      const prompt = `${Copiloto.INSTRUCOES(ctx.resumo.loja, `${ctx.resumo.diaDaSemana}, ${ctx.resumo.hoje}`)}\n\nDADOS (JSON):\n${JSON.stringify(ctx.resumo)}\n\nPERGUNTA: ${pergunta}`;
+      const historico = (Array.isArray(corpoReq.historico) ? corpoReq.historico : []).slice(-6)
+        .map((h) => ({ role: h && h.role === 'ia' ? 'ia' : 'user', content: String((h && h.content) || '').slice(0, 800) }));
+      const resposta = await textoUnico(prompt, { historico, temperatura: 0.2 });
+      return res.status(200).json({ sucesso: true, resposta, dadosDe: ctx.resumo.previsaoCalculadaEm, avisos: ctx.resumo.avisos });
+    } catch (e) {
+      console.error('[copiloto]', e);
+      const sobrecarga = TRANSITORIO.indexOf(e.status) !== -1;
+      return res.status(sobrecarga ? 503 : 500).json({ sucesso: false, error: mensagemAmigavel(e), podeRepetir: sobrecarga });
+    }
+  }
+
+  // =================================================================
   // AÇÕES DO ADMIN — resposta JSON comum
   // =================================================================
   const montar = PROMPTS[action];
   if (!montar) return res.status(400).json({ sucesso: false, error: 'Ação desconhecida: ' + action });
+
+  // Só a equipe da loja usa estas ações (antes qualquer visitante podia chamá-las e gastar a cota da IA).
+  try {
+    if (!iniciarFirebase()) throw new Error('config');
+    const cab = String((req.headers && req.headers.authorization) || '');
+    const dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '');
+    const tidAdm = T.tenantDaRequisicao(req);
+    if (!tidAdm || !T.temPapel(dec, tidAdm, T.PAPEIS)) return res.status(403).json({ sucesso: false, error: 'Acesso restrito à equipe da loja.' });
+  } catch (e) {
+    return res.status(401).json({ sucesso: false, error: 'Entre no painel de novo para usar a IA.' });
+  }
 
   // Estas ações também gastam a cota da IA: mesmo freio por IP do chat
   const ipAdmin = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'anon';

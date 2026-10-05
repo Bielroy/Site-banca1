@@ -147,8 +147,10 @@ function modelarCliente(cli, G, hoje, produtos) {
     .map(([k, c]) => { const [a, b] = k.split('\u0001'); return { a, b, n: c }; });   // objetos: Firestore não aceita arrays aninhados
 
   return {
-    id: cli.id, nome: cli.nome, quadra: cli.quadra, lote: cli.lote, uids: [...cli.uids],
+    id: cli.id, nome: cli.nome, condominio: cli.condominio || '', formatoEndereco: cli.formatoEndereco || 'ql', quadra: cli.quadra, lote: cli.lote, uids: [...cli.uids],
     nVisitas: n, nivel: nivelHistorico(n),
+    nPedidos: cli.nPedidos || n, gasto: S.arred(cli.gasto || 0, 2), ticket: cli.nPedidos ? S.arred((cli.gasto || 0) / cli.nPedidos, 2) : null,
+    telefone: cli.telefone || '', aceitaOfertas: cli.aceitaOfertas === true,
     primeiroDia: dias[0], ultimoDia: dias[n - 1], penultimoDia: n > 1 ? dias[n - 2] : null,
     nuMed, nuMedia: ints.length ? S.arred(S.mean(ints), 2) : null, nuDp: ints.length >= 2 ? S.arred(S.stdev(ints), 2) : null,
     freqSemanal: ints.length ? S.arred(7 / S.mean(ints), 2) : null,

@@ -1,0 +1,19 @@
+rules_version = '2';
+// Fotos de produto. Qualquer pessoa vê; só a equipe da loja envia, e só imagem de até 2 MB
+// (o painel já reduz a foto antes de enviar). Compare com as regras atuais do console antes de publicar.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function plataforma() { return request.auth != null && request.auth.token.plataforma == true; }
+    function papel(tid) { return request.auth != null ? request.auth.token.get('tenants', {}).get(tid, '') : ''; }
+    function imagemPequena() { return request.resource.size < 2 * 1024 * 1024 && request.resource.contentType.matches('image/.*'); }
+
+    match /fotos_produtos/{arquivo} {                       // loja original
+      allow read: if true;
+      allow write: if imagemPequena() && (plataforma() || request.auth.token.admin == true || papel('banca') in ['proprietario', 'administrador', 'estoque']);
+    }
+    match /tenants/{tid}/fotos_produtos/{arquivo} {         // demais lojas
+      allow read: if true;
+      allow write: if imagemPequena() && (plataforma() || papel(tid) in ['proprietario', 'administrador', 'estoque', 'producao']);
+    }
+  }
+}

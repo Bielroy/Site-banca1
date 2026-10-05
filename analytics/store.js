@@ -50,27 +50,36 @@ async function lerLoteadoEscrita(db, ops) {   // ops: [{tipo:'set'|'update'|'del
 // ---------------------------------------------------------------------
 //  ENTRADAS
 // ---------------------------------------------------------------------
+const { paraMotor } = require('../lib/calendario');
 async function carregarEntradas(db, { janelaDias } = {}) {
-  const [cfgP, evP, cfgLoja] = await Promise.all([db.doc('analytics_config/params').get(), db.doc('analytics_config/eventos').get(), db.doc('loja/config').get()]);
+  const [cfgP, evP, cfgLoja, calSnap] = await Promise.all([db.doc('analytics_config/params').get(), db.doc('analytics_config/eventos').get(), db.doc('loja/config').get(),
+    db.collection('calendario').get().catch(() => ({ docs: [] }))]);          // calendário operacional (aba Calendário do painel)
   const parametros = cfgP.exists ? cfgP.data() : {};
-  const eventos = evP.exists ? (evP.data().lista || []) : [];
+  // Eventos que mexem na procura: os antigos (analytics_config/eventos) + promoções, eventos, feriados locais
+  // e datas especiais do calendário. O motor só usa um efeito depois de ver o mesmo nome 2 vezes.
+  const hojeCal = diaDeTs(Date.now());
+  const doCalendario = paraMotor(calSnap.docs.map((d) => d.data()), isoDeDia(hojeCal - C.JANELA_LONGA_DIAS), isoDeDia(hojeCal + 45));
+  const eventos = (evP.exists ? (evP.data().lista || []) : []).concat(doCalendario);
   const dias = Math.min(Math.max(Number(janelaDias) || Number(parametros.JANELA_DIAS) || JANELA_PADRAO, 14), 900);
 
   const agora = Date.now(), hoje = diaDeTs(agora);
   // início do 1º dia da janela em horário de Brasília → ISO UTC
   const desde = new Date((hoje - dias) * 86400000 - C.TZ_OFFSET_HORAS * 3600000).toISOString();
 
-  const [pedSnap, prodSnap, aggSnap, snapSnap] = await Promise.all([
+  const [pedSnap, prodSnap, aggSnap, snapSnap, fechSnap] = await Promise.all([
     db.collection('pedidos').where('data', '>=', desde).orderBy('data', 'asc').limit(C.MAX_PEDIDOS).get(),
     db.collection('produtos').get(),
     db.collection('analytics_vendas').where(admin.firestore.FieldPath.documentId(), '>=', isoDeDia(hoje - C.JANELA_LONGA_DIAS)).get(),
     db.collection('analytics_snapshots').where('avaliado', '==', false).get(),
+    // Fechamento da feira: dias em que cada produto acabou. Se a leitura falhar, o motor segue sem essa correção.
+    db.collection('fechamentos').where('dia', '>=', isoDeDia(hoje - C.JANELA_LONGA_DIAS)).get().catch(() => ({ docs: [] })),
   ]);
   return {
     pedidos: pedSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
     catalogo: prodSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
     agregados: aggSnap.docs.map((d) => ({ dia: d.id, ...d.data() })),
     snapshots: snapSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    fechamentos: fechSnap.docs.map((d) => ({ dia: d.data().dia || d.id, itens: d.data().itens || {} })),
     parametros: { ...parametros, JANELA_DIAS: dias }, eventos,
     diasAbertos: cfgLoja.exists ? cfgLoja.data().diasAbertos : undefined,
     truncado: pedSnap.size >= C.MAX_PEDIDOS, agora,
@@ -149,12 +158,17 @@ async function recalcular(db, { janelaDias, forcar } = {}) {
 // ---------------------------------------------------------------------
 //  LEITURA (API)
 // ---------------------------------------------------------------------
-let _gCache = { ts: 0, v: null };
+// `db` pode ser o banco inteiro (loja original) ou um banco com escopo de UMA loja
+// (lib/tenant.js → escopo). O que fica guardado em memória é separado por loja.
+const _gCaches = new Map();
 async function lerGlobal(db) {
-  if (_gCache.v && Date.now() - _gCache.ts < C.RECALC_INTERVALO_MS) return _gCache.v;
+  const k = db._tenant || 'banca';
+  const c = _gCaches.get(k);
+  if (c && c.v && Date.now() - c.ts < C.RECALC_INTERVALO_MS) return c.v;
   const s = await db.doc('analytics_global/atual').get();
-  _gCache = { ts: Date.now(), v: s.exists ? s.data() : null };
-  return _gCache.v;
+  const novo = { ts: Date.now(), v: s.exists ? s.data() : null };
+  _gCaches.set(k, novo);
+  return novo.v;
 }
 async function lerClientePorUid(db, uid) {
   const m = await db.doc(`analytics_uid/${uid}`).get();

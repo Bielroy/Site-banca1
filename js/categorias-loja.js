@@ -12,13 +12,14 @@
 //    visivel = false esconde a aba E os produtos dela
 // =====================================================================
 import { db, collection, onSnapshot } from './firebase.js';
+import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 
 const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
 let categorias = [];
 
 export const iniciarCategorias = (aoMudar) => onSnapshot(
-    collection(db, 'categorias'),
+    tcol('categorias'),
     (snap) => {
         categorias = snap.docs
             .map((d) => ({ id: d.id, ...d.data() }))

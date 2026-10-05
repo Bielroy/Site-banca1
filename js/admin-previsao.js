@@ -5,6 +5,7 @@
 // =====================================================================
 import { auth } from './firebase.js';
 import { escapeHTML, fmt, showToast } from './utils.js';
+import { linhaEndereco } from './endereco.js';
 
 const CONF_BAIXA = 0.4, CONF_ALTA = 0.7;      // mesmos limiares de analytics/config.js
 const HORIZONTES = [
@@ -52,7 +53,7 @@ const barraFaixa = (h, un) => {
             ${est != null ? `<i class="pv-mk pv-mk-est" style="left:${p(est)}%" title="Seu estoque"></i>` : ''}
         </div>
         <div class="pv-legenda">
-            <span>🔴 &lt; ${f(h.q10)}</span><span>🟡 ${f(h.q10)}–${f(h.previsto)}</span><span>🟢 ${f(h.previsto)}–${f(h.q90)}</span><span>🔵 &gt; ${f(h.q90)}</span>
+            <span><i class="pt" style="background:#c0392b"></i> &lt; ${f(h.q10)}</span><span><i class="pt" style="background:#d4a017"></i> ${f(h.q10)}–${f(h.previsto)}</span><span><i class="pt" style="background:#2f7a4f"></i> ${f(h.previsto)}–${f(h.q90)}</span><span><i class="pt" style="background:#2c6fb3"></i> &gt; ${f(h.q90)}</span>
         </div>
         <div class="pv-leg-mk"><span>▲ previsto</span><span>◆ compra sugerida</span>${est != null ? '<span>▮ seu estoque</span>' : ''}</div>
     </div>`;
@@ -66,7 +67,7 @@ const cartaoProduto = (p, hz) => {
     if (h.semDados) return `<article class="pv-card pv-card--vazio"><div class="pv-topo">${cab}</div><p class="pv-aviso">Dados insuficientes (${h.nObs || 0} dia(s) de histórico) — ainda não dá para prever.</p></article>`;
 
     const rec = h.recomendacao || {};
-    const avisos = (rec.avisos || []).map((a) => `<p class="pv-aviso">⚠️ ${escapeHTML(a)}</p>`).join('');
+    const avisos = (rec.avisos || []).map((a) => `<p class="pv-aviso"><i class="ic" data-i="alerta"></i> ${escapeHTML(a)}</p>`).join('');
     const est = rec.estoque
         ? `<p class="pv-est pv-est--${rec.estoque.zona}">Seu estoque: <b>${num(rec.estoque.atual)}</b> → risco de falta <b>${pct(rec.estoque.riscoFalta)}</b>${rec.estoque.comprarAdicional > 0 ? ` · comprar +${num(rec.estoque.comprarAdicional)}` : ''}</p>` : '';
     const motivos = ((p.horizontes[hz] && h.explicacao) || []).map((m) => `<li>${escapeHTML(m)}</li>`).join('');
@@ -123,23 +124,23 @@ const blocoEsperados = () => {
     else if (e.indisponivel || !e.clientes) corpo = '<p class="pv-vazio">Ainda não há clientes recorrentes suficientes para estimar.</p>';
     else corpo = `<p class="pv-sub">≈ <b>${num(e.pedidosEsperados)}</b> pedido(s) esperado(s)</p>` + (e.clientes.length ? e.clientes.map((c) => `
         <article class="pv-cli">
-            <div class="pv-cli-top"><strong>${escapeHTML(c.nome || 'Cliente')}</strong><span>Q${escapeHTML(c.quadra)}·L${escapeHTML(c.lote)}</span><b>${pct(c.p)}</b></div>
+            <div class="pv-cli-top"><strong>${escapeHTML(c.nome || 'Cliente')}</strong><span>${escapeHTML(linhaEndereco(c, { curto: true }))}</span><b>${pct(c.p)}</b></div>
             <div class="pv-barra"><i style="width:${Math.round(c.p * 100)}%"></i></div>
             <small>Última compra há ${c.diasDesdeUltima} dia(s)${c.intervaloMedio ? ` · costuma comprar a cada ${num(c.intervaloMedio, 0)} dias` : ''}${c.jaComprouHoje ? ' · <b>já comprou hoje</b>' : ''}</small>
             <div class="pv-itens">${c.itens.map((i) => `<span>${escapeHTML(i.nome)} ${pct(i.p)}</span>`).join('')}</div>
             <button class="pv-link" data-pv-cli="${escapeHTML(c.id)}">Por quê?</button><div class="pv-cli-det" id="pvcli-${escapeHTML(c.id)}"></div>
         </article>`).join('') : '<p class="pv-vazio">Nenhum cliente com probabilidade relevante.</p>');
-    return `<section class="pv-bloco pv-bloco--largo"><h4>👥 Clientes esperados</h4><div class="pv-chips">${abas}</div>${corpo}</section>`;
+    return `<section class="pv-bloco pv-bloco--largo"><h4><i class="ic" data-i="pessoas"></i> Clientes esperados</h4><div class="pv-chips">${abas}</div>${corpo}</section>`;
 };
 
 const detalheCliente = (r) => {
     const p = r.perfil;
     const meta = [`${p.pedidos} pedido(s)`, p.intervaloMedioDias ? `intervalo médio ${num(p.intervaloMedioDias)} d (mediana ${num(p.intervaloMedianoDias, 0)}, desvio ${num(p.intervaloDesvio)})` : null, p.diaMaisFrequente ? `dia habitual: ${p.diaMaisFrequente}` : null].filter(Boolean).join(' · ');
     const extra = [
-        p.alternados.length ? `🔁 Alternados: ${p.alternados.map((a) => `${escapeHTML(a.nome)} (a cada ${a.acada} pedidos)`).join(', ')}` : '',
-        p.juntos.length ? `🧺 Compra junto: ${p.juntos.map((j) => `${escapeHTML(j.a)} + ${escapeHTML(j.b)}`).join('; ')}` : '',
-        p.novos.length ? `🆕 Novos: ${p.novos.map(escapeHTML).join(', ')}` : '',
-        p.abandonados.length ? `💤 Possivelmente abandonados: ${p.abandonados.map(escapeHTML).join(', ')}` : ''
+        p.alternados.length ? `<i class="ic" data-i="repetir"></i> Alternados: ${p.alternados.map((a) => `${escapeHTML(a.nome)} (a cada ${a.acada} pedidos)`).join(', ')}` : '',
+        p.juntos.length ? `<i class="ic" data-i="cesta"></i> Compra junto: ${p.juntos.map((j) => `${escapeHTML(j.a)} + ${escapeHTML(j.b)}`).join('; ')}` : '',
+        p.novos.length ? `Novos: ${p.novos.map(escapeHTML).join(', ')}` : '',
+        p.abandonados.length ? `Possivelmente abandonados: ${p.abandonados.map(escapeHTML).join(', ')}` : ''
     ].filter(Boolean).map((t) => `<p>${t}</p>`).join('');
     const itens = r.itens.map((i) => `<li><b>${escapeHTML(i.nome)} — ${pct(i.p)}</b> <em>(confiança ${i.confRotulo})</em>${i.qtd && i.qtd.esperada ? ` · qtd. habitual ${num(i.qtd.esperada)}` : ''}<ul>${(i.motivos || []).map((m) => `<li>${escapeHTML(m)}</li>`).join('')}</ul></li>`).join('');
     return `<div class="pv-det"><p>${meta}</p>${extra}<ol>${itens}</ol></div>`;
@@ -147,36 +148,36 @@ const detalheCliente = (r) => {
 
 const tabelaErros = (av) => {
     if (!av || !av.length) return '<p class="pv-vazio">Ainda sem previsões para comparar. Amanhã, o sistema compara o previsto de hoje com o que foi vendido.</p>';
-    return `<div class="pv-scroll"><table class="pv-tab"><thead><tr><th>Dia</th><th></th><th>Erro médio (MAE)</th><th>WAPE</th><th>Dentro da faixa</th></tr></thead><tbody>${av.slice(0, 10).map((a) => `<tr><td>${escapeHTML(a.diaAlvoIso)}</td><td>${a.horizonte === 'amanha' ? 'véspera' : 'manhã'}</td><td>${num(a.mae, 2)}</td><td>${a.wape == null ? '–' : pct(a.wape)}</td><td>${a.cobertura == null ? '–' : pct(a.cobertura)}</td></tr>`).join('')}</tbody></table></div>`;
+    return `<div class="pv-scroll"><table class="pv-tab"><thead><tr><th>Dia</th><th></th><th>Erro médio (MAE)</th><th>WAPE</th><th>Dentro da faixa</th><th title="Erro do motor dividido pelo erro de repetir a venda de 7 dias antes. Abaixo de 1, o motor ganhou.">Contra a semana passada</th></tr></thead><tbody>${av.slice(0, 10).map((a) => `<tr><td>${escapeHTML(a.diaAlvoIso)}</td><td>${a.horizonte === 'amanha' ? 'véspera' : 'manhã'}</td><td>${num(a.mae, 2)}</td><td>${a.wape == null ? '–' : pct(a.wape)}</td><td>${a.cobertura == null ? '–' : pct(a.cobertura)}</td><td>${a.mase == null ? '–' : `${num(a.mase, 2)} ${a.mase < 1 ? '(melhor)' : '(pior)'}`}${a.comFalta ? ` · ${a.comFalta} com falta, fora da conta` : ''}</td></tr>`).join('')}</tbody></table></div>`;
 };
 
 // ------------------------- render principal -------------------------
 const render = () => {
     const alvo = document.getElementById('previsao-conteudo'); if (!alvo) return;
     const d = S.dados;
-    if (S.carregando && !d) { alvo.innerHTML = '<p class="pv-vazio">Carregando previsões… ⏳</p>'; return; }
+    if (S.carregando && !d) { alvo.innerHTML = '<p class="pv-vazio">Carregando previsões… <i class="ic" data-i="espera"></i></p>'; return; }
     // Falhou ao ler: diz o que houve (antes mostrava "ainda não há previsões", que não era verdade)
     if (!d && S.erro) {
-        alvo.innerHTML = `<div class="pv-vazio-box"><div style="font-size:2.4rem">⚠️</div><p><b>Não consegui abrir as previsões.</b></p><p>${escapeHTML(S.erro)}</p>
+        alvo.innerHTML = `<div class="pv-vazio-box"><div style="font-size:2.4rem"><i class="ic" data-i="alerta"></i></div><p><b>Não consegui abrir as previsões.</b></p><p>${escapeHTML(S.erro)}</p>
             <button class="btn-ia-action pv-btn-grande" id="pv-tentar">Tentar de novo</button></div>`;
         return;
     }
     // Nunca calculado: o botão para o PRIMEIRO cálculo fica aqui (antes ele só existia depois de já haver dados)
     if (!d || d.vazio) {
-        alvo.innerHTML = `<div class="pv-vazio-box"><div style="font-size:2.4rem">🔮</div><p><b>Ainda não há previsões calculadas.</b></p>
+        alvo.innerHTML = `<div class="pv-vazio-box"><div style="font-size:2.4rem"><i class="ic" data-i="previsao"></i></div><p><b>Ainda não há previsões calculadas.</b></p>
             <p>O sistema lê os pedidos dos últimos meses e estima quanto cada produto deve vender hoje, amanhã e na semana, com sugestão de compra.</p>
-            <button class="btn-ia-action pv-btn-grande" id="pv-recalc">🔮 Calcular agora</button>
+            <button class="btn-ia-action pv-btn-grande" id="pv-recalc"><i class="ic" data-i="previsao"></i> Calcular agora</button>
             <p class="pv-dica">Leva alguns segundos. Com menos de 4 dias de vendas de um produto, ele aparece como "dados insuficientes".</p></div>`;
         return;
     }
 
     const m = d.meta || {}, db = d.dashboard || {}, av = resumoErro(d.avaliacoes);
     const conf = db.confiancaMedia;
-    const avisos = (m.avisos || []).map((a) => `<p class="pv-aviso">⚠️ ${escapeHTML(a)}</p>`).join('');
+    const avisos = (m.avisos || []).map((a) => `<p class="pv-aviso"><i class="ic" data-i="alerta"></i> ${escapeHTML(a)}</p>`).join('');
     const rs = (x) => (x ? `${fmt(x.faturamentoPrevisto)}` : '–');
     alvo.innerHTML = `
     <div class="pv-head">
-        <div><h3>🔮 Previsão de Demanda</h3><small>Atualizado ${quando(m.geradoEm)} · ${m.diasHistorico} dia(s) de histórico · ${m.nPedidos} pedido(s) · ${m.nClientes} cliente(s)</small></div>
+        <div><h3><i class="ic" data-i="previsao"></i> Previsão de Demanda</h3><small>Atualizado ${quando(m.geradoEm)} · ${m.diasHistorico} dia(s) de histórico · ${m.nPedidos} pedido(s) · ${m.nClientes} cliente(s)</small></div>
         <button class="btn-ia-action" id="pv-recalc">↻ Recalcular</button>
     </div>
     ${avisos}
@@ -190,23 +191,23 @@ const render = () => {
     <div class="pv-ctrl">
         <div class="pv-chips">${HORIZONTES.map(([k, r]) => `<button class="pv-chip ${S.horizonte === k ? 'on' : ''}" data-pv-hz="${k}">${r}</button>`).join('')}</div>
         <div class="pv-ctrl2">
-            <input type="search" id="pv-busca" placeholder="🔎 Buscar produto..." value="${escapeHTML(S.busca)}">
+            <input type="search" id="pv-busca" placeholder="Buscar produto..." value="${escapeHTML(S.busca)}">
             <select id="pv-ordem" aria-label="Ordenar">${ORDENS.map(([k, r]) => `<option value="${k}" ${S.ordem === k ? 'selected' : ''}>${r}</option>`).join('')}</select>
         </div>
         <p class="pv-dica">Período: ${(m.hz && m.hz[S.horizonte] ? (m.hz[S.horizonte].length > 1 ? m.hz[S.horizonte][0] + ' a ' + m.hz[S.horizonte][m.hz[S.horizonte].length - 1] : m.hz[S.horizonte][0]) : '–') || '–'}. “Sugestão de compra” cobre a demanda com ${Math.round((m.nivelServico ?? 0.8) * 100)}% de chance (nível de serviço ajustável em analytics/config.js).</p>
     </div>
     <div class="pv-grid" id="pv-lista">${listaProdutos()}</div>
 
-    <h4 class="pv-sec">📊 Visão geral</h4>
+    <h4 class="pv-sec"><i class="ic" data-i="barras"></i> Visão geral</h4>
     <div class="pv-blocos">
-        ${bloco('🚨 Maior risco de falta (7 dias)', (db.riscoFalta || []).map((x) => `<li><span>${escapeHTML(x.nome)}</span><b>${pct(x.risco)} · comprar +${num(x.comprar)}</b></li>`), 'Nenhum produto com estoque controlado em risco.')}
-        ${bloco('📦 Maior excesso previsto', (db.excesso || []).map((x) => `<li><span>${escapeHTML(x.nome)}</span><b>+${num(x.excesso)} acima do provável</b></li>`), 'Nenhum excesso detectado.')}
-        ${bloco('📈 Demanda crescendo', (db.crescendo || []).map((x) => linhaMini(x, '+' + Math.round(x.pct * 100) + '%')), 'Nenhum produto com alta estatisticamente relevante.')}
-        ${bloco('📉 Demanda caindo', (db.caindo || []).map((x) => linhaMini(x, Math.round(x.pct * 100) + '%')), 'Nenhum produto com queda estatisticamente relevante.')}
+        ${bloco('<i class="ic" data-i="sino"></i> Maior risco de falta (7 dias)', (db.riscoFalta || []).map((x) => `<li><span>${escapeHTML(x.nome)}</span><b>${pct(x.risco)} · comprar +${num(x.comprar)}</b></li>`), 'Nenhum produto com estoque controlado em risco.')}
+        ${bloco('<i class="ic" data-i="caixa"></i> Maior excesso previsto', (db.excesso || []).map((x) => `<li><span>${escapeHTML(x.nome)}</span><b>+${num(x.excesso)} acima do provável</b></li>`), 'Nenhum excesso detectado.')}
+        ${bloco('<i class="ic" data-i="sobe"></i> Demanda crescendo', (db.crescendo || []).map((x) => linhaMini(x, '+' + Math.round(x.pct * 100) + '%')), 'Nenhum produto com alta estatisticamente relevante.')}
+        ${bloco('<i class="ic" data-i="desce"></i> Demanda caindo', (db.caindo || []).map((x) => linhaMini(x, Math.round(x.pct * 100) + '%')), 'Nenhum produto com queda estatisticamente relevante.')}
     </div>
     <p class="pv-dica">Risco de falta e excesso só são calculados para produtos com <b>estoque físico</b> cadastrado${db.estoqueSemControle ? ` (${db.estoqueSemControle} produto(s) sem controle de estoque)` : ''}.</p>
     ${blocoEsperados()}
-    <section class="pv-bloco pv-bloco--largo"><h4>🎯 Erro das previsões anteriores</h4>${av ? `<p class="pv-sub">Média dos últimos ${av.n} dia(s): erro médio ${num(av.mae, 2)} · RMSE ${num(av.rmse, 2)} · WAPE ${pct(av.wape)}${av.cobertura != null ? ` · ${pct(av.cobertura)} das vendas caíram dentro da faixa (ideal ≈ 80%)` : ''}</p>` : ''}${tabelaErros(d.avaliacoes)}</section>
+    <section class="pv-bloco pv-bloco--largo"><h4><i class="ic" data-i="alvo"></i> Erro das previsões anteriores</h4>${av ? `<p class="pv-sub">Média dos últimos ${av.n} dia(s): erro médio ${num(av.mae, 2)} · RMSE ${num(av.rmse, 2)} · WAPE ${pct(av.wape)}${av.cobertura != null ? ` · ${pct(av.cobertura)} das vendas caíram dentro da faixa (ideal ≈ 80%)` : ''}</p>` : ''}${tabelaErros(d.avaliacoes)}</section>
     <details class="pv-avancado"><summary>Opções avançadas</summary>
         <p>Para o sistema aprender feriados e sazonalidade, ele precisa de histórico longo. Este botão relê até 1 ano de pedidos <b>uma vez</b> e guarda o resumo diário.</p>
         <button class="btn-ia-action" id="pv-backfill">Importar histórico de 365 dias</button>
@@ -222,10 +223,10 @@ const carregar = async () => {
 };
 
 const recalcular = async (btn, janelaDias) => {
-    btn.disabled = true; const t = btn.textContent; btn.textContent = 'Calculando… ⏳';
+    btn.disabled = true; const t = btn.textContent; btn.textContent = 'Calculando…';
     try {
         const r = await chamar({ acao: 'recalcular', janelaDias });
-        showToast(r.pulado ? 'Um cálculo acabou de rodar — aguarde um instante.' : `✅ Previsões atualizadas em ${num((r.duracaoMs || 0) / 1000, 1)} s.`, false);
+        showToast(r.pulado ? 'Um cálculo acabou de rodar — aguarde um instante.' : `Previsões atualizadas em ${num((r.duracaoMs || 0) / 1000, 1)} s.`, false);
         await carregar();
     } catch (e) { showToast(e.message || 'Falha ao recalcular.', true); btn.disabled = false; btn.textContent = t; }
 };

@@ -1,0 +1,32 @@
+/* Aba "Aparência" do painel. A prévia (.ap-previa) recebe as variáveis do tema
+   escolhido, então mostra as cores da LOJA sem mudar as cores do painel. */
+.ap-titulo { font-family: 'Fraunces', serif; color: var(--forest); font-size: 1.5rem; margin-bottom: 8px; }
+.ap-grade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 340px); gap: 28px; align-items: start; margin-top: 18px; }
+.ap-modelos { display: flex; flex-wrap: wrap; gap: 8px; }
+.ap-modelos button { padding: 10px 16px; min-height: 44px; }
+.ap-cores { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.ap-cor { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.ap-cor input { width: 48px; height: 44px; padding: 0; border: 1.5px solid #e0dcd4; border-radius: 10px; background: none; flex: none; }
+.ap-cor span { display: flex; flex-direction: column; font-size: .9rem; min-width: 0; }
+.ap-cor small { color: var(--text-light); font-size: .76rem; }
+.ap-avisos p { background: var(--warning-light); color: #92400e; border-radius: 10px; padding: 8px 12px; font-size: .86rem; margin-bottom: 8px; }
+
+.ap-previa { position: sticky; top: 16px; border-radius: 22px; overflow: hidden; border: 1px solid #d9d4c8; background: var(--cream); color: var(--text-dark); font-family: var(--fonte-texto); box-shadow: 0 12px 30px rgba(0,0,0,.12); }
+.ap-p-topo { background: var(--forest); color: var(--sobre-primaria); padding: 18px 16px; display: grid; gap: 4px; }
+.ap-p-topo strong { font-family: var(--fonte-titulo); font-size: 1.35rem; line-height: 1.1; }
+.ap-p-topo span { font-size: .85rem; opacity: .85; }
+.ap-p-topo em { font-style: normal; font-size: .78rem; font-weight: 600; justify-self: start; margin-top: 8px; padding: 6px 12px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--sobre-primaria) 35%, transparent); }
+.ap-p-corpo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 12px; }
+.ap-p-card { background: var(--superficie); border: 1.5px solid var(--linha); border-radius: var(--raio-card); padding: 8px; display: grid; gap: 8px; font-size: .86rem; }
+.ap-p-card--no-pedido { border-color: var(--leaf); }
+.ap-p-foto { aspect-ratio: 1; border-radius: calc(var(--raio-card) * .6); background: var(--foam); }
+.ap-p-etq { justify-self: start; background: var(--etiqueta); color: var(--etiqueta-tinta); padding: 4px 8px; border-radius: 4px; transform: rotate(-1.5deg); }
+.ap-p-etq strong { font-family: var(--fonte-titulo); font-size: 1rem; } .ap-p-etq small { font-size: .68rem; }
+.ap-previa.etiqueta-limpa .ap-p-etq { background: none; transform: none; padding: 0 0 0 8px; border-left: 3px solid var(--manga); border-radius: 0; color: var(--text-dark); }
+.ap-p-botao, .ap-p-seletor { border-radius: 999px; min-height: 36px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+.ap-p-botao { background: var(--forest); color: var(--sobre-primaria); }
+.ap-p-seletor { background: var(--foam); justify-content: space-between; padding: 3px; }
+.ap-p-seletor i { font-style: normal; width: 30px; height: 30px; border-radius: 50%; background: var(--superficie); color: var(--forest); display: grid; place-items: center; }
+.ap-p-barra { margin: 0 12px 14px; background: var(--forest); color: var(--sobre-primaria); border-radius: 14px; padding: 12px 14px; font-weight: 700; display: flex; justify-content: space-between; }
+.ap-p-barra span { font-family: var(--fonte-titulo); }
+@media (max-width: 760px) { .ap-grade { grid-template-columns: minmax(0, 1fr); } .ap-previa { position: static; order: -1; } }

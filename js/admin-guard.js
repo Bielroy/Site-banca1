@@ -27,6 +27,20 @@
 // =====================================================================
 
 import { auth, signOut } from './firebase.js';
+import { TENANT, TENANT_PADRAO, urlDaLoja, enderecoEhDaLoja } from './tenant.js';
+
+// Papel da pessoa NESTA loja, lido do token (gravado só pelo servidor).
+// Mesma regra de lib/tenant.js. A conta antiga { admin: true } vale como dona da loja original.
+export const papelNoToken = (claims, tid = TENANT) => {
+  const c = claims || {};
+  if (c.plataforma === true) return 'plataforma';
+  if (c.tenants && typeof c.tenants === 'object' && typeof c.tenants[tid] === 'string') return c.tenants[tid];
+  if (tid === TENANT_PADRAO && c.admin === true) return 'proprietario';
+  return null;
+};
+export let papelAtual = null;
+// Toda a equipe entra; cada papel vê só as suas abas (js/papeis-lib.js). O servidor e as regras do banco conferem de novo.
+const PODEM_ENTRAR = ['plataforma', 'proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque'];
 
 const TELA_BLOQUEIO_ID = 'admin-bloqueio-acesso';
 
@@ -40,7 +54,7 @@ const mostrarBloqueio = (mensagem, mostrarSair = true) => {
         padding: 24px; text-align: center;
         font-family: system-ui, -apple-system, sans-serif;">
       <div style="max-width: 380px;">
-        <div style="font-size: 3.2rem; margin-bottom: 14px;" aria-hidden="true">🔒</div>
+        <div style="font-size: 3.2rem; margin-bottom: 14px;" aria-hidden="true"><i class="ic" data-i="cadeado"></i></div>
         <h1 style="font-size: 1.4rem; margin: 0 0 10px;">Acesso restrito</h1>
         <p style="opacity: .8; line-height: 1.6; margin: 0 0 22px;">${mensagem}</p>
         ${mostrarSair ? `<button id="btn-sair-bloqueio" style="
@@ -69,11 +83,20 @@ export const exigirAdmin = async (user) => {
     // recém-revogado) seja refletido sem precisar deslogar e logar.
     const tokenResult = await user.getIdTokenResult(true);
 
-    if (tokenResult.claims.admin === true) return true;
+    const claims = tokenResult.claims;
+    papelAtual = papelNoToken(claims);
+    if (PODEM_ENTRAR.includes(papelAtual)) return true;
+
+    // Entrou sem dizer a loja, mas a conta pertence a outra: leva para o painel dela.
+    const minhas = claims.tenants && typeof claims.tenants === 'object' ? Object.keys(claims.tenants) : [];
+    if (!papelAtual && !enderecoEhDaLoja && !new URLSearchParams(location.search).get('loja') && minhas.length) {
+      location.replace(urlDaLoja(minhas[0], location.pathname));
+      return false;
+    }
 
     mostrarBloqueio(
-      'Esta conta não tem permissão de administrador. ' +
-      'Se você é o responsável pela banca, entre com a conta autorizada.'
+      'Esta conta não faz parte da equipe desta loja. ' +
+      'Peça ao proprietário para incluir o seu e-mail na aba Equipe.'
     );
     return false;
   } catch (erro) {

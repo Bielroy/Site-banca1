@@ -33,7 +33,7 @@ function aplicarParametros(over) {
 
 const r2 = (x) => S.arred(x, 2);
 
-function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos = [], diasAbertos, snapshots = [], agora = Date.now() }) {
+function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos = [], diasAbertos, snapshots = [], fechamentos = [], agora = Date.now() }) {
   aplicarParametros(parametros);
   const t0 = Date.now();
   const hoje = diaDeTs(agora), asOfD = hoje - 1;
@@ -52,6 +52,17 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     const d = diaDeIso(ag.dia); if (!(d < iniPed)) continue;
     diasDeAgregado++; visitasDia.set(d, Number(ag.visitas) || 0);
     for (const [pid, q] of Object.entries(ag.produtos || {})) if (Number(q) > 0) put(vendasDia, pid, d, Number(q));
+  }
+
+  // ---------- faltas: dias em que cada produto ACABOU (aba Fechamento, "Não tem") ----------
+  const rupturas = new Map();                         // produtoId → Set(dia)
+  for (const f of fechamentos) {
+    const d = diaDeIso(f.dia); if (!Number.isFinite(d)) continue;
+    for (const [pid, v] of Object.entries(f.itens || {})) {
+      if (!v || v.tem !== false) continue;
+      if (!rupturas.has(pid)) rupturas.set(pid, new Set());
+      rupturas.get(pid).add(d);
+    }
   }
 
   // agregados a persistir (1 doc/dia, só dias com venda) — alimenta o histórico longo
@@ -80,7 +91,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
   const ativos = [...produtos.values()].filter((p) => p.ativo || (vendasDia.has(p.id) && [...vendasDia.get(p.id).keys()].some((d) => d > hoje - 28)));
   const series = new Map(), walks = new Map();
   for (const p of ativos) {
-    const s = D.montarSerie(vendasDia.get(p.id), asOfD, abertos);
+    const s = D.montarSerie(vendasDia.get(p.id), asOfD, abertos, rupturas.get(p.id));
     if (!s.length) continue;
     series.set(p.id, s); walks.set(p.id, D.walkForward(s));
   }
@@ -101,12 +112,13 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
       serie, hoje, hz, abertos, extras: eventos, wf: walks.get(p.id), wBU,
       bu: { dias: Object.fromEntries(Object.entries(buDias).map(([d, v]) => [d, v.por])), pid: p.id },
       unidade: p.unidade, estoque: p.estoque, fracEstimada: eg ? eg.e / eg.n : 0,
+      nivelServico: (C.NIVEL_SERVICO_CLASSES || {})[p.duracao],
     });
     // explicação (só dos horizontes de 1 dia)
     for (const nome of ['hoje', 'amanha', 'proximoDia']) {
       const h = r.horizontes[nome]; if (!h || !h._exp) continue;
       const d = hz[nome][0];
-      const top = buDias[d] ? buDias[d].clientes.map((c) => ({ c, e: (c.itens.find((i) => i.id === p.id) || {}).e || 0 })).filter((x) => x.e > 0.01).sort((a, b) => b.e - a.e).slice(0, 3).map((x) => `${(x.c.nome || 'Cliente').split(' ')[0]} (Q${x.c.quadra}·L${x.c.lote})`) : [];
+      const top = buDias[d] ? buDias[d].clientes.map((c) => ({ c, e: (c.itens.find((i) => i.id === p.id) || {}).e || 0 })).filter((x) => x.e > 0.01).sort((a, b) => b.e - a.e).slice(0, 3).map((x) => `${(x.c.nome || 'Cliente').split(' ')[0]} (${x.c.formatoEndereco === 'rua' || x.c.formatoEndereco === 'livre' ? `${x.c.quadra}, ${x.c.lote}` : `Q${x.c.quadra}·L${x.c.lote}`})`) : [];
       h.explicacao = D.explicarDemanda(p.nome, h, r.tendencia, wBU, p.unidade, dowNome(d), top);
       delete h._exp;
     }
@@ -138,7 +150,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     esperados[nome] = {
       dia: isoDeDia(d), pedidosEsperados: r2(b.pedidos),
       clientes: b.clientes.sort((x, y) => y.p - x.p).slice(0, 25).map((c) => ({
-        id: c.id, nome: c.nome, quadra: c.quadra, lote: c.lote, p: c.p, diasDesdeUltima: asOfD - c.ultimoDia, intervaloMedio: c.nuMed, jaComprouHoje: nome === 'hoje' && jaHoje.has(c.id),
+        id: c.id, nome: c.nome, condominio: c.condominio || '', formatoEndereco: c.formatoEndereco || 'ql', quadra: c.quadra, lote: c.lote, p: c.p, diasDesdeUltima: asOfD - c.ultimoDia, intervaloMedio: c.nuMed, jaComprouHoje: nome === 'hoje' && jaHoje.has(c.id),
         itens: c.itens.sort((x, y) => y.e - x.e).slice(0, 5).map((i) => ({ id: i.id, nome: (produtos.get(i.id) || {}).nome || i.id, p: S.arred(i.p, 2), qtd: i.qtd })),
       })),
     };
@@ -149,7 +161,9 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
   for (const sn of snapshots) {
     if (!(sn.diaAlvo < hoje)) continue;
     const real = new Map(); for (const [pid, mp] of vendasDia) if (mp.has(sn.diaAlvo)) real.set(pid, mp.get(sn.diaAlvo));
-    avaliacoes.push({ id: sn.id, horizonte: sn.horizonte, ...E.avaliarSnapshot(sn, real), diaAlvoIso: isoDeDia(sn.diaAlvo) });
+    const ingenuo = new Map(); for (const [pid, mp] of vendasDia) if (mp.has(sn.diaAlvo - 7)) ingenuo.set(pid, mp.get(sn.diaAlvo - 7));
+    const faltou = new Set([...rupturas].filter(([, dias]) => dias.has(sn.diaAlvo)).map(([pid]) => pid));
+    avaliacoes.push({ id: sn.id, horizonte: sn.horizonte, ...E.avaliarSnapshot(sn, real, { ingenuo, faltou }), diaAlvoIso: isoDeDia(sn.diaAlvo) });
   }
   const novosSnapshots = [];
   for (const nome of ['hoje', 'amanha']) {
@@ -185,13 +199,18 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
 
   // dados compactos para a API pública / painel (sem nada sensível)
   const catalogoCompacto = {}; produtos.forEach((p) => { catalogoCompacto[p.id] = { nome: p.nome, un: p.unidade, cat: p.cat, ativo: p.ativo }; });
-  const indiceClientes = modelos.map((m) => ({ id: m.id, nome: m.nome, quadra: m.quadra, lote: m.lote, n: m.nVisitas, nivel: m.nivel, ult: isoDeDia(m.ultimoDia) }))
+  const indiceClientes = modelos.map((m) => ({ id: m.id, nome: m.nome, condominio: m.condominio || '', formatoEndereco: m.formatoEndereco || 'ql', quadra: m.quadra, lote: m.lote, n: m.nVisitas, nivel: m.nivel, ult: isoDeDia(m.ultimoDia),
+    // CRM (aba Clientes): primeira compra, intervalo típico, gasto, ticket, produtos mais comprados e contato
+    pri: isoDeDia(m.primeiroDia), cada: m.nuMed, gasto: m.gasto, ticket: m.ticket, ped: m.nPedidos,
+    tp: Object.entries(m.prod || {}).sort((a, b) => (b[1].n || 0) - (a[1].n || 0)).slice(0, 6).map(([id]) => id),
+    tel: m.aceitaOfertas ? m.telefone : '', oferta: m.aceitaOfertas === true }))
     .sort((a, b) => b.n - a.n).slice(0, 600);
 
   const meta = {
     versao: C.VERSAO, nivelServico: C.NIVEL_SERVICO, geradoEm: new Date(agora).toISOString(), hoje: isoDeDia(hoje), duracaoMs: Date.now() - t0,
     nPedidos: norm.nPedidos, nClientes: clientes.length, nClientesModelados: modelos.length, nClientesBottomUp: modelosD.length,
     diasHistorico: norm.ultimoDia >= norm.primeiroDia ? norm.ultimoDia - norm.primeiroDia + 1 : 0, diasDeAgregado,
+    diasComFalta: [...rupturas.values()].reduce((n, s) => n + s.size, 0),
     pesos, hz: Object.fromEntries(Object.entries(hz).map(([k, v]) => [k, v.map(isoDeDia)])),
     avisos: [
       ...(norm.nPedidos < 30 ? ['Poucos pedidos no histórico: todas as previsões têm confiança baixa.'] : []),

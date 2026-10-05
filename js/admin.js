@@ -1,8 +1,35 @@
-import { auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL, query, orderBy, limit, writeBatch, where, updateDoc } from './firebase.js';
+import { getDoc, auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL, query, orderBy, limit, writeBatch, where, updateDoc } from './firebase.js';
+import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal, customConfirm } from './utils.js';
-import { exigirAdmin, iniciarLogoutPorInatividade } from './admin-guard.js';
+import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual } from './admin-guard.js';
+import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel } from './papeis-lib.js';
+import { ico } from './icones-admin.js';          // também liga a troca das marcas <i class="ic"> pelos desenhos
+import { linhaEndereco } from './endereco.js';
 import { abrirPrevisao } from './admin-previsao.js';
 import { abrirFechamento } from './admin-fechamento.js';
+
+// ---------------------------------------------------------------------
+// TELAS CARREGADAS SÓ QUANDO ABERTAS. O painel abre mais rápido porque o
+// código de Estoque, Compras, Balcão, Clientes etc. só é baixado na hora
+// em que a aba é tocada (e fica guardado para as próximas vezes).
+// ---------------------------------------------------------------------
+const TELAS = {
+    aparencia: () => import('./admin-aparencia.js'), estoque: () => import('./admin-estoque.js'), fotos: () => import('./admin-fotos.js'),
+    margens: () => import('./admin-margens.js'), compras: () => import('./admin-compras.js'), pdv: () => import('./admin-pdv.js'),
+    crm: () => import('./admin-crm.js'), copiloto: () => import('./admin-copiloto.js'), calendario: () => import('./admin-calendario.js'),
+    equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'),
+};
+const comImpressao = async (fn) => { try { await fn(await TELAS.impressao()); } catch (e) { console.error(e); showToast('Não consegui abrir a impressão. Confira a internet e toque de novo.', true); } };
+document.getElementById('btn-impressora')?.addEventListener('click', () => comImpressao((m) => m.abrirImpressora()));
+let condominiosAtuais = [];
+const ABRIR = {
+    aparencia: (m) => m.abrirAparencia(), estoque: (m) => m.abrirEstoque(produtosAtuais), compras: (m) => m.abrirCompras(produtosAtuais),
+    pdv: (m) => { m.definirCondominiosPdv(condominiosAtuais); m.abrirPdv(produtosAtuais); }, crm: (m) => m.abrirCrm(produtosAtuais), copiloto: (m) => m.abrirCopiloto(), calendario: (m) => m.abrirCalendario({ podeEditar: ehGestor(papelAtual) }), equipe: (m) => m.abrirEquipe(),
+};
+const abrirTela = async (nome) => {
+    try { ABRIR[nome](await TELAS[nome]()); }
+    catch (e) { console.error(e); showToast('Não consegui abrir esta tela. Confira a internet e toque de novo.', true); }
+};
 import { iniciarCategoriasAdmin, abrirCategorias, chaveDaCategoria, nomeDaCategoria, normalizarWpp } from './admin-categorias.js';
 
 // Chart.js agora é carregado sob demanda (só ao abrir o Dashboard).
@@ -22,45 +49,6 @@ let pedidoBuscaTermo = "";
 const placeholderSVG = `<div class="prod-img-placeholder skeleton" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-light);font-size:0.8rem">Sem Foto</div>`;
 
 const normalizar = (txt) => String(txt || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-// =====================================================================
-// COMPRESSÃO DE IMAGEM — agora fora da main thread + corrige EXIF
-// createImageBitmap decodifica em thread separada, então o painel não
-// congela ao salvar foto grande de celular. imageOrientation corrige
-// fotos de retrato que apareciam deitadas.
-// =====================================================================
-const compressImageToJPG = async (file, maxWidth = 1000, quality = 0.8) => {
-    const desenhar = (w, h, fonte) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d', { alpha: false }).drawImage(fonte, 0, 0, w, h);
-        return new Promise((resolve) => canvas.toBlob(
-            (blob) => resolve(new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), { type: 'image/jpeg' })),
-            'image/jpeg', quality
-        ));
-    };
-
-    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' }).catch(() => null);
-    if (bitmap) {
-        let { width, height } = bitmap;
-        if (width > maxWidth) { height = Math.round((height * maxWidth) / width); width = maxWidth; }
-        const saida = await desenhar(width, height, bitmap);
-        bitmap.close?.();
-        return saida;
-    }
-
-    // Fallback para navegadores sem createImageBitmap
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = async () => {
-            let width = img.width, height = img.height;
-            if (width > maxWidth) { height = Math.round((height * maxWidth) / width); width = maxWidth; }
-            resolve(await desenhar(width, height, img));
-        };
-        img.onerror = reject;
-        img.src = URL.createObjectURL(file);
-    });
-};
 
 // =====================================================================
 // AUTENTICAÇÃO + AUTORIZAÇÃO
@@ -84,7 +72,9 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
     iniciarLogoutPorInatividade(30);
-    iniciarIAFeaturesDOM();
+    try { const f = await getDoc(fichaRef()); modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; } catch (_) { modulosDaLoja = null; }
+    aplicarPapel();
+    if (ehGestor(papelAtual)) iniciarIAFeaturesDOM();
     iniciarRealTimeSync();
 });
 
@@ -95,7 +85,7 @@ document.getElementById('btn-login').addEventListener('click', async () => {
     const msg = document.getElementById('login-msg');
 
     if (!email || !email.includes('@')) {
-        msg.textContent = "⚠️ Digite um e-mail válido."; msg.style.color = "var(--danger)"; return;
+        msg.textContent = "Digite um e-mail válido."; msg.style.color = "var(--danger)"; return;
     }
 
     isLoginProcessing = true; document.getElementById('btn-login').disabled = true;
@@ -105,9 +95,9 @@ document.getElementById('btn-login').addEventListener('click', async () => {
         await sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true });
         try { window.localStorage.setItem('emailForSignIn', email); } catch (_) {}
         window.sessionStorage.setItem('emailForSignIn', email);
-        msg.textContent = "✅ Link enviado! Verifique o e-mail."; msg.style.color = "var(--success)";
+        msg.textContent = "Link enviado! Verifique o e-mail."; msg.style.color = "var(--success)";
     } catch (error) {
-        msg.textContent = "❌ Erro ao enviar. Tente novamente."; msg.style.color = "var(--danger)";
+        msg.textContent = "Erro ao enviar. Tente novamente."; msg.style.color = "var(--danger)";
     } finally {
         setTimeout(() => { isLoginProcessing = false; document.getElementById('btn-login').disabled = false; }, 5000);
     }
@@ -136,14 +126,55 @@ if (isSignInWithEmailLink(auth, window.location.href)) {
 
 document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
 
+// ---------------------------------------------------------------------
+// PAPÉIS: cada pessoa da equipe vê só as abas do papel dela (js/papeis-lib.js).
+// É organização de tela; a trava de verdade está no servidor e nas regras do banco.
+// ---------------------------------------------------------------------
+const TODAS_AS_ABAS = [...document.querySelectorAll('.tab')].map((t) => t.dataset.aba);
+let modulosDaLoja = null;                                // ficha.modulos: o que a plataforma ligou nesta loja
+const aplicarPapel = () => {
+    const minhas = abasDoPapel(papelAtual, TODAS_AS_ABAS, modulosDaLoja), gestor = ehGestor(papelAtual);
+    const lp = document.getElementById('link-plataforma'); if (lp) lp.hidden = papelAtual !== 'plataforma';
+    document.querySelectorAll('.tab').forEach((t) => { t.hidden = !minhas.includes(t.dataset.aba); });
+    document.body.classList.toggle('so-equipe', !gestor);
+    const r = document.getElementById('papel-rotulo'); if (r) { r.textContent = rotuloDoPapel(papelAtual); r.hidden = papelAtual === 'proprietario'; }
+    if (!gestor) {                                      // para a equipe, a aba do Dashboard mostra só a fila de pedidos
+        const t = document.querySelector('.tab[data-aba="relatorios"]');
+        if (t) { t.querySelector('.tab-txt').textContent = 'Pedidos'; t.querySelector('.tab-ico').innerHTML = '<i class="ic" data-i="pedidos"></i>'; }
+    }
+    // título de grupo só aparece se sobrou alguma aba dele; quem tem poucas abas não precisa de grupos nem de menu
+    const nav = document.querySelector('.tabs');
+    nav.classList.toggle('poucas', minhas.length <= 4);
+    document.querySelectorAll('.tabs-grupo').forEach((g) => {
+        let tem = false;
+        for (let n = g.nextElementSibling; n && !n.classList.contains('tabs-grupo'); n = n.nextElementSibling) if (!n.hidden) tem = true;
+        g.hidden = !tem;
+    });
+    const ativa = document.querySelector('.tab.active');
+    if (!ativa || !minhas.includes(ativa.dataset.aba)) document.querySelector(`.tab[data-aba="${minhas[0]}"]`)?.click();
+    else mostrarAbaAtual(ativa);
+};
+// No celular o menu fica recolhido numa barra com a aba aberta; "Menu" mostra todas.
+const mostrarAbaAtual = (tab) => {
+    document.getElementById('tabs-atual-nome').textContent = tab.querySelector('.tab-txt').textContent;
+    document.getElementById('tabs-atual-ico').innerHTML = ico(tab.querySelector('[data-i]')?.dataset.i || 'menu', 'viva');
+};
+const recolherMenu = (sim) => {
+    document.querySelector('.tabs').classList.toggle('recolhido', sim);
+    document.getElementById('tabs-atual').setAttribute('aria-expanded', String(!sim));
+};
+document.getElementById('tabs-atual').addEventListener('click', () => recolherMenu(!document.querySelector('.tabs').classList.contains('recolhido')));
+
 document.querySelector('.tabs').addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');
     if (!tab) return;
     const aba = tab.dataset.aba;
+    if (!podeAbrir(papelAtual, aba, TODAS_AS_ABAS, modulosDaLoja)) return;
     document.querySelectorAll('.tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
     document.querySelectorAll('.aba-content').forEach(c => c.classList.remove('active'));
 
     tab.classList.add('active'); tab.setAttribute('aria-selected', 'true');
+    mostrarAbaAtual(tab); recolherMenu(true);
     document.getElementById(`aba-${aba}`).classList.add('active');
 
     if (aba === 'relatorios') renderRelatoriosMaster();
@@ -151,6 +182,7 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
     if (aba === 'previsao') abrirPrevisao();
     if (aba === 'fechamento') abrirFechamento(produtosAtuais);
     if (aba === 'categorias') abrirCategorias();
+    if (ABRIR[aba]) abrirTela(aba);
     if (aba === 'comunicados') renderComunicados();
     if (aba === 'cupons') renderCupons();
 });
@@ -163,8 +195,11 @@ document.getElementById('dashboard').addEventListener('click', (e) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
-document.querySelectorAll('[data-fechar]').forEach(btn => {
-    btn.addEventListener('click', (e) => { closeModal(e.currentTarget.dataset.fechar); });
+// Um ouvinte só para todos os botões de fechar, inclusive os das telas criadas depois
+// (Estoque, Enviar fotos). Antes só valia para as telas que já existiam ao abrir o painel.
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-fechar]');
+    if (btn) closeModal(btn.dataset.fechar);
 });
 
 const playAlertaPedido = () => {
@@ -197,7 +232,7 @@ const mostrarErroConsulta = (erro, alvoId) => {
     if (link) {
         alvo.innerHTML = `
             <div style="background:var(--warning-light); border:1px solid var(--warning); border-radius:12px; padding:20px; text-align:center;">
-                <div style="font-size:2rem; margin-bottom:8px;">🗂️</div>
+                <div style="font-size:2rem; margin-bottom:8px;"><i class="ic" data-i="caixa"></i></div>
                 <h3 style="color:var(--warning); margin-bottom:8px;">Falta criar um índice no banco</h3>
                 <p style="color:var(--text-mid); font-size:.92rem; line-height:1.6; margin-bottom:16px;">
                     O Firestore precisa de um índice para esta consulta. É automático:
@@ -211,7 +246,7 @@ const mostrarErroConsulta = (erro, alvoId) => {
     } else if (semPermissao) {
         alvo.innerHTML = `
             <div style="background:var(--danger-light); border:1px solid var(--danger); border-radius:12px; padding:20px; text-align:center;">
-                <div style="font-size:2rem; margin-bottom:8px;">🔒</div>
+                <div style="font-size:2rem; margin-bottom:8px;"><i class="ic" data-i="cadeado"></i></div>
                 <h3 style="color:var(--danger); margin-bottom:8px;">Sem permissão para ler os pedidos</h3>
                 <p style="color:var(--text-mid); font-size:.92rem; line-height:1.6;">
                     As regras do Firestore exigem a permissão de administrador.
@@ -247,20 +282,32 @@ const avisarModoSimples = (erro) => {
 
     secao.insertAdjacentHTML('afterbegin', `
         <div id="faixa-modo-simples" style="background:#fef3c7; border:1px solid #d97706; border-radius:12px; padding:14px 16px; margin-bottom:18px; font-size:.9rem; line-height:1.6; color:#4a4a44;">
-            ⚙️ <b>Modo simplificado.</b> A fila está funcionando normalmente, mas o banco
+            <i class="ic" data-i="ajustes"></i> <b>Modo simplificado.</b> A fila está funcionando normalmente, mas o banco
             ainda não tem o índice ideal — por isso o carregamento fica um pouco mais pesado. ${acao}
         </div>`);
 };
 
 const iniciarRealTimeSync = () => {
-    const unsubProd = onSnapshot(collection(db, "produtos"), (snap) => {
-        produtosAtuais = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-            .sort((a, b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
+    // Custo e ficha técnica moram em produtos_custos (privado). Aqui os dois se juntam,
+    // e todas as abas continuam lendo p.custo e p.ficha como antes.
+    let produtosBase = [], custosPorId = new Map();
+    const juntarProdutos = () => {
+        produtosAtuais = produtosBase.map(p => { const c = custosPorId.get(p.id) || {}; return { ...p, custo: c.custo ?? null, ficha: c.ficha ?? null }; });
         renderProdutos();
+        const abaAberta = (n) => document.getElementById(`aba-${n}`)?.classList.contains('active');
+        ['estoque', 'compras', 'pdv'].forEach((n) => { if (abaAberta(n)) abrirTela(n); });
+    };
+    if (cuidaDeEstoque(papelAtual)) unsubscribes.push(onSnapshot(tcol("produtos_custos"), (snap) => {
+        custosPorId = new Map(snap.docs.map(d => [d.id, d.data()])); juntarProdutos();
+    }, (e) => console.warn('[painel] custos:', e?.code || e)));
+    const unsubProd = onSnapshot(tcol("produtos"), (snap) => {
+        produtosBase = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+            .sort((a, b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
+        juntarProdutos();
     }, (e) => mostrarErroConsulta(e, 'lista-produtos'));
     unsubscribes.push(unsubProd);
 
-    const unsubConfig = onSnapshot(doc(db, "loja", "config"), (snap) => {
+    const unsubConfig = onSnapshot(tdoc("loja", "config"), (snap) => {
         if (snap.exists()) {
             const data = snap.data();
             document.getElementById('config-wpp').value = data.wpp || '';
@@ -268,18 +315,24 @@ const iniciarRealTimeSync = () => {
             document.getElementById('config-status-loja').value = data.lojaAberta === false ? "fechada" : "aberta";
             const diasSalvos = data.diasAbertos || [0, 1, 2, 3, 4, 5, 6];
             document.querySelectorAll('.chk-dia').forEach(chk => chk.checked = diasSalvos.includes(parseInt(chk.value)));
+            // não redesenha a lista se alguém está digitando nela
+            if (!document.getElementById('lista-condominios')?.contains(document.activeElement)) pintarCondominios(data.condominios);
+            condominiosAtuais = Array.isArray(data.condominios) ? data.condominios : [];
+            if (document.getElementById('aba-pdv')?.classList.contains('active')) abrirTela('pdv');
         }
     });
     unsubscribes.push(unsubConfig);
 
-    const unsubComunicados = onSnapshot(doc(db, "loja", "comunicados"), (snap) => {
+    const unsubComunicados = onSnapshot(tdoc("loja", "comunicados"), (snap) => {
         if (snap.exists()) comunicadosAtuais = { dias: {}, fixo: { ativo: false, texto: '' }, ...snap.data() };
         renderComunicados();
     });
     unsubscribes.push(unsubComunicados);
 
-    iniciarCupons();
+    if (ehGestor(papelAtual)) iniciarCupons();
     unsubscribes.push(...iniciarCategoriasAdmin(() => produtosAtuais));
+    // Produção e Estoque não têm a fila de pedidos: não gasta leitura com ela.
+    if (!podeAbrir(papelAtual, 'relatorios', TODAS_AS_ABAS, modulosDaLoja)) return;
 
     // ATENÇÃO: esta consulta combina "where in" + "orderBy", o que exige um
     // ÍNDICE COMPOSTO no Firestore. Se aparecer erro no console com um link,
@@ -297,6 +350,11 @@ const iniciarRealTimeSync = () => {
 
     const aplicarPedidos = (docs) => {
         pedidosGerais = docs;
+        // quantos pedidos esperam alguém: aparece na aba e no botão do menu
+        const esperando = docs.filter(p => ['pendente', 'aguardando_pesagem'].includes(p.status)).length;
+        const tabPed = document.querySelector('.tab[data-aba="relatorios"]');
+        if (tabPed) { let c = tabPed.querySelector('.tab-conta'); if (!c) { c = document.createElement('i'); c.className = 'tab-conta'; tabPed.appendChild(c); } c.textContent = esperando; c.hidden = !esperando; c.setAttribute('aria-label', `${esperando} pedido(s) esperando`); }
+        const ponto = document.getElementById('tabs-ponto'); if (ponto) ponto.hidden = !esperando;
         if (document.getElementById('aba-relatorios')?.classList.contains('active')) {
             renderRelatoriosMaster();
         }
@@ -321,7 +379,8 @@ const iniciarRealTimeSync = () => {
         );
         if (!cargaInicial && chegou) {
             playAlertaPedido();
-            showToast("🔔 NOVO PEDIDO NA FILA!", false);
+            document.querySelectorAll('.tab[data-aba="relatorios"] .ic, #tabs-atual .tabs-atual-trocar .ic').forEach((i) => { i.classList.remove('toca'); void i.getBoundingClientRect(); i.classList.add('toca'); });
+            showToast("NOVO PEDIDO NA FILA!", false);
             notificarNovoPedido();
         }
         cargaInicial = false; // só a PRIMEIRA carga é silenciosa
@@ -329,7 +388,7 @@ const iniciarRealTimeSync = () => {
 
     const escutarSemIndice = (motivo) => {
         avisarModoSimples(motivo);
-        const qSimples = query(collection(db, "pedidos"), orderBy("data", "desc"), limit(300));
+        const qSimples = query(tcol("pedidos"), orderBy("data", "desc"), limit(300));
         // O unsubscribe é guardado — sem isso o listener sobreviveria ao logout.
         const unsub = onSnapshot(qSimples, (snap) => {
             aplicarPedidos(
@@ -342,7 +401,7 @@ const iniciarRealTimeSync = () => {
     };
 
     const qComIndice = query(
-        collection(db, "pedidos"),
+        tcol("pedidos"),
         where("status", "in", STATUS_NA_FILA),
         orderBy("data", "desc"), limit(100)
     );
@@ -388,7 +447,7 @@ const renderProdutos = () => {
         // sem ele, o cliente não vê estimativa ao pedir "5 unidades".
         const precisaPeso = ehFracionavel(p.unidade) && !p.pesoMedio;
         const avisoPeso = precisaPeso
-            ? `<span class="badge-estoque baixo" style="margin-top:4px;display:inline-block;">⚖️ Sem peso médio</span>` : '';
+            ? `<span class="badge-estoque baixo" style="margin-top:4px;display:inline-block;"><i class="ic" data-i="balanca"></i> Sem peso médio</span>` : '';
 
         return `
         <article class="card-produto ${p.ativo ? '' : 'esgotado'}">
@@ -467,7 +526,7 @@ const injetarEstoqueUI = () => {
         if (precoRow) {
             precoRow.insertAdjacentHTML('afterend', `
                 <div class="form-group-estoque">
-                    <label for="edit-estoque-fisico">📦 Quantidade Física em Stock (Opcional)</label>
+                    <label for="edit-estoque-fisico"><i class="ic" data-i="caixa"></i> Quantidade Física em Stock (Opcional)</label>
                     <input type="number" id="edit-estoque-fisico" min="0" placeholder="Ex: 50 (Deixe em branco p/ infinito)">
                     <small style="color:var(--text-light); font-size:0.75rem; display:block; margin-top:4px;">Se preenchido, o produto irá esgotar automaticamente quando chegar a 0 no e-commerce.</small>
                 </div>
@@ -488,7 +547,8 @@ const ESTEIRA = {
     conferindo: false
 };
 
-const ehItemDeBalanca = (item) => item.aPesar === true;
+// item pedido em unidades de um produto vendido por quilo (continua sendo "de balança" depois de pesado)
+const ehItemDeBalanca = (item) => item.aPesar === true || (item.tipo === 'un' && ehFracionavel(item.unidade) && item.pesoFinal > 0);
 
 const valorDoItem = (item) => {
     if (ehItemDeBalanca(item)) {
@@ -571,7 +631,7 @@ const renderItemAtual = () => {
 
     const blocoFoto = foto
         ? `<img class="pk-foto" src="${escapeHTML(foto)}" alt="${escapeHTML(item.nome)}">`
-        : `<div class="pk-foto pk-foto-vazia">🥬</div>`;
+        : `<div class="pk-foto pk-foto-vazia"><i class="ic" data-i="folha"></i></div>`;
 
     if (ehItemDeBalanca(item)) {
         // Se há peso médio cadastrado, sugere quanto deve dar
@@ -689,8 +749,8 @@ const renderConferencia = () => {
                 <div class="pk-total-final"><span>Valor exato</span><strong>${fmt(total)}</strong></div>
             </div>
             <div class="pk-acoes-finais">
-                <button class="pk-btn-enviar" id="pk-enviar">📲 Enviar para a cliente</button>
-                <button class="pk-btn-secundario" id="pk-reconferir">🔄 Reconferir desde o início</button>
+                <button class="pk-btn-enviar" id="pk-enviar"><i class="ic" data-i="enviar"></i> Enviar para a cliente</button>
+                <button class="pk-btn-secundario" id="pk-reconferir"><i class="ic" data-i="repetir"></i> Reconferir desde o início</button>
                 <button class="pk-btn-secundario" id="pk-salvar-sem-enviar">Salvar sem avisar agora</button>
             </div>
         </div>`;
@@ -718,7 +778,7 @@ const renderEsteira = () => {
 const avancarEsteira = () => {
     const item = ESTEIRA.itens[ESTEIRA.indice];
     if (ehItemDeBalanca(item) && !(item.pesoFinal > 0)) {
-        return showToast('⚠️ Digite o peso marcado na balança.', true);
+        return showToast('Digite o peso marcado na balança.', true);
     }
     if (ESTEIRA.indice < ESTEIRA.itens.length - 1) ESTEIRA.indice++;
     else ESTEIRA.conferindo = true;
@@ -731,7 +791,7 @@ const voltarEsteira = () => {
 
 const abrirEsteira = (pedido) => {
     injetarEsteira();
-    ESTEIRA.pedido = pedido;
+    ESTEIRA.pedido = pedido; ESTEIRA.totalFechado = null; ESTEIRA.desconto = 0;
     ESTEIRA.itens = JSON.parse(JSON.stringify(pedido.itens || []));
     ESTEIRA.itens.forEach(i => { if (!i.pesoFinal) i.pesoFinal = 0; });
     ESTEIRA.indice = 0;
@@ -739,7 +799,7 @@ const abrirEsteira = (pedido) => {
 
     document.getElementById('pk-cliente-nome').textContent = pedido.nome || 'Cliente';
     document.getElementById('pk-cliente-end').textContent =
-        `Quadra ${pedido.quadra || '?'} • Lote ${pedido.lote || '?'}`;
+        linhaEndereco(pedido) || 'Endereço não informado';
 
     if (ESTEIRA.itens.length === 0) return showToast('Este pedido não tem itens.', true);
 
@@ -825,7 +885,8 @@ const montarMensagemCliente = () => {
     });
 
     L.push(risco);
-    L.push(`💰 *Total: ${fmt(totalDaEsteira())}*`);
+    if (ESTEIRA.desconto > 0) L.push(`🎁 Desconto do cupom: -${fmt(ESTEIRA.desconto)}`);
+    L.push(`💰 *Total: ${fmt(ESTEIRA.totalFechado ?? totalDaEsteira())}*`);
     L.push('');
     L.push(`💳 Pagamento: ${p.pag || 'a combinar'}`);
 
@@ -835,7 +896,7 @@ const montarMensagemCliente = () => {
 
     L.push('');
     L.push('📍 *Endereço de entrega:*');
-    L.push(`Quadra ${p.quadra} • Lote ${p.lote}`);
+    L.push(linhaEndereco(p));
 
     if (p.obs) {
         L.push('');
@@ -851,25 +912,19 @@ const montarMensagemCliente = () => {
 
 const finalizarEsteira = async (btn, enviarWhats) => {
     const textoOriginal = btn.textContent;
-    btn.disabled = true; btn.textContent = 'Salvando... ⏳';
-
-    const totalExato = totalDaEsteira();
-    const itensFinais = ESTEIRA.itens.map(i => ({
-        ...i,
-        aPesar: false,
-        subtotal: valorDoItem(i),
-        precoFinalCalculado: valorDoItem(i)
-    }));
+    btn.disabled = true; btn.textContent = 'Salvando...';
 
     try {
-        await updateDoc(doc(db, 'pedidos', ESTEIRA.pedido.id), {
-            itens: itensFinais,
-            total: totalExato,
-            totalExato,
-            temItensAPesar: false,
-            status: 'preparando',
-            pesadoEm: new Date().toISOString()
+        // Quem fecha a conta é o servidor (/api/pdv): ele calcula o valor pelo peso,
+        // mantém o desconto do cupom e baixa do estoque o que foi pesado.
+        const token = await auth.currentUser?.getIdToken();
+        const resp = await fetch('/api/pdv', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ acao: 'pesagem', pedidoId: ESTEIRA.pedido.id, pesos: ESTEIRA.itens.map((i, idx) => ({ i: idx, peso: i.pesoFinal })).filter(x => x.peso > 0) })
         });
+        const fechado = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(fechado.error || 'Erro ao salvar o pedido.');
+        ESTEIRA.totalFechado = fechado.total; ESTEIRA.desconto = fechado.desconto || 0;
 
         if (enviarWhats) {
             const msg = montarMensagemCliente();
@@ -884,13 +939,13 @@ const finalizarEsteira = async (btn, enviarWhats) => {
             window.open(url, '_blank');
             if (!fone) showToast('Texto copiado — escolha a conversa da cliente.', false);
         } else {
-            showToast('✅ Pedido salvo com os valores exatos.');
+            showToast('Pedido salvo com os valores exatos.');
         }
 
         fecharEsteira();
     } catch (e) {
         console.error(e);
-        showToast('Erro ao salvar o pedido.', true);
+        showToast(e.message || 'Erro ao salvar o pedido.', true);
         btn.disabled = false; btn.textContent = textoOriginal;
     }
 };
@@ -909,6 +964,8 @@ document.body.addEventListener('click', async (e) => {
             ['edit-id', 'edit-nome', 'edit-preco', 'edit-cat', 'edit-foto', 'edit-foto-url'].forEach(i => document.getElementById(i).value = '');
             if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = '';
             if (document.getElementById('edit-estoque-fisico')) document.getElementById('edit-estoque-fisico').value = '';
+            if (document.getElementById('edit-duracao')) document.getElementById('edit-duracao').value = 'normal';
+            if (document.getElementById('edit-so-insumo')) document.getElementById('edit-so-insumo').checked = false;
             if (document.getElementById('edit-peso-medio')) document.getElementById('edit-peso-medio').value = '';
             definirUnidade('kg');          // produto novo começa sempre em "Quilo" (antes herdava o do último aberto)
             alternarCampoPesoMedio();
@@ -935,6 +992,8 @@ document.body.addEventListener('click', async (e) => {
             if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = p.descricao || '';
             if (document.getElementById('edit-estoque-fisico')) document.getElementById('edit-estoque-fisico').value = p.estoqueFisico !== undefined && p.estoqueFisico !== null ? p.estoqueFisico : '';
             if (document.getElementById('edit-peso-medio')) document.getElementById('edit-peso-medio').value = p.pesoMedio || '';
+            if (document.getElementById('edit-duracao')) document.getElementById('edit-duracao').value = ['curta', 'longa'].includes(p.duracao) ? p.duracao : 'normal';
+            if (document.getElementById('edit-so-insumo')) document.getElementById('edit-so-insumo').checked = p.soInsumo === true;
             alternarCampoPesoMedio();
 
             const previewContainer = document.getElementById('preview-foto-wrapper');
@@ -948,7 +1007,7 @@ document.body.addEventListener('click', async (e) => {
             const p = produtosAtuais.find(x => x.id === target.dataset.id);
             if (!p) return;
             const originHtml = target.innerHTML;
-            target.innerHTML = "⏳"; target.disabled = true;
+            target.innerHTML = "<i class='ic' data-i='espera'></i>"; target.disabled = true;
             try {
                 const res = await fetch('/api/assistente', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -959,7 +1018,7 @@ document.body.addEventListener('click', async (e) => {
 
                 // Substitui o alert() por um modal legível e copiável
                 mostrarTextoGerado('Post gerado pela IA', data.post);
-                try { await navigator.clipboard.writeText(data.post); showToast("✨ Texto copiado!"); } catch (_) {}
+                try { await navigator.clipboard.writeText(data.post); showToast("Texto copiado!"); } catch (_) {}
             } catch (e) {
                 showToast("Erro ao gerar post.", true);
             } finally {
@@ -974,7 +1033,7 @@ document.body.addEventListener('click', async (e) => {
                 const confirmado = await customConfirm("Esgotar Produto?", "Clientes não poderão comprar até você voltar pro stock.");
                 if (!confirmado) return;
             }
-            await setDoc(doc(db, "produtos", id), { ativo: novoStatus, ultimaModificacao: Date.now() }, { merge: true });
+            await setDoc(tdoc("produtos", id), { ativo: novoStatus, ultimaModificacao: Date.now() }, { merge: true });
             showToast(novoStatus ? "Produto disponível!" : "Produto esgotado.");
         }
 
@@ -992,7 +1051,7 @@ document.body.addEventListener('click', async (e) => {
             const id = target.dataset.id;
             const nextStatus = target.dataset.next;
             target.disabled = true;
-            await setDoc(doc(db, "pedidos", id), { status: nextStatus }, { merge: true });
+            await setDoc(tdoc("pedidos", id), { status: nextStatus }, { merge: true });
             showToast(`Pedido movido para: ${nextStatus.toUpperCase()}`);
         }
 
@@ -1001,7 +1060,7 @@ document.body.addEventListener('click', async (e) => {
             const atual = cuponsAtuais.find(c => c.codigo === codigo);
             const ligar = atual?.ativo === false;
             target.disabled = true;
-            await setDoc(doc(db, 'cupons', codigo), { ativo: ligar }, { merge: true });
+            await setDoc(tdoc('cupons', codigo), { ativo: ligar }, { merge: true });
             showToast(ligar ? `Cupom ${codigo} ligado` : `Cupom ${codigo} desligado`);
         }
 
@@ -1011,15 +1070,23 @@ document.body.addEventListener('click', async (e) => {
                 `Excluir o cupom ${codigo}?`,
                 'Quem já usou continua com o desconto no pedido. Novos pedidos não vão mais aceitar este código.'
             )) {
-                await deleteDoc(doc(db, 'cupons', codigo));
+                await deleteDoc(tdoc('cupons', codigo));
                 showToast(`Cupom ${codigo} excluído`);
             }
+        }
+
+        else if (action === 'imprimir-pedido') {
+            const pedido = pedidosGerais.find(p => p.id === target.dataset.id);
+            if (!pedido) return showToast("Pedido não encontrado", true);
+            target.disabled = true;
+            await comImpressao((m) => m.imprimirPedido(pedido, target.dataset.tipo));
+            target.disabled = false;
         }
 
         else if (action === 'excluir-pedido') {
             const id = target.dataset.id;
             if (await customConfirm("Concluir e Arquivar", "Deseja finalizar este pedido e retirá-lo da logística visual? (Os dados financeiros serão mantidos).")) {
-                await setDoc(doc(db, "pedidos", id), { status: 'arquivado' }, { merge: true });
+                await setDoc(tdoc("pedidos", id), { status: 'arquivado' }, { merge: true });
                 showToast("Pedido concluído e arquivado!");
             }
         }
@@ -1043,7 +1110,7 @@ const mostrarTextoGerado = (titulo, texto) => {
                         <textarea id="texto-ia-conteudo" rows="10" style="width:100%; font-size:0.95rem; line-height:1.5;"></textarea>
                     </div>
                     <footer class="modal-footer">
-                        <button class="btn btn-primary w-100" id="btn-copiar-texto-ia">📋 Copiar texto</button>
+                        <button class="btn btn-primary w-100" id="btn-copiar-texto-ia"><i class="ic" data-i="prancheta"></i> Copiar texto</button>
                     </footer>
                 </div>
             </div>`);
@@ -1051,8 +1118,8 @@ const mostrarTextoGerado = (titulo, texto) => {
             .addEventListener('click', () => closeModal('modal-texto-ia'));
         document.getElementById('btn-copiar-texto-ia').addEventListener('click', async () => {
             const campo = document.getElementById('texto-ia-conteudo');
-            try { await navigator.clipboard.writeText(campo.value); showToast("📋 Copiado!"); }
-            catch (_) { campo.select(); document.execCommand('copy'); showToast("📋 Copiado!"); }
+            try { await navigator.clipboard.writeText(campo.value); showToast("Copiado!"); }
+            catch (_) { campo.select(); document.execCommand('copy'); showToast("Copiado!"); }
         });
     }
     document.getElementById('texto-ia-titulo').textContent = titulo;
@@ -1067,7 +1134,7 @@ const iniciarIAFeaturesDOM = () => {
             <div class="form-group w-100" id="form-group-descricao">
                 <label style="display:flex; justify-content:space-between; align-items:center;">
                     Descrição (Exibida no detalhe do produto)
-                    <button type="button" id="btn-ia-descricao" class="btn-ia-action">✨ IA Copywriter</button>
+                    <button type="button" id="btn-ia-descricao" class="btn-ia-action"><i class="ic" data-i="faisca"></i> IA Copywriter</button>
                 </label>
                 <textarea id="edit-descricao" rows="3" placeholder="Deixe a nossa IA redigir um texto de conversão irresistível para este produto..." style="resize: vertical;"></textarea>
             </div>
@@ -1076,9 +1143,9 @@ const iniciarIAFeaturesDOM = () => {
         document.getElementById('btn-ia-descricao').addEventListener('click', async (e) => {
             const nome = document.getElementById('edit-nome').value;
             const cat = document.getElementById('edit-cat').value;
-            if (!nome || !cat) return showToast("⚠️ Preencha Nome e Categoria primeiro.", true);
+            if (!nome || !cat) return showToast("Preencha Nome e Categoria primeiro.", true);
             const btn = e.currentTarget; const originText = btn.innerHTML;
-            btn.innerHTML = "A gerar... ⏳"; btn.disabled = true;
+            btn.innerHTML = "A gerar... <i class='ic' data-i='espera'></i>"; btn.disabled = true;
             try {
                 const res = await fetch('/api/assistente', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1087,7 +1154,7 @@ const iniciarIAFeaturesDOM = () => {
                 const data = await res.json();
                 if (!data.sucesso) throw new Error(data.error);
                 document.getElementById('edit-descricao').value = data.descricao;
-                showToast("✨ Descrição de Alta Conversão gerada!");
+                showToast("Descrição de Alta Conversão gerada!");
             } catch (err) { showToast("Falha na geração via IA.", true); }
             finally { btn.innerHTML = originText; btn.disabled = false; }
         });
@@ -1097,14 +1164,14 @@ const iniciarIAFeaturesDOM = () => {
     if (dashboardControls && !document.getElementById('btn-ia-kit')) {
         dashboardControls.insertAdjacentHTML('beforeend', `
             <div style="display:flex; gap:10px; align-items:center;">
-                <button id="btn-ia-kit" class="btn-ia-action" style="padding: 10px 18px; font-size: 0.95rem;">🪄 Criar Kit c/ IA</button>
+                <button id="btn-ia-kit" class="btn-ia-action" style="padding: 10px 18px; font-size: 0.95rem;"><i class="ic" data-i="faisca"></i> Criar Kit c/ IA</button>
             </div>
         `);
 
         document.getElementById('btn-ia-kit').addEventListener('click', async (e) => {
             if (produtosAtuais.length < 5) return showToast("Precisa de mais produtos no catálogo.", true);
             const btn = e.currentTarget; const originText = btn.innerHTML;
-            btn.innerHTML = "⏳ A criar kit..."; btn.disabled = true;
+            btn.innerHTML = "<i class='ic' data-i='espera'></i> A criar kit..."; btn.disabled = true;
             try {
                 const res = await fetch('/api/assistente', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1114,15 +1181,15 @@ const iniciarIAFeaturesDOM = () => {
                 if (!data.sucesso) throw new Error(data.error);
 
                 injetarEstoqueUI();
-                document.getElementById('modal-titulo').textContent = '⭐ ' + data.kit.nome;
+                document.getElementById('modal-titulo').textContent = '' + data.kit.nome;
                 document.getElementById('edit-id').value = ''; document.getElementById('edit-nome').value = data.kit.nome;
                 document.getElementById('edit-preco').value = data.kit.preco;
                 document.getElementById('edit-cat').value = 'Kits Inteligentes';
                 definirUnidade('kit');
                 alternarCampoPesoMedio();
-                if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = `${data.kit.descricao}\n\n📦 O que inclui:\n${data.kit.itensInclusos}`;
+                if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = `${data.kit.descricao}\n\nO que inclui:\n${data.kit.itensInclusos}`;
                 openModal('modal-produto');
-                showToast("✨ Kit formulado! Ajuste o preço e guarde.");
+                showToast("Kit formulado! Ajuste o preço e guarde.");
             } catch (err) { showToast("Falha ao montar kit.", true); }
             finally { btn.innerHTML = originText; btn.disabled = false; }
         });
@@ -1131,7 +1198,7 @@ const iniciarIAFeaturesDOM = () => {
 
 document.getElementById('btn-salvar-produto').addEventListener('click', async () => {
     const btn = document.getElementById('btn-salvar-produto');
-    btn.textContent = "A guardar... ⏳"; btn.disabled = true;
+    btn.textContent = "A guardar..."; btn.disabled = true;
 
     try {
         const idExistente = document.getElementById('edit-id').value;
@@ -1150,50 +1217,64 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
             // aceita o nome que aparece na loja OU a chave; grava sempre a chave da categoria cadastrada
             cat: chaveDaCategoria(document.getElementById('edit-cat').value).toLowerCase(),
             descricao: document.getElementById('edit-descricao') ? document.getElementById('edit-descricao').value.trim() : '',
-            estoqueFisico: estoqueFinal,
             pesoMedio: pesoMedioFinal, // gramas por unidade — alimenta a estimativa na loja
+            duracao: document.getElementById('edit-duracao')?.value || 'normal',   // folga da sugestão de compra (motor)
+            soInsumo: !!document.getElementById('edit-so-insumo')?.checked,        // ingrediente de receita: fora da loja
             // Sem controle de estoque: mantém o que estava. Antes, editar um produto
             // marcado como "Esgotado" o colocava de volta à venda sem ninguém pedir.
-            ativo: estoqueFinal !== null ? (estoqueFinal > 0) : (antigo ? antigo.ativo !== false : true),
+            ativo: antigo ? antigo.ativo !== false : true,
             ultimaModificacao: Date.now()
         };
 
         if (!pData.nome) throw new Error("Preencha o nome do produto.");
         if (!pData.unidade) throw new Error("Escolha a métrica de venda (quilo, unidade...).");
         if (!pData.cat) throw new Error("Escolha a categoria do produto.");
-        if (isNaN(pData.preco) || pData.preco <= 0) throw new Error("Informe um preço válido.");
+        if (pData.soInsumo && !(pData.preco > 0)) pData.preco = 0;
+        else if (isNaN(pData.preco) || pData.preco <= 0) throw new Error("Informe um preço válido.");
 
         const fileInput = document.getElementById('edit-foto');
         const urlInput = document.getElementById('edit-foto-url').value.trim();
 
         if (fileInput.files.length > 0) {
             showToast("A otimizar imagem...", false);
-            const optimizedFile = await compressImageToJPG(fileInput.files[0], 1000, 0.8);
-            const storageRef = ref(storage, `fotos_produtos/${id}.jpg`);
-            await uploadBytes(storageRef, optimizedFile);
-            pData.foto = await getDownloadURL(storageRef);
+            // mesmo caminho do envio de várias fotos: reduz, converte para WebP e envia
+            Object.assign(pData, await (await TELAS.fotos()).enviarFotos(id, fileInput.files[0]));   // foto grande + miniatura
         }
         else if (urlInput) {
             if (!urlInput.startsWith('https://')) throw new Error("A URL da foto precisa começar com https://");
-            pData.foto = urlInput;
+            pData.foto = urlInput; pData.fotoMini = null;
         }
         else if (document.getElementById('edit-id').value) {
             const pAntigo = produtosAtuais.find(x => x.id === id);
             if (pAntigo && pAntigo.foto) pData.foto = pAntigo.foto;
         }
 
-        await setDoc(doc(db, "produtos", id), pData, { merge: true });
+        // ESTOQUE: a quantidade não é mais gravada direto aqui. Campo vazio = sem controle.
+        // Número diferente do atual = contagem, que passa pelo servidor e entra no histórico.
+        const estoqueAntes = antigo && antigo.estoqueFisico !== undefined && antigo.estoqueFisico !== '' ? antigo.estoqueFisico : null;
+        if (estoqueFinal !== null && (!Number.isFinite(estoqueFinal) || estoqueFinal < 0)) throw new Error("A quantidade em estoque precisa ser zero ou maior.");
+        if (estoqueFinal === null && estoqueAntes !== null) pData.estoqueFisico = null;
+
+        await setDoc(tdoc("produtos", id), pData, { merge: true });
+        if (estoqueFinal !== null && estoqueFinal !== estoqueAntes) {
+            try { await (await TELAS.estoque()).contarEstoque(id, estoqueFinal, 'Alterado no cadastro do produto'); }
+            catch (e) { throw new Error(`Produto guardado, mas o estoque não mudou: ${e.message}`); }
+        }
         closeModal('modal-produto'); showToast("Produto guardado com sucesso!");
     } catch (erro) {
         showToast(erro.message || "Erro ao guardar o produto.", true);
     } finally {
-        btn.textContent = "💾 Gravar no Banco"; btn.disabled = false;
+        btn.textContent = "Gravar no Banco"; btn.disabled = false;
     }
+});
+
+document.getElementById('btn-varias-fotos')?.addEventListener('click', async () => {
+    try { (await TELAS.fotos()).abrirFotos(produtosAtuais); } catch (e) { showToast('Não consegui abrir. Confira a internet.', true); }
 });
 
 document.getElementById('btn-excluir-produto').addEventListener('click', async () => {
     if (await customConfirm("Atenção Crítica", "APAGAR este produto permanentemente do banco de dados?")) {
-        await deleteDoc(doc(db, "produtos", document.getElementById('edit-id').value));
+        await deleteDoc(tdoc("produtos", document.getElementById('edit-id').value));
         closeModal('modal-produto'); showToast("Produto apagado.");
     }
 });
@@ -1226,11 +1307,11 @@ const extrairEstatisticas = (pedidos) => {
 // ==========================================
 const renderHtmlPedidos = (pedidos) => {
     const dicsStatus = {
-        'pendente':             { tag: '🚨 NOVO',        cor: 'var(--danger)',  btn: 'Aceitar e Preparar',      proximo: 'preparando' },
-        'aguardando_pagamento': { tag: '💠 AGUARDA PIX', cor: 'var(--info)',    btn: 'Confirmar Recebimento',   proximo: 'preparando' },
-        'aguardando_pesagem':   { tag: '⚖️ A PESAR',     cor: 'var(--earth)',   btn: 'Lançar Pesos na Balança', proximo: null },
-        'preparando':           { tag: '📦 PREPARANDO',  cor: 'var(--warning)', btn: 'Despachar (Enviado)',     proximo: 'enviado' },
-        'enviado':              { tag: '🛵 A CAMINHO',   cor: 'var(--info)',    btn: 'Marcar como Entregue',    proximo: 'arquivado' }
+        'pendente':             { tag: '<i class="ic" data-i="sino"></i> NOVO',        cor: 'var(--danger)',  btn: 'Aceitar e Preparar',      proximo: 'preparando' },
+        'aguardando_pagamento': { tag: '<i class="ic" data-i="pix"></i> AGUARDA PIX', cor: 'var(--info)',    btn: 'Confirmar Recebimento',   proximo: 'preparando' },
+        'aguardando_pesagem':   { tag: '<i class="ic" data-i="balanca"></i> A PESAR',     cor: 'var(--earth)',   btn: 'Lançar Pesos na Balança', proximo: null },
+        'preparando':           { tag: '<i class="ic" data-i="caixa"></i> PREPARANDO',  cor: 'var(--warning)', btn: 'Despachar (Enviado)',     proximo: 'enviado' },
+        'enviado':              { tag: '<i class="ic" data-i="entrega"></i> A CAMINHO',   cor: 'var(--info)',    btn: 'Marcar como Entregue',    proximo: 'arquivado' }
     };
 
     let colNovos = '', colPrep = '', colEnv = '';
@@ -1238,7 +1319,7 @@ const renderHtmlPedidos = (pedidos) => {
 
     const termo = pedidoBuscaTermo;
     const filtrados = termo
-        ? pedidos.filter(p => normalizar(p.nome).includes(termo) || String(p.quadra || '').includes(termo) || String(p.lote || '').includes(termo))
+        ? pedidos.filter(p => normalizar(p.nome).includes(termo) || normalizar(p.quadra).includes(termo) || String(p.lote || '').includes(termo) || normalizar(p.condominio).includes(termo))
         : pedidos;
 
     filtrados.forEach(p => {
@@ -1267,8 +1348,8 @@ const renderHtmlPedidos = (pedidos) => {
 
         const infoPag = p.pagamento?.status === 'PAID'
             ? `<span style="background:var(--success);color:white;padding:3px 8px;border-radius:12px;font-size:0.72rem;font-weight:700;">✓ PAGO</span>` : '';
-        const infoTroco = p.troco ? `<div style="font-size:0.82rem;color:var(--earth);margin-top:4px;">💵 Troco para: ${escapeHTML(p.troco)}</div>` : '';
-        const infoObs = p.obs ? `<div style="font-size:0.82rem;color:var(--text-mid);margin-top:4px;font-style:italic;">📝 ${escapeHTML(p.obs)}</div>` : '';
+        const infoTroco = p.troco ? `<div style="font-size:0.82rem;color:var(--earth);margin-top:4px;"><i class="ic" data-i="dinheiro"></i> Troco para: ${escapeHTML(p.troco)}</div>` : '';
+        const infoObs = p.obs ? `<div style="font-size:0.82rem;color:var(--text-mid);margin-top:4px;font-style:italic;"><i class="ic" data-i="nota"></i> ${escapeHTML(p.obs)}</div>` : '';
 
         const cardHtml = `
         <article class="card-pedido" style="border-left: 5px solid ${st.cor}; background: var(--warm-white); border-radius: 8px; padding: 15px; margin-bottom: 15px; border-right: 1px solid var(--parchment); border-top: 1px solid var(--parchment); border-bottom: 1px solid var(--parchment);">
@@ -1276,11 +1357,11 @@ const renderHtmlPedidos = (pedidos) => {
                 <h3 style="font-size: 1.1rem; color: var(--forest); margin: 0;">${escapeHTML(p.nome)}</h3>
                 <strong style="font-size: 1.1rem; white-space:nowrap;">${fmt(p.total || 0)}</strong>
             </div>
-            <p style="font-size: 0.85rem; color: var(--text-mid); margin-bottom: 8px;">📍 Q${escapeHTML(p.quadra)} - L${escapeHTML(p.lote)} • ${escapeHTML(p.pag || '')}</p>
+            <p style="font-size: 0.85rem; color: var(--text-mid); margin-bottom: 8px;"><i class="ic" data-i="pino"></i> ${escapeHTML(linhaEndereco(p, { curto: true }))} • ${escapeHTML(p.pag || '')}</p>
             <div style="margin-bottom: 10px; font-size: 0.8rem; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                 <span style="background: ${st.cor}; color: white; padding: 3px 8px; border-radius: 12px; font-weight: bold;">${st.tag}</span>
                 ${infoPag}
-                <span>📅 ${dataFmt}</span>
+                <span><i class="ic" data-i="calendario"></i> ${dataFmt}</span>
             </div>
             <div style="font-size: 0.9rem; color: var(--text-dark); margin-bottom: 12px; background: white; padding: 10px; border-radius: 6px; border: 1px solid #eee;">
                 • ${itensStr}
@@ -1288,6 +1369,10 @@ const renderHtmlPedidos = (pedidos) => {
                 ${infoObs}
             </div>
             <div style="display: flex; gap: 8px;">${botao}</div>
+            <div class="ped-imprimir">
+                <button type="button" data-action="imprimir-pedido" data-tipo="cupom" data-id="${escapeHTML(p.id)}"><i class="ic" data-i="impressora"></i> Cupom</button>
+                <button type="button" data-action="imprimir-pedido" data-tipo="etiqueta" data-id="${escapeHTML(p.id)}"><i class="ic" data-i="etiqueta"></i> Etiqueta da sacola</button>
+            </div>
         </article>`;
 
         if (['pendente', 'aguardando_pesagem', 'aguardando_pagamento'].includes(stKey)) { colNovos += cardHtml; nNovos++; }
@@ -1335,14 +1420,14 @@ const acoplarRelatorioIADemanda = (historicoMap) => {
     if (!document.getElementById('btn-gerar-relatorio-ia')) {
         painelArea.insertAdjacentHTML('beforebegin', `
             <div style="display:flex; justify-content:flex-end; margin-bottom: 12px;">
-                <button id="btn-gerar-relatorio-ia" class="btn-ia-action">🧠 Pedir Relatório de Previsão de Demanda à IA</button>
+                <button id="btn-gerar-relatorio-ia" class="btn-ia-action"><i class="ic" data-i="faisca"></i> Pedir Relatório de Previsão de Demanda à IA</button>
             </div>
             <div id="container-relatorio-ia"></div>
         `);
 
         document.getElementById('btn-gerar-relatorio-ia').addEventListener('click', async (e) => {
             const btn = e.currentTarget;
-            btn.innerHTML = "A analisar cruzamento de dados... ⏳"; btn.disabled = true;
+            btn.innerHTML = "A analisar cruzamento de dados... <i class='ic' data-i='espera'></i>"; btn.disabled = true;
 
             const historicoLeve = Object.entries(historicoMap).map(i => ({ data: i[0], faturacao_dia: i[1] }));
 
@@ -1357,7 +1442,7 @@ const acoplarRelatorioIADemanda = (historicoMap) => {
                 document.getElementById('container-relatorio-ia').innerHTML = `
                     <div class="ia-relatorio-box animation-slide-up">
                         <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                            <span style="font-size:1.5rem">📊</span>
+                            <span style="font-size:1.5rem"><i class="ic" data-i="barras"></i></span>
                             <h3 style="margin:0;">Insight Logístico da Inteligência Artificial</h3>
                         </div>
                         <p style="color:var(--text-light); font-size:0.8rem; margin-bottom:16px;">Análise em Tempo Real • Baseado nas vendas faturadas</p>
@@ -1367,7 +1452,7 @@ const acoplarRelatorioIADemanda = (historicoMap) => {
             } catch (e) {
                 showToast("A IA não conseguiu gerar o relatório de momento.", true);
             } finally {
-                btn.innerHTML = "🧠 Atualizar Previsão de Demanda"; btn.disabled = false;
+                btn.innerHTML = "<i class='ic' data-i='faisca'></i> Atualizar Previsão de Demanda"; btn.disabled = false;
             }
         });
     }
@@ -1378,11 +1463,11 @@ const renderRelatoriosMaster = async () => {
     if (pedidosGerais.length === 0) {
         listDiv.innerHTML = `
             <div style="text-align:center; padding:40px 20px; color:var(--text-light);">
-                <div style="font-size:2.5rem; margin-bottom:10px;">📭</div>
+                <div style="font-size:2.5rem; margin-bottom:10px;"><i class="ic" data-i="vazio"></i></div>
                 <p style="font-weight:700; color:var(--text-mid); font-size:1.05rem;">Nenhum pedido na fila</p>
                 <p style="font-size:.88rem; margin-top:6px; line-height:1.6;">
                     Só aparecem aqui pedidos em andamento.<br>
-                    Os já concluídos ficam em <b>💰 Balanço Geral</b>.
+                    Os já concluídos ficam em <b><i class="ic" data-i="moedas"></i> Balanço Geral</b>.
                 </p>
             </div>`;
         document.getElementById('stat-pedidos').textContent = "0";
@@ -1401,7 +1486,7 @@ const renderRelatoriosMaster = async () => {
         if (rankingContainer) {
             rankingContainer.insertAdjacentHTML('beforebegin', `
                 <div id="area-grafico-receita" class="chart-wrapper">
-                    <h3>📊 Receita Logística Recente</h3>
+                    <h3><i class="ic" data-i="barras"></i> Receita Logística Recente</h3>
                     <canvas id="receita-chart" height="70"></canvas>
                 </div>
             `);
@@ -1474,14 +1559,14 @@ const csvCampo = (valor) => {
 
 document.getElementById('btn-exportar').addEventListener('click', () => {
     if (pedidosGerais.length === 0) return showToast("Não há pedidos para exportar.", true);
-    let csv = ['Data', 'Cliente', 'Quadra', 'Lote', 'Status', 'Pagamento', 'Total', 'Itens'].join(CSV_SEP) + "\n";
+    let csv = ['Data', 'Cliente', 'Condomínio', 'Quadra/Rua', 'Lote/Número', 'Status', 'Pagamento', 'Total', 'Itens'].join(CSV_SEP) + "\n";
     pedidosGerais.forEach(p => {
         const itensTxt = p.itens ? p.itens.map(i => `${formatarQtdRelatorio(i.qtd, i.unidade)} ${i.nome}`).join(' | ') : '';
         const total = (Number(p.total) || 0).toFixed(2).replace('.', ',');
-        csv += [dataHoraBR(p.data), p.nome, p.quadra, p.lote, p.status, p.pag, total, itensTxt].map(csvCampo).join(CSV_SEP) + "\n";
+        csv += [dataHoraBR(p.data), p.nome, p.condominio || '', p.quadra, p.lote, p.status, p.pag, total, itensTxt].map(csvCampo).join(CSV_SEP) + "\n";
     });
     baixarCsv(csv, `Vendas_Logistica_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`);
-    showToast('📥 Planilha gerada. Veja em Downloads.');
+    showToast('Planilha gerada. Veja em Downloads.');
 });
 
 document.getElementById('btn-limpar-hist').addEventListener('click', async () => {
@@ -1489,7 +1574,7 @@ document.getElementById('btn-limpar-hist').addEventListener('click', async () =>
     if (await customConfirm("Limpeza de Final de Expediente", "Isto ARQUIVARÁ todos os pedidos da tela atual. Confirmar encerramento em lote?")) {
         try {
             const batch = writeBatch(db);
-            pedidosGerais.forEach(p => batch.update(doc(db, "pedidos", p.id), { status: 'arquivado' }));
+            pedidosGerais.forEach(p => batch.update(tdoc("pedidos", p.id), { status: 'arquivado' }));
             await batch.commit();
             showToast("Expediente finalizado. Pedidos arquivados.");
         } catch (error) {
@@ -1515,7 +1600,7 @@ document.getElementById('btn-limpar-hist').addEventListener('click', async () =>
 let cuponsAtuais = [];
 
 const iniciarCupons = () => {
-    const unsub = onSnapshot(collection(db, 'cupons'), (snap) => {
+    const unsub = onSnapshot(tcol('cupons'), (snap) => {
         cuponsAtuais = snap.docs.map(d => ({ codigo: d.id, ...d.data() }));
         renderCupons();
     }, (e) => {
@@ -1542,7 +1627,7 @@ const renderCupons = () => {
     if (cuponsAtuais.length === 0) {
         alvo.innerHTML = `
             <div style="text-align:center; padding:30px 20px; color:var(--text-light);">
-                <div style="font-size:2rem; margin-bottom:8px;">🎁</div>
+                <div style="font-size:2rem; margin-bottom:8px;"><i class="ic" data-i="cupom"></i></div>
                 <p style="font-weight:700; color:var(--text-mid);">Nenhum cupom criado</p>
                 <p style="font-size:.86rem; margin-top:6px;">Crie um acima para começar a oferecer desconto.</p>
             </div>`;
@@ -1613,9 +1698,9 @@ const salvarCupom = async () => {
 
     const limiteRaw = document.getElementById('cup-limite').value;
 
-    btn.disabled = true; btn.textContent = 'Gravando... ⏳';
+    btn.disabled = true; btn.textContent = 'Gravando...';
     try {
-        await setDoc(doc(db, 'cupons', codigo), {
+        await setDoc(tdoc('cupons', codigo), {
             percentual,
             valorFixo,
             minimoCompra: Number(document.getElementById('cup-minimo').value) || 0,
@@ -1625,14 +1710,14 @@ const salvarCupom = async () => {
             criadoEm: new Date().toISOString(),
         }, { merge: true });   // merge preserva a contagem de usos se já existir
 
-        showToast(`🎁 Cupom ${codigo} gravado!`);
+        showToast(`Cupom ${codigo} gravado!`);
         ['cup-codigo', 'cup-percentual', 'cup-valorfixo', 'cup-minimo', 'cup-limite', 'cup-validade']
             .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     } catch (e) {
         console.error(e);
         showToast('Erro ao gravar o cupom.', true);
     } finally {
-        btn.disabled = false; btn.textContent = '💾 Gravar Cupom';
+        btn.disabled = false; btn.textContent = 'Gravar Cupom';
     }
 };
 
@@ -1663,12 +1748,12 @@ const renderComunicados = () => {
     const blocoFixo = `
         <div class="com-dia" style="border-color: var(--earth);">
             <div class="com-dia-topo">
-                <span class="com-dia-nome">📢 Aviso fixo / Oferta do momento ${jaVenceu(comunicadosAtuais.fixo) ? SELO_VENCIDO : ''}</span>
+                <span class="com-dia-nome"><i class="ic" data-i="megafone"></i> Aviso fixo / Oferta do momento ${jaVenceu(comunicadosAtuais.fixo) ? SELO_VENCIDO : ''}</span>
                 <label class="com-switch">
                     <input type="checkbox" id="com-fixo-ativo" ${comunicadosAtuais.fixo?.ativo ? 'checked' : ''}> mostrar
                 </label>
             </div>
-            <textarea id="com-fixo-texto" placeholder="Ex: 🍓 Morango na promoção hoje: R$ 8,90 a bandeja!">${escapeHTML(comunicadosAtuais.fixo?.texto || '')}</textarea>
+            <textarea id="com-fixo-texto" placeholder="Ex: Morango na promoção hoje: R$ 8,90 a bandeja!">${escapeHTML(comunicadosAtuais.fixo?.texto || '')}</textarea>
             <label class="com-validade">
                 Some sozinho depois de
                 <input type="date" id="com-fixo-validade" value="${escapeHTML(comunicadosAtuais.fixo?.validoAte || '')}">
@@ -1736,7 +1821,7 @@ document.getElementById('btn-exportar-balanco')?.addEventListener('click', () =>
 
     // --- Parte 2: pedido por pedido ---
     csv += '\nPEDIDOS DO PERÍODO\n';
-    csv += ['Data', 'Cliente', 'Quadra', 'Lote', 'Status', 'Pagamento', 'Pago via PIX', 'Cupom', 'Total', 'Itens'].join(CSV_SEP) + '\n';
+    csv += ['Data', 'Cliente', 'Condomínio', 'Quadra/Rua', 'Lote/Número', 'Status', 'Pagamento', 'Pago via PIX', 'Cupom', 'Total', 'Itens'].join(CSV_SEP) + '\n';
     validos
         .slice()
         .sort((a, b) => String(a.data).localeCompare(String(b.data)))
@@ -1748,19 +1833,19 @@ document.getElementById('btn-exportar-balanco')?.addEventListener('click', () =>
                 ? `${p.cupom.codigo} (-${Number(p.cupom.desconto || 0).toFixed(2).replace('.', ',')})`
                 : '';
             csv += [
-                dataHoraBR(p.data), p.nome, p.quadra, p.lote, p.status, p.pag, pago, cupom,
+                dataHoraBR(p.data), p.nome, p.condominio || '', p.quadra, p.lote, p.status, p.pag, pago, cupom,
                 (Number(p.total) || 0).toFixed(2).replace('.', ','), itensTxt
             ].map(csvCampo).join(CSV_SEP) + '\n';
         });
 
     const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
     baixarCsv(csv, `Balanco_Banca_${hoje}.csv`);
-    showToast(`📄 Balanço exportado (${validos.length} pedidos). Veja em Downloads.`);
+    showToast(`Balanço exportado (${validos.length} pedidos). Veja em Downloads.`);
 });
 
 const salvarComunicados = async () => {
     const btn = document.getElementById('btn-salvar-comunicados');
-    btn.disabled = true; btn.textContent = 'Salvando... ⏳';
+    btn.disabled = true; btn.textContent = 'Salvando...';
     try {
         const dias = {};
         document.querySelectorAll('.com-dia-texto').forEach(t => {
@@ -1778,12 +1863,12 @@ const salvarComunicados = async () => {
             texto: (document.getElementById('com-fixo-texto')?.value || '').trim().slice(0, 220),
             validoAte: document.getElementById('com-fixo-validade')?.value || ''
         };
-        await setDoc(doc(db, 'loja', 'comunicados'), { dias, fixo, atualizadoEm: Date.now() }, { merge: true });
-        showToast('📢 Comunicados atualizados!');
+        await setDoc(tdoc('loja', 'comunicados'), { dias, fixo, atualizadoEm: Date.now() }, { merge: true });
+        showToast('Comunicados atualizados!');
     } catch (e) {
         showToast('Erro ao salvar comunicados.', true);
     } finally {
-        btn.disabled = false; btn.textContent = '💾 Gravar Comunicados';
+        btn.disabled = false; btn.textContent = 'Gravar Comunicados';
     }
 };
 document.getElementById('btn-salvar-comunicados')?.addEventListener('click', salvarComunicados);
@@ -1798,12 +1883,12 @@ let balancoCache = [];
 const carregarBalanco = async (dias = 30) => {
     const alvo = document.getElementById('balanco-conteudo');
     if (!alvo) return;
-    alvo.innerHTML = '<p style="color:var(--text-light)">Somando os números... ⏳</p>';
+    alvo.innerHTML = '<p style="color:var(--text-light)">Somando os números... <i class="ic" data-i="espera"></i></p>';
 
     const desde = new Date(Date.now() - dias * 86400000).toISOString();
     try {
         const LIMITE_BALANCO = 2000;
-        const q = query(collection(db, 'pedidos'), where('data', '>=', desde), orderBy('data', 'desc'), limit(LIMITE_BALANCO));
+        const q = query(tcol('pedidos'), where('data', '>=', desde), orderBy('data', 'desc'), limit(LIMITE_BALANCO));
 
         // Busca única. Se o seu firebase.js ainda não exporta getDocs,
         // cai automaticamente num onSnapshot que se desinscreve na 1ª resposta —
@@ -1817,9 +1902,10 @@ const carregarBalanco = async (dias = 30) => {
 
         balancoCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         renderBalanco(dias);
+        TELAS.margens().then((m) => m.renderMargens(balancoCache, produtosAtuais, dias)).catch(() => {});   // custos e margens, com os mesmos pedidos
         // Antes cortava em 800 sem avisar: o total do período saía menor que o real.
         if (snap.size >= LIMITE_BALANCO) {
-            alvo.insertAdjacentHTML('afterbegin', `<p class="aviso-limite">⚠️ Este período tem mais de ${LIMITE_BALANCO} pedidos. Os totais abaixo consideram só os ${LIMITE_BALANCO} mais recentes — escolha um período menor para o número exato.</p>`);
+            alvo.insertAdjacentHTML('afterbegin', `<p class="aviso-limite"><i class="ic" data-i="alerta"></i> Este período tem mais de ${LIMITE_BALANCO} pedidos. Os totais abaixo consideram só os ${LIMITE_BALANCO} mais recentes — escolha um período menor para o número exato.</p>`);
         }
     } catch (e) {
         console.error(e);
@@ -1878,11 +1964,11 @@ const renderBalanco = async (dias) => {
             ${cartao('A RECEBER', fmt(aReceber), 'dinheiro, cartão ou PIX pendente', 'var(--warning)')}
         </div>
         <div class="chart-wrapper" style="margin-bottom:20px;">
-            <h3>📈 Faturamento por dia</h3>
+            <h3><i class="ic" data-i="sobe"></i> Faturamento por dia</h3>
             <canvas id="balanco-chart" height="90"></canvas>
         </div>
         <div class="ranking-box">
-            <h3>🥇 Mais vendidos no período</h3>
+            <h3>Mais vendidos no período</h3>
             <div id="balanco-ranking"></div>
         </div>`;
 
@@ -1911,9 +1997,49 @@ document.getElementById('btn-atualizar-balanco')?.addEventListener('click', () =
     carregarBalanco(Number(document.getElementById('balanco-periodo')?.value || 30));
 });
 
+// ---------------------------------------------------------------------
+// CONDOMÍNIOS ATENDIDOS (aba Operacional)
+// Ficam em loja/config.condominios = [{ id, nome, formato }] e aparecem na
+// loja para o cliente escolher. formato: 'ql' = quadra e lote · 'rua' = rua e número.
+// O id nasce do nome e NÃO muda ao renomear (é ele que liga o cliente ao condomínio).
+// ---------------------------------------------------------------------
+const idDeCondominio = (nome) => normalizar(nome).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || `c${Date.now()}`;
+const linhaCondominioHtml = (c = {}) => `
+    <div class="cond-linha" data-id="${escapeHTML(c.id || '')}">
+        <input type="text" class="cond-nome" placeholder="Nome do condomínio" maxlength="60" value="${escapeHTML(c.nome || '')}" aria-label="Nome do condomínio">
+        <select class="cond-formato" aria-label="Como é o endereço">
+            <option value="ql"${c.formato === 'rua' ? '' : ' selected'}>Quadra e lote</option>
+            <option value="rua"${c.formato === 'rua' ? ' selected' : ''}>Rua e número</option>
+        </select>
+        <button type="button" class="cond-remover" aria-label="Remover condomínio">&times;</button>
+    </div>`;
+const pintarCondominios = (lista) => {
+    const alvo = document.getElementById('lista-condominios'); if (!alvo) return;
+    alvo.innerHTML = (Array.isArray(lista) ? lista : []).map(linhaCondominioHtml).join('');
+};
+const lerCondominios = () => {
+    const usados = new Set();
+    return Array.from(document.querySelectorAll('#lista-condominios .cond-linha')).map((l) => {
+        const nome = l.querySelector('.cond-nome').value.trim().replace(/\s+/g, ' ');
+        if (!nome) return null;
+        let id = l.dataset.id || idDeCondominio(nome);
+        while (usados.has(id)) id += '-2';
+        usados.add(id);
+        return { id, nome, formato: l.querySelector('.cond-formato').value === 'rua' ? 'rua' : 'ql' };
+    }).filter(Boolean);
+};
+document.getElementById('btn-add-condominio')?.addEventListener('click', () => {
+    const alvo = document.getElementById('lista-condominios');
+    alvo.insertAdjacentHTML('beforeend', linhaCondominioHtml());
+    alvo.lastElementChild.querySelector('.cond-nome').focus();
+});
+document.getElementById('lista-condominios')?.addEventListener('click', (e) => {
+    e.target.closest('.cond-remover')?.closest('.cond-linha').remove();
+});
+
 document.getElementById('btn-salvar-config').addEventListener('click', async () => {
     const btn = document.getElementById('btn-salvar-config');
-    btn.textContent = "A guardar... ⏳"; btn.disabled = true;
+    btn.textContent = "A guardar..."; btn.disabled = true;
 
     try {
         const wpp = normalizarWpp(document.getElementById('config-wpp').value);   // "62 99999-8888" vira 5562999998888
@@ -1924,11 +2050,12 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         if (!wpp) throw new Error("Número de WhatsApp inválido. Digite com DDD, ex.: 62 99999-8888.");
         if (diasAbertos.length === 0) throw new Error("Marque pelo menos um dia de abertura (ou feche a loja no disjuntor).");
 
-        await setDoc(doc(db, "loja", "config"), { wpp, minimo, lojaAberta, diasAbertos }, { merge: true });
+        const condominios = lerCondominios();
+        await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios }, { merge: true });
         showToast("Configurações atualizadas!");
     } catch (err) {
         showToast(err.message, true);
     } finally {
-        btn.textContent = "💾 Gravar Definições"; btn.disabled = false;
+        btn.textContent = "Gravar Definições"; btn.disabled = false;
     }
 });

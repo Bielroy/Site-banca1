@@ -63,7 +63,7 @@ const aplicarCors = (req, res, metodos) => {
   // Sem o Vary, um proxy poderia servir a resposta de um domínio para outro.
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', metodos || 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Loja');
 };
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
@@ -84,6 +84,9 @@ const bootFirebase = () => {
 
 const fixFloat = (n) => Math.round(n * 1000) / 1000;
 
+const T = require('../lib/tenant');
+const E = require('../lib/estoque');
+
 module.exports = async function handler(req, res) {
   aplicarCors(req, res, 'OPTIONS,POST');
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -94,6 +97,12 @@ module.exports = async function handler(req, res) {
 
   try { bootFirebase(); }
   catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
+
+  // Qual loja? (cabeçalho X-Loja; sem ele, a loja original). Só diz ONDE olhar.
+  let tid;
+  try { ({ tid } = await T.resolverLoja(db, req)); }
+  catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+
 
   // -------------------------------------------------------------------
   // QUEM ESTÁ PEDINDO O CANCELAMENTO?
@@ -124,7 +133,7 @@ module.exports = async function handler(req, res) {
 
   try {
     const resultado = await db.runTransaction(async (t) => {
-      const pedidoRef = db.collection('pedidos').doc(String(pedidoId));
+      const pedidoRef = T.tdoc(db, tid, 'pedidos', pedidoId);
       const pedidoSnap = await t.get(pedidoRef);
       if (!pedidoSnap.exists) throw new Error('Pedido não encontrado.');
 
@@ -166,7 +175,7 @@ module.exports = async function handler(req, res) {
       // (os "a pesar" nunca baixaram estoque, então ficam de fora)
       const itensFechados = (pedido.itens || []).filter((i) => !i.aPesar);
       const prodSnaps = await Promise.all(
-        itensFechados.map((i) => t.get(db.doc(`produtos/${i.id}`)))
+        itensFechados.map((i) => t.get(T.docDe(db, tid, `produtos/${i.id}`)))
       );
 
       const devolucoes = [];
@@ -176,20 +185,21 @@ module.exports = async function handler(req, res) {
         const p = snap.data();
         if (p.estoqueFisico !== null && p.estoqueFisico !== undefined && p.estoqueFisico !== '') {
           const novo = fixFloat(Number(p.estoqueFisico) + Number(item.qtd));
-          devolucoes.push([snap.ref, { estoqueFisico: novo, ativo: novo > 0 }]);
+          devolucoes.push([snap.ref, { estoqueFisico: novo, ativo: novo > 0 }, { produtoId: item.id, nome: p.nome, unidade: p.unidade, delta: Number(item.qtd), saldo: novo, custoUnit: p.custo }]);
         }
       });
 
       // Desfaz o uso do cupom, se houver
       let cupomRef = null;
       if (pedido.cupom && pedido.cupom.codigo) {
-        cupomRef = db.doc(`cupons/${pedido.cupom.codigo}`);
+        cupomRef = T.docDe(db, tid, `cupons/${pedido.cupom.codigo}`);
         const cupomSnap = await t.get(cupomRef);
         if (!cupomSnap.exists) cupomRef = null;
       }
 
       // ---- escritas ----
       devolucoes.forEach(([ref, patch]) => t.update(ref, patch));
+      E.registrarMovs(t, db, tid, devolucoes.map(([, , m]) => ({ ...m, tipo: 'cancelamento', pedidoId: String(pedidoId) })), admin.firestore.FieldValue);
       if (cupomRef) t.update(cupomRef, { usos: admin.firestore.FieldValue.increment(-1) });
 
       t.update(pedidoRef, {
@@ -200,14 +210,14 @@ module.exports = async function handler(req, res) {
 
       // Reverte os números agregados
       const total = Number(pedido.total || 0);
-      t.set(db.doc('analytics/dashboard'), {
+      t.set(T.docDe(db, tid, 'analytics/dashboard'), {
         receitaTotal: admin.firestore.FieldValue.increment(-total),
         totalPedidos: admin.firestore.FieldValue.increment(-1),
       }, { merge: true });
 
       const diaChave = String(pedido.data || '').slice(0, 10);
       if (diaChave) {
-        t.set(db.doc(`resumos/${diaChave}`), {
+        t.set(T.docDe(db, tid, `resumos/${diaChave}`), {
           receita: admin.firestore.FieldValue.increment(-total),
           pedidos: admin.firestore.FieldValue.increment(-1),
           atualizadoEm: new Date().toISOString(),

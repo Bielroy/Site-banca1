@@ -13,7 +13,7 @@
 // =====================================================================
 
 const base = {
-  VERSAO: '1.0.0',
+  VERSAO: '1.1.0',
 
   // ---- Tempo -------------------------------------------------------
   TZ_OFFSET_HORAS: -3,            // Brasília (sem horário de verão desde 2019)
@@ -73,6 +73,21 @@ const base = {
   HORIZONTE_BU_MAX: 7,            // bottom-up só até N dias à frente
   Z_TEND_DEMANDA: 1.5,
 
+  // ---- Demanda intermitente (produto que passa dias sem vender) ----
+  // TSB (Teunter-Syntetos-Babai): acompanha separadamente a CHANCE de vender no dia
+  // e o TAMANHO da venda. Entra em média com o núcleo só quando o produto é intermitente.
+  TSB_ATIVO: true,
+  ADI_INTERMITENTE: 1.32,         // intervalo médio entre vendas (em dias abertos) acima disso = intermitente (Syntetos-Boylan)
+  TSB_ALFA: 0.2,                  // suavização do tamanho da venda
+  TSB_BETA: 0.1,                  // suavização da chance de venda
+  PESO_TSB: 0.5,                  // peso do TSB na média com o núcleo (0 desliga)
+
+  // ---- Falta de produto (demanda censurada) -----------------------
+  // Dia em que o Fechamento marcou "Não tem": a venda registrada é só um PISO da
+  // procura real. O motor sobe esse dia até o que era esperado e não usa o dia
+  // para medir o próprio erro.
+  CORRIGIR_RUPTURA: true,
+
   // ---- Sazonalidade ----------------------------------------------
   JANELA_EVENTO: 3,               // ±dias em torno de feriado/data especial
   MIN_OCORRENCIAS_EVENTO: 2,      // sem 2 ocorrências NÃO assumimos efeito
@@ -81,6 +96,10 @@ const base = {
 
   // ---- Estoque / compra ------------------------------------------
   NIVEL_SERVICO: 0.8,             // decisão de negócio: P(não faltar). Perecível => <1
+  // Por produto (campo "duracao" no cadastro). Quem estraga em 1–2 dias pede MENOS folga
+  // (sobra vira perda); quem dura aguenta mais folga. São pontos de partida: ajuste aqui
+  // ou no documento analytics_config/params conforme a sua margem e a sua perda real.
+  NIVEL_SERVICO_CLASSES: { curta: 0.65, normal: 0.8, longa: 0.9 },
   Q_INF: 0.1,
   Q_SUP: 0.9,
   LARGURA_REL_ALTA: 1.0,          // (q90-q10)/previsto acima disso = "alta variabilidade"

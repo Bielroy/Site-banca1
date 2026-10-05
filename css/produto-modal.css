@@ -136,7 +136,7 @@
   min-height: 46px; /* alvo de toque confortável */
 }
 .btn-tipo-compra.active {
-  color: #fff;
+  color: var(--sobre-primaria);
 }
 .md-seg-ico {
   font-size: 1.05rem;
@@ -158,8 +158,8 @@
   min-width: 64px;
   min-height: 42px;
   padding: 10px 14px;
-  border: 1.5px solid var(--parchment, #e0dcd4);
-  background: #fff;
+  border: 1.5px solid var(--parchment, var(--linha));
+  background: var(--superficie);
   color: var(--text-dark, #2c2c2c);
   border-radius: 11px;
   font-weight: 700;
@@ -173,7 +173,7 @@
 .md-preset.ativo {
   background: var(--forest, #1f5c3d);
   border-color: var(--forest, #1f5c3d);
-  color: #fff;
+  color: var(--sobre-primaria);
   transform: scale(1.03);
 }
 
@@ -194,7 +194,7 @@
   flex-shrink: 0;
   border-radius: 12px;
   border: none;
-  background: #fff;
+  background: var(--superficie);
   color: var(--forest, #1f5c3d);
   font-size: 1.7rem;
   font-weight: 700;
@@ -279,7 +279,7 @@
 .md-rodape {
   padding: 14px 22px calc(18px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--parchment, #f2efe8);
-  background: #fff;
+  background: var(--superficie);
 }
 .md-btn-add {
   font-size: 1.08rem;

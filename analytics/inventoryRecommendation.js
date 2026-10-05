@@ -37,18 +37,19 @@ function zona(s, prev, q10, q90) {
 }
 const RISCO = { vermelho: 'alto', amarelo: 'moderado', verde: 'baixo', margem: 'muito baixo' };
 
-function recomendar({ previsto, q10, q90, conf, unidade, estoque }) {
+function recomendar({ previsto, q10, q90, conf, unidade, estoque, nivelServico }) {
   if (previsto == null || !Number.isFinite(previsto)) return null;
   const step = ehFracionavel(unidade) ? 0.5 : 1;
   const d = distribuicao(previsto, q10, q90);
-  const sugestao = teto(d.quantil(C.NIVEL_SERVICO), step);
+  const nivel = Number.isFinite(nivelServico) && nivelServico > 0 && nivelServico < 1 ? nivelServico : C.NIVEL_SERVICO;
+  const sugestao = teto(d.quantil(nivel), step);
   const larguraRel = (q90 - q10) / Math.max(previsto, C.EPS_ESCALA);
   const avisos = [];
   if (conf < C.CONF_BAIXA) avisos.push('Confiança baixa — poucos dados ou padrão instável');
   if (larguraRel > C.LARGURA_REL_ALTA) avisos.push('Previsão com alta variabilidade');
   const z = zona(sugestao, previsto, q10, q90);
   const out = {
-    sugestao, riscoFalta: arred(1 - d.cdf(sugestao)), riscoRotulo: RISCO[z], zonaSugestao: z,
+    sugestao, nivelServico: nivel, riscoFalta: arred(1 - d.cdf(sugestao)), riscoRotulo: RISCO[z], zonaSugestao: z,
     faixas: { vermelhoAte: arred(q10), amareloAte: arred(previsto), verdeAte: arred(q90) },
     larguraRel: arred(larguraRel), avisos,
   };

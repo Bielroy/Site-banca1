@@ -1,0 +1,113 @@
+rules_version = '2';
+// =====================================================================
+//  REGRAS DO BANCO (Firestore) — quem pode ler e gravar o quê.
+//
+//  ATENÇÃO ANTES DE PUBLICAR
+//  O bloco "LOJA ORIGINAL" abaixo foi REESCRITO a partir do que o código do
+//  site usa, porque as regras que estão hoje no console do Firebase não
+//  estavam no projeto. Compare com as suas regras atuais antes de publicar:
+//  se a sua tiver algo que aqui não tem, me avise em vez de sobrescrever.
+//
+//  COMO O ACESSO FUNCIONA
+//  O papel de cada pessoa vem dentro do login (custom claims), gravado só
+//  pelo servidor (scripts/plataforma.js):
+//      tenants: { "id-da-loja": "proprietario" | "administrador" | ... }
+//      plataforma: true      → dono da plataforma (vê todas as lojas)
+//      admin: true           → conta antiga: dona da loja original
+//  Pedidos são criados SÓ pelo servidor (api/checkout.js), que confere preço,
+//  estoque e cupom. Nenhum navegador cria ou altera valor de pedido.
+// =====================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logado() { return request.auth != null; }
+    function plataforma() { return logado() && request.auth.token.plataforma == true; }
+    // papel da pessoa NESTA loja ('' se não tiver)
+    function papel(tid) {
+      return logado() && request.auth.token.get('tenants', {}).get(tid, '') is string
+        ? request.auth.token.get('tenants', {}).get(tid, '') : '';
+    }
+    function gestor(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador']; }
+    function equipe(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque']; }
+    function cuidaDeEstoque(tid) { return gestor(tid) || papel(tid) in ['estoque', 'producao']; }
+    function donoOriginal() { return plataforma() || (logado() && request.auth.token.admin == true) || gestor('banca'); }
+    // equipe da loja original (os papéis dela ficam em tenants.banca, como nas outras lojas)
+    function equipeOriginal()  { return donoOriginal() || equipe('banca'); }
+    function estoqueOriginal() { return donoOriginal() || cuidaDeEstoque('banca'); }
+    // quem cuida de estoque sem ser gestor só mexe nos limites de estoque do produto, nunca em preço ou nome
+    function soLimitesDeEstoque() { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estoqueMin', 'estoqueIdeal', 'estoqueMax', 'prazoDias']); }
+
+    // ------------------------------------------------------------------
+    // PLATAFORMA
+    // ------------------------------------------------------------------
+    // Ficha pública de cada loja: nome, tema, módulos, feira.
+    match /tenants/{tid} {
+      allow read: if true;
+      allow create, delete: if plataforma();
+      // O gestor muda a APARÊNCIA. Ligar/desligar a loja, módulos e feira é só da plataforma.
+      allow update: if plataforma()
+        || ((gestor(tid) || (tid == 'banca' && donoOriginal()))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'subtitulo', 'nota', 'busca', 'tema', 'atualizadoEm']));
+      // a loja original ainda não tem ficha: a dona pode criar a dela (só com os campos de aparência)
+      allow create: if tid == 'banca' && donoOriginal()
+        && request.resource.data.keys().hasOnly(['nome', 'subtitulo', 'nota', 'busca', 'tema', 'atualizadoEm']);
+
+      // ---------------- dados de UMA loja ----------------
+      match /produtos/{id}    { allow read: if true; allow write: if gestor(tid); allow update: if cuidaDeEstoque(tid) && soLimitesDeEstoque(); }
+      // custo e ficha técnica: fora do produto público, para concorrente e cliente não lerem
+      match /produtos_custos/{id} { allow read, write: if cuidaDeEstoque(tid); }
+      match /categorias/{id}  { allow read: if true; allow write: if gestor(tid); }
+      match /loja/{docId}     { allow read: if true; allow write: if gestor(tid); }
+      match /pedidos/{id} {
+        allow get: if equipe(tid) || (logado() && resource.data.userId == request.auth.uid);
+        allow list: if equipe(tid);
+        allow create: if false;                       // só o servidor
+        // a equipe só muda o STATUS. Itens e valores só mudam pelo servidor (pesagem, cancelamento).
+        allow update: if equipe(tid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+        allow delete: if gestor(tid);
+      }
+      match /cupons/{id}      { allow read, write: if gestor(tid); }
+      match /fechamentos/{id} { allow read, write: if equipe(tid); }
+      match /resumos/{id}     { allow read: if gestor(tid); allow write: if false; }
+      match /analytics/{id}   { allow read: if gestor(tid); allow write: if false; }
+      match /estoque_mov/{id} { allow read: if cuidaDeEstoque(tid); allow write: if false; }   // só o servidor grava
+      match /estoque_resumo/{id} { allow read: if cuidaDeEstoque(tid); allow write: if false; }
+      match /producoes/{id}   { allow read: if cuidaDeEstoque(tid); allow write: if false; }
+      match /calendario/{id}  { allow read: if equipe(tid); allow write: if gestor(tid); }           // calendário operacional
+      match /equipe/{id}      { allow read: if gestor(tid); allow write: if false; }                // espelho da equipe: só o servidor grava
+      match /crm/{id}         { allow read, write: if gestor(tid); }                         // anotação de quando cada cliente recebeu mensagem
+      // analytics_*, analytics/dashboard e tudo o mais: só o servidor (regra final nega).
+    }
+
+    // Feiras: grupos de lojas que aparecem juntas na faixa do topo.
+    match /feiras/{fid} { allow read: if true; allow write: if plataforma(); }
+
+    // ------------------------------------------------------------------
+    // LOJA ORIGINAL (Banca Adair e Pedrina) — dados na raiz, como sempre foi
+    // ------------------------------------------------------------------
+    match /produtos/{id}    { allow read: if true; allow write: if donoOriginal(); allow update: if estoqueOriginal() && soLimitesDeEstoque(); }
+    match /produtos_custos/{id} { allow read, write: if estoqueOriginal(); }
+    match /categorias/{id}  { allow read: if true; allow write: if donoOriginal(); }
+    match /loja/{docId}     { allow read: if true; allow write: if donoOriginal(); }
+    match /pedidos/{id} {
+      allow get: if equipeOriginal() || (logado() && resource.data.userId == request.auth.uid);
+      allow list: if equipeOriginal();
+      allow create: if false;
+      allow update: if equipeOriginal() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      allow delete: if donoOriginal();
+    }
+    match /cupons/{id}      { allow read, write: if donoOriginal(); }
+    match /fechamentos/{id} { allow read, write: if equipeOriginal(); }
+    match /resumos/{id}     { allow read: if donoOriginal(); allow write: if false; }
+    match /analytics/{id}   { allow read: if donoOriginal(); allow write: if false; }
+    match /estoque_mov/{id} { allow read: if estoqueOriginal(); allow write: if false; }
+    match /estoque_resumo/{id} { allow read: if estoqueOriginal(); allow write: if false; }
+    match /producoes/{id}   { allow read: if estoqueOriginal(); allow write: if false; }
+    match /crm/{id}         { allow read, write: if donoOriginal(); }
+    match /calendario/{id}  { allow read: if equipeOriginal(); allow write: if donoOriginal(); }
+    match /equipe/{id}      { allow read: if donoOriginal(); allow write: if false; }
+
+    // Qualquer outro caminho: negado (o servidor usa a conta de serviço e não passa por aqui).
+    match /{caminho=**} { allow read, write: if false; }
+  }
+}

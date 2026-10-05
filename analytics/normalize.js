@@ -35,10 +35,40 @@ const normEnd = (s) => {
   return /^\d+$/.test(t) ? String(parseInt(t, 10)) : t;
 };
 
-const chaveCliente = (p) => {
+// "Jardins Munique" / "jardins  munique" / "JARDINS MUNIQUE" → "jardins munique"
+const normCond = (s) => semAcento(s).replace(/[^a-z0-9]+/g, ' ').trim();
+
+// CLIENTE = condomínio + quadra + lote. Dois condomínios têm "Quadra 5, Lote 3":
+// sem o condomínio na chave, as duas casas virariam um cliente só.
+// `cond` já vem resolvido por condominioDoPedido() (ver abaixo). Sem condomínio
+// conhecido a chave é a ANTIGA (só quadra|lote), para o histórico não se partir.
+const chaveCliente = (p, cond = normCond(p.condominio)) => {
   const q = normEnd(p.quadra), l = normEnd(p.lote);
-  return q || l ? `end:${q}|${l}` : `ped:${p.id || Math.random()}`;
+  if (!q && !l) return `ped:${p.id || Math.random()}`;
+  return cond ? `end:${cond}|${q}|${l}` : `end:${q}|${l}`;
 };
+
+// Pedidos de ANTES do campo de condomínio não trazem esse dado. Se a mesma
+// quadra+lote aparece depois com UM condomínio só, o pedido antigo é da mesma
+// casa e herda esse condomínio. Se aparece em DOIS condomínios, não dá para
+// saber de qual era: o pedido antigo fica separado, sem condomínio.
+function mapaCondominios(pedidos) {
+  const vistos = new Map();                    // "q|l" → Map(condNormalizado → nome como foi escrito)
+  for (const p of pedidos) {
+    const c = normCond(p.condominio); if (!c) continue;
+    const k = `${normEnd(p.quadra)}|${normEnd(p.lote)}`;
+    if (!vistos.has(k)) vistos.set(k, new Map());
+    vistos.get(k).set(c, String(p.condominio).trim());
+  }
+  return vistos;
+}
+function condominioDoPedido(p, vistos) {
+  const proprio = normCond(p.condominio);
+  if (proprio) return { chave: proprio, nome: String(p.condominio).trim() };
+  const m = vistos.get(`${normEnd(p.quadra)}|${normEnd(p.lote)}`);
+  if (m && m.size === 1) { const [chave, nome] = [...m.entries()][0]; return { chave, nome }; }
+  return { chave: '', nome: '' };
+}
 const idDeChave = (k) => 'c_' + crypto.createHash('sha1').update(k).digest('hex').slice(0, 12);
 
 // Quantidade na unidade de venda do produto
@@ -65,6 +95,7 @@ function normalizarPedidos(pedidos, catalogo = []) {
     unidade: p.unidade || 'un', foto: p.foto || '', preco: Number(p.preco) || 0,
     estoque: p.estoqueFisico === '' || p.estoqueFisico == null ? null : Number(p.estoqueFisico),
     ativo: p.ativo !== false, noCatalogo: true,
+    duracao: ['curta', 'longa'].includes(p.duracao) ? p.duracao : 'normal',   // quanto tempo aguenta na banca
   }));
 
   const validos = [];
@@ -86,18 +117,26 @@ function normalizarPedidos(pedidos, catalogo = []) {
   const kgPorUn = new Map();
   for (const [id, arr] of amostrasKg) if (arr.length >= C.KG_POR_UN_MIN_OBS) kgPorUn.set(id, median(arr));
 
-  const clientes = new Map();          // id → {id, nome, quadra, lote, uids:Set, visitas:Map(dia→visita)}
+  const condsVistos = mapaCondominios(validos);
+  const clientes = new Map();          // id → {id, nome, condominio, quadra, lote, uids:Set, visitas:Map(dia→visita)}
   const vendasDia = new Map();         // produtoId → Map(dia → qtd)
   const pedidosDia = new Map();        // dia → nº de visitas
   const visitasVistas = new Set();
   let primeiroDia = Infinity, ultimoDia = -Infinity;
 
   for (const p of validos) {
-    const chave = chaveCliente(p); const cid = idDeChave(chave);
-    if (!clientes.has(cid)) clientes.set(cid, { id: cid, nome: '', quadra: '', lote: '', uids: new Set(), visitas: new Map() });
+    const cond = condominioDoPedido(p, condsVistos);
+    const chave = chaveCliente(p, cond.chave); const cid = idDeChave(chave);
+    if (!clientes.has(cid)) clientes.set(cid, { id: cid, nome: '', condominio: '', formatoEndereco: 'ql', quadra: '', lote: '', telefone: '', aceitaOfertas: false, gasto: 0, nPedidos: 0, uids: new Set(), visitas: new Map() });
     const cli = clientes.get(cid);
     cli.nome = p.nome || cli.nome; cli.quadra = p.quadra || cli.quadra; cli.lote = p.lote || cli.lote;   // o mais recente vence
-    if (p.userId && p.userId !== 'anonimo') cli.uids.add(p.userId);
+    cli.condominio = cond.nome || cli.condominio; if (p.formatoEndereco) cli.formatoEndereco = p.formatoEndereco;
+    if (p.userId && p.userId !== 'anonimo' && !String(p.userId).startsWith('equipe:')) cli.uids.add(p.userId);   // venda de balcão: quem registrou foi a equipe, não o cliente
+    // CRM: quanto já gastou, quantos pedidos, e o telefone/consentimento do pedido MAIS RECENTE
+    // (se a pessoa desmarcar "quero receber ofertas" num pedido novo, deixa de valer).
+    cli.gasto += Number(p.total) || 0; cli.nPedidos++;
+    if (p.telefone) cli.telefone = String(p.telefone).replace(/\D/g, '');
+    if (p.origem !== 'balcao') cli.aceitaOfertas = p.aceitaOfertas === true;
 
     if (!cli.visitas.has(p._dia)) cli.visitas.set(p._dia, { dia: p._dia, ts: p._ts, itens: new Map() });
     const vis = cli.visitas.get(p._dia);
@@ -132,5 +171,5 @@ function normalizarPedidos(pedidos, catalogo = []) {
 
 module.exports = {
   DIA_MS, diaDeTs, isoDeDia, diaDeIso, dowDeDia, semanaDeDia,
-  ehFracionavel, normEnd, semAcento, normalizarPedidos, qtdItem, idDeChave, chaveCliente,
+  ehFracionavel, normEnd, normCond, semAcento, normalizarPedidos, qtdItem, idDeChave, chaveCliente,
 };

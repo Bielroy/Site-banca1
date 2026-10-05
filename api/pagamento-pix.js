@@ -87,23 +87,43 @@ const aplicarCors = (req, res, metodos) => {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 };
 
+const T = require('../lib/tenant');
+
 module.exports = async function handler(req, res) {
   aplicarCors(req, res, 'OPTIONS,POST');
   res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Loja');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
 
   try {
     bootFirebase();
     const { pedidoId, cpf, email } = req.body || {};
-    if (!pedidoId) return res.status(400).json({ error: 'pedidoId é obrigatório.' });
+    if (!pedidoId || !/^[\w-]{6,80}$/.test(String(pedidoId))) return res.status(400).json({ error: 'pedidoId é obrigatório.' });
+    let tid;
+    try { ({ tid } = await T.resolverLoja(db, req)); }
+    catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
 
-    const pedidoRef = db.collection('pedidos').doc(pedidoId);
+    // A conta do PagBank configurada no servidor é a da loja original. Gerar PIX para outra
+    // loja mandaria o dinheiro do cliente dela para a conta errada: fica bloqueado até cada
+    // loja ter as próprias credenciais.
+    if (tid !== T.TENANT_PADRAO) return res.status(400).json({ error: 'O PIX automático ainda não está disponível nesta loja. Combine o pagamento pelo WhatsApp.' });
+
+    // Quem pede o QR precisa ser o dono do pedido ou alguém da equipe (antes bastava saber o número do pedido).
+    let dec;
+    try {
+      const cab = String((req.headers && req.headers.authorization) || '');
+      dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '');
+    } catch (e) { return res.status(401).json({ error: 'Sessão não identificada. Recarregue a página e tente de novo.' }); }
+
+    const pedidoRef = T.tdoc(db, tid, 'pedidos', pedidoId);
     const snap = await pedidoRef.get();
     if (!snap.exists) return res.status(404).json({ error: 'Pedido não encontrado.' });
 
     const pedido = snap.data();
+    if (pedido.userId !== dec.uid && !T.temPapel(dec, tid, T.PAPEIS)) return res.status(404).json({ error: 'Pedido não encontrado.' });
+    if (pedido.status === 'cancelado') return res.status(409).json({ error: 'Este pedido foi cancelado.' });
+    if (pedido.temItensAPesar) return res.status(409).json({ error: 'Este pedido ainda tem itens a pesar. O PIX sai depois da pesagem.' });
 
     // Já pago? Não gera novo QR.
     if (pedido.pagamento && pedido.pagamento.status === 'PAID') {
@@ -169,7 +189,8 @@ module.exports = async function handler(req, res) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        reference_id: pedidoId,
+        // Outras lojas: a referência leva o id da loja, para o aviso de pagamento achar o pedido certo.
+        reference_id: tid === T.TENANT_PADRAO ? pedidoId : `${tid}~${pedidoId}`,
         customer,
         items: [{ name: `Pedido Banca Adair e Pedrina`, quantity: 1, unit_amount: valorCentavos }],
         qr_codes: [{ amount: { value: valorCentavos }, expiration_date: expiracao }],

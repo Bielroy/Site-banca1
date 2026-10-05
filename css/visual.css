@@ -1,0 +1,212 @@
+/* =====================================================================
+   css/visual.css — O VISUAL NOVO DA LOJA
+   Carregado por último: o que está aqui vence os arquivos antigos.
+
+   COMO MEXER SEM QUEBRAR
+   • Cores, fontes, raio dos cards e o "jeito" do movimento ficam em
+     css/variables.css (bloco "Visual novo"). Mude lá e vale em tudo.
+   • Este arquivo está dividido em seções numeradas. Cada uma cuida de
+     um pedaço da tela e pode ser alterada sem afetar as outras.
+
+   SEÇÕES
+     1. Base (fonte, ícones)          6. Carrinho e pedido mínimo
+     2. Cabeçalho                     7. Barra "Ver pedido" (celular)
+     3. Busca e categorias            8. Telas (modais) e endereço
+     4. Card de produto e etiqueta    9. Tela de entrada e sucesso
+     5. Botão Adicionar → seletor    10. Movimento (animações)
+   ===================================================================== */
+
+/* ---------- 1. BASE ---------- */
+h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 100; }
+.ico { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+:where(button, a, input, select, textarea):focus-visible { outline: 3px solid var(--manga); outline-offset: 2px; }
+
+/* ---------- 2. CABEÇALHO ---------- */
+.header-inner { padding: 26px 20px 20px; }
+#header-principal h1 { font-size: clamp(1.9rem, 5vw, 2.7rem); font-weight: 750; letter-spacing: -.5px; margin-bottom: 6px; }
+#header-principal h1 em { font-style: italic; font-weight: 500; color: color-mix(in srgb, var(--sobre-primaria) 78%, var(--leaf)); }
+.header-subtitle { font-size: 1.02rem; margin: 0 0 2px; color: color-mix(in srgb, var(--sobre-primaria) 86%, transparent); }
+.header-nota { font-size: .86rem; color: color-mix(in srgb, var(--sobre-primaria) 72%, transparent); margin: 0 0 16px; }
+.header-nota[hidden] ~ .header-acoes { margin-top: 14px; }
+.header-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-header {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 44px; max-width: 100%;
+    padding: 8px 16px; border-radius: 999px; cursor: pointer;
+    border: 1px solid color-mix(in srgb, var(--sobre-primaria) 32%, transparent); background: transparent; color: var(--sobre-primaria);
+    font-family: inherit; font-size: .92rem; font-weight: 600;
+    transition: background .2s ease;
+}
+.chip-header:hover { background: rgba(255,255,255,.1); }
+.chip-header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.chip-header .ico { width: 18px; height: 18px; }
+.chip-header.btn-historico { background: transparent; border-color: rgba(255,255,255,.3); font-weight: 600; }
+
+/* faixa das lojas da feira (só aparece quando há mais de uma loja) */
+.feira-lojas { display: flex; gap: 8px; overflow-x: auto; padding: 10px 16px; background: var(--text-dark); scrollbar-width: none; scroll-snap-type: x proximity; }
+.feira-lojas::-webkit-scrollbar { display: none; }
+.feira-loja { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 14px; border-radius: 999px; scroll-snap-align: center;
+    color: var(--cream); text-decoration: none; font-weight: 600; font-size: .9rem; border: 1px solid color-mix(in srgb, var(--cream) 28%, transparent); }
+.feira-loja i { width: 10px; height: 10px; border-radius: 50%; background: var(--leaf); }
+.feira-loja.atual { background: var(--cream); color: var(--text-dark); border-color: var(--cream); }
+/* trocar de loja = outra página; o navegador faz a passagem suave entre as duas */
+@view-transition { navigation: auto; }
+
+/* ---------- 3. BUSCA E CATEGORIAS ---------- */
+.controles-inner { padding: 12px 20px; }
+.btn-voz { color: var(--forest); }
+.cat-btn { color: var(--text-mid); border-color: var(--linha); }
+
+/* faixa "Seus de sempre": cards lado a lado, rolando para o lado */
+.vitrine { flex: 2; min-width: 0; display: flex; flex-direction: column; gap: 26px; }
+.vitrine .produtos-grid { flex: none; width: 100%; }
+.faixa-sempre h2 { font-family: var(--fonte-titulo); font-size: 1.3rem; font-weight: 650; color: var(--forest); margin-bottom: 12px; }
+.faixa-rolo { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 10px; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.faixa-rolo::-webkit-scrollbar { display: none; }
+.faixa-rolo .produto-card { flex: 0 0 168px; scroll-snap-align: start; }
+@media (max-width: 600px) { .faixa-rolo { margin-right: -16px; padding-right: 16px; } .faixa-rolo .produto-card { flex-basis: 152px; } }
+
+/* ---------- 4. CARD DE PRODUTO E ETIQUETA ---------- */
+.produto-card {
+    background: var(--superficie); border: 1.5px solid var(--linha); border-radius: var(--raio-card);
+    box-shadow: none; overflow: visible;
+    transition: border-color .2s ease, transform .25s ease, box-shadow .25s ease;
+}
+@media (hover: hover) { .produto-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--sage); } }
+.produto-card.na-sacola, .produto-card.na-sacola:hover { border-color: var(--leaf); }
+.produto-img-wrap { width: auto; margin: 8px 8px 0; border-radius: 9px; }
+.produto-info { padding: 10px 12px 12px; gap: 10px; pointer-events: auto; }
+.produto-nome { font-size: 1rem; line-height: 1.2; min-height: 2.4em; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* coração de favorito */
+.produto-card .btn-fav { color: var(--text-mid); filter: none; opacity: 1; background: var(--superficie); }
+.skeleton { background: linear-gradient(90deg, var(--linha) 25%, var(--parchment) 50%, var(--linha) 75%); background-size: 200% 100%; }
+/* loja sem o Ajudante (módulo desligado na ficha da loja) */
+.sem-ia .ia-fab { display: none; }
+@media (max-width: 600px) { .sem-ia .btn-flutuante-carrinho { right: 16px; } }
+.produto-card .btn-fav .ico { width: 20px; height: 20px; }
+.produto-card .btn-fav.ativo { color: var(--danger); text-shadow: none; }
+.produto-card .btn-fav.ativo .ico { fill: currentColor; }
+
+/* selo do que o cliente costuma levar */
+.rec-tag { left: 6px; bottom: 6px; border-radius: 999px; padding: 3px 9px; }
+
+/* A etiqueta: papel, ilhós e barbante. Para a versão "limpa", troque
+   por .etiqueta { transform:none; background:none; padding-left:10px;
+   border-left:3px solid var(--manga); } e apague ::before e ::after. */
+.etiqueta {
+    position: relative; align-self: flex-start; max-width: 100%;
+    background: var(--etiqueta); color: var(--etiqueta-tinta);
+    padding: 6px 10px 7px 20px; border-radius: 4px;
+    transform: rotate(-1.5deg); box-shadow: 0 1px 0 rgba(0,0,0,.12);
+}
+.etiqueta::before { content: ""; position: absolute; left: 7px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--superficie); box-shadow: inset 0 0 0 1px var(--barbante); }
+.etiqueta::after { content: ""; position: absolute; left: -11px; top: 50%; width: 20px; height: 1.5px; background: var(--barbante); transform: rotate(-14deg); transform-origin: right; }
+.etq-preco { font-family: var(--fonte-titulo); font-variation-settings: "SOFT" 100; font-weight: 750; font-size: 1.22rem; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.etq-preco small { font-family: var(--fonte-texto); font-size: .74rem; font-weight: 600; white-space: nowrap; }
+.etq-ref { font-size: .72rem; font-weight: 500; margin-top: 3px; opacity: .85; line-height: 1.25; }
+
+/* versão limpa da etiqueta (tema da loja: etiqueta = "limpa") */
+.etiqueta-limpa .etiqueta { transform: none; background: none; box-shadow: none; padding: 0 0 0 10px; border-left: 3px solid var(--manga); border-radius: 0; color: var(--text-dark); }
+.etiqueta-limpa .etiqueta::before, .etiqueta-limpa .etiqueta::after { display: none; }
+
+/* ---------- 5. BOTÃO ADICIONAR → SELETOR ---------- */
+.card-acao { position: relative; height: 46px; margin-top: auto; }
+.card-add, .card-qtd { position: absolute; inset: 0; border-radius: 999px; font-family: inherit; font-weight: 700; font-size: .95rem; }
+.card-add { border: 0; background: var(--forest); color: var(--sobre-primaria); cursor: pointer; transition: background .2s ease, transform .12s ease; }
+.card-add:hover { background: var(--forest-mid); }
+.card-add:active { transform: scale(.96); }
+.card-qtd { display: flex; align-items: center; justify-content: space-between; padding: 3px; background: var(--foam); color: var(--text-dark); }
+.card-qtd button { width: 40px; height: 40px; border: 0; border-radius: 50%; background: var(--superficie); color: var(--forest); font-size: 1.3rem; font-weight: 700; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.08); transition: transform .12s ease; }
+.card-qtd button:active { transform: scale(.88); }
+.card-qtd output { font-variant-numeric: tabular-nums; white-space: nowrap; padding: 0 4px; }
+
+/* ---------- 6. CARRINHO E PEDIDO MÍNIMO ---------- */
+.carrinho { border-radius: 18px; }
+.item-preco--pesar { background: var(--etiqueta); color: var(--etiqueta-tinta); font-family: var(--fonte-texto); font-size: .8rem; padding: 4px 10px; border-radius: 4px; }
+.item-preco--estimado { text-align: right; white-space: nowrap; }
+.item-preco--estimado small { display: block; font-family: var(--fonte-texto); font-size: .7rem; font-weight: 600; color: var(--text-light); }
+.total-valor { text-align: right; font-variant-numeric: tabular-nums; }
+.total-nota { display: block; font-family: var(--fonte-texto); font-size: .78rem; font-weight: 500; color: rgba(255,255,255,.75); }
+.min-progresso { margin-bottom: 12px; font-size: .86rem; font-weight: 600; color: var(--text-mid); }
+.min-trilho { height: 6px; border-radius: 9px; background: var(--parchment); overflow: hidden; margin-top: 6px; }
+.min-trilho i, .barra-min i { display: block; height: 100%; width: 0; border-radius: 9px; background: var(--manga); transition: width .5s var(--mola); }
+.upsell-box { border: 1px solid var(--linha); background: var(--superficie); }
+
+/* ---------- 7. BARRA "VER PEDIDO" (CELULAR) ---------- */
+@media (max-width: 600px) {
+    .btn-flutuante-carrinho {
+        flex-direction: column; align-items: stretch; justify-content: center; gap: 6px;
+        height: 60px; border-radius: 18px; padding: 0 16px; font-family: inherit;
+    }
+    .barra-linha { display: flex; align-items: center; gap: 10px; }
+    .barra-qtd { background: rgba(255,255,255,.18); border-radius: 999px; min-width: 26px; padding: 1px 8px; font-size: .85rem; text-align: center; font-variant-numeric: tabular-nums; }
+    .barra-valor { font-variant-numeric: tabular-nums; }
+    .barra-min[hidden] { display: none; }
+    .barra-min:not([hidden]) { display: block; height: 4px; border-radius: 9px; background: rgba(255,255,255,.22); overflow: hidden; }
+}
+
+/* ---------- 8. TELAS (MODAIS) E ENDEREÇO ---------- */
+.form-group label { text-transform: none; letter-spacing: 0; font-size: .9rem; }
+.form-group input, .form-group select, .form-group textarea { border-color: var(--linha); font-family: inherit; }
+.form-group select + input { margin-top: 8px; }
+.end-grid--rua { grid-template-columns: 1fr; }
+@media (min-width: 601px) { .end-grid--rua { grid-template-columns: 2fr 1fr; } }
+/* no celular, quadra e lote ficam lado a lado (são campos curtos) */
+@media (max-width: 600px) { .end-grid:not(.end-grid--rua) { grid-template-columns: 1fr 1fr; } }
+
+.md-seg-ico { display: grid; place-items: center; }
+.md-seg-ico .ico { width: 19px; height: 19px; }
+.md-resumo-estimado, .md-resumo-pesar { background: var(--etiqueta); color: var(--etiqueta-tinta); border: 0; }
+.timeline-bola .ico { width: 18px; height: 18px; }
+.timeline-bola { color: var(--forest); }
+.ia-topo-cesto .ico { width: 24px; height: 24px; }
+#btn-ia-camera { display: grid; place-items: center; }
+.ia-digitando span { width: 8px; height: 8px; border-radius: 50%; background: var(--leaf); display: inline-block; }
+
+/* ---------- 9. TELA DE ENTRADA E SUCESSO ---------- */
+.splash-folha { color: var(--mint); }
+.splash-folha path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: desenha 1.1s ease forwards .35s; }
+.splash-folha path + path { animation-delay: .9s; animation-duration: .7s; }
+@keyframes desenha { to { stroke-dashoffset: 0; } }
+
+.circulo-sucesso { width: 80px; height: 80px; margin: 0 auto 20px; border-radius: 50%; display: grid; place-items: center; background: var(--success-light); color: var(--success); animation: scaleIn .5s var(--mola); }
+.circulo-sucesso path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: desenha .45s ease forwards .3s; }
+.title-success { font-family: var(--fonte-titulo); color: var(--forest); margin-bottom: 12px; font-size: 1.8rem; }
+
+/* ---------- 10. MOVIMENTO ---------- */
+/* botão ↔ seletor: entra "pulando" */
+.entra { animation: entraMola .42s var(--mola); }
+@keyframes entraMola { from { transform: scale(.82); opacity: .3; } to { transform: none; opacity: 1; } }
+
+/* produto voando até o pedido (criado por js/loja.js → voarParaPedido) */
+.voador { position: fixed; z-index: 2000; pointer-events: none; margin: 0; border-radius: 12px; overflow: hidden; background: var(--foam); }
+.voador img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pulo { animation: pulo .45s var(--mola); }
+@keyframes pulo { 40% { transform: scale(1.3); } }
+
+/* gaveta do carrinho e telas: entram com mola e SAEM com animação
+   (antes sumiam de uma vez). Navegador antigo ignora e some direto. */
+@media (max-width: 600px) { .carrinho { transition: bottom .42s var(--mola); } }
+.modal-overlay { opacity: 0; transition: opacity .2s ease, display .2s allow-discrete; }
+.modal-overlay.aberto { opacity: 1; }
+.modal-overlay .modal { transition: transform .22s ease; }
+.modal-overlay:not(.aberto) .modal { transform: translateY(28px); }
+.modal-overlay.aberto .modal { animation: slideUp .4s var(--mola); }
+.modal-overlay.sem-anim, .modal-overlay.sem-anim .modal { animation: none !important; transition: none !important; }
+
+/* Fundo das telas sem desfoque: o desfoque custa caro em celular simples
+   e travava a animação de abrir. O escurecido sozinho já separa bem. */
+.modal-overlay, .carrinho-overlay { backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* foto do card → foto da tela do produto */
+::view-transition-group(produto-foto) { animation-duration: .36s; animation-timing-function: cubic-bezier(.3, 1.2, .4, 1); }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+
+@media (prefers-reduced-motion: reduce) {
+    .splash-folha path, .circulo-sucesso path { stroke-dashoffset: 0; }
+    .etiqueta { transform: none; }
+}
+
+/* consentimento para ofertas no WhatsApp (formulário do pedido) */
+.chk-oferta { display: flex; align-items: flex-start; gap: 10px; margin: -4px 0 16px; font-size: .9rem; color: var(--text-mid); cursor: pointer; }
+.chk-oferta input { width: 22px; height: 22px; flex: none; accent-color: var(--forest); margin-top: 1px; }

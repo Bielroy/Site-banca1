@@ -35,7 +35,7 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght,SOFT@9..144,500..900,0..100&display=swap" rel="stylesheet">
 
 
     <!-- Dado estruturado (JSON-LD): descreve o negócio em linguagem que o
@@ -64,6 +64,8 @@
          Precisa vir DEPOIS do loja.css para prevalecer. -->
     <link rel="stylesheet" href="./css/produto-modal.css">
     <link rel="stylesheet" href="./css/melhorias.css">
+    <!-- Visual novo (etiqueta de preço, seletor no card, animações). Vem por ÚLTIMO de propósito. -->
+    <link rel="stylesheet" href="./css/visual.css">
 
     <link rel="icon" href="./icon-192.png">
     <!-- O <link rel="manifest"> não é escrito aqui. O vite-plugin-pwa
@@ -85,27 +87,36 @@
 
 <!-- Tela de entrada enquanto a vitrine carrega (some sozinha: ver js/melhorias-ui.js) -->
 <div id="splash-feira" aria-hidden="true">
-    <div class="splash-cesto">🧺</div>
-    <div class="splash-frutas"><span>🍅</span><span>🥕</span><span>🍋</span></div>
+    <svg class="splash-folha" viewBox="0 0 64 64" width="72" height="72" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path pathLength="1" d="M12 52C12 28 28 12 54 10c0 26-16 42-42 42z"/>
+        <path pathLength="1" d="M12 52l26-26M24 40V30M32 32h9"/>
+    </svg>
     <p>Separando o que tem de fresquinho...</p>
 </div>
 
-<div class="banner-aviso fechado" id="banner-offline" aria-live="assertive">📵 Você está sem internet. Usando dados salvos.</div>
-<div class="banner-aviso fechado" id="banner-fechado" aria-live="polite">🚫 Estamos fechados no momento. Voltamos em breve!</div>
+<div class="banner-aviso fechado" id="banner-offline" aria-live="assertive">Você está sem internet. Usando dados salvos.</div>
+<div class="banner-aviso fechado" id="banner-fechado" aria-live="polite">Estamos fechados no momento. Voltamos em breve!</div>
 <div class="banner-aviso minimo" id="banner-minimo" aria-live="polite"></div>
 <!-- Comunicado configurado no painel (aviso fixo ou mensagem do dia) -->
 <div class="banner-aviso comunicado" id="banner-comunicado" aria-live="polite"></div>
 
+<!-- Lojas da mesma feira (aparece só quando há mais de uma). Preenchida por js/tema.js -->
+<nav class="feira-lojas" id="feira-lojas" aria-label="Lojas desta feira" hidden></nav>
+
 <header id="header-principal">
     <div class="header-inner">
-        <div class="header-eyebrow">🌿 Frescor Todo Dia</div>
-        <h1 id="header-nome">Banca <em>Adair</em> e Pedrina</h1>
-        <div class="header-subtitle">Seg a Sáb • Entrega no seu condomínio</div>
-        <nav class="header-pills" aria-label="Navegação de Destaques">
-            <span class="pill">⭐ +200 pedidos</span>
-            <span class="pill">✅ Receba em casa</span>
-            <span class="pill">💳 PIX • Cartão • Dinheiro</span>
-            <button class="pill btn-historico" data-action="open-historico">📜 Meus Pedidos</button>
+        <h1 id="header-nome">Banca Adair <em>e Pedrina</em></h1>
+        <p class="header-subtitle" id="header-sub">Seg a Sáb • Entrega no seu condomínio</p>
+        <p class="header-nota" id="header-nota">+200 pedidos entregues. Pague com PIX, cartão ou dinheiro.</p>
+        <nav class="header-acoes" aria-label="Endereço e pedidos">
+            <button class="chip-header" id="btn-endereco" data-action="open-endereco">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>
+                <span id="endereco-resumo">Escolha onde entregar</span>
+            </button>
+            <button class="chip-header btn-historico" data-action="open-historico">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10a2 2 0 0 1 2 2v14l-3-2-2 2-2-2-2 2-3-2V6a2 2 0 0 1 2-2z"/><path d="M9 9h6M9 13h6"/></svg>
+                <span>Meus pedidos</span>
+            </button>
         </nav>
     </div>
 </header>
@@ -116,7 +127,7 @@
             <svg class="busca-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/></svg>
             <input type="text" id="busca-input" class="busca-input" placeholder="Buscar batata, alface, tomate..." aria-label="Buscar produtos">
             <!-- Começa oculto: só aparece se o navegador suportar reconhecimento de voz -->
-            <button class="btn-voz" id="btn-voz" aria-label="Pesquisa por voz" hidden>🎤</button>
+            <button class="btn-voz" id="btn-voz" aria-label="Pesquisa por voz" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg></button>
         </div>
         <nav class="categorias" id="categorias" aria-label="Filtro de Categorias">
             <button class="cat-btn skeleton" style="width:80px;height:38px"></button>
@@ -126,10 +137,23 @@
 </section>
 
 <main class="layout">
-    <section class="produtos-grid" id="lista-produtos" aria-label="Lista de Produtos"></section>
+    <div class="vitrine">
+        <!-- "Seus de sempre": o que este cliente costuma levar (ou o último pedido). Preenchida por js/loja.js -->
+        <section class="faixa-sempre" id="faixa-sempre" aria-labelledby="faixa-titulo" hidden>
+            <h2 id="faixa-titulo">Seus de sempre</h2>
+            <div class="faixa-rolo" id="faixa-lista"></div>
+        </section>
+        <section class="produtos-grid" id="lista-produtos" aria-label="Lista de Produtos"></section>
+    </div>
 
-    <button class="btn-flutuante-carrinho" id="btn-carrinho-mobile" aria-label="Ver Carrinho">
-        🛒 Ver Pedido (<span id="qtd-flutuante">0</span>)
+    <button class="btn-flutuante-carrinho vazio" id="btn-carrinho-mobile" aria-label="Ver pedido">
+        <span class="barra-linha">
+            <svg class="ico" id="ico-sacola-barra" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h16l-1.6 10.2a2 2 0 0 1-2 1.8H7.6a2 2 0 0 1-2-1.8z"/><path d="M8.5 9l3-5.5M15.5 9l-3-5.5"/></svg>
+            <span>Ver pedido</span>
+            <span class="barra-qtd" id="qtd-flutuante">0</span>
+            <span class="barra-valor"></span>
+        </span>
+        <span class="barra-min" id="barra-min" hidden><i></i></span>
     </button>
     <div class="carrinho-overlay" id="carrinho-overlay"></div>
 
@@ -143,8 +167,12 @@
         <div id="upsell-container"></div>
 
         <footer class="carrinho-rodape">
+            <div class="min-progresso" id="min-progresso" hidden>
+                <span id="min-texto"></span>
+                <div class="min-trilho"><i id="min-barra"></i></div>
+            </div>
             <div class="total-box">
-                <span class="total-label">Total</span>
+                <span class="total-label" id="total-label">Total</span>
                 <span class="total-valor" id="total-val">R$ 0,00</span>
             </div>
             <button class="btn-finalizar" id="btn-abrir-checkout" disabled>Finalizar Pedido</button>
@@ -163,19 +191,18 @@
 <div class="modal-overlay" id="modal-checkout" role="dialog" aria-modal="true" aria-labelledby="checkout-titulo">
     <div class="modal">
         <header class="modal-head">
-            <h2 id="checkout-titulo">📦 Dados da Entrega</h2>
+            <h2 id="checkout-titulo">Dados da entrega</h2>
             <button class="btn-fechar" data-fechar="modal-checkout" aria-label="Fechar">&times;</button>
         </header>
         <div class="modal-body">
+            <!-- Condomínio + quadra/lote (ou rua/número). Montado por js/endereco.js -->
+            <div id="checkout-endereco"></div>
             <div class="form-group"><label for="cli-nome">Como devemos te chamar?</label><input type="text" id="cli-nome" placeholder="Seu nome" autocomplete="name"></div>
-            <div class="grid-2">
-                <div class="form-group"><label for="cli-quadra">Quadra</label><input type="text" inputmode="numeric" id="cli-quadra"></div>
-                <div class="form-group"><label for="cli-lote">Casa/Lote</label><input type="text" inputmode="numeric" id="cli-lote"></div>
-            </div>
             <div class="form-group">
                 <label for="cli-telefone">WhatsApp (para avisarmos quando ficar pronto)</label>
                 <input type="tel" id="cli-telefone" inputmode="numeric" placeholder="62 9 9999-9999" autocomplete="tel">
             </div>
+            <label class="chk-oferta"><input type="checkbox" id="cli-ofertas"> Quero receber ofertas e novidades da loja no WhatsApp</label>
             <div class="form-group">
                 <label for="cli-pagamento">Forma de Pagamento</label>
                 <select id="cli-pagamento">
@@ -208,7 +235,20 @@
             </div>
         </div>
         <footer class="modal-footer">
-            <button class="btn-finalizar" id="btn-enviar-pedido">Enviar Pedido 🚀</button>
+            <button class="btn-finalizar" id="btn-enviar-pedido">Enviar pedido</button>
+        </footer>
+    </div>
+</div>
+
+<div class="modal-overlay" id="modal-endereco" role="dialog" aria-modal="true" aria-labelledby="endereco-titulo">
+    <div class="modal">
+        <header class="modal-head">
+            <h2 id="endereco-titulo">Onde entregamos?</h2>
+            <button class="btn-fechar" data-fechar="modal-endereco" aria-label="Fechar">&times;</button>
+        </header>
+        <div class="modal-body"><div id="endereco-campos"></div></div>
+        <footer class="modal-footer">
+            <button class="btn-finalizar" id="btn-salvar-endereco">Entregar aqui</button>
         </footer>
     </div>
 </div>
@@ -216,7 +256,7 @@
 <div class="modal-overlay" id="modal-historico" role="dialog" aria-modal="true" aria-labelledby="historico-titulo">
     <div class="modal">
         <header class="modal-head">
-            <h2 id="historico-titulo">📜 Meus Pedidos</h2>
+            <h2 id="historico-titulo">Meus pedidos</h2>
             <button class="btn-fechar" data-fechar="modal-historico" aria-label="Fechar">&times;</button>
         </header>
         <div class="modal-body" id="lista-meus-pedidos"></div>
@@ -226,11 +266,13 @@
 <div class="modal-overlay" id="modal-sucesso" role="dialog" aria-modal="true">
     <div class="modal modal-center">
         <div class="modal-body" style="padding-top: 40px; text-align: center;">
-            <div class="circulo-sucesso" style="width: 80px; height: 80px; background: #dcfce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: var(--success); font-size: 40px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.2); animation: scaleIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.2);">✓</div>
-            <h2 class="title-success" style="font-family: 'Fraunces', serif; color: var(--forest); margin-bottom: 12px; font-size: 1.8rem;">Pedido Registrado!</h2>
+            <div class="circulo-sucesso">
+                <svg viewBox="0 0 48 48" width="44" height="44" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path pathLength="1" d="M11 25l9 9 17-19"/></svg>
+            </div>
+            <h2 class="title-success">Pedido registrado!</h2>
             <p class="text-success" id="sucesso-texto" style="color: var(--text-mid); margin-bottom: 18px; line-height: 1.5; font-size: 1.05rem;">Você será redirecionado para o nosso WhatsApp para finalizar. Caso a janela não abra, clique no botão abaixo.</p>
             <div id="sucesso-whatsapps" class="sucesso-whatsapps"></div>
-            <button class="btn-finalizar" data-fechar="modal-sucesso">Voltar para a Loja</button>
+            <button class="btn-finalizar" data-fechar="modal-sucesso">Voltar para a loja</button>
         </div>
     </div>
 </div>
@@ -249,7 +291,7 @@
     <div class="modal ia-modal">
         <header class="modal-head ia-topo">
             <div class="ia-topo-info">
-                <span class="ia-topo-cesto" aria-hidden="true">🧺</span>
+                <span class="ia-topo-cesto" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M4 9h16l-1.6 10.2a2 2 0 0 1-2 1.8H7.6a2 2 0 0 1-2-1.8z"/><path d="M8.5 9l3-5.5M15.5 9l-3-5.5"/></svg></span>
                 <div>
                     <h2 id="ia-titulo">Ajudante da Banca</h2>
                     <p class="ia-topo-sub">Receitas, dicas e o que levar para a mesa</p>
@@ -261,9 +303,9 @@
             <div class="ia-msg ia-msg--bot">
                 <p>Oi, vizinho! Sou o ajudante da banca. Me conta o que você quer cozinhar hoje que eu separo os ingredientes fresquinhos.</p>
                 <div class="ia-etiquetas">
-                    <button type="button" class="ia-etiqueta" data-prompt="O que preciso para fazer um vinagrete completo?">🍅 Vinagrete</button>
-                    <button type="button" class="ia-etiqueta" data-prompt="Ideia de sobremesa com frutas">🍓 Sobremesa</button>
-                    <button type="button" class="ia-etiqueta" data-prompt="O que posso fazer de almoço rápido com legumes?">🥕 Almoço rápido</button>
+                    <button type="button" class="ia-etiqueta" data-prompt="O que preciso para fazer um vinagrete completo?">Vinagrete</button>
+                    <button type="button" class="ia-etiqueta" data-prompt="Ideia de sobremesa com frutas">Sobremesa</button>
+                    <button type="button" class="ia-etiqueta" data-prompt="O que posso fazer de almoço rápido com legumes?">Almoço rápido</button>
                 </div>
             </div>
         </div>

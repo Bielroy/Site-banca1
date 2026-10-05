@@ -37,6 +37,20 @@
     --shadow-md: 0 8px 24px hsl(148, 30%, 15%, 0.08);
     --shadow-lg: 0 20px 40px hsl(148, 30%, 15%, 0.12);
     
+    /* ---- Visual novo (css/visual.css usa estes valores) ---- */
+    --fonte-titulo: 'Fraunces', Georgia, serif;          /* títulos e preços */
+    --fonte-texto: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif; /* todo o resto */
+    --etiqueta: #f4ead2;          /* papel da etiqueta de preço */
+    --etiqueta-tinta: #2a2414;    /* texto da etiqueta */
+    --barbante: #b79a62;          /* fio e ilhós da etiqueta */
+    --manga: #f2b33d;             /* destaque quente: barra do pedido mínimo, foco */
+    --linha: #e4dfd3;             /* contorno de cards e campos */
+    --superficie: #ffffff;        /* fundo de cards, telas e campos */
+    --sobre-primaria: #ffffff;    /* texto em cima da cor principal (botões, cabeçalho) */
+    --raio-card: 14px;
+    /* "mola": movimento que passa um pouco do ponto e volta. Usado em botões e gavetas */
+    --mola: linear(0, .36 8%, .82 17%, 1.07 26%, 1.13 33%, 1.06 44%, .99 56%, 1);
+
     /* Layout & Sistema de Z-Index */
     --radius: 20px;
     --radius-sm: 12px;
@@ -53,7 +67,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body { 
-    font-family: 'Plus Jakarta Sans', sans-serif; 
+    font-family: var(--fonte-texto); 
     background: var(--cream); 
     color: var(--text-dark); 
     min-height: 100vh; 

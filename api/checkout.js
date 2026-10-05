@@ -89,7 +89,7 @@ const aplicarCors = (req, res, metodos) => {
   // Sem o Vary, um proxy poderia servir a resposta de um domínio para outro.
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', metodos || 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Loja');
 };
 
 // ---------------------------------------------------------------------
@@ -135,6 +135,10 @@ const textoSeguro = (t) => (typeof t.toWellFormed === 'function' ? t.toWellForme
 // "a loja não abre hoje" e somava a venda no resumo do dia seguinte).
 const agoraBrasilia = () => new Date(Date.now() - 3 * 3600000);
 
+const { linhaEndereco } = require('../lib/endereco');
+const T = require('../lib/tenant');
+const E = require('../lib/estoque');
+
 function montarTextoWhatsApp(pedido, numero) {
   const dividido = pedido.parte && pedido.parte.de > 1;
   const primeira = !dividido || pedido.parte.n === 1;
@@ -144,7 +148,7 @@ function montarTextoWhatsApp(pedido, numero) {
 
   let msg = dividido ? `*NOVO PEDIDO — parte ${pedido.parte.n} de ${pedido.parte.de}*\n` : `*NOVO PEDIDO*\n`;
   msg += `👤 ${pedido.nome}\n`;
-  msg += `📍 Quadra ${pedido.quadra} • Lote ${pedido.lote}\n`;
+  msg += `📍 ${linhaEndereco(pedido)}\n`;
   msg += `💳 Pagamento: ${pedido.pag || 'A combinar'}\n`;
   // Pedido dividido: troco e cupom aparecem UMA vez (na 1ª parte), para dois
   // atendimentos não darem o mesmo troco nem o mesmo desconto.
@@ -221,6 +225,12 @@ module.exports = async function handler(req, res) {
   try { bootFirebase(); }
   catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
 
+  // Qual loja? (cabeçalho X-Loja; sem ele, a loja original). Só diz ONDE olhar.
+  let tid;
+  try { ({ tid } = await T.resolverLoja(db, req)); }
+  catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+
+
   // -------------------------------------------------------------------
   // DE QUEM É ESTE PEDIDO?
   //
@@ -247,14 +257,19 @@ module.exports = async function handler(req, res) {
 
   // Validação de entrada
   // Nota: userId NÃO é lido do corpo de propósito — ver donoVerificado acima.
-  let { nome, quadra, lote, telefone, pag, troco, obs, cupom, itens, idempotencyKey } = req.body || {};
+  let { nome, quadra, lote, telefone, pag, troco, obs, cupom, itens, idempotencyKey, condominio, condominioId, formatoEndereco, aceitaOfertas } = req.body || {};
   if (!idempotencyKey || !nome || !quadra || !lote || !Array.isArray(itens) || itens.length === 0) {
     return res.status(400).json({ error: 'Dados do pedido incompletos.' });
   }
   if (itens.length > 100) return res.status(400).json({ error: 'Pedido excede o limite de itens.' });
 
   nome   = sanitizeString(nome, 100);
-  quadra = sanitizeString(quadra, 30);
+  quadra = sanitizeString(quadra, 60);   // também guarda o nome da rua, nos condomínios que usam rua + número
+  // Condomínio: opcional AQUI de propósito. Celular com a versão antiga da loja
+  // guardada ainda envia pedido sem esse campo, e não pode ser recusado.
+  condominio = sanitizeString(condominio, 60);
+  condominioId = sanitizeString(condominioId, 40).replace(/[^\w-]/g, '');
+  formatoEndereco = ['rua', 'livre'].includes(formatoEndereco) ? formatoEndereco : 'ql';
   // Telefone é opcional; guardamos só dígitos para montar o link do WhatsApp depois.
   telefone = String(telefone || '').replace(/\D/g, '').slice(0, 13);
   lote   = sanitizeString(lote, 30);
@@ -264,11 +279,11 @@ module.exports = async function handler(req, res) {
 
   try {
     const resultado = await db.runTransaction(async (t) => {
-      const pedidoRef = db.collection('pedidos').doc(idempotencyKey);
-      const configRef = db.doc('loja/config');
+      const pedidoRef = T.tdoc(db, tid, 'pedidos', idempotencyKey);
+      const configRef = T.docDe(db, tid, 'loja/config');
 
       // ---- TODAS as leituras ANTES de qualquer escrita (regra do Firestore) ----
-      const [pedidoSnap, configSnap, catsSnap] = await Promise.all([t.get(pedidoRef), t.get(configRef), t.get(db.collection('categorias'))]);
+      const [pedidoSnap, configSnap, catsSnap] = await Promise.all([t.get(pedidoRef), t.get(configRef), t.get(T.tcol(db, tid, 'categorias'))]);
       const categoriasCfg = catsSnap.docs.map((c) => c.data());
       const configCfg = configSnap.exists ? configSnap.data() : {};
 
@@ -295,12 +310,12 @@ module.exports = async function handler(req, res) {
         idsVistos.add(i.id);
       }
 
-      const prodSnaps = await Promise.all(itens.map((i) => t.get(db.doc(`produtos/${i.id}`))));
+      const prodSnaps = await Promise.all(itens.map((i) => t.get(T.docDe(db, tid, `produtos/${i.id}`))));
 
       // O cupom também é lido AQUI: no Firestore, toda leitura de uma
       // transação tem que acontecer antes da primeira escrita.
       const codigoCupom = cupom ? String(cupom).trim().toUpperCase().slice(0, 40) : '';
-      const cupomSnap = codigoCupom ? await t.get(db.doc(`cupons/${codigoCupom}`)) : null;
+      const cupomSnap = codigoCupom ? await t.get(T.docDe(db, tid, `cupons/${codigoCupom}`)) : null;
 
       // ---- Cálculo (ainda sem escrever) ----
       let totalExatoCentavos = 0;
@@ -312,6 +327,7 @@ module.exports = async function handler(req, res) {
         if (!snap.exists) throw new Error(`Um produto do carrinho não existe mais.`);
         const p = snap.data();
         if (p.ativo === false) throw new Error(`"${p.nome}" está esgotado.`);
+        if (p.soInsumo === true) throw new Error(`"${p.nome}" não está à venda.`);   // só ingrediente de ficha técnica
 
         const fracionavel = isFracionavel(p.unidade);
         // tipo escolhido pelo cliente; produto não-fracionável é sempre 'un'
@@ -349,7 +365,7 @@ module.exports = async function handler(req, res) {
           if (p.estoqueFisico !== null && p.estoqueFisico !== undefined && p.estoqueFisico !== '') {
             const novo = fixFloat(Number(p.estoqueFisico) - qtd);
             if (novo < 0) throw new Error(`"${p.nome}" não tem estoque suficiente.`);
-            estoqueUpdates.push([snap.ref, { estoqueFisico: novo, ativo: novo > 0 }]);
+            estoqueUpdates.push([snap.ref, { estoqueFisico: novo, ativo: novo > 0 }, { produtoId: item.id, nome: p.nome, unidade: p.unidade, delta: -qtd, saldo: novo, custoUnit: p.custo }]);
           }
         }
       });
@@ -404,8 +420,11 @@ module.exports = async function handler(req, res) {
 
       const dadosPedido = {
         id: pedidoRef.id,
+        tenantId: tid,
         userId: donoVerificado,
         nome, quadra, lote, telefone: telefone || '', pag, troco: troco || '', obs: obsFinal || '',
+        condominio, condominioId, formatoEndereco,
+        aceitaOfertas: aceitaOfertas === true && !!telefone,   // consentimento para receber ofertas no WhatsApp (LGPD)
         itens: itensValidados,
         total: totalExato,        // total dos itens de valor fechado
         clientTotal: totalExato,  // usado pelo painel de pesagem como base
@@ -418,11 +437,13 @@ module.exports = async function handler(req, res) {
 
       // ---- Agora sim, as escritas ----
       estoqueUpdates.forEach(([ref, patch]) => t.update(ref, patch));
+      // histórico do estoque: uma linha por produto com estoque controlado
+      E.registrarMovs(t, db, tid, estoqueUpdates.map(([, , m]) => ({ ...m, tipo: 'venda', pedidoId: pedidoRef.id })), admin.firestore.FieldValue);
       if (cupomAplicado) {
         t.update(cupomAplicado.ref, { usos: admin.firestore.FieldValue.increment(1) });
       }
       t.set(pedidoRef, dadosPedido);
-      t.set(db.doc('analytics/dashboard'), {
+      t.set(T.docDe(db, tid, 'analytics/dashboard'), {
         receitaTotal: admin.firestore.FieldValue.increment(totalExato),
         totalPedidos: admin.firestore.FieldValue.increment(1),
       }, { merge: true });
@@ -433,7 +454,7 @@ module.exports = async function handler(req, res) {
       // que, quando houver histórico longo, o Balanço possa somar 30 documentos
       // em vez de reler centenas de pedidos.
       const diaChave = agoraBrasilia().toISOString().slice(0, 10);   // dia no horário de Brasília
-      t.set(db.doc(`resumos/${diaChave}`), {
+      t.set(T.docDe(db, tid, `resumos/${diaChave}`), {
         dia: diaChave,
         receita: admin.firestore.FieldValue.increment(totalExato),
         pedidos: admin.firestore.FieldValue.increment(1),

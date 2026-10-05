@@ -79,7 +79,7 @@
 .ia-fab {
     position: fixed; bottom: calc(var(--safe-bottom) + 20px); right: 16px; z-index: var(--z-sticky);
     width: 58px; height: 58px; border: 0; border-radius: 50% 50% 46% 54% / 56% 52% 48% 44%;
-    background: linear-gradient(145deg, #d98a4a, var(--earth)); color: #fff; cursor: pointer;
+    background: linear-gradient(145deg, #d98a4a, var(--earth)); color: var(--sobre-primaria); cursor: pointer;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
     box-shadow: 0 10px 22px rgba(196,119,58,.38), inset 0 -3px 0 rgba(0,0,0,.12);
     transition: transform .2s ease, box-shadow .2s ease;
@@ -89,7 +89,7 @@
 
 .ia-modal { max-width: 450px; height: 78dvh; background: var(--cream); }
 .ia-topo {
-    background: var(--forest); border-bottom: 0; padding: 14px 18px; position: relative; color: #fff;
+    background: var(--forest); border-bottom: 0; padding: 14px 18px; position: relative; color: var(--sobre-primaria);
 }
 /* barra de "toalha de feira" xadrez embaixo do topo */
 .ia-topo::after {
@@ -100,9 +100,9 @@
 }
 .ia-topo-info { display: flex; align-items: center; gap: 12px; }
 .ia-topo-cesto { width: 42px; height: 42px; display: grid; place-items: center; font-size: 1.5rem; border-radius: 14px 14px 18px 18px; background: rgba(255,255,255,.12); }
-.ia-topo .ia-topo-info h2 { color: #fff; font-size: 1.2rem; line-height: 1.1; }
+.ia-topo .ia-topo-info h2 { color: var(--sobre-primaria); font-size: 1.2rem; line-height: 1.1; }
 .ia-topo-sub { font-size: .74rem; color: var(--sage); margin-top: 2px; }
-.ia-topo .btn-fechar { color: #fff; background: rgba(255,255,255,.14); }
+.ia-topo .btn-fechar { color: var(--sobre-primaria); background: rgba(255,255,255,.14); }
 .ia-topo .ia-topo-sub { color: #d5eadd; }
 
 .ia-corpo {
@@ -115,16 +115,16 @@
 .ia-msg { max-width: 88%; padding: 12px 14px; font-size: .94rem; line-height: 1.5; box-shadow: var(--shadow-sm); animation: cardEntra .3s ease both; overflow-wrap: anywhere; }
 .ia-msg p { margin: 0; }
 .ia-msg--bot { align-self: flex-start; background: #fffaf0; color: var(--text-dark); border: 1px solid #eadfc8; border-radius: 4px 18px 18px 18px; }
-.ia-msg--eu { align-self: flex-end; background: var(--forest-mid); color: #fff; border-radius: 18px 4px 18px 18px; }
+.ia-msg--eu { align-self: flex-end; background: var(--forest-mid); color: var(--sobre-primaria); border-radius: 18px 4px 18px 18px; }
 .ia-msg--erro { color: var(--text-mid); }
 .ia-msg--erro.fatal { color: var(--danger); }
 .ia-etiquetas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .ia-etiqueta {
-    border: 1.5px dashed var(--earth); background: #fff; color: var(--earth-forte); font-weight: 700; font-size: .84rem;
+    border: 1.5px dashed var(--earth); background: var(--superficie); color: var(--earth-forte); font-weight: 700; font-size: .84rem;
     min-height: 44px; padding: 8px 14px; border-radius: 10px 14px 10px 14px; cursor: pointer; transition: transform .15s ease, background .15s ease;
 }
 .ia-etiqueta:active { transform: scale(.95); background: #fff3e6; }
-.ia-tentar { margin-top: 10px; border: 1.5px solid var(--earth); background: #fff; color: var(--earth-forte); font-weight: 700; min-height: 44px; padding: 8px 16px; border-radius: 12px; cursor: pointer; }
+.ia-tentar { margin-top: 10px; border: 1.5px solid var(--earth); background: var(--superficie); color: var(--earth-forte); font-weight: 700; min-height: 44px; padding: 8px 16px; border-radius: 12px; cursor: pointer; }
 
 /* digitando: três frutas pulando */
 .ia-digitando { display: inline-flex; gap: 6px; font-size: 1.1rem; }
@@ -133,7 +133,7 @@
 .ia-digitando span:nth-child(3) { animation-delay: .3s; }
 
 /* sugestões = etiquetinhas de preço de feira com pílula − 1 + */
-.ia-sugestoes { display: flex; gap: 10px; overflow-x: auto; padding: 10px 14px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; background: #fff; border-top: 1px dashed #e0d5bd; scrollbar-width: none; }
+.ia-sugestoes { display: flex; gap: 10px; overflow-x: auto; padding: 10px 14px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; background: var(--superficie); border-top: 1px dashed #e0d5bd; scrollbar-width: none; }
 .ia-sugestoes:empty { display: none; }
 .ia-sugestoes::-webkit-scrollbar { display: none; }
 .ia-pill {
@@ -144,19 +144,19 @@
 .ia-sugestoes.tem-mais .ia-pill { max-width: 74vw; }
 .ia-pill-nome { font-size: .84rem; font-weight: 700; color: var(--text-dark); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ia-pill-add, .ia-pill-qtd { border-radius: 999px; }
-.ia-pill-add { border: 0; background: var(--forest); color: #fff; font-weight: 800; font-size: .84rem; min-height: 44px; padding: 8px 16px; cursor: pointer; white-space: nowrap; transition: transform .15s ease; }
+.ia-pill-add { border: 0; background: var(--forest); color: var(--sobre-primaria); font-weight: 800; font-size: .84rem; min-height: 44px; padding: 8px 16px; cursor: pointer; white-space: nowrap; transition: transform .15s ease; }
 .ia-pill-add:active { transform: scale(.94); }
-.ia-pill-qtd { display: flex; align-items: center; background: var(--forest); color: #fff; padding: 2px; }
+.ia-pill-qtd { display: flex; align-items: center; background: var(--forest); color: var(--sobre-primaria); padding: 2px; }
 .ia-pill-qtd[hidden], .ia-pill-add[hidden] { display: none; }
-.ia-pill-qtd button { width: 40px; height: 40px; border: 0; border-radius: 50%; background: rgba(255,255,255,.16); color: #fff; font-size: 1.1rem; font-weight: 800; cursor: pointer; transition: background .15s ease, transform .12s ease; }
+.ia-pill-qtd button { width: 40px; height: 40px; border: 0; border-radius: 50%; background: rgba(255,255,255,.16); color: var(--sobre-primaria); font-size: 1.1rem; font-weight: 800; cursor: pointer; transition: background .15s ease, transform .12s ease; }
 .ia-pill-qtd button:active { background: rgba(255,255,255,.32); transform: scale(.88); }
 .ia-pill-valor { min-width: 56px; padding: 0 2px; text-align: center; font-weight: 800; font-size: .82rem; font-variant-numeric: tabular-nums; }
 
-.ia-rodape { padding: 10px 14px calc(10px + var(--safe-bottom)); background: #fff; }
+.ia-rodape { padding: 10px 14px calc(10px + var(--safe-bottom)); background: var(--superficie); }
 .ia-form { display: flex; gap: 8px; width: 100%; align-items: center; }
 .ia-form input[type=text] { flex: 1; min-width: 0; padding: 12px 14px; border: 1.5px solid #e0d5bd; border-radius: 999px; background: var(--cream); outline: none; font-size: 16px; }
-.ia-form input[type=text]:focus { border-color: var(--leaf); background: #fff; }
-.ia-enviar { border: 0; background: var(--earth-forte); color: #fff; font-weight: 800; min-height: 46px; padding: 12px 18px; border-radius: 999px; cursor: pointer; }
+.ia-form input[type=text]:focus { border-color: var(--leaf); background: var(--superficie); }
+.ia-enviar { border: 0; background: var(--earth-forte); color: var(--sobre-primaria); font-weight: 800; min-height: 46px; padding: 12px 18px; border-radius: 999px; cursor: pointer; }
 .ia-enviar:disabled { opacity: .6; }
 #btn-ia-camera { background: none; border: 0; font-size: 1.35rem; cursor: pointer; min-width: 44px; min-height: 44px; padding: 0; color: var(--text-mid); }
 #btn-ia-camera:disabled, .ia-form input:disabled { opacity: .55; }
@@ -164,7 +164,7 @@
 /* ---------- 6) Tela de sucesso: um botão por WhatsApp ---------- */
 .sucesso-whatsapps { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
 /* verde mais escuro que o do WhatsApp: branco sobre #25d366 não dava leitura */
-.btn-wpp { display: block; text-decoration: none; background: #0f7a4d; color: #fff; font-weight: 800; padding: 14px 16px; border-radius: 14px; text-align: center; transition: transform .15s ease, opacity .2s ease; }
+.btn-wpp { display: block; text-decoration: none; background: #0f7a4d; color: var(--sobre-primaria); font-weight: 800; padding: 14px 16px; border-radius: 14px; text-align: center; transition: transform .15s ease, opacity .2s ease; }
 .btn-wpp small { font-weight: 600; opacity: .85; }
 .btn-wpp:active { transform: scale(.97); }
 .btn-wpp.enviado { background: var(--success-light); color: #166534; }

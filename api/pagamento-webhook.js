@@ -25,6 +25,7 @@
 
 const admin = require('firebase-admin');
 const crypto = require('crypto');
+const T = require('../lib/tenant');
 
 // (o "config" que desliga o parse automático é exportado no FIM do arquivo:
 //  aqui em cima ele era apagado pelo "module.exports = handler" logo abaixo)
@@ -107,15 +108,18 @@ module.exports = async function handler(req, res) {
 
     // CORRIGIDO: o pedidoId agora vem da resposta da API (confiável), e não
     // do corpo do webhook (que qualquer um poderia ter escrito).
-    const pedidoId = order.reference_id;
-    if (!pedidoId) return res.status(200).json({ ok: true });
+    // Referência = "pedido" (loja original) ou "loja~pedido" (demais lojas) — ver pagamento-pix.js
+    const ref = String(order.reference_id || '');
+    const [parteA, parteB] = ref.includes('~') ? ref.split('~') : [T.TENANT_PADRAO, ref];
+    const tid = parteA, pedidoId = parteB;
+    if (!pedidoId || !T.idValido(tid) || !/^[\w-]{6,80}$/.test(pedidoId)) return res.status(200).json({ ok: true });
 
     const charges = order.charges || [];
     const pago = charges.some((c) => c.status === 'PAID');
 
     if (!pago) {
       // WAITING / DECLINED / CANCELED / IN_ANALYSIS -> só atualiza o rótulo
-      await db.collection('pedidos').doc(pedidoId).set(
+      await T.tdoc(db, tid, 'pedidos', pedidoId).set(
         { pagamento: { status: charges[0]?.status || 'WAITING' } }, { merge: true }
       );
       return res.status(200).json({ ok: true });
@@ -129,7 +133,7 @@ module.exports = async function handler(req, res) {
     // baixa, todo produto com estoque controlado teria saído em DOBRO em
     // cada venda no PIX. Fonte única de verdade agora: checkout.js.
     await db.runTransaction(async (t) => {
-      const pedidoRef = db.collection('pedidos').doc(pedidoId);
+      const pedidoRef = T.tdoc(db, tid, 'pedidos', pedidoId);
       const pedidoSnap = await t.get(pedidoRef);
       if (!pedidoSnap.exists) return;
 

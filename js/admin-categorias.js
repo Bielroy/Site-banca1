@@ -9,6 +9,7 @@
 //  mesmo cadastro para dividir o pedido (lib/roteamentoWhatsapp.js).
 // =====================================================================
 import { db, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch } from './firebase.js';
+import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { escapeHTML, showToast, customConfirm } from './utils.js';
 
 const S = { cats: [], numeros: [], padrao: '', getProdutos: () => [], configPronta: false, erro: '' };
@@ -47,11 +48,11 @@ const contarProdutos = () => {
 };
 
 // ------------------------------------------------------------------ dados
-const salvarNumeros = (lista) => setDoc(doc(db, 'loja', 'config'), { numeros: lista }, { merge: true });
+const salvarNumeros = (lista) => setDoc(tdoc('loja', 'config'), { numeros: lista }, { merge: true });
 
 const reordenar = async (ids) => {
     const b = writeBatch(db);
-    ids.forEach((id, i) => b.update(doc(db, 'categorias', id), { ordem: (i + 1) * 10 }));
+    ids.forEach((id, i) => b.update(tdoc('categorias', id), { ordem: (i + 1) * 10 }));
     await b.commit();
 };
 
@@ -72,8 +73,8 @@ const adicionar = () => tentar(async () => {
     if (S.cats.some((c) => c.id === id || norm(c.chave) === norm(nome))) return showToast('Essa categoria já existe.', true);
     const ordem = (Math.max(0, ...S.cats.map((c) => Number(c.ordem) || 0)) || 0) + 10;
     campo.value = ''; campo.blur();      // tira o foco: com foco no campo a lista não era redesenhada
-    await setDoc(doc(db, 'categorias', id), { chave: nome.toLowerCase(), nome, ordem, visivel: true, wppId: '' });
-    showToast(`✅ "${nome}" criada. Aparece na loja assim que tiver um produto nela.`);
+    await setDoc(tdoc('categorias', id), { chave: nome.toLowerCase(), nome, ordem, visivel: true, wppId: '' });
+    showToast(`"${nome}" criada. Aparece na loja assim que tiver um produto nela.`);
     render(true);
 });
 
@@ -91,10 +92,10 @@ const importar = () => tentar(async () => {
         let id = slug(chave), n = 2;
         while (usados.has(id)) id = `${slug(chave)}-${n++}`;
         usados.add(id);
-        b.set(doc(db, 'categorias', id), { chave, nome, ordem, visivel: true, wppId: '' });
+        b.set(tdoc('categorias', id), { chave, nome, ordem, visivel: true, wppId: '' });
     });
     await b.commit();
-    showToast(`✅ ${novas.size} categoria(s) importada(s).`);
+    showToast(`${novas.size} categoria(s) importada(s).`);
     render(true);
 });
 
@@ -102,15 +103,15 @@ const renomear = (id, valor) => tentar(async () => {
     const nome = valor.trim().replace(/\s+/g, ' ').slice(0, 40);
     const atual = S.cats.find((c) => c.id === id);
     if (!atual || !nome || nome === atual.nome) return render();
-    await updateDoc(doc(db, 'categorias', id), { nome });
-    showToast('✏️ Nome atualizado na loja.');
+    await updateDoc(tdoc('categorias', id), { nome });
+    showToast('Nome atualizado na loja.');
 });
 
 const alternar = (id, visivel) => tentar(async () => {
-    await updateDoc(doc(db, 'categorias', id), { visivel });
+    await updateDoc(tdoc('categorias', id), { visivel });
     const c = S.cats.find((x) => x.id === id);
     const n = c ? (contarProdutos().get(norm(c.chave)) || 0) : 0;
-    showToast(visivel ? `👁️ Voltou para a loja${n ? ` com ${n} produto(s)` : ''}.` : `🙈 Oculta: ${n} produto(s) saíram da loja.`);
+    showToast(visivel ? `Voltou para a loja${n ? ` com ${n} produto(s)` : ''}.` : `Oculta: ${n} produto(s) saíram da loja.`);
 });
 
 const mover = (id, delta) => tentar(async () => {
@@ -122,8 +123,8 @@ const mover = (id, delta) => tentar(async () => {
 });
 
 const trocarNumero = (id, wppId) => tentar(async () => {
-    await updateDoc(doc(db, 'categorias', id), { wppId });
-    showToast('📲 Número da categoria atualizado.');
+    await updateDoc(tdoc('categorias', id), { wppId });
+    showToast('Número da categoria atualizado.');
 });
 
 const apagar = (id) => tentar(async () => {
@@ -134,8 +135,8 @@ const apagar = (id) => tentar(async () => {
         ? `"${c.nome}" tem ${n} produto(s). Se apagar, eles continuam na loja, mas numa aba solta (sem ordem, sem ocultar e sem número próprio). Para só tirar da loja, use "Visível". Apagar mesmo?`
         : `Apagar a categoria "${c.nome}"?`;
     if (!(await customConfirm('Apagar categoria', aviso))) return;
-    await deleteDoc(doc(db, 'categorias', id));
-    showToast('🗑️ Categoria apagada.');
+    await deleteDoc(tdoc('categorias', id));
+    showToast('Categoria apagada.');
 });
 
 const adicionarNumero = () => tentar(async () => {
@@ -148,7 +149,7 @@ const adicionarNumero = () => tentar(async () => {
     if (numero === normalizarWpp(S.padrao) || S.numeros.some((n) => n.numero === numero)) return showToast('Esse número já está cadastrado.', true);
     cNome.value = ''; cNum.value = ''; cNum.blur(); cNome.blur();
     await salvarNumeros([...S.numeros, { id: 'n' + Date.now().toString(36), nome, numero }]);
-    showToast(`✅ "${nome}" cadastrado. Agora escolha-o nas categorias acima.`);
+    showToast(`"${nome}" cadastrado. Agora escolha-o nas categorias acima.`);
     render(true);
 });
 
@@ -167,7 +168,7 @@ const editarNumero = (id, campo, valor) => tentar(async () => {
         if (novo.numero === normalizarWpp(S.padrao) || S.numeros.some((n) => n.id !== id && n.numero === novo.numero)) { showToast('Esse número já está cadastrado.', true); return render(true); }
     }
     await salvarNumeros(S.numeros.map((n) => (n.id === id ? novo : n)));
-    showToast('✏️ Número atualizado.');
+    showToast('Número atualizado.');
     render(true);
 });
 
@@ -180,10 +181,10 @@ const removerNumero = (id) => tentar(async () => {
         : `Remover o número "${n.nome}"?`;
     if (!(await customConfirm('Remover número', aviso))) return;
     const b = writeBatch(db);
-    usadas.forEach((c) => b.update(doc(db, 'categorias', c.id), { wppId: '' }));
-    b.set(doc(db, 'loja', 'config'), { numeros: S.numeros.filter((x) => x.id !== id) }, { merge: true });
+    usadas.forEach((c) => b.update(tdoc('categorias', c.id), { wppId: '' }));
+    b.set(tdoc('loja', 'config'), { numeros: S.numeros.filter((x) => x.id !== id) }, { merge: true });
     await b.commit();
-    showToast('🗑️ Número removido.');
+    showToast('Número removido.');
 });
 
 // ------------------------------------------------------------------ tela
@@ -198,13 +199,13 @@ const linhaCategoria = (c, i, total, qtd) => `
                 <button type="button" data-cg="descer" ${i === total - 1 ? 'disabled' : ''} aria-label="Descer ${escapeHTML(c.nome || c.chave)}">▼</button>
             </div>
             <input class="cg-nome" type="text" value="${escapeHTML(c.nome || c.chave)}" maxlength="40" aria-label="Nome da categoria" data-cg="nome">
-            <button type="button" class="cg-apagar" data-cg="apagar" aria-label="Apagar categoria">🗑️</button>
+            <button type="button" class="cg-apagar" data-cg="apagar" aria-label="Apagar categoria"><i class="ic" data-i="lixeira"></i></button>
         </div>
         <div class="cg-base">
             <label class="cg-chave"><input type="checkbox" data-cg="visivel" ${c.visivel === false ? '' : 'checked'}> <span>${c.visivel === false ? 'Oculta na loja' : 'Visível na loja'}</span></label>
             <span class="cg-qtd">${qtd} produto${qtd === 1 ? '' : 's'}</span>
         </div>
-        <label class="cg-wpp">📲 Pedidos desta categoria vão para
+        <label class="cg-wpp"><i class="ic" data-i="enviar"></i> Pedidos desta categoria vão para
             <select data-cg="wpp">${opcoesNumero(c.wppId)}</select>
         </label>
     </article>`;
@@ -222,14 +223,14 @@ function render(forcar = false) {
     el.innerHTML = `
         <h3 class="cg-titulo">Categorias da Loja</h3>
         <p class="config-sub">Crie, renomeie, reordene e oculte abas. A loja do cliente muda na hora.</p>
-        ${S.erro ? `<div class="cg-aviso cg-aviso--erro">⚠️ Não consegui ler as categorias${S.erro === 'permission-denied' ? ': as regras novas do Firestore (coleção <b>categorias</b>) ainda não foram publicadas' : ''}. Enquanto isso, nada aqui é salvo.</div>` : ''}
-        <button type="button" class="cg-atalho" data-cg="ir-numeros">📲 Números de WhatsApp (${S.numeros.length + (S.padrao ? 1 : 0)}) — ver / cadastrar ↓</button>
+        ${S.erro ? `<div class="cg-aviso cg-aviso--erro"><i class="ic" data-i="alerta"></i> Não consegui ler as categorias${S.erro === 'permission-denied' ? ': as regras novas do Firestore (coleção <b>categorias</b>) ainda não foram publicadas' : ''}. Enquanto isso, nada aqui é salvo.</div>` : ''}
+        <button type="button" class="cg-atalho" data-cg="ir-numeros"><i class="ic" data-i="enviar"></i> Números de WhatsApp (${S.numeros.length + (S.padrao ? 1 : 0)}) — ver / cadastrar ↓</button>
 
         <div class="cg-novo">
             <input id="cat-novo-nome" type="text" maxlength="40" placeholder="Nova categoria (ex.: Produtos Artesanais)" aria-label="Nome da nova categoria">
             <button type="button" id="cat-btn-add" class="btn-salvar-config">+ Criar</button>
         </div>
-        ${soltas.size ? `<div class="cg-aviso">📥 ${soltas.size} categoria(s) dos seus produtos ainda não estão cadastradas aqui.
+        ${soltas.size ? `<div class="cg-aviso"><i class="ic" data-i="baixar"></i> ${soltas.size} categoria(s) dos seus produtos ainda não estão cadastradas aqui.
             <button type="button" id="cat-btn-importar">Importar agora</button></div>` : ''}
 
         <div class="cg-lista">${S.cats.length
@@ -237,7 +238,7 @@ function render(forcar = false) {
             : '<p class="cg-vazio">Nenhuma categoria cadastrada ainda. Enquanto estiver vazio, a loja usa as categorias dos produtos, como sempre.</p>'}</div>
 
         <h3 class="cg-titulo cg-titulo2" id="cg-numeros">Números de WhatsApp</h3>
-        <p class="config-sub">Cada categoria manda o pedido para um número. O que não tiver número próprio vai para o <b>número padrão</b>${S.padrao ? ` (<b>${escapeHTML(fmtTel(S.padrao))}</b>)` : ''}, que se troca na aba ⚙️ Operacional.</p>
+        <p class="config-sub">Cada categoria manda o pedido para um número. O que não tiver número próprio vai para o <b>número padrão</b>${S.padrao ? ` (<b>${escapeHTML(fmtTel(S.padrao))}</b>)` : ''}, que se troca na aba <i class="ic" data-i="ajustes"></i> Operacional.</p>
         <div class="cg-lista">${S.numeros.map((n) => `
             <article class="cg-item cg-num" data-nid="${escapeHTML(n.id)}">
                 <div class="cg-topo">
@@ -245,7 +246,7 @@ function render(forcar = false) {
                         <input class="cg-nome" type="text" maxlength="40" value="${escapeHTML(n.nome)}" data-cg="num-nome" aria-label="Nome do número">
                         <input class="cg-tel" type="tel" inputmode="tel" value="${escapeHTML(fmtTel(n.numero))}" data-cg="num-numero" aria-label="Número de WhatsApp de ${escapeHTML(n.nome)}">
                     </div>
-                    <button type="button" class="cg-apagar" data-cg="rm-num" aria-label="Remover o número ${escapeHTML(n.nome)}">🗑️</button>
+                    <button type="button" class="cg-apagar" data-cg="rm-num" aria-label="Remover o número ${escapeHTML(n.nome)}"><i class="ic" data-i="lixeira"></i></button>
                 </div>
                 <small>${S.cats.filter((c) => c.wppId === n.id).map((c) => escapeHTML(c.nome)).join(', ') || 'Nenhuma categoria usa este número ainda. Escolha-o numa categoria acima.'}</small>
             </article>`).join('') || '<p class="cg-vazio">Nenhum número extra. Hoje todos os pedidos vão para o número padrão.</p>'}</div>
@@ -302,13 +303,13 @@ export const iniciarCategoriasAdmin = (getProdutos) => {
     desligar.forEach((u) => { try { u(); } catch (_) { /* já desligada */ } });
     S.getProdutos = getProdutos || S.getProdutos;
     S.configPronta = false;
-    const u1 = onSnapshot(collection(db, 'categorias'), (snap) => {
+    const u1 = onSnapshot(tcol('categorias'), (snap) => {
         S.cats = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
             .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
         S.erro = '';
         render();
     }, (e) => { console.error('categorias:', e); S.erro = (e && e.code) || 'erro'; render(true); });
-    const u2 = onSnapshot(doc(db, 'loja', 'config'), (snap) => {
+    const u2 = onSnapshot(tdoc('loja', 'config'), (snap) => {
         const d = snap.exists() ? snap.data() : {};
         S.padrao = soDigitos(d.wpp);
         S.numeros = (Array.isArray(d.numeros) ? d.numeros : []).filter((n) => n && n.id).map((n) => ({ id: String(n.id), nome: String(n.nome || ''), numero: soDigitos(n.numero) }));

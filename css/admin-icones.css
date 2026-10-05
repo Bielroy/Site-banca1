@@ -1,0 +1,77 @@
+/* =====================================================================
+   Ícones e movimento do painel. Desenhos: js/icones-admin.js.
+   --ic-semente = cor da peça cheia de cada ícone.
+   ===================================================================== */
+:root { --ic-semente: #e39a2d; --ic-traco: 1.7; --mola-ic: cubic-bezier(.34, 1.56, .64, 1); }
+.ic { width: 1.25em; height: 1.25em; flex: none; display: inline-block; vertical-align: -0.24em; fill: none; stroke: currentColor; stroke-width: var(--ic-traco); stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+.ic .s { fill: var(--ic-semente); stroke: none; transform-box: fill-box; transform-origin: center; }
+i.ic { visibility: hidden; }                                   /* marca ainda não trocada pelo desenho */
+.ic-g { width: 2.6rem; height: 2.6rem; stroke-width: 1.4; }      /* ícone grande dos avisos de tela vazia */
+.ic + b, .ic + span, button > .ic:first-child, a > .ic:first-child { margin-right: .35em; }
+
+/* o ícone "se desenha" e a semente brota */
+@keyframes ic-tracar { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes ic-brotar { 0% { transform: scale(0); } 100% { transform: scale(1); } }
+@keyframes ic-balancar { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-14deg); } 60% { transform: rotate(10deg); } 85% { transform: rotate(-4deg); } }
+.ic.viva [pathLength], .tab.active .ic [pathLength] { stroke-dasharray: 1; animation: ic-tracar .5s ease-out both; }
+.ic.viva .s, .tab.active .ic .s { animation: ic-brotar .42s var(--mola-ic) .22s both; }
+.ic.toca { transform-origin: 50% 10%; animation: ic-balancar .7s ease-in-out 2; }
+
+.pt { display: inline-block; width: .62em; height: .62em; border-radius: 50%; vertical-align: .08em; }
+
+/* ---------- menu do painel ---------- */
+.tabs { display: block; overflow: visible; padding: 0; margin-bottom: 22px; }
+.tabs-lista { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tabs-grupo { flex: 0 0 100%; margin: 10px 0 0; font-size: .82rem; font-weight: 700; color: var(--text-light); }
+.tabs-grupo:first-child { margin-top: 0; } .tabs-grupo[hidden], .tabs.poucas .tabs-grupo { display: none; }
+.tabs-atual { display: none; }
+.tab { position: relative; padding: 10px 18px; border-radius: 14px; background: #fff; border: 1.5px solid #e6e1d6; color: var(--text-dark); transition: background .18s, color .18s, border-color .18s, transform .12s; }
+.tab .ic { width: 1.35rem; height: 1.35rem; color: var(--forest); } .tab-ico { font-size: 1rem; display: inline-flex; }
+.tab:hover { background: var(--parchment); color: var(--text-dark); border-color: #d9d3c6; }
+.tab.active, .tab.active:hover { background: var(--forest); color: #fff; border-color: var(--forest); } .tab.active .ic { color: #fff; }
+.tab:active { transform: scale(.96); }
+.tab-conta, .tabs-ponto { font-style: normal; background: var(--ic-semente); color: #1a1a18; border-radius: 999px; }
+.tab-conta { position: absolute; top: -7px; right: -7px; min-width: 22px; height: 22px; padding: 0 6px; font: 700 .76rem/22px 'Figtree', system-ui, sans-serif; text-align: center; box-shadow: 0 0 0 2px var(--cream, #faf7f2); }
+.tab-conta[hidden], .tabs-ponto[hidden] { display: none; }
+.tabs-ponto { width: 10px; height: 10px; margin-left: 6px; display: inline-block; }
+@media (max-width: 700px) {
+    .tabs:not(.poucas) .tabs-atual { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 8px 10px 8px 14px; background: var(--forest); color: #fff; border: 0; border-radius: 16px; font: inherit; cursor: pointer; text-align: left; }
+    .tabs-atual-ico .ic { width: 1.7rem; height: 1.7rem; display: block; } .tabs-atual b { flex: 1; min-width: 0; font-size: 1.08rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tabs-atual-trocar { display: inline-flex; align-items: center; gap: 6px; padding: 9px 12px; border-radius: 12px; background: rgba(255,255,255,.14); font-weight: 700; font-size: .9rem; }
+    .tabs-atual-trocar .ic { width: 1.1rem; height: 1.1rem; margin: 0; }
+    .tabs-lista { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+    .tabs-grupo { grid-column: 1 / -1; margin-top: 6px; }
+    .tabs.recolhido:not(.poucas) .tabs-lista { display: none; }
+    .tabs:not(.recolhido):not(.poucas) .tabs-lista { animation: menu-abrir .26s ease-out both; }
+    .tabs.poucas .tabs-lista { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); margin-top: 0; }
+    .tab { flex-direction: column; gap: 5px; padding: 12px 4px 10px; min-height: 72px; font-size: .78rem; }
+    .tab .ic { width: 1.75rem; height: 1.75rem; }
+}
+@keyframes menu-abrir { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+
+/* ---------- toldo da banca: desenrola uma vez, quando o painel abre ---------- */
+.toldo { height: 22px; margin: -6px 0 16px; background: repeating-linear-gradient(90deg, var(--forest) 0 22px, #f3ead8 22px 44px);
+    -webkit-mask: radial-gradient(circle 11px at 11px 11px, #000 98%, transparent) 0 0 / 22px 22px repeat-x, linear-gradient(#000, #000) 0 0 / 100% 11px no-repeat;
+            mask: radial-gradient(circle 11px at 11px 11px, #000 98%, transparent) 0 0 / 22px 22px repeat-x, linear-gradient(#000, #000) 0 0 / 100% 11px no-repeat;
+    transform-origin: top; animation: toldo-desenrolar .7s cubic-bezier(.2, .9, .3, 1.2) both; }
+.login-box .toldo { margin: -40px -30px 26px; border-radius: 20px 20px 0 0; }
+@keyframes toldo-desenrolar { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+/* ---------- movimento que responde ao toque ---------- */
+.aba-content.active { animation: aba-entrar .24s ease-out both; }
+@keyframes aba-entrar { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+#dashboard button:active, .pf button:active, .modal button:active { transform: scale(.97); }
+.sementes { display: inline-flex; gap: 5px; vertical-align: middle; } .sementes i { width: 7px; height: 7px; border-radius: 50%; background: var(--ic-semente); animation: semente-pular .9s ease-in-out infinite; }
+.sementes i:nth-child(2) { animation-delay: .12s; } .sementes i:nth-child(3) { animation-delay: .24s; }
+@keyframes semente-pular { 0%, 60%, 100% { transform: translateY(0); opacity: .5; } 30% { transform: translateY(-6px); opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+    .ic [pathLength], .ic .s, .ic.toca, .toldo, .aba-content.active, .tabs-lista, .sementes i { animation: none !important; }
+    .ic [pathLength] { stroke-dasharray: none; }
+}
+
+/* no computador os grupos ficam na mesma linha, separados por um risco fino */
+@media (min-width: 701px) {
+    .tabs-grupo { flex: 0 0 1px; width: 1px; height: 28px; margin: 0 6px; padding: 0; overflow: hidden; background: #d9d3c6; color: transparent; font-size: 0; }
+    .tabs-grupo:first-child { display: none; }
+}

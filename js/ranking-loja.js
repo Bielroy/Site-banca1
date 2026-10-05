@@ -15,9 +15,10 @@
 //  Nada aqui faz cálculo pesado: só consome o resultado já pronto.
 // =====================================================================
 import { auth } from './firebase.js';
+import { chave } from './tenant.js';
 
 const TTL_MS = 10 * 60 * 1000;           // reaproveita o ranking por 10 min na sessão
-const CHAVE = 'banca_rank_v1';
+const CHAVE = chave('banca_rank_v1');
 
 let escores = new Map();                  // id → { p, motivo?, repor? }
 let nivel = 'sem_dados';
@@ -26,6 +27,11 @@ let iniciado = false;
 
 export const scoreDe = (id) => (escores.has(id) ? escores.get(id).p : 0);
 export const nivelCliente = () => nivel;
+// Produtos que ESTE cliente costuma levar (os que o motor explicou: "Você sempre leva",
+// "Hora de repor"...). Alimenta a faixa "Seus de sempre" no topo da loja.
+export const destaques = (max = 8) => (nivel === 'sem_historico' || nivel === 'sem_dados' ? []
+    : [...escores.values()].filter((e) => e.motivo).sort((a, b) => b.p - a.p).slice(0, max).map((e) => e.id));
+const avisar = () => document.dispatchEvent(new Event('ranking-pronto'));
 
 const lerCache = (uid) => {
     try {
@@ -49,7 +55,7 @@ export async function iniciarRanking() {
         if (!user) { iniciado = false; return; }
 
         const cache = lerCache(user.uid);
-        if (cache) { guardar(cache.dados); aplicarOrdem(); return; }
+        if (cache) { guardar(cache.dados); aplicarOrdem(); avisar(); return; }
 
         const token = await user.getIdToken();
         const ctrl = new AbortController();
@@ -66,7 +72,7 @@ export async function iniciarRanking() {
 
         guardar(dados);
         try { sessionStorage.setItem(CHAVE, JSON.stringify({ uid: user.uid, ts: Date.now(), dados })); } catch (_) { /* quota */ }
-        aplicarOrdem();
+        aplicarOrdem(); avisar();
     } catch (e) {
         iniciado = false;                      // permite nova tentativa no próximo login/refresh
         console.warn('[ranking] usando ordem padrão:', e && e.message);
@@ -86,7 +92,7 @@ export function aplicarOrdem() {
         card.querySelector('.rec-tag')?.remove();
         if (e && e.motivo && nivel !== 'sem_historico') {
             const wrap = card.querySelector('.produto-img-wrap');
-            if (wrap) wrap.insertAdjacentHTML('beforeend', `<span class="rec-tag${e.repor ? ' rec-tag--repor' : ''}">${e.repor ? '🔄' : '⭐'} ${e.motivo}</span>`);
+            if (wrap) { const tag = document.createElement('span'); tag.className = `rec-tag${e.repor ? ' rec-tag--repor' : ''}`; tag.textContent = String(e.motivo); wrap.appendChild(tag); }   // texto puro: nunca vira HTML
         }
     });
 }
