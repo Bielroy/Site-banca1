@@ -138,6 +138,7 @@ const agoraBrasilia = () => new Date(Date.now() - 3 * 3600000);
 const { linhaEndereco } = require('../lib/endereco');
 const T = require('../lib/tenant');
 const Avisos = require('../lib/avisos');
+const Entrega = require('../lib/entrega');
 const E = require('../lib/estoque');
 
 function montarTextoWhatsApp(pedido, numero) {
@@ -150,6 +151,7 @@ function montarTextoWhatsApp(pedido, numero) {
   let msg = dividido ? `*NOVO PEDIDO — parte ${pedido.parte.n} de ${pedido.parte.de}*\n` : `*NOVO PEDIDO*\n`;
   msg += `👤 ${pedido.nome}\n`;
   msg += `📍 ${linhaEndereco(pedido)}\n`;
+  if (pedido.entrega && pedido.entrega.horario) msg += `🕒 Entrega: ${pedido.entrega.horario}\n`;
   msg += `💳 Pagamento: ${pedido.pag || 'A combinar'}\n`;
   // Pedido dividido: troco e cupom aparecem UMA vez (na 1ª parte), para dois
   // atendimentos não darem o mesmo troco nem o mesmo desconto.
@@ -168,11 +170,15 @@ function montarTextoWhatsApp(pedido, numero) {
   if (dividido) {
     msg += `\n*Itens desta parte: ${fmtBRL(pedido.total)}*`;
     if (cupom && primeira) msg += `\n🎁 Cupom ${cupom.codigo}: -${fmtBRL(cupom.desconto)} no total do pedido`;
+    if (primeira && pedido.entrega && Number(pedido.entrega.taxa) > 0) msg += `\n🛵 Entrega: ${fmtBRL(Number(pedido.entrega.taxa))} no total do pedido`;
     msg += `\n🧾 Total do pedido inteiro${cupom ? ' (já com o cupom)' : ''}: ${fmtBRL(pedido.totalGeral)}`;
     msg += `\n📦 _Os outros itens foram para outro WhatsApp da banca.${primeira ? '' : ' Troco e cupom, se houver, estão na parte 1.'}_`;
   } else {
     if (cupom) msg += `\n🎁 Cupom ${cupom.codigo}: -${fmtBRL(cupom.desconto)}`;
-    msg += `\n*${cupom ? 'Total' : 'Subtotal'} (itens já pesados): ${fmtBRL(pedido.total)}*`;
+    const taxa = pedido.entrega && Number(pedido.entrega.taxa) > 0 ? Number(pedido.entrega.taxa) : 0;
+    if (taxa) msg += `\n🛵 Entrega: ${fmtBRL(taxa)}`;
+    else if (pedido.entrega && Number(pedido.entrega.taxaCheia) > 0) msg += `\n🛵 Entrega grátis`;
+    msg += `\n*${cupom || taxa ? 'Total' : 'Subtotal'} (itens já pesados): ${fmtBRL(pedido.total)}*`;
   }
   if (pedido.temItensAPesar) {
     msg += `\n➕ _Os itens marcados com ⚖️ serão pesados e o valor final ajustado._`;
@@ -416,6 +422,14 @@ module.exports = async function handler(req, res) {
         throw new Error('Cupom não encontrado.');
       }
 
+      // ---- Entrega: taxa (grátis acima de um valor) e horário escolhido ----
+      // A taxa é calculada aqui, com a configuração da loja: o navegador só mostra a prévia.
+      // Com item a pesar, o valor ainda sobe na balança: a pesagem reavalia a entrega grátis.
+      const cfgEntrega = Entrega.lerConfig(configCfg);
+      const horarioEntrega = Entrega.horarioValido(cfgEntrega, req.body && req.body.horarioEntrega);
+      const taxaEntregaC = Entrega.taxaC(cfgEntrega, totalExatoCentavos);
+      totalExatoCentavos += taxaEntregaC;
+
       const totalExato = paraFlutuante(totalExatoCentavos);
       const temItensAPesar = itensValidados.some((i) => i.aPesar);
 
@@ -431,6 +445,8 @@ module.exports = async function handler(req, res) {
         clientTotal: totalExato,  // usado pelo painel de pesagem como base
         temItensAPesar,
         cupom: cupomAplicado ? { codigo: cupomAplicado.codigo, desconto: cupomAplicado.desconto } : null,
+        // taxa cobrada agora + a regra do dia do pedido (a pesagem usa para reavaliar a entrega grátis)
+        entrega: { taxa: paraFlutuante(taxaEntregaC), taxaCheia: paraFlutuante(cfgEntrega.taxaC), gratisAcima: paraFlutuante(cfgEntrega.gratisAcimaC), horario: horarioEntrega },
         status: temItensAPesar ? 'aguardando_pesagem' : 'pendente',
         data: new Date().toISOString(),
         origem: 'whatsapp',

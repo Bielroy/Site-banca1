@@ -236,3 +236,7 @@
 .pix-pago { text-align: center; padding: 18px 0; }
 .pix-pago b { display: block; font-size: 1.3rem; color: var(--success, #166534); margin-bottom: 8px; }
 .pix-pago p { color: var(--text-mid); margin-bottom: 18px; }
+
+/* ---------- entrega ---------- */
+.linha-entrega { font-size: .88rem; color: var(--text-mid); margin: 0 0 8px; line-height: 1.35; }
+.linha-entrega.gratis { color: var(--success, #166534); font-weight: 700; }

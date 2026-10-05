@@ -570,6 +570,47 @@ teste('PIX: CPF, máscara e quando o botão de pagar aparece', async () => {
   assert.strictEqual(P.podePagarPix(true, { ...ped, status: 'preparando' }), true, 'depois da pesagem pode pagar');
 });
 
+// ------------------------------------------------------------------ entrega (taxa e horário)
+teste('entrega: taxa calculada no servidor, grátis acima de um valor, horário conferido e pesagem reavalia', async () => {
+  const Ent = require(raiz('lib/entrega')), L = await import(raiz('js/entrega-lib.js'));
+  const cfg = Ent.lerConfig({ entrega: { taxa: 5, gratisAcima: 20, horarios: [' Manhã (8h às 12h) ', 'Tarde', 'Tarde', '<b>x</b>', ''] } });
+  assert.deepStrictEqual(cfg, { taxaC: 500, gratisAcimaC: 2000, horarios: ['Manhã (8h às 12h)', 'Tarde', 'b x /b'] });
+  assert.strictEqual(Ent.taxaC(cfg, 1999), 500); assert.strictEqual(Ent.taxaC(cfg, 2000), 0); assert.strictEqual(Ent.taxaC(Ent.lerConfig({}), 100), 0);
+  assert.strictEqual(Ent.taxaC(Ent.lerConfig({ entrega: { taxa: -3 } }), 100), 0); assert.strictEqual(Ent.taxaC(Ent.lerConfig({ entrega: { taxa: 'abc' } }), 100), 0);
+  assert.throws(() => Ent.horarioValido(cfg, 'Madrugada'), /horário/); assert.throws(() => Ent.horarioValido(cfg, ''), /horário/);
+  assert.strictEqual(Ent.horarioValido(cfg, 'Tarde'), 'Tarde'); assert.strictEqual(Ent.horarioValido(Ent.lerConfig({}), 'qualquer coisa'), '', 'loja que não pergunta ignora o campo');
+  // prévia do navegador = mesma conta
+  const fmtT = (v) => `R$ ${v.toFixed(2).replace('.', ',')}`, c2 = L.lerEntrega({ entrega: { taxa: 5, gratisAcima: 20 } });
+  assert.deepStrictEqual(L.previaDaEntrega(c2, 14, fmtT), { taxa: 5, gratis: false, falta: 6, texto: 'Entrega R$ 5,00 · faltam R$ 6,00 para entrega grátis' });
+  assert.strictEqual(L.previaDaEntrega(c2, 20, fmtT).texto, 'Entrega grátis'); assert.strictEqual(L.previaDaEntrega(L.lerEntrega({}), 20, fmtT).texto, '');
+  assert.deepStrictEqual(L.horariosDoTexto(' Manhã \n\nTarde\nTarde\n'), ['Manhã', 'Tarde']);
+
+  const db = criarBancoP({ ...sementeEstoque(), 'loja/config': { ...(sementeEstoque()['loja/config'] || {}), entrega: { taxa: 5, gratisAcima: 20, horarios: ['Manhã', 'Tarde'] } } }); const adm = criarAdmin(db, TOKENS_P);
+  const checkout = carregarApi(raiz('api/checkout.js'), adm);
+  const pedir = (extra) => chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedido(extra) });
+  assert.strictEqual((await pedir({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }] })).status, 400, 'sem escolher o horário');
+  assert.strictEqual((await pedir({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: 'Madrugada' })).status, 400);
+  // ovos 14: abaixo de 20 → paga 5. O navegador mandar "total" ou "taxa" não muda nada.
+  let p = pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: 'Tarde', taxaEntrega: 0, entrega: { taxa: 0 } });
+  let r = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: p });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(r.corpo.pedido.total, 19);
+  let g = db._dados.get(`pedidos/${p.idempotencyKey}`); assert.deepStrictEqual(g.entrega, { taxa: 5, taxaCheia: 5, gratisAcima: 20, horario: 'Tarde' });
+  assert.ok(decodeURIComponent(r.corpo.pedido.whatsappMsg).includes('Entrega: R$') && decodeURIComponent(r.corpo.pedido.whatsappMsg).includes('Entrega: Tarde'));
+  // 2 ovos = 28: entrega grátis
+  r = await pedir({ itens: [{ id: 'ovos', qtd: 2, tipo: 'un' }], horarioEntrega: 'Manhã' }); assert.strictEqual(r.corpo.pedido.total, 28);
+  // item a pesar: cobra a taxa agora (14 < 20); depois da balança passa de 20 e a taxa sai
+  p = pedido({ itens: [{ id: 'tomate', qtd: 4, tipo: 'un' }, { id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: 'Tarde' });
+  r = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: p }); assert.strictEqual(r.corpo.pedido.total, 19);
+  const pdv = carregarApi(raiz('api/pdv.js'), adm), pesar = (peso) => chamar(pdv, { headers: { Authorization: 'Bearer func-banca' }, body: { acao: 'pesagem', pedidoId: p.idempotencyKey, pesos: [{ i: 0, peso }] } });
+  r = await pesar(0.5); assert.strictEqual(r.corpo.total, 23.45, '0,5 × 8,90 = 4,45 + 14 = 18,45 (< 20) + 5 de entrega'); assert.strictEqual(r.corpo.entrega, 5);
+  r = await pesar(1); assert.strictEqual(r.corpo.total, 22.9, '8,90 + 14 = 22,90 (≥ 20): entrega grátis'); assert.strictEqual(r.corpo.entrega, 0);
+  g = db._dados.get(`pedidos/${p.idempotencyKey}`); assert.strictEqual(g.entrega.taxa, 0); assert.strictEqual(g.entrega.horario, 'Tarde');
+  // cupom com taxa e impressão
+  const I = await import(raiz('js/impressao-lib.js'));
+  const txt = I.paraTexto(I.cupomDoPedido({ itens: [{ nome: 'Ovos', qtd: 1, unidade: 'un', tipo: 'un', subtotal: 14 }], total: 19, entrega: { taxa: 5, horario: 'Tarde' } }), 32);
+  assert.ok(txt.includes('Subtotal') && txt.includes('Entrega') && txt.includes('R$ 5,00') && txt.includes('Entregar: Tarde') && txt.includes('R$ 19,00'), txt);
+});
+
 // ------------------------------------------------------------------ avisos de pedido (Web Push)
 teste('avisos: a mensagem cifrada abre só com a chave do aparelho, e o crachá do servidor confere', () => {
   const crypto = require('crypto'), A = require(raiz('lib/avisos'));

@@ -276,6 +276,16 @@
                     <div class="form-group"><label for="config-minimo"><i class="ic" data-i="moedas"></i> Ticket Mínimo (R$)</label><input type="number" id="config-minimo" step="0.5"></div>
                 </div>
 
+                <div class="grid-2" style="width: 100%;">
+                    <div class="form-group"><label for="config-taxa"><i class="ic" data-i="entrega"></i> Taxa de entrega (R$)</label><input type="number" id="config-taxa" min="0" step="0.5" inputmode="decimal" placeholder="0"><small class="dica-campo">Zero = não cobra entrega.</small></div>
+                    <div class="form-group"><label for="config-gratis">Entrega grátis a partir de (R$)</label><input type="number" id="config-gratis" min="0" step="1" inputmode="decimal" placeholder="0"><small class="dica-campo">Zero = sempre cobra a taxa. Vale sobre os itens, já com cupom.</small></div>
+                </div>
+                <div class="form-group" style="width: 100%;">
+                    <label for="config-horarios"><i class="ic" data-i="espera"></i> Horários de entrega</label>
+                    <textarea id="config-horarios" rows="3" placeholder="Manhã (8h às 12h)&#10;Tarde (14h às 18h)"></textarea>
+                    <small class="dica-campo">Um por linha, até 8. O cliente escolhe um ao fechar o pedido. Em branco = a loja não pergunta.</small>
+                </div>
+
                 <div class="form-group" id="grupo-pix" style="width: 100%;">
                     <label class="chk-linha" for="config-pix"><input type="checkbox" id="config-pix"> <i class="ic" data-i="pix"></i> PIX automático (QR Code na tela do cliente)</label>
                     <small class="dica-campo" style="display:block;">O cliente paga na hora e o pedido aparece como PAGO sozinho. Precisa de uma conta PagBank ligada ao site; sem ela, esta opção não faz efeito e o PIX continua combinado pelo WhatsApp. Pedido com item a pesar só libera o PIX depois da pesagem.</small>

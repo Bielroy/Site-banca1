@@ -131,7 +131,11 @@ async function pesagem(req, res, { tid, dec }) {
         } else totalC += V.paraCentavos(Number(i.subtotal) || (Number(i.preco ?? i.precoOriginal) || 0) * (Number(i.qtd) || 0));
       });
       const descC = ped.cupom && Number(ped.cupom.desconto) > 0 ? V.paraCentavos(ped.cupom.desconto) : 0;      // o desconto dado no pedido continua valendo
-      const total = V.paraReais(Math.max(0, totalC - descC));
+      // Entrega: a taxa do pedido continua; se depois da balança o pedido passou do valor de entrega grátis, ela sai.
+      const ent = ped.entrega || null, itensC = Math.max(0, totalC - descC);
+      const cheiaC = ent ? V.paraCentavos(Number(ent.taxaCheia) || 0) : 0, gratisC = ent ? V.paraCentavos(Number(ent.gratisAcima) || 0) : 0;
+      const taxaC = cheiaC > 0 && !(gratisC > 0 && itensC >= gratisC) ? cheiaC : 0;
+      const total = V.paraReais(itensC + taxaC);
 
       const movs = [];
       for (const [id, kg] of baixa) {
@@ -141,13 +145,13 @@ async function pesagem(req, res, { tid, dec }) {
         movs.push({ produtoId: id, nome: p.d.nome, unidade: p.d.unidade, tipo: 'venda', delta: E.fix(novo - atual), saldo: novo, custoUnit: p.d.custo, pedidoId, obs: 'Pesagem do pedido', por: dec.email || dec.uid });
       }
       const abertos = ['pendente', 'aguardando_pesagem', 'aguardando_pagamento'];
-      t.update(pedidoRef, { itens, total, totalExato: total, temItensAPesar: false, status: abertos.includes(ped.status) ? 'preparando' : ped.status, pesadoEm: new Date().toISOString() });
+      t.update(pedidoRef, { itens, total, totalExato: total, temItensAPesar: false, ...(ent ? { entrega: { ...ent, taxa: V.paraReais(taxaC) } } : {}), status: abertos.includes(ped.status) ? 'preparando' : ped.status, pesadoEm: new Date().toISOString() });
       E.registrarMovs(t, db, tid, movs, admin.firestore.FieldValue);
       // o caixa já tinha a parte de valor fechado: soma só a diferença
       const dif = V.paraReais(V.paraCentavos(total) - V.paraCentavos(Number(ped.total) || 0));
       const dia = new Date(new Date(ped.data).getTime() - 3 * 3600000).toISOString().slice(0, 10);
       if (dif !== 0 && /^\d{4}-\d{2}-\d{2}$/.test(dia)) somarNoCaixa(t, tid, dif, 0, dia);
-      return { total, desconto: V.paraReais(descC), itens };
+      return { total, desconto: V.paraReais(descC), entrega: V.paraReais(taxaC), itens };
     });
     return res.status(200).json({ sucesso: true, ...saida });
   } catch (e) { return res.status(400).json({ error: e.message || 'Não foi possível salvar a pesagem.' }); }

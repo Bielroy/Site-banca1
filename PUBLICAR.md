@@ -1,12 +1,12 @@
 # Antes de publicar — lista de conferência
 
 Nada disto foi feito no ambiente em que o código foi escrito (sem acesso à internet,
-ao Firebase e à Vercel). Os testes automáticos (`npm test`, 58 testes) passam e as telas
+ao Firebase e à Vercel). Os testes automáticos (`npm test`, 59 testes) passam e as telas
 foram conferidas com dados simulados.
 
 ## 1. Build
 1. `npm install`
-2. `npm test` — deve terminar com "58 de 58 testes passaram".
+2. `npm test` — deve terminar com "59 de 59 testes passaram".
 3. `npm run build` — nunca foi rodado depois das mudanças. Se der erro, copie a mensagem inteira.
 4. `npm run preview` e abra: `/`, `/admin.html`, `/plataforma.html`.
 
@@ -50,6 +50,14 @@ foram conferidas com dados simulados.
 - As chaves ficam na Vercel: `VITE_VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY`. Não troque: quem já ligou
   teria de ligar de novo.
 - Nunca foi testado num celular de verdade: confira com um pedido de teste e o painel fechado.
+
+## 4d. Taxa e horário de entrega
+- Painel → **Configurações**: taxa de entrega, valor para entrega grátis e horários (um por linha).
+- Tudo em branco/zero = a loja se comporta como antes (não cobra, não pergunta horário).
+- A taxa é calculada pelo servidor e entra no total do pedido, do cupom impresso e da mensagem do WhatsApp.
+- Pedido com item a pesar: a taxa é cobrada no envio e sai sozinha se, depois da balança, o pedido
+  passar do valor de entrega grátis.
+- A taxa entra no faturamento do Balanço junto com os itens. Vendas no Balcão não têm taxa.
 
 ## 5. Testar com a loja de verdade
 - [ ] Pedido pela loja: preço, estoque, cupom, WhatsApp.

@@ -46,12 +46,16 @@ export function cupomDoPedido(p, { loja = '' } = {}) {
     });
     L.push(SEP);
     const desc = p.cupom && Number(p.cupom.desconto) > 0 ? Number(p.cupom.desconto) : 0;
-    if (desc) L.push({ t: 'par', e: 'Subtotal', d: reais(soma) }, { t: 'par', e: `Cupom ${limpo(p.cupom.codigo, 20)}`, d: `-${reais(desc)}` });
+    const taxa = p.entrega && Number(p.entrega.taxa) > 0 ? Number(p.entrega.taxa) : 0;
+    if (desc || taxa) L.push({ t: 'par', e: 'Subtotal', d: reais(soma) });
+    if (desc) L.push({ t: 'par', e: `Cupom ${limpo(p.cupom.codigo, 20)}`, d: `-${reais(desc)}` });
+    if (taxa) L.push({ t: 'par', e: 'Entrega', d: reais(taxa) });
     L.push({ t: 'par', e: aPesar ? 'PARCIAL' : 'TOTAL', d: reais(p.total), b: true, g: true });
     if (aPesar) L.push(txt(`Falta pesar ${aPesar} item(ns): o total muda depois da balança.`));
     const pago = p.pagamento && p.pagamento.status === 'PAID';
     if (limpo(p.pag)) L.push(txt(`Pagamento: ${limpo(p.pag, 30)}${pago ? ' (PAGO)' : ''}`));
     if (limpo(p.troco)) L.push(txt(`Troco para: ${limpo(p.troco, 30)}`, { b: true }));
+    if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`Entregar: ${limpo(p.entrega.horario, 40)}`, { b: true }));
     if (limpo(p.obs)) L.push(SEP, txt(`Obs: ${limpo(p.obs, 300)}`));
     L.push(SEP, txt('Obrigado pela preferência!', { al: 'c' }), CORTE);
     return L;
@@ -63,6 +67,7 @@ export function etiquetaDeEntrega(p, { loja = '', volume = 1, volumes = 1 } = {}
     if (loja) L.push(txt(loja, { al: 'c' }));
     L.push(txt(p.nome || 'Cliente', { al: 'c', b: true, g: true }));
     const end = enderecoTxt(p); if (end) L.push(txt(end, { al: 'c', b: true }));
+    if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`Entregar: ${limpo(p.entrega.horario, 40)}`, { al: 'c' }));
     L.push(SEP, { t: 'par', e: `${itens.length} item(ns)`, d: volumes > 1 ? `Volume ${volume}/${volumes}` : '' });
     L.push(txt(pago ? 'JÁ PAGO' : `Cobrar ${reais(p.total)} - ${limpo(p.pag, 20) || 'a combinar'}`, { b: true }));
     if (!pago && limpo(p.troco)) L.push(txt(`Troco para: ${limpo(p.troco, 30)}`));

@@ -1,4 +1,5 @@
 import { getDoc, auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL, query, orderBy, limit, writeBatch, where, updateDoc } from './firebase.js';
+import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal, customConfirm } from './utils.js';
 import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual } from './admin-guard.js';
@@ -315,6 +316,10 @@ const iniciarRealTimeSync = () => {
             const data = snap.data();
             document.getElementById('config-wpp').value = data.wpp || '';
             document.getElementById('config-minimo').value = data.minimo || 0;
+            const ent = data.entrega || {}, campoHor = document.getElementById('config-horarios');
+            if (document.activeElement?.id !== 'config-taxa') document.getElementById('config-taxa').value = Number(ent.taxa) > 0 ? ent.taxa : '';
+            if (document.activeElement?.id !== 'config-gratis') document.getElementById('config-gratis').value = Number(ent.gratisAcima) > 0 ? ent.gratisAcima : '';
+            if (campoHor && document.activeElement !== campoHor) campoHor.value = (Array.isArray(ent.horarios) ? ent.horarios : []).join('\n');
             const chkPix = document.getElementById('config-pix'); if (chkPix) chkPix.checked = data.pixAutomatico === true;
             const grupoPix = document.getElementById('grupo-pix'); if (grupoPix) grupoPix.hidden = !ehLojaOriginal;   // a conta do PagBank no servidor é a da loja original
             document.getElementById('config-status-loja').value = data.lojaAberta === false ? "fechada" : "aberta";
@@ -891,6 +896,8 @@ const montarMensagemCliente = () => {
 
     L.push(risco);
     if (ESTEIRA.desconto > 0) L.push(`🎁 Desconto do cupom: -${fmt(ESTEIRA.desconto)}`);
+    if (ESTEIRA.entrega > 0) L.push(`🛵 Entrega: ${fmt(ESTEIRA.entrega)}`);
+    if (p.entrega?.horario) L.push(`🕒 Entrega: ${p.entrega.horario}`);
     L.push(`💰 *Total: ${fmt(ESTEIRA.totalFechado ?? totalDaEsteira())}*`);
     L.push('');
     L.push(`💳 Pagamento: ${p.pag || 'a combinar'}`);
@@ -929,7 +936,7 @@ const finalizarEsteira = async (btn, enviarWhats) => {
         });
         const fechado = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(fechado.error || 'Erro ao salvar o pedido.');
-        ESTEIRA.totalFechado = fechado.total; ESTEIRA.desconto = fechado.desconto || 0;
+        ESTEIRA.totalFechado = fechado.total; ESTEIRA.desconto = fechado.desconto || 0; ESTEIRA.entrega = fechado.entrega || 0;
 
         if (enviarWhats) {
             const msg = montarMensagemCliente();
@@ -1370,6 +1377,8 @@ const renderHtmlPedidos = (pedidos) => {
 
         const infoPag = p.pagamento?.status === 'PAID'
             ? `<span style="background:var(--success);color:white;padding:3px 8px;border-radius:12px;font-size:0.72rem;font-weight:700;">✓ PAGO</span>` : '';
+        const infoEntrega = p.entrega && (p.entrega.horario || Number(p.entrega.taxa) > 0)
+            ? `<div style="font-size:0.82rem;color:var(--forest);margin-top:4px;font-weight:600;"><i class="ic" data-i="entrega"></i> ${escapeHTML([p.entrega.horario, Number(p.entrega.taxa) > 0 ? `entrega ${fmt(p.entrega.taxa)}` : ''].filter(Boolean).join(' · '))}</div>` : '';
         const infoTroco = p.troco ? `<div style="font-size:0.82rem;color:var(--earth);margin-top:4px;"><i class="ic" data-i="dinheiro"></i> Troco para: ${escapeHTML(p.troco)}</div>` : '';
         const infoObs = p.obs ? `<div style="font-size:0.82rem;color:var(--text-mid);margin-top:4px;font-style:italic;"><i class="ic" data-i="nota"></i> ${escapeHTML(p.obs)}</div>` : '';
 
@@ -1387,6 +1396,7 @@ const renderHtmlPedidos = (pedidos) => {
             </div>
             <div style="font-size: 0.9rem; color: var(--text-dark); margin-bottom: 12px; background: white; padding: 10px; border-radius: 6px; border: 1px solid #eee;">
                 • ${itensStr}
+                ${infoEntrega}
                 ${infoTroco}
                 ${infoObs}
             </div>
@@ -2075,7 +2085,10 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
 
         const condominios = lerCondominios();
         const pixAutomatico = ehLojaOriginal && document.getElementById('config-pix')?.checked === true;
-        await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios, pixAutomatico }, { merge: true });
+        const taxa = Math.max(0, parseFloat(document.getElementById('config-taxa').value) || 0), gratisAcima = Math.max(0, parseFloat(document.getElementById('config-gratis').value) || 0);
+        if (taxa > 500) throw new Error("Confira a taxa de entrega: o máximo é R$ 500.");
+        const entrega = { taxa, gratisAcima, horarios: horariosDoTexto(document.getElementById('config-horarios').value) };
+        await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios, pixAutomatico, entrega }, { merge: true });
         showToast("Configurações atualizadas!");
     } catch (err) {
         showToast(err.message, true);

@@ -8,6 +8,7 @@ import { ICO } from './icones.js';
 import { iniciarTema } from './tema.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
 import { podePagarPix } from './pix-lib.js';
+import { lerEntrega, previaDaEntrega } from './entrega-lib.js';
 import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
 
 const CART_VERSION = "3.0"; // Atualizado para suportar o Carrinho Híbrido
@@ -207,7 +208,12 @@ const atualizarRodapeCarrinhoDOM = () => {
             qtdDistinta += (isFracionavel(item.unidade) ? 1 : item.qtd);
         }
     });
-    const previsto = totalExato + estimado;                 // exato + estimativa dos itens a pesar
+    // Entrega: prévia da taxa (quem cobra de verdade é o servidor, com a mesma conta).
+    const entrega = STATE.carrinho.length ? previaDaEntrega(lerEntrega(STATE.config), totalExato, fmt) : { taxa: 0, texto: '' };
+    const linhaEnt = document.getElementById('linha-entrega');
+    if (linhaEnt) { linhaEnt.hidden = !entrega.texto; linhaEnt.textContent = entrega.texto + (entrega.falta > 0 && temItensAPesar ? ' (os itens a pesar também contam, depois da balança)' : ''); linhaEnt.classList.toggle('gratis', !!entrega.gratis); }
+    const previstoItens = totalExato + estimado;            // só os itens: é sobre isto que vale o pedido mínimo
+    const previsto = previstoItens + entrega.taxa;          // exato + estimativa dos itens a pesar + entrega
     const aprox = temItensAPesar && !semEstimativa;         // dá para mostrar "≈ total"
 
     document.getElementById('total-label').textContent = temItensAPesar ? 'Total estimado' : 'Total';
@@ -229,8 +235,8 @@ const atualizarRodapeCarrinhoDOM = () => {
     // item a pesar SEM estimativa (não dá para saber quanto falta).
     const minimo = Number(STATE.config.minimo) || 0;
     const medeMinimo = minimo > 0 && STATE.carrinho.length > 0 && !semEstimativa;
-    const falta = medeMinimo ? Math.max(0, minimo - previsto) : 0;
-    const fracao = medeMinimo ? Math.min(1, previsto / minimo) : 0;
+    const falta = medeMinimo ? Math.max(0, minimo - previstoItens) : 0;
+    const fracao = medeMinimo ? Math.min(1, previstoItens / minimo) : 0;
     const caixaMin = document.getElementById('min-progresso'), barraMin = document.getElementById('barra-min');
     if (caixaMin) {
         caixaMin.hidden = !medeMinimo;
@@ -478,6 +484,15 @@ const oferecerPixNoSucesso = (pedido) => {
     area.innerHTML = pode ? `<button type="button" class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Pagar ${fmt(pedido.total)} com PIX agora</button>` : '';
 };
 
+// Horário de entrega: o campo só aparece se a loja cadastrou horários no painel.
+const pintarHorariosDeEntrega = () => {
+    const grupo = document.getElementById('grupo-horario'), campo = document.getElementById('cli-horario'); if (!grupo || !campo) return;
+    const { horarios } = lerEntrega(STATE.config), atual = campo.value;
+    grupo.hidden = !horarios.length;
+    campo.innerHTML = horarios.length ? '<option value="">Escolha um horário</option>' + horarios.map((h) => `<option value="${escapeHTML(h)}">${escapeHTML(h)}</option>`).join('') : '';
+    if (horarios.includes(atual)) campo.value = atual;
+};
+
 const renderCategorias = () => {
     const abas = [{ chave: 'todas', nome: 'Todos' }, { chave: 'favoritos', nome: 'Favoritos' }, ...abasDeCategoria(STATE.produtos)];
     // se a categoria aberta sumiu (ocultada no painel), volta para "Todos"
@@ -495,6 +510,7 @@ const iniciarRealTimeSync = () => {
     const unsubConfig = onSnapshot(tdoc("loja", "config"), (snap) => {
         if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()}; atualizarRodapeCarrinhoDOM();
         endCheckout.definirLista(STATE.config.condominios); endTopo.definirLista(STATE.config.condominios);
+        pintarHorariosDeEntrega();
     }, (e) => console.warn('[loja] config:', e?.code || e));
     unsubscribes.push(unsubConfig);
 
@@ -1233,6 +1249,8 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     const faltaEndereco = endCheckout.validar();
     if (faltaEndereco) return showToast(faltaEndereco, true);
     if (!nome) return showToast("Escreva o seu nome para a entrega.", true);
+    const campoHorario = document.getElementById('cli-horario');
+    if (campoHorario && !document.getElementById('grupo-horario').hidden && !campoHorario.value) { campoHorario.focus(); return showToast("Escolha quando prefere receber.", true); }
     btn.disabled = true; btn.textContent = 'Enviando pedido...';
 
     try {
@@ -1256,6 +1274,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             condominio: endereco.condominio, condominioId: endereco.condominioId, formatoEndereco: endereco.formatoEndereco,
             aceitaOfertas: !!document.getElementById('cli-ofertas')?.checked,
             itens: itensFormatados,
+            horarioEntrega: document.getElementById('cli-horario')?.value || '',
             clientTotal: totalEstimado, // Manda só o valor do que é exato
             status: itensFormatados.some(i => i.aPesar) ? 'aguardando_pesagem' : 'pendente', // Avisa o Admin!
             idempotencyKey: STATE.checkoutSessionId
