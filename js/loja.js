@@ -938,7 +938,10 @@ const repetirPedido = (pedId) => {
 // Abre a tela do produto com a foto do card "viajando" até ela.
 const transicaoFoto = (fotoCard, abrir) => {
     const semMovimento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!document.startViewTransition || semMovimento || !fotoCard) return abrir();
+    if (!document.startViewTransition || semMovimento || !fotoCard) {
+        document.getElementById('modal-detalhe-produto')?.classList.remove('sem-anim');
+        return abrir();
+    }
     fotoCard.style.viewTransitionName = 'produto-foto';
     const t = document.startViewTransition(() => {
         fotoCard.style.viewTransitionName = '';
@@ -950,7 +953,7 @@ const transicaoFoto = (fotoCard, abrir) => {
     });
     const limpar = () => {
         const img = document.getElementById('md-img'); if (img) img.style.viewTransitionName = '';
-        document.getElementById('modal-detalhe-produto')?.classList.remove('sem-anim');
+        // 'sem-anim' fica até a tela fechar: tirar aqui fazia a animação de abrir tocar de novo por cima.
     };
     t.finished.then(limpar, limpar);
 };
