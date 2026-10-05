@@ -570,6 +570,27 @@ teste('PIX: CPF, máscara e quando o botão de pagar aparece', async () => {
   assert.strictEqual(P.podePagarPix(true, { ...ped, status: 'preparando' }), true, 'depois da pesagem pode pagar');
 });
 
+// ------------------------------------------------------------------ versão nova entra sozinha
+teste('versão: percebe que a página no ar mudou, ignora resposta estranha e não recarrega sem parar', async () => {
+  const V = await import(raiz('js/versao-lib.js'));
+  const eu = V.arquivoDaPagina(['./js/busca-voz.js', '/assets/main-B_XEcaEF.js']); assert.strictEqual(eu, '/assets/main-B_XEcaEF.js');
+  assert.strictEqual(V.arquivoDaPagina(['./js/loja.js']), '', 'sem build não confere nada');
+  const pagina = (arq) => `<html><head><script type="module" crossorigin src="${arq}"></script></head></html>`;
+  assert.strictEqual(V.estaDesatualizada(eu, pagina('/assets/main-B_XEcaEF.js')), false, 'mesma versão');
+  assert.strictEqual(V.estaDesatualizada(eu, pagina('/assets/main-D4SNZK6U.js')), true, 'saiu versão nova');
+  for (const estranho of ['', '<html>Entre na rede Wi-Fi</html>', 'Internal Server Error', null]) assert.strictEqual(V.estaDesatualizada(eu, estranho), false, String(estranho));
+  assert.strictEqual(V.estaDesatualizada('', pagina('/assets/main-D4SNZK6U.js')), false);
+  const agora = 1e12;
+  assert.strictEqual(V.podeRecarregar([], agora), true);
+  assert.strictEqual(V.podeRecarregar([agora - 10000], agora), false, 'acabou de recarregar');
+  assert.strictEqual(V.podeRecarregar([agora - 60000], agora), true);
+  assert.strictEqual(V.podeRecarregar([agora - 60000, agora - 120000], agora), false, 'duas em 10 minutos: para');
+  assert.strictEqual(V.podeRecarregar([agora - 11 * 60000, agora - 12 * 60000], agora), true, 'as antigas não contam');
+  // as páginas não podem voltar para a cópia guardada no aparelho
+  const cfg = require('fs').readFileSync(raiz('vite.config.js'), 'utf8');
+  assert.ok(!/globPatterns:[^\n]*html/.test(cfg), 'html fora da cópia guardada'); assert.ok(cfg.includes("request.mode === 'navigate'") && cfg.includes('navigateFallback: null'));
+});
+
 // ------------------------------------------------------------------ entrega (taxa e horário)
 teste('entrega: taxa calculada no servidor, grátis acima de um valor, horário conferido e pesagem reavalia', async () => {
   const Ent = require(raiz('lib/entrega')), L = await import(raiz('js/entrega-lib.js'));

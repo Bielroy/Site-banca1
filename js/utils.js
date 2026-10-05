@@ -242,30 +242,46 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 // --------- Versão nova do site: entra sozinha ---------
-// Depois de um deploy, o celular ainda abria a versão guardada e só mostrava a
-// nova na SEGUNDA abertura. Agora, quando a versão nova assume, a página
-// recarrega uma vez — mas nunca no meio de um pedido ou de um formulário.
-if ('serviceWorker' in navigator) {
-  const jaTinhaVersao = !!navigator.serviceWorker.controller;   // 1ª visita não recarrega
-  let recarregou = false;
-  const ocupado = () => !!document.querySelector('.modal-overlay.aberto, .carrinho.aberto, .picking-palco.aberto')
+// Quem já tinha entrado ficava vendo o site antigo depois de uma atualização. Agora:
+//  1) a página é sempre buscada na internet ao abrir (vite.config.js, regra "paginas");
+//  2) com o site aberto, de tempos em tempos conferimos se o que está no ar é mais novo
+//     que o que está na tela (regra em js/versao-lib.js). Se for, a página recarrega
+//     sozinha — nunca no meio de um pedido, de um formulário ou de uma tela aberta.
+// O carrinho, o endereço e "Meus pedidos" ficam guardados no aparelho e não se perdem.
+import { arquivoDaPagina, estaDesatualizada, podeRecarregar } from './versao-lib.js';
+(() => {
+  if (typeof document === 'undefined') return;
+  const meuArquivo = arquivoDaPagina([...document.querySelectorAll('script[type="module"][src]')].map((s) => s.getAttribute('src')));
+  if (!meuArquivo) return;                       // em desenvolvimento (sem build) não há o que conferir
+  const CHAVE = 'banca_recargas';
+  let pendente = false, conferindo = false, ultima = 0;
+  const ocupado = () => !!document.querySelector('.modal-overlay.aberto, .carrinho.aberto, .picking-palco.aberto, .tabs:not(.recolhido) .tabs-lista')
     || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement && document.activeElement.tagName) || '');
-  let pendente = false;
+  const historico = () => { try { return JSON.parse(sessionStorage.getItem(CHAVE) || '[]'); } catch (_) { return []; } };
   const tentarRecarregar = () => {
-    if (recarregou || !pendente || ocupado()) return;
-    recarregou = true; window.location.reload();
+    if (!pendente || ocupado()) return;
+    const h = historico();
+    if (!podeRecarregar(h, Date.now())) { pendente = false; return; }     // trava contra recarregar sem parar
+    try { sessionStorage.setItem(CHAVE, JSON.stringify(h.concat(Date.now()).slice(-5))); } catch (_) { /* sem armazenamento: segue */ }
+    pendente = false; window.location.reload();
   };
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!jaTinhaVersao) return;
-    pendente = true; tentarRecarregar();
-  });
-  // App aberto há dias (atalho na tela inicial): ao voltar para ele, confere se há versão nova
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') return;
-    tentarRecarregar();
-    navigator.serviceWorker.getRegistration().then((r) => r && r.update()).catch(() => {});
-  });
-}
+  const conferir = async (forcar) => {
+    if (conferindo || pendente || !navigator.onLine || (!forcar && Date.now() - ultima < 120000)) return;
+    conferindo = true; ultima = Date.now();
+    try {
+      if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistration().then((r) => r && r.update()).catch(() => {});
+      // "?v=" faz a resposta vir direto do servidor, nunca de uma cópia guardada
+      const r = await fetch(`${location.pathname}?v=${Date.now()}`, { cache: 'no-store', credentials: 'omit' });
+      if (r.ok && estaDesatualizada(meuArquivo, await r.text())) { pendente = true; tentarRecarregar(); }
+    } catch (_) { /* sem sinal: confere na próxima */ }
+    conferindo = false;
+  };
+  setTimeout(() => conferir(true), 5000);                                   // logo depois de abrir
+  setInterval(() => conferir(false), 15 * 60 * 1000);                       // site aberto por horas (painel no balcão)
+  setInterval(tentarRecarregar, 4000);                                      // esperando a pessoa terminar o que está fazendo
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { tentarRecarregar(); conferir(false); } });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('controllerchange', () => conferir(true));
+})();
 
 // --------- IndexedDB wrapper (não bloqueante) ---------
 export const dbStorage = {

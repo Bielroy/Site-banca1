@@ -70,15 +70,30 @@ export default defineConfig({
       workbox: {
         // aviso de pedido novo: o service worker gerado carrega este arquivo (push-sw.js, na raiz)
         importScripts: ['push-sw.js'],
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'],
-
-        // Impede o PWA de "sequestrar" o painel admin com uma página em cache
-        navigateFallbackDenylist: [/^\/admin/, /^\/api/],
+        // As PÁGINAS (html) NÃO ficam mais na cópia guardada do aparelho. Antes ficavam, e quem
+        // já tinha entrado abria sempre a versão antiga do site, só vendo a nova na visita
+        // seguinte (ou nunca, se a atualização em segundo plano falhasse). Agora a página é
+        // buscada na internet toda vez (regra "paginas" abaixo) e só cai na cópia guardada se
+        // o aparelho estiver sem sinal. Imagens, estilos e código continuam guardados: é o que
+        // deixa o site rápido, e cada versão deles tem nome próprio, então não ficam velhos.
+        globPatterns: ['**/*.{js,css,ico,png,svg,webp}'],
+        navigateFallback: null,
 
         // O checkout, o cancelamento e o assistente NUNCA podem vir do
         // cache: uma resposta antiga de /api/checkout poderia mostrar
         // "pedido enviado" sem pedido nenhum ter sido criado.
         runtimeCaching: [
+          {
+            // Abrir o site: sempre tenta a versão que está no ar; sem sinal (ou internet
+            // muito lenta), mostra a última que este aparelho viu.
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'paginas',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
           {
             urlPattern: /^https?:\/\/[^/]+\/api\/.*/i,
             handler: 'NetworkOnly',
