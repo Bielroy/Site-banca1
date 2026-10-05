@@ -57,7 +57,8 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .cat-btn { color: var(--text-mid); border-color: var(--linha); }
 
 /* faixa "Seus de sempre": cards lado a lado, rolando para o lado */
-.vitrine { flex: 2; min-width: 0; display: flex; flex-direction: column; gap: 26px; }
+.vitrine { flex: 2; min-width: 0; max-width: 100%; align-self: stretch; display: flex; flex-direction: column; gap: 26px; }
+.faixa-sempre { min-width: 0; max-width: 100%; }
 .vitrine .produtos-grid { flex: none; width: 100%; }
 .faixa-sempre h2 { font-family: var(--fonte-titulo); font-size: 1.3rem; font-weight: 650; color: var(--forest); margin-bottom: 12px; }
 .faixa-rolo { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 10px; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
