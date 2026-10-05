@@ -29,3 +29,6 @@
 .pf-perigo { border-color: var(--danger) !important; color: var(--danger) !important; }
 .pf-feira { background: #fff; border: 1.5px solid #e6e1d6; border-radius: 16px; padding: 14px; margin-bottom: 12px; }
 .pf-vazio { padding: 28px 16px; text-align: center; color: var(--text-mid); background: var(--warm-white); border-radius: 14px; }
+
+/* botão desligado precisa parecer desligado */
+.pf button:disabled, .pf .btn-outline:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }

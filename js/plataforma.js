@@ -71,7 +71,7 @@ function render() {
     <div class="pf-lojas">${d.lojas.map((l) => lojaHtml(l, d.modulos)).join('')}</div>
     <div class="pf-secao"><h3>Feiras</h3><button class="btn-outline" data-pf="nova-feira"${d.lojas.length < 2 ? ' disabled' : ''}>+ Nova feira</button></div>
     ${S.novaFeira ? feiraHtml({ id: '', nome: '', lojas: [] }, d.lojas, true) : ''}
-    ${d.feiras.length ? d.feiras.map((f) => feiraHtml(f, d.lojas, false)).join('') : (S.novaFeira ? '' : '<p class="config-sub">Nenhuma feira. Uma feira junta lojas na faixa do topo: o cliente troca de loja deslizando o dedo.</p>')}
+    ${d.feiras.length ? d.feiras.map((f) => feiraHtml(f, d.lojas, false)).join('') : (S.novaFeira ? '' : `<p class="config-sub">${d.lojas.length < 2 ? 'Uma feira junta duas ou mais lojas na faixa do topo, e o cliente troca de loja deslizando o dedo. Você tem uma loja só: crie a segunda em "+ Nova loja" e o botão acima é liberado.' : 'Nenhuma feira. Uma feira junta lojas na faixa do topo: o cliente troca de loja deslizando o dedo.'}</p>`)}
     <p class="config-sub cal-nota">Ao bloquear uma loja, ela para de receber pedidos, vender no balcão e mexer no estoque; o cadastro de produtos continua editável pelo proprietário.</p>`;
 }
 async function carregar() { S.dados = await api({ acao: 'lojas' }); render(); }
