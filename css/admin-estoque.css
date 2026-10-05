@@ -209,3 +209,10 @@ body.so-equipe #aba-relatorios .relatorios-header, body.so-equipe #aba-relatorio
 .pr-etq { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; } .pr-etq input { width: 90px; min-height: 44px; padding: 8px 10px; border-radius: 10px; border: 1.5px solid #e0dcd4; font-size: 16px; }
 .pr-etq button, .pv2-ultima button { min-height: 44px; padding: 8px 14px; } .pv2-ultima button { margin-top: 8px; }
 @media (min-width: 720px) { .eq-item span { flex: 1 1 0; } .eq-item select { flex: 0 0 190px; } }
+
+/* ---------- avisos de pedido ---------- */
+#btn-avisos.on { background: var(--forest); color: #fff; border-color: var(--forest); }
+.av-estado { display: flex; align-items: center; gap: 10px; font-size: 1.05rem; margin-bottom: 8px; color: var(--text-dark); }
+.av-estado.on { color: var(--forest); }
+#av-corpo .btn-salvar-config { width: 100%; margin-top: 10px; }
+#av-corpo .av-desligar { width: 100%; min-height: 46px; margin-top: 10px; }

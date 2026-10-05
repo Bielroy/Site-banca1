@@ -1,12 +1,12 @@
 # Antes de publicar — lista de conferência
 
 Nada disto foi feito no ambiente em que o código foi escrito (sem acesso à internet,
-ao Firebase e à Vercel). Os testes automáticos (`npm test`, 55 testes) passam e as telas
+ao Firebase e à Vercel). Os testes automáticos (`npm test`, 58 testes) passam e as telas
 foram conferidas com dados simulados.
 
 ## 1. Build
 1. `npm install`
-2. `npm test` — deve terminar com "55 de 55 testes passaram".
+2. `npm test` — deve terminar com "58 de 58 testes passaram".
 3. `npm run build` — nunca foi rodado depois das mudanças. Se der erro, copie a mensagem inteira.
 4. `npm run preview` e abra: `/`, `/admin.html`, `/plataforma.html`.
 
@@ -42,6 +42,14 @@ foram conferidas com dados simulados.
    copia e cola. Pago, o pedido aparece como PAGO no painel sozinho.
 - Pedido com item a pesar só libera o PIX depois da pesagem (botão em **Meus pedidos**).
 - Cancelar um pedido já pago NÃO devolve o dinheiro: devolva o PIX pelo aplicativo do banco.
+
+## 4c. Aviso de pedido novo no celular
+- No painel, botão **Avisos** no topo → **Ligar avisos neste aparelho** → **Mandar um aviso de teste**.
+- Cada pessoa liga no próprio celular. Android: funciona pelo Chrome. iPhone: só com o site instalado
+  na tela de início (Compartilhar → Adicionar à Tela de Início).
+- As chaves ficam na Vercel: `VITE_VAPID_PUBLIC_KEY` e `VAPID_PRIVATE_KEY`. Não troque: quem já ligou
+  teria de ligar de novo.
+- Nunca foi testado num celular de verdade: confira com um pedido de teste e o painel fechado.
 
 ## 5. Testar com a loja de verdade
 - [ ] Pedido pela loja: preço, estoque, cupom, WhatsApp.

@@ -17,10 +17,11 @@ const TELAS = {
     aparencia: () => import('./admin-aparencia.js'), estoque: () => import('./admin-estoque.js'), fotos: () => import('./admin-fotos.js'),
     margens: () => import('./admin-margens.js'), compras: () => import('./admin-compras.js'), pdv: () => import('./admin-pdv.js'),
     crm: () => import('./admin-crm.js'), copiloto: () => import('./admin-copiloto.js'), calendario: () => import('./admin-calendario.js'),
-    equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'),
+    equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'), avisos: () => import('./admin-avisos.js'),
 };
 const comImpressao = async (fn) => { try { await fn(await TELAS.impressao()); } catch (e) { console.error(e); showToast('Não consegui abrir a impressão. Confira a internet e toque de novo.', true); } };
 document.getElementById('btn-impressora')?.addEventListener('click', () => comImpressao((m) => m.abrirImpressora()));
+document.getElementById('btn-avisos')?.addEventListener('click', async () => { try { (await TELAS.avisos()).abrirAvisos(); } catch (e) { console.error(e); showToast('Não consegui abrir os avisos. Confira a internet e toque de novo.', true); } });
 let condominiosAtuais = [];
 const ABRIR = {
     aparencia: (m) => m.abrirAparencia(), estoque: (m) => m.abrirEstoque(produtosAtuais), compras: (m) => m.abrirCompras(produtosAtuais),
@@ -136,6 +137,8 @@ const aplicarPapel = () => {
     const minhas = abasDoPapel(papelAtual, TODAS_AS_ABAS, modulosDaLoja), gestor = ehGestor(papelAtual);
     const lp = document.getElementById('link-plataforma'); if (lp) lp.hidden = !(papelAtual === 'plataforma' || (papelAtual === 'proprietario' && ehLojaOriginal));
     document.querySelectorAll('.tab').forEach((t) => { t.hidden = !minhas.includes(t.dataset.aba); });
+    const ba = document.getElementById('btn-avisos');   // quem não vê pedidos (produção, estoque) não recebe aviso de pedido
+    if (ba) { ba.hidden = !['plataforma', 'proprietario', 'administrador', 'funcionario', 'caixa'].includes(papelAtual); if (!ba.hidden) TELAS.avisos().then((m) => m.marcarBotaoDeAvisos()).catch(() => {}); }
     document.body.classList.toggle('so-equipe', !gestor);
     const r = document.getElementById('papel-rotulo'); if (r) { r.textContent = rotuloDoPapel(papelAtual); r.hidden = papelAtual === 'proprietario'; }
     if (!gestor) {                                      // para a equipe, a aba do Dashboard mostra só a fila de pedidos

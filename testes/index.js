@@ -570,6 +570,80 @@ teste('PIX: CPF, máscara e quando o botão de pagar aparece', async () => {
   assert.strictEqual(P.podePagarPix(true, { ...ped, status: 'preparando' }), true, 'depois da pesagem pode pagar');
 });
 
+// ------------------------------------------------------------------ avisos de pedido (Web Push)
+teste('avisos: a mensagem cifrada abre só com a chave do aparelho, e o crachá do servidor confere', () => {
+  const crypto = require('crypto'), A = require(raiz('lib/avisos'));
+  const aparelho = crypto.createECDH('prime256v1'); aparelho.generateKeys(); const auth = crypto.randomBytes(16);
+  const corpo = A.cifrar('{"titulo":"Pedido novo","corpo":"Maria · R$ 49,35"}', A.b64u(aparelho.getPublicKey()), A.b64u(auth));
+  // abre do jeito que o navegador abre (RFC 8291)
+  const salt = corpo.subarray(0, 16), n = corpo[20], as = corpo.subarray(21, 21 + n), cifra = corpo.subarray(21 + n);
+  assert.strictEqual(corpo.readUInt32BE(16), 4096); assert.strictEqual(n, 65);
+  const comum = aparelho.computeSecret(as);
+  const ikm = Buffer.from(crypto.hkdfSync('sha256', comum, auth, Buffer.concat([Buffer.from('WebPush: info\0'), aparelho.getPublicKey(), as]), 32));
+  const cek = Buffer.from(crypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16)), nonce = Buffer.from(crypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12));
+  const d = crypto.createDecipheriv('aes-128-gcm', cek, nonce); d.setAuthTag(cifra.subarray(cifra.length - 16));
+  const claro = Buffer.concat([d.update(cifra.subarray(0, cifra.length - 16)), d.final()]);
+  assert.strictEqual(claro[claro.length - 1], 2); assert.strictEqual(JSON.parse(claro.subarray(0, -1).toString('utf8')).corpo, 'Maria · R$ 49,35');
+  // outro aparelho não abre
+  const outro = crypto.createECDH('prime256v1'); outro.generateKeys();
+  assert.notDeepStrictEqual(outro.computeSecret(as), comum);
+  // crachá (VAPID): assinatura confere com a chave pública e o destino é o serviço do aparelho
+  const srv = crypto.createECDH('prime256v1'); srv.generateKeys(); const k = { priv: A.b64u(srv.getPrivateKey()), pub: A.b64u(srv.getPublicKey()) };
+  const cab = A.cracha('https://fcm.googleapis.com/fcm/send/abc', k); const [, jwt, pub] = cab.match(/^vapid t=([^,]+), k=(.+)$/);
+  const [h, p, ass] = jwt.split('.'); assert.strictEqual(pub, k.pub);
+  const x = srv.getPublicKey(), chavePub = crypto.createPublicKey({ format: 'jwk', key: { kty: 'EC', crv: 'P-256', x: A.b64u(x.subarray(1, 33)), y: A.b64u(x.subarray(33)) } });
+  assert.ok(crypto.verify('sha256', Buffer.from(`${h}.${p}`), { key: chavePub, dsaEncoding: 'ieee-p1363' }, A.deB64u(ass)));
+  const carga = JSON.parse(A.deB64u(p).toString()); assert.strictEqual(carga.aud, 'https://fcm.googleapis.com'); assert.ok(carga.exp - Date.now() / 1000 <= 24 * 3600, 'validade de no máximo 24 h');
+  // endereços: só serviços de aviso conhecidos, com as duas chaves do tamanho certo
+  const boa = { endpoint: 'https://fcm.googleapis.com/fcm/send/abc', keys: { p256dh: A.b64u(aparelho.getPublicKey()), auth: A.b64u(auth) } };
+  assert.strictEqual(A.assinaturaValida(boa), true); assert.strictEqual(A.assinaturaValida({ ...boa, endpoint: 'https://web.push.apple.com/x' }), true);
+  for (const ruim of [{ ...boa, endpoint: 'https://meu-servidor.com/x' }, { ...boa, endpoint: 'http://fcm.googleapis.com/x' }, { ...boa, endpoint: 'https://fcm.googleapis.com.golpe.com/x' }, { ...boa, keys: { p256dh: 'abc', auth: boa.keys.auth } }, { endpoint: boa.endpoint }, null])
+    assert.strictEqual(A.assinaturaValida(ruim), false, JSON.stringify(ruim));
+});
+teste('avisos: a equipe liga o aparelho, o pedido novo dispara o aviso e uma falha não derruba o pedido', async () => {
+  const crypto = require('crypto'), A = require(raiz('lib/avisos'));
+  const srv = crypto.createECDH('prime256v1'); srv.generateKeys(); const ap = crypto.createECDH('prime256v1'); ap.generateKeys();
+  const assinatura = (n) => ({ endpoint: `https://fcm.googleapis.com/fcm/send/aparelho-${n}`, keys: { p256dh: A.b64u(ap.getPublicKey()), auth: A.b64u(crypto.randomBytes(16)) } });
+  const db = criarBancoP(sementeEstoque()); const adm = criarAdmin(db, TOKENS_P);
+  const equipe = carregarApi(raiz('api/equipe.js'), adm), checkout = carregarApi(raiz('api/checkout.js'), adm);
+  const ch = (token, body, loja) => chamar(equipe, { headers: { Authorization: `Bearer ${token}`, ...(loja ? { 'X-Loja': loja } : {}) }, body });
+  const fetchReal = global.fetch, envios = []; let resposta = 201;
+  global.fetch = async (url, o) => { envios.push({ url: String(url), h: o.headers, tam: o.body.length }); if (resposta === 'cai') throw new Error('sem rede'); return { status: resposta }; };
+  try {
+    delete process.env.VAPID_PRIVATE_KEY; delete process.env.VITE_VAPID_PUBLIC_KEY;
+    assert.strictEqual((await ch('func-banca', { acao: 'aviso-ligar', assinatura: assinatura(1) })).status, 503, 'sem chave no servidor fica desligado');
+    process.env.VAPID_PRIVATE_KEY = A.b64u(srv.getPrivateKey()); process.env.VITE_VAPID_PUBLIC_KEY = A.b64u(srv.getPublicKey());
+    assert.strictEqual((await ch('cliente', { acao: 'aviso-ligar', assinatura: assinatura(1) })).status, 403, 'cliente não recebe aviso da loja');
+    assert.strictEqual((await ch('dono-espetinhos', { acao: 'aviso-ligar', assinatura: assinatura(1) })).status, 403, 'gente de outra loja também não');
+    assert.strictEqual((await ch('func-banca', { acao: 'aviso-ligar', assinatura: { endpoint: 'https://golpe.com/x', keys: assinatura(1).keys } })).status, 400);
+    assert.strictEqual((await ch('func-banca', { acao: 'aviso-ligar', assinatura: assinatura(1) })).status, 200);
+    assert.strictEqual((await ch('func-banca', { acao: 'aviso-ligar', assinatura: assinatura(1) })).status, 200, 'ligar duas vezes não duplica');
+    assert.strictEqual((await ch('func-banca', { acao: 'aviso-ligar', assinatura: assinatura(2) })).status, 200);
+    const guardados = () => [...db._dados.keys()].filter((k) => k.startsWith('avisos/'));
+    assert.strictEqual(guardados().length, 2);
+    const pedir = () => chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }] }) });
+    let r = await pedir(); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+    assert.strictEqual(envios.length, 2); assert.ok(envios[0].url.includes('fcm.googleapis.com')); assert.strictEqual(envios[0].h['Content-Encoding'], 'aes128gcm'); assert.match(envios[0].h.Authorization, /^vapid t=/);
+    assert.ok(envios[0].tam > 100 && envios[0].tam < 4096, 'cabe no limite do serviço de avisos');
+    resposta = 410; r = await pedir(); assert.strictEqual(r.status, 200); assert.strictEqual(guardados().length, 0, 'aparelho que saiu é tirado da lista');
+    await ch('func-banca', { acao: 'aviso-ligar', assinatura: assinatura(3) }); resposta = 'cai';
+    r = await pedir(); assert.strictEqual(r.status, 200, 'o serviço de avisos fora do ar não derruba o pedido'); assert.strictEqual(guardados().length, 1);
+    assert.strictEqual((await ch('func-banca', { acao: 'aviso-desligar', endpoint: assinatura(3).endpoint })).status, 200); assert.strictEqual(guardados().length, 0);
+  } finally { global.fetch = fetchReal; delete process.env.VAPID_PRIVATE_KEY; delete process.env.VITE_VAPID_PUBLIC_KEY; }
+});
+teste('avisos: situação do aparelho e conversão da chave', async () => {
+  const L = await import(raiz('js/avisos-lib.js'));
+  const base = { temSW: true, temPush: true, temNotificacao: true, permissao: 'default', assinado: false, chave: 'abc', ios: false, instalado: false };
+  assert.strictEqual(L.situacaoDosAvisos(base), 'desligado');
+  assert.strictEqual(L.situacaoDosAvisos({ ...base, permissao: 'granted', assinado: true }), 'ligado');
+  assert.strictEqual(L.situacaoDosAvisos({ ...base, permissao: 'granted', assinado: false }), 'desligado');
+  assert.strictEqual(L.situacaoDosAvisos({ ...base, permissao: 'denied' }), 'bloqueado');
+  assert.strictEqual(L.situacaoDosAvisos({ ...base, chave: '' }), 'sem-chave');
+  assert.strictEqual(L.situacaoDosAvisos({ ...base, temPush: false }), 'sem-suporte');
+  assert.strictEqual(L.situacaoDosAvisos({ ...base, ios: true }), 'ios-instalar'); assert.strictEqual(L.situacaoDosAvisos({ ...base, ios: true, instalado: true }), 'desligado');
+  assert.deepStrictEqual([...L.chaveParaBytes('AQID-_8')], [1, 2, 3, 251, 255]);
+});
+
 // ------------------------------------------------------------------ auditoria de segurança
 teste('PIX: só o dono do pedido (ou a equipe) gera o QR, e só na loja original', async () => {
   const db = criarBancoP({ ...semente(), 'loja/config': { ...(semente()['loja/config'] || {}), pixAutomatico: true }, 'pedidos/pedido-0001': { userId: 'c1', total: 20, status: 'pendente' }, 'tenants/espetinhos/pedidos/pedido-0002': { userId: 'c1', total: 20, status: 'pendente' } });

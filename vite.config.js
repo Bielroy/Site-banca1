@@ -44,7 +44,7 @@ const paginasExistentes = Object.fromEntries(
 // atalho (manifest), a imagem de compartilhamento, o robots.txt e o
 // sitemap.xml davam erro 404. Este mini-plugin os copia com o mesmo nome.
 // ---------------------------------------------------------------------
-const ARQUIVOS_DA_RAIZ = ['icon-192.png', 'icon-512.png', 'og-image.png', 'robots.txt', 'sitemap.xml'];
+const ARQUIVOS_DA_RAIZ = ['icon-192.png', 'icon-512.png', 'og-image.png', 'robots.txt', 'sitemap.xml', 'push-sw.js'];
 const copiarArquivosDaRaiz = () => ({
   name: 'banca-copiar-arquivos-da-raiz',
   apply: 'build',
@@ -68,6 +68,8 @@ export default defineConfig({
       injectRegister: 'auto',
 
       workbox: {
+        // aviso de pedido novo: o service worker gerado carrega este arquivo (push-sw.js, na raiz)
+        importScripts: ['push-sw.js'],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'],
 
         // Impede o PWA de "sequestrar" o painel admin com uma página em cache

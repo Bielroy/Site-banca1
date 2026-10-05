@@ -18,6 +18,7 @@
 // =====================================================================
 const admin = require('firebase-admin');
 const T = require('../lib/tenant');
+const A = require('../lib/avisos');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -99,6 +100,18 @@ module.exports = async function handler(req, res) {
   } catch (e) { return res.status(401).json({ error: 'Entre no painel de novo.' }); }
   try { ({ tid } = await T.resolverLoja(db, req)); }
   catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+  // Avisos de pedido novo neste aparelho: qualquer pessoa da equipe que vê os pedidos pode ligar o seu.
+  const acaoAviso = (req.body || {}).acao;
+  if (acaoAviso === 'aviso-ligar' || acaoAviso === 'aviso-desligar' || acaoAviso === 'aviso-teste') {
+    if (!T.temPapel(dec, tid, ['proprietario', 'administrador', 'funcionario', 'caixa'])) return res.status(403).json({ error: 'Sua conta não recebe avisos de pedido nesta loja.' });
+    try {
+      if (!A.ligado()) return res.status(503).json({ error: 'Os avisos ainda não estão ligados no servidor.' });
+      if (acaoAviso === 'aviso-ligar') await A.ligar(db, tid, dec, (req.body || {}).assinatura);
+      else if (acaoAviso === 'aviso-desligar') await A.desligar(db, tid, (req.body || {}).endpoint);
+      else return res.status(200).json({ sucesso: true, ...(await A.avisarLoja(db, tid, { titulo: 'Aviso de teste', corpo: 'É assim que o pedido novo vai aparecer.', url: '/admin.html', tag: 'teste' })) });
+      return res.status(200).json({ sucesso: true });
+    } catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[avisos]', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
+  }
   if (!T.temPapel(dec, tid, ['proprietario'])) return res.status(403).json({ error: 'Só o proprietário cuida da equipe desta loja.' });
   const acao = (req.body || {}).acao;
   try {

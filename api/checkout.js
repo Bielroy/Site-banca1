@@ -137,6 +137,7 @@ const agoraBrasilia = () => new Date(Date.now() - 3 * 3600000);
 
 const { linhaEndereco } = require('../lib/endereco');
 const T = require('../lib/tenant');
+const Avisos = require('../lib/avisos');
 const E = require('../lib/estoque');
 
 function montarTextoWhatsApp(pedido, numero) {
@@ -464,6 +465,13 @@ module.exports = async function handler(req, res) {
       const links = montarLinksWhatsApp(dadosPedido, categoriasCfg, configCfg);
       return { id: pedidoRef.id, total: totalExato, temItensAPesar,
                whatsappMsg: links[0].url, whatsapps: links };
+    });
+
+    // Aviso no celular da equipe. Espera no máximo ~3 s e nunca derruba o pedido, que já está gravado.
+    await Avisos.avisarLoja(db, tid, {
+      titulo: resultado.temItensAPesar ? 'Pedido novo (tem item a pesar)' : 'Pedido novo',
+      corpo: `${nome} · ${Number(resultado.total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}${resultado.temItensAPesar ? ' + itens a pesar' : ''}`,
+      url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `pedido-${resultado.id}`,
     });
 
     return res.status(200).json({ sucesso: true, pedido: resultado });
