@@ -42,8 +42,8 @@
 .produto-card { background: var(--warm-white); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); border: 1.5px solid transparent; display: flex; flex-direction: column; position: relative; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2), box-shadow 0.3s; cursor: pointer;}
 .produto-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-md); border-color: var(--sage); }
 
-.produto-img-wrap { width: 100%; aspect-ratio: 1; background: var(--foam); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
-.produto-img-wrap img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s ease; }
+.produto-img-wrap { width: 100%; aspect-ratio: var(--foto-proporcao, 1); background: var(--foam); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+.produto-img-wrap img { width: 100%; height: 100%; object-fit: var(--foto-encaixe, cover); transition: transform 0.5s ease; }
 .produto-card:hover .produto-img-wrap img { transform: scale(1.05); }
 
 .btn-fav { position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.9); border: none; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; font-size: 1.1rem; box-shadow: var(--shadow-sm); transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2); backdrop-filter: blur(4px); }

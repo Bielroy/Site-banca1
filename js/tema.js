@@ -66,6 +66,9 @@ export const MODELOS = {
     jantinha: { primaria: '#7a2e12', secundaria: '#c8662e', destaque: '#e0a23a', fundo: '#fbf3e7', superficie: '#fffaf2', texto: '#2a1c14', sobrePrimaria: '#fff8ef', fonteTitulo: 'Lora', fonteTexto: 'Nunito Sans', raio: 18, etiqueta: 'limpa' },
 };
 
+/** Formatos da área da foto no cartão do produto: rótulo e proporção (largura / altura). */
+export const FOTO_FORMATOS = { quadrada: ['Quadrada', '1 / 1'], alta: ['Em pé', '4 / 5'], 'bem-alta': ['Bem em pé (pacotes, garrafas)', '2 / 3'], larga: ['Deitada', '4 / 3'] };
+
 const cor = (v) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null);
 const mix = (a, pct, b) => `color-mix(in srgb, ${a} ${pct}%, ${b})`;
 
@@ -85,6 +88,10 @@ export function variaveisDoTema(tema) {
     if (FONTES.texto[t.fonteTexto]) v['--fonte-texto'] = FONTES.texto[t.fonteTexto];
     const raio = Number(t.raio);
     if (Number.isFinite(raio) && raio >= 0 && raio <= 28) { v['--raio-card'] = `${raio}px`; v['--radius'] = `${Math.round(raio * 1.4)}px`; v['--radius-sm'] = `${Math.max(4, Math.round(raio * 0.85))}px`; }
+    // FOTO DO PRODUTO: cada loja escolhe o formato da área (quadrada, em pé, deitada) e se a foto preenche ou aparece inteira
+    if (FOTO_FORMATOS[t.fotoFormato]) v['--foto-proporcao'] = FOTO_FORMATOS[t.fotoFormato][1];
+    if (t.fotoFormato === 'alta') v['--foto-hero'] = '1 / 1'; else if (t.fotoFormato === 'bem-alta') v['--foto-hero'] = '4 / 5';   // a foto grande, ao abrir o produto, acompanha
+    if (t.fotoEncaixe === 'inteira') v['--foto-encaixe'] = 'contain';
     // etiqueta: em tema escuro o "papel" claro continua claro (é um objeto), com tinta escura
     return { variaveis: v, classes: { 'etiqueta-limpa': t.etiqueta === 'limpa' } };
 }

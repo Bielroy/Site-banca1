@@ -9,7 +9,7 @@
 import { getDoc, setDoc } from './firebase.js';
 import { fichaRef, TENANT, urlDaLoja } from './tenant.js';
 import { escapeHTML, showToast } from './utils.js';
-import { aplicarTema, FONTES, MODELOS } from './tema.js';
+import { aplicarTema, FONTES, MODELOS, FOTO_FORMATOS } from './tema.js';
 
 const CORES = [
     ['primaria', 'Cor principal', 'Cabeçalho e botões'],
@@ -68,6 +68,11 @@ function render(ficha) {
             <div class="form-group"><label for="ap-etiqueta">Etiqueta de preço</label>
                 <select id="ap-etiqueta"><option value="barbante"${tema.etiqueta !== 'limpa' ? ' selected' : ''}>De feira, com barbante</option><option value="limpa"${tema.etiqueta === 'limpa' ? ' selected' : ''}>Limpa</option></select>
             </div>
+            <div class="grid-2">
+                <div class="form-group"><label for="ap-foto-formato">Formato da foto do produto</label><select id="ap-foto-formato">${Object.entries(FOTO_FORMATOS).map(([k, [rot]]) => `<option value="${k}"${(tema.fotoFormato || 'quadrada') === k ? ' selected' : ''}>${rot}</option>`).join('')}</select></div>
+                <div class="form-group"><label for="ap-foto-encaixe">Como a foto se encaixa</label><select id="ap-foto-encaixe"><option value="preencher"${tema.fotoEncaixe !== 'inteira' ? ' selected' : ''}>Preenche a área (corta as sobras)</option><option value="inteira"${tema.fotoEncaixe === 'inteira' ? ' selected' : ''}>Aparece inteira (sem cortar)</option></select></div>
+            </div>
+            <small class="dica-campo">Fotos tiradas em pé (pão no saco, garrafa, pote) ficam melhores em "Em pé". Vale para todos os produtos da loja.</small>
             <div id="ap-avisos" class="ap-avisos" aria-live="polite"></div>
             <button class="btn-salvar-config" id="ap-gravar">Gravar aparência</button>
             <p class="dica-campo">Sua loja: <a href="${urlDaLoja(TENANT)}" target="_blank" rel="noopener">abrir em outra aba</a></p>
@@ -104,12 +109,14 @@ function ligar() {
         else if (t.id === 'ap-fonte-titulo') tema.fonteTitulo = t.value;
         else if (t.id === 'ap-fonte-texto') tema.fonteTexto = t.value;
         else if (t.id === 'ap-etiqueta') tema.etiqueta = t.value;
+        else if (t.id === 'ap-foto-formato') tema.fotoFormato = t.value;
+        else if (t.id === 'ap-foto-encaixe') tema.fotoEncaixe = t.value;
         pintarPrevia();
     });
     raiz.addEventListener('click', async (e) => {
         const m = e.target.closest('[data-modelo]');
         if (m) {
-            tema = { ...MODELOS[m.dataset.modelo] };
+            tema = { ...MODELOS[m.dataset.modelo], fotoFormato: tema.fotoFormato, fotoEncaixe: tema.fotoEncaixe };   // o modelo troca cores e letras; o formato da foto fica
             CORES.forEach(([k]) => { $(`ap-cor-${k}`).value = tema[k]; });
             $('ap-fonte-titulo').value = tema.fonteTitulo; $('ap-fonte-texto').value = tema.fonteTexto;
             $('ap-raio').value = tema.raio; $('ap-raio-valor').textContent = `${tema.raio}px`; $('ap-etiqueta').value = tema.etiqueta;
