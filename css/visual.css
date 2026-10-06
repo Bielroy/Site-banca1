@@ -258,3 +258,52 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .avaliar-envio textarea { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--linha); font-family: inherit; font-size: 16px; resize: vertical; background: var(--superficie); color: var(--text-dark); }
 .avaliado { margin-top: 10px; font-size: .88rem; color: var(--text-mid); }
 .avaliado span { color: var(--manga); letter-spacing: 1px; }
+
+/* =====================================================================
+   DESTAQUES DE COMPRA — os três lugares que puxam a venda usam a mesma
+   cor quente (--manga), para a cliente aprender que "amarelo = atalho":
+   "Pedir de novo", a faixa "Seus de sempre" e o "Que tal levar?".
+   Toda animação roda UMA vez, na entrada; nada fica piscando.
+   ===================================================================== */
+
+/* 1) PEDIR DE NOVO: botão cheio, com ícone e um anel que pulsa duas vezes ao aparecer */
+.atalhos { padding-top: 6px; padding-left: 4px; }
+.atalho.principal { flex-direction: row; align-items: center; gap: 12px; min-height: 64px; padding: 10px 20px 10px 12px;
+    background: var(--forest); border-color: var(--forest); color: var(--sobre-primaria);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--manga) 70%, transparent); animation: atalhoChama 1.5s ease-out .5s 2; }
+.atalho.principal span { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.atalho.principal b { color: var(--sobre-primaria); font-size: 1.04rem; }
+.atalho.principal small { color: color-mix(in srgb, var(--sobre-primaria) 80%, transparent); }
+.atalho-ico { flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: var(--manga); color: #2a2414; }
+.atalho-ico .ico { width: 22px; height: 22px; stroke-width: 2.2; animation: atalhoGira .9s cubic-bezier(.3, .8, .3, 1) .5s both; }
+@keyframes atalhoChama { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--manga) 70%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
+@keyframes atalhoGira { from { transform: rotate(-200deg); } to { transform: none; } }
+.atalho.principal:active { transform: scale(.98); }
+
+/* 2) SEUS DE SEMPRE: a faixa ganha moldura e fundo próprios, para não se confundir com a vitrine */
+.faixa-sempre { position: relative; padding: 16px 14px 8px; border-radius: calc(var(--raio-card, 14px) + 6px);
+    background: color-mix(in srgb, var(--manga) 11%, var(--superficie)); border: 1.5px solid color-mix(in srgb, var(--manga) 55%, var(--superficie)); }
+.faixa-sempre[hidden] { display: none; }
+.faixa-sempre h2 { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.faixa-sempre h2::before { content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--manga); box-shadow: 0 0 0 4px color-mix(in srgb, var(--manga) 28%, transparent); }
+.faixa-sub { font-size: .84rem; color: var(--text-mid); margin: 0 0 12px 18px; }
+.faixa-sempre .produto-card { border-color: color-mix(in srgb, var(--manga) 40%, var(--linha)); }
+@media (max-width: 600px) { .faixa-sempre .faixa-rolo { margin-right: -14px; padding-right: 14px; } }
+
+/* 3) QUE TAL LEVAR? (no pedido): foto, nome e preço, moldura tracejada quente e botão cheio */
+.upsell-box { display: flex; align-items: center; justify-content: flex-start; gap: 12px; margin: 10px 16px; padding: 10px 12px;
+    background: color-mix(in srgb, var(--manga) 13%, var(--superficie)); border: 1.5px dashed color-mix(in srgb, var(--manga) 80%, var(--text-dark)); border-radius: 14px;
+    animation: upsellEntra .45s cubic-bezier(.2, .9, .3, 1.15) both; }
+.upsell-foto { flex: none; width: 52px; height: 52px; border-radius: 10px; object-fit: cover; background: var(--parchment); }
+.upsell-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.upsell-texto small { font-size: .74rem; font-weight: 700; color: var(--earth-forte, var(--earth)); }
+.upsell-texto b { font-size: .98rem; color: var(--text-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upsell-texto em { font-style: normal; font-size: .8rem; color: var(--text-mid); }
+.upsell-box .upsell-botao { flex: none; min-height: 44px; padding: 8px 16px; border: 0; border-radius: 999px; cursor: pointer; font-family: inherit; font-size: .9rem; font-weight: 700;
+    background: var(--manga); color: #2a2414; }
+.upsell-box .upsell-botao:hover { background: color-mix(in srgb, var(--manga) 86%, #000); transform: none; }
+@keyframes upsellEntra { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+    .atalho.principal, .atalho-ico .ico, .upsell-box { animation: none; }
+}

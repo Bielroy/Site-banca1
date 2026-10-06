@@ -192,7 +192,7 @@ const atualizarLinhaCarrinhoDOM = (id, novaQtd, subtotalFmt, tipo) => {
 
 const renderUpsell = () => {
     const upsellCont = document.getElementById('upsell-container');
-    if (STATE.carrinho.length === 0) { upsellCont.innerHTML = ''; return; }
+    if (STATE.carrinho.length === 0) { upsellCont.innerHTML = ''; upsellCont.dataset.sugestao = ''; return; }
     const idsNoCarrinho = STATE.carrinho.map(c => c.id);
     const catsNoCarrinho = [...new Set(STATE.carrinho.map(c => c.cat))];
     let sugestoes = STATE.produtos.filter(p => p.ativo && !idsNoCarrinho.includes(p.id) && catsNoCarrinho.includes(p.cat));
@@ -200,8 +200,15 @@ const renderUpsell = () => {
     if (sugestoes.length > 0) {
         sugestoes.sort((a,b) => (scoreDe(b.id) - scoreDe(a.id)) || ((STATE.favoritos.includes(b.id) ? 1 : 0) - (STATE.favoritos.includes(a.id) ? 1 : 0)));
         const up = sugestoes[0];
-        upsellCont.innerHTML = `<div class="upsell-box"><span>Que tal levar <b>${escapeHTML(up.nome)}</b>?</span><button class="btn btn-outline" style="padding: 6px 12px;" data-action="add" data-id="${escapeHTML(up.id)}">Adicionar</button></div>`;
-    } else { upsellCont.innerHTML = ''; }
+        // só redesenha quando a sugestão MUDA: assim a entrada animada acontece uma vez, e não a cada toque no + e no −
+        if (upsellCont.dataset.sugestao === up.id) return;
+        upsellCont.dataset.sugestao = up.id;
+        upsellCont.innerHTML = `<div class="upsell-box">
+            ${up.foto ? `<img class="upsell-foto" src="${escapeHTML(up.fotoMini || miniatura(up.foto, 128))}" data-original="${escapeHTML(up.foto)}" alt="" width="52" height="52" loading="lazy">` : ''}
+            <span class="upsell-texto"><small>Que tal levar?</small><b>${escapeHTML(up.nome)}</b><em>${fmt(up.preco)} ${nomeUnidade(up.unidade)}</em></span>
+            <button class="upsell-botao" data-action="add" data-id="${escapeHTML(up.id)}">Adicionar</button>
+        </div>`;
+    } else { upsellCont.innerHTML = ''; upsellCont.dataset.sugestao = ''; }
 };
 
 const atualizarRodapeCarrinhoDOM = () => {
@@ -466,6 +473,7 @@ const renderFaixaSempre = (forcar = false) => {
     if (!visivel || assinatura === _faixaIds) return;
     _faixaIds = assinatura;
     document.getElementById('faixa-titulo').textContent = titulo;
+    const sub = document.getElementById('faixa-sub'); if (sub) sub.textContent = titulo === 'Seus de sempre' ? 'O que você mais leva, a um toque.' : 'Para repetir sem procurar de novo.';
     lista.innerHTML = ids.map(id => cardHtml(porId.get(id), true)).join('');
     ids.forEach(id => atualizarBadgesDOM(id));
 };
@@ -1083,7 +1091,8 @@ function renderAtalhos() {
         const hoje = lista.dia === new Date().getDay();
         botoes.push(`<span class="atalho-par"><button type="button" class="atalho${hoje ? ' destaque' : ''}" data-action="por-lista"><b>Minha lista da semana</b><small>${hoje ? 'hoje é ' + nomeDoDia(lista.dia) + ', dia da sua lista · ' : ''}${lista.itens.length} ${lista.itens.length === 1 ? 'item' : 'itens'}</small></button><button type="button" class="atalho-ver" data-action="ver-lista" aria-label="Ver ou apagar a lista da semana">ver</button></span>`);
     }
-    if (ultimo) botoes.push(`<button type="button" class="atalho" data-action="repetir-pedido" data-id="${escapeHTML(String(ultimo.id))}"><b>Pedir de novo</b><small>o pedido de ${dataCurta(ultimo.data)} · ${ultimo.itens.length} ${ultimo.itens.length === 1 ? 'item' : 'itens'}</small></button>`);
+    // "Pedir de novo" é o atalho principal: vem primeiro, preenchido, com o ícone de repetir.
+    if (ultimo) botoes.unshift(`<button type="button" class="atalho principal" data-action="repetir-pedido" data-id="${escapeHTML(String(ultimo.id))}"><i class="atalho-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.7L20 8.5"/><path d="M20 4v4.5h-4.5"/><path d="M20 12a8 8 0 0 1-13.7 5.7L4 15.5"/><path d="M4 20v-4.5h4.5"/></svg></i><span><b>Pedir de novo</b><small>o pedido de ${dataCurta(ultimo.data)} · ${ultimo.itens.length} ${ultimo.itens.length === 1 ? 'item' : 'itens'}</small></span></button>`);
     if (avaliar) botoes.push(`<button type="button" class="atalho" data-action="open-historico"><b>Chegou tudo fresquinho?</b><small>avalie seu pedido em um toque</small></button>`);
     nav.hidden = !livre || !botoes.length;
     const html = botoes.join('');
