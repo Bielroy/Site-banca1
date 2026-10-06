@@ -36,6 +36,10 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 @media (max-width: 340px) { .header-arte { display: none; } .header-acoes { padding-right: 0; } }
 .sem-arte .header-arte { display: none; }
 .sem-arte .header-acoes { padding-right: 0; }
+/* toldo listrado pendurado embaixo do cabeçalho (igual ao do painel); usa a cor principal da loja */
+.toldo-loja { height: 22px; background: repeating-linear-gradient(90deg, var(--forest) 0 22px, #f3ead8 22px 44px);
+    -webkit-mask: radial-gradient(circle 11px at 11px 11px, #000 98%, transparent) 0 0 / 22px 22px repeat-x, linear-gradient(#000, #000) 0 0 / 100% 11px no-repeat;
+            mask: radial-gradient(circle 11px at 11px 11px, #000 98%, transparent) 0 0 / 22px 22px repeat-x, linear-gradient(#000, #000) 0 0 / 100% 11px no-repeat; }
 .chip-header {
     display: inline-flex; align-items: center; gap: 8px; min-height: 44px; max-width: 100%;
     padding: 8px 16px; border-radius: 999px; cursor: pointer;

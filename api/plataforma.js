@@ -3,7 +3,8 @@
 //  Só entra quem tem  plataforma: true  no login (gravado pelo servidor).
 //
 //  POST { acao: 'lojas' }                                   lista lojas, feiras e o movimento do mês
-//  POST { acao: 'criar-loja', id, nome, modelo, emailDono? }
+//  POST { acao: 'criar-loja', id, nome, modelo, tipoNome?, emailDono? }   (modelo = aparência inicial; tipoNome = tipo escrito à mão)
+//  POST { acao: 'tipo', id, tipo }                              muda o tipo de negócio de uma loja
 //  POST { acao: 'ativo', id, ativo }                        bloquear / liberar
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
 //  POST { acao: 'proprietario', id, email, remover? }
@@ -91,7 +92,7 @@ async function definirDono(id, email, remover) {
 }
 
 async function criarLoja(req, res) {
-  const b = req.body || {}, id = exigirId(String(b.id || '')), nome = texto(b.nome, 60), modelo = String(b.modelo || 'hortifruti'), email = String(b.emailDono || '').trim().toLowerCase();
+  const b = req.body || {}, id = exigirId(String(b.id || '')), nome = texto(b.nome, 60), modelo = String(b.modelo || 'hortifruti'), tipoNome = texto(b.tipoNome, 30), email = String(b.emailDono || '').trim().toLowerCase();
   if (id === T.TENANT_PADRAO || ['tenants', 'feiras', 'api', 'admin', 'plataforma', 'www'].includes(id)) throw falha(400, 'Este endereço é reservado. Escolha outro.');
   if (nome.length < 2) throw falha(400, 'Dê um nome para a loja.');
   if (!MODELOS[modelo]) throw falha(400, 'Escolha um modelo da lista.');
@@ -100,7 +101,7 @@ async function criarLoja(req, res) {
   const ref = fichaRef(id);
   await db.runTransaction(async (t) => {
     if ((await t.get(ref)).exists) throw falha(409, 'Já existe uma loja com este endereço.');
-    t.set(ref, { nome, tipo: modelo, ativo: true, tema: MODELOS[modelo], modulos: { ia: false }, criadoEm: new Date().toISOString() });
+    t.set(ref, { nome, tipo: tipoNome || modelo, ativo: true, tema: MODELOS[modelo], modulos: { ia: false }, criadoEm: new Date().toISOString() });
     t.set(T.docDe(db, id, 'loja/config'), { lojaAberta: true, diasAbertos: [0, 1, 2, 3, 4, 5, 6], minimo: 0, wpp: '' }, { merge: true });
   });
   if (email) await definirDono(id, email, false);
@@ -111,6 +112,14 @@ async function criarLoja(req, res) {
 async function ativo(req, res) {
   const id = String((req.body || {}).id || ''), f = await exigirLoja(id);
   await fichaRef(id).set({ ...base(f), ativo: (req.body || {}).ativo === true }, { merge: true });
+  T._cacheFichas.delete(id);
+  return res.status(200).json({ sucesso: true });
+}
+// Tipo de negócio escrito à mão ("Padaria", "Açaí"...). É só um rótulo: a aparência fica como está.
+async function tipo(req, res) {
+  const id = String((req.body || {}).id || ''), f = await exigirLoja(id), nome = texto((req.body || {}).tipo, 30);
+  if (nome.length < 2) throw falha(400, 'Escreva o tipo de negócio.');
+  await fichaRef(id).set({ ...base(f), tipo: nome }, { merge: true });
   T._cacheFichas.delete(id);
   return res.status(200).json({ sucesso: true });
 }
@@ -178,7 +187,7 @@ module.exports = async function handler(req, res) {
     catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[plataforma] assumir', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
   }
   if (dec.plataforma !== true) return res.status(403).json({ error: 'Área restrita ao dono da plataforma.' });
-  const acoes = { lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res) };
+  const acoes = { lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res) };
   const fn = acoes[(req.body || {}).acao];
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });
   try { return await fn(); }

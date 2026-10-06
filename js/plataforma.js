@@ -25,6 +25,9 @@ async function api(corpo) {
 }
 const aviso = (titulo, texto, link) => { el().innerHTML = `<div class="pf-vazio"><b>${titulo}</b><p>${texto}</p>${link ? `<p><a class="btn-outline" style="display:inline-block;padding:12px 18px;margin-top:10px;text-decoration:none" href="./admin.html">${link}</a></p>` : ''}</div>`; };
 
+// tipos de negócio que você mesmo escreveu em outras lojas: voltam como opção no cadastro
+const tiposProprios = (d) => [...new Set(d.lojas.map((l) => l.tipo).filter((t) => t && !d.modelos.includes(t)))].sort((a, b) => a.localeCompare(b));
+
 function lojaHtml(l, modulos) {
     return `
     <article class="pf-loja${l.ativo ? '' : ' bloq'}" data-loja="${escapeHTML(l.id)}">
@@ -37,6 +40,8 @@ function lojaHtml(l, modulos) {
         <span class="pf-rotulo">Proprietário</span>
         ${l.donos.length ? `<ul class="pf-donos">${l.donos.map((e) => `<li><span>${escapeHTML(e)}</span><button type="button" data-pf="tirar-dono" data-email="${escapeHTML(e)}" aria-label="Tirar ${escapeHTML(e)}">&times;</button></li>`).join('')}</ul>` : `<p class="config-sub">${l.original ? 'A conta antiga da banca continua valendo. Novos proprietários aparecem aqui.' : 'Ninguém ainda: sem proprietário, ninguém abre o painel desta loja.'}</p>`}
         <div class="pf-add"><input type="email" inputmode="email" autocomplete="off" placeholder="e-mail do proprietário" aria-label="E-mail do novo proprietário de ${escapeHTML(l.nome)}"><button type="button" class="btn-outline" data-pf="dar-dono">Adicionar</button></div>
+        ${l.original ? '' : `<span class="pf-rotulo">Tipo de negócio</span>
+        <div class="pf-add pf-tipo"><input type="text" maxlength="30" autocomplete="off" value="${escapeHTML(NOMES_MODELO[l.tipo] || l.tipo || '')}" placeholder="Ex.: Padaria" aria-label="Tipo de negócio de ${escapeHTML(l.nome)}"><button type="button" class="btn-outline" data-pf="mudar-tipo">Salvar</button></div>`}
         <span class="pf-rotulo">Módulos ligados</span>
         <div class="pf-modulos">${Object.entries(modulos).map(([k, rot]) => `<label><input type="checkbox" data-pf-modulo="${k}"${l.modulos[k] ? ' checked' : ''}> ${escapeHTML(rot)}</label>`).join('')}</div>
         <div class="pf-acoes">
@@ -64,7 +69,9 @@ function render() {
     <div class="pf-form">
         <div class="form-group"><label for="pf-nome">Nome da loja</label><input type="text" id="pf-nome" maxlength="60" autocomplete="off" placeholder="Ex.: Espetinhos do Zé"></div>
         <div class="form-group"><label for="pf-id">Endereço</label><input type="text" id="pf-id" maxlength="40" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="espetinhos-do-ze"><small class="dica-campo" id="pf-id-dica">Não muda depois. Só letras minúsculas, números e hífen.</small></div>
-        <div class="form-group"><label for="pf-modelo">Tipo de negócio</label><select id="pf-modelo">${d.modelos.map((m) => `<option value="${escapeHTML(m)}">${escapeHTML(NOMES_MODELO[m] || m)}</option>`).join('')}</select><small class="dica-campo">Define as cores e fontes iniciais. O proprietário muda depois na aba Aparência.</small></div>
+        <div class="form-group"><label for="pf-modelo">Tipo de negócio</label><select id="pf-modelo">${d.modelos.map((m) => `<option value="${escapeHTML(m)}">${escapeHTML(NOMES_MODELO[m] || m)}</option>`).join('')}${tiposProprios(d).map((t) => `<option value="c:${escapeHTML(t)}">${escapeHTML(t)}</option>`).join('')}<option value="__novo">+ Outro tipo (escrever)…</option></select><small class="dica-campo">Não achou o seu? Escolha "Outro tipo" e escreva.</small></div>
+        <div class="form-group" id="pf-grupo-tipo" hidden><label for="pf-tipo-nome">Qual é o tipo de negócio?</label><input type="text" id="pf-tipo-nome" maxlength="30" autocomplete="off" placeholder="Ex.: Padaria"></div>
+        <div class="form-group" id="pf-grupo-base" hidden><label for="pf-base">Começar com a aparência de</label><select id="pf-base">${d.modelos.map((m) => `<option value="${escapeHTML(m)}">${escapeHTML(NOMES_MODELO[m] || m)}</option>`).join('')}</select><small class="dica-campo">São só as cores e fontes iniciais. O proprietário muda depois na aba Aparência.</small></div>
         <div class="form-group"><label for="pf-dono">E-mail do proprietário (opcional)</label><input type="email" id="pf-dono" inputmode="email" autocomplete="off" placeholder="nome@email.com"></div>
         <div class="pf-largo"><button class="btn-salvar-config" data-pf="criar">Criar loja</button></div>
     </div>` : ''}
@@ -89,6 +96,12 @@ function ligar() {
         if (e.target.id === 'pf-nome' || e.target.id === 'pf-id') $('pf-id-dica').textContent = idValido($('pf-id').value) ? `A loja abre em ${urlDaLoja($('pf-id').value, '/').replace(/^https:\/\//, '')} · não muda depois.` : 'Não muda depois. Só letras minúsculas, números e hífen.';
     });
     el().addEventListener('change', async (e) => {
+        if (e.target.id === 'pf-modelo') {          // tipo fora da lista: pede o nome e a aparência de partida
+            const v = e.target.value, proprio = v === '__novo' || v.startsWith('c:');
+            $('pf-grupo-tipo').hidden = v !== '__novo'; $('pf-grupo-base').hidden = !proprio;
+            if (v === '__novo') $('pf-tipo-nome').focus();
+            return;
+        }
         const m = e.target.closest('[data-pf-modulo]'); if (!m) return;
         const id = m.closest('[data-loja]').dataset.loja, nome = S.dados.modulos[m.dataset.pfModulo];
         if (!(await fazer({ acao: 'modulos', id, modulos: { [m.dataset.pfModulo]: m.checked } }, `${nome}: ${m.checked ? 'ligado' : 'desligado'}.`))) m.checked = !m.checked;
@@ -103,7 +116,10 @@ function ligar() {
             const nome = $('pf-nome').value.trim(), nid = $('pf-id').value.trim(), emailDono = $('pf-dono').value.trim().toLowerCase();
             if (nome.length < 2) return showToast('Dê um nome para a loja.', true);
             if (!idValido(nid)) return showToast('Confira o endereço: só letras minúsculas, números e hífen.', true);
-            if (await fazer({ acao: 'criar-loja', id: nid, nome, modelo: $('pf-modelo').value, emailDono }, `Loja "${nome}" criada.`)) { S.nova = false; render(); }
+            const escolha = $('pf-modelo').value, proprio = escolha === '__novo' || escolha.startsWith('c:');
+            const tipoNome = escolha === '__novo' ? $('pf-tipo-nome').value.trim() : escolha.startsWith('c:') ? escolha.slice(2) : '';
+            if (escolha === '__novo' && tipoNome.length < 2) return showToast('Escreva o tipo de negócio.', true);
+            if (await fazer({ acao: 'criar-loja', id: nid, nome, modelo: proprio ? $('pf-base').value : escolha, tipoNome, emailDono }, `Loja "${nome}" criada.`)) { S.nova = false; render(); }
             return;
         }
         if (a === 'bloquear') {
@@ -111,8 +127,13 @@ function ligar() {
             return fazer({ acao: 'ativo', id, ativo: false }, 'Loja bloqueada.');
         }
         if (a === 'liberar') return fazer({ acao: 'ativo', id, ativo: true }, 'Loja liberada.');
+        if (a === 'mudar-tipo') {
+            const novo = card.querySelector('.pf-tipo input').value.trim();
+            if (novo.length < 2) return showToast('Escreva o tipo de negócio.', true);
+            return fazer({ acao: 'tipo', id, tipo: novo }, `${loja.nome} agora é "${novo}".`);
+        }
         if (a === 'dar-dono') {
-            const campo = card.querySelector('.pf-add input'), email = campo.value.trim().toLowerCase();
+            const campo = card.querySelector('.pf-add:not(.pf-tipo) input'), email = campo.value.trim().toLowerCase();
             if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return showToast('Confira o e-mail.', true);
             return fazer({ acao: 'proprietario', id, email }, `${email} agora é proprietário de ${loja.nome}.`);
         }

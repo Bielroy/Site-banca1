@@ -888,6 +888,14 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   const c = await ch('super', { acao: 'criar-loja', id: 'jantinha-da-lu', nome: 'Jantinha da <b>Lu</b>', modelo: 'jantinha', emailDono: 'ZE@x.com' }); assert.strictEqual(c.status, 200, JSON.stringify(c.corpo));
   const ficha = db._dados.get('tenants/jantinha-da-lu'); assert.strictEqual(ficha.tema.fonteTitulo, 'Lora'); assert.ok(!/[<>]/.test(ficha.nome)); assert.deepStrictEqual(ficha.modulos, { ia: false });
   assert.ok(db._dados.has('tenants/jantinha-da-lu/loja/config'));
+  // tipo de negócio escrito à mão: no cadastro (com a aparência de um modelo) e depois, pelo cartão da loja
+  assert.strictEqual(ficha.tipo, 'jantinha');
+  assert.strictEqual((await ch('super', { acao: 'criar-loja', id: 'pao-da-vila', nome: 'Pão da Vila', modelo: 'jantinha', tipoNome: ' Padaria <b> ' })).status, 200);
+  const pao = db._dados.get('tenants/pao-da-vila'); assert.ok(/^Padaria/.test(pao.tipo) && !/[<>]/.test(pao.tipo), pao.tipo); assert.strictEqual(pao.tema.fonteTitulo, 'Lora');
+  assert.strictEqual((await ch('super', { acao: 'tipo', id: 'pao-da-vila', tipo: 'Padaria e confeitaria' })).status, 200); assert.strictEqual(db._dados.get('tenants/pao-da-vila').tipo, 'Padaria e confeitaria');
+  assert.strictEqual((await ch('super', { acao: 'tipo', id: 'pao-da-vila', tipo: ' ' })).status, 400); assert.strictEqual((await ch('super', { acao: 'tipo', id: 'nao-existe', tipo: 'Padaria' })).status, 404);
+  assert.strictEqual((await ch('dono', { acao: 'tipo', id: 'pao-da-vila', tipo: 'Outra' })).status, 403);
+  db._dados.delete('tenants/pao-da-vila'); db._dados.delete('tenants/pao-da-vila/loja/config');
   assert.deepStrictEqual(usuarios[0].customClaims, { tenants: { outra: 'caixa', 'jantinha-da-lu': 'proprietario' } }, 'vira dono sem perder o que tinha em outra loja');
   assert.deepStrictEqual((await ch('super', { acao: 'lojas' })).corpo.lojas.find((x) => x.id === 'jantinha-da-lu').donos, ['ze@x.com']);
   // módulos: desligado → o servidor recusa
