@@ -2,6 +2,7 @@ import { getDoc, auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, i
 import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal, customConfirm } from './utils.js';
+import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
 import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual } from './admin-guard.js';
 import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel } from './papeis-lib.js';
@@ -324,6 +325,7 @@ const iniciarRealTimeSync = () => {
             if (document.activeElement?.id !== 'config-gratis') document.getElementById('config-gratis').value = Number(ent.gratisAcima) > 0 ? ent.gratisAcima : '';
             if (campoHor && document.activeElement !== campoHor) campoHor.value = (Array.isArray(ent.horarios) ? ent.horarios : []).join('\n');
             const chkPix = document.getElementById('config-pix'); if (chkPix) chkPix.checked = data.pixAutomatico === true;
+            const px = data.pix || {}; [['config-pix-tipo', px.tipo || 'celular'], ['config-pix-chave', px.chave || ''], ['config-pix-nome', px.nome || ''], ['config-pix-cidade', px.cidade || '']].forEach(([id, v]) => { const el = document.getElementById(id); if (el) el.value = v; });
             const grupoPix = document.getElementById('grupo-pix'); if (grupoPix) grupoPix.hidden = !ehLojaOriginal;   // a conta do PagBank no servidor é a da loja original
             document.getElementById('config-status-loja').value = data.lojaAberta === false ? "fechada" : "aberta";
             const diasSalvos = data.diasAbertos || [0, 1, 2, 3, 4, 5, 6];
@@ -2108,7 +2110,17 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         const taxa = Math.max(0, parseFloat(document.getElementById('config-taxa').value) || 0), gratisAcima = Math.max(0, parseFloat(document.getElementById('config-gratis').value) || 0);
         if (taxa > 500) throw new Error("Confira a taxa de entrega: o máximo é R$ 500.");
         const entrega = { taxa, gratisAcima, horarios: horariosDoTexto(document.getElementById('config-horarios').value) };
-        await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios, pixAutomatico, entrega }, { merge: true });
+        // Chave PIX da loja (copia e cola). Vazia = desligado. Preenchida, tem de ser válida para o tipo escolhido.
+        const pixTipo = document.getElementById('config-pix-tipo').value, pixBruta = document.getElementById('config-pix-chave').value.trim();
+        const pixNome = document.getElementById('config-pix-nome').value.trim(), pixCidade = document.getElementById('config-pix-cidade').value.trim();
+        let pix = null;
+        if (pixBruta) {
+            const chave = normalizarChave(pixTipo, pixBruta);
+            if (!chave) throw new Error(`A chave PIX não confere com o tipo "${TIPOS_DE_CHAVE[pixTipo]}". Confira os números ou troque o tipo.`);
+            if (pixNome.length < 2) throw new Error("Escreva o nome de quem recebe o PIX, como aparece no banco.");
+            pix = { tipo: pixTipo, chave, nome: pixNome.slice(0, 25), cidade: pixCidade.slice(0, 15) };
+        }
+        await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios, pixAutomatico, entrega, pix }, { merge: true });
         showToast("Configurações atualizadas!");
     } catch (err) {
         showToast(err.message, true);

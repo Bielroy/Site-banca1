@@ -356,3 +356,11 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 /* botão de instalar o app (cabeçalho): mesmo formato dos vizinhos, com um leve realce */
 .chip-header.btn-instalar { background: color-mix(in srgb, var(--sobre-primaria) 14%, transparent); }
 .chip-header.btn-instalar[hidden] { display: none; }
+
+/* ---------- PIX copia e cola (chave da própria loja) ---------- */
+.pix-cola { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; padding: 14px; text-align: left; border-radius: 14px; background: color-mix(in srgb, var(--leaf) 9%, var(--superficie)); border: 1.5px solid color-mix(in srgb, var(--leaf) 35%, var(--superficie)); }
+.pix-cola b { font-size: 1.05rem; color: var(--forest); }
+.pix-cola span { font-size: .86rem; color: var(--text-mid); word-break: break-word; }
+.pix-cola small { font-size: .8rem; color: var(--text-mid); line-height: 1.35; }
+.pix-cola .btn-pix { margin: 4px 0; background: var(--forest); color: var(--sobre-primaria); border-color: var(--forest); font-weight: 700; }
+.pix-espera { margin: 10px 0; font-size: .86rem; color: var(--text-mid); }

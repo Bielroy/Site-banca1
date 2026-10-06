@@ -1,12 +1,12 @@
 # Antes de publicar — lista de conferência
 
 Nada disto foi feito no ambiente em que o código foi escrito (sem acesso à internet,
-ao Firebase e à Vercel). Os testes automáticos (`npm test`, 72 testes) passam e as telas
+ao Firebase e à Vercel). Os testes automáticos (`npm test`, 73 testes) passam e as telas
 foram conferidas com dados simulados.
 
 ## 1. Build
 1. `npm install`
-2. `npm test` — deve terminar com "72 de 72 testes passaram".
+2. `npm test` — deve terminar com "73 de 73 testes passaram".
 3. `npm run build` — nunca foi rodado depois das mudanças. Se der erro, copie a mensagem inteira.
 4. `npm run preview` e abra: `/`, `/admin.html`, `/plataforma.html`.
 
@@ -32,6 +32,13 @@ foram conferidas com dados simulados.
   **Assumir a plataforma**. Vale uma vez: a primeira conta dona da loja original que tocar fica sendo a
   dona da plataforma (gravado em `plataforma/dono`). Dali você cria lojas e define o dono de cada uma.
 - Equipe: aba **Equipe** do painel (e-mail + papel).
+
+## 4a2. PIX copia e cola com a chave da loja (sem banco no meio)
+Em **Configurações → Chave PIX da loja**, escolha o tipo, escreva a chave, o nome de quem recebe e a cidade.
+Quem escolhe PIX recebe um código pronto com o valor do pedido (na tela de pedido enviado e em Meus pedidos).
+Pedido com item a pesar só mostra o código depois da pesagem. O site NÃO confirma o pagamento: a loja confere
+pelo extrato ou pelo comprovante. Funciona em todas as lojas. O código segue o padrão do Banco Central e foi
+conferido com o exemplo oficial, mas nunca foi pago de verdade: faça um PIX de teste de valor baixo.
 
 ## 4b. PIX automático (PagBank) — desligado até você configurar
 1. Tenha uma conta PagBank com a API liberada e copie o token.
@@ -126,6 +133,7 @@ Nunca foi testado com o ImgBB de verdade: confira o primeiro envio.
 - Loja bloqueada ainda deixa o proprietário editar produtos; Clientes, Calendário e Cupons desligados
   somem do painel, mas as regras do banco não bloqueiam.
 - Não há impressão automática ao chegar pedido; nenhuma impressora real foi testada.
-- O link compartilhado (og:image, canonical) aponta para www.bancaadairepedrina.com.br, que NÃO está ligado a este
-  projeto na Vercel: enquanto não estiver, a prévia do WhatsApp não mostra a imagem nova.
+- O link compartilhado (og:image, canonical, sitemap) aponta para https://site-banca1.vercel.app. Quando houver
+  domínio próprio, troque nos arquivos index.html, privacidade.html, sitemap.xml e robots.txt.
+- A prévia do link no WhatsApp é sempre a da Banca, mesmo no link de outra loja (?loja=...).
 - Acesso retirado de alguém pode valer por até 1 hora no painel que já estava aberto.

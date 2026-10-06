@@ -286,6 +286,19 @@
                     <small class="dica-campo">Um por linha, até 8. O cliente escolhe um ao fechar o pedido. Em branco = a loja não pergunta.</small>
                 </div>
 
+                <div class="form-group" style="width: 100%;">
+                    <label for="config-pix-chave"><i class="ic" data-i="pix"></i> Chave PIX da loja (copia e cola no pedido)</label>
+                    <div class="pix-chave-linha">
+                        <select id="config-pix-tipo" aria-label="Tipo de chave"><option value="celular">Celular</option><option value="cpf">CPF</option><option value="cnpj">CNPJ</option><option value="email">E-mail</option><option value="aleatoria">Chave aleatória</option></select>
+                        <input type="text" id="config-pix-chave" autocomplete="off" maxlength="80" placeholder="a chave PIX">
+                    </div>
+                    <div class="pix-chave-linha">
+                        <input type="text" id="config-pix-nome" autocomplete="off" maxlength="25" placeholder="Nome de quem recebe (como no banco)" aria-label="Nome de quem recebe">
+                        <input type="text" id="config-pix-cidade" autocomplete="off" maxlength="15" placeholder="Cidade" aria-label="Cidade">
+                    </div>
+                    <small class="dica-campo" style="display:block;">Com a chave preenchida, quem escolhe PIX recebe um código pronto com o valor do pedido: copia, cola no banco e paga. O dinheiro cai direto na sua conta. O site não confirma o pagamento sozinho: confira pelo extrato ou pelo comprovante. Para desligar, apague a chave.</small>
+                </div>
+
                 <div class="form-group" id="grupo-pix" style="width: 100%;">
                     <label class="chk-linha" for="config-pix"><input type="checkbox" id="config-pix"> <i class="ic" data-i="pix"></i> PIX automático (QR Code na tela do cliente)</label>
                     <small class="dica-campo" style="display:block;">O cliente paga na hora e o pedido aparece como PAGO sozinho. Precisa de uma conta PagBank ligada ao site; sem ela, esta opção não faz efeito e o PIX continua combinado pelo WhatsApp. Pedido com item a pesar só libera o PIX depois da pesagem.</small>

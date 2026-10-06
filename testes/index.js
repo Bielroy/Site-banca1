@@ -925,6 +925,27 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   assert.strictEqual((await ch3({ acao: 'proprietario', id: 'jantinha-da-lu', email: 'ze@x.com', remover: true })).status, 200);
   assert.deepStrictEqual(usuarios[0].customClaims, { tenants: { outra: 'caixa' } }); assert.strictEqual(usuarios[0].revogado, true);
 });
+teste('PIX copia e cola: código no padrão do Banco Central, com a chave da loja e o valor do pedido', async () => {
+  const X = await import(raiz('js/pix-chave-lib.js'));
+  // o exemplo do manual do Banco Central fecha com o verificador 1D3D
+  assert.strictEqual(X.crc16('00020126580014br.gov.bcb.pix0136123e4567-e12b-12d1-a456-4266554400005204000053039865802BR5913Fulano de Tal6008BRASILIA62070503***6304'), '1D3D');
+  // chaves: cada tipo no formato que os bancos esperam
+  assert.strictEqual(X.normalizarChave('celular', '(62) 99999-8888'), '+5562999998888'); assert.strictEqual(X.normalizarChave('celular', '+55 62 99999-8888'), '+5562999998888'); assert.strictEqual(X.normalizarChave('celular', '99999-8888'), '');
+  assert.strictEqual(X.normalizarChave('cpf', '123.456.789-09'), '12345678909'); assert.strictEqual(X.normalizarChave('cpf', '123'), ''); assert.strictEqual(X.normalizarChave('cnpj', '12.345.678/0001-95'), '12345678000195');
+  assert.strictEqual(X.normalizarChave('email', ' Adair@Banca.com.br '), 'adair@banca.com.br'); assert.strictEqual(X.normalizarChave('email', 'sem-arroba'), '');
+  assert.strictEqual(X.normalizarChave('aleatoria', '123E4567-E12B-12D1-A456-426655440000'), '123e4567-e12b-12d1-a456-426655440000'); assert.strictEqual(X.normalizarChave('aleatoria', 'qualquer'), ''); assert.strictEqual(X.normalizarChave('outro', 'x'), '');
+  // o código: valor com 2 casas, nome sem acento e no limite, número do pedido como identificação, verificador coerente
+  const pix = { tipo: 'celular', chave: '(62) 99999-8888', nome: 'Adair José da Silva Pereira Santos', cidade: 'Goiânia' };
+  const c = X.codigoPix(pix, 49.9, 'ped-9x7k2m4');
+  assert.ok(c.startsWith('000201') && c.includes('0014br.gov.bcb.pix0114+5562999998888') && c.includes('540549.90') && c.includes('5802BR') && c.includes('6007Goiania') && c.includes('0510ped9x7k2m4'), c);
+  assert.ok(c.includes('5925Adair Jose da Silva Perei'), 'nome cortado em 25, sem acento'); assert.strictEqual(c.slice(-4), X.crc16(c.slice(0, -4)), 'o verificador fecha');
+  assert.ok(/^[\x20-\x7e]+$/.test(c), 'só caracteres simples');
+  assert.ok(X.codigoPix(pix, 1234.5, '').includes('54071234.50') && X.codigoPix(pix, 10, '').includes('0503***'));
+  for (const [px, v] of [[pix, 0], [pix, -5], [pix, 'abc'], [{ ...pix, chave: '123' }, 10], [null, 10]]) assert.strictEqual(X.codigoPix(px, v, 'x'), '', JSON.stringify([px && px.chave, v]));
+  assert.strictEqual(X.pixDaLojaValido(pix), true); assert.strictEqual(X.pixDaLojaValido({ ...pix, nome: '' }), false); assert.strictEqual(X.pixDaLojaValido(null), false);
+  assert.strictEqual(X.chaveBonita(pix), '(62) 99999-8888'); assert.strictEqual(X.chaveBonita({ tipo: 'cpf', chave: '12345678909', nome: 'A' }), '123.456.789-09');
+});
+
 teste('maquininha: só o proprietário liga; a busca soma as vendas do dia sem contar parcela duas vezes', async () => {
   const M = require(raiz('lib/maquininha'));
   // leitura das linhas: venda parcelada vem em 3 linhas e conta uma vez; cancelamento vai para estornos; campo estranho não quebra

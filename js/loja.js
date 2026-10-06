@@ -12,6 +12,7 @@ import { lerEntrega, previaDaEntrega } from './entrega-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
 import { miniatura } from './foto-lib.js';
 import { emOferta, desconto, ofertasDe } from './oferta-lib.js';
+import { codigoPix, pixDaLojaValido, chaveBonita } from './pix-chave-lib.js';
 import { listaValida, listaDoCarrinho, separar, mesmoConjunto, podeConvidarAvaliar, nomeDoDia, textoDaNota } from './atalhos-lib.js';
 import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
 
@@ -585,11 +586,43 @@ const pagarComPix = async (pedidoId, total) => {
     } catch (e) { showToast('Não foi possível abrir o PIX. Combine o pagamento pelo WhatsApp.', true); }
 };
 // Depois de enviar o pedido: se a loja ligou o PIX automático e o valor já está fechado, oferece pagar na hora.
+// PIX no pedido, em duas formas:
+//  1. automático (PagBank): QR na tela e o pedido vira PAGO sozinho. Só com a conta ligada.
+//  2. copia e cola com a chave da loja: o código já sai com o valor; quem confere o pagamento é a loja.
+// Se o automático estiver ligado, ele vence. Pedido com item a pesar espera a balança (o valor ainda muda).
+const pixAutomaticoHtml = (pedido) => `<button type="button" class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Pagar ${fmt(pedido.total)} com PIX agora</button>`;
+const pixCopiaColaHtml = (pedido) => {
+    const pix = STATE.config.pix, codigo = codigoPix(pix, pedido.total, pedido.id);
+    if (!codigo) return '';
+    return `<div class="pix-cola">
+        <b>Pague ${fmt(pedido.total)} com PIX</b>
+        <span>Para ${escapeHTML(pix.nome)} · chave ${escapeHTML(chaveBonita(pix))}</span>
+        <button type="button" class="btn-pix" data-action="copiar-pix" data-codigo="${escapeHTML(codigo)}">Copiar código PIX</button>
+        <small>Cole no aplicativo do seu banco, em "PIX copia e cola". O valor já vem preenchido. Depois, mande o comprovante no WhatsApp.</small>
+    </div>`;
+};
+const pixDoPedidoHtml = (pedido) => {
+    if (ehLojaOriginal && podePagarPix(STATE.config.pixAutomatico === true, pedido)) return pixAutomaticoHtml(pedido);
+    if (pixDaLojaValido(STATE.config.pix) && podePagarPix(true, pedido)) return pixCopiaColaHtml(pedido);
+    if (pixDaLojaValido(STATE.config.pix) && String(pedido.pag || '').toUpperCase() === 'PIX' && pedido.temItensAPesar && pedido.status !== 'cancelado')
+        return '<p class="pix-espera">O código PIX aparece aqui, em Meus pedidos, assim que a banca pesar os itens e fechar o valor.</p>';
+    return '';
+};
 const oferecerPixNoSucesso = (pedido) => {
     const area = document.getElementById('sucesso-pix'); if (!area) return;
-    const pode = ehLojaOriginal && podePagarPix(STATE.config.pixAutomatico === true, pedido);
-    area.hidden = !pode;
-    area.innerHTML = pode ? `<button type="button" class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Pagar ${fmt(pedido.total)} com PIX agora</button>` : '';
+    const html = pixDoPedidoHtml(pedido);
+    area.hidden = !html; area.innerHTML = html;
+};
+const copiarPix = async (botao) => {
+    const codigo = botao.dataset.codigo || '';
+    let ok = false;
+    try { await navigator.clipboard.writeText(codigo); ok = true; }
+    catch (_) {           // navegador sem permissão de copiar: usa o jeito antigo
+        const t = document.createElement('textarea'); t.value = codigo; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;opacity:0;';
+        document.body.appendChild(t); t.select(); try { ok = document.execCommand('copy'); } catch (__) { ok = false; } t.remove();
+    }
+    if (ok) { botao.textContent = 'Código copiado'; showToast('Código PIX copiado. Agora cole no aplicativo do seu banco.'); setTimeout(() => { botao.textContent = 'Copiar código PIX'; }, 4000); }
+    else showToast('Não consegui copiar sozinho. Use a chave que aparece acima do botão.', true);
 };
 
 // Horário de entrega: o campo só aparece se a loja cadastrou horários no painel.
@@ -1054,7 +1087,7 @@ const renderHistorico = async () => {
             </div>
             ${avaliacaoHtml(p, vivo, status)}
             ${vivo && vivo.pagamento && vivo.pagamento.status === 'PAID' ? '<p class="pedido-pago">Pago por PIX</p>' : ''}
-            ${ehLojaOriginal && vivo && podePagarPix(STATE.config.pixAutomatico === true, vivo) ? `<button class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(p.id)}" data-total="${Number(totalReal) || 0}">Pagar ${fmt(totalReal)} com PIX</button>` : ''}
+            ${vivo ? pixDoPedidoHtml({ ...vivo, id: p.id, total: totalReal }) : ''}
         </article>`;
     }).join('');
 };
@@ -1414,6 +1447,7 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'open-endereco') { endTopo.preencher(lerEnderecoSalvo()); openModal('modal-endereco'); }
         else if (action === 'repetir-pedido') { repetirPedido(id); }
         else if (action === 'indicar') { indicarLoja(); }
+        else if (action === 'copiar-pix') { copiarPix(actionTarget); }
         else if (action === 'instalar') { instalarApp(); }
         else if (action === 'por-lista') { const l = lerListaSemana(); if (l) porNoPedido(l.itens); }
         else if (action === 'ver-lista') { verListaDaSemana(); }

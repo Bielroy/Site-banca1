@@ -144,3 +144,8 @@
 .maq-chaves { margin-top: 12px; }
 .maq-chaves summary { cursor: pointer; font-weight: 700; color: var(--forest); min-height: 40px; display: flex; align-items: center; }
 .maq-chaves .btn-outline { margin-top: 4px; }
+
+/* chave PIX da loja (Configurações) */
+.pix-chave-linha { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.pix-chave-linha select { flex: 0 0 150px; min-height: 46px; padding: 8px 10px; border-radius: 10px; border: 1.5px solid #e0dcd4; font-size: 16px; }
+.pix-chave-linha input { flex: 1; min-width: 150px; }
