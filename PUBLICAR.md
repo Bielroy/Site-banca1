@@ -1,12 +1,12 @@
 # Antes de publicar — lista de conferência
 
 Nada disto foi feito no ambiente em que o código foi escrito (sem acesso à internet,
-ao Firebase e à Vercel). Os testes automáticos (`npm test`, 74 testes) passam e as telas
+ao Firebase e à Vercel). Os testes automáticos (`npm test`, 75 testes) passam e as telas
 foram conferidas com dados simulados.
 
 ## 1. Build
 1. `npm install`
-2. `npm test` — deve terminar com "74 de 74 testes passaram".
+2. `npm test` — deve terminar com "75 de 75 testes passaram".
 3. `npm run build` — nunca foi rodado depois das mudanças. Se der erro, copie a mensagem inteira.
 4. `npm run preview` e abra: `/`, `/admin.html`, `/plataforma.html`.
 

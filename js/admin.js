@@ -1748,8 +1748,13 @@ const salvarCupom = async () => {
     if (percentual <= 0 && valorFixo <= 0) {
         return showToast('Defina o desconto: em % ou em reais.', true);
     }
+    if (percentual > 100) return showToast('O desconto vai até 100%.', true);
+    const limiteDigitado = document.getElementById('cup-limite').value;
     if (percentual > 90) {
-        return showToast('Desconto acima de 90% provavelmente é engano.', true);
+        const tudo = percentual >= 100;
+        const ok = await customConfirm(tudo ? 'Cupom de 100%?' : `Cupom de ${percentual}%?`,
+            `${tudo ? 'Quem usar este código leva o pedido de graça, com a entrega.' : 'É um desconto bem alto.'} Vale para qualquer pessoa que souber o código${limiteDigitado === '' ? ', sem limite de usos' : ''}. Confirma?`);
+        if (!ok) return;
     }
 
     const limiteRaw = document.getElementById('cup-limite').value;

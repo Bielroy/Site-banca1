@@ -594,6 +594,7 @@ const pagarComPix = async (pedidoId, total) => {
 // Se o automático estiver ligado, ele vence. Pedido com item a pesar espera a balança (o valor ainda muda).
 const pixAutomaticoHtml = (pedido) => `<button type="button" class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Pagar ${fmt(pedido.total)} com PIX agora</button>`;
 const pixCopiaColaHtml = (pedido) => {
+    if (!(Number(pedido.total) > 0)) return '';          // pedido de cortesia (cupom de 100%): nada a pagar
     const pix = STATE.config.pix, codigo = codigoPix(pix, pedido.total, pedido.id);
     if (!codigo) return '';
     return `<div class="pix-cola">

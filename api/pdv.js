@@ -141,11 +141,13 @@ async function pesagem(req, res, { tid, dec }) {
           totalC += subC;
         } else totalC += V.paraCentavos(Number(i.subtotal) || (Number(i.preco ?? i.precoOriginal) || 0) * (Number(i.qtd) || 0));
       });
-      const descC = ped.cupom && Number(ped.cupom.desconto) > 0 ? V.paraCentavos(ped.cupom.desconto) : 0;      // o desconto dado no pedido continua valendo
+      // cupom em %: vale sobre tudo, inclusive o que acabou de ser pesado. Cupom em reais: o valor dado no pedido continua.
+      const pctCupom = ped.cupom ? Math.min(100, Number(ped.cupom.percentual) || 0) : 0;
+      const descC = Math.min(totalC, pctCupom > 0 ? Math.round(totalC * pctCupom / 100) : (ped.cupom && Number(ped.cupom.desconto) > 0 ? V.paraCentavos(ped.cupom.desconto) : 0));
       // Entrega: a taxa do pedido continua; se depois da balança o pedido passou do valor de entrega grátis, ela sai.
       const ent = ped.entrega || null, itensC = Math.max(0, totalC - descC);
       const cheiaC = ent ? V.paraCentavos(Number(ent.taxaCheia) || 0) : 0, gratisC = ent ? V.paraCentavos(Number(ent.gratisAcima) || 0) : 0;
-      const taxaC = cheiaC > 0 && !(gratisC > 0 && itensC >= gratisC) ? cheiaC : 0;
+      const taxaC = pctCupom >= 100 ? 0 : (cheiaC > 0 && !(gratisC > 0 && itensC >= gratisC) ? cheiaC : 0);   // cupom de 100% é cortesia: sem taxa
       const total = V.paraReais(itensC + taxaC);
 
       const movs = [];
@@ -156,7 +158,7 @@ async function pesagem(req, res, { tid, dec }) {
         movs.push({ produtoId: id, nome: p.d.nome, unidade: p.d.unidade, tipo: 'venda', delta: E.fix(novo - atual), saldo: novo, custoUnit: p.d.custo, pedidoId, obs: 'Pesagem do pedido', por: dec.email || dec.uid });
       }
       const abertos = ['pendente', 'aguardando_pesagem', 'aguardando_pagamento'];
-      t.update(pedidoRef, { itens, total, totalExato: total, temItensAPesar: false, ...(ent ? { entrega: { ...ent, taxa: V.paraReais(taxaC) } } : {}), status: abertos.includes(ped.status) ? 'preparando' : ped.status, pesadoEm: new Date().toISOString() });
+      t.update(pedidoRef, { itens, total, totalExato: total, temItensAPesar: false, ...(pctCupom > 0 ? { cupom: { ...ped.cupom, desconto: V.paraReais(descC) } } : {}), ...(ent ? { entrega: { ...ent, taxa: V.paraReais(taxaC) } } : {}), status: abertos.includes(ped.status) ? 'preparando' : ped.status, pesadoEm: new Date().toISOString() });
       E.registrarMovs(t, db, tid, movs, admin.firestore.FieldValue);
       // o caixa já tinha a parte de valor fechado: soma só a diferença
       const dif = V.paraReais(V.paraCentavos(total) - V.paraCentavos(Number(ped.total) || 0));

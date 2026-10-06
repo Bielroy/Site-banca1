@@ -430,6 +430,28 @@ teste('balcão: vender mais do que o sistema tinha não trava a venda; entradas 
   assert.strictEqual((await vender({ itens: [{ id: 'tomate', qtd: 2 }] }, 'caixa-espetinhos', 'espetinhos')).status, 200);
   assert.strictEqual(db._dados.get('tenants/espetinhos/produtos/tomate').estoqueFisico, 48); assert.strictEqual(db._dados.get('produtos/tomate').estoqueFisico, 11);
 });
+teste('cupom em %: vale também para o que vai para a balança, e o de 100% zera o pedido com a entrega', async () => {
+  const db = criarBancoP({ ...sementeEstoque(), 'loja/config': { ...(sementeEstoque()['loja/config'] || {}), status: 'aberta', entrega: { taxa: 6, gratisAcima: 80 } },
+    'cupons/FAMILIA': { ativo: true, percentual: 100 }, 'cupons/DEZ': { ativo: true, percentual: 10 } }); const adm = criarAdmin(db, TOKENS_P);
+  const checkout = carregarApi(raiz('api/checkout.js'), adm), api = carregarApi(raiz('api/pdv.js'), adm);
+  const fazer = async (cupom) => { const p = pedido({ cupom, itens: [{ id: 'tomate', qtd: 4, tipo: 'un' }, { id: 'ovos', qtd: 1, tipo: 'un' }] });
+    const c = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: p }); assert.strictEqual(c.status, 200, JSON.stringify(c.corpo));
+    const r = await chamar(api, { headers: { Authorization: 'Bearer func-banca' }, body: { acao: 'pesagem', pedidoId: p.idempotencyKey, pesos: [{ i: 0, peso: 0.62 }] } }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+    return { c: c.corpo.pedido, r: r.corpo, ped: db._dados.get(`pedidos/${p.idempotencyKey}`) }; };
+  const f = await fazer('FAMILIA');
+  assert.strictEqual(f.c.total, 0, 'ovos de graça e sem taxa de entrega');
+  assert.strictEqual(f.r.total, 0, 'depois da balança continua zero'); assert.strictEqual(f.r.desconto, 19.52); assert.strictEqual(f.r.entrega, 0);
+  assert.strictEqual(f.ped.total, 0); assert.strictEqual(f.ped.cupom.desconto, 19.52); assert.strictEqual(db._dados.get('cupons/FAMILIA').usos, 1);
+  const d = await fazer('DEZ');
+  assert.strictEqual(d.c.total, 18.6, 'ovos 14 − 10% = 12,60; + 6 de entrega'); assert.strictEqual(d.r.desconto, 1.95, '10% de 19,52');
+  assert.strictEqual(d.r.total, 23.57, '19,52 − 1,95 + 6'); assert.strictEqual(d.ped.cupom.percentual, 10);
+  // só itens a pesar: o cupom em % fica guardado e entra na balança
+  const p = pedido({ cupom: 'FAMILIA', itens: [{ id: 'tomate', qtd: 2, tipo: 'un' }] });
+  const c = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: p }); assert.strictEqual(c.status, 200, JSON.stringify(c.corpo));
+  const r = await chamar(api, { headers: { Authorization: 'Bearer func-banca' }, body: { acao: 'pesagem', pedidoId: p.idempotencyKey, pesos: [{ i: 0, peso: 0.3 }] } });
+  assert.strictEqual(r.corpo.total, 0, JSON.stringify(r.corpo));
+});
+
 teste('pesagem: calcula pelo peso, MANTÉM o cupom, baixa o estoque por quilo e não baixa duas vezes', async () => {
   const db = criarBancoP({ ...sementeEstoque(), 'cupons/BANCA10': { ativo: true, valorFixo: 5 } }); const adm = criarAdmin(db, TOKENS_P);
   const checkout = carregarApi(raiz('api/checkout.js'), adm);

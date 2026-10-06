@@ -419,9 +419,12 @@ module.exports = async function handler(req, res) {
         // Nunca deixa o total ficar negativo
         descC = Math.min(descC, totalExatoCentavos);
 
-        if (descC > 0) {
+        // cupom em % vale mesmo se o pedido só tem itens a pesar (o desconto entra na balança)
+        if (descC > 0 || Number(c.percentual) > 0) {
           totalExatoCentavos -= descC;
-          cupomAplicado = { codigo: cupomSnap.id, desconto: paraFlutuante(descC), ref: cupomSnap.ref };
+          // percentual guardado no pedido: a pesagem aplica o mesmo desconto ao que ainda vai para a balança
+          const pct = Number(c.percentual) > 0 ? Math.min(100, Number(c.percentual)) : 0;
+          cupomAplicado = { codigo: cupomSnap.id, desconto: paraFlutuante(descC), percentual: pct, ref: cupomSnap.ref };
           obsFinal = `${obs ? obs + ' | ' : ''}🎁 Cupom ${cupomSnap.id} (-${fmtBRL(paraFlutuante(descC))})`;
         }
       } else if (cupom) {
@@ -433,7 +436,9 @@ module.exports = async function handler(req, res) {
       // Com item a pesar, o valor ainda sobe na balança: a pesagem reavalia a entrega grátis.
       const cfgEntrega = Entrega.lerConfig(configCfg);
       const horarioEntrega = Entrega.horarioValido(cfgEntrega, req.body && req.body.horarioEntrega);
-      const taxaEntregaC = Entrega.taxaC(cfgEntrega, totalExatoCentavos);
+      // cupom de 100% (família, cortesia): o pedido sai de graça, entrega incluída
+      const cortesia = !!cupomAplicado && cupomAplicado.percentual >= 100;
+      const taxaEntregaC = cortesia ? 0 : Entrega.taxaC(cfgEntrega, totalExatoCentavos);
       totalExatoCentavos += taxaEntregaC;
 
       const totalExato = paraFlutuante(totalExatoCentavos);
@@ -450,7 +455,7 @@ module.exports = async function handler(req, res) {
         total: totalExato,        // total dos itens de valor fechado
         clientTotal: totalExato,  // usado pelo painel de pesagem como base
         temItensAPesar,
-        cupom: cupomAplicado ? { codigo: cupomAplicado.codigo, desconto: cupomAplicado.desconto } : null,
+        cupom: cupomAplicado ? { codigo: cupomAplicado.codigo, desconto: cupomAplicado.desconto, ...(cupomAplicado.percentual ? { percentual: cupomAplicado.percentual } : {}) } : null,
         // taxa cobrada agora + a regra do dia do pedido (a pesagem usa para reavaliar a entrega grátis)
         entrega: { taxa: paraFlutuante(taxaEntregaC), taxaCheia: paraFlutuante(cfgEntrega.taxaC), gratisAcima: paraFlutuante(cfgEntrega.gratisAcimaC), horario: horarioEntrega },
         status: temItensAPesar ? 'aguardando_pesagem' : 'pendente',
