@@ -1251,7 +1251,24 @@ document.body.addEventListener('click', async (e) => {
 
             document.getElementById('md-nome').textContent = p.nome;
             const img = document.getElementById('md-img');
-            if (p.foto) { img.src = p.foto; img.style.visibility = ''; } else { img.removeAttribute('src'); img.style.visibility = 'hidden'; }
+            if (p.foto) {
+                // Abre JÁ com a foto que está na tela (a miniatura do card), para não piscar em branco,
+                // e troca pela foto grande só quando ela terminar de chegar e de ser aberta pelo aparelho.
+                const jaNaTela = (fotoCard && fotoCard.complete && fotoCard.naturalWidth ? fotoCard.currentSrc : '') || p.fotoMini || miniatura(p.foto, 384);
+                img.dataset.original = p.foto; img.src = jaNaTela; img.style.visibility = '';
+                if (jaNaTela !== p.foto) {
+                    const grande = new Image();
+                    // troca a peça inteira pela foto grande JÁ pronta: mudar só o endereço deixava um instante sem imagem
+                    const trocar = () => {
+                        const atual = document.getElementById('md-img');
+                        if (!atual || STATE.modalProdutoAtual !== p || !document.getElementById('modal-detalhe-produto')?.classList.contains('aberto')) return;
+                        grande.id = 'md-img'; grande.alt = p.nome; grande.className = atual.className; grande.style.cssText = atual.style.cssText;
+                        atual.replaceWith(grande);
+                    };
+                    grande.onload = () => (grande.decode ? grande.decode().then(trocar, trocar) : trocar());
+                    grande.src = p.foto;
+                }
+            } else { delete img.dataset.original; img.removeAttribute('src'); img.style.visibility = 'hidden'; }
             img.alt = p.nome;
             document.getElementById('md-tag').textContent = p.cat || '';
             document.getElementById('md-desc').textContent = p.descricao || "Produto fresco, selecionado no dia.";
