@@ -8,9 +8,14 @@
 
     <meta name="robots" content="noindex, nofollow"> <!-- Evita indexação do painel admin pelo Google -->
     <meta name="theme-color" content="#1a3a2a">
-    <link rel="apple-touch-icon" href="./icon-192.png">
+    <!-- O PAINEL é um aplicativo instalável à parte, com nome e ícone próprios (claro, com a prancheta),
+         para não se confundir com o da loja na tela inicial. js/admin-instalar.js troca o endereço abaixo
+         nas outras lojas e tira qualquer outro manifesto que o build tenha posto na página. -->
+    <link rel="manifest" id="manifesto-painel" href="/admin.webmanifest">
+    <link rel="icon" href="/icon-painel-192.png">
+    <link rel="apple-touch-icon" href="/icon-painel-192.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="Banca Admin">
+    <meta name="apple-mobile-web-app-title" content="Painel">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -47,7 +52,7 @@
         <div class="toldo" aria-hidden="true"></div>
         <header class="dash-header">
             <h2>Painel de Controle <small id="papel-rotulo" class="papel-rotulo" hidden></small></h2>
-            <div class="dash-acoes"><a class="btn-outline" id="link-plataforma" href="./plataforma.html" style="padding: 10px 16px; text-decoration:none;" hidden>Plataforma</a><button class="btn-outline" id="btn-avisos" style="padding: 10px 16px;"><i class="ic" data-i="sino"></i> Avisos</button><button class="btn-outline" id="btn-impressora" style="padding: 10px 16px;"><i class="ic" data-i="impressora"></i> Impressora</button>
+            <div class="dash-acoes"><a class="btn-outline" id="link-plataforma" href="./plataforma.html" style="padding: 10px 16px; text-decoration:none;" hidden>Plataforma</a><button class="btn-outline" id="btn-instalar-painel" style="padding: 10px 16px;" hidden>Instalar o painel</button><button class="btn-outline" id="btn-avisos" style="padding: 10px 16px;"><i class="ic" data-i="sino"></i> Avisos</button><button class="btn-outline" id="btn-impressora" style="padding: 10px 16px;"><i class="ic" data-i="impressora"></i> Impressora</button>
             <button class="btn-outline" id="btn-logout" style="padding: 10px 16px;"><i class="ic" data-i="sair"></i>Sair</button></div>
         </header>
 

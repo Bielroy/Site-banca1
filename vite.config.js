@@ -44,7 +44,8 @@ const paginasExistentes = Object.fromEntries(
 // atalho (manifest), a imagem de compartilhamento, o robots.txt e o
 // sitemap.xml davam erro 404. Este mini-plugin os copia com o mesmo nome.
 // ---------------------------------------------------------------------
-const ARQUIVOS_DA_RAIZ = ['icon-192.png', 'icon-512.png', 'og-image.png', 'robots.txt', 'sitemap.xml', 'push-sw.js'];
+// admin.webmanifest + icon-painel-*: o segundo aplicativo instalável, o do PAINEL (ver js/admin-instalar.js).
+const ARQUIVOS_DA_RAIZ = ['icon-192.png', 'icon-512.png', 'icon-painel-192.png', 'icon-painel-512.png', 'admin.webmanifest', 'og-image.png', 'robots.txt', 'sitemap.xml', 'push-sw.js'];
 const copiarArquivosDaRaiz = () => ({
   name: 'banca-copiar-arquivos-da-raiz',
   apply: 'build',

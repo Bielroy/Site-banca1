@@ -1061,6 +1061,14 @@ teste('app por loja: nome, cor e ícone próprios; a loja original e loja bloque
   const ruim = (await ch({ loja: 'ruim', icone: '1' })).corpo; assert.ok(!ruim.includes('script') && ruim.includes('fill="#1a3a2a"'), 'cor inválida cai na padrão');
   for (const q of [{ loja: 'banca' }, { loja: 'fechada' }, { loja: 'nao-existe' }, { loja: '../x' }, {}]) assert.strictEqual((await ch(q)).status, 404, JSON.stringify(q));
   assert.strictEqual((await ch({ loja: 'pao-da-lu' }, 'POST')).status, 405);
+  // o PAINEL é outro aplicativo: abre o admin, tem outra identidade (não substitui o da loja) e outro ícone
+  const mp = JSON.parse((await ch({ loja: 'pao-da-lu', painel: '1' })).corpo);
+  assert.strictEqual(mp.start_url, '/admin.html?loja=pao-da-lu'); assert.strictEqual(mp.scope, '/admin.html'); assert.notStrictEqual(mp.id, m.id); assert.ok(mp.name.startsWith('Painel'));
+  const svgP = (await ch({ loja: 'pao-da-lu', painel: '1', icone: '1' })).corpo; assert.ok(svgP.includes('fill="#F6F1E4"') && svgP.includes('stroke="#7a2e12"') && svgP !== svg);
+  const fixo = JSON.parse(require('fs').readFileSync(raiz('admin.webmanifest'), 'utf8')), cfgVite = require('fs').readFileSync(raiz('vite.config.js'), 'utf8');
+  assert.strictEqual(fixo.start_url, '/admin.html'); assert.strictEqual(fixo.id, '/admin.html'); assert.strictEqual(fixo.scope, '/admin.html');
+  for (const i of fixo.icons) { assert.ok(require('fs').existsSync(raiz(i.src.slice(1))), i.src); assert.ok(cfgVite.includes(`'${i.src.slice(1)}'`), 'o build copia ' + i.src); }
+  assert.ok(cfgVite.includes("'admin.webmanifest'")); assert.ok(require('fs').readFileSync(raiz('admin.html'), 'utf8').includes('href="/admin.webmanifest"'));
 });
 
 teste('avaliação: só a dona do pedido, uma vez, de 1 a 5; entra na média da loja', async () => {

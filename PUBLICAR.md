@@ -101,6 +101,14 @@ Nunca foi testado com o ImgBB de verdade: confira o primeiro envio.
 - O projeto está com **12 funções em `api/`**, que é o teto do plano gratuito da Vercel: a próxima
   função nova precisa entrar dentro de um arquivo que já existe.
 
+## 4i. Dois aplicativos: a loja e o painel
+- **Loja** ("Banca Adair", ícone escuro): botão "Instalar o app" no topo da loja.
+- **Painel** ("Painel", ícone claro com a prancheta): botão "Instalar o painel" no topo do painel
+  (`/admin.html`). Abre direto no painel, sem precisar do link.
+Os botões só aparecem quando o aparelho permite instalar. No Android, o login feito no Chrome vale no
+aplicativo. No iPhone, o aplicativo tem memória separada: é preciso entrar de novo por dentro dele, e o
+link de acesso enviado por e-mail abre no Safari, não no aplicativo. Nunca testado em celular de verdade.
+
 ## 4h. Maquininha (PagBank) no painel
 1. No PagBank, abra um chamado "Novas Ativações - EDI → Geração de token API EDI". O token chega por
    e-mail, com o número do estabelecimento. (Não é o mesmo token do PIX.)
