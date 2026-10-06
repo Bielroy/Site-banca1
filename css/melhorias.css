@@ -26,22 +26,29 @@
 /* ---------- 2) TELA DE ENTRADA ---------- */
 #splash-feira {
     position: fixed; inset: 0; z-index: 99999; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 14px;
-    background: radial-gradient(ellipse at 50% 30%, #2c5f45 0%, var(--forest) 70%);
-    color: var(--sage);
-    /* Só aparece se a loja demorar (0,35 s): em quem já tem o site guardado no
-       celular, não pisca mais uma tela escura a cada abertura.
+    align-items: center; justify-content: center; gap: 14px; isolation: isolate;
+    /* Cobre a loja DESDE O PRIMEIRO INSTANTE, na cor de fundo da página: assim a loja
+       nunca aparece antes do carregamento (era "loja, carregando, loja").
+       O verde, a folha e o texto só entram depois de 0,35 s: quem já tem o site
+       guardado no celular vê só o fundo claro por um instante, sem piscar tela escura.
        Trava de segurança: aos 10 s some SOZINHA, só com CSS — se o JavaScript
        falhar (sinal fraco, celular antigo), ela não fica na frente para sempre. */
-    opacity: 0;
-    animation: splashAparece .25s ease .35s forwards, splashFim 1s linear 10s forwards;
+    background: var(--cream);
+    color: var(--sage);
+    animation: splashFim 1s linear 10s forwards;
+}
+#splash-feira::before {
+    content: ''; position: absolute; inset: 0; z-index: -1; opacity: 0;
+    background: radial-gradient(ellipse at 50% 30%, #2c5f45 0%, var(--forest) 70%);
+    animation: splashAparece .25s ease .35s forwards;
 }
 #splash-feira.saindo { animation: splashSai .4s ease forwards; pointer-events: none; }
 @keyframes splashAparece { to { opacity: 1; } }
 @keyframes splashSai { from { opacity: 1; } to { opacity: 0; } }
 /* início e fim iguais de propósito: "visibility" só troca no ponto exato do fim, e um arredondamento a deixava visível */
 @keyframes splashFim { from, to { visibility: hidden; } }
-#splash-feira p { font-family: 'Fraunces', serif; font-size: 1.05rem; letter-spacing: .3px; opacity: .9; }
+#splash-feira p { font-family: 'Fraunces', serif; font-size: 1.05rem; letter-spacing: .3px; opacity: 0; animation: splashTexto .25s ease .35s forwards; }
+@keyframes splashTexto { to { opacity: .9; } }
 .splash-cesto { font-size: 3.6rem; animation: splashBalanca 1.6s ease-in-out infinite; transform-origin: 50% 0; }
 .splash-frutas { display: flex; gap: 14px; font-size: 1.6rem; }
 .splash-frutas span { animation: splashPula 1s ease-in-out infinite; }

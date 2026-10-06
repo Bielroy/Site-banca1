@@ -2,7 +2,8 @@
 // Não mexe em dados nem em regra de negócio.
 
 // ---- Tela de entrada (some assim que os produtos aparecem) ----
-// O CSS só a deixa visível depois de 0,35 s e a esconde sozinho aos 10 s.
+// Ela cobre a loja desde o início (fundo claro) e mostra o verde com a folha depois de 0,35 s;
+// o CSS a esconde sozinho aos 10 s.
 const splash = document.getElementById('splash-feira');
 const grid = document.getElementById('lista-produtos');
 let splashFechada = false;
