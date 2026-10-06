@@ -570,6 +570,13 @@ teste('PIX: CPF, máscara e quando o botão de pagar aparece', async () => {
   assert.strictEqual(P.podePagarPix(true, { ...ped, status: 'preparando' }), true, 'depois da pesagem pode pagar');
 });
 
+teste('quantidade: o campo só aceita número (letra não entra, nem colada)', async () => {
+  const Q = await import(raiz('js/quantidade-lib.js'));
+  const casos = [['x', ''], ['X', ''], ['1x5', '15'], ['1,5kg', '1,5'], ['1.2.3', '1.23'], ['12,3456', '12,345'], ['abc', ''], ['-3', '3'], ['2', '2'], ['0,5', '0,5'], [',5', ',5'], ['123456', '1234'], [null, '']];
+  for (const [entra, sai] of casos) assert.strictEqual(Q.limparQuantidade(entra), sai, String(entra));
+  assert.strictEqual(Q.limparQuantidade('1,5', true), '15', 'por unidade não tem vírgula'); assert.strictEqual(Q.limparQuantidade('x3', true), '3');
+});
+
 // ------------------------------------------------------------------ versão nova entra sozinha
 teste('versão: percebe que a página no ar mudou, ignora resposta estranha e não recarrega sem parar', async () => {
   const V = await import(raiz('js/versao-lib.js'));

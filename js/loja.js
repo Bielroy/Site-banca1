@@ -9,6 +9,7 @@ import { iniciarTema } from './tema.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
 import { podePagarPix } from './pix-lib.js';
 import { lerEntrega, previaDaEntrega } from './entrega-lib.js';
+import { limparQuantidade } from './quantidade-lib.js';
 import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
 
 const CART_VERSION = "3.0"; // Atualizado para suportar o Carrinho Híbrido
@@ -1148,6 +1149,17 @@ document.body.addEventListener('click', async (e) => {
     }
 });
 
+// Campos de quantidade (carrinho e tela do produto) só aceitam número. No celular o teclado
+// já é numérico; no computador dava para digitar letra ("x" no lugar de 1). A limpeza roda
+// antes dos outros tratadores (captura), para eles nunca verem o texto sujo.
+document.addEventListener('input', (e) => {
+    const campo = e.target;
+    if (!campo.classList || !(campo.classList.contains('qtd-input') || campo.classList.contains('md-qtd-input'))) return;
+    const soInteiro = campo.classList.contains('qtd-input') && campo.closest('.qtd-ctrl')?.querySelector('.qtd-unid')?.textContent.trim() === 'un';
+    const limpo = limparQuantidade(campo.value, soInteiro);
+    if (limpo !== campo.value) { const pos = Math.max(0, (campo.selectionStart || limpo.length) - (campo.value.length - limpo.length)); campo.value = limpo; try { campo.setSelectionRange(pos, pos); } catch (_) { /* campo sem seleção */ } }
+}, true);
+
 // 'change' (ao sair do campo / OK do teclado), não 'input': aplicando a cada
 // tecla, "1,5" virava 15 kg e digitar "0" apagava o item no meio da digitação.
 document.getElementById('carrinho-itens').addEventListener('keydown', (e) => {
@@ -1160,7 +1172,9 @@ document.getElementById('carrinho-itens').addEventListener('change', (e) => {
     if(e.target.classList.contains('qtd-input')) {
         const id = e.target.dataset.id; const p = STATE.produtos.find(x => x.id === id);
         const itemCart = STATE.carrinho.find(x => x.id === id);
-        let val = parseFloat(e.target.value.replace(',', '.'));
+        // colar texto (Ctrl+V) também passa pela limpeza: "2x" não vira 2 por acidente
+        const texto = e.target.value.trim();
+        let val = /^\d{1,4}([.,]\d{0,3})?$/.test(texto) ? parseFloat(texto.replace(',', '.')) : NaN;
         if(isNaN(val) || val < 0) { renderCarrinhoCompleto(); return; }   // texto inválido: volta ao valor anterior
         
         // Se o cliente escolheu Unidade no Slider, não deixa colocar gramas no input
