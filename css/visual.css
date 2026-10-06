@@ -36,10 +36,10 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 @media (max-width: 340px) { .header-arte { display: none; } .header-acoes { padding-right: 0; } }
 .sem-arte .header-arte { display: none; }
 .sem-arte .header-acoes { padding-right: 0; }
-/* desenho de traço das outras lojas (pão, espetinho, panela...): linha na cor do texto do cabeçalho */
-.header-arte.traco { fill: none; stroke: var(--sobre-primaria); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; opacity: .94; right: 12px; bottom: 14px;
+/* desenho das outras lojas (pão, espetinho, panela...): formas cheias, no estilo do caixote da logo */
+.header-arte.plana { right: 12px; bottom: 14px;
     width: auto; aspect-ratio: 1; height: min(calc(100% - 28px), clamp(126px, 32vw, 200px)); }
-.header-arte.traco ~ .header-inner .header-acoes { padding-right: clamp(136px, 35vw, 216px); }
+.header-arte.plana ~ .header-inner .header-acoes { padding-right: clamp(136px, 35vw, 216px); }
 /* toldo listrado pendurado embaixo do cabeçalho (igual ao do painel); usa a cor principal da loja */
 .toldo-loja { height: 22px; background: repeating-linear-gradient(90deg, var(--forest) 0 22px, #f3ead8 22px 44px);
     -webkit-mask: radial-gradient(circle 11px at 11px 11px, #000 98%, transparent) 0 0 / 22px 22px repeat-x, linear-gradient(#000, #000) 0 0 / 100% 11px no-repeat;
@@ -281,7 +281,6 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 /* o desenho da loja, num quadro claro, com a setinha de "de novo" no canto */
 .atalho-arte { position: relative; flex: none; width: 52px; height: 52px; border-radius: 12px; background: color-mix(in srgb, var(--sobre-primaria) 13%, transparent); display: grid; place-items: center; }
 .atalho-arte > svg:first-child { width: 42px; height: 42px; animation: atalhoPousa .7s cubic-bezier(.2, .9, .3, 1.3) .5s both; }
-.atalho-arte > svg.traco { fill: none; stroke: var(--sobre-primaria); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
 .atalho-volta { position: absolute; right: -7px; bottom: -7px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
     background: var(--sobre-primaria); color: var(--forest); border: 2px solid var(--forest); }
 .atalho-volta .ico { width: 13px; height: 13px; stroke-width: 2.6; animation: atalhoGira .9s cubic-bezier(.3, .8, .3, 1) .7s both; }

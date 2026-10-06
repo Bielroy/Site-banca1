@@ -25,19 +25,19 @@ const boot = () => {
 const cor = (v, padrao) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : padrao);
 const limpo = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f<>"]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
-/** Ícone em SVG: fundo na cor da loja, desenho do tipo de negócio na cor do texto. Cabe na área segura do Android. */
+/** Ícone em SVG: fundo na cor da loja, desenho colorido do tipo de negócio. Cabe na área segura do Android. */
 function iconeSvg(ficha, painel = false) {
-  const tema = (ficha && ficha.tema) || {}, fundo = cor(tema.primaria, '#1a3a2a'), traco = cor(tema.sobrePrimaria, '#ffffff');
+  const tema = (ficha && ficha.tema) || {}, fundo = cor(tema.primaria, '#1a3a2a');
   const qual = arteDoTipo(ficha && ficha.tipo);
   // PAINEL: as cores invertem (fundo claro, desenho na cor da loja) e entra a prancheta, para não se confundir com o app da loja
   if (painel) {
     const desenhoP = ARTES[qual] || ARTES.sacola;
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><rect width="512" height="512" fill="#F6F1E4"/><g transform="translate(96 86) scale(2.5)" fill="none" stroke="${fundo}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">${desenhoP}</g><g transform="translate(322 300)"><circle cx="48" cy="48" r="66" fill="#F6F1E4"/><circle cx="48" cy="48" r="54" fill="${fundo}"/><rect x="24" y="22" width="48" height="58" rx="7" fill="#fff"/><rect x="36" y="14" width="24" height="14" rx="5" fill="#1a1a18"/><path d="M33 42h30M33 54h30M33 66h18" stroke="#1a1a18" stroke-width="5" stroke-linecap="round"/></g></svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><rect width="512" height="512" fill="#F6F1E4"/><rect x="66" y="56" width="360" height="360" rx="72" fill="${fundo}"/><g transform="translate(96 86) scale(2.5)">${desenhoP}</g><g transform="translate(322 300)"><circle cx="48" cy="48" r="66" fill="#F6F1E4"/><circle cx="48" cy="48" r="54" fill="${fundo}"/><rect x="24" y="22" width="48" height="58" rx="7" fill="#fff"/><rect x="36" y="14" width="24" height="14" rx="5" fill="#1a1a18"/><path d="M33 42h30M33 54h30M33 66h18" stroke="#1a1a18" stroke-width="5" stroke-linecap="round"/></g></svg>`;
   }
   // loja de hortifruti: o caixote colorido, o mesmo desenho do ícone da loja original
   if (qual === 'caixote') return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><rect width="512" height="512" fill="${fundo}"/><circle cx="322" cy="204" r="56" fill="#7CC99B"/><circle cx="216" cy="188" r="76" fill="#E9A862"/><path d="M216 118C218 92 238 80 260 82C260 104 242 118 216 118Z" fill="#7CC99B"/><rect x="112" y="232" width="288" height="42" rx="8" fill="#F6F1E4"/><rect x="112" y="289" width="288" height="42" rx="8" fill="#F6F1E4"/><rect x="112" y="346" width="288" height="42" rx="8" fill="#F6F1E4"/><rect x="104" y="224" width="40" height="168" rx="10" fill="#D9C7A3"/><rect x="368" y="224" width="40" height="168" rx="10" fill="#D9C7A3"/></svg>`;
   const desenho = ARTES[qual] || ARTES.sacola;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><rect width="512" height="512" fill="${fundo}"/><g transform="translate(106 106) scale(2.5)" fill="none" stroke="${traco}" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round">${desenho}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><rect width="512" height="512" fill="${fundo}"/><g transform="translate(106 106) scale(2.5)">${desenho}</g></svg>`;
 }
 
 function manifesto(id, ficha, painel = false) {

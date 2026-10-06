@@ -22,10 +22,10 @@ const CAIXOTE = { viewBox: '', html: '' };
 function aplicarArte(tipo) {
     const svg = document.querySelector('.header-arte'); if (!svg) return;
     if (!CAIXOTE.html) { CAIXOTE.viewBox = svg.getAttribute('viewBox'); CAIXOTE.html = svg.innerHTML; }
-    const qual = arteDoTipo(tipo), traco = qual !== 'caixote';
+    const qual = arteDoTipo(tipo), traco = qual !== 'caixote';   // 'traco' = desenho de outro tipo de loja (nome antigo; hoje são formas cheias)
     svg.setAttribute('viewBox', traco ? '0 0 120 120' : CAIXOTE.viewBox);
     svg.innerHTML = traco ? ARTES[qual] : CAIXOTE.html;          // desenhos fixos deste projeto, nada vindo de fora
-    svg.classList.toggle('traco', traco);
+    svg.classList.toggle('plana', traco);
     document.documentElement.classList.remove('sem-arte');
 }
 

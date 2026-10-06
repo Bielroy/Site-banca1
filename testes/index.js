@@ -1080,7 +1080,7 @@ teste('app por loja: nome, cor e ícone próprios; a loja original e loja bloque
   const m = JSON.parse((await ch({ loja: 'pao-da-lu' })).corpo);
   assert.strictEqual(m.name, 'Pães da b Lúcia /b'.replace(/\s+/g, ' ')); assert.strictEqual(m.theme_color, '#7a2e12'); assert.strictEqual(m.background_color, '#fbf3e7');
   assert.strictEqual(m.start_url, '/?loja=pao-da-lu'); assert.strictEqual(m.id, '/?loja=pao-da-lu'); assert.ok(m.icons.some((i) => i.purpose === 'maskable') && m.icons.every((i) => i.src === '/api/manifest?loja=pao-da-lu&icone=1'));
-  const svg = (await ch({ loja: 'pao-da-lu', icone: '1' })).corpo; assert.ok(svg.startsWith('<svg') && svg.includes('fill="#7a2e12"') && svg.includes('stroke="#fff8ef"') && svg.includes(L.ARTES.pao));
+  const svg = (await ch({ loja: 'pao-da-lu', icone: '1' })).corpo; assert.ok(svg.startsWith('<svg') && svg.includes('fill="#7a2e12"') && svg.includes(L.ARTES.pao));
   assert.ok((await ch({ loja: 'horta', icone: '1' })).corpo.includes('#E9A862'), 'hortifruti leva o caixote colorido');
   const ruim = (await ch({ loja: 'ruim', icone: '1' })).corpo; assert.ok(!ruim.includes('script') && ruim.includes('fill="#1a3a2a"'), 'cor inválida cai na padrão');
   for (const q of [{ loja: 'banca' }, { loja: 'fechada' }, { loja: 'nao-existe' }, { loja: '../x' }, {}]) assert.strictEqual((await ch(q)).status, 404, JSON.stringify(q));
@@ -1088,7 +1088,7 @@ teste('app por loja: nome, cor e ícone próprios; a loja original e loja bloque
   // o PAINEL é outro aplicativo: abre o admin, tem outra identidade (não substitui o da loja) e outro ícone
   const mp = JSON.parse((await ch({ loja: 'pao-da-lu', painel: '1' })).corpo);
   assert.strictEqual(mp.start_url, '/admin.html?loja=pao-da-lu'); assert.strictEqual(mp.scope, '/admin.html'); assert.notStrictEqual(mp.id, m.id); assert.ok(mp.name.startsWith('Painel'));
-  const svgP = (await ch({ loja: 'pao-da-lu', painel: '1', icone: '1' })).corpo; assert.ok(svgP.includes('fill="#F6F1E4"') && svgP.includes('stroke="#7a2e12"') && svgP !== svg);
+  const svgP = (await ch({ loja: 'pao-da-lu', painel: '1', icone: '1' })).corpo; assert.ok(svgP.includes('fill="#F6F1E4"') && svgP.includes('rx="72" fill="#7a2e12"') && svgP !== svg);
   const fixo = JSON.parse(require('fs').readFileSync(raiz('admin.webmanifest'), 'utf8')), cfgVite = require('fs').readFileSync(raiz('vite.config.js'), 'utf8');
   assert.strictEqual(fixo.start_url, '/admin.html'); assert.strictEqual(fixo.id, '/admin.html'); assert.strictEqual(fixo.scope, '/admin.html');
   for (const i of fixo.icons) { assert.ok(require('fs').existsSync(raiz(i.src.slice(1))), i.src); assert.ok(cfgVite.includes(`'${i.src.slice(1)}'`), 'o build copia ' + i.src); }

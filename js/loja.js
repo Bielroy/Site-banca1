@@ -1165,8 +1165,8 @@ const verListaDaSemana = async () => {
 const arteDaLoja = () => {
     const svg = document.querySelector('.header-arte');
     if (svg && svg.innerHTML.trim() && !document.documentElement.classList.contains('sem-arte'))
-        return `<svg viewBox="${escapeHTML(svg.getAttribute('viewBox') || '0 0 120 120')}"${svg.classList.contains('traco') ? ' class="traco"' : ''}>${svg.innerHTML}</svg>`;   // desenho fixo do projeto, já presente na página
-    return '<svg class="traco" viewBox="0 0 120 120"><path d="M22 44h76l-6 60H28z"/><path d="M44 44V34c0-10 7-18 16-18s16 8 16 18v10"/></svg>';
+        return `<svg viewBox="${escapeHTML(svg.getAttribute('viewBox') || '0 0 120 120')}">${svg.innerHTML}</svg>`;   // desenho fixo do projeto, já presente na página
+    return `<svg viewBox="0 0 120 120"><circle cx="48" cy="40" r="17" fill="#E9A862"/><circle cx="76" cy="44" r="13" fill="#7CC99B"/><path d="M0 0C1-11 9-16 18-15 18-6 10 0 0 0Z" fill="#7CC99B" transform="translate(48 25) rotate(0) scale(0.8)"/><path d="M20 46h80l-6 54a8 8 0 0 1-8 7H34a8 8 0 0 1-8-7z" fill="#D9C7A3"/><rect x="44" y="60" width="32" height="10" rx="5" fill="#F6F1E4"/></svg>`;
 };
 // ---------------------------------------------------------------------
 // INSTALAR NA TELA INICIAL. O site já funciona como aplicativo, mas quase ninguém sabe.
