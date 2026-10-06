@@ -149,13 +149,13 @@ export default defineConfig({
         // comum acaba com as bordas cortadas. Um ícone "maskable" tem
         // margem de sobra desenhada de propósito para sobreviver ao corte.
         //
-        // Só existem icon-192.png e icon-512.png no projeto, e eles não
-        // têm essa margem. Estão declarados como 'any' (uso normal), que
-        // é o correto. Se quiser o acabamento completo no Android, veja a
-        // seção "ícone maskable" no guia.
+        // Os ícones (o caixote com frutas) têm fundo cheio e o desenho
+        // inteiro cabe na área segura, então o mesmo arquivo de 512 serve
+        // também como 'maskable' e o Android o mostra sem moldura branca.
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
     }),

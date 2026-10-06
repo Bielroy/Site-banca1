@@ -29,6 +29,13 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .header-nota { font-size: .86rem; color: color-mix(in srgb, var(--sobre-primaria) 72%, transparent); margin: 0 0 16px; }
 .header-nota[hidden] ~ .header-acoes { margin-top: 14px; }
 .header-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
+/* desenho do caixote no canto do cabeçalho: fica atrás do texto e
+   "apoiado" na borda de baixo; os botões ganham folga para não passar por cima */
+.header-arte { position: absolute; z-index: 0; right: 14px; bottom: -14px; width: clamp(124px, 31vw, 168px); height: auto; pointer-events: none; }
+.header-acoes { padding-right: clamp(132px, 33vw, 184px); }
+@media (max-width: 340px) { .header-arte { display: none; } .header-acoes { padding-right: 0; } }
+.sem-arte .header-arte { display: none; }
+.sem-arte .header-acoes { padding-right: 0; }
 .chip-header {
     display: inline-flex; align-items: center; gap: 8px; min-height: 44px; max-width: 100%;
     padding: 8px 16px; border-radius: 999px; cursor: pointer;

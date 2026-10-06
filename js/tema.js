@@ -12,6 +12,9 @@
 import { getDoc, doc, db } from './firebase.js';
 import { TENANT, fichaRef, chave, urlDaLoja, ehLojaOriginal } from './tenant.js';
 
+// O caixote de frutas do cabeçalho é desenho de hortifruti: só a loja original mostra.
+if (!ehLojaOriginal) document.documentElement.classList.add('sem-arte');
+
 /** Fontes que o painel oferece. Para acrescentar uma: ponha aqui e ela aparece no painel. */
 export const FONTES = {
     titulo: { Fraunces: "'Fraunces', Georgia, serif", 'Bricolage Grotesque': "'Bricolage Grotesque', system-ui, sans-serif", 'Playfair Display': "'Playfair Display', Georgia, serif", Oswald: "'Oswald', 'Arial Narrow', sans-serif", Lora: "'Lora', Georgia, serif" },
