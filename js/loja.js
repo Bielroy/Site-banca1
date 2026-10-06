@@ -1079,6 +1079,14 @@ const verListaDaSemana = async () => {
     showToast('Lista apagada.'); renderAtalhos();
 };
 
+// O desenho que já está no cabeçalho desta loja (o caixote na banca, o traço do tipo de negócio nas outras),
+// copiado em miniatura para o botão "Pedir de novo". Sem desenho no cabeçalho, uma sacola simples.
+const arteDaLoja = () => {
+    const svg = document.querySelector('.header-arte');
+    if (svg && svg.innerHTML.trim() && !document.documentElement.classList.contains('sem-arte'))
+        return `<svg viewBox="${escapeHTML(svg.getAttribute('viewBox') || '0 0 120 120')}"${svg.classList.contains('traco') ? ' class="traco"' : ''}>${svg.innerHTML}</svg>`;   // desenho fixo do projeto, já presente na página
+    return '<svg class="traco" viewBox="0 0 120 120"><path d="M22 44h76l-6 60H28z"/><path d="M44 44V34c0-10 7-18 16-18s16 8 16 18v10"/></svg>';
+};
 const dataCurta = (iso) => { try { return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }); } catch (_) { return ''; } };
 function renderAtalhos() {
     const nav = document.getElementById('atalhos'); if (!nav) return;
@@ -1092,7 +1100,7 @@ function renderAtalhos() {
         botoes.push(`<span class="atalho-par"><button type="button" class="atalho${hoje ? ' destaque' : ''}" data-action="por-lista"><b>Minha lista da semana</b><small>${hoje ? 'hoje é ' + nomeDoDia(lista.dia) + ', dia da sua lista · ' : ''}${lista.itens.length} ${lista.itens.length === 1 ? 'item' : 'itens'}</small></button><button type="button" class="atalho-ver" data-action="ver-lista" aria-label="Ver ou apagar a lista da semana">ver</button></span>`);
     }
     // "Pedir de novo" é o atalho principal: vem primeiro, preenchido, com o ícone de repetir.
-    if (ultimo) botoes.unshift(`<button type="button" class="atalho principal" data-action="repetir-pedido" data-id="${escapeHTML(String(ultimo.id))}"><i class="atalho-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.7L20 8.5"/><path d="M20 4v4.5h-4.5"/><path d="M20 12a8 8 0 0 1-13.7 5.7L4 15.5"/><path d="M4 20v-4.5h4.5"/></svg></i><span><b>Pedir de novo</b><small>o pedido de ${dataCurta(ultimo.data)} · ${ultimo.itens.length} ${ultimo.itens.length === 1 ? 'item' : 'itens'}</small></span></button>`);
+    if (ultimo) botoes.unshift(`<button type="button" class="atalho principal" data-action="repetir-pedido" data-id="${escapeHTML(String(ultimo.id))}"><i class="atalho-arte" aria-hidden="true">${arteDaLoja()}<span class="atalho-volta"><svg class="ico" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.7L20 8.5"/><path d="M20 4v4.5h-4.5"/><path d="M20 12a8 8 0 0 1-13.7 5.7L4 15.5"/><path d="M4 20v-4.5h4.5"/></svg></span></i><span><b>Pedir de novo</b><small>o pedido de ${dataCurta(ultimo.data)} · ${ultimo.itens.length} ${ultimo.itens.length === 1 ? 'item' : 'itens'}</small></span></button>`);
     if (avaliar) botoes.push(`<button type="button" class="atalho" data-action="open-historico"><b>Chegou tudo fresquinho?</b><small>avalie seu pedido em um toque</small></button>`);
     nav.hidden = !livre || !botoes.length;
     const html = botoes.join('');

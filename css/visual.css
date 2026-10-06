@@ -260,50 +260,71 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .avaliado span { color: var(--manga); letter-spacing: 1px; }
 
 /* =====================================================================
-   DESTAQUES DE COMPRA — os três lugares que puxam a venda usam a mesma
-   cor quente (--manga), para a cliente aprender que "amarelo = atalho":
-   "Pedir de novo", a faixa "Seus de sempre" e o "Que tal levar?".
-   Toda animação roda UMA vez, na entrada; nada fica piscando.
+   DESTAQUES DE COMPRA — feitos com o que já é a cara da loja, em vez de
+   uma caixa colorida qualquer:
+     • "Seus de sempre" é uma banquinha: toldo listrado em cima e o título
+       numa plaquinha de papel pendurada no barbante;
+     • "Pedir de novo" leva o desenho da loja (o caixote, o espetinho...);
+     • "Que tal levar?" é um bilhete de papel, igual à etiqueta de preço.
+   Cores: os verdes da marca e o papel da etiqueta. Toda animação roda UMA
+   vez, na entrada; nada fica piscando.
    ===================================================================== */
 
-/* 1) PEDIR DE NOVO: botão cheio, com ícone e um anel que pulsa duas vezes ao aparecer */
-.atalhos { padding-top: 6px; padding-left: 4px; }
-.atalho.principal { flex-direction: row; align-items: center; gap: 12px; min-height: 64px; padding: 10px 20px 10px 12px;
+/* 1) PEDIR DE NOVO */
+.atalhos { padding-top: 8px; padding-left: 6px; }
+.atalho.principal { position: relative; flex-direction: row; align-items: center; gap: 12px; min-height: 68px; padding: 8px 22px 8px 10px;
     background: var(--forest); border-color: var(--forest); color: var(--sobre-primaria);
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--manga) 70%, transparent); animation: atalhoChama 1.5s ease-out .5s 2; }
+    animation: atalhoChama 1.6s ease-out .6s 2; }
 .atalho.principal span { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-.atalho.principal b { color: var(--sobre-primaria); font-size: 1.04rem; }
+.atalho.principal b { color: var(--sobre-primaria); font-family: var(--fonte-titulo); font-size: 1.12rem; font-weight: 650; }
 .atalho.principal small { color: color-mix(in srgb, var(--sobre-primaria) 80%, transparent); }
-.atalho-ico { flex: none; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: var(--manga); color: #2a2414; }
-.atalho-ico .ico { width: 22px; height: 22px; stroke-width: 2.2; animation: atalhoGira .9s cubic-bezier(.3, .8, .3, 1) .5s both; }
-@keyframes atalhoChama { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--manga) 70%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
-@keyframes atalhoGira { from { transform: rotate(-200deg); } to { transform: none; } }
+/* o desenho da loja, num quadro claro, com a setinha de "de novo" no canto */
+.atalho-arte { position: relative; flex: none; width: 52px; height: 52px; border-radius: 12px; background: color-mix(in srgb, var(--sobre-primaria) 13%, transparent); display: grid; place-items: center; }
+.atalho-arte > svg:first-child { width: 42px; height: 42px; animation: atalhoPousa .7s cubic-bezier(.2, .9, .3, 1.3) .5s both; }
+.atalho-arte > svg.traco { fill: none; stroke: var(--sobre-primaria); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+.atalho-volta { position: absolute; right: -7px; bottom: -7px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--sobre-primaria); color: var(--forest); border: 2px solid var(--forest); }
+.atalho-volta .ico { width: 13px; height: 13px; stroke-width: 2.6; animation: atalhoGira .9s cubic-bezier(.3, .8, .3, 1) .7s both; }
+@keyframes atalhoChama { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--leaf) 65%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
+@keyframes atalhoGira { from { transform: rotate(-270deg); } to { transform: none; } }
+@keyframes atalhoPousa { from { transform: translateY(-10px) rotate(-8deg); opacity: 0; } to { transform: none; opacity: 1; } }
 .atalho.principal:active { transform: scale(.98); }
 
-/* 2) SEUS DE SEMPRE: a faixa ganha moldura e fundo próprios, para não se confundir com a vitrine */
-.faixa-sempre { position: relative; padding: 16px 14px 8px; border-radius: calc(var(--raio-card, 14px) + 6px);
-    background: color-mix(in srgb, var(--manga) 11%, var(--superficie)); border: 1.5px solid color-mix(in srgb, var(--manga) 55%, var(--superficie)); }
+/* 2) SEUS DE SEMPRE: a banquinha */
+.faixa-sempre { position: relative; overflow: hidden; padding: 38px 14px 8px; border-radius: calc(var(--raio-card, 14px) + 4px);
+    background: color-mix(in srgb, var(--leaf) 9%, var(--superficie)); border: 1.5px solid color-mix(in srgb, var(--leaf) 30%, var(--superficie)); }
 .faixa-sempre[hidden] { display: none; }
-.faixa-sempre h2 { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
-.faixa-sempre h2::before { content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--manga); box-shadow: 0 0 0 4px color-mix(in srgb, var(--manga) 28%, transparent); }
-.faixa-sub { font-size: .84rem; color: var(--text-mid); margin: 0 0 12px 18px; }
-.faixa-sempre .produto-card { border-color: color-mix(in srgb, var(--manga) 40%, var(--linha)); }
+/* toldo: o mesmo recorte em ondas do cabeçalho, em tamanho menor */
+.faixa-sempre::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 20px;
+    background: repeating-linear-gradient(90deg, var(--forest) 0 20px, #f3ead8 20px 40px);
+    -webkit-mask: radial-gradient(circle 10px at 10px 10px, #000 98%, transparent) 0 0 / 20px 20px repeat-x, linear-gradient(#000, #000) 0 0 / 100% 10px no-repeat;
+            mask: radial-gradient(circle 10px at 10px 10px, #000 98%, transparent) 0 0 / 20px 20px repeat-x, linear-gradient(#000, #000) 0 0 / 100% 10px no-repeat; }
+/* plaquinha de papel pendurada no toldo */
+.faixa-sempre h2 { position: relative; display: inline-block; margin: 0 0 8px 6px; padding: 6px 14px 7px 24px; border-radius: 4px;
+    background: var(--etiqueta); color: var(--etiqueta-tinta); font-size: 1.18rem; box-shadow: 0 1px 0 rgba(0,0,0,.14);
+    transform: rotate(-1.5deg); transform-origin: 14px -18px; animation: placaBalanca 1.4s ease-out .4s both; }
+.faixa-sempre h2::before { content: ""; position: absolute; left: 9px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: color-mix(in srgb, var(--leaf) 9%, var(--superficie)); box-shadow: inset 0 0 0 1px var(--barbante, #b99a5b); }
+.faixa-sempre h2::after { content: ""; position: absolute; left: 12px; bottom: 50%; width: 1.5px; height: 30px; background: var(--barbante, #b99a5b); transform: rotate(8deg); transform-origin: bottom; }
+.faixa-sub { font-size: .84rem; color: var(--text-mid); margin: 0 0 12px 8px; }
+@keyframes placaBalanca { 0% { transform: rotate(-9deg); } 35% { transform: rotate(3deg); } 65% { transform: rotate(-3.5deg); } 100% { transform: rotate(-1.5deg); } }
 @media (max-width: 600px) { .faixa-sempre .faixa-rolo { margin-right: -14px; padding-right: 14px; } }
 
-/* 3) QUE TAL LEVAR? (no pedido): foto, nome e preço, moldura tracejada quente e botão cheio */
-.upsell-box { display: flex; align-items: center; justify-content: flex-start; gap: 12px; margin: 10px 16px; padding: 10px 12px;
-    background: color-mix(in srgb, var(--manga) 13%, var(--superficie)); border: 1.5px dashed color-mix(in srgb, var(--manga) 80%, var(--text-dark)); border-radius: 14px;
-    animation: upsellEntra .45s cubic-bezier(.2, .9, .3, 1.15) both; }
-.upsell-foto { flex: none; width: 52px; height: 52px; border-radius: 10px; object-fit: cover; background: var(--parchment); }
+/* 3) QUE TAL LEVAR? — bilhete de papel preso com barbante, como a etiqueta de preço */
+.upsell-box { position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 12px; margin: 14px 16px 12px 22px; padding: 10px 12px 10px 26px;
+    background: var(--etiqueta); color: var(--etiqueta-tinta); border: 0; border-radius: 5px; box-shadow: 0 1px 0 rgba(0,0,0,.14), 0 6px 14px -8px rgba(0,0,0,.25);
+    transform: rotate(-.8deg); animation: bilheteEntra .55s cubic-bezier(.2, .9, .3, 1.2) both; }
+.upsell-box::before { content: ""; position: absolute; left: 9px; top: 50%; width: 8px; height: 8px; margin-top: -4px; border-radius: 50%; background: var(--warm-white, #fff); box-shadow: inset 0 0 0 1px var(--barbante, #b99a5b); }
+.upsell-box::after { content: ""; position: absolute; left: -14px; top: 50%; width: 26px; height: 1.5px; background: var(--barbante, #b99a5b); transform: rotate(-14deg); transform-origin: right; }
+.upsell-foto { flex: none; width: 54px; height: 54px; border-radius: 8px; object-fit: cover; background: rgba(0,0,0,.06); }
 .upsell-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
-.upsell-texto small { font-size: .74rem; font-weight: 700; color: var(--earth-forte, var(--earth)); }
-.upsell-texto b { font-size: .98rem; color: var(--text-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.upsell-texto em { font-style: normal; font-size: .8rem; color: var(--text-mid); }
+.upsell-texto small { font-family: var(--fonte-titulo); font-style: italic; font-size: .86rem; font-weight: 500; color: color-mix(in srgb, var(--etiqueta-tinta) 78%, transparent); }
+.upsell-texto b { font-size: 1rem; color: var(--etiqueta-tinta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upsell-texto em { font-style: normal; font-size: .8rem; font-weight: 600; color: color-mix(in srgb, var(--etiqueta-tinta) 72%, transparent); }
 .upsell-box .upsell-botao { flex: none; min-height: 44px; padding: 8px 16px; border: 0; border-radius: 999px; cursor: pointer; font-family: inherit; font-size: .9rem; font-weight: 700;
-    background: var(--manga); color: #2a2414; }
-.upsell-box .upsell-botao:hover { background: color-mix(in srgb, var(--manga) 86%, #000); transform: none; }
-@keyframes upsellEntra { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+    background: var(--forest); color: var(--sobre-primaria); }
+.upsell-box .upsell-botao:hover { background: var(--forest-mid); transform: none; }
+@keyframes bilheteEntra { from { opacity: 0; transform: translateX(-14px) rotate(-5deg); } to { opacity: 1; transform: rotate(-.8deg); } }
 
 @media (prefers-reduced-motion: reduce) {
-    .atalho.principal, .atalho-ico .ico, .upsell-box { animation: none; }
+    .atalho.principal, .atalho-arte > svg:first-child, .atalho-volta .ico, .faixa-sempre h2, .upsell-box { animation: none; }
 }
