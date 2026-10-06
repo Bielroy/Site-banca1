@@ -35,7 +35,9 @@
 .produtos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
 .card-produto { background: white; border: 1px solid var(--parchment); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; gap: 16px; transition: 0.2s; }
 .card-produto:hover { box-shadow: var(--shadow-md); transform: translateY(-3px); }
-.card-produto.esgotado { opacity: 0.6; filter: grayscale(80%); border-style: dashed; }
+/* fora da loja: só a foto e o texto esmaecem; os botões continuam vivos, para não parecerem travados */
+.card-produto.esgotado { border-style: dashed; }
+.card-produto.esgotado .prod-info-grande { opacity: 0.6; filter: grayscale(80%); }
 .prod-info-grande { display: flex; gap: 16px; align-items: center; }
 .prod-img-grande { width: 70px; height: 70px; background: var(--foam); border-radius: 10px; overflow: hidden; flex-shrink: 0; }
 .prod-img-grande img { width: 100%; height: 100%; object-fit: cover; }

@@ -442,11 +442,11 @@ document.getElementById('admin-busca-input')?.addEventListener('input', (e) => {
 });
 
 const getEstoqueBadge = (estoqueFisico, ativo) => {
-    if (!ativo) return `<span class="badge-estoque esgotado">Esgotado Indefinido</span>`;
-    if (estoqueFisico === undefined || estoqueFisico === null || estoqueFisico === "") return `<span class="badge-estoque alto">Stock: Ilimitado</span>`;
-    if (estoqueFisico <= 0) return `<span class="badge-estoque esgotado">Stock: ZERADO</span>`;
-    if (estoqueFisico <= 5) return `<span class="badge-estoque baixo">Stock Baixo: ${estoqueFisico} restam</span>`;
-    return `<span class="badge-estoque alto">Stock: ${estoqueFisico} un.</span>`;
+    if (!ativo) return `<span class="badge-estoque esgotado">Fora da loja</span>`;
+    if (estoqueFisico === undefined || estoqueFisico === null || estoqueFisico === "") return `<span class="badge-estoque alto">À venda</span>`;
+    if (estoqueFisico <= 0) return `<span class="badge-estoque esgotado">Estoque zerado</span>`;
+    if (estoqueFisico <= 5) return `<span class="badge-estoque baixo">Estoque baixo: restam ${estoqueFisico}</span>`;
+    return `<span class="badge-estoque alto">Estoque: ${estoqueFisico}</span>`;
 };
 
 const FRACIONAVEIS = ['kg', 'kilo', 'quilograma', 'g', 'grama', 'l', 'litro'];
@@ -481,8 +481,8 @@ const renderProdutos = () => {
             </div>
             <div class="botoes-acao">
                 ${p.ativo
-                    ? `<button class="btn btn-outline flex-1" style="border-color:var(--danger); color:var(--danger);" data-action="toggle-estoque" data-id="${escapeHTML(p.id)}" data-status="false">Esgotar</button>`
-                    : `<button class="btn btn-outline flex-1" style="background:var(--success); border-color:var(--success); color:white;" data-action="toggle-estoque" data-id="${escapeHTML(p.id)}" data-status="true">Em Estoque</button>`
+                    ? `<button class="btn btn-outline flex-1" style="border-color:var(--danger); color:var(--danger);" data-action="toggle-estoque" data-id="${escapeHTML(p.id)}" data-status="false">Tirar da loja</button>`
+                    : `<button class="btn btn-outline flex-1" style="background:var(--success); border-color:var(--success); color:white;" data-action="toggle-estoque" data-id="${escapeHTML(p.id)}" data-status="true">Voltar a vender</button>`
                 }
                 <button class="btn btn-outline" style="background: var(--parchment); color: var(--text-dark); border-color: #e0dcd4;" data-action="editar-produto" data-id="${escapeHTML(p.id)}">Editar</button>
             </div>
@@ -1062,11 +1062,11 @@ document.body.addEventListener('click', async (e) => {
             const id = target.dataset.id;
             const novoStatus = target.dataset.status === 'true';
             if (!novoStatus) {
-                const confirmado = await customConfirm("Esgotar Produto?", "Clientes não poderão comprar até você voltar pro stock.");
+                const confirmado = await customConfirm("Tirar da loja?", "Os clientes não vão ver este produto até você tocar em Voltar a vender.");
                 if (!confirmado) return;
             }
             await setDoc(tdoc("produtos", id), { ativo: novoStatus, ultimaModificacao: Date.now() }, { merge: true });
-            showToast(novoStatus ? "Produto disponível!" : "Produto esgotado.");
+            showToast(novoStatus ? "Produto de volta na loja." : "Produto fora da loja.");
         }
 
         // --- AÇÕES DE LOGÍSTICA KANBAN ---
