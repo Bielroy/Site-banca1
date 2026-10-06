@@ -487,6 +487,19 @@ const renderProdutos = () => {
     document.getElementById('lista-produtos').innerHTML = html || "<p style='color:var(--text-light)'>Nenhum produto encontrado na busca.</p>";
 };
 
+// Banco de fotos: escolhe uma foto já enviada, sem galeria nem link.
+document.getElementById('btn-banco-fotos')?.addEventListener('click', async () => {
+    try {
+        (await TELAS.fotos()).abrirBanco((f) => {
+            const campo = document.getElementById('edit-foto-url'), previa = document.getElementById('preview-foto-wrapper');
+            campo.value = f.url; campo.dataset.bancoUrl = f.url; campo.dataset.bancoMini = f.mini || '';
+            document.getElementById('edit-foto').value = '';
+            if (previa) { const img = document.createElement('img'); img.src = f.mini || f.url; img.alt = 'Foto escolhida'; img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:12px;'; previa.replaceChildren(img); }
+            showToast('Foto escolhida. Toque em "Gravar no Banco" para salvar no produto.');
+        });
+    } catch (e) { showToast('Não consegui abrir o banco de fotos. Confira a internet.', true); }
+});
+
 document.getElementById('edit-foto')?.addEventListener('change', (e) => {
     const file = e.target.files[0];
     const previewContainer = document.getElementById('preview-foto-wrapper');
@@ -1272,7 +1285,8 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
         }
         else if (urlInput) {
             if (!urlInput.startsWith('https://')) throw new Error("A URL da foto precisa começar com https://");
-            pData.foto = urlInput; pData.fotoMini = null;
+            const campoUrl = document.getElementById('edit-foto-url');      // foto vinda do banco de fotos traz a miniatura junto
+            pData.foto = urlInput; pData.fotoMini = campoUrl.dataset.bancoUrl === urlInput && campoUrl.dataset.bancoMini ? campoUrl.dataset.bancoMini : null;
         }
         else if (document.getElementById('edit-id').value) {
             const pAntigo = produtosAtuais.find(x => x.id === id);

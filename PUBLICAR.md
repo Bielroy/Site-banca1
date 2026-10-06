@@ -64,6 +64,8 @@ foram conferidas com dados simulados.
 2. No painel, abra **Plataforma → Fotos dos produtos**, cole a chave e toque em Salvar.
 3. Em qualquer loja: **Produtos → Enviar várias fotos**. Escolha as fotos; o sistema reduz, envia
    ao ImgBB e grava o link em cada produto. Arquivo com o nome do produto (tomate.jpg) já vem marcado.
+   Foto sem produto marcado vai para o **banco de fotos** da loja; depois, na tela de cada produto,
+   toque em "Escolher do banco de fotos".
 A chave fica só no servidor (`plataforma/segredos`); nenhuma tela mostra a chave de volta.
 Nunca foi testado com o ImgBB de verdade: confira o primeiro envio.
 

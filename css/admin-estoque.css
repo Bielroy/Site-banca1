@@ -216,3 +216,13 @@ body.so-equipe #aba-relatorios .relatorios-header, body.so-equipe #aba-relatorio
 .av-estado.on { color: var(--forest); }
 #av-corpo .btn-salvar-config { width: 100%; margin-top: 10px; }
 #av-corpo .av-desligar { width: 100%; min-height: 46px; margin-top: 10px; }
+
+/* banco de fotos */
+.btn-banco-fotos { width: 100%; min-height: 46px; margin-top: 10px; }
+.banco-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+.banco-item { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.banco-foto { padding: 0; border: 2px solid #e6e1d6; border-radius: 12px; overflow: hidden; aspect-ratio: 1; background: var(--parchment); cursor: pointer; }
+.banco-foto:hover, .banco-foto:focus-visible { border-color: var(--forest); }
+.banco-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.banco-nome { font-size: .74rem; color: var(--text-mid); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.banco-tirar { position: absolute; top: 4px; right: 4px; width: 30px; height: 30px; border: 0; border-radius: 50%; background: rgba(255,255,255,.94); color: var(--danger); font-size: 1.1rem; line-height: 1; cursor: pointer; }

@@ -12,9 +12,9 @@
 //  O produto de cada foto é adivinhado pelo NOME DO ARQUIVO e pode ser
 //  trocado na lista antes de enviar.
 // =====================================================================
-import { storage, ref, uploadBytes, getDownloadURL, setDoc } from './firebase.js';
+import { storage, ref, uploadBytes, getDownloadURL, setDoc, getDoc } from './firebase.js';
 import { tdoc, pastaFotos } from './tenant.js';
-import { escapeHTML, showToast, openModal } from './utils.js';
+import { escapeHTML, showToast, openModal, closeModal } from './utils.js';
 import { validarArquivo, produtoParecido, tamanhoBonito, comTentativas, emFila } from './fotos-lib.js';
 
 /** Reduz e converte. Devolve { blob, ext }. Usada também pelo cadastro de um produto só. */
@@ -58,12 +58,70 @@ export async function enviarFoto(produtoId, { blob, ext }, sufixo = '') {
 
 /** As duas versões de uma foto: grande (tela do produto) e miniatura (cards da vitrine: carrega bem mais rápido no 4G). */
 export async function otimizarFotos(file) { return { grande: await otimizarFoto(file, 1000, 0.82), mini: await otimizarFoto(file, 400, 0.78) }; }
-export async function enviarOtimizadas(produtoId, o) {
+export async function enviarOtimizadas(produtoId, o, nome = '') {
     const [foto, fotoMini] = await Promise.all([enviarFoto(produtoId, o.grande), enviarFoto(produtoId, o.mini, '-m')]);
+    guardarNoBanco({ url: foto, mini: fotoMini, nome });          // toda foto enviada fica também no banco de fotos da loja
     return { foto, fotoMini };
 }
+
+// ---------------------------------------------------------------------
+// BANCO DE FOTOS da loja: tudo o que já foi enviado, para escolher depois
+// na tela de cada produto, sem enviar de novo nem copiar link.
+// Fica em loja/fotos (uma lista com o link, a miniatura e o nome do arquivo).
+// ---------------------------------------------------------------------
+const MAX_BANCO = 300;
+export async function lerBanco() {
+    const s = await getDoc(tdoc('loja', 'fotos'));
+    const itens = s.exists() && Array.isArray(s.data().itens) ? s.data().itens : [];
+    return itens.filter((f) => f && /^https:\/\//.test(String(f.url || '')));
+}
+// as fotos sobem 3 de cada vez; a lista é gravada uma por vez, em fila, para uma não apagar a outra
+let filaBanco = Promise.resolve();
+function mexerNoBanco(mudar) {
+    filaBanco = filaBanco.then(async () => {
+        const itens = mudar(await lerBanco()).slice(0, MAX_BANCO);
+        await setDoc(tdoc('loja', 'fotos'), { itens, em: Date.now() }, { merge: true });
+    }).catch((e) => console.warn('[banco de fotos]', e && (e.code || e.message)));
+    return filaBanco;
+}
+const guardarNoBanco = (f) => mexerNoBanco((itens) => [{ url: f.url, mini: f.mini || '', nome: String(f.nome || '').slice(0, 80), em: Date.now() }, ...itens.filter((x) => x.url !== f.url)]);
+
+/** Abre o banco de fotos para escolher uma. `aoEscolher({ url, mini, nome })` é chamado com a foto tocada. */
+export async function abrirBanco(aoEscolher) {
+    if (!$('modal-banco-fotos')) {
+        document.body.insertAdjacentHTML('beforeend', `
+        <div class="modal-overlay" id="modal-banco-fotos" role="dialog" aria-modal="true" aria-labelledby="banco-titulo">
+            <div class="modal modal-lg">
+                <header class="modal-head"><h2 id="banco-titulo">Banco de fotos</h2><button class="btn-fechar" data-fechar="modal-banco-fotos" aria-label="Fechar">&times;</button></header>
+                <div class="modal-body"><p class="config-sub" id="banco-dica"></p><div id="banco-grade" class="banco-grade"></div></div>
+            </div>
+        </div>`);
+        $('modal-banco-fotos').addEventListener('click', async (e) => {
+            if (e.target.closest('[data-fechar]')) return closeModal('modal-banco-fotos');
+            const tirar = e.target.closest('[data-tirar]'), foto = e.target.closest('[data-foto]');
+            if (tirar) { e.stopPropagation(); const url = tirar.dataset.tirar; await mexerNoBanco((itens) => itens.filter((x) => x.url !== url)); return pintarBanco(); }
+            if (foto && $('modal-banco-fotos')._escolher) { const f = ($('modal-banco-fotos')._itens || []).find((x) => x.url === foto.dataset.foto); closeModal('modal-banco-fotos'); if (f) $('modal-banco-fotos')._escolher(f); }
+        });
+    }
+    $('modal-banco-fotos')._escolher = aoEscolher;
+    $('banco-grade').innerHTML = ''; $('banco-dica').textContent = 'Carregando as fotos...';
+    openModal('modal-banco-fotos');
+    await pintarBanco();
+}
+async function pintarBanco() {
+    let itens = [];
+    try { await filaBanco; itens = await lerBanco(); } catch (e) { $('banco-dica').textContent = 'Não consegui abrir o banco de fotos. Confira a internet.'; return; }
+    $('modal-banco-fotos')._itens = itens;
+    $('banco-dica').textContent = itens.length ? 'Toque na foto para usar neste produto.' : 'Ainda não há fotos aqui. Feche, toque em "Enviar várias fotos" na lista de produtos, escolha as fotos e envie: elas ficam guardadas neste banco.';
+    $('banco-grade').innerHTML = itens.map((f) => `
+        <div class="banco-item">
+            <button type="button" class="banco-foto" data-foto="${escapeHTML(f.url)}" aria-label="Usar a foto ${escapeHTML(f.nome || '')}"><img src="${escapeHTML(f.mini || f.url)}" alt="" loading="lazy"></button>
+            <span class="banco-nome">${escapeHTML(f.nome || 'sem nome')}</span>
+            <button type="button" class="banco-tirar" data-tirar="${escapeHTML(f.url)}" aria-label="Tirar do banco de fotos">&times;</button>
+        </div>`).join('');
+}
 /** Atalho usado pelo cadastro de um produto só. */
-export const enviarFotos = async (produtoId, file) => enviarOtimizadas(produtoId, await otimizarFotos(file));
+export const enviarFotos = async (produtoId, file) => enviarOtimizadas(produtoId, await otimizarFotos(file), file && file.name);
 
 let linhas = [], produtos = [], enviando = false, seq = 0;
 const $ = (id) => document.getElementById(id);
@@ -75,7 +133,7 @@ function garantirModal() {
         <div class="modal modal-lg">
             <header class="modal-head"><h2 id="fotos-titulo">Enviar várias fotos</h2><button class="btn-fechar" data-fechar="modal-fotos" aria-label="Fechar">&times;</button></header>
             <div class="modal-body">
-                <p class="config-sub">Escolha as fotos. O sistema reduz, converte e envia cada uma. Dica: dê ao arquivo o nome do produto (tomate.jpg) e ele já vem marcado.</p>
+                <p class="config-sub">Escolha as fotos. O sistema reduz, converte e envia cada uma. Foto com produto marcado já entra no produto. Foto sem produto vai para o banco de fotos, e você escolhe depois, na tela de cada produto.</p>
                 <input type="file" id="fotos-arquivos" accept="image/*" multiple class="sr-only">
                 <label for="fotos-arquivos" class="ft-escolher">Escolher fotos</label>
                 <div id="fotos-lista" class="ft-lista" aria-live="polite"></div>
@@ -121,20 +179,19 @@ function pintar() {
             <div class="ft-meio">
                 <span class="ft-nome">${escapeHTML(l.file.name)}</span>
                 ${l.estado === 'feito' || l.estado === 'erro' && !l.previa ? '' : `<select data-linha="${l.id}" aria-label="Produto desta foto"${enviando ? ' disabled' : ''}>${ops(l.produtoId)}</select>`}
-                <span class="ft-status">${l.estado === 'feito' ? `${tamanhoBonito(l.antes)} → ${tamanhoBonito(l.depois)} · Otimizado` : l.estado === 'erro' ? escapeHTML(l.msg) : ROTULO[l.estado] || tamanhoBonito(l.antes)}</span>
+                <span class="ft-status">${l.estado === 'feito' ? `${tamanhoBonito(l.antes)} → ${tamanhoBonito(l.depois)} · ${l.noBanco ? 'No banco de fotos' : 'No produto e no banco de fotos'}` : l.estado === 'erro' ? escapeHTML(l.msg) : ROTULO[l.estado] || tamanhoBonito(l.antes)}</span>
             </div>
             ${l.estado === 'erro' && l.previa ? `<button type="button" class="btn-outline ft-btn" data-acao="repetir" data-linha="${l.id}">Tentar de novo</button>` : ''}
             ${['pronta', 'erro'].includes(l.estado) && !enviando ? `<button type="button" class="ft-tirar" data-acao="tirar" data-linha="${l.id}" aria-label="Tirar da lista">&times;</button>` : ''}
         </div>`).join('');
-    const prontas = linhas.filter((l) => l.estado === 'pronta' && l.produtoId).length;
+    const prontas = linhas.filter((l) => l.estado === 'pronta').length;
     const semProduto = linhas.filter((l) => l.estado === 'pronta' && !l.produtoId).length;
     const b = $('fotos-enviar');
     b.disabled = enviando || !prontas;
-    b.textContent = enviando ? 'Enviando...' : prontas ? `Enviar ${prontas} foto${prontas > 1 ? 's' : ''}${semProduto ? ` (${semProduto} sem produto)` : ''}` : 'Enviar';
+    b.textContent = enviando ? 'Enviando...' : prontas ? `Enviar ${prontas} foto${prontas > 1 ? 's' : ''}${semProduto ? ` (${semProduto === prontas ? 'todas' : semProduto} para o banco de fotos)` : ''}` : 'Enviar';
 }
 
 async function processar(l) {
-    if (!l.produtoId) { l.estado = 'erro'; l.msg = 'Escolha o produto desta foto.'; pintar(); return; }
     try {
         if (!l.otimizada) {
             l.estado = 'reduzindo'; pintar();
@@ -142,9 +199,14 @@ async function processar(l) {
             l.depois = l.otimizada.grande.blob.size;
         }
         l.estado = 'enviando'; pintar();
-        const urls = await comTentativas(() => enviarOtimizadas(l.produtoId, l.otimizada));
-        l.estado = 'salvando'; pintar();
-        await comTentativas(() => setDoc(tdoc('produtos', l.produtoId), { ...urls, ultimaModificacao: Date.now() }, { merge: true }));
+        // sem produto marcado, a foto vai só para o banco de fotos (o nome do arquivo ajuda a achar depois)
+        const urls = await comTentativas(() => enviarOtimizadas(l.produtoId || 'banco', l.otimizada, l.file.name));
+        l.noBanco = !l.produtoId;
+        if (l.produtoId) {
+            l.estado = 'salvando'; pintar();
+            await comTentativas(() => setDoc(tdoc('produtos', l.produtoId), { ...urls, ultimaModificacao: Date.now() }, { merge: true }));
+        }
+        await filaBanco;
         l.estado = 'feito'; l.msg = '';
     } catch (e) {
         l.estado = 'erro';
@@ -165,12 +227,12 @@ function resumo() {
 
 async function enviarTodas() {
     if (enviando) return;
-    const fila = linhas.filter((l) => l.estado === 'pronta' && l.produtoId);
+    const fila = linhas.filter((l) => l.estado === 'pronta');
     // duas fotos para o mesmo produto: vale a última da lista; avisa as outras
-    const ultimo = new Map(); fila.forEach((l) => ultimo.set(l.produtoId, l));
+    const ultimo = new Map(); fila.forEach((l) => { if (l.produtoId) ultimo.set(l.produtoId, l); });
     enviando = true; pintar();
     await emFila(fila, 3, async (l) => {
-        if (ultimo.get(l.produtoId) !== l) { l.estado = 'erro'; l.msg = 'Outra foto desta lista é do mesmo produto. Esta não foi enviada.'; l.previa && URL.revokeObjectURL(l.previa); l.previa = ''; pintar(); return; }
+        if (l.produtoId && ultimo.get(l.produtoId) !== l) { l.estado = 'erro'; l.msg = 'Outra foto desta lista é do mesmo produto. Esta não foi enviada.'; l.previa && URL.revokeObjectURL(l.previa); l.previa = ''; pintar(); return; }
         await processar(l);
     });
     enviando = false; pintar(); resumo();
