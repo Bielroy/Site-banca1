@@ -16,6 +16,8 @@ import { ARTES, arteDoTipo } from './arte-lib.js';
 // DESENHO DO CABEÇALHO. A loja original mostra o caixote de frutas, que já vem na página.
 // As outras ficam sem desenho até a ficha chegar, e aí ganham o traço do tipo de negócio delas.
 if (!ehLojaOriginal) document.documentElement.classList.add('sem-arte');
+// Mesmo cuidado com o botão do Ajudante: nas outras lojas ele só aparece depois que a ficha diz que está ligado.
+if (!ehLojaOriginal) document.body.classList.add('sem-ia');
 const CAIXOTE = { viewBox: '', html: '' };
 function aplicarArte(tipo) {
     const svg = document.querySelector('.header-arte'); if (!svg) return;
@@ -91,10 +93,12 @@ export const moduloLigado = (ficha, nome) => {
 };
 
 const escrever = (id, texto) => { const el = document.getElementById(id); if (el && texto) el.textContent = texto; };
-function aplicarFicha(ficha) {
+// completa = false: cópia antiga guardada no aparelho, que não trazia o tipo nem os módulos.
+// Nesse caso o desenho e o botão do Ajudante esperam a ficha de verdade, em vez de mostrar o errado e trocar depois.
+function aplicarFicha(ficha, completa = true) {
     if (!ficha) return;
     aplicarTema(ficha.tema || null);
-    if (!ehLojaOriginal) aplicarArte(ficha.tipo);
+    if (!ehLojaOriginal && completa) aplicarArte(ficha.tipo);
     if (ficha.nome && !(ehLojaOriginal && !ficha.tema)) {          // a loja original mantém o título desenhado, a não ser que tenha sido personalizada
         escrever('header-nome', ficha.nome);
         document.title = ficha.subtitulo ? `${ficha.nome} | ${ficha.subtitulo}` : ficha.nome;
@@ -104,7 +108,7 @@ function aplicarFicha(ficha) {
     if (busca && (ficha.busca || !ehLojaOriginal)) busca.placeholder = ficha.busca || 'Buscar produto...';
     // MÓDULOS: cada loja liga só o que usa (ficha.modulos = { ia: true, ... }).
     // O Ajudante foi escrito para hortifruti, então nas outras lojas começa desligado.
-    document.body.classList.toggle('sem-ia', !moduloLigado(ficha, 'ia'));
+    if (completa) document.body.classList.toggle('sem-ia', !moduloLigado(ficha, 'ia'));
     if (ficha.nota !== undefined) { const n = document.getElementById('header-nota'); if (n) { n.textContent = ficha.nota || ''; n.hidden = !ficha.nota; } }
 }
 
@@ -148,7 +152,7 @@ function montarFeira(feira) {
 /** Chamado uma vez pela loja. Usa a ficha guardada no aparelho na hora e confere no banco depois. */
 export async function iniciarTema() {
     const K = chave('banca_ficha');
-    try { const g = JSON.parse(localStorage.getItem(K) || 'null'); if (g) { aplicarFicha(g.ficha); montarFeira(g.feira); } } catch (_) { /* sem cache */ }
+    try { const g = JSON.parse(localStorage.getItem(K) || 'null'); if (g) { aplicarFicha(g.ficha, g.v === 2); montarFeira(g.feira); } } catch (_) { /* sem cache */ }
     try {
         const s = await getDoc(fichaRef());
         const ficha = s.exists() ? s.data() : null;
@@ -158,7 +162,7 @@ export async function iniciarTema() {
         }
         if (ficha) aplicarFicha(ficha);
         montarFeira(feira);
-        try { localStorage.setItem(K, JSON.stringify({ ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId }, feira })); } catch (_) { /* cheio */ }
+        try { localStorage.setItem(K, JSON.stringify({ v: 2, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feira })); } catch (_) { /* cheio */ }
         return ficha;
     } catch (e) { console.warn('[tema] usando o visual guardado:', e && e.code); return null; }
 }
