@@ -37,7 +37,9 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .sem-arte .header-arte { display: none; }
 .sem-arte .header-acoes { padding-right: 0; }
 /* desenho de traço das outras lojas (pão, espetinho, panela...): linha na cor do texto do cabeçalho */
-.header-arte.traco { fill: none; stroke: var(--sobre-primaria); stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; opacity: .92; bottom: 12px; width: clamp(112px, 28vw, 150px); }
+.header-arte.traco { fill: none; stroke: var(--sobre-primaria); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; opacity: .94; right: 12px; bottom: 14px;
+    width: auto; aspect-ratio: 1; height: min(calc(100% - 28px), clamp(126px, 32vw, 200px)); }
+.header-arte.traco ~ .header-inner .header-acoes { padding-right: clamp(136px, 35vw, 216px); }
 /* toldo listrado pendurado embaixo do cabeçalho (igual ao do painel); usa a cor principal da loja */
 .toldo-loja { height: 22px; background: repeating-linear-gradient(90deg, var(--forest) 0 22px, #f3ead8 22px 44px);
     -webkit-mask: radial-gradient(circle 11px at 11px 11px, #000 98%, transparent) 0 0 / 22px 22px repeat-x, linear-gradient(#000, #000) 0 0 / 100% 11px no-repeat;

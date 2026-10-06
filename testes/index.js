@@ -927,7 +927,7 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
 });
 teste('cabeçalho: cada tipo de negócio tem o seu desenho', async () => {
   const A = await import(raiz('js/arte-lib.js'));
-  const casos = { hortifruti: 'caixote', 'Feira de Frutas': 'caixote', espetinhos: 'espeto', jantinha: 'prato', Padaria: 'pao', 'Pães e Bolos': 'pao', 'Açaí': 'tigela', Pizzaria: 'pizza', 'Hambúrgueres': 'burger', Confeitaria: 'bolo', 'Sucos e Cafés': 'copo', 'Loja de Presentes': 'sacola', '': 'sacola' };
+  const casos = { hortifruti: 'caixote', 'Feira de Frutas': 'caixote', espetinhos: 'espeto', jantinha: 'prato', Padaria: 'pao', 'Pães': 'pao', 'Açaí': 'tigela', Pizzaria: 'pizza', 'Hambúrgueres': 'burger', Confeitaria: 'doce', Doces: 'doce', Bolo: 'bolo', Bolos: 'bolo', 'Sucos e Cafés': 'copo', 'Creme e suco': 'copo', Crepe: 'crepe', Pastel: 'pastel', 'Pastéis': 'pastel', 'Macarrão': 'macarrao', 'Caldo de cana': 'cana', Caldos: 'tigela', 'Queijo/ovos/mel e doces da roça': 'queijo', 'Banca do queijo': 'queijo', Mel: 'queijo', Pamonha: 'pamonha', 'Cachorro quente': 'hotdog', 'Loja de Presentes': 'sacola', '': 'sacola' };
   for (const [tipo, esperado] of Object.entries(casos)) assert.strictEqual(A.arteDoTipo(tipo), esperado, tipo);
   for (const [nome, html] of Object.entries(A.ARTES)) assert.ok(html.length > 40 && !/<script|on\w+=|href/i.test(html), nome);
   assert.ok(Object.values(casos).every((q) => q === 'caixote' || A.ARTES[q]));
