@@ -72,7 +72,10 @@ export async function iniciarRanking() {
 
         guardar(dados);
         try { sessionStorage.setItem(CHAVE, JSON.stringify({ uid: user.uid, ts: Date.now(), dados })); } catch (_) { /* quota */ }
-        aplicarOrdem(); avisar();
+        // Chegou tarde e a pessoa já está rolando? Não troca os cards de lugar debaixo do dedo dela:
+        // a ordem nova vale na próxima abertura (fica guardada acima).
+        if (window.scrollY < 160) aplicarOrdem();
+        avisar();
     } catch (e) {
         iniciado = false;                      // permite nova tentativa no próximo login/refresh
         console.warn('[ranking] usando ordem padrão:', e && e.message);

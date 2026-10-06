@@ -144,13 +144,17 @@ export const openModal = (id) => {
   focarPrimeiroElemento(modal);
 };
 
+// A página só volta a rolar quando não sobra NADA aberto por cima (outro modal, a gaveta do pedido).
+// Antes, cancelar uma confirmação com a gaveta aberta soltava a página por trás dela.
+const soltarRolagem = () => { if (!document.querySelector('.modal-overlay.aberto, #carrinho.aberto, #overlay-confirm.aberto')) document.body.style.overflow = ''; };
+
 export const closeModal = (id) => {
   const modal = document.getElementById(id);
   if (!modal) return;
   modal.classList.remove('aberto');
   modal.setAttribute('aria-hidden', 'true');
   modal.setAttribute('aria-modal', 'false');
-  document.body.style.overflow = '';
+  soltarRolagem();
   if (ultimoFocado && typeof ultimoFocado.focus === 'function') {
     ultimoFocado.focus({ preventScroll: true });
     ultimoFocado = null;
@@ -217,7 +221,7 @@ export const customConfirm = (title, msg, rotulos = {}) => {
     const cleanup = () => {
       overlay.classList.remove('aberto');
       overlay.setAttribute('aria-hidden', 'true');
-      document.body.style.overflow = '';
+      soltarRolagem();
       okBtn.removeEventListener('click', onOk);
       cancelBtn.removeEventListener('click', onCancel);
       overlay.removeEventListener('click', onOverlay);

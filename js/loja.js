@@ -10,7 +10,12 @@ import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } 
 import { podePagarPix } from './pix-lib.js';
 import { lerEntrega, previaDaEntrega } from './entrega-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
+import { miniatura } from './foto-lib.js';
 import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
+
+// Lista guardada no aparelho. Dado corrompido ou armazenamento bloqueado NÃO pode derrubar a loja:
+// antes, um JSON estragado aqui deixava a vitrine parada no carregamento.
+const lerLista = (nome) => { try { const v = JSON.parse(localStorage.getItem(chave(nome)) || '[]'); return Array.isArray(v) ? v : []; } catch (_) { return []; } };
 
 const CART_VERSION = "3.0"; // Atualizado para suportar o Carrinho Híbrido
 let unsubscribes = []; 
@@ -18,7 +23,7 @@ let unsubscribes = [];
 const STATE = {
     uid: null, produtos: [], carrinho: [], catAtiva: 'todas', busca: '',
     config: { minimo: 0, wpp: '5562999999999', lojaAberta: true, diasAbertos: [0,1,2,3,4,5,6] },
-    favoritos: JSON.parse(localStorage.getItem(chave('banca_favs')) || '[]'),
+    favoritos: lerLista('banca_favs'),
     lojaRenderizada: false, checkoutSessionId: null, historicoChat: [],
     modalProdutoAtual: null, modalTipoCompra: 'kg', modalQtd: 1 // Estado do seletor do modal
 };
@@ -42,7 +47,7 @@ const resetInatividadeTimer = () => {
         }, 180000); 
     }
 };
-['click', 'touchstart', 'scroll', 'keydown'].forEach(evt => document.addEventListener(evt, resetInatividadeTimer, { passive: true }));
+['click', 'touchstart', 'keydown'].forEach(evt => document.addEventListener(evt, resetInatividadeTimer, { passive: true }));
 
 const carregarCarrinhoDB = async () => {
     try { 
@@ -172,7 +177,11 @@ const atualizarLinhaCarrinhoDOM = (id, novaQtd, subtotalFmt, tipo) => {
         else {
             const input = row.querySelector('.qtd-input'); const price = row.querySelector('.item-preco');
             const prod = STATE.produtos.find(p => p.id === id);
-            if(input) input.value = formatarQuantidadeVisual(novaQtd, isFracionavel(prod?.unidade) && tipo !== 'un');
+            const porPeso = isFracionavel(prod?.unidade) && tipo !== 'un';
+            if(input) input.value = formatarQuantidadeVisual(novaQtd, porPeso);
+            // o rótulo acompanha a troca "por unidade" ↔ "por peso" (ficava "0,5 un" e travava a vírgula)
+            const unid = row.querySelector('.qtd-unid');
+            if (unid) unid.textContent = porPeso ? String(prod?.unidade || 'kg').toLowerCase() : 'un';
             
             const item = STATE.carrinho.find(x => x.id === id);
             if (price && item) price.outerHTML = precoLinhaHtml(item);
@@ -293,7 +302,7 @@ const renderCarrinhoCompleto = () => {
 
         html += `
         <article class="carrinho-item" id="cart-row-${escapeHTML(item.id)}">
-            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(item.fotoMini || item.foto)}" alt="${escapeHTML(item.nome)}" loading="lazy" width="48" height="48">` : `<div class="item-emoji skeleton"></div>`}</div>
+            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(item.fotoMini || miniatura(item.foto, 128))}" data-original="${escapeHTML(item.foto)}" alt="${escapeHTML(item.nome)}" loading="lazy" width="48" height="48">` : ''}</div>
             <div class="item-meio">
                 <h3 class="item-nome">${escapeHTML(item.nome)} </h3>
                 <div class="qtd-ctrl">
@@ -373,7 +382,7 @@ const cardHtml = (p, rapido = false) => {
         return `
         <article class="produto-card" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}" style="display: flex;">
             <div class="produto-img-wrap">
-                ${p.foto ? `<img src="${escapeHTML(p.fotoMini || p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}" decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder skeleton" style="width:100%;height:100%"></div>'}
+                ${p.foto ? `<img src="${escapeHTML(p.fotoMini || miniatura(p.foto, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}" decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 <button class="btn-fav ${favActive}" data-action="fav" data-id="${escapeHTML(p.id)}" aria-label="Favoritar ${escapeHTML(p.nome)}" aria-pressed="${favActive ? 'true' : 'false'}">${ICO.coracao}</button>
             </div>
             <div class="produto-info">
@@ -384,12 +393,50 @@ const cardHtml = (p, rapido = false) => {
         </article>`;
 };
 
+// Miniatura falhou (redutor fora do ar, site que não deixa copiar a foto)? Volta para a foto original.
+document.addEventListener('error', (e) => {
+    const img = e.target;
+    if (!(img instanceof HTMLImageElement) || !img.dataset.original) return;
+    const original = img.dataset.original; delete img.dataset.original;
+    if (img.getAttribute('src') !== original) img.src = original;
+}, true);
+
+// As fotos de baixo da tela começam "preguiçosas" para a loja abrir rápido. Assim que o
+// aparelho sossega, vamos buscando as demais em lotes: quando a cliente rolar, mesmo
+// depressa, a foto já está no aparelho em vez de aparecer atrasada.
+let _adiantando = 0;
+const adiantarFotos = () => {
+    clearTimeout(_adiantando);
+    if (navigator.connection && navigator.connection.saveData) return;      // quem pediu economia de dados fica como estava
+    const passo = () => {
+        const lote = [...document.querySelectorAll('#lista-produtos img[loading="lazy"]')].slice(0, 6);
+        if (!lote.length) return;
+        lote.forEach(img => { img.loading = 'eager'; });
+        _adiantando = setTimeout(passo, 350);
+    };
+    _adiantando = setTimeout(passo, 1500);
+};
+
 const construirCardsIniciais = () => {
     const grid = document.getElementById('lista-produtos');
     grid.innerHTML = STATE.produtos.map((p, i) => cardHtml(p, i < 4)).join('');
     STATE.lojaRenderizada = true;
     renderFaixaSempre(true);
     STATE.produtos.forEach(p => atualizarBadgesDOM(p.id));
+    adiantarFotos();
+};
+
+// Mudou UM produto (preço, foto, nome)? Troca só o card dele. Antes a vitrine inteira era
+// refeita, e todas as fotos piscavam no meio da rolagem de quem estava comprando.
+const trocarCards = (produtos) => {
+    produtos.forEach(p => {
+        document.querySelectorAll(`.produto-card[data-id="${CSS.escape(p.id)}"]`).forEach(card => {
+            const molde = document.createElement('template'); molde.innerHTML = cardHtml(p, true).trim();
+            const novo = molde.content.firstElementChild; novo.style.order = card.style.order;
+            card.replaceWith(novo);
+        });
+        atualizarBadgesDOM(p.id);
+    });
 };
 
 // ---------------------------------------------------------------------
@@ -405,7 +452,7 @@ const renderFaixaSempre = (forcar = false) => {
     let ids = destaques().filter(id => porId.has(id)), titulo = 'Seus de sempre';
     if (!ids.length) {
         try {
-            const ultimo = JSON.parse(localStorage.getItem(chave('banca_meus_pedidos')) || '[]')[0];
+            const ultimo = lerLista('banca_meus_pedidos')[0];
             ids = ((ultimo && ultimo.itens) || []).map(i => i.id).filter(id => porId.has(id)).slice(0, 8);
             titulo = 'Do seu último pedido';
         } catch (_) { ids = []; }
@@ -413,7 +460,8 @@ const renderFaixaSempre = (forcar = false) => {
     const visivel = ids.length >= 2 && !semAcento(STATE.busca).trim() && STATE.catAtiva === 'todas';
     faixa.hidden = !visivel;
     const assinatura = ids.join('|');
-    if (!visivel || (!forcar && assinatura === _faixaIds)) return;
+    if (forcar) _faixaIds = '';          // catálogo mudou: o que estiver guardado ficou velho, mesmo com a faixa escondida
+    if (!visivel || assinatura === _faixaIds) return;
     _faixaIds = assinatura;
     document.getElementById('faixa-titulo').textContent = titulo;
     lista.innerHTML = ids.map(id => cardHtml(porId.get(id), true)).join('');
@@ -423,6 +471,7 @@ document.addEventListener('ranking-pronto', () => renderFaixaSempre());
 
 const renderLoja = (forcarRebuild = false) => {
     const grid = document.getElementById('lista-produtos');
+    if (!STATE.catalogoChegou) return;     // produtos ainda a caminho: fica o carregando, e não um falso "sem produtos"
     if(!STATE.lojaRenderizada || forcarRebuild) construirCardsIniciais();
     renderFaixaSempre();
     const termo = semAcento(STATE.busca).trim();
@@ -518,20 +567,33 @@ const iniciarRealTimeSync = () => {
     // [PATCH 3] Só reconstrói o grid quando o catálogo realmente muda (evita reflows/lag)
     let _assinaturaProdutos = '';
     let _produtosBrutos = [];
+    let _produtosChegaram = false; // a vitrine só é desenhada depois da 1ª resposta dos produtos
     let _catsProntas = false;      // espera a 1ª resposta das categorias p/ não "piscar" produto de categoria oculta
     // Junta produtos + categorias do painel (ocultas somem; renomear/ordenar reflete na hora)
+    let _lista = '', _porProduto = new Map();
+    const assinaturaDe = (p) => `${p.preco}:${p.foto || ''}:${p.fotoMini || ''}:${p.nome}:${p.cat}:${p.unidade || ''}:${p.pesoMedio || ''}`;
     const aplicarCatalogo = () => {
-        if (!_catsProntas) return;
+        if (!_catsProntas || !_produtosChegaram) return;
+        STATE.catalogoChegou = true;
         STATE.produtos = aplicarCategorias(_produtosBrutos);
-        const assinatura = STATE.produtos.map(p => `${p.id}:${p.preco}:${p.foto || ''}:${p.nome}:${p.cat}`).join('|') + '#' + assinaturaCategorias();
+        const lista = STATE.produtos.map(p => p.id).join('|') + '#' + assinaturaCategorias();
+        const porProduto = new Map(STATE.produtos.map(p => [p.id, assinaturaDe(p)]));
+        const assinatura = lista + '#' + [...porProduto.values()].join('|');
         if (assinatura !== _assinaturaProdutos) {
-            renderCategorias(); renderLoja(true); _assinaturaProdutos = assinatura;
+            const mudaram = STATE.produtos.filter(p => _porProduto.get(p.id) !== porProduto.get(p.id));
+            if (STATE.lojaRenderizada && lista === _lista && mudaram.length <= 12) {
+                trocarCards(mudaram); renderCategorias(); renderLoja();          // mesmos produtos, na mesma ordem: só os cards que mudaram
+            } else {
+                renderCategorias(); renderLoja(true);
+            }
+            _assinaturaProdutos = assinatura; _lista = lista; _porProduto = porProduto;
             aplicarOrdem();
         }
         syncCarrinhoComPrecosAoVivo();
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
     };
     const unsubProdutos = onSnapshot(tcol("produtos"), (snap) => {
+        _produtosChegaram = true;
         _produtosBrutos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.ativo && !p.soInsumo);   // ingrediente de receita não vai para a vitrine
         aplicarCatalogo();
     }, (e) => {
@@ -633,14 +695,16 @@ const injetarModalDetalheSeNecessario = () => {
         });
     };
 
-    const atualizarResumo = () => {
+    // escreverCampo = false enquanto a pessoa DIGITA: reescrever o campo a cada tecla apagava a vírgula
+    // ("1," virava "1" e "1,5" acabava como 15 quilos).
+    const atualizarResumo = (escreverCampo = true) => {
         const p = STATE.modalProdutoAtual; if (!p) return;
         const qtd = STATE.modalQtd;
         const resumo = $('md-resumo');
         const btn = $('md-btn-add');
         const fracionavel = isFracionavel(p.unidade);
 
-        $('md-qtd').value = formatarQuantidadeVisual(qtd, modoPeso());
+        if (escreverCampo) $('md-qtd').value = formatarQuantidadeVisual(qtd, modoPeso());
         $('md-qtd-unid').textContent = modoPeso() ? (p.unidade || 'kg') : (qtd === 1 ? 'unidade' : 'unidades');
         $('md-menos').disabled = qtd <= passo();
         marcarPresetAtivo();
@@ -722,7 +786,7 @@ const injetarModalDetalheSeNecessario = () => {
 
     $('md-qtd').addEventListener('input', (e) => {
         const v = parseFloat(String(e.target.value).replace(',', '.'));
-        if (Number.isFinite(v) && v > 0) { STATE.modalQtd = modoPeso() ? fixFloat(v) : Math.round(v); atualizarResumo(); }
+        if (Number.isFinite(v) && v > 0) { STATE.modalQtd = modoPeso() ? fixFloat(v) : Math.round(v); atualizarResumo(false); }
     });
     $('md-qtd').addEventListener('blur', () => setQtd(STATE.modalQtd));
 
@@ -863,7 +927,7 @@ const renderLinhaDoTempo = (status) => {
 };
 
 const renderHistorico = async () => {
-    const meusPedidos = JSON.parse(localStorage.getItem(chave('banca_meus_pedidos')) || '[]');
+    const meusPedidos = lerLista('banca_meus_pedidos');
     const lista = document.getElementById('lista-meus-pedidos');
     if (!lista) return;
 
@@ -952,18 +1016,20 @@ const cancelarPedido = async (pedidoId) => {
 };
 
 const repetirPedido = (pedId) => {
-    const meusPedidos = JSON.parse(localStorage.getItem(chave('banca_meus_pedidos')) || '[]');
+    const meusPedidos = lerLista('banca_meus_pedidos');
     const ped = meusPedidos.find(p => String(p.id) === String(pedId)); 
     if(!ped || !ped.itens) return;
 
-    let itensAdicionados = 0; let itensEsgotados = []; STATE.carrinho = [];
+    // monta a lista nova ANTES de mexer no pedido atual: se nada puder voltar, o que já estava no pedido fica
+    let itensAdicionados = 0; let itensEsgotados = []; const novo = [];
     ped.itens.forEach(i => {
         const prodAtualizado = STATE.produtos.find(px => px.id === i.id);
-        if(prodAtualizado && prodAtualizado.ativo) { STATE.carrinho.push({...prodAtualizado, qtd: i.qtd, tipo: i.tipo || 'kg'}); itensAdicionados++; } 
+        if(prodAtualizado && prodAtualizado.ativo) { novo.push({...prodAtualizado, qtd: i.qtd, tipo: i.tipo || 'kg'}); itensAdicionados++; } 
         else { itensEsgotados.push(i.nome || 'Produto Indisponível'); }
     });
 
     if (itensAdicionados > 0) {
+        STATE.carrinho = novo;
         persistirCarrinhoComDebounce(); renderCarrinhoCompleto(); closeModal('modal-historico'); 
         if (ehCelular()) toggleCartMobile(true);
         let msgToast = "🛒 Itens adicionados com preços atualizados!";
@@ -1104,6 +1170,7 @@ document.body.addEventListener('click', async (e) => {
             window.__mdSincronizar();
 
             document.getElementById('md-btn-add').onclick = () => {
+                if (!STATE.produtos.some(x => x.id === p.id)) { showToast('Este produto acabou de sair da loja.', true); closeModal('modal-detalhe-produto'); if (history.state && history.state.modal === 'modal-detalhe-produto') history.back(); return; }
                 // fixo=true: usa exatamente a quantidade escolhida (não incrementa)
                 modificarCarrinho(p.id, STATE.modalQtd, true, STATE.modalTipoCompra);
                 const aPesar = STATE.modalTipoCompra === 'un' && isFracionavel(p.unidade);
@@ -1238,13 +1305,17 @@ document.getElementById('cli-pagamento').addEventListener('change', (e) => {
 });
 
 // UI Checkout
+const assinaturaDoCarrinho = () => STATE.carrinho.map(i => `${i.id}:${i.qtd}:${i.tipo || ''}`).join('|');
 document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
-    const clientes = JSON.parse(localStorage.getItem(chave('banca_clientes')) || '[]');
+    const clientes = lerLista('banca_clientes');
     if (clientes.length > 0) {
         document.getElementById('cli-nome').value = clientes[0].nome || '';
     }
     endCheckout.preencher(lerEnderecoSalvo());
-    STATE.checkoutSessionId = novoId(); 
+    // A chave identifica ESTE pedido no servidor. Ela só muda quando o pedido muda: se o envio
+    // cair no meio e a pessoa abrir de novo e reenviar, o servidor reconhece e não cria um segundo pedido.
+    const cara = assinaturaDoCarrinho();
+    if (!STATE.checkoutSessionId || STATE.checkoutCara !== cara) { STATE.checkoutSessionId = novoId(); STATE.checkoutCara = cara; }
     openModal('modal-checkout');
 });
 
@@ -1300,19 +1371,25 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         // à cliente cancelar o pedido depois pela própria loja.
         const data = await chamarApi('/api/checkout', payload, { comToken: true });
 
-        const clientes = JSON.parse(localStorage.getItem(chave('banca_clientes')) || '[]');
-        const idx = clientes.findIndex(c => c.nome.toLowerCase() === nome.toLowerCase());
-        if(idx >= 0) { clientes[idx] = {nome, quadra, lote}; } else { clientes.unshift({nome, quadra, lote}); }
-        localStorage.setItem(chave('banca_clientes'), JSON.stringify(clientes.slice(0, 5)));
-        salvarEndereco(endereco); pintarResumoEndereco();
+        // O pedido JÁ FOI ACEITO. Guardar no aparelho é só conveniência: se falhar (memória cheia,
+        // armazenamento bloqueado), a cliente não pode ver "erro" nem ficar com o pedido ainda aberto.
+        STATE.checkoutSessionId = null;
+        try {
+            const clientes = lerLista('banca_clientes');
+            const idx = clientes.findIndex(c => String(c && c.nome || '').toLowerCase() === nome.toLowerCase());
+            if(idx >= 0) { clientes[idx] = {nome, quadra, lote}; } else { clientes.unshift({nome, quadra, lote}); }
+            localStorage.setItem(chave('banca_clientes'), JSON.stringify(clientes.slice(0, 5)));
+            salvarEndereco(endereco); pintarResumoEndereco();
 
-        const meusPedidos = JSON.parse(localStorage.getItem(chave('banca_meus_pedidos')) || '[]');
-        meusPedidos.unshift({
-            id: data.pedido.id, data: new Date().toISOString(), total: data.pedido.total,
-            descItens: STATE.carrinho.map(i => i.tipo === 'un' && isFracionavel(i.unidade) ? `${i.qtd} un de ${i.nome} (A Pesar)` : `${i.qtd}x ${i.nome}`).join(', '),
-            itens: itensFormatados
-        });
-        localStorage.setItem(chave('banca_meus_pedidos'), JSON.stringify(meusPedidos.slice(0, 10)));
+            const meusPedidos = lerLista('banca_meus_pedidos');
+            meusPedidos.unshift({
+                id: data.pedido.id, data: new Date().toISOString(), total: data.pedido.total,
+                descItens: STATE.carrinho.map(i => i.tipo === 'un' && isFracionavel(i.unidade) ? `${i.qtd} un de ${i.nome} (A Pesar)` : `${i.qtd}x ${i.nome}`).join(', '),
+                itens: itensFormatados
+            });
+            localStorage.setItem(chave('banca_meus_pedidos'), JSON.stringify(meusPedidos.slice(0, 10)));
+
+        } catch (e) { console.warn('[loja] pedido enviado, mas não consegui guardar no aparelho:', e && e.message); }
 
         mostrarLinksWhatsApp(data.pedido);
         oferecerPixNoSucesso({ id: data.pedido.id, total: data.pedido.total, pag, status: 'pendente', temItensAPesar: itensFormatados.some(i => i.aPesar) });

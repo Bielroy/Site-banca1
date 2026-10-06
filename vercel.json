@@ -79,5 +79,24 @@
       "path": "/api/analytics",
       "schedule": "0 8 * * *"
     }
-  ]
+  ],
+  "images": {
+    "sizes": [
+      128,
+      384
+    ],
+    "remotePatterns": [
+      {
+        "protocol": "https",
+        "hostname": "**"
+      }
+    ],
+    "minimumCacheTTL": 2678400,
+    "qualities": [
+      75
+    ],
+    "formats": [
+      "image/webp"
+    ]
+  }
 }

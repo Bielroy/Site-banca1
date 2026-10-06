@@ -925,6 +925,17 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   assert.strictEqual((await ch3({ acao: 'proprietario', id: 'jantinha-da-lu', email: 'ze@x.com', remover: true })).status, 200);
   assert.deepStrictEqual(usuarios[0].customClaims, { tenants: { outra: 'caixa' } }); assert.strictEqual(usuarios[0].revogado, true);
 });
+teste('fotos: miniatura só para link https em produção, nas larguras que a Vercel aceita', async () => {
+  const F = await import(raiz('js/foto-lib.js')), V = JSON.parse(require('fs').readFileSync(raiz('vercel.json'), 'utf8'));
+  assert.deepStrictEqual(V.images.sizes, F.LARGURAS, 'vercel.json e js/foto-lib.js com as mesmas larguras');
+  const u = 'https://fotos.exemplo.com/a/tomate.jpg?x=1&y=2';
+  assert.strictEqual(F.miniatura(u, 384, 'site-banca1.vercel.app'), '/_vercel/image?url=' + encodeURIComponent(u) + '&w=384&q=75');
+  assert.ok(F.miniatura(u, 128, 'www.loja.com.br').includes('&w=128&'));
+  assert.ok(F.miniatura(u, 999, 'www.loja.com.br').includes('&w=384&'), 'largura fora da lista cai na padrão');
+  for (const host of ['localhost', '127.0.0.1', '192.168.0.10', '']) assert.strictEqual(F.miniatura(u, 384, host), u, host);
+  for (const fica of ['', null, 'data:image/png;base64,AAAA', 'blob:https://x/1', 'http://sem-s.com/a.jpg', 'https://x.com/logo.svg', 'https://x.com/a.jpg" onerror="x']) assert.strictEqual(F.miniatura(fica, 384, 'www.loja.com.br'), String(fica || ''));
+});
+
 teste('cabeçalho: cada tipo de negócio tem o seu desenho', async () => {
   const A = await import(raiz('js/arte-lib.js'));
   const casos = { hortifruti: 'caixote', 'Feira de Frutas': 'caixote', espetinhos: 'espeto', jantinha: 'prato', Padaria: 'pao', 'Pães': 'pao', 'Açaí': 'tigela', Pizzaria: 'pizza', 'Hambúrgueres': 'burger', Confeitaria: 'doce', Doces: 'doce', Bolo: 'bolo', Bolos: 'bolo', 'Sucos e Cafés': 'copo', 'Creme e suco': 'copo', Crepe: 'crepe', Pastel: 'pastel', 'Pastéis': 'pastel', 'Macarrão': 'macarrao', 'Caldo de cana': 'cana', Caldos: 'tigela', 'Queijo/ovos/mel e doces da roça': 'queijo', 'Banca do queijo': 'queijo', Mel: 'queijo', Pamonha: 'pamonha', 'Cachorro quente': 'hotdog', 'Loja de Presentes': 'sacola', '': 'sacola' };
