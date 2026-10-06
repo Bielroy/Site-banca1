@@ -925,6 +925,60 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   assert.strictEqual((await ch3({ acao: 'proprietario', id: 'jantinha-da-lu', email: 'ze@x.com', remover: true })).status, 200);
   assert.deepStrictEqual(usuarios[0].customClaims, { tenants: { outra: 'caixa' } }); assert.strictEqual(usuarios[0].revogado, true);
 });
+teste('oferta: só vale com preço antigo maior; o desconto nunca promete a mais', async () => {
+  const O = await import(raiz('js/oferta-lib.js'));
+  assert.strictEqual(O.emOferta({ preco: 8, precoDe: 10 }), true);
+  for (const nao of [{ preco: 8 }, { preco: 8, precoDe: 8 }, { preco: 8, precoDe: 6 }, { preco: 8, precoDe: 'x' }, { preco: 0, precoDe: 5 }, null]) assert.strictEqual(O.emOferta(nao), false, JSON.stringify(nao));
+  assert.strictEqual(O.desconto({ preco: 8, precoDe: 10 }), 20); assert.strictEqual(O.desconto({ preco: 6.99, precoDe: 9.99 }), 30, '30,03% vira 30, não 31'); assert.strictEqual(O.desconto({ preco: 8 }), 0);
+  assert.strictEqual(O.precoDeValido('12,50', 10), 12.5); assert.strictEqual(O.precoDeValido('', 10), null); assert.strictEqual(O.precoDeValido(10, 10), null); assert.strictEqual(O.precoDeValido(9, 10), null); assert.strictEqual(O.precoDeValido('abc', 10), null);
+  const lista = O.ofertasDe([{ id: 'a', preco: 9, precoDe: 10 }, { id: 'b', preco: 5, precoDe: 10 }, { id: 'c', preco: 5 }]); assert.deepStrictEqual(lista.map((p) => p.id), ['b', 'a'], 'maior desconto primeiro, sem quem não é oferta');
+  // o servidor continua cobrando `preco`: o preço antigo é só vitrine
+  const db = criarBanco({ ...semente(), 'produtos/tomate': { ...semente()['produtos/tomate'], precoDe: 99 } }); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  const r = await chamar(api, { headers: ip(), body: pedido({ itens: [{ id: 'tomate', qtd: 2, tipo: 'kg' }] }) }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(r.corpo.pedido.total, 17.8);
+});
+
+teste('cópia: restaurar volta o cadastro, guarda o estado de antes e não mexe em pedidos nem no que é novo', async () => {
+  const P = require(raiz('lib/prudencia'));
+  const db = criarBanco({ ...semente(), 'pedidos/p1': { nome: 'Ana', total: 10, data: new Date().toISOString() }, 'loja/avaliacoes': { soma: 9, n: 2 } });
+  const precoBom = db._dados.get('produtos/tomate').preco;
+  await P.copiar(db, 'banca', new Date(Date.UTC(2026, 9, 5, 8)));
+  // depois da cópia: preço estragado, produto novo, pedido novo, avaliação nova
+  db._dados.set('produtos/tomate', { ...db._dados.get('produtos/tomate'), preco: 0.01 }); db._dados.set('produtos/novo', { nome: 'Caqui', preco: 7, ativo: true });
+  db._dados.set('pedidos/p2', { nome: 'Bia', total: 20, data: new Date().toISOString() }); db._dados.set('loja/avaliacoes', { soma: 14, n: 3 });
+  const eq = carregarApi(raiz('api/equipe.js'), criarAdmin(db, { dono: { uid: 'a-1', admin: true }, adm: { uid: 'b-1', tenants: { banca: 'administrador' } }, outro: { uid: 'o-1', tenants: { espetinhos: 'proprietario' } } }));
+  const ce = (tk, body, loja) => chamar(eq, { headers: { authorization: `Bearer ${tk}`, ...(loja ? { 'x-loja': loja } : {}) }, body });
+  assert.strictEqual((await ce('adm', { acao: 'copia-restaurar', dia: '2026-10-05' })).status, 403, 'só o proprietário restaura');
+  assert.strictEqual((await ce('outro', { acao: 'copia-restaurar', dia: '2026-10-05' })).status, 403, 'dono de outra loja não restaura esta');
+  for (const ruim of ['', '2026-10-06', '../x', 'banca_2026-10-05']) assert.strictEqual((await ce('dono', { acao: 'copia-restaurar', dia: ruim })).status, 404, ruim);
+  assert.strictEqual(db._dados.get('produtos/tomate').preco, 0.01, 'tentativa recusada não mexe em nada');
+  const r = await ce('dono', { acao: 'copia-restaurar', dia: '2026-10-05' }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(db._dados.get('produtos/tomate').preco, precoBom, 'o preço voltou');
+  assert.ok(db._dados.has('produtos/novo'), 'produto criado depois continua'); assert.ok(db._dados.has('pedidos/p2'), 'pedido novo continua');
+  assert.deepStrictEqual(db._dados.get('loja/avaliacoes'), { soma: 14, n: 3 }, 'a média das avaliações não volta no tempo');
+  // dá para desfazer: a cópia "antes" guarda o estado estragado
+  const antes = await P.lerCopia(db, 'banca', r.corpo.copiaDeAntes); assert.strictEqual(antes.colecoes.produtos.tomate.preco, 0.01); assert.ok(/-antes$/.test(r.corpo.copiaDeAntes));
+  const lista = (await ce('dono', { acao: 'copia-estado' })).corpo.copias; assert.strictEqual(lista.length, 2); assert.ok(lista.some((c) => c.dia === '2026-10-05'));
+  // a cópia de uma loja não restaura outra
+  assert.strictEqual(await P.lerCopia(db, 'espetinhos', '2026-10-05'), null);
+});
+
+teste('app por loja: nome, cor e ícone próprios; a loja original e loja bloqueada não passam por aqui', async () => {
+  const A = await import(raiz('js/arte-lib.js')), L = require(raiz('lib/artes'));
+  assert.deepStrictEqual(L.ARTES, JSON.parse(JSON.stringify(A.ARTES)), 'js/arte-lib.js e lib/artes.js com os mesmos desenhos');
+  for (const t of ['Padaria', 'hortifruti', 'Caldo de cana', 'Queijo, ovos e mel', 'espetinhos', 'Loja de presentes', '']) assert.strictEqual(L.arteDoTipo(t), A.arteDoTipo(t), t);
+  const db = criarBanco({ 'tenants/pao-da-lu': { nome: 'Pães da <b>Lúcia</b>', tipo: 'Padaria', subtitulo: 'Pão quentinho', ativo: true, tema: { primaria: '#7a2e12', fundo: '#fbf3e7', sobrePrimaria: '#fff8ef' } },
+    'tenants/horta': { nome: 'Horta do Zé', tipo: 'hortifruti', ativo: true }, 'tenants/fechada': { nome: 'Fechada', ativo: false }, 'tenants/ruim': { nome: 'X', ativo: true, tema: { primaria: 'red"/><script>' } } });
+  const api = carregarApi(raiz('api/manifest.js'), criarAdmin(db, {})), ch = (query, method = 'GET') => chamar(api, { method, query });
+  const m = JSON.parse((await ch({ loja: 'pao-da-lu' })).corpo);
+  assert.strictEqual(m.name, 'Pães da b Lúcia /b'.replace(/\s+/g, ' ')); assert.strictEqual(m.theme_color, '#7a2e12'); assert.strictEqual(m.background_color, '#fbf3e7');
+  assert.strictEqual(m.start_url, '/?loja=pao-da-lu'); assert.strictEqual(m.id, '/?loja=pao-da-lu'); assert.ok(m.icons.some((i) => i.purpose === 'maskable') && m.icons.every((i) => i.src === '/api/manifest?loja=pao-da-lu&icone=1'));
+  const svg = (await ch({ loja: 'pao-da-lu', icone: '1' })).corpo; assert.ok(svg.startsWith('<svg') && svg.includes('fill="#7a2e12"') && svg.includes('stroke="#fff8ef"') && svg.includes(L.ARTES.pao));
+  assert.ok((await ch({ loja: 'horta', icone: '1' })).corpo.includes('#E9A862'), 'hortifruti leva o caixote colorido');
+  const ruim = (await ch({ loja: 'ruim', icone: '1' })).corpo; assert.ok(!ruim.includes('script') && ruim.includes('fill="#1a3a2a"'), 'cor inválida cai na padrão');
+  for (const q of [{ loja: 'banca' }, { loja: 'fechada' }, { loja: 'nao-existe' }, { loja: '../x' }, {}]) assert.strictEqual((await ch(q)).status, 404, JSON.stringify(q));
+  assert.strictEqual((await ch({ loja: 'pao-da-lu' }, 'POST')).status, 405);
+});
+
 teste('avaliação: só a dona do pedido, uma vez, de 1 a 5; entra na média da loja', async () => {
   const db = criarBanco(semente()); const adm = criarAdmin(db, { ...TOKENS, outra: { uid: 'c2' } });
   const checkout = carregarApi(raiz('api/checkout.js'), adm), api = carregarApi(raiz('api/cancelar-pedido.js'), adm);

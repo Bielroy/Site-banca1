@@ -6,7 +6,7 @@
 // =====================================================================
 import { auth } from './firebase.js';
 import { TENANT } from './tenant.js';
-import { showToast } from './utils.js';
+import { showToast, customConfirm } from './utils.js';
 
 const $ = (id) => document.getElementById(id);
 async function api(corpo) {
@@ -20,11 +20,29 @@ const dataBonita = (iso) => { try { return new Date(iso).toLocaleString('pt-BR',
 
 async function pintarEstado() {
     try {
-        const { ultima } = await api({ acao: 'copia-estado' });
+        const dados = await api({ acao: 'copia-estado' }), ultima = dados.ultima;
         $('copia-estado').textContent = ultima
             ? `Última cópia automática: ${dataBonita(ultima.feitaEm)} · ${ultima.contagem.produtos || 0} produtos e ${ultima.contagem.pedidos || 0} pedidos. Ficam guardadas as últimas ${ultima.guardadas > 1 ? ultima.guardadas + ' cópias' : 'cópia'}.`
             : 'Ainda não há cópia automática. A primeira é feita na próxima madrugada.';
+        const copias = Array.isArray(dados.copias) ? dados.copias : [], caixa = $('copia-restaurar');
+        if (caixa) {
+            caixa.hidden = !copias.length;
+            $('copia-dia').innerHTML = copias.map((c) => `<option value="${String(c.dia).replace(/[^0-9a-z-]/g, '')}">${dataBonita(c.feitaEm)}${/-antes$/.test(c.dia) ? ' (guardada antes de restaurar)' : ''} · ${c.contagem.produtos || 0} produtos</option>`).join('');
+        }
     } catch (e) { $('copia-estado').textContent = 'Não consegui ver a última cópia agora.'; }
+}
+
+async function restaurar() {
+    const sel = $('copia-dia'), dia = sel.value, rotulo = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : dia;
+    if (!dia) return;
+    const ok = await customConfirm('Voltar o cadastro para esta cópia?', `Produtos, categorias, configurações e cupons voltam a ficar como estavam em ${rotulo}. Preços e estoques mudados depois disso serão desfeitos. Pedidos não mudam.`, { ok: 'Restaurar', nao: 'Não mexer' });
+    if (!ok) return;
+    const b = $('btn-restaurar-copia'); b.disabled = true; b.textContent = 'Restaurando...';
+    try {
+        const r = await api({ acao: 'copia-restaurar', dia });
+        showToast(`Cadastro restaurado: ${r.contagem.produtos || 0} produtos. Recarregando o painel...`);
+        setTimeout(() => location.reload(), 1800);
+    } catch (e) { showToast(e.message, true); b.disabled = false; b.textContent = 'Restaurar'; }
 }
 
 async function baixar() {
@@ -44,5 +62,6 @@ export function iniciarCopia() {
     const caixa = $('copia-box'); if (!caixa || ligado) return;
     ligado = true; caixa.hidden = false;
     $('btn-baixar-copia').addEventListener('click', baixar);
+    $('btn-restaurar-copia')?.addEventListener('click', restaurar);
     pintarEstado();
 }

@@ -124,3 +124,10 @@
 .pedido-avaliacao b { color: #c4773a; letter-spacing: 1px; margin-right: 6px; }
 .pedido-avaliacao.baixa { background: #fde8e6; }
 .pedido-avaliacao.baixa b { color: #b3261e; }
+
+.copia-restaurar { margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--linha, #e0dcd4); }
+.copia-restaurar[hidden] { display: none; }
+.copia-restaurar label { display: block; font-weight: 700; margin-bottom: 6px; }
+.copia-linha { display: flex; gap: 8px; flex-wrap: wrap; }
+.copia-linha select { flex: 1; min-width: 180px; min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1.5px solid #e0dcd4; font-size: 16px; }
+.copia-box .copia-perigo { margin-top: 0; color: var(--danger); border-color: var(--danger); }

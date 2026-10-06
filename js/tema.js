@@ -29,6 +29,29 @@ function aplicarArte(tipo) {
     document.documentElement.classList.remove('sem-arte');
 }
 
+// O "APP" DESTA LOJA: quem instala na tela inicial vê o nome e o ícone da loja em que está,
+// e não os da Banca. O manifesto e o ícone saem de /api/manifest (ver o arquivo).
+let _appDe = '';
+function aplicarApp(ficha) {
+    if (_appDe === TENANT || !ficha || !ficha.nome) return;
+    _appDe = TENANT;
+    const base = `/api/manifest?loja=${encodeURIComponent(TENANT)}`;
+    let m = document.querySelector('link[rel="manifest"]');
+    if (!m) { m = document.createElement('link'); m.rel = 'manifest'; document.head.appendChild(m); }
+    m.href = base;
+    document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]').forEach((l) => { l.href = `${base}&icone=1`; });
+    const t = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if (t) t.setAttribute('content', ficha.nome);
+    // iPhone não aceita ícone em SVG na tela inicial: desenha o mesmo ícone num PNG, aqui mesmo no aparelho
+    const img = new Image();
+    img.onload = () => {
+        try {
+            const c = document.createElement('canvas'); c.width = c.height = 180; c.getContext('2d').drawImage(img, 0, 0, 180, 180);
+            const png = c.toDataURL('image/png'); document.querySelectorAll('link[rel="apple-touch-icon"]').forEach((l) => { l.href = png; });
+        } catch (_) { /* fica o ícone padrão */ }
+    };
+    img.src = `${base}&icone=1`;
+}
+
 /** Fontes que o painel oferece. Para acrescentar uma: ponha aqui e ela aparece no painel. */
 export const FONTES = {
     titulo: { Fraunces: "'Fraunces', Georgia, serif", 'Bricolage Grotesque': "'Bricolage Grotesque', system-ui, sans-serif", 'Playfair Display': "'Playfair Display', Georgia, serif", Oswald: "'Oswald', 'Arial Narrow', sans-serif", Lora: "'Lora', Georgia, serif" },
@@ -99,6 +122,7 @@ function aplicarFicha(ficha, completa = true) {
     if (!ficha) return;
     aplicarTema(ficha.tema || null);
     if (!ehLojaOriginal && completa) aplicarArte(ficha.tipo);
+    if (!ehLojaOriginal) aplicarApp(ficha);
     if (ficha.nome && !(ehLojaOriginal && !ficha.tema)) {          // a loja original mantém o título desenhado, a não ser que tenha sido personalizada
         escrever('header-nome', ficha.nome);
         document.title = ficha.subtitulo ? `${ficha.nome} | ${ficha.subtitulo}` : ficha.nome;

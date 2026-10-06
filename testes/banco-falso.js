@@ -71,7 +71,7 @@ function criarAdmin(db, tokens = {}, usuarios = []) {
 /** Requisição e resposta de mentira no formato da Vercel. */
 function chamar(handler, { method = 'POST', headers = {}, body = {}, query = {} } = {}) {
   return new Promise((resolve, reject) => {
-    const res = { _status: 200, setHeader() {}, status(c) { this._status = c; return this; }, json(j) { resolve({ status: this._status, corpo: j }); return this; }, end() { resolve({ status: this._status, corpo: null }); } };
+    const res = { _status: 200, setHeader() {}, status(c) { this._status = c; return this; }, json(j) { resolve({ status: this._status, corpo: j }); return this; }, send(t) { resolve({ status: this._status, corpo: t }); return this; }, end() { resolve({ status: this._status, corpo: null }); } };
     const h = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
     Promise.resolve(handler({ method, headers: h, body, query, socket: {} }, res)).catch(reject);
   });

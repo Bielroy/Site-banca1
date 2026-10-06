@@ -4,6 +4,7 @@
 //  POST { acao: 'listar' }
 //  POST { acao: 'definir', email, papel }   papel: administrador | funcionario | caixa | producao | estoque
 //  POST { acao: 'remover', uid }
+//  POST { acao: 'copia-restaurar', dia }                      volta o cadastro (produtos, categorias, configurações, cupons) para a cópia do dia
 //  POST { acao: 'copia-estado' } / { acao: 'copia-baixar' }   cópia de segurança dos dados da loja
 //
 //  O papel fica gravado DENTRO do login da pessoa (custom claims), que só o
@@ -121,7 +122,11 @@ module.exports = async function handler(req, res) {
     if (acao === 'definir') return await definir(req, res, { tid, dec });
     if (acao === 'remover') return await remover(req, res, { tid, dec });
     // CÓPIA DE SEGURANÇA: o proprietário vê quando foi a última e baixa uma cópia feita na hora.
-    if (acao === 'copia-estado') return res.status(200).json({ sucesso: true, ultima: await P.ultimaCopia(db, tid) });
+    if (acao === 'copia-estado') return res.status(200).json({ sucesso: true, ultima: await P.ultimaCopia(db, tid), copias: await P.listarCopias(db, tid) });
+    if (acao === 'copia-restaurar') {
+      try { const r = await P.restaurar(db, tid, String((req.body || {}).dia || '')); T._cacheFichas.delete(tid); console.warn(`[copia] ${dec.email || dec.uid} restaurou ${tid} para ${r.dia}`); return res.status(200).json({ sucesso: true, ...r }); }
+      catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); throw e; }
+    }
     if (acao === 'copia-baixar') return res.status(200).json({ sucesso: true, copia: await P.exportar(db, tid) });
   } catch (e) { console.error('[equipe]', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
   return res.status(400).json({ error: 'Ação desconhecida.' });

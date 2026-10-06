@@ -328,3 +328,31 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 @media (prefers-reduced-motion: reduce) {
     .atalho.principal, .atalho-arte > svg:first-child, .atalho-volta .ico, .faixa-sempre h2, .upsell-box { animation: none; }
 }
+
+/* ---------- OFERTA: selo no canto da foto, preço antigo riscado e a faixa "Ofertas de hoje" ---------- */
+.selo-oferta { position: absolute; left: 0; top: 10px; padding: 4px 10px 4px 8px; font-size: .8rem; font-weight: 800; letter-spacing: .2px; line-height: 1.1;
+    background: var(--earth); color: #fff; border-radius: 0 999px 999px 0; box-shadow: 0 1px 0 rgba(0,0,0,.18); }
+.etq-de { font-size: .74rem; font-weight: 600; opacity: .8; margin-bottom: 1px; }
+.etq-de s { text-decoration-thickness: 1.5px; }
+.md-preco-de { font-size: .7em; font-weight: 500; opacity: .65; margin-right: 4px; }
+.produto-card:has(.selo-oferta) { border-color: color-mix(in srgb, var(--earth) 45%, var(--linha)); }
+/* a banquinha das ofertas usa o tom terroso no toldo, para não se confundir com "Seus de sempre" */
+.faixa-ofertas { background: color-mix(in srgb, var(--earth) 8%, var(--superficie)); border-color: color-mix(in srgb, var(--earth) 32%, var(--superficie)); }
+.faixa-ofertas::before { background: repeating-linear-gradient(90deg, var(--earth) 0 20px, #f3ead8 20px 40px); }
+.faixa-ofertas h2::before { background: color-mix(in srgb, var(--earth) 8%, var(--superficie)); }
+
+/* ---------- ENTREGA GRÁTIS: quanto falta, em barra ---------- */
+.frete-progresso { margin: 0 0 12px; font-size: .86rem; font-weight: 600; color: var(--text-mid); }
+.frete-progresso[hidden] { display: none; }
+.frete-progresso .min-trilho i { background: var(--leaf); }
+.frete-progresso.ganhou { color: var(--success, #166534); }
+.frete-progresso.ganhou span::before { content: "✓ "; }
+
+/* ---------- INDICAR PARA UM VIZINHO ---------- */
+.btn-indicar { width: 100%; min-height: 46px; margin-top: 10px; padding: 10px 16px; cursor: pointer; font-family: inherit; font-size: .92rem; font-weight: 700;
+    background: none; color: var(--forest); border: 1.5px dashed color-mix(in srgb, var(--forest) 55%, transparent); border-radius: 999px; }
+.btn-indicar:hover { background: color-mix(in srgb, var(--forest) 7%, transparent); }
+
+/* botão de instalar o app (cabeçalho): mesmo formato dos vizinhos, com um leve realce */
+.chip-header.btn-instalar { background: color-mix(in srgb, var(--sobre-primaria) 14%, transparent); }
+.chip-header.btn-instalar[hidden] { display: none; }

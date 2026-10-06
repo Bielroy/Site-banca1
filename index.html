@@ -129,6 +129,11 @@
                 <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10a2 2 0 0 1 2 2v14l-3-2-2 2-2-2-2 2-3-2V6a2 2 0 0 1 2-2z"/><path d="M9 9h6M9 13h6"/></svg>
                 <span>Meus pedidos</span>
             </button>
+            <!-- Aparece só quando o aparelho deixa instalar (ver "INSTALAR" em js/loja.js) -->
+            <button class="chip-header btn-instalar" id="btn-instalar" data-action="instalar" hidden>
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/></svg>
+                <span>Instalar o app</span>
+            </button>
         </nav>
     </div>
 </header>
@@ -155,6 +160,12 @@
         <!-- "Seus de sempre": o que este cliente costuma levar (ou o último pedido). Preenchida por js/loja.js -->
         <!-- Atalhos de quem volta: pedir de novo, lista da semana, avaliar. Preenchidos por js/loja.js -->
         <nav class="atalhos" id="atalhos" aria-label="Atalhos de compra" hidden></nav>
+        <!-- Ofertas de hoje: produtos com preço antigo riscado. Preenchida por js/loja.js -->
+        <section class="faixa-sempre faixa-ofertas" id="faixa-ofertas" aria-labelledby="ofertas-titulo" hidden>
+            <h2 id="ofertas-titulo">Ofertas de hoje</h2>
+            <p class="faixa-sub">Preço baixou. Vale enquanto durar.</p>
+            <div class="faixa-rolo" id="ofertas-lista"></div>
+        </section>
         <section class="faixa-sempre" id="faixa-sempre" aria-labelledby="faixa-titulo" hidden>
             <h2 id="faixa-titulo">Seus de sempre</h2>
             <p class="faixa-sub" id="faixa-sub">O que você mais leva, a um toque.</p>
@@ -189,6 +200,10 @@
                 <div class="min-trilho"><i id="min-barra"></i></div>
             </div>
             <p class="linha-entrega" id="linha-entrega" hidden></p>
+            <div class="frete-progresso" id="frete-progresso" hidden>
+                <span id="frete-texto"></span>
+                <div class="min-trilho"><i id="frete-barra"></i></div>
+            </div>
             <div class="total-box">
                 <span class="total-label" id="total-label">Total</span>
                 <span class="total-valor" id="total-val">R$ 0,00</span>
@@ -283,6 +298,7 @@
             <button class="btn-fechar" data-fechar="modal-historico" aria-label="Fechar">&times;</button>
         </header>
         <div class="modal-body" id="lista-meus-pedidos"></div>
+        <footer class="modal-footer"><button type="button" class="btn-indicar" data-action="indicar">Indicar a loja para um vizinho</button></footer>
     </div>
 </div>
 
@@ -297,6 +313,7 @@
             <div id="sucesso-whatsapps" class="sucesso-whatsapps"></div>
             <div id="sucesso-pix" class="sucesso-pix" hidden></div>
             <button class="btn-finalizar" data-fechar="modal-sucesso">Voltar para a loja</button>
+            <button type="button" class="btn-indicar" data-action="indicar">Indicar a loja para um vizinho</button>
         </div>
     </div>
 </div>

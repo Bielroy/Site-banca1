@@ -11,6 +11,7 @@ import { podePagarPix } from './pix-lib.js';
 import { lerEntrega, previaDaEntrega } from './entrega-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
 import { miniatura } from './foto-lib.js';
+import { emOferta, desconto, ofertasDe } from './oferta-lib.js';
 import { listaValida, listaDoCarrinho, separar, mesmoConjunto, podeConvidarAvaliar, nomeDoDia, textoDaNota } from './atalhos-lib.js';
 import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
 
@@ -230,7 +231,28 @@ const atualizarRodapeCarrinhoDOM = () => {
     // Entrega: prévia da taxa (quem cobra de verdade é o servidor, com a mesma conta).
     const entrega = STATE.carrinho.length ? previaDaEntrega(lerEntrega(STATE.config), totalExato, fmt) : { taxa: 0, texto: '' };
     const linhaEnt = document.getElementById('linha-entrega');
-    if (linhaEnt) { linhaEnt.hidden = !entrega.texto; linhaEnt.textContent = entrega.texto + (entrega.falta > 0 && temItensAPesar ? ' (os itens a pesar também contam, depois da balança)' : ''); linhaEnt.classList.toggle('gratis', !!entrega.gratis); }
+    // Com "grátis acima de X", a espera vira uma barra: ver quanto falta puxa mais um item para o pedido.
+    const gratisAcima = lerEntrega(STATE.config).gratisAcima, abaixoDoMinimo = Number(STATE.config.minimo) > 0 && (totalExato + estimado) < Number(STATE.config.minimo);
+    // uma meta de cada vez: enquanto falta o pedido mínimo, só a barra dele aparece
+    const temBarra = STATE.carrinho.length > 0 && gratisAcima > 0 && !abaixoDoMinimo && (entrega.falta > 0 || entrega.gratis);
+    if (linhaEnt) {
+        linhaEnt.hidden = !entrega.texto || !!(temBarra && entrega.gratis);
+        linhaEnt.textContent = (temBarra || abaixoDoMinimo) && !entrega.gratis ? `Entrega ${fmt(entrega.taxa)}` : entrega.texto;
+        linhaEnt.classList.toggle('gratis', !!entrega.gratis);
+    }
+    const caixaFrete = document.getElementById('frete-progresso');
+    if (caixaFrete) {
+        caixaFrete.hidden = !temBarra; caixaFrete.classList.toggle('ganhou', !!entrega.gratis);
+        // Item "a pesar" ainda não tem valor exato, mas tem estimativa: a barra usa a estimativa, e o texto avisa
+        // que a confirmação é na balança (o servidor refaz a conta da entrega depois de pesar).
+        const comEstimativa = totalExato + (semEstimativa ? 0 : estimado), deveGanhar = !entrega.gratis && temItensAPesar && comEstimativa >= gratisAcima;
+        const faltaEstimada = Math.max(0, Math.round((gratisAcima - comEstimativa) * 100) / 100);
+        document.getElementById('frete-texto').textContent = entrega.gratis ? 'Entrega grátis garantida'
+            : deveGanhar ? 'Pelo peso estimado, a entrega deve sair de graça. Confirmamos na balança.'
+            : `Faltam ${temItensAPesar ? 'cerca de ' : ''}${fmt(faltaEstimada)} para a entrega sair de graça`;
+        caixaFrete.classList.toggle('quase', deveGanhar);
+        document.getElementById('frete-barra').style.width = `${entrega.gratis || deveGanhar ? 100 : Math.max(4, Math.min(100, (comEstimativa / gratisAcima) * 100))}%`;
+    }
     const previstoItens = totalExato + estimado;            // só os itens: é sobre isto que vale o pedido mínimo
     const previsto = previstoItens + entrega.taxa;          // exato + estimativa dos itens a pesar + entrega
     const aprox = temItensAPesar && !semEstimativa;         // dá para mostrar "≈ total"
@@ -372,7 +394,16 @@ const modificarCarrinho = (id, delta, fixo = false, tipoCompraForcado = null) =>
 // Etiqueta de preço do card. A UNIDADE vem em destaque; o quilo fica de referência.
 const NOME_UNIDADE = { un: 'a unidade', 'maço': 'o maço', maco: 'o maço', bdj: 'a bandeja', kit: 'o kit', kg: 'o quilo', kilo: 'o quilo', quilograma: 'o quilo', l: 'o litro', litro: 'o litro', g: 'o grama', grama: 'o grama' };
 const nomeUnidade = (u) => NOME_UNIDADE[String(u || 'un').toLowerCase()] || `por ${escapeHTML(u)}`;
-const etiquetaHtml = (p) => {
+const etiquetaHtml = (p) => etiquetaDeOferta(p) + etiquetaBase(p);
+// preço antigo riscado (o preço que vale continua sendo o de baixo; o servidor só conhece esse)
+// Quando a etiqueta mostra o preço POR UNIDADE (item pesado com peso médio), o preço antigo também vai por unidade:
+// comparar "R$ 14,85 o quilo" com "R$ 4,46 a unidade" faria a oferta parecer maior do que é.
+const etiquetaDeOferta = (p) => {
+    if (!emOferta(p)) return '';
+    const pm = Number(p.pesoMedio || 0), porUnidade = isFracionavel(p.unidade) && pm > 0;
+    return `<div class="etq-de">de <s>${fmt(porUnidade ? p.precoDe * pm / 1000 : p.precoDe)}</s> por</div>`;
+};
+const etiquetaBase = (p) => {
     const frac = isFracionavel(p.unidade), pm = Number(p.pesoMedio || 0);
     if (frac && pm > 0) {
         return `<div class="etq-preco">≈ ${fmt(p.preco * pm / 1000)} <small>a unidade</small></div>
@@ -392,6 +423,7 @@ const cardHtml = (p, rapido = false) => {
         <article class="produto-card" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}" style="display: flex;">
             <div class="produto-img-wrap">
                 ${p.foto ? `<img src="${escapeHTML(p.fotoMini || miniatura(p.foto, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}" decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
+                ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
                 <button class="btn-fav ${favActive}" data-action="fav" data-id="${escapeHTML(p.id)}" aria-label="Favoritar ${escapeHTML(p.nome)}" aria-pressed="${favActive ? 'true' : 'false'}">${ICO.coracao}</button>
             </div>
             <div class="produto-info">
@@ -479,11 +511,27 @@ const renderFaixaSempre = (forcar = false) => {
 };
 document.addEventListener('ranking-pronto', () => renderFaixaSempre());
 
+// FAIXA "OFERTAS DE HOJE": produtos com preço antigo riscado. Some na busca e dentro de uma categoria.
+let _ofertasCara = '';
+const renderFaixaOfertas = (forcar = false) => {
+    const faixa = document.getElementById('faixa-ofertas'), lista = document.getElementById('ofertas-lista');
+    if (!faixa || !lista) return;
+    const ofertas = ofertasDe(STATE.produtos);
+    const visivel = ofertas.length > 0 && !semAcento(STATE.busca).trim() && STATE.catAtiva === 'todas';
+    faixa.hidden = !visivel;
+    const cara = ofertas.map(p => `${p.id}:${p.preco}:${p.precoDe}`).join('|');
+    if (forcar) _ofertasCara = '';
+    if (!visivel || cara === _ofertasCara) return;
+    _ofertasCara = cara;
+    lista.innerHTML = ofertas.map(p => cardHtml(p, true)).join('');
+    ofertas.forEach(p => atualizarBadgesDOM(p.id));
+};
+
 const renderLoja = (forcarRebuild = false) => {
     const grid = document.getElementById('lista-produtos');
     if (!STATE.catalogoChegou) return;     // produtos ainda a caminho: fica o carregando, e não um falso "sem produtos"
     if(!STATE.lojaRenderizada || forcarRebuild) construirCardsIniciais();
-    renderFaixaSempre(); renderAtalhos();
+    renderFaixaSempre(); renderFaixaOfertas(forcarRebuild); renderAtalhos();
     const termo = semAcento(STATE.busca).trim();
     const cards = grid.querySelectorAll('.produto-card');
     let itensVisiveis = 0;
@@ -587,7 +635,7 @@ const iniciarRealTimeSync = () => {
     let _catsProntas = false;      // espera a 1ª resposta das categorias p/ não "piscar" produto de categoria oculta
     // Junta produtos + categorias do painel (ocultas somem; renomear/ordenar reflete na hora)
     let _lista = '', _porProduto = new Map();
-    const assinaturaDe = (p) => `${p.preco}:${p.foto || ''}:${p.fotoMini || ''}:${p.nome}:${p.cat}:${p.unidade || ''}:${p.pesoMedio || ''}`;
+    const assinaturaDe = (p) => `${p.preco}:${p.precoDe || ''}:${p.foto || ''}:${p.fotoMini || ''}:${p.nome}:${p.cat}:${p.unidade || ''}:${p.pesoMedio || ''}`;
     const aplicarCatalogo = () => {
         if (!_catsProntas || !_produtosChegaram) return;
         STATE.catalogoChegou = true;
@@ -1087,6 +1135,36 @@ const arteDaLoja = () => {
         return `<svg viewBox="${escapeHTML(svg.getAttribute('viewBox') || '0 0 120 120')}"${svg.classList.contains('traco') ? ' class="traco"' : ''}>${svg.innerHTML}</svg>`;   // desenho fixo do projeto, já presente na página
     return '<svg class="traco" viewBox="0 0 120 120"><path d="M22 44h76l-6 60H28z"/><path d="M44 44V34c0-10 7-18 16-18s16 8 16 18v10"/></svg>';
 };
+// ---------------------------------------------------------------------
+// INSTALAR NA TELA INICIAL. O site já funciona como aplicativo, mas quase ninguém sabe.
+// O botão só aparece quando dá para instalar: no Android/Chrome, quando o navegador avisa
+// que pode; no iPhone, sempre que a loja não estiver aberta como app (lá não existe o
+// aviso, então o botão explica o caminho pelo Safari).
+// ---------------------------------------------------------------------
+let _conviteInstalar = null;
+const jaEhApp = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const ehIphone = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+const mostrarInstalar = (sim) => { const b = document.getElementById('btn-instalar'); if (b) b.hidden = !sim || jaEhApp(); };
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); _conviteInstalar = e; mostrarInstalar(true); });
+window.addEventListener('appinstalled', () => { _conviteInstalar = null; mostrarInstalar(false); showToast('Pronto! A loja está na sua tela inicial.'); });
+if (ehIphone()) mostrarInstalar(true);
+const instalarApp = async () => {
+    if (_conviteInstalar) {
+        const convite = _conviteInstalar; _conviteInstalar = null;
+        convite.prompt();
+        try { const { outcome } = await convite.userChoice; if (outcome === 'accepted') mostrarInstalar(false); } catch (_) { /* fechou a janela */ }
+        return;
+    }
+    if (ehIphone()) await customConfirm('Pôr a loja na tela inicial', 'No Safari, toque no botão Compartilhar (o quadrado com a seta para cima) e depois em "Adicionar à Tela de Início". A loja passa a abrir como um aplicativo.', { ok: 'Entendi', nao: 'Fechar' });
+};
+
+// "Indicar para um vizinho": abre o compartilhar do celular (WhatsApp, etc.) com um recado pronto e o link da loja.
+const indicarLoja = async () => {
+    const nome = (document.getElementById('header-nome')?.textContent || 'a loja').trim(), url = location.href.split('#')[0];
+    const texto = `Estou pedindo na ${nome} e entregam aqui no condomínio. Dá uma olhada:`;
+    try { if (navigator.share) { await navigator.share({ title: nome, text: texto, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+    window.open(`https://wa.me/?text=${encodeURIComponent(texto + ' ' + url)}`, '_blank', 'noopener');
+};
 const dataCurta = (iso) => { try { return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }); } catch (_) { return ''; } };
 function renderAtalhos() {
     const nav = document.getElementById('atalhos'); if (!nav) return;
@@ -1273,7 +1351,7 @@ document.body.addEventListener('click', async (e) => {
             document.getElementById('md-tag').textContent = p.cat || '';
             document.getElementById('md-desc').textContent = p.descricao || "Produto fresco, selecionado no dia.";
             document.getElementById('md-preco').innerHTML =
-                `${fmt(p.preco)} <span class="md-preco-unid">/ ${escapeHTML(p.unidade || 'un')}</span>`;
+                `${emOferta(p) ? `<s class="md-preco-de">${fmt(p.precoDe)}</s> ` : ''}${fmt(p.preco)} <span class="md-preco-unid">/ ${escapeHTML(p.unidade || 'un')}</span>`;
 
             // Se o cliente JÁ tem esse item no carrinho, o modal abre no estado atual dele
             const jaNoCarrinho = STATE.carrinho.find(c => c.id === p.id);
@@ -1335,6 +1413,8 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'open-historico') { renderHistorico(); openModal('modal-historico'); }
         else if (action === 'open-endereco') { endTopo.preencher(lerEnderecoSalvo()); openModal('modal-endereco'); }
         else if (action === 'repetir-pedido') { repetirPedido(id); }
+        else if (action === 'indicar') { indicarLoja(); }
+        else if (action === 'instalar') { instalarApp(); }
         else if (action === 'por-lista') { const l = lerListaSemana(); if (l) porNoPedido(l.itens); }
         else if (action === 'ver-lista') { verListaDaSemana(); }
         else if (action === 'guardar-lista') { guardarListaDaSemana(); }

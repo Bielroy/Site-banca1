@@ -2,6 +2,7 @@ import { getDoc, auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, i
 import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal, customConfirm } from './utils.js';
+import { precoDeValido } from './oferta-lib.js';
 import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual } from './admin-guard.js';
 import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel } from './papeis-lib.js';
 import { ico } from './icones-admin.js';          // também liga a troca das marcas <i class="ic"> pelos desenhos
@@ -987,7 +988,7 @@ document.body.addEventListener('click', async (e) => {
         if (action === 'novo-produto') {
             injetarEstoqueUI();
             document.getElementById('modal-titulo').textContent = 'Novo Produto';
-            ['edit-id', 'edit-nome', 'edit-preco', 'edit-cat', 'edit-foto', 'edit-foto-url'].forEach(i => document.getElementById(i).value = '');
+            ['edit-id', 'edit-nome', 'edit-preco', 'edit-preco-de', 'edit-cat', 'edit-foto', 'edit-foto-url'].forEach(i => document.getElementById(i).value = '');
             if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = '';
             if (document.getElementById('edit-estoque-fisico')) document.getElementById('edit-estoque-fisico').value = '';
             if (document.getElementById('edit-duracao')) document.getElementById('edit-duracao').value = 'normal';
@@ -1010,6 +1011,7 @@ document.body.addEventListener('click', async (e) => {
             document.getElementById('edit-id').value = p.id;
             document.getElementById('edit-nome').value = p.nome;
             document.getElementById('edit-preco').value = p.preco;
+            document.getElementById('edit-preco-de').value = Number(p.precoDe) > Number(p.preco) ? p.precoDe : '';
             definirUnidade(p.unidade || 'un');
             document.getElementById('edit-cat').value = nomeDaCategoria(p.cat);   // mostra o NOME da categoria; a chave é resolvida ao salvar
             document.getElementById('edit-foto').value = '';
@@ -1256,6 +1258,7 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
         const pData = {
             nome: document.getElementById('edit-nome').value.trim(),
             preco: parseFloat(document.getElementById('edit-preco').value),
+            precoDe: precoDeValido(document.getElementById('edit-preco-de').value, parseFloat(document.getElementById('edit-preco').value)),   // preço antigo (oferta) ou null
             unidade: document.getElementById('edit-unidade').value,
             // aceita o nome que aparece na loja OU a chave; grava sempre a chave da categoria cadastrada
             cat: chaveDaCategoria(document.getElementById('edit-cat').value).toLowerCase(),

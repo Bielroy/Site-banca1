@@ -1,12 +1,12 @@
 # Antes de publicar — lista de conferência
 
 Nada disto foi feito no ambiente em que o código foi escrito (sem acesso à internet,
-ao Firebase e à Vercel). Os testes automáticos (`npm test`, 67 testes) passam e as telas
+ao Firebase e à Vercel). Os testes automáticos (`npm test`, 70 testes) passam e as telas
 foram conferidas com dados simulados.
 
 ## 1. Build
 1. `npm install`
-2. `npm test` — deve terminar com "67 de 67 testes passaram".
+2. `npm test` — deve terminar com "70 de 70 testes passaram".
 3. `npm run build` — nunca foi rodado depois das mudanças. Se der erro, copie a mensagem inteira.
 4. `npm run preview` e abra: `/`, `/admin.html`, `/plataforma.html`.
 
@@ -80,6 +80,19 @@ Nunca foi testado com o ImgBB de verdade: confira o primeiro envio.
 - **Limite de pedidos**: 8 por conexão a cada 10 minutos, contado no banco.
 - **Venda no balcão** também dispara aviso nos aparelhos da equipe.
 
+## 4g. Oferta, entrega grátis, app por loja e restaurar cópia
+- **Oferta**: no cadastro do produto, preencha "preço antigo, que aparece riscado". Se for maior que o
+  preço de venda, o produto ganha o selo e entra na faixa "Ofertas de hoje". Apague o campo para encerrar.
+  O servidor continua cobrando só o preço de venda.
+- **Entrega grátis**: com "grátis acima de" configurado, o pedido mostra uma barra de quanto falta.
+- **App por loja**: cada loja (menos a original) é instalada com o nome, a cor e o ícone dela
+  (`/api/manifest`). Nunca foi testado num celular de verdade; o iPhone é o caso mais incerto.
+- **Restaurar cópia**: Configurações → Cópia de segurança → escolha o dia → Restaurar. Volta produtos,
+  categorias, configurações e cupons; não mexe em pedidos, equipe nem clientes, e não apaga o que foi
+  criado depois. Antes de voltar, guarda uma cópia do estado atual (aparece na lista como "antes de restaurar").
+- O projeto está com **12 funções em `api/`**, que é o teto do plano gratuito da Vercel: a próxima
+  função nova precisa entrar dentro de um arquivo que já existe.
+
 ## 5. Testar com a loja de verdade
 - [ ] Pedido pela loja: preço, estoque, cupom, WhatsApp.
 - [ ] Pesagem: desconto do cupom mantido e estoque por quilo baixado.
@@ -93,12 +106,13 @@ Nunca foi testado com o ImgBB de verdade: confira o primeiro envio.
 
 ## 6. Limites conhecidos
 - PIX automático só na loja original (a conta do banco no servidor é uma só) e nunca foi testado com o PagBank de verdade.
-- A cópia de segurança não tem botão de restaurar; a lista da semana e o "pedir de novo" ficam no aparelho
+- A lista da semana e o "pedir de novo" ficam no aparelho
   da cliente (trocou de celular, começa do zero).
 - A miniatura das fotos usa o redutor de imagens da Vercel, que tem limite mensal no plano gratuito.
 - A rotina diária do motor roda as lojas em sequência (60 s no plano gratuito).
 - Loja bloqueada ainda deixa o proprietário editar produtos; Clientes, Calendário e Cupons desligados
   somem do painel, mas as regras do banco não bloqueiam.
 - Não há impressão automática ao chegar pedido; nenhuma impressora real foi testada.
-- O aplicativo instalável (PWA) ainda leva o nome e o ícone da Banca em todas as lojas.
+- O link compartilhado (og:image, canonical) aponta para www.bancaadairepedrina.com.br, que NÃO está ligado a este
+  projeto na Vercel: enquanto não estiver, a prévia do WhatsApp não mostra a imagem nova.
 - Acesso retirado de alguém pode valer por até 1 hora no painel que já estava aberto.
