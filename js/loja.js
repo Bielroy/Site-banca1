@@ -15,6 +15,8 @@ import { emOferta, desconto, ofertasDe } from './oferta-lib.js';
 import { codigoPix, pixDaLojaValido, chaveBonita } from './pix-chave-lib.js';
 import { listaValida, listaDoCarrinho, separar, mesmoConjunto, podeConvidarAvaliar, nomeDoDia, textoDaNota } from './atalhos-lib.js';
 import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
+import { ligarVerFoto } from './ver-foto.js';
+ligarVerFoto();   // tocar na foto da janela do produto abre ela inteira
 
 // Lista guardada no aparelho. Dado corrompido ou armazenamento bloqueado NÃO pode derrubar a loja:
 // antes, um JSON estragado aqui deixava a vitrine parada no carregamento.
@@ -713,9 +715,10 @@ const injetarModalDetalheSeNecessario = () => {
             <div class="modal modal-produto">
                 <button class="btn-fechar md-fechar-flutuante" data-fechar="modal-detalhe-produto" aria-label="Fechar">&times;</button>
 
-                <div class="md-hero">
+                <div class="md-hero" tabindex="0" role="button" aria-label="Ver a foto inteira">
                     <img id="md-img" src="" alt="">
                     <span id="md-tag" class="md-tag"></span>
+                    <span class="md-ampliar" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg>Ver inteira</span>
                 </div>
 
                 <div class="modal-body md-corpo">
@@ -1373,7 +1376,7 @@ document.body.addEventListener('click', async (e) => {
                     const trocar = () => {
                         const atual = document.getElementById('md-img');
                         if (!atual || STATE.modalProdutoAtual !== p || !document.getElementById('modal-detalhe-produto')?.classList.contains('aberto')) return;
-                        grande.id = 'md-img'; grande.alt = p.nome; grande.className = atual.className; grande.style.cssText = atual.style.cssText;
+                        grande.id = 'md-img'; grande.alt = p.nome; grande.dataset.original = p.foto; grande.className = atual.className; grande.style.cssText = atual.style.cssText;
                         atual.replaceWith(grande);
                     };
                     grande.onload = () => (grande.decode ? grande.decode().then(trocar, trocar) : trocar());
