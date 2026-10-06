@@ -79,6 +79,9 @@ function render() {
     <div class="pf-secao"><h3>Feiras</h3><button class="btn-outline" data-pf="nova-feira"${d.lojas.length < 2 ? ' disabled' : ''}>+ Nova feira</button></div>
     ${S.novaFeira ? feiraHtml({ id: '', nome: '', lojas: [] }, d.lojas, true) : ''}
     ${d.feiras.length ? d.feiras.map((f) => feiraHtml(f, d.lojas, false)).join('') : (S.novaFeira ? '' : `<p class="config-sub">${d.lojas.length < 2 ? 'Uma feira junta duas ou mais lojas na faixa do topo, e o cliente troca de loja deslizando o dedo. Você tem uma loja só: crie a segunda em "+ Nova loja" e o botão acima é liberado.' : 'Nenhuma feira. Uma feira junta lojas na faixa do topo: o cliente troca de loja deslizando o dedo.'}</p>`)}
+    <div class="pf-secao"><h3>PIX automático (PagBank)</h3><span class="pf-chip${d.pix ? '' : ' bloq'}">${d.pix ? 'Chave guardada' : 'Sem chave'}</span></div>
+    <p class="config-sub">${d.pix ? 'A chave do PagBank está guardada. Para o PIX aparecer para o cliente, ligue também "PIX automático" nas Configurações do painel da loja. Para trocar a chave, cole a nova abaixo.' : 'Cole aqui o token da conta PagBank (no site do PagBank: Integrações → Token). Depois, ligue "PIX automático" nas Configurações do painel da loja. Vale para a loja original.'}</p>
+    <div class="pf-add pf-imgbb"><input type="password" id="pf-pagbank" autocomplete="off" spellcheck="false" maxlength="300" placeholder="token do PagBank" aria-label="Token do PagBank"><button type="button" class="btn-outline" data-pf="salvar-pagbank">Salvar</button></div>
     <div class="pf-secao"><h3>Fotos dos produtos</h3><span class="pf-chip${d.fotos ? '' : ' bloq'}">${d.fotos ? 'Envio automático ligado' : 'Desligado'}</span></div>
     <p class="config-sub">${d.fotos ? 'As lojas enviam as fotos pelo painel (Produtos → "Enviar várias fotos") e elas vão sozinhas para o ImgBB. Para trocar a chave, cole a nova abaixo.' : 'Com a chave do ImgBB, as lojas escolhem as fotos no painel e o sistema envia todas de uma vez e já grava em cada produto. Para pegar a chave (grátis): entre em imgbb.com, crie a conta, abra api.imgbb.com e toque em "Get API key".'}</p>
     <div class="pf-add pf-imgbb"><input type="password" id="pf-imgbb" autocomplete="off" spellcheck="false" maxlength="40" placeholder="chave do ImgBB (32 letras e números)" aria-label="Chave do ImgBB"><button type="button" class="btn-outline" data-pf="salvar-imgbb">Salvar</button></div>
@@ -130,6 +133,11 @@ function ligar() {
             return fazer({ acao: 'ativo', id, ativo: false }, 'Loja bloqueada.');
         }
         if (a === 'liberar') return fazer({ acao: 'ativo', id, ativo: true }, 'Loja liberada.');
+        if (a === 'salvar-pagbank') {
+            const chave = $('pf-pagbank').value.trim();
+            if (chave.length < 20 || /\s/.test(chave)) return showToast('O token do PagBank é longo e não tem espaços. Confira se copiou inteiro.', true);
+            return fazer({ acao: 'pagbank', chave }, 'Chave do PagBank guardada. Agora ligue "PIX automático" nas Configurações da loja.');
+        }
         if (a === 'salvar-imgbb') {
             const chave = $('pf-imgbb').value.trim();
             if (!/^[a-f0-9]{32}$/i.test(chave)) return showToast('A chave do ImgBB tem 32 letras e números. Confira se copiou inteira.', true);

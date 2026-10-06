@@ -299,6 +299,21 @@
                 </div>
 
                 <button class="btn-salvar-config" id="btn-salvar-config">Gravar Definições</button>
+                <!-- Maquininha (PagBank): aparece só para o proprietário (js/admin-maquininha.js) -->
+                <div class="copia-box" id="maq-box" hidden>
+                    <h4>Maquininha (PagBank)</h4>
+                    <p class="config-sub">Traz para o painel o que foi vendido na maquininha. O PagBank só entrega as vendas no dia seguinte: a de hoje aparece aqui amanhã cedo.</p>
+                    <p class="config-sub" id="maq-estado">Conferindo...</p>
+                    <div id="maq-dias" class="maq-dias"></div>
+                    <button type="button" class="btn-outline" id="btn-maq-buscar" hidden>Buscar as vendas de ontem agora</button>
+                    <details class="maq-chaves">
+                        <summary>Ligar ou trocar a maquininha</summary>
+                        <p class="config-sub">Peça ao PagBank o "token da API EDI" (chamado: Novas Ativações - EDI). Ele chega por e-mail junto com o número do estabelecimento.</p>
+                        <div class="form-group"><label for="maq-estab">Número do estabelecimento</label><input type="text" id="maq-estab" inputmode="numeric" autocomplete="off" maxlength="20"></div>
+                        <div class="form-group"><label for="maq-token">Token da API EDI</label><input type="password" id="maq-token" autocomplete="off" spellcheck="false" maxlength="300"></div>
+                        <button type="button" class="btn-outline" id="btn-maq-salvar">Guardar</button>
+                    </details>
+                </div>
                 <!-- Cópia de segurança: aparece só para o proprietário (js/admin-copia.js) -->
                 <div class="copia-box" id="copia-box" hidden>
                     <h4>Cópia de segurança</h4>

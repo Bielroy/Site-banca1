@@ -1,12 +1,12 @@
 # Antes de publicar — lista de conferência
 
 Nada disto foi feito no ambiente em que o código foi escrito (sem acesso à internet,
-ao Firebase e à Vercel). Os testes automáticos (`npm test`, 70 testes) passam e as telas
+ao Firebase e à Vercel). Os testes automáticos (`npm test`, 72 testes) passam e as telas
 foram conferidas com dados simulados.
 
 ## 1. Build
 1. `npm install`
-2. `npm test` — deve terminar com "70 de 70 testes passaram".
+2. `npm test` — deve terminar com "72 de 72 testes passaram".
 3. `npm run build` — nunca foi rodado depois das mudanças. Se der erro, copie a mensagem inteira.
 4. `npm run preview` e abra: `/`, `/admin.html`, `/plataforma.html`.
 
@@ -35,7 +35,8 @@ foram conferidas com dados simulados.
 
 ## 4b. PIX automático (PagBank) — desligado até você configurar
 1. Tenha uma conta PagBank com a API liberada e copie o token.
-2. Na Vercel, crie `PAGBANK_API_TOKEN` (o token) e confira `PUBLIC_BASE_URL` (endereço do site, com https).
+2. Cole o token em **Plataforma → PIX automático (PagBank)** e salve. (Quem preferir, pode criar na Vercel a
+   variável `PAGBANK_API_TOKEN`; se existir, ela é a que vale.) Confira `PUBLIC_BASE_URL` (endereço do site, com https).
    Para testar sem dinheiro de verdade, crie também `PAGBANK_ENV` = `sandbox` com o token de teste.
 3. No painel: **Configurações → PIX automático** → marque e salve.
 4. Faça um pedido de teste com PIX: aparece "Pagar com PIX agora", pede o CPF, mostra o QR Code e o
@@ -92,6 +93,18 @@ Nunca foi testado com o ImgBB de verdade: confira o primeiro envio.
   criado depois. Antes de voltar, guarda uma cópia do estado atual (aparece na lista como "antes de restaurar").
 - O projeto está com **12 funções em `api/`**, que é o teto do plano gratuito da Vercel: a próxima
   função nova precisa entrar dentro de um arquivo que já existe.
+
+## 4h. Maquininha (PagBank) no painel
+1. No PagBank, abra um chamado "Novas Ativações - EDI → Geração de token API EDI". O token chega por
+   e-mail, com o número do estabelecimento. (Não é o mesmo token do PIX.)
+2. No painel da loja: **Configurações → Maquininha (PagBank) → Ligar ou trocar a maquininha**.
+3. Toque em "Buscar as vendas de ontem agora" para testar. Daí em diante a rotina da madrugada busca sozinha.
+- O PagBank só entrega as vendas no dia seguinte, e vale-refeição não entra.
+- A tela mostra a maquininha AO LADO do que o painel registrou; não soma os dois, para não contar em
+  dobro o pedido do site pago no cartão na entrega.
+- **Nunca testado com uma conta de verdade.** A leitura foi escrita pela documentação pública do PagBank
+  (https://developer.pagbank.com.br/docs/api-do-extrato-edi). Se aparecer "formato não reconhecido", o
+  resumo do dia guarda os nomes dos campos recebidos em `maquininha/{dia}.formatoDesconhecido` para ajustar.
 
 ## 5. Testar com a loja de verdade
 - [ ] Pedido pela loja: preço, estoque, cupom, WhatsApp.

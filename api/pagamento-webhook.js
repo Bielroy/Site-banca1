@@ -24,6 +24,7 @@
 // =====================================================================
 
 const admin = require('firebase-admin');
+const Segredos = require('../lib/segredos');
 const crypto = require('crypto');
 const T = require('../lib/tenant');
 
@@ -59,8 +60,7 @@ function lerCorpoCru(req) {
   });
 }
 
-function assinaturaValida(rawBody, headerRecebido) {
-  const token = process.env.PAGBANK_API_TOKEN;
+function assinaturaValida(rawBody, headerRecebido, token) {
   // CORRIGIDO (era falha ABERTA): sem token configurado, recusa tudo.
   // Antes o código retornava true aqui, então se a variável de ambiente
   // sumisse, qualquer pessoa na internet poderia fingir um pagamento.
@@ -83,8 +83,12 @@ module.exports = async function handler(req, res) {
   const rawBody = await lerCorpoCru(req);
   const assinaturaHeader = req.headers['x-authenticity-token'];
 
+  // A chave vem da Vercel ou da tela Plataforma (lib/segredos.js). Sem conseguir ler, recusa.
+  let TOKEN_PAGBANK = '';
+  try { bootFirebase(); TOKEN_PAGBANK = await Segredos.pagbank(db); } catch (e) { console.error('[webhook] não consegui ler a chave:', e && e.message); }
+
   // Assinatura inválida: responde 200 (evita retries infinitos) mas NÃO processa nada
-  if (!assinaturaValida(rawBody, assinaturaHeader)) {
+  if (!assinaturaValida(rawBody, assinaturaHeader, TOKEN_PAGBANK)) {
     return res.status(200).json({ ignorado: 'assinatura_invalida' });
   }
 
@@ -101,7 +105,7 @@ module.exports = async function handler(req, res) {
 
     // 2) Fonte de verdade: reconsulta o pedido na API (nunca confia só no corpo do webhook)
     const consulta = await fetch(`${PAGBANK_BASE_URL}/orders/${orderId}`, {
-      headers: { Authorization: `Bearer ${process.env.PAGBANK_API_TOKEN}` },
+      headers: { Authorization: `Bearer ${TOKEN_PAGBANK}` },
     });
     const order = await consulta.json();
     if (!consulta.ok) return res.status(200).json({ ok: true });

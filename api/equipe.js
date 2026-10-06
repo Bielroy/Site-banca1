@@ -4,6 +4,8 @@
 //  POST { acao: 'listar' }
 //  POST { acao: 'definir', email, papel }   papel: administrador | funcionario | caixa | producao | estoque
 //  POST { acao: 'remover', uid }
+//  POST { acao: 'maquininha-estado' } / { acao: 'maquininha-salvar', estabelecimento, token } / { acao: 'maquininha-buscar', dia? }
+//                                                              vendas da maquininha PagBank (ver lib/maquininha.js)
 //  POST { acao: 'copia-restaurar', dia }                      volta o cadastro (produtos, categorias, configurações, cupons) para a cópia do dia
 //  POST { acao: 'copia-estado' } / { acao: 'copia-baixar' }   cópia de segurança dos dados da loja
 //
@@ -22,6 +24,9 @@ const admin = require('firebase-admin');
 const T = require('../lib/tenant');
 const A = require('../lib/avisos');
 const P = require('../lib/prudencia');
+const Maq = require('../lib/maquininha');
+const hojeBrasilia = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+const ontemBrasilia = () => new Date(Date.now() - 27 * 3600000).toISOString().slice(0, 10);
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -122,6 +127,21 @@ module.exports = async function handler(req, res) {
     if (acao === 'definir') return await definir(req, res, { tid, dec });
     if (acao === 'remover') return await remover(req, res, { tid, dec });
     // CÓPIA DE SEGURANÇA: o proprietário vê quando foi a última e baixa uma cópia feita na hora.
+    // MAQUININHA (PagBank): o proprietário guarda as credenciais, vê os últimos dias e pede a busca de um dia.
+    // As credenciais nunca voltam para a tela: ela só fica sabendo SE estão guardadas.
+    if (acao === 'maquininha-estado' || acao === 'maquininha-salvar' || acao === 'maquininha-buscar') {
+      try {
+        if (acao === 'maquininha-salvar') await Maq.salvarCredenciais(db, tid, (req.body || {}).estabelecimento, (req.body || {}).token);
+        let buscado = null;
+        if (acao === 'maquininha-buscar') {
+          const dia = String((req.body || {}).dia || ontemBrasilia());
+          if (!Maq.diaValido(dia) || dia >= hojeBrasilia()) return res.status(400).json({ error: 'O PagBank só entrega as vendas no dia seguinte. Escolha um dia que já passou.' });
+          buscado = await Maq.buscarDia(db, tid, dia);
+          if (!buscado) return res.status(400).json({ error: 'Guarde primeiro o número do estabelecimento e o token.' });
+        }
+        return res.status(200).json({ sucesso: true, ligada: !!(await Maq.lerCredenciais(db, tid)), dias: await Maq.ultimosDias(db, tid, hojeBrasilia()), buscado });
+      } catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); throw e; }
+    }
     if (acao === 'copia-estado') return res.status(200).json({ sucesso: true, ultima: await P.ultimaCopia(db, tid), copias: await P.listarCopias(db, tid) });
     if (acao === 'copia-restaurar') {
       try { const r = await P.restaurar(db, tid, String((req.body || {}).dia || '')); T._cacheFichas.delete(tid); console.warn(`[copia] ${dec.email || dec.uid} restaurou ${tid} para ${r.dia}`); return res.status(200).json({ sucesso: true, ...r }); }

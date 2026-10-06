@@ -131,3 +131,16 @@
 .copia-linha { display: flex; gap: 8px; flex-wrap: wrap; }
 .copia-linha select { flex: 1; min-width: 180px; min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1.5px solid #e0dcd4; font-size: 16px; }
 .copia-box .copia-perigo { margin-top: 0; color: var(--danger); border-color: var(--danger); }
+
+/* maquininha (Configurações) */
+.maq-dias { margin: 6px 0 10px; }
+.maq-dia { display: grid; grid-template-columns: 52px 1fr; column-gap: 10px; row-gap: 4px; padding: 10px 0; border-bottom: 1px solid #efeae0; }
+.maq-data { font-size: .95rem; padding-top: 14px; }
+.maq-numeros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: .92rem; }
+.maq-numeros small { display: block; font-size: .7rem; color: var(--text-mid); font-weight: 600; }
+.maq-detalhe { grid-column: 2; color: var(--text-mid); font-size: .78rem; line-height: 1.35; }
+.maq-vazio { color: var(--text-light); font-style: italic; }
+.maq-mais { color: #b3261e; font-weight: 700; }
+.maq-chaves { margin-top: 12px; }
+.maq-chaves summary { cursor: pointer; font-weight: 700; color: var(--forest); min-height: 40px; display: flex; align-items: center; }
+.maq-chaves .btn-outline { margin-top: 4px; }

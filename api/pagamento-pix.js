@@ -25,6 +25,7 @@
 // =====================================================================
 
 const admin = require('firebase-admin');
+const Segredos = require('../lib/segredos');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -117,7 +118,9 @@ module.exports = async function handler(req, res) {
     } catch (e) { return res.status(401).json({ error: 'Sessão não identificada. Recarregue a página e tente de novo.' }); }
 
     // Desligado até a loja ter a conta do PagBank configurada E ligar a opção no painel.
-    if (!process.env.PAGBANK_API_TOKEN) return res.status(503).json({ error: 'O PIX automático ainda não está ligado. Combine o pagamento pelo WhatsApp.' });
+    // A chave vem da Vercel ou da tela Plataforma (lib/segredos.js).
+    const TOKEN_PAGBANK = await Segredos.pagbank(db);
+    if (!TOKEN_PAGBANK) return res.status(503).json({ error: 'O PIX automático ainda não está ligado. Combine o pagamento pelo WhatsApp.' });
     const cfg = await T.docDe(db, tid, 'loja/config').get();
     if (!cfg.exists || cfg.data().pixAutomatico !== true) return res.status(503).json({ error: 'O PIX automático está desligado nesta loja. Combine o pagamento pelo WhatsApp.' });
 
@@ -139,7 +142,7 @@ module.exports = async function handler(req, res) {
     // gerar QR duplicado se o cliente reabrir o modal / clicar 2x).
     if (pedido.pagamento && pedido.pagamento.orderId && pedido.pagamento.status === 'WAITING') {
       const check = await fetch(`${PAGBANK_BASE_URL}/orders/${pedido.pagamento.orderId}`, {
-        headers: { Authorization: `Bearer ${process.env.PAGBANK_API_TOKEN}` },
+        headers: { Authorization: `Bearer ${TOKEN_PAGBANK}` },
       });
       const existente = await check.json();
       if (check.ok && existente.qr_codes && existente.qr_codes[0]) {
@@ -194,7 +197,7 @@ module.exports = async function handler(req, res) {
     const orderResp = await fetch(`${PAGBANK_BASE_URL}/orders`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.PAGBANK_API_TOKEN}`,
+        Authorization: `Bearer ${TOKEN_PAGBANK}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

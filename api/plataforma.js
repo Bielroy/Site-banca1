@@ -17,6 +17,7 @@
 const admin = require('firebase-admin');
 const T = require('../lib/tenant');
 const { MODELOS, MODULOS } = require('../lib/modelos');
+const Segredos = require('../lib/segredos');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -77,7 +78,8 @@ async function lojas(res) {
   const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, lojas: (d.data().lojas || []).map((l) => l.id) }));
   const seg = await db.collection('plataforma').doc('segredos').get();
   const fotos = /^[a-f0-9]{32}$/i.test(String(process.env.IMGBB_API_KEY || (seg.exists && seg.data().imgbb) || ''));
-  return res.status(200).json({ sucesso: true, lojas: lista, feiras, modelos: Object.keys(MODELOS), modulos: MODULOS, mes: mesAtual(), fotos });
+  const pix = !!process.env.PAGBANK_API_TOKEN || Segredos.tokenPagbankValido(seg.exists && seg.data().pagbank);
+  return res.status(200).json({ sucesso: true, lojas: lista, feiras, modelos: Object.keys(MODELOS), modulos: MODULOS, mes: mesAtual(), fotos, pix });
 }
 
 async function definirDono(id, email, remover) {
@@ -132,6 +134,15 @@ async function imgbb(req, res) {
   const chave = String((req.body || {}).chave || '').trim();
   if (chave && !/^[a-f0-9]{32}$/i.test(chave)) throw falha(400, 'Esta não parece uma chave do ImgBB (são 32 letras e números).');
   await db.collection('plataforma').doc('segredos').set({ imgbb: chave, imgbbEm: new Date().toISOString() }, { merge: true });
+  return res.status(200).json({ sucesso: true, ligado: !!chave });
+}
+// Chave do PagBank (PIX automático). Mesmo cuidado da chave do ImgBB: fica em plataforma/segredos
+// e a tela só fica sabendo SE existe. Chave vazia desliga.
+async function pagbank(req, res) {
+  const chave = String((req.body || {}).chave || '').trim();
+  if (chave && !Segredos.tokenPagbankValido(chave)) throw falha(400, 'Este não parece um token do PagBank. Confira se copiou inteiro, sem espaços.');
+  await db.collection('plataforma').doc('segredos').set({ pagbank: chave, pagbankEm: new Date().toISOString() }, { merge: true });
+  Segredos._zerar();
   return res.status(200).json({ sucesso: true, ligado: !!chave });
 }
 async function modulos(req, res) {
@@ -198,7 +209,7 @@ module.exports = async function handler(req, res) {
     catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[plataforma] assumir', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
   }
   if (dec.plataforma !== true) return res.status(403).json({ error: 'Área restrita ao dono da plataforma.' });
-  const acoes = { lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res) };
+  const acoes = { lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res) };
   const fn = acoes[(req.body || {}).acao];
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });
   try { return await fn(); }

@@ -925,6 +925,69 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   assert.strictEqual((await ch3({ acao: 'proprietario', id: 'jantinha-da-lu', email: 'ze@x.com', remover: true })).status, 200);
   assert.deepStrictEqual(usuarios[0].customClaims, { tenants: { outra: 'caixa' } }); assert.strictEqual(usuarios[0].revogado, true);
 });
+teste('maquininha: só o proprietário liga; a busca soma as vendas do dia sem contar parcela duas vezes', async () => {
+  const M = require(raiz('lib/maquininha'));
+  // leitura das linhas: venda parcelada vem em 3 linhas e conta uma vez; cancelamento vai para estornos; campo estranho não quebra
+  const linhas = [
+    { tipo_evento: '1', codigo_transacao: 'A1', valor_total_transacao: 300, meio_pagamento: '3', parcela: 1 }, { tipo_evento: '1', codigo_transacao: 'A1', valor_total_transacao: 300, meio_pagamento: '3', parcela: 2 },
+    { tipo_evento: '1', codigo_transacao: 'A1', valor_total_transacao: 300, meio_pagamento: '3', parcela: 3 }, { tipo_evento: '1', codigo_transacao: 'B2', valor_total_transacao: '45,50', meio_pagamento: '8' },
+    { tipo_evento: '1', codigo_transacao: 'C3', valor_total_transacao: 20, meio_pagamento: '11' }, { tipo_evento: '1', codigo_transacao: 'D4', valor_total_transacao: 10, meio_pagamento: '99' },
+    { tipo_evento: '6', codigo_transacao: 'B2', valor_total_transacao: -45.5, meio_pagamento: '8' }, { qualquer: 'coisa' }, null ];
+  const r = M.resumir(linhas);
+  assert.strictEqual(r.total, 375.5); assert.strictEqual(r.vendas, 4); assert.strictEqual(r.estornos, 45.5);
+  assert.deepStrictEqual(r.porMeio, { credito: 300, debito: 45.5, pix: 20, outros: 10 });
+  assert.strictEqual(M.resumir([{ a: 1 }]).reconhecidas, 0); assert.strictEqual(M.resumir(null).total, 0);
+
+  const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10), ontem = new Date(Date.now() - 27 * 3600000).toISOString().slice(0, 10);
+  const db = criarBanco({ ...semente(), [`resumos/${ontem}`]: { receita: 120, pedidos: 3 }, 'tenants/espetinhos': { nome: 'Espetinhos', ativo: true } });
+  const eq = carregarApi(raiz('api/equipe.js'), criarAdmin(db, { dono: { uid: 'a-1', admin: true }, adm: { uid: 'b-1', tenants: { banca: 'administrador' } }, outro: { uid: 'o-1', tenants: { espetinhos: 'proprietario' } } }));
+  const ce = (tk, body, loja) => chamar(eq, { headers: { authorization: `Bearer ${tk}`, ...(loja ? { 'x-loja': loja } : {}) }, body });
+  const fetchReal = global.fetch, idas = []; let resposta = () => ({ ok: true, status: 200, headers: { get: () => 'TRUE' }, json: async () => ({ detalhes: linhas, pagination: { totalPages: 1 } }) });
+  global.fetch = async (url, o) => { idas.push({ url: String(url), auth: o.headers.Authorization }); return resposta(); };
+  try {
+    assert.strictEqual((await ce('adm', { acao: 'maquininha-salvar', estabelecimento: '123456', token: 'tok-da-maquininha-0001' })).status, 403, 'administrador não mexe nas credenciais');
+    assert.strictEqual((await ce('dono', { acao: 'maquininha-buscar' })).status, 400, 'sem credenciais, não busca');
+    for (const ruim of [{ estabelecimento: 'abc', token: 'tok-da-maquininha-0001' }, { estabelecimento: '123456', token: 'curto' }, { estabelecimento: '123456', token: 'com espaço no meio aaaaaaaa' }])
+      assert.strictEqual((await ce('dono', { acao: 'maquininha-salvar', ...ruim })).status, 400, JSON.stringify(ruim));
+    const s = await ce('dono', { acao: 'maquininha-salvar', estabelecimento: '123456', token: 'tok-da-maquininha-0001' }); assert.strictEqual(s.status, 200); assert.strictEqual(s.corpo.ligada, true);
+    assert.ok(!JSON.stringify(s.corpo).includes('tok-da-maquininha'), 'o token não volta para a tela'); assert.ok(db._dados.has('plataforma/maquininha_banca'));
+    assert.strictEqual((await ce('dono', { acao: 'maquininha-buscar', dia: hoje })).status, 400, 'o dia de hoje ainda não existe no PagBank');
+    const b = await ce('dono', { acao: 'maquininha-buscar' }); assert.strictEqual(b.status, 200, JSON.stringify(b.corpo));
+    assert.strictEqual(b.corpo.buscado.total, 375.5); assert.strictEqual(b.corpo.buscado.dia, ontem);
+    assert.ok(idas[0].url.endsWith(`/transactional/${ontem}?pageNumber=1&pageSize=1000`)); assert.strictEqual(idas[0].auth, 'Basic ' + Buffer.from('123456:tok-da-maquininha-0001').toString('base64'));
+    const linha = b.corpo.dias.find((x) => x.dia === ontem); assert.strictEqual(linha.maquininha.total, 375.5); assert.strictEqual(linha.painel, 120, 'ao lado, o que o painel registrou no dia');
+    assert.strictEqual(db._dados.get(`maquininha/${ontem}`).vendas, 4);
+    // a credencial de uma loja não serve para outra
+    assert.strictEqual((await ce('outro', { acao: 'maquininha-estado' }, 'espetinhos')).corpo.ligada, false); assert.strictEqual((await ce('outro', { acao: 'maquininha-buscar' }, 'espetinhos')).status, 400);
+    // PagBank recusa a chave, ou cai: erro claro e nada gravado por cima
+    resposta = () => ({ ok: false, status: 401, json: async () => ({}) }); const neg = await ce('dono', { acao: 'maquininha-buscar' }); assert.strictEqual(neg.status, 400); assert.ok(/recusou/.test(neg.corpo.error));
+    assert.strictEqual(db._dados.get(`maquininha/${ontem}`).total, 375.5);
+    // formato que o painel não conhece: guarda só os nomes dos campos, sem valor
+    resposta = () => ({ ok: true, status: 200, json: async () => ({ detalhes: [{ campoNovo: 'segredo-123', outro: 5 }] }) });
+    const des = (await ce('dono', { acao: 'maquininha-buscar' })).corpo.buscado; assert.deepStrictEqual(des.formatoDesconhecido, ['campoNovo', 'outro']); assert.ok(!JSON.stringify(des).includes('segredo-123'));
+    // desligar: os dois campos vazios
+    assert.strictEqual((await ce('dono', { acao: 'maquininha-salvar', estabelecimento: '', token: '' })).corpo.ligada, false); assert.ok(!db._dados.has('plataforma/maquininha_banca'));
+  } finally { global.fetch = fetchReal; }
+});
+
+teste('PIX: a chave do PagBank também entra pela tela Plataforma, e nunca volta para ela', async () => {
+  const S = require(raiz('lib/segredos'));
+  const db = criarBanco({}); const adm = criarAdmin(db, { super: { uid: 's-1', plataforma: true }, dono: { uid: 'd-1', admin: true } });
+  const plat = carregarApi(raiz('api/plataforma.js'), adm), cp = (tk, body) => chamar(plat, { headers: { authorization: `Bearer ${tk}` }, body });
+  const antes = process.env.PAGBANK_API_TOKEN; delete process.env.PAGBANK_API_TOKEN;
+  try {
+    assert.strictEqual(await S.pagbank(db), '');
+    assert.strictEqual((await cp('dono', { acao: 'pagbank', chave: 'a'.repeat(40) })).status, 403);
+    for (const ruim of ['curta', 'tem espaço dentro da chave aqui sim', 'x'.repeat(400)]) assert.strictEqual((await cp('super', { acao: 'pagbank', chave: ruim })).status, 400, ruim.slice(0, 12));
+    const CHAVE = 'A1b2-C3d4.E5f6_G7h8=I9j0+K1l2/M3n4';
+    assert.strictEqual((await cp('super', { acao: 'pagbank', chave: CHAVE })).status, 200);
+    const lista = (await cp('super', { acao: 'lojas' })).corpo; assert.strictEqual(lista.pix, true); assert.ok(!JSON.stringify(lista).includes(CHAVE));
+    S._zerar(); assert.strictEqual(await S.pagbank(db), CHAVE);
+    process.env.PAGBANK_API_TOKEN = 'da-vercel'; assert.strictEqual(await S.pagbank(db), 'da-vercel', 'a variável da Vercel continua mandando'); delete process.env.PAGBANK_API_TOKEN;
+    assert.strictEqual((await cp('super', { acao: 'pagbank', chave: '' })).status, 200); S._zerar(); assert.strictEqual(await S.pagbank(db), '');
+  } finally { if (antes === undefined) delete process.env.PAGBANK_API_TOKEN; else process.env.PAGBANK_API_TOKEN = antes; }
+});
+
 teste('oferta: só vale com preço antigo maior; o desconto nunca promete a mais', async () => {
   const O = await import(raiz('js/oferta-lib.js'));
   assert.strictEqual(O.emOferta({ preco: 8, precoDe: 10 }), true);

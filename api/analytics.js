@@ -22,6 +22,7 @@ const K = require('../analytics/ranking');
 const { diaDeTs, isoDeDia } = require('../analytics/normalize');
 const T = require('../lib/tenant');
 const P = require('../lib/prudencia');
+const Maq = require('../lib/maquininha');
 
 const ORIGENS_CONFIAVEIS = [
   'https://www.bancaadairepedrina.com.br',
@@ -76,6 +77,12 @@ module.exports = async function handler(req, res) {
         catch (e) { console.error('[copia] loja', id, e && e.message); saida[id] = { ...saida[id], copia: { erro: true } }; await P.avisarFalha(banco, id, 'A cópia de segurança', e); }
       }
       await P.limparLimites(banco);
+      // MAQUININHA: as vendas de ontem (o PagBank só entrega no dia seguinte). Loja sem credenciais é pulada.
+      const ontem = new Date(Date.now() - 27 * 3600000).toISOString().slice(0, 10);
+      for (const id of lojas) {
+        try { const m = await Maq.buscarDia(banco, id, ontem); if (m) saida[id] = { ...saida[id], maquininha: { dia: m.dia, total: m.total, vendas: m.vendas } }; }
+        catch (e) { console.error('[maquininha] loja', id, e && e.message); saida[id] = { ...saida[id], maquininha: { erro: true } }; }
+      }
       return res.status(200).json({ sucesso: true, cron: true, ...(saida[T.TENANT_PADRAO] || {}), lojas: saida });
     }
     if (req.method !== 'POST') return res.status(405).json({ sucesso: false, error: 'Método não permitido.' });
