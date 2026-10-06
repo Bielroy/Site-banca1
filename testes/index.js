@@ -432,7 +432,7 @@ teste('balcão: vender mais do que o sistema tinha não trava a venda; entradas 
 });
 teste('cupom em %: vale também para o que vai para a balança, e o de 100% zera o pedido com a entrega', async () => {
   const db = criarBancoP({ ...sementeEstoque(), 'loja/config': { ...(sementeEstoque()['loja/config'] || {}), status: 'aberta', entrega: { taxa: 6, gratisAcima: 80 } },
-    'cupons/FAMILIA': { ativo: true, percentual: 100 }, 'cupons/DEZ': { ativo: true, percentual: 10 } }); const adm = criarAdmin(db, TOKENS_P);
+    'cupons/FAMILIA': { ativo: true, percentual: 100, foraDaPrevisao: true }, 'cupons/DEZ': { ativo: true, percentual: 10 } }); const adm = criarAdmin(db, TOKENS_P);
   const checkout = carregarApi(raiz('api/checkout.js'), adm), api = carregarApi(raiz('api/pdv.js'), adm);
   const fazer = async (cupom) => { const p = pedido({ cupom, itens: [{ id: 'tomate', qtd: 4, tipo: 'un' }, { id: 'ovos', qtd: 1, tipo: 'un' }] });
     const c = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: p }); assert.strictEqual(c.status, 200, JSON.stringify(c.corpo));
@@ -442,7 +442,13 @@ teste('cupom em %: vale também para o que vai para a balança, e o de 100% zera
   assert.strictEqual(f.c.total, 0, 'ovos de graça e sem taxa de entrega');
   assert.strictEqual(f.r.total, 0, 'depois da balança continua zero'); assert.strictEqual(f.r.desconto, 19.52); assert.strictEqual(f.r.entrega, 0);
   assert.strictEqual(f.ped.total, 0); assert.strictEqual(f.ped.cupom.desconto, 19.52); assert.strictEqual(db._dados.get('cupons/FAMILIA').usos, 1);
+  // cupom especial: o pedido leva a marca e o motor de previsão não aprende com ele
+  assert.strictEqual(f.ped.foraDaPrevisao, true); 
+  const N = require(raiz('analytics/normalize')), cat = [{ id: 'tomate', nome: 'Tomate', unidade: 'kg', preco: 8.9 }, { id: 'ovos', nome: 'Ovos', unidade: 'un', preco: 14 }];
+  const conta = (lista) => N.normalizarPedidos(lista, cat).nPedidos;
+  assert.strictEqual(conta([f.ped]), 0, 'pedido especial fora do motor'); assert.ok(conta([{ ...f.ped, foraDaPrevisao: false }]) > 0, 'o mesmo pedido, sem a marca, entraria');
   const d = await fazer('DEZ');
+  assert.strictEqual(d.ped.foraDaPrevisao, undefined, 'cupom comum entra na previsão');
   assert.strictEqual(d.c.total, 18.6, 'ovos 14 − 10% = 12,60; + 6 de entrega'); assert.strictEqual(d.r.desconto, 1.95, '10% de 19,52');
   assert.strictEqual(d.r.total, 23.57, '19,52 − 1,95 + 6'); assert.strictEqual(d.ped.cupom.percentual, 10);
   // só itens a pesar: o cupom em % fica guardado e entra na balança

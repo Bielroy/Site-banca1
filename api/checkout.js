@@ -424,7 +424,7 @@ module.exports = async function handler(req, res) {
           totalExatoCentavos -= descC;
           // percentual guardado no pedido: a pesagem aplica o mesmo desconto ao que ainda vai para a balança
           const pct = Number(c.percentual) > 0 ? Math.min(100, Number(c.percentual)) : 0;
-          cupomAplicado = { codigo: cupomSnap.id, desconto: paraFlutuante(descC), percentual: pct, ref: cupomSnap.ref };
+          cupomAplicado = { codigo: cupomSnap.id, desconto: paraFlutuante(descC), percentual: pct, especial: c.foraDaPrevisao === true, ref: cupomSnap.ref };
           obsFinal = `${obs ? obs + ' | ' : ''}🎁 Cupom ${cupomSnap.id} (-${fmtBRL(paraFlutuante(descC))})`;
         }
       } else if (cupom) {
@@ -455,6 +455,7 @@ module.exports = async function handler(req, res) {
         total: totalExato,        // total dos itens de valor fechado
         clientTotal: totalExato,  // usado pelo painel de pesagem como base
         temItensAPesar,
+        ...(cupomAplicado && cupomAplicado.especial ? { foraDaPrevisao: true } : {}),   // cupom especial (família, cortesia): o motor de previsão ignora este pedido
         cupom: cupomAplicado ? { codigo: cupomAplicado.codigo, desconto: cupomAplicado.desconto, ...(cupomAplicado.percentual ? { percentual: cupomAplicado.percentual } : {}) } : null,
         // taxa cobrada agora + a regra do dia do pedido (a pesagem usa para reavaliar a entrega grátis)
         entrega: { taxa: paraFlutuante(taxaEntregaC), taxaCheia: paraFlutuante(cfgEntrega.taxaC), gratisAcima: paraFlutuante(cfgEntrega.gratisAcimaC), horario: horarioEntrega },

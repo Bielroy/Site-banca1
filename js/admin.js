@@ -1723,6 +1723,7 @@ const renderCupons = () => {
                     Usado ${usos}${limite !== null ? ` de ${limite}` : ' vez(es)'}
                     ${Number(c.minimoCompra) > 0 ? ` • mínimo ${fmt(c.minimoCompra)}` : ''}
                     ${c.validoAte ? ` • até ${new Date(c.validoAte + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}
+                    ${c.foraDaPrevisao === true ? ' • especial, fora da previsão' : ''}
                 </p>
                 <div class="cupom-acoes">
                     <button class="btn btn-outline" data-action="toggle-cupom" data-id="${escapeHTML(c.codigo)}">
@@ -1733,6 +1734,13 @@ const renderCupons = () => {
             </div>`;
         }).join('');
 };
+
+// cupom de 100% já nasce marcado como especial (a pessoa pode desmarcar)
+document.getElementById('cup-percentual')?.addEventListener('input', (e) => {
+    const esp = document.getElementById('cup-especial'); if (!esp || esp.dataset.mexido) return;
+    esp.checked = Number(e.target.value) >= 100;
+});
+document.getElementById('cup-especial')?.addEventListener('change', (e) => { e.target.dataset.mexido = '1'; });
 
 const salvarCupom = async () => {
     const btn = document.getElementById('btn-salvar-cupom');
@@ -1767,6 +1775,7 @@ const salvarCupom = async () => {
             minimoCompra: Number(document.getElementById('cup-minimo').value) || 0,
             limiteUsos: limiteRaw === '' ? null : Number(limiteRaw),
             validoAte: document.getElementById('cup-validade').value || '',
+            foraDaPrevisao: document.getElementById('cup-especial')?.checked === true,
             ativo: true,
             criadoEm: new Date().toISOString(),
         }, { merge: true });   // merge preserva a contagem de usos se já existir
@@ -1774,6 +1783,7 @@ const salvarCupom = async () => {
         showToast(`Cupom ${codigo} gravado!`);
         ['cup-codigo', 'cup-percentual', 'cup-valorfixo', 'cup-minimo', 'cup-limite', 'cup-validade']
             .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+        const esp = document.getElementById('cup-especial'); if (esp) { esp.checked = false; delete esp.dataset.mexido; }
     } catch (e) {
         console.error(e);
         showToast('Erro ao gravar o cupom.', true);

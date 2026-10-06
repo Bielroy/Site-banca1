@@ -10,6 +10,7 @@
 //   • itens "a pesar" têm qtd em UNIDADES e o kg real só aparece em
 //     pesoFinal (admin.js, fechamento da esteira) → convertemos tudo para a
 //     unidade de venda do produto (kg, un, maço...).
+//   • pedidos marcados como fora da previsão (cupom especial) saem;
 //   • pedidos cancelados saem; arquivados ENTRAM (arquivar = concluir).
 //   • duas compras do mesmo cliente no mesmo dia viram UMA visita.
 // =====================================================================
@@ -100,7 +101,8 @@ function normalizarPedidos(pedidos, catalogo = []) {
 
   const validos = [];
   for (const p of pedidos || []) {
-    if (!p || p.status === 'cancelado') continue;
+    // foraDaPrevisao: pedido especial (cupom de família, cortesia). Não é demanda de cliente, então o motor não aprende com ele.
+    if (!p || p.status === 'cancelado' || p.foraDaPrevisao === true) continue;
     const ts = Date.parse(p.data);
     if (!Number.isFinite(ts) || !Array.isArray(p.itens) || !p.itens.length) continue;
     validos.push({ ...p, _ts: ts, _dia: diaDeTs(ts) });
