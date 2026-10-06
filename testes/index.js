@@ -925,6 +925,14 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   assert.strictEqual((await ch3({ acao: 'proprietario', id: 'jantinha-da-lu', email: 'ze@x.com', remover: true })).status, 200);
   assert.deepStrictEqual(usuarios[0].customClaims, { tenants: { outra: 'caixa' } }); assert.strictEqual(usuarios[0].revogado, true);
 });
+teste('cabeçalho: cada tipo de negócio tem o seu desenho', async () => {
+  const A = await import(raiz('js/arte-lib.js'));
+  const casos = { hortifruti: 'caixote', 'Feira de Frutas': 'caixote', espetinhos: 'espeto', jantinha: 'prato', Padaria: 'pao', 'Pães e Bolos': 'pao', 'Açaí': 'tigela', Pizzaria: 'pizza', 'Hambúrgueres': 'burger', Confeitaria: 'bolo', 'Sucos e Cafés': 'copo', 'Loja de Presentes': 'sacola', '': 'sacola' };
+  for (const [tipo, esperado] of Object.entries(casos)) assert.strictEqual(A.arteDoTipo(tipo), esperado, tipo);
+  for (const [nome, html] of Object.entries(A.ARTES)) assert.ok(html.length > 40 && !/<script|on\w+=|href/i.test(html), nome);
+  assert.ok(Object.values(casos).every((q) => q === 'caixote' || A.ARTES[q]));
+});
+
 teste('plataforma: modelos iguais nos dois lados, endereço sugerido e abas por módulo', async () => {
   const L = await import(raiz('js/plataforma-lib.js')), Tm = await import(raiz('js/tema.js')).catch(() => null), M = require(raiz('lib/modelos')), P = await import(raiz('js/papeis-lib.js')), T = require(raiz('lib/tenant'));
   if (Tm) assert.deepStrictEqual(JSON.parse(JSON.stringify(Tm.MODELOS)), M.MODELOS, 'js/tema.js e lib/modelos.js têm os mesmos modelos');

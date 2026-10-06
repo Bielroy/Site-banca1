@@ -11,9 +11,21 @@
 // =====================================================================
 import { getDoc, doc, db } from './firebase.js';
 import { TENANT, fichaRef, chave, urlDaLoja, ehLojaOriginal } from './tenant.js';
+import { ARTES, arteDoTipo } from './arte-lib.js';
 
-// O caixote de frutas do cabeçalho é desenho de hortifruti: só a loja original mostra.
+// DESENHO DO CABEÇALHO. A loja original mostra o caixote de frutas, que já vem na página.
+// As outras ficam sem desenho até a ficha chegar, e aí ganham o traço do tipo de negócio delas.
 if (!ehLojaOriginal) document.documentElement.classList.add('sem-arte');
+const CAIXOTE = { viewBox: '', html: '' };
+function aplicarArte(tipo) {
+    const svg = document.querySelector('.header-arte'); if (!svg) return;
+    if (!CAIXOTE.html) { CAIXOTE.viewBox = svg.getAttribute('viewBox'); CAIXOTE.html = svg.innerHTML; }
+    const qual = arteDoTipo(tipo), traco = qual !== 'caixote';
+    svg.setAttribute('viewBox', traco ? '0 0 120 120' : CAIXOTE.viewBox);
+    svg.innerHTML = traco ? ARTES[qual] : CAIXOTE.html;          // desenhos fixos deste projeto, nada vindo de fora
+    svg.classList.toggle('traco', traco);
+    document.documentElement.classList.remove('sem-arte');
+}
 
 /** Fontes que o painel oferece. Para acrescentar uma: ponha aqui e ela aparece no painel. */
 export const FONTES = {
@@ -82,6 +94,7 @@ const escrever = (id, texto) => { const el = document.getElementById(id); if (el
 function aplicarFicha(ficha) {
     if (!ficha) return;
     aplicarTema(ficha.tema || null);
+    if (!ehLojaOriginal) aplicarArte(ficha.tipo);
     if (ficha.nome && !(ehLojaOriginal && !ficha.tema)) {          // a loja original mantém o título desenhado, a não ser que tenha sido personalizada
         escrever('header-nome', ficha.nome);
         document.title = ficha.subtitulo ? `${ficha.nome} | ${ficha.subtitulo}` : ficha.nome;
