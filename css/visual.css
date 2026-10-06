@@ -228,3 +228,33 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 /* consentimento para ofertas no WhatsApp (formulário do pedido) */
 .chk-oferta { display: flex; align-items: flex-start; gap: 10px; margin: -4px 0 16px; font-size: .9rem; color: var(--text-mid); cursor: pointer; }
 .chk-oferta input { width: 22px; height: 22px; flex: none; accent-color: var(--forest); margin-top: 1px; }
+
+/* ---------- ATALHOS DE QUEM VOLTA: pedir de novo, lista da semana, avaliar ---------- */
+.atalhos { display: flex; gap: 10px; overflow-x: auto; padding: 2px 0 14px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.atalhos::-webkit-scrollbar { display: none; }
+.atalhos[hidden] { display: none; }
+.atalho { flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 56px; padding: 10px 16px; text-align: left; cursor: pointer;
+    background: var(--superficie); color: var(--text-dark); border: 1.5px solid var(--linha); border-radius: var(--raio-card, 14px); font-family: inherit; }
+.atalho b { font-size: .95rem; font-weight: 700; color: var(--forest); }
+.atalho small { font-size: .78rem; color: var(--text-mid); white-space: nowrap; }
+.atalho.destaque { border-color: var(--manga); background: color-mix(in srgb, var(--manga) 10%, var(--superficie)); }
+.atalho-par { flex: none; display: flex; align-items: stretch; }
+.atalho-par .atalho { border-radius: var(--raio-card, 14px) 0 0 var(--raio-card, 14px); border-right: 0; }
+.atalho-ver { min-width: 48px; padding: 0 12px; cursor: pointer; font-family: inherit; font-size: .8rem; font-weight: 600; color: var(--text-mid);
+    background: var(--superficie); border: 1.5px solid var(--linha); border-radius: 0 var(--raio-card, 14px) var(--raio-card, 14px) 0; }
+.atalho-par .destaque + .atalho-ver { border-color: var(--manga); }
+@media (max-width: 600px) { .atalhos { margin-right: -16px; padding-right: 16px; } }
+.btn-guardar-lista { width: 100%; min-height: 44px; margin-top: 8px; background: none; border: 0; cursor: pointer; font-family: inherit; font-size: .88rem; font-weight: 600; color: var(--forest); text-decoration: underline; text-underline-offset: 3px; }
+.header-avaliacao { position: relative; font-size: .86rem; font-weight: 600; margin: -10px 0 14px; color: color-mix(in srgb, var(--sobre-primaria) 88%, transparent); }
+
+/* avaliação do pedido ("Meus pedidos") */
+.avaliar { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--linha); }
+.avaliar-pergunta { display: block; font-weight: 700; color: var(--forest); margin-bottom: 4px; }
+.avaliar-estrelas { display: flex; gap: 2px; }
+.avaliar-estrelas button { width: 46px; height: 46px; background: none; border: 0; cursor: pointer; font-size: 1.9rem; line-height: 1; color: var(--text-light); }
+.avaliar-estrelas button.on { color: var(--manga); }
+.avaliar-envio { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.avaliar-envio[hidden] { display: none; }
+.avaliar-envio textarea { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--linha); font-family: inherit; font-size: 16px; resize: vertical; background: var(--superficie); color: var(--text-dark); }
+.avaliado { margin-top: 10px; font-size: .88rem; color: var(--text-mid); }
+.avaliado span { color: var(--manga); letter-spacing: 1px; }

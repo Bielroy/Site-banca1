@@ -119,6 +119,7 @@
         <h1 id="header-nome">Banca Adair <em>e Pedrina</em></h1>
         <p class="header-subtitle" id="header-sub">Seg a Sáb • Entrega no seu condomínio</p>
         <p class="header-nota" id="header-nota">+200 pedidos entregues. Pague com PIX, cartão ou dinheiro.</p>
+        <p class="header-avaliacao" id="header-avaliacao" hidden></p>
         <nav class="header-acoes" aria-label="Endereço e pedidos">
             <button class="chip-header" id="btn-endereco" data-action="open-endereco">
                 <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>
@@ -152,6 +153,8 @@
 <main class="layout">
     <div class="vitrine">
         <!-- "Seus de sempre": o que este cliente costuma levar (ou o último pedido). Preenchida por js/loja.js -->
+        <!-- Atalhos de quem volta: pedir de novo, lista da semana, avaliar. Preenchidos por js/loja.js -->
+        <nav class="atalhos" id="atalhos" aria-label="Atalhos de compra" hidden></nav>
         <section class="faixa-sempre" id="faixa-sempre" aria-labelledby="faixa-titulo" hidden>
             <h2 id="faixa-titulo">Seus de sempre</h2>
             <div class="faixa-rolo" id="faixa-lista"></div>
@@ -190,6 +193,7 @@
                 <span class="total-valor" id="total-val">R$ 0,00</span>
             </div>
             <button class="btn-finalizar" id="btn-abrir-checkout" disabled>Finalizar Pedido</button>
+            <button type="button" class="btn-guardar-lista" id="btn-guardar-lista" data-action="guardar-lista" hidden>Guardar como minha lista da semana</button>
         </footer>
     </aside>
 </main>

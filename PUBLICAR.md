@@ -1,12 +1,12 @@
 # Antes de publicar — lista de conferência
 
 Nada disto foi feito no ambiente em que o código foi escrito (sem acesso à internet,
-ao Firebase e à Vercel). Os testes automáticos (`npm test`, 63 testes) passam e as telas
+ao Firebase e à Vercel). Os testes automáticos (`npm test`, 67 testes) passam e as telas
 foram conferidas com dados simulados.
 
 ## 1. Build
 1. `npm install`
-2. `npm test` — deve terminar com "63 de 63 testes passaram".
+2. `npm test` — deve terminar com "67 de 67 testes passaram".
 3. `npm run build` — nunca foi rodado depois das mudanças. Se der erro, copie a mensagem inteira.
 4. `npm run preview` e abra: `/`, `/admin.html`, `/plataforma.html`.
 
@@ -59,6 +59,25 @@ foram conferidas com dados simulados.
   passar do valor de entrega grátis.
 - A taxa entra no faturamento do Balanço junto com os itens. Vendas no Balcão não têm taxa.
 
+## 4e. Fotos automáticas (ImgBB)
+1. Crie uma conta grátis em imgbb.com, abra api.imgbb.com e toque em "Get API key".
+2. No painel, abra **Plataforma → Fotos dos produtos**, cole a chave e toque em Salvar.
+3. Em qualquer loja: **Produtos → Enviar várias fotos**. Escolha as fotos; o sistema reduz, envia
+   ao ImgBB e grava o link em cada produto. Arquivo com o nome do produto (tomate.jpg) já vem marcado.
+A chave fica só no servidor (`plataforma/segredos`); nenhuma tela mostra a chave de volta.
+Nunca foi testado com o ImgBB de verdade: confira o primeiro envio.
+
+## 4f. Cópia de segurança, alertas e limite
+- **Cópia diária**: a rotina da madrugada guarda, por loja, produtos, configurações e os pedidos dos
+  últimos 90 dias em `backups/` (ficam as últimas 7). O proprietário baixa uma cópia na hora em
+  **Configurações → Cópia de segurança**. A cópia fica no MESMO banco: protege de apagar por engano,
+  não de perder a conta do Firebase. Por isso, baixe uma de vez em quando e guarde fora.
+  Restaurar uma cópia ainda é manual (não há botão).
+- **Alerta de falha**: erro interno no envio de pedido ou na venda do balcão avisa os aparelhos com
+  avisos ligados (no máximo um a cada 30 min por assunto).
+- **Limite de pedidos**: 8 por conexão a cada 10 minutos, contado no banco.
+- **Venda no balcão** também dispara aviso nos aparelhos da equipe.
+
 ## 5. Testar com a loja de verdade
 - [ ] Pedido pela loja: preço, estoque, cupom, WhatsApp.
 - [ ] Pesagem: desconto do cupom mantido e estoque por quilo baixado.
@@ -72,7 +91,9 @@ foram conferidas com dados simulados.
 
 ## 6. Limites conhecidos
 - PIX automático só na loja original (a conta do banco no servidor é uma só) e nunca foi testado com o PagBank de verdade.
-- Limite de chamadas por minuto fica na memória do servidor (zera a cada reinício).
+- A cópia de segurança não tem botão de restaurar; a lista da semana e o "pedir de novo" ficam no aparelho
+  da cliente (trocou de celular, começa do zero).
+- A miniatura das fotos usa o redutor de imagens da Vercel, que tem limite mensal no plano gratuito.
 - A rotina diária do motor roda as lojas em sequência (60 s no plano gratuito).
 - Loja bloqueada ainda deixa o proprietário editar produtos; Clientes, Calendário e Cupons desligados
   somem do painel, mas as regras do banco não bloqueiam.

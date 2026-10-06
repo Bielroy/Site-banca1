@@ -118,3 +118,9 @@
 .copia-box { margin-top: 28px; padding: 18px; border: 1.5px solid var(--linha, #e0dcd4); border-radius: 14px; background: var(--superficie, #fff); }
 .copia-box h4 { font-family: 'Fraunces', serif; color: var(--forest); font-size: 1.15rem; margin: 0 0 6px; }
 .copia-box .btn-outline { margin-top: 6px; min-height: 44px; padding: 10px 18px; }
+
+/* avaliação da cliente no cartão do pedido */
+.pedido-avaliacao { margin: 8px 0 0; padding: 8px 10px; border-radius: 10px; background: #f6f1e4; font-size: .9rem; }
+.pedido-avaliacao b { color: #c4773a; letter-spacing: 1px; margin-right: 6px; }
+.pedido-avaliacao.baixa { background: #fde8e6; }
+.pedido-avaliacao.baixa b { color: #b3261e; }

@@ -1398,6 +1398,7 @@ const renderHtmlPedidos = (pedidos) => {
             <div style="font-size: 0.9rem; color: var(--text-dark); margin-bottom: 12px; background: white; padding: 10px; border-radius: 6px; border: 1px solid #eee;">
                 • ${itensStr}
                 ${infoEntrega}
+                ${p.avaliacao && p.avaliacao.nota ? `<p class="pedido-avaliacao${p.avaliacao.nota <= 3 ? ' baixa' : ''}"><b>Nota ${Number(p.avaliacao.nota)} de 5</b> ${p.avaliacao.texto ? escapeHTML(p.avaliacao.texto) : 'sem comentário'}</p>` : ''}
                 ${infoTroco}
                 ${infoObs}
             </div>

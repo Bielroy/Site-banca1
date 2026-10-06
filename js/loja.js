@@ -11,6 +11,7 @@ import { podePagarPix } from './pix-lib.js';
 import { lerEntrega, previaDaEntrega } from './entrega-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
 import { miniatura } from './foto-lib.js';
+import { listaValida, listaDoCarrinho, separar, mesmoConjunto, podeConvidarAvaliar, nomeDoDia, textoDaNota } from './atalhos-lib.js';
 import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
 
 // Lista guardada no aparelho. Dado corrompido ou armazenamento bloqueado NÃO pode derrubar a loja:
@@ -204,6 +205,7 @@ const renderUpsell = () => {
 };
 
 const atualizarRodapeCarrinhoDOM = () => {
+    try { renderAtalhos(); } catch (_) { /* ainda carregando */ }
     let totalExato = 0, estimado = 0, qtdDistinta = 0;
     let temItensAPesar = false, semEstimativa = false;
 
@@ -473,7 +475,7 @@ const renderLoja = (forcarRebuild = false) => {
     const grid = document.getElementById('lista-produtos');
     if (!STATE.catalogoChegou) return;     // produtos ainda a caminho: fica o carregando, e não um falso "sem produtos"
     if(!STATE.lojaRenderizada || forcarRebuild) construirCardsIniciais();
-    renderFaixaSempre();
+    renderFaixaSempre(); renderAtalhos();
     const termo = semAcento(STATE.busca).trim();
     const cards = grid.querySelectorAll('.produto-card');
     let itensVisiveis = 0;
@@ -563,6 +565,12 @@ const iniciarRealTimeSync = () => {
         pintarHorariosDeEntrega();
     }, (e) => console.warn('[loja] config:', e?.code || e));
     unsubscribes.push(unsubConfig);
+
+    // Nota da loja no cabeçalho (só com 5 avaliações ou mais). Uma leitura só, sem ficar ouvindo.
+    getDoc(tdoc('loja', 'avaliacoes')).then((s) => {
+        const el = document.getElementById('header-avaliacao'), txt = s.exists() ? textoDaNota(s.data()) : '';
+        if (el && txt) { el.textContent = '★ ' + txt; el.hidden = false; }
+    }).catch(() => { /* sem nota não muda nada */ });
 
     // [PATCH 3] Só reconstrói o grid quando o catálogo realmente muda (evita reflows/lag)
     let _assinaturaProdutos = '';
@@ -988,6 +996,7 @@ const renderHistorico = async () => {
                 <button class="btn btn-outline flex-1" data-action="repetir-pedido" data-id="${escapeHTML(p.id)}">Repetir pedido</button>
                 ${podeCancelar ? `<button class="btn btn-danger" data-action="cancelar-pedido" data-id="${escapeHTML(p.id)}">Cancelar</button>` : ''}
             </div>
+            ${avaliacaoHtml(p, vivo, status)}
             ${vivo && vivo.pagamento && vivo.pagamento.status === 'PAID' ? '<p class="pedido-pago">Pago por PIX</p>' : ''}
             ${ehLojaOriginal && vivo && podePagarPix(STATE.config.pixAutomatico === true, vivo) ? `<button class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(p.id)}" data-total="${Number(totalReal) || 0}">Pagar ${fmt(totalReal)} com PIX</button>` : ''}
         </article>`;
@@ -1009,32 +1018,120 @@ const cancelarPedido = async (pedidoId) => {
         // pedido é desta sessão. Sem isso ele recusa, e é assim que deve ser.
         await chamarApi('/api/cancelar-pedido', { pedidoId }, { comToken: true });
         showToast('✅ Pedido cancelado');
-        renderHistorico();
+        try { const meus = lerLista('banca_meus_pedidos'), alvo = meus.find(p => String(p.id) === String(pedidoId)); if (alvo) { alvo.cancelado = true; localStorage.setItem(chave('banca_meus_pedidos'), JSON.stringify(meus)); } } catch (_) { /* só afeta os atalhos */ }
+        renderHistorico(); renderAtalhos();
     } catch (e) {
         showToast(mensagemDeErroAmigavel(e), true);
     }
 };
 
+// ---------------------------------------------------------------------
+// ATALHOS DE QUEM VOLTA: pedir de novo, lista da semana, avaliar.
+// ---------------------------------------------------------------------
+const CHAVE_LISTA = 'banca_lista_semana';
+const lerListaSemana = () => { try { return listaValida(JSON.parse(localStorage.getItem(chave(CHAVE_LISTA)) || 'null')); } catch (_) { return null; } };
+
+// Põe um conjunto de itens no pedido, com os preços e a disponibilidade DE HOJE.
+// Se já houver outro pedido em montagem, pergunta antes de trocar.
+const porNoPedido = async (itens) => {
+    const { entram, faltam } = separar(itens, STATE.produtos);
+    if (!entram.length) { showToast('Todos estes itens estão em falta hoje.', true); return false; }
+    if (STATE.carrinho.length && !mesmoConjunto(STATE.carrinho, entram)) {
+        const n = STATE.carrinho.length;
+        const ok = await customConfirm('Trocar o pedido atual?', `Seu pedido tem ${n} ${n === 1 ? 'item' : 'itens'}. ${n === 1 ? 'Ele sai' : 'Eles saem'} para entrar ${entram.length === 1 ? 'o item escolhido' : 'os ' + entram.length + ' itens escolhidos'}.`, { ok: 'Trocar', nao: 'Manter o atual' });
+        if (!ok) return false;
+    }
+    STATE.carrinho = entram;
+    persistirCarrinhoComDebounce(); renderCarrinhoCompleto(); STATE.produtos.forEach(p => atualizarBadgesDOM(p.id));
+    closeModal('modal-historico');
+    if (ehCelular()) toggleCartMobile(true);
+    showToast(faltam.length ? `${entram.length} no pedido, com os preços de hoje. Em falta: ${faltam.slice(0, 3).join(', ')}${faltam.length > 3 ? '...' : ''}.` : `${entram.length} ${entram.length === 1 ? 'item' : 'itens'} no pedido, com os preços de hoje.`, faltam.length > 0);
+    return true;
+};
+
 const repetirPedido = (pedId) => {
-    const meusPedidos = lerLista('banca_meus_pedidos');
-    const ped = meusPedidos.find(p => String(p.id) === String(pedId)); 
-    if(!ped || !ped.itens) return;
+    const ped = lerLista('banca_meus_pedidos').find(p => String(p.id) === String(pedId));
+    if (!ped || !Array.isArray(ped.itens)) return;
+    return porNoPedido(ped.itens);
+};
 
-    // monta a lista nova ANTES de mexer no pedido atual: se nada puder voltar, o que já estava no pedido fica
-    let itensAdicionados = 0; let itensEsgotados = []; const novo = [];
-    ped.itens.forEach(i => {
-        const prodAtualizado = STATE.produtos.find(px => px.id === i.id);
-        if(prodAtualizado && prodAtualizado.ativo) { novo.push({...prodAtualizado, qtd: i.qtd, tipo: i.tipo || 'kg'}); itensAdicionados++; } 
-        else { itensEsgotados.push(i.nome || 'Produto Indisponível'); }
-    });
+const guardarListaDaSemana = () => {
+    const lista = listaDoCarrinho(STATE.carrinho);
+    if (!lista) return;
+    try { localStorage.setItem(chave(CHAVE_LISTA), JSON.stringify(lista)); } catch (_) { showToast('Não consegui guardar a lista neste aparelho.', true); return; }
+    showToast(`Lista da semana guardada com ${lista.itens.length} ${lista.itens.length === 1 ? 'item' : 'itens'}. Ela fica no topo da loja.`);
+    renderAtalhos();
+};
+const verListaDaSemana = async () => {
+    const lista = lerListaSemana(); if (!lista) return;
+    const nomes = lista.itens.map(i => i.nome).filter(Boolean).join(', ');
+    const apagar = await customConfirm('Minha lista da semana', `${nomes || lista.itens.length + ' itens'}. Para mudar a lista, monte o pedido como quiser e toque em "Guardar como minha lista da semana".`, { ok: 'Apagar a lista', nao: 'Fechar' });
+    if (!apagar) return;
+    try { localStorage.removeItem(chave(CHAVE_LISTA)); } catch (_) {}
+    showToast('Lista apagada.'); renderAtalhos();
+};
 
-    if (itensAdicionados > 0) {
-        STATE.carrinho = novo;
-        persistirCarrinhoComDebounce(); renderCarrinhoCompleto(); closeModal('modal-historico'); 
-        if (ehCelular()) toggleCartMobile(true);
-        let msgToast = "🛒 Itens adicionados com preços atualizados!";
-        showToast(msgToast, itensEsgotados.length > 0);
-    } else { showToast("❌ Todos os itens deste pedido encontram-se esgotados.", true); }
+const dataCurta = (iso) => { try { return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }); } catch (_) { return ''; } };
+function renderAtalhos() {
+    const nav = document.getElementById('atalhos'); if (!nav) return;
+    const guardar = document.getElementById('btn-guardar-lista'); if (guardar) guardar.hidden = STATE.carrinho.length < 2;
+    const livre = STATE.catalogoChegou && !semAcento(STATE.busca).trim() && STATE.catAtiva === 'todas';
+    const pedidos = lerLista('banca_meus_pedidos'), ultimo = pedidos.find(p => Array.isArray(p.itens) && p.itens.length && !p.cancelado), lista = lerListaSemana();
+    const avaliar = pedidos.find(p => podeConvidarAvaliar(p));
+    const botoes = [];
+    if (lista) {
+        const hoje = lista.dia === new Date().getDay();
+        botoes.push(`<span class="atalho-par"><button type="button" class="atalho${hoje ? ' destaque' : ''}" data-action="por-lista"><b>Minha lista da semana</b><small>${hoje ? 'hoje é ' + nomeDoDia(lista.dia) + ', dia da sua lista · ' : ''}${lista.itens.length} ${lista.itens.length === 1 ? 'item' : 'itens'}</small></button><button type="button" class="atalho-ver" data-action="ver-lista" aria-label="Ver ou apagar a lista da semana">ver</button></span>`);
+    }
+    if (ultimo) botoes.push(`<button type="button" class="atalho" data-action="repetir-pedido" data-id="${escapeHTML(String(ultimo.id))}"><b>Pedir de novo</b><small>o pedido de ${dataCurta(ultimo.data)} · ${ultimo.itens.length} ${ultimo.itens.length === 1 ? 'item' : 'itens'}</small></button>`);
+    if (avaliar) botoes.push(`<button type="button" class="atalho" data-action="open-historico"><b>Chegou tudo fresquinho?</b><small>avalie seu pedido em um toque</small></button>`);
+    nav.hidden = !livre || !botoes.length;
+    const html = botoes.join('');
+    if (nav.dataset.cara !== html) { nav.innerHTML = html; nav.dataset.cara = html; }
+}
+
+// ---------------------------------------------------------------------
+// AVALIAÇÃO DEPOIS DA ENTREGA ("Meus pedidos")
+// ---------------------------------------------------------------------
+const estrelas = (n) => '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n);
+const avaliacaoHtml = (p, vivo, status) => {
+    const nota = (vivo && vivo.avaliacao && vivo.avaliacao.nota) || p.avaliado;
+    if (nota) return `<p class="avaliado" aria-label="Você deu ${nota} de 5 estrelas">Sua avaliação: <span>${estrelas(Number(nota))}</span> Obrigado!</p>`;
+    // Aparece quando a loja marcou o pedido como entregue, ou 3 horas depois do envio (nem toda banca
+    // atualiza a etapa no painel). Pedido cancelado ou com mais de uma semana não pergunta.
+    const horas = (Date.now() - new Date(p.data).getTime()) / 3600000;
+    if (status === 'cancelado' || horas > 7 * 24 || !(['enviado', 'arquivado'].includes(status) || horas >= 3)) return '';
+    return `<div class="avaliar" data-avaliar="${escapeHTML(String(p.id))}">
+                <span class="avaliar-pergunta">Chegou tudo fresquinho?</span>
+                <div class="avaliar-estrelas" role="group" aria-label="Dê de 1 a 5 estrelas">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-action="estrela" data-id="${escapeHTML(String(p.id))}" data-nota="${n}" aria-label="${n} ${n === 1 ? 'estrela' : 'estrelas'}">☆</button>`).join('')}</div>
+                <div class="avaliar-envio" hidden>
+                    <textarea maxlength="300" rows="2" placeholder="Quer contar algo para a banca? (opcional)" aria-label="Comentário (opcional)"></textarea>
+                    <button type="button" class="btn btn-primary" data-action="enviar-avaliacao" data-id="${escapeHTML(String(p.id))}">Enviar avaliação</button>
+                </div>
+            </div>`;
+};
+const marcarEstrela = (botao) => {
+    const caixa = botao.closest('.avaliar'), nota = Number(botao.dataset.nota);
+    caixa.dataset.nota = String(nota);
+    caixa.querySelectorAll('[data-action="estrela"]').forEach(b => { const on = Number(b.dataset.nota) <= nota; b.textContent = on ? '★' : '☆'; b.classList.toggle('on', on); });
+    caixa.querySelector('.avaliar-envio').hidden = false;
+};
+const enviarAvaliacao = async (botao) => {
+    const caixa = botao.closest('.avaliar'), nota = Number(caixa.dataset.nota), pedidoId = botao.dataset.id;
+    if (!(nota >= 1)) return;
+    botao.disabled = true; botao.textContent = 'Enviando...';
+    try {
+        await chamarApi('/api/cancelar-pedido', { acao: 'avaliar', pedidoId, nota, texto: caixa.querySelector('textarea').value.trim() }, { comToken: true });
+    } catch (e) {
+        // "já foi avaliado" não é problema para a cliente: guarda e segue
+        if (!/já foi avaliado/.test(String(e && e.message))) { botao.disabled = false; botao.textContent = 'Enviar avaliação'; showToast(mensagemDeErroAmigavel(e), true); return; }
+    }
+    try {
+        const meus = lerLista('banca_meus_pedidos'), alvo = meus.find(p => String(p.id) === String(pedidoId));
+        if (alvo) { alvo.avaliado = nota; localStorage.setItem(chave('banca_meus_pedidos'), JSON.stringify(meus)); }
+    } catch (_) { /* a nota já está no servidor */ }
+    showToast(nota >= 4 ? 'Obrigado pela avaliação!' : 'Obrigado por avisar. A banca vai ver o seu recado.');
+    renderHistorico(); renderAtalhos();
 };
 
 // Abre a tela do produto com a foto do card "viajando" até ela.
@@ -1204,6 +1301,11 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'open-historico') { renderHistorico(); openModal('modal-historico'); }
         else if (action === 'open-endereco') { endTopo.preencher(lerEnderecoSalvo()); openModal('modal-endereco'); }
         else if (action === 'repetir-pedido') { repetirPedido(id); }
+        else if (action === 'por-lista') { const l = lerListaSemana(); if (l) porNoPedido(l.itens); }
+        else if (action === 'ver-lista') { verListaDaSemana(); }
+        else if (action === 'guardar-lista') { guardarListaDaSemana(); }
+        else if (action === 'estrela') { marcarEstrela(actionTarget); }
+        else if (action === 'enviar-avaliacao') { enviarAvaliacao(actionTarget); }
         else if (action === 'cancelar-pedido') { cancelarPedido(id); }
         else if (action === 'pagar-pix') { pagarComPix(id, Number(actionTarget.dataset.total) || 0); }
         else if (action === 'toggle-troco') {

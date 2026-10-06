@@ -925,6 +925,53 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   assert.strictEqual((await ch3({ acao: 'proprietario', id: 'jantinha-da-lu', email: 'ze@x.com', remover: true })).status, 200);
   assert.deepStrictEqual(usuarios[0].customClaims, { tenants: { outra: 'caixa' } }); assert.strictEqual(usuarios[0].revogado, true);
 });
+teste('avaliação: só a dona do pedido, uma vez, de 1 a 5; entra na média da loja', async () => {
+  const db = criarBanco(semente()); const adm = criarAdmin(db, { ...TOKENS, outra: { uid: 'c2' } });
+  const checkout = carregarApi(raiz('api/checkout.js'), adm), api = carregarApi(raiz('api/cancelar-pedido.js'), adm);
+  const fazer = async (loja) => { const p = pedido(); await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente', ...(loja ? { 'X-Loja': loja } : {}) }, body: p }); return p.idempotencyKey; };
+  const av = (tk, body, loja) => chamar(api, { headers: { ...(tk ? { Authorization: `Bearer ${tk}` } : {}), ...(loja ? { 'X-Loja': loja } : {}) }, body: { acao: 'avaliar', ...body } });
+  const id = await fazer();
+  assert.strictEqual((await av('', { pedidoId: id, nota: 5 })).status, 401);
+  assert.notStrictEqual((await av('outra', { pedidoId: id, nota: 1 })).status, 200, 'outra pessoa não avalia o meu pedido');
+  for (const ruim of [0, 6, 4.5, 'cinco', null]) assert.strictEqual((await av('cliente', { pedidoId: id, nota: ruim })).status, 400, String(ruim));
+  assert.strictEqual(db._dados.get(`pedidos/${id}`).avaliacao, undefined);
+  const ok = await av('cliente', { pedidoId: id, nota: 4, texto: '  Veio <b>ótimo</b>,\n só faltou a salsa ' }); assert.strictEqual(ok.status, 200, JSON.stringify(ok.corpo));
+  const g = db._dados.get(`pedidos/${id}`).avaliacao; assert.strictEqual(g.nota, 4); assert.ok(!/[<>\n]/.test(g.texto) && g.texto.includes('salsa'), g.texto);
+  assert.strictEqual(db._dados.get(`pedidos/${id}`).status, 'pendente', 'avaliar não mexe no pedido');
+  assert.notStrictEqual((await av('cliente', { pedidoId: id, nota: 1 })).status, 200, 'não avalia duas vezes');
+  // média pública: só soma e quantidade
+  const id2 = await fazer(); await av('cliente', { pedidoId: id2, nota: 5 });
+  const media = db._dados.get('loja/avaliacoes'); assert.strictEqual(media.n, 2); assert.strictEqual(media.soma, 9); assert.strictEqual(media.media, 4.5); assert.ok(!JSON.stringify(media).includes('salsa'));
+  // pedido cancelado não recebe nota; e a nota de uma loja não entra na média de outra
+  const id3 = await fazer(); await chamar(api, { headers: { Authorization: 'Bearer cliente' }, body: { pedidoId: id3 } });
+  assert.notStrictEqual((await av('cliente', { pedidoId: id3, nota: 5 })).status, 200);
+  const idE = await fazer('espetinhos'); assert.strictEqual((await av('cliente', { pedidoId: idE, nota: 2 }, 'espetinhos')).status, 200);
+  assert.strictEqual(db._dados.get('tenants/espetinhos/loja/avaliacoes').n, 1); assert.strictEqual(db._dados.get('loja/avaliacoes').n, 2);
+  assert.notStrictEqual((await av('cliente', { pedidoId: idE, nota: 2 })).status, 200, 'na loja errada o pedido não existe');
+});
+
+teste('atalhos: lista da semana, pedir de novo com o catálogo de hoje e convite para avaliar', async () => {
+  const A = await import(raiz('js/atalhos-lib.js'));
+  const quinta = new Date(2026, 9, 8, 9);
+  const lista = A.listaDoCarrinho([{ id: 'tomate', qtd: 1.5, tipo: 'kg', nome: 'Tomate', preco: 8.9, foto: 'x' }, { id: 'ovos', qtd: 2, tipo: 'un', nome: 'Ovos' }], quinta);
+  assert.deepStrictEqual(lista.itens, [{ id: 'tomate', qtd: 1.5, tipo: 'kg', nome: 'Tomate' }, { id: 'ovos', qtd: 2, tipo: 'un', nome: 'Ovos' }], 'guarda só o necessário, sem preço');
+  assert.strictEqual(lista.dia, 4); assert.strictEqual(A.nomeDoDia(lista.dia), 'quinta');
+  for (const ruim of [null, {}, { itens: [] }, { itens: [{ id: '', qtd: 1 }] }, { itens: [{ id: 'a', qtd: 0 }] }, { itens: 'x' }]) assert.strictEqual(A.listaValida(ruim), null, JSON.stringify(ruim));
+  assert.strictEqual(A.listaValida({ itens: [{ id: 'a', qtd: 1 }], dia: 9 }).dia, null);
+  // pôr no pedido: preço e dados de HOJE; o que saiu do catálogo ou está inativo vira "em falta"
+  const hoje = [{ id: 'tomate', nome: 'Tomate italiano', preco: 9.9, unidade: 'kg', ativo: true }, { id: 'ovos', nome: 'Ovos', preco: 15, unidade: 'un', ativo: false }];
+  const { entram, faltam } = A.separar([...lista.itens, { id: 'sumiu', qtd: 1, nome: 'Couve' }], hoje);
+  assert.strictEqual(entram.length, 1); assert.strictEqual(entram[0].preco, 9.9); assert.strictEqual(entram[0].qtd, 1.5); assert.strictEqual(entram[0].tipo, 'kg');
+  assert.deepStrictEqual(faltam, ['Ovos', 'Couve']);
+  assert.strictEqual(A.mesmoConjunto([{ id: 'a', qtd: 1, tipo: 'un' }, { id: 'b', qtd: 2, tipo: 'kg' }], [{ id: 'b', qtd: 2, tipo: 'kg' }, { id: 'a', qtd: 1, tipo: 'un' }]), true);
+  assert.strictEqual(A.mesmoConjunto([{ id: 'a', qtd: 1, tipo: 'un' }], [{ id: 'a', qtd: 2, tipo: 'un' }]), false);
+  // convite para avaliar: nem cedo demais (ainda não chegou), nem tarde demais, nem duas vezes
+  const agora = Date.parse('2026-10-08T12:00:00Z'), ha = (h) => ({ data: new Date(agora - h * 3600000).toISOString() });
+  assert.strictEqual(A.podeConvidarAvaliar(ha(1), agora), false); assert.strictEqual(A.podeConvidarAvaliar(ha(5), agora), true); assert.strictEqual(A.podeConvidarAvaliar(ha(24 * 5), agora), false);
+  assert.strictEqual(A.podeConvidarAvaliar({ ...ha(5), avaliado: 5 }, agora), false); assert.strictEqual(A.podeConvidarAvaliar({ ...ha(5), cancelado: true }, agora), false);
+  assert.strictEqual(A.textoDaNota({ soma: 19, n: 4 }), '', 'com menos de 5 avaliações não mostra nota'); assert.strictEqual(A.textoDaNota({ soma: 47, n: 10 }), '4,7 de 5 em 10 avaliações'); assert.strictEqual(A.textoDaNota(null), '');
+});
+
 teste('prudência: limite contado no banco, alerta de falha com intervalo e cópia de segurança diária', async () => {
   const P = require(raiz('lib/prudencia')), T = require(raiz('lib/tenant'));
   // 1) LIMITE: 8 pedidos por conexão em 10 min; o 9º é barrado; outra conexão e outra loja não pagam por isso

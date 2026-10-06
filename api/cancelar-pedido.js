@@ -87,6 +87,38 @@ const fixFloat = (n) => Math.round(n * 1000) / 1000;
 
 const T = require('../lib/tenant');
 const E = require('../lib/estoque');
+const Avisos = require('../lib/avisos');
+
+// ---------------------------------------------------------------------
+// AVALIAÇÃO: "chegou tudo fresquinho?"  POST { acao: 'avaliar', pedidoId, nota: 1..5, texto? }
+//
+//  - só a dona do pedido avalia (uid do token), uma vez só, e nunca pedido cancelado;
+//  - a nota fica no pedido (a equipe vê no painel) e entra na média pública da loja
+//    (loja/avaliacoes: só soma e quantidade, sem nome nem texto de ninguém);
+//  - nota 3 ou menos avisa a equipe no celular, para dar tempo de resolver com a cliente.
+// ---------------------------------------------------------------------
+async function avaliar(req, res, { tid, uid, pedidoId }) {
+  const nota = Number((req.body || {}).nota);
+  const texto = String((req.body || {}).texto || '').replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (!Number.isInteger(nota) || nota < 1 || nota > 5) return res.status(400).json({ error: 'Escolha de 1 a 5 estrelas.' });
+  try {
+    const saida = await db.runTransaction(async (t) => {
+      const pedidoRef = T.tdoc(db, tid, 'pedidos', String(pedidoId)), resumoRef = T.docDe(db, tid, 'loja/avaliacoes');
+      const [ps, rs] = await Promise.all([t.get(pedidoRef), t.get(resumoRef)]);
+      if (!ps.exists) throw new Error('Pedido não encontrado.');
+      const pedido = ps.data();
+      if (!pedido.userId || pedido.userId === 'anonimo' || pedido.userId !== uid) throw new Error('Só quem fez o pedido pode avaliar.');
+      if (pedido.status === 'cancelado') throw new Error('Pedido cancelado não recebe avaliação.');
+      if (pedido.avaliacao) throw new Error('Este pedido já foi avaliado. Obrigado!');
+      const r = rs.exists ? rs.data() : {}, soma = Number(r.soma || 0) + nota, n = Number(r.n || 0) + 1;
+      t.set(pedidoRef, { avaliacao: { nota, texto, em: new Date().toISOString() } }, { merge: true });
+      t.set(resumoRef, { soma, n, media: Math.round((soma / n) * 10) / 10, em: new Date().toISOString() }, { merge: true });
+      return { nome: pedido.nome || 'Cliente' };
+    });
+    if (nota <= 3) await Avisos.avisarLoja(db, tid, { titulo: `Avaliação ${nota} de 5`, corpo: `${saida.nome}${texto ? ': ' + texto.slice(0, 90) : ' não ficou satisfeita com o pedido.'}`, url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `avaliacao-${pedidoId}` });
+    return res.status(200).json({ sucesso: true });
+  } catch (e) { return res.status(400).json({ error: e.message || 'Não foi possível guardar a avaliação.' }); }
+}
 
 module.exports = async function handler(req, res) {
   aplicarCors(req, res, 'OPTIONS,POST');
@@ -135,6 +167,9 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: 'Sessão expirada. Recarregue a página e tente de novo.' });
   }
   const motivo = daEquipe ? String((req.body || {}).motivo || '').trim().slice(0, 200) : '';
+
+  // AVALIAÇÃO DEPOIS DA ENTREGA (mesma prova de dono do cancelamento: o token).
+  if ((req.body || {}).acao === 'avaliar') return avaliar(req, res, { tid, uid: uidVerificado, pedidoId });
 
   try {
     const resultado = await db.runTransaction(async (t) => {
