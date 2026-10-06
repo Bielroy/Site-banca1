@@ -57,11 +57,24 @@ async function baixar() {
     finally { b.disabled = false; b.textContent = 'Baixar cópia agora'; }
 }
 
+async function zerar() {
+    if ($('zerar-palavra').value.trim().toUpperCase() !== 'ZERAR') return showToast('Para confirmar, escreva ZERAR no campo ao lado.', true);
+    const ok = await customConfirm('Apagar todo o movimento?', 'Pedidos, vendas, caixa, histórico de estoque e tudo o que o motor de previsão aprendeu serão apagados desta loja. Os produtos e as configurações ficam. Não dá para desfazer.', { ok: 'Apagar tudo', nao: 'Não apagar' });
+    if (!ok) return;
+    const b = $('btn-zerar'); b.disabled = true; b.textContent = 'Apagando...';
+    try {
+        const r = await api({ acao: 'zerar-movimento', confirmacao: 'ZERAR' });
+        showToast(`Pronto: ${r.total} registros apagados. Recarregando o painel...`);
+        setTimeout(() => location.reload(), 2000);
+    } catch (e) { showToast(e.message, true); b.disabled = false; b.textContent = 'Apagar o movimento'; }
+}
+
 let ligado = false;
 export function iniciarCopia() {
     const caixa = $('copia-box'); if (!caixa || ligado) return;
     ligado = true; caixa.hidden = false;
     $('btn-baixar-copia').addEventListener('click', baixar);
     $('btn-restaurar-copia')?.addEventListener('click', restaurar);
+    const zb = $('zerar-box'); if (zb) { zb.hidden = false; $('btn-zerar').addEventListener('click', zerar); }
     pintarEstado();
 }

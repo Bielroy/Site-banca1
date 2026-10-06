@@ -6,6 +6,7 @@
 //  POST { acao: 'remover', uid }
 //  POST { acao: 'maquininha-estado' } / { acao: 'maquininha-salvar', estabelecimento, token } / { acao: 'maquininha-buscar', dia? }
 //                                                              vendas da maquininha PagBank (ver lib/maquininha.js)
+//  POST { acao: 'zerar-movimento', confirmacao: 'ZERAR' }      apaga pedidos, caixa, histórico e o que o motor de demanda aprendeu
 //  POST { acao: 'copia-restaurar', dia }                      volta o cadastro (produtos, categorias, configurações, cupons) para a cópia do dia
 //  POST { acao: 'copia-estado' } / { acao: 'copia-baixar' }   cópia de segurança dos dados da loja
 //
@@ -143,6 +144,13 @@ module.exports = async function handler(req, res) {
       } catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); throw e; }
     }
     if (acao === 'copia-estado') return res.status(200).json({ sucesso: true, ultima: await P.ultimaCopia(db, tid), copias: await P.listarCopias(db, tid) });
+    if (acao === 'zerar-movimento') {
+      // apaga pedidos, caixa, histórico e o que o motor aprendeu. Só com a palavra digitada, para não acontecer por engano.
+      if (String((req.body || {}).confirmacao || '').trim().toUpperCase() !== 'ZERAR') return res.status(400).json({ error: 'Para confirmar, escreva ZERAR.' });
+      const r = await P.zerarMovimento(db, tid); T._cacheFichas.delete(tid);
+      console.warn(`[zerar] ${dec.email || dec.uid} zerou o movimento de ${tid}: ${r.total} registros`);
+      return res.status(200).json({ sucesso: true, ...r });
+    }
     if (acao === 'copia-restaurar') {
       try { const r = await P.restaurar(db, tid, String((req.body || {}).dia || '')); T._cacheFichas.delete(tid); console.warn(`[copia] ${dec.email || dec.uid} restaurou ${tid} para ${r.dia}`); return res.status(200).json({ sucesso: true, ...r }); }
       catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); throw e; }

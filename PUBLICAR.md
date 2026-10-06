@@ -1,12 +1,12 @@
 # Antes de publicar — lista de conferência
 
 Nada disto foi feito no ambiente em que o código foi escrito (sem acesso à internet,
-ao Firebase e à Vercel). Os testes automáticos (`npm test`, 73 testes) passam e as telas
+ao Firebase e à Vercel). Os testes automáticos (`npm test`, 74 testes) passam e as telas
 foram conferidas com dados simulados.
 
 ## 1. Build
 1. `npm install`
-2. `npm test` — deve terminar com "73 de 73 testes passaram".
+2. `npm test` — deve terminar com "74 de 74 testes passaram".
 3. `npm run build` — nunca foi rodado depois das mudanças. Se der erro, copie a mensagem inteira.
 4. `npm run preview` e abra: `/`, `/admin.html`, `/plataforma.html`.
 
@@ -145,3 +145,12 @@ link de acesso enviado por e-mail abre no Safari, não no aplicativo. Nunca test
   domínio próprio, troque nos arquivos index.html, privacidade.html, sitemap.xml e robots.txt.
 - A prévia do link no WhatsApp é sempre a da Banca, mesmo no link de outra loja (?loja=...).
 - Acesso retirado de alguém pode valer por até 1 hora no painel que já estava aberto.
+
+## 4j. Começar do zero (depois dos testes)
+
+Painel → Configurações → "Começar do zero" (só o proprietário vê). Escreve ZERAR e confirma.
+Apaga pedidos, caixa, fechamentos, histórico de estoque, anotações de clientes, avaliações, vendas da
+maquininha já buscadas e tudo o que o motor de previsão aprendeu; zera os usos dos cupons.
+Ficam produtos (com o estoque marcado), categorias, configurações, cupons, equipe, calendário e fotos.
+Antes de apagar, guarda uma cópia "AAAA-MM-DD-antes-de-zerar" (some depois de 7 cópias diárias mais novas).
+Vale só para a loja em que o painel está aberto.

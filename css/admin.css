@@ -149,3 +149,8 @@
 .pix-chave-linha { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .pix-chave-linha select { flex: 0 0 150px; min-height: 46px; padding: 8px 10px; border-radius: 10px; border: 1.5px solid #e0dcd4; font-size: 16px; }
 .pix-chave-linha input { flex: 1; min-width: 150px; }
+
+/* começar do zero */
+.zerar-box { border-color: #e6b8b3; }
+.zerar-box h4 { color: #b3261e; }
+.zerar-box .copia-linha input { flex: 1; min-width: 150px; min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1.5px solid #e0dcd4; font-size: 16px; text-transform: uppercase; }

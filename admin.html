@@ -317,6 +317,14 @@
                 </div>
 
                 <button class="btn-salvar-config" id="btn-salvar-config">Gravar Definições</button>
+                <!-- Zerar o movimento: aparece só para o proprietário (js/admin-copia.js) -->
+                <div class="copia-box zerar-box" id="zerar-box" hidden>
+                    <h4>Começar do zero</h4>
+                    <p class="config-sub">Para depois dos testes. <b>Apaga</b>: pedidos e vendas, caixa e fechamentos, tudo o que o motor de previsão aprendeu, histórico de estoque (entradas, perdas, produções), anotações de clientes, avaliações e os usos dos cupons.</p>
+                    <p class="config-sub"><b>Fica</b>: produtos (com o estoque que estiver marcado), categorias, configurações, cupons, equipe, calendário, fotos e aparência.</p>
+                    <p class="config-sub">Antes de apagar, o sistema guarda uma cópia. O que o motor aprendeu não tem volta.</p>
+                    <div class="copia-linha"><input type="text" id="zerar-palavra" autocomplete="off" autocapitalize="characters" maxlength="10" placeholder="Escreva ZERAR" aria-label="Escreva ZERAR para confirmar"><button type="button" class="btn-outline copia-perigo" id="btn-zerar">Apagar o movimento</button></div>
+                </div>
                 <!-- Maquininha (PagBank): aparece só para o proprietário (js/admin-maquininha.js) -->
                 <div class="copia-box" id="maq-box" hidden>
                     <h4>Maquininha (PagBank)</h4>

@@ -1021,6 +1021,30 @@ teste('oferta: só vale com preço antigo maior; o desconto nunca promete a mais
   const r = await chamar(api, { headers: ip(), body: pedido({ itens: [{ id: 'tomate', qtd: 2, tipo: 'kg' }] }) }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(r.corpo.pedido.total, 17.8);
 });
 
+teste('zerar: apaga o movimento e o que o motor aprendeu, guarda cópia antes e não toca no cadastro nem em outra loja', async () => {
+  const P = require(raiz('lib/prudencia'));
+  const base = { ...semente(), 'pedidos/p1': { nome: 'Ana', total: 10, data: new Date().toISOString() }, 'pedidos/p2': { nome: 'Bia', total: 20, data: new Date().toISOString() },
+    'resumos/2026-10-05': { receita: 30, pedidos: 2 }, 'fechamentos/2026-10-05': { total: 30 }, 'analytics/dashboard': { x: 1 }, 'analytics_vendas/2026-10-05': { tomate: 3 }, 'analytics_clientes/c1': { n: 2 },
+    'analytics_uid/u1': { cliente: 'c1' }, 'analytics_previsoes/painel': { p: 1 }, 'analytics_previsoes_chunks/0': { p: 1 }, 'analytics_meta/execucao': { em: 1 }, 'analytics_config/params': { margem: 0.3 },
+    'estoque_mov/m1': { tipo: 'compra', qtd: 5 }, 'estoque_resumo/2026-10': { compras: 5 }, 'producoes/x1': { qtd: 2 }, 'crm/c1': { nota: 'ligar' }, 'maquininha/2026-10-05': { total: 99 },
+    'loja/avaliacoes': { soma: 9, n: 2 }, 'loja/fotos': { itens: [{ url: 'https://i.ibb.co/a.webp' }] }, 'cupons/BEMVINDO': { percentual: 10, usos: 7, ativo: true }, 'calendario/e1': { titulo: 'Ceasa' }, 'equipe/u9': { papel: 'caixa' },
+    'tenants/espetinhos': { nome: 'Espetinhos', ativo: true }, 'tenants/espetinhos/pedidos/pe1': { nome: 'Zé', total: 9 }, 'tenants/espetinhos/analytics_vendas/2026-10-05': { carne: 4 } };
+  const db = criarBanco(base), produtosAntes = JSON.stringify(db._dados.get('produtos/tomate')), configAntes = JSON.stringify(db._dados.get('loja/config'));
+  const eq = carregarApi(raiz('api/equipe.js'), criarAdmin(db, { dono: { uid: 'a-1', admin: true }, adm: { uid: 'b-1', tenants: { banca: 'administrador' } } }));
+  const ce = (tk, body) => chamar(eq, { headers: { authorization: `Bearer ${tk}` }, body });
+  assert.strictEqual((await ce('adm', { acao: 'zerar-movimento', confirmacao: 'ZERAR' })).status, 403, 'só o proprietário zera');
+  for (const sem of [undefined, '', 'sim', 'zera']) assert.strictEqual((await ce('dono', { acao: 'zerar-movimento', confirmacao: sem })).status, 400, String(sem));
+  assert.ok(db._dados.has('pedidos/p1'), 'sem a palavra, nada é apagado');
+  const r = await ce('dono', { acao: 'zerar-movimento', confirmacao: 'zerar' }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  for (const foi of ['pedidos/p1', 'pedidos/p2', 'resumos/2026-10-05', 'fechamentos/2026-10-05', 'analytics/dashboard', 'analytics_vendas/2026-10-05', 'analytics_clientes/c1', 'analytics_uid/u1', 'analytics_previsoes/painel',
+    'analytics_previsoes_chunks/0', 'analytics_meta/execucao', 'estoque_mov/m1', 'estoque_resumo/2026-10', 'producoes/x1', 'crm/c1', 'maquininha/2026-10-05', 'loja/avaliacoes']) assert.ok(!db._dados.has(foi), 'devia ter saído: ' + foi);
+  assert.strictEqual(JSON.stringify(db._dados.get('produtos/tomate')), produtosAntes, 'produto intacto'); assert.strictEqual(JSON.stringify(db._dados.get('loja/config')), configAntes, 'configuração intacta');
+  for (const fica of ['loja/fotos', 'calendario/e1', 'equipe/u9', 'analytics_config/params', 'tenants/espetinhos/pedidos/pe1', 'tenants/espetinhos/analytics_vendas/2026-10-05']) assert.ok(db._dados.has(fica), 'devia ter ficado: ' + fica);
+  assert.strictEqual(db._dados.get('cupons/BEMVINDO').usos, 0); assert.strictEqual(db._dados.get('cupons/BEMVINDO').percentual, 10, 'o cupom fica, só a contagem zera');
+  assert.ok(r.corpo.total >= 16, 'conta o que apagou'); assert.ok(/-antes-de-zerar$/.test(r.corpo.copiaDeAntes));
+  const copia = await P.lerCopia(db, 'banca', r.corpo.copiaDeAntes); assert.ok(copia.colecoes.pedidos.p1 && copia.colecoes.pedidos.p2, 'os pedidos ficaram guardados na cópia de antes');
+});
+
 teste('cópia: restaurar volta o cadastro, guarda o estado de antes e não mexe em pedidos nem no que é novo', async () => {
   const P = require(raiz('lib/prudencia'));
   const db = criarBanco({ ...semente(), 'pedidos/p1': { nome: 'Ana', total: 10, data: new Date().toISOString() }, 'loja/avaliacoes': { soma: 9, n: 2 } });

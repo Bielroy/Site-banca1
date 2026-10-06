@@ -72,6 +72,9 @@
   "functions": {
     "api/analytics.js": {
       "maxDuration": 60
+    },
+    "api/equipe.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
