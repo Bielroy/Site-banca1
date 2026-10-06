@@ -18,6 +18,8 @@ const admin = require('firebase-admin');
 const T = require('../lib/tenant');
 const E = require('../lib/estoque');
 const V = require('../lib/venda');
+const Avisos = require('../lib/avisos');
+const P = require('../lib/prudencia');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -98,8 +100,17 @@ async function venda(req, res, { tid, dec }) {
       somarNoCaixa(t, tid, total, 1, V.agoraBrasilia().toISOString().slice(0, 10));
       return { id: chave, total, itens: linhas.length };
     });
+    // Venda no balcão também avisa os aparelhos da equipe (quem está longe do caixa acompanha o movimento).
+    // Toque repetido não avisa de novo; e o aviso nunca derruba a venda, que já está gravada.
+    if (!saida.repetido) await Avisos.avisarLoja(db, tid, {
+      titulo: 'Venda no balcão', corpo: `${Number(saida.total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} · ${pag}`,
+      url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `balcao-${saida.id}`,
+    });
     return res.status(200).json({ sucesso: true, ...saida });
-  } catch (e) { return res.status(400).json({ error: e.message || 'Não foi possível registrar a venda.' }); }
+  } catch (e) {
+    if (P.ehFalhaInterna(e)) { await P.avisarFalha(db, tid, 'A venda no balcão', e); return res.status(500).json({ error: 'Não consegui registrar a venda agora. Tente de novo em instantes.' }); }
+    return res.status(400).json({ error: e.message || 'Não foi possível registrar a venda.' });
+  }
 }
 
 async function pesagem(req, res, { tid, dec }) {

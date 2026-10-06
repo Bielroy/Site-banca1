@@ -3,7 +3,8 @@
 //
 //  Para cada foto escolhida:
 //    confere o arquivo → reduz para no máximo 1000 px → converte para WebP
-//    (JPG onde o navegador não gera WebP) → envia para o Firebase Storage →
+//    (JPG onde o navegador não gera WebP) → envia para o ImgBB (ou, sem ele,
+//    para o Firebase Storage) →
 //    grava o endereço no produto.
 //  Cada linha mostra o progresso e o ganho ("2,4 MB → 180 KB"). Se o envio
 //  cair, tenta mais duas vezes sozinho; se ainda falhar, aparece "Tentar de novo".
@@ -36,7 +37,19 @@ export async function otimizarFoto(file, lado = 1000, qualidade = 0.82) {
 }
 
 /** Envia a foto já otimizada e devolve o endereço público. O nome leva um sufixo para o navegador não mostrar a foto antiga guardada. */
+// 1º caminho: ImgBB, pelo nosso servidor (a chave fica lá). É o que funciona sem pagar o Storage do Firebase.
+// Se o ImgBB não estiver ligado na plataforma, cai no Storage, como era antes.
+const emBase64 = (blob) => new Promise((ok, falha) => { const l = new FileReader(); l.onload = () => ok(String(l.result).split(',')[1] || ''); l.onerror = () => falha(new Error('não consegui ler a foto')); l.readAsDataURL(blob); });
+let _semImgbb = false;
+async function enviarAoImgbb(produtoId, blob, sufixo) {
+    const r = await fetch('/api/foto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ imagem: await emBase64(blob), nome: `${produtoId}${sufixo}` }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 503 && d.codigo === 'sem-imgbb') { _semImgbb = true; return null; }
+    if (!r.ok || !d.url) throw Object.assign(new Error(d.error || 'O envio caiu.'), { amigavel: d.error || '', definitivo: r.status === 400 || r.status === 403 });
+    return d.url;
+}
 export async function enviarFoto(produtoId, { blob, ext }, sufixo = '') {
+    if (!_semImgbb) { const url = await enviarAoImgbb(produtoId, blob, sufixo); if (url) return url; }
     const caminho = `${pastaFotos()}/${produtoId}-${Date.now().toString(36)}${sufixo}.${ext}`;
     const r = ref(storage, caminho);
     await uploadBytes(r, blob, { contentType: blob.type, cacheControl: 'public, max-age=31536000, immutable' });
@@ -135,7 +148,11 @@ async function processar(l) {
         l.estado = 'feito'; l.msg = '';
     } catch (e) {
         l.estado = 'erro';
-        l.msg = e.definitivo ? e.message : (e && /unauthorized|permission/.test(e.code || '') ? 'Sem permissão para enviar. Publique as regras novas do Storage.' : 'O envio caiu. Confira a internet e toque em Tentar de novo.');
+        const semLugar = e && /unauthorized|permission|storage\//.test(e.code || '');
+        l.msg = e.definitivo ? e.message
+            : e.amigavel ? e.amigavel
+            : semLugar ? 'Não há onde guardar a foto. Peça ao dono da plataforma para colar a chave do ImgBB na tela Plataforma.'
+            : 'O envio caiu. Confira a internet e toque em Tentar de novo.';
         if (e.definitivo) { URL.revokeObjectURL(l.previa); l.previa = ''; }
     }
     pintar();

@@ -1,0 +1,48 @@
+// =====================================================================
+//  js/admin-copia.js — CÓPIA DE SEGURANÇA (aba Configurações, só o proprietário).
+//  O servidor guarda sozinho uma cópia por dia (as últimas 7). Aqui a tela
+//  mostra quando foi a última e deixa baixar uma cópia feita na hora, para
+//  guardar no computador, no Drive ou onde a pessoa quiser.
+// =====================================================================
+import { auth } from './firebase.js';
+import { TENANT } from './tenant.js';
+import { showToast } from './utils.js';
+
+const $ = (id) => document.getElementById(id);
+async function api(corpo) {
+    const token = await auth.currentUser.getIdToken();
+    const r = await fetch('/api/equipe', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(corpo) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || 'Não foi possível concluir.');
+    return d;
+}
+const dataBonita = (iso) => { try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch (_) { return iso; } };
+
+async function pintarEstado() {
+    try {
+        const { ultima } = await api({ acao: 'copia-estado' });
+        $('copia-estado').textContent = ultima
+            ? `Última cópia automática: ${dataBonita(ultima.feitaEm)} · ${ultima.contagem.produtos || 0} produtos e ${ultima.contagem.pedidos || 0} pedidos. Ficam guardadas as últimas ${ultima.guardadas > 1 ? ultima.guardadas + ' cópias' : 'cópia'}.`
+            : 'Ainda não há cópia automática. A primeira é feita na próxima madrugada.';
+    } catch (e) { $('copia-estado').textContent = 'Não consegui ver a última cópia agora.'; }
+}
+
+async function baixar() {
+    const b = $('btn-baixar-copia'); b.disabled = true; b.textContent = 'Gerando...';
+    try {
+        const { copia } = await api({ acao: 'copia-baixar' });
+        const url = URL.createObjectURL(new Blob([JSON.stringify(copia, null, 1)], { type: 'application/json' }));
+        const a = document.createElement('a'); a.href = url; a.download = `copia-${TENANT}-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+        showToast(`Cópia baixada: ${copia.contagem.produtos || 0} produtos e ${copia.contagem.pedidos || 0} pedidos.`);
+    } catch (e) { showToast(e.message, true); }
+    finally { b.disabled = false; b.textContent = 'Baixar cópia agora'; }
+}
+
+let ligado = false;
+export function iniciarCopia() {
+    const caixa = $('copia-box'); if (!caixa || ligado) return;
+    ligado = true; caixa.hidden = false;
+    $('btn-baixar-copia').addEventListener('click', baixar);
+    pintarEstado();
+}

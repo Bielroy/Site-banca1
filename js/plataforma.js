@@ -79,6 +79,9 @@ function render() {
     <div class="pf-secao"><h3>Feiras</h3><button class="btn-outline" data-pf="nova-feira"${d.lojas.length < 2 ? ' disabled' : ''}>+ Nova feira</button></div>
     ${S.novaFeira ? feiraHtml({ id: '', nome: '', lojas: [] }, d.lojas, true) : ''}
     ${d.feiras.length ? d.feiras.map((f) => feiraHtml(f, d.lojas, false)).join('') : (S.novaFeira ? '' : `<p class="config-sub">${d.lojas.length < 2 ? 'Uma feira junta duas ou mais lojas na faixa do topo, e o cliente troca de loja deslizando o dedo. Você tem uma loja só: crie a segunda em "+ Nova loja" e o botão acima é liberado.' : 'Nenhuma feira. Uma feira junta lojas na faixa do topo: o cliente troca de loja deslizando o dedo.'}</p>`)}
+    <div class="pf-secao"><h3>Fotos dos produtos</h3><span class="pf-chip${d.fotos ? '' : ' bloq'}">${d.fotos ? 'Envio automático ligado' : 'Desligado'}</span></div>
+    <p class="config-sub">${d.fotos ? 'As lojas enviam as fotos pelo painel (Produtos → "Enviar várias fotos") e elas vão sozinhas para o ImgBB. Para trocar a chave, cole a nova abaixo.' : 'Com a chave do ImgBB, as lojas escolhem as fotos no painel e o sistema envia todas de uma vez e já grava em cada produto. Para pegar a chave (grátis): entre em imgbb.com, crie a conta, abra api.imgbb.com e toque em "Get API key".'}</p>
+    <div class="pf-add pf-imgbb"><input type="password" id="pf-imgbb" autocomplete="off" spellcheck="false" maxlength="40" placeholder="chave do ImgBB (32 letras e números)" aria-label="Chave do ImgBB"><button type="button" class="btn-outline" data-pf="salvar-imgbb">Salvar</button></div>
     <p class="config-sub cal-nota">Ao bloquear uma loja, ela para de receber pedidos, vender no balcão e mexer no estoque; o cadastro de produtos continua editável pelo proprietário.</p>`;
 }
 async function carregar() { S.dados = await api({ acao: 'lojas' }); render(); }
@@ -127,13 +130,18 @@ function ligar() {
             return fazer({ acao: 'ativo', id, ativo: false }, 'Loja bloqueada.');
         }
         if (a === 'liberar') return fazer({ acao: 'ativo', id, ativo: true }, 'Loja liberada.');
+        if (a === 'salvar-imgbb') {
+            const chave = $('pf-imgbb').value.trim();
+            if (!/^[a-f0-9]{32}$/i.test(chave)) return showToast('A chave do ImgBB tem 32 letras e números. Confira se copiou inteira.', true);
+            return fazer({ acao: 'imgbb', chave }, 'Chave guardada. O envio automático de fotos está ligado.');
+        }
         if (a === 'mudar-tipo') {
             const novo = card.querySelector('.pf-tipo input').value.trim();
             if (novo.length < 2) return showToast('Escreva o tipo de negócio.', true);
             return fazer({ acao: 'tipo', id, tipo: novo }, `${loja.nome} agora é "${novo}".`);
         }
         if (a === 'dar-dono') {
-            const campo = card.querySelector('.pf-add:not(.pf-tipo) input'), email = campo.value.trim().toLowerCase();
+            const campo = card.querySelector('.pf-add:not(.pf-tipo):not(.pf-imgbb) input'), email = campo.value.trim().toLowerCase();
             if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return showToast('Confira o e-mail.', true);
             return fazer({ acao: 'proprietario', id, email }, `${email} agora é proprietário de ${loja.nome}.`);
         }

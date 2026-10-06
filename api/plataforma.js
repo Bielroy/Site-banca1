@@ -4,6 +4,7 @@
 //
 //  POST { acao: 'lojas' }                                   lista lojas, feiras e o movimento do mês
 //  POST { acao: 'criar-loja', id, nome, modelo, tipoNome?, emailDono? }   (modelo = aparência inicial; tipoNome = tipo escrito à mão)
+//  POST { acao: 'imgbb', chave }                               liga (ou desliga, com chave vazia) o envio de fotos ao ImgBB
 //  POST { acao: 'tipo', id, tipo }                              muda o tipo de negócio de uma loja
 //  POST { acao: 'ativo', id, ativo }                        bloquear / liberar
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
@@ -74,7 +75,9 @@ async function lojas(res) {
     return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, mes, donos };
   }));
   const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, lojas: (d.data().lojas || []).map((l) => l.id) }));
-  return res.status(200).json({ sucesso: true, lojas: lista, feiras, modelos: Object.keys(MODELOS), modulos: MODULOS, mes: mesAtual() });
+  const seg = await db.collection('plataforma').doc('segredos').get();
+  const fotos = /^[a-f0-9]{32}$/i.test(String(process.env.IMGBB_API_KEY || (seg.exists && seg.data().imgbb) || ''));
+  return res.status(200).json({ sucesso: true, lojas: lista, feiras, modelos: Object.keys(MODELOS), modulos: MODULOS, mes: mesAtual(), fotos });
 }
 
 async function definirDono(id, email, remover) {
@@ -122,6 +125,14 @@ async function tipo(req, res) {
   await fichaRef(id).set({ ...base(f), tipo: nome }, { merge: true });
   T._cacheFichas.delete(id);
   return res.status(200).json({ sucesso: true });
+}
+// Chave do ImgBB (hospedagem das fotos). Fica em plataforma/segredos, que ninguém lê pelo navegador.
+// A tela só fica sabendo SE existe chave, nunca qual é.
+async function imgbb(req, res) {
+  const chave = String((req.body || {}).chave || '').trim();
+  if (chave && !/^[a-f0-9]{32}$/i.test(chave)) throw falha(400, 'Esta não parece uma chave do ImgBB (são 32 letras e números).');
+  await db.collection('plataforma').doc('segredos').set({ imgbb: chave, imgbbEm: new Date().toISOString() }, { merge: true });
+  return res.status(200).json({ sucesso: true, ligado: !!chave });
 }
 async function modulos(req, res) {
   const id = String((req.body || {}).id || ''), f = await exigirLoja(id), pedido = (req.body || {}).modulos;
@@ -187,7 +198,7 @@ module.exports = async function handler(req, res) {
     catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[plataforma] assumir', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
   }
   if (dec.plataforma !== true) return res.status(403).json({ error: 'Área restrita ao dono da plataforma.' });
-  const acoes = { lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res) };
+  const acoes = { lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res) };
   const fn = acoes[(req.body || {}).acao];
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });
   try { return await fn(); }

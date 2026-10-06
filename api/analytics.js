@@ -21,6 +21,7 @@ const { montarRankingCliente } = require('../analytics/publicApi');
 const K = require('../analytics/ranking');
 const { diaDeTs, isoDeDia } = require('../analytics/normalize');
 const T = require('../lib/tenant');
+const P = require('../lib/prudencia');
 
 const ORIGENS_CONFIAVEIS = [
   'https://www.bancaadairepedrina.com.br',
@@ -70,7 +71,11 @@ module.exports = async function handler(req, res) {
       for (const id of lojas) {
         try { saida[id] = resumo(await Store.recalcular(T.escopo(banco, id), { forcar: true })); }
         catch (e) { console.error('[analytics] loja', id, e); saida[id] = { erro: true }; }
+        // CÓPIA DE SEGURANÇA do dia (guarda as últimas 7). Falha aqui não derruba o resto da rotina.
+        try { saida[id] = { ...saida[id], copia: await P.copiar(banco, id) }; }
+        catch (e) { console.error('[copia] loja', id, e && e.message); saida[id] = { ...saida[id], copia: { erro: true } }; await P.avisarFalha(banco, id, 'A cópia de segurança', e); }
       }
+      await P.limparLimites(banco);
       return res.status(200).json({ sucesso: true, cron: true, ...(saida[T.TENANT_PADRAO] || {}), lojas: saida });
     }
     if (req.method !== 'POST') return res.status(405).json({ sucesso: false, error: 'Método não permitido.' });

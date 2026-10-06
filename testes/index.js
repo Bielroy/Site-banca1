@@ -925,6 +925,99 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   assert.strictEqual((await ch3({ acao: 'proprietario', id: 'jantinha-da-lu', email: 'ze@x.com', remover: true })).status, 200);
   assert.deepStrictEqual(usuarios[0].customClaims, { tenants: { outra: 'caixa' } }); assert.strictEqual(usuarios[0].revogado, true);
 });
+teste('prudência: limite contado no banco, alerta de falha com intervalo e cópia de segurança diária', async () => {
+  const P = require(raiz('lib/prudencia')), T = require(raiz('lib/tenant'));
+  // 1) LIMITE: 8 pedidos por conexão em 10 min; o 9º é barrado; outra conexão e outra loja não pagam por isso
+  const db = criarBanco(semente()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  const mandar = (ipTxt, extra) => chamar(api, { headers: { 'x-forwarded-for': ipTxt }, body: pedido(extra) });
+  // (o 2º endereço muda só para passar pela trava antiga de 5 s, que fica na memória; a conta nova usa o 1º, o de quem compra)
+  for (let i = 0; i < 8; i++) assert.strictEqual((await mandar('200.1.1.1, 10.0.0.' + i)).status, 200, 'pedido ' + (i + 1));
+  const nono = await mandar('200.1.1.1, 10.0.0.99'); assert.strictEqual(nono.status, 429); assert.ok(/Aguarde/.test(nono.corpo.error));
+  assert.strictEqual((await mandar('200.2.2.2')).status, 200, 'outra conexão segue comprando');
+  assert.strictEqual([...db._dados.keys()].filter((k) => k.startsWith('pedidos/')).length, 9, 'o pedido barrado não foi gravado');
+  assert.ok([...db._dados.keys()].some((k) => k.startsWith('limites/pedido_')), 'a conta fica no banco');
+  // a janela passa e a pessoa volta a comprar; a faxina apaga as contagens vencidas
+  const depois = Date.now() + 601000;
+  assert.strictEqual(await P.limitar(db, 'pedido', 'banca|200.1.1.1', 8, 600, depois), true);
+  assert.ok((await P.limparLimites(db, depois + 601000)) >= 1); assert.ok(![...db._dados.keys()].some((k) => k.startsWith('limites/')));
+  // banco fora do ar nunca impede venda
+  assert.strictEqual(await P.limitar({ collection: () => { throw new Error('fora'); } }, 'pedido', 'x', 1, 60), true);
+
+  // 2) ALERTA: só falha interna avisa, e no máximo uma vez a cada 30 min por assunto
+  assert.strictEqual(P.ehFalhaInterna(new Error('Tomate esgotou.')), false); assert.strictEqual(P.ehFalhaInterna(new TypeError('x')), true);
+  assert.strictEqual(P.ehFalhaInterna(Object.assign(new Error('UNAVAILABLE'), { code: 14 })), true); assert.strictEqual(P.ehFalhaInterna(Object.assign(new Error('Loja fechada'), { status: 403, code: 'x' })), false);
+  const agora = Date.now();
+  assert.strictEqual((await P.avisarFalha(db, 'banca', 'O envio de pedidos', new Error('caiu'), agora)).avisou, true);
+  assert.strictEqual((await P.avisarFalha(db, 'banca', 'O envio de pedidos', new Error('caiu'), agora + 60000)).avisou, false, 'dentro de 30 min não repete');
+  assert.strictEqual((await P.avisarFalha(db, 'banca', 'A venda no balcão', new Error('caiu'), agora + 60000)).avisou, true, 'outro assunto avisa');
+  assert.strictEqual((await P.avisarFalha(db, 'banca', 'O envio de pedidos', new Error('caiu'), agora + 31 * 60000)).avisou, true);
+  // falha interna no pedido: a cliente vê frase simples (não o erro técnico) e a equipe é avisada
+  const dbRuim = criarBanco(semente()); const apiRuim = carregarApi(raiz('api/checkout.js'), criarAdmin(dbRuim, TOKENS));
+  const tx = dbRuim.runTransaction.bind(dbRuim); let n = 0;
+  dbRuim.runTransaction = async (fn) => { n++; if (n === 2) throw Object.assign(new Error('14 UNAVAILABLE: segredo interno'), { code: 14 }); return tx(fn); };   // a 1ª transação é a do limite
+  const ruim = await chamar(apiRuim, { headers: ip(), body: pedido() });
+  assert.strictEqual(ruim.status, 500); assert.ok(!/UNAVAILABLE|segredo/.test(ruim.corpo.error), ruim.corpo.error);
+  assert.ok(dbRuim._dados.has('plataforma/alertas'), 'o alerta ficou registrado');
+
+  // 3) CÓPIA: produtos, configuração e pedidos recentes; as mais velhas que 7 saem; a rotina diária faz sozinha
+  const d2 = criarBanco({ ...semente(), 'pedidos/novo': { nome: 'Ana', total: 10, data: new Date().toISOString() }, 'pedidos/velho': { nome: 'Bia', total: 5, data: '2020-01-01T10:00:00.000Z' },
+    'tenants/espetinhos': { nome: 'Espetinhos', ativo: true }, 'tenants/espetinhos/produtos/carne': { nome: 'Espeto', preco: 9, ativo: true } });
+  const ex = await P.exportar(d2, 'banca'); assert.ok(ex.colecoes.produtos.tomate, 'produto na cópia'); assert.ok(ex.colecoes.pedidos.novo && !ex.colecoes.pedidos.velho, 'pedidos: só os últimos 90 dias');
+  assert.ok(!JSON.stringify(ex).includes('Espeto'), 'a cópia de uma loja não leva dado de outra');
+  const exE = await P.exportar(d2, 'espetinhos'); assert.strictEqual(exE.colecoes.produtos.carne.nome, 'Espeto'); assert.strictEqual(exE.ficha.nome, 'Espetinhos');
+  for (let i = 0; i < 9; i++) await P.copiar(d2, 'banca', new Date(Date.UTC(2026, 9, 1 + i, 8)));
+  const guardadas = [...d2._dados.keys()].filter((k) => /^backups\/banca_[\d-]+$/.test(k)).sort();
+  assert.strictEqual(guardadas.length, P.GUARDAR); assert.strictEqual(guardadas[0], 'backups/banca_2026-10-03'); assert.ok(!d2._dados.has('backups/banca_2026-10-01/partes/000'), 'as partes da cópia velha saíram junto');
+  const montada = JSON.parse([...d2._dados.keys()].filter((k) => k.startsWith('backups/banca_2026-10-09/partes/')).sort().map((k) => d2._dados.get(k).t).join(''));
+  assert.strictEqual(montada.colecoes.produtos.tomate.nome, ex.colecoes.produtos.tomate.nome, 'a cópia guardada remonta inteira');
+  assert.strictEqual((await P.ultimaCopia(d2, 'banca')).dia, '2026-10-09'); assert.strictEqual(await P.ultimaCopia(d2, 'espetinhos'), null);
+  // o proprietário baixa pelo painel; caixa não
+  const eq = carregarApi(raiz('api/equipe.js'), criarAdmin(d2, { dono: { uid: 'a-1', admin: true }, caixa: { uid: 'c-1', tenants: { banca: 'caixa' } } }));
+  const ce = (tk, body) => chamar(eq, { headers: { authorization: `Bearer ${tk}` }, body });
+  assert.strictEqual((await ce('caixa', { acao: 'copia-baixar' })).status, 403);
+  const baixada = await ce('dono', { acao: 'copia-baixar' }); assert.strictEqual(baixada.status, 200); assert.ok(baixada.corpo.copia.colecoes.produtos.tomate);
+  assert.strictEqual((await ce('dono', { acao: 'copia-estado' })).corpo.ultima.guardadas, P.GUARDAR);
+});
+
+teste('fotos: envio ao ImgBB só para gestor, só imagem de verdade, e a chave nunca volta para a tela', async () => {
+  const db = criarBanco({ 'tenants/espetinhos': { nome: 'Espetinhos', ativo: true } });
+  const tokens = { super: { uid: 's-1', plataforma: true }, dono: { uid: 'd-1', tenants: { espetinhos: 'proprietario' } }, caixa: { uid: 'c-1', tenants: { espetinhos: 'caixa' } }, antigo: { uid: 'a-1', admin: true } };
+  const adm = criarAdmin(db, tokens), foto = carregarApi(raiz('api/foto.js'), adm), plat = carregarApi(raiz('api/plataforma.js'), adm);
+  const ch = (tk, body, loja) => chamar(foto, { headers: { authorization: `Bearer ${tk}`, ...(loja ? { 'x-loja': loja } : {}) }, body });
+  const webp = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP'), Buffer.alloc(40, 7)]).toString('base64');
+  const CHAVE = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4', fetchReal = global.fetch, idas = []; let resposta = { ok: true, status: 200, corpo: { success: true, data: { url: 'https://i.ibb.co/abc/tomate.webp' } } };
+  global.fetch = async (url, o) => { idas.push({ url: String(url), corpo: String(o.body) }); return { ok: resposta.ok, status: resposta.status, json: async () => resposta.corpo }; };
+  try {
+    delete process.env.IMGBB_API_KEY;
+    assert.strictEqual((await ch('', { imagem: webp }, 'espetinhos')).status, 401);
+    assert.strictEqual((await ch('caixa', { imagem: webp }, 'espetinhos')).status, 403, 'caixa não envia foto');
+    assert.strictEqual((await ch('dono', { imagem: webp })).status, 403, 'dono de uma loja não envia na loja original');
+    // sem chave: avisa com um código que o painel entende, e não chama ninguém
+    const sem = await ch('dono', { imagem: webp }, 'espetinhos'); assert.strictEqual(sem.status, 503); assert.strictEqual(sem.corpo.codigo, 'sem-imgbb'); assert.strictEqual(idas.length, 0);
+    assert.strictEqual((await ch('dono', { acao: 'estado' }, 'espetinhos')).corpo.ligado, false);
+    // a chave entra pela tela Plataforma, só pelo dono da plataforma, e a lista só diz SE existe
+    const cp = (tk, body) => chamar(plat, { headers: { authorization: `Bearer ${tk}` }, body });
+    assert.strictEqual((await cp('dono', { acao: 'imgbb', chave: CHAVE })).status, 403);
+    assert.strictEqual((await cp('super', { acao: 'imgbb', chave: 'curta' })).status, 400);
+    assert.strictEqual((await cp('super', { acao: 'imgbb', chave: CHAVE })).status, 200);
+    const lista = (await cp('super', { acao: 'lojas' })).corpo; assert.strictEqual(lista.fotos, true); assert.ok(!JSON.stringify(lista).includes(CHAVE), 'a chave não volta para a tela');
+    foto._zerar();
+    // agora envia: a foto segue para o ImgBB com a chave, e volta só o link
+    const ok = await ch('dono', { imagem: webp, nome: 'Tomate Italiano!' }, 'espetinhos'); assert.strictEqual(ok.status, 200, JSON.stringify(ok.corpo)); assert.strictEqual(ok.corpo.url, 'https://i.ibb.co/abc/tomate.webp');
+    assert.strictEqual(idas.length, 1); assert.ok(idas[0].url.startsWith('https://api.imgbb.com/1/upload')); assert.ok(idas[0].corpo.includes('key=' + CHAVE) && idas[0].corpo.includes('name=espetinhos-tomate-italiano'));
+    assert.ok(!JSON.stringify(ok.corpo).includes(CHAVE));
+    assert.strictEqual((await ch('antigo', { imagem: webp })).status, 200, 'a conta antiga envia na loja original');
+    // o que não é imagem não passa (o servidor olha os bytes, não o nome)
+    for (const ruim of ['', 'não é base64 !!!', Buffer.from('<script>alert(1)</script> isto não é imagem').toString('base64'), Buffer.alloc(1.6 * 1024 * 1024, 1).toString('base64')])
+      assert.strictEqual((await ch('dono', { imagem: ruim }, 'espetinhos')).status, 400, ruim.slice(0, 20));
+    assert.strictEqual(idas.length, 2, 'nada inválido chegou ao ImgBB');
+    // ImgBB fora do ar, ou devolvendo link estranho: erro claro, sem gravar lixo
+    resposta = { ok: false, status: 500, corpo: null }; assert.strictEqual((await ch('dono', { imagem: webp }, 'espetinhos')).status, 502);
+    resposta = { ok: true, status: 200, corpo: { success: true, data: { url: 'javascript:alert(1)' } } }; assert.strictEqual((await ch('dono', { imagem: webp }, 'espetinhos')).status, 502);
+    assert.strictEqual(foto.tipoDaImagem(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0])), 'jpg');
+  } finally { global.fetch = fetchReal; }
+});
+
 teste('fotos: miniatura só para link https em produção, nas larguras que a Vercel aceita', async () => {
   const F = await import(raiz('js/foto-lib.js')), V = JSON.parse(require('fs').readFileSync(raiz('vercel.json'), 'utf8'));
   assert.deepStrictEqual(V.images.sizes, F.LARGURAS, 'vercel.json e js/foto-lib.js com as mesmas larguras');

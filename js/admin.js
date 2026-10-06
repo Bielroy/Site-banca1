@@ -141,6 +141,7 @@ const aplicarPapel = () => {
     const ba = document.getElementById('btn-avisos');   // quem não vê pedidos (produção, estoque) não recebe aviso de pedido
     if (ba) { ba.hidden = !['plataforma', 'proprietario', 'administrador', 'funcionario', 'caixa'].includes(papelAtual); if (!ba.hidden) TELAS.avisos().then((m) => m.marcarBotaoDeAvisos()).catch(() => {}); }
     document.body.classList.toggle('so-equipe', !gestor);
+    if (['plataforma', 'proprietario'].includes(papelAtual)) import('./admin-copia.js').then((m) => m.iniciarCopia()).catch((e) => console.warn('[copia]', e && e.message));
     const r = document.getElementById('papel-rotulo'); if (r) { r.textContent = rotuloDoPapel(papelAtual); r.hidden = papelAtual === 'proprietario'; }
     if (!gestor) {                                      // para a equipe, a aba do Dashboard mostra só a fila de pedidos
         const t = document.querySelector('.tab[data-aba="relatorios"]');

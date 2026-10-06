@@ -138,6 +138,7 @@ const agoraBrasilia = () => new Date(Date.now() - 3 * 3600000);
 const { linhaEndereco } = require('../lib/endereco');
 const T = require('../lib/tenant');
 const Avisos = require('../lib/avisos');
+const P = require('../lib/prudencia');
 const Entrega = require('../lib/entrega');
 const E = require('../lib/estoque');
 
@@ -236,6 +237,11 @@ module.exports = async function handler(req, res) {
   let tid;
   try { ({ tid } = await T.resolverLoja(db, req)); }
   catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+
+  // Limite de verdade: contado no banco (vale para todas as cópias do servidor e não zera sozinho).
+  // 8 pedidos em 10 minutos, por conexão, é folga de sobra para uma família e pouco para quem quer encher a loja de pedido falso.
+  const conexao = String(ip).split(',')[0].trim() || 'desconhecida';
+  if (!(await P.limitar(db, 'pedido', `${tid}|${conexao}`, 8, 600))) return res.status(429).json({ error: 'Muitos pedidos seguidos desta conexão. Aguarde alguns minutos e tente de novo.' });
 
 
   // -------------------------------------------------------------------
@@ -492,6 +498,12 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json({ sucesso: true, pedido: resultado });
   } catch (error) {
+    // Falha NOSSA (banco fora do ar, erro de programa): a equipe recebe um aviso no celular, e a
+    // cliente vê uma frase simples em vez do erro técnico. Aviso de regra ("esgotado") segue como era.
+    if (P.ehFalhaInterna(error)) {
+      await P.avisarFalha(db, tid, 'O envio de pedidos', error);
+      return res.status(500).json({ error: 'Não consegui registrar o pedido agora. Tente de novo em instantes.' });
+    }
     return res.status(400).json({ error: error.message || 'Não foi possível registrar o pedido.' });
   }
 };

@@ -4,6 +4,7 @@
 //  POST { acao: 'listar' }
 //  POST { acao: 'definir', email, papel }   papel: administrador | funcionario | caixa | producao | estoque
 //  POST { acao: 'remover', uid }
+//  POST { acao: 'copia-estado' } / { acao: 'copia-baixar' }   cópia de segurança dos dados da loja
 //
 //  O papel fica gravado DENTRO do login da pessoa (custom claims), que só o
 //  servidor consegue escrever. A lista em {loja}/equipe é só um espelho para
@@ -19,6 +20,7 @@
 const admin = require('firebase-admin');
 const T = require('../lib/tenant');
 const A = require('../lib/avisos');
+const P = require('../lib/prudencia');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -118,6 +120,9 @@ module.exports = async function handler(req, res) {
     if (acao === 'listar') return await listar(res, { tid });
     if (acao === 'definir') return await definir(req, res, { tid, dec });
     if (acao === 'remover') return await remover(req, res, { tid, dec });
+    // CÓPIA DE SEGURANÇA: o proprietário vê quando foi a última e baixa uma cópia feita na hora.
+    if (acao === 'copia-estado') return res.status(200).json({ sucesso: true, ultima: await P.ultimaCopia(db, tid) });
+    if (acao === 'copia-baixar') return res.status(200).json({ sucesso: true, copia: await P.exportar(db, tid) });
   } catch (e) { console.error('[equipe]', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
   return res.status(400).json({ error: 'Ação desconhecida.' });
 };

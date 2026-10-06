@@ -113,3 +113,8 @@
 .cond-linha .cond-formato { flex: 0 0 150px; }
 .cond-linha .cond-remover { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid #e0dcd4; background: #fff; color: var(--danger); font-size: 1.3rem; cursor: pointer; }
 @media (max-width: 600px) { .cond-linha { flex-wrap: wrap; } .cond-linha .cond-nome { flex-basis: 100%; } .cond-linha .cond-formato { flex: 1; } }
+
+/* cópia de segurança (Configurações) */
+.copia-box { margin-top: 28px; padding: 18px; border: 1.5px solid var(--linha, #e0dcd4); border-radius: 14px; background: var(--superficie, #fff); }
+.copia-box h4 { font-family: 'Fraunces', serif; color: var(--forest); font-size: 1.15rem; margin: 0 0 6px; }
+.copia-box .btn-outline { margin-top: 6px; min-height: 44px; padding: 10px 18px; }
