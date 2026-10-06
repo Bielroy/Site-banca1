@@ -26,7 +26,7 @@ const $ = (id) => document.getElementById(id);
 export async function lerCalendario({ forcar = false } = {}) {
     if (!forcar && S.entradas && Date.now() - S.em < 600000) return S.entradas;
     const snap = await getDocs(query(tcol('calendario'), limit(500)));
-    S.entradas = snap.docs.map((d) => ({ id: d.id, ...d.data() })); S.em = Date.now();
+    S.entradas = snap.docs.map((d) => ({ ...d.data(), id: d.id })); S.em = Date.now();
     return S.entradas;
 }
 

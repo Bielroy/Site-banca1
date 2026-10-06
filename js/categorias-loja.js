@@ -22,7 +22,7 @@ export const iniciarCategorias = (aoMudar) => onSnapshot(
     tcol('categorias'),
     (snap) => {
         categorias = snap.docs
-            .map((d) => ({ id: d.id, ...d.data() }))
+            .map((d) => ({ ...d.data(), id: d.id }))
             .filter((c) => c.chave)
             .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
         aoMudar();

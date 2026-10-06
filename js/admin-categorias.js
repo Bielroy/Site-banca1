@@ -304,7 +304,7 @@ export const iniciarCategoriasAdmin = (getProdutos) => {
     S.getProdutos = getProdutos || S.getProdutos;
     S.configPronta = false;
     const u1 = onSnapshot(tcol('categorias'), (snap) => {
-        S.cats = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        S.cats = snap.docs.map((d) => ({ ...d.data(), id: d.id }))
             .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
         S.erro = '';
         render();

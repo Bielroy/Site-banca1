@@ -310,7 +310,7 @@ const iniciarRealTimeSync = () => {
         custosPorId = new Map(snap.docs.map(d => [d.id, d.data()])); juntarProdutos();
     }, (e) => console.warn('[painel] custos:', e?.code || e)));
     const unsubProd = onSnapshot(tcol("produtos"), (snap) => {
-        produtosBase = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        produtosBase = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }))
             .sort((a, b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
         juntarProdutos();
     }, (e) => mostrarErroConsulta(e, 'lista-produtos'));
@@ -408,7 +408,7 @@ const iniciarRealTimeSync = () => {
         // O unsubscribe é guardado — sem isso o listener sobreviveria ao logout.
         const unsub = onSnapshot(qSimples, (snap) => {
             aplicarPedidos(
-                snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                snap.docs.map(d => ({ ...d.data(), id: d.id }))
                          .filter(p => STATUS_NA_FILA.includes(p.status))
             );
             avisarSeChegouPedido(snap);
@@ -423,7 +423,7 @@ const iniciarRealTimeSync = () => {
     );
 
     const unsubPedidos = onSnapshot(qComIndice, (snap) => {
-        aplicarPedidos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        aplicarPedidos(snap.docs.map(d => ({ ...d.data(), id: d.id })));
         avisarSeChegouPedido(snap);
     }, (erro) => {
         console.error('Consulta de pedidos falhou:', erro);
@@ -1956,7 +1956,7 @@ const carregarBalanco = async (dias = 30) => {
                 const parar = onSnapshot(q, (s) => { parar(); resolve(s); }, reject);
               });
 
-        balancoCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        balancoCache = snap.docs.map(d => ({ ...d.data(), id: d.id }));
         renderBalanco(dias);
         TELAS.margens().then((m) => m.renderMargens(balancoCache, produtosAtuais, dias)).catch(() => {});   // custos e margens, com os mesmos pedidos
         // Antes cortava em 800 sem avisar: o total do período saía menor que o real.

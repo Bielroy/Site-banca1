@@ -691,7 +691,7 @@ const iniciarRealTimeSync = () => {
     };
     const unsubProdutos = onSnapshot(tcol("produtos"), (snap) => {
         _produtosChegaram = true;
-        _produtosBrutos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.ativo && !p.soInsumo);   // ingrediente de receita não vai para a vitrine
+        _produtosBrutos = snap.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter(p => p.ativo && !p.soInsumo);   // ingrediente de receita não vai para a vitrine
         aplicarCatalogo();
     }, (e) => {
         console.warn('[loja] produtos:', e?.code || e);
