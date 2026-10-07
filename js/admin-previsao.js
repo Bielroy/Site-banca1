@@ -64,28 +64,29 @@ const cartaoProduto = (p, hz) => {
     const cab = `<img class="pv-foto" src="${escapeHTML(p.foto || '')}" alt="" loading="lazy" width="56" height="56" onerror="this.style.visibility='hidden'">
                  <div class="pv-tit"><strong>${escapeHTML(p.nome)}</strong><small>${escapeHTML(p.cat || '')} · ${escapeHTML(p.unidade || 'un')}</small></div>`;
     if (!h || h.fechado) return `<article class="pv-card pv-card--vazio"><div class="pv-topo">${cab}</div><p class="pv-aviso">Loja fechada neste período.</p></article>`;
-    if (h.semDados) return `<article class="pv-card pv-card--vazio"><div class="pv-topo">${cab}</div><p class="pv-aviso">Dados insuficientes (${h.nObs || 0} dia(s) de histórico) — ainda não dá para prever.</p></article>`;
+    if (h.semDados) return `<article class="pv-card pv-card--vazio"><div class="pv-topo">${cab}</div><p class="pv-aviso">Ainda não dá para prever: só ${h.nObs || 0} dia(s) de venda deste produto.</p></article>`;
 
+    // O cartão diz UMA coisa em destaque: quanto comprar. O resto (faixa, risco, motivos) fica atrás de "Por quê?".
     const rec = h.recomendacao || {};
+    const un = escapeHTML(p.unidade || 'un');
     const avisos = (rec.avisos || []).map((a) => `<p class="pv-aviso"><i class="ic" data-i="alerta"></i> ${escapeHTML(a)}</p>`).join('');
     const est = rec.estoque
-        ? `<p class="pv-est pv-est--${rec.estoque.zona}">Seu estoque: <b>${num(rec.estoque.atual)}</b> → risco de falta <b>${pct(rec.estoque.riscoFalta)}</b>${rec.estoque.comprarAdicional > 0 ? ` · comprar +${num(rec.estoque.comprarAdicional)}` : ''}</p>` : '';
+        ? `<p class="pv-est pv-est--${rec.estoque.zona}">Você tem <b>${num(rec.estoque.atual)}</b>${rec.estoque.comprarAdicional > 0 ? ` · falta comprar <b>${num(rec.estoque.comprarAdicional)}</b>` : ' · dá para o período'}</p>` : '';
     const motivos = ((p.horizontes[hz] && h.explicacao) || []).map((m) => `<li>${escapeHTML(m)}</li>`).join('');
     const comp = h.componentes || {};
     return `
-    <article class="pv-card" data-id="${escapeHTML(p.id)}">
-        <div class="pv-topo">${cab}<span class="pv-conf pv-conf--${rotConf(h.conf)}" title="Confiança da previsão">${pct(h.conf)} · ${rotConf(h.conf)}</span></div>
-        <div class="pv-nums">
-            <div><span>Previsto</span><strong>${num(h.previsto)}</strong></div>
-            <div><span>Faixa provável</span><strong>${num(h.q10)}–${num(h.q90)}</strong></div>
-            <div class="pv-sug"><span>Sugestão de compra</span><strong>${num(rec.sugestao)}</strong></div>
+    <article class="pv-card pv-card--novo" data-id="${escapeHTML(p.id)}">
+        <div class="pv-topo">${cab}
+            <div class="pv-comprar"><span>${rec.estoque ? 'Ter no total' : 'Comprar'}</span><strong>${num(rec.sugestao)} <small>${un}</small></strong></div>
         </div>
-        ${barraFaixa(h, p.unidade)}
-        <p class="pv-risco">Risco de faltar com a sugestão: <b>${rec.riscoRotulo || '–'}</b> (${pct(rec.riscoFalta)})</p>
-        ${est}${avisos}
+        <p class="pv-resumo-linha">Deve vender <b>${num(h.previsto)} ${un}</b> <span>(entre ${num(h.q10)} e ${num(h.q90)})</span> <i class="pv-conf pv-conf--${rotConf(h.conf)}" title="Confiança da previsão">confiança ${rotConf(h.conf)}</i></p>
+        ${est}
         <details class="pv-por-que"><summary>Por quê?</summary>
             ${motivos ? `<ul>${motivos}</ul>` : '<p>Sem detalhes para este período.</p>'}
-            <p class="pv-conf-det">Confiança = volume de dados ${pct(comp.volume)} · regularidade ${pct(comp.regularidade)} · acerto recente ${pct(comp.estabilidade)} · qualidade ${pct(comp.qualidade)}${h.intervalo === 'poisson' ? '<br>Faixa estimada por modelo de contagem (histórico curto).' : `<br>Faixa calculada de ${h.nRes} erros passados do próprio modelo.`}</p>
+            ${barraFaixa(h, p.unidade)}
+            <p class="pv-risco">Chance de faltar comprando o sugerido: <b>${rec.riscoRotulo || '–'}</b> (${pct(rec.riscoFalta)})</p>
+            ${avisos}
+            <p class="pv-conf-det">Confiança ${pct(h.conf)}: quantidade de dados ${pct(comp.volume)} · regularidade ${pct(comp.regularidade)} · acerto recente ${pct(comp.estabilidade)} · qualidade ${pct(comp.qualidade)}</p>
         </details>
     </article>`;
 };
@@ -120,7 +121,7 @@ const aprendido = (m) => {
     const clima = c && c.dias ? `Clima de ${escapeHTML(c.lugar || c.cidade)}` : 'Clima desligado';
     const temClima = !!(c && c.dias);
     return `<details class="pv-aprendido"><summary><i class="ic" data-i="alvo"></i> O que o motor já aprendeu <small>${clima}${m.diasFechados ? ` · ${m.diasFechados} dia(s) sem funcionar ignorado(s)` : ''}</small></summary><ul>
-        ${temClima ? estado('Dia de chuva', f.chuva) + estado('Dia de calor fora do normal', f.calor) + estado('Dia mais frio que o normal', f.frio) : '<li>Sem a cidade da loja (aba Operacional), a previsão não usa chuva nem calor.</li>'}
+        ${temClima ? estado('Dia de chuva', f.chuva) + estado('Dia de calor fora do normal', f.calor) + estado('Dia mais frio que o normal', f.frio) : '<li>Sem a cidade da loja (em Configurações), a previsão não usa chuva nem calor.</li>'}
         ${estado('Dias de pagamento (5 a 10)', f.pag, 8)}
         <li><b>Preço e oferta:</b> ${f.preco && f.preco.n ? `10% mais barato rende cerca de ${Math.round((Math.pow(0.9, -f.preco.elasticidade) - 1) * 100)}% a mais de venda <small>(medido em ${f.preco.n} dia(s) de preço diferente)</small>` : 'ainda sem oferta medida; por enquanto assume que 10% mais barato rende uns 10% a mais'}</li>
     </ul></details>`;
@@ -196,8 +197,8 @@ const render = () => {
     const rs = (x) => (x ? `${fmt(x.faturamentoPrevisto)}` : '–');
     alvo.innerHTML = `
     <div class="pv-head">
-        <div><h3><i class="ic" data-i="previsao"></i> Previsão de Demanda</h3><small>Atualizado ${quando(m.geradoEm)} · ${m.diasHistorico} dia(s) de histórico · ${m.nPedidos} pedido(s) · ${m.nClientes} cliente(s)</small></div>
-        <button class="btn-ia-action" id="pv-recalc">↻ Recalcular</button>
+        <div><h3><i class="ic" data-i="previsao"></i> Quanto deve vender</h3><small>Atualizado ${quando(m.geradoEm)} · ${m.diasHistorico} dia(s) de histórico · ${m.nPedidos} pedido(s) · ${m.nClientes} cliente(s)</small></div>
+        <button class="bt bt-sec" id="pv-recalc"><i class="ic" data-i="repetir"></i> Recalcular</button>
     </div>
     ${avisos}
     ${aprendido(m)}
@@ -223,7 +224,7 @@ const render = () => {
             <input type="search" id="pv-busca" placeholder="Buscar produto..." value="${escapeHTML(S.busca)}">
             <select id="pv-ordem" aria-label="Ordenar">${ORDENS.map(([k, r]) => `<option value="${k}" ${S.ordem === k ? 'selected' : ''}>${r}</option>`).join('')}</select>
         </div>
-        <p class="pv-dica">Período: ${(m.hz && m.hz[S.horizonte] ? (m.hz[S.horizonte].length > 1 ? m.hz[S.horizonte][0] + ' a ' + m.hz[S.horizonte][m.hz[S.horizonte].length - 1] : m.hz[S.horizonte][0]) : '–') || '–'}. “Sugestão de compra” cobre a demanda com ${Math.round((m.nivelServico ?? 0.8) * 100)}% de chance (nível de serviço ajustável em analytics/config.js).</p>
+        <p class="pv-dica">Período: ${(m.hz && m.hz[S.horizonte] ? (m.hz[S.horizonte].length > 1 ? m.hz[S.horizonte][0] + ' a ' + m.hz[S.horizonte][m.hz[S.horizonte].length - 1] : m.hz[S.horizonte][0]) : '–') || '–'}. A quantidade para comprar já inclui uma folga para não faltar.</p>
     </div>
     <div class="pv-grid" id="pv-lista">${listaProdutos()}</div>
 
@@ -231,12 +232,12 @@ const render = () => {
     <div class="pv-blocos">
         ${bloco('<i class="ic" data-i="sino"></i> Maior risco de falta (7 dias)', (db.riscoFalta || []).map((x) => `<li><span>${escapeHTML(x.nome)}</span><b>${pct(x.risco)} · comprar +${num(x.comprar)}</b></li>`), 'Nenhum produto com estoque controlado em risco.')}
         ${bloco('<i class="ic" data-i="caixa"></i> Maior excesso previsto', (db.excesso || []).map((x) => `<li><span>${escapeHTML(x.nome)}</span><b>+${num(x.excesso)} acima do provável</b></li>`), 'Nenhum excesso detectado.')}
-        ${bloco('<i class="ic" data-i="sobe"></i> Demanda crescendo', (db.crescendo || []).map((x) => linhaMini(x, '+' + Math.round(x.pct * 100) + '%')), 'Nenhum produto com alta estatisticamente relevante.')}
-        ${bloco('<i class="ic" data-i="desce"></i> Demanda caindo', (db.caindo || []).map((x) => linhaMini(x, Math.round(x.pct * 100) + '%')), 'Nenhum produto com queda estatisticamente relevante.')}
+        ${bloco('<i class="ic" data-i="sobe"></i> Demanda crescendo', (db.crescendo || []).map((x) => linhaMini(x, '+' + Math.round(x.pct * 100) + '%')), 'Nenhum produto subindo com clareza.')}
+        ${bloco('<i class="ic" data-i="desce"></i> Demanda caindo', (db.caindo || []).map((x) => linhaMini(x, Math.round(x.pct * 100) + '%')), 'Nenhum produto caindo com clareza.')}
     </div>
     <p class="pv-dica">Risco de falta e excesso só são calculados para produtos com <b>estoque físico</b> cadastrado${db.estoqueSemControle ? ` (${db.estoqueSemControle} produto(s) sem controle de estoque)` : ''}.</p>
     ${blocoEsperados()}
-    <section class="pv-bloco pv-bloco--largo"><h4><i class="ic" data-i="alvo"></i> Erro das previsões anteriores</h4>${av ? `<p class="pv-sub">Média dos últimos ${av.n} dia(s): erro médio ${num(av.mae, 2)} · RMSE ${num(av.rmse, 2)} · WAPE ${pct(av.wape)}${av.cobertura != null ? ` · ${pct(av.cobertura)} das vendas caíram dentro da faixa (ideal ≈ 80%)` : ''}</p>` : ''}${tabelaErros(d.avaliacoes)}</section>
+    <section class="pv-bloco pv-bloco--largo"><h4><i class="ic" data-i="alvo"></i> A previsão acertou?</h4>${av ? `<p class="pv-sub">Nos últimos ${av.n} dia(s) conferidos, o erro foi de ${pct(av.wape)} do que foi vendido${av.cobertura != null ? `, e ${pct(av.cobertura)} das vendas ficaram dentro da faixa prevista (o esperado é perto de 80%)` : ''}.</p>` : '<p class="pv-sub">Ainda não há dias conferidos.</p>'}${tabelaErros(d.avaliacoes)}</section>
     <details class="pv-avancado"><summary>Opções avançadas</summary>
         <p>Para o sistema aprender feriados e sazonalidade, ele precisa de histórico longo. Este botão relê até 1 ano de pedidos <b>uma vez</b> e guarda o resumo diário.</p>
         <button class="btn-ia-action" id="pv-backfill">Importar histórico de 365 dias</button>

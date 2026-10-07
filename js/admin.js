@@ -76,9 +76,10 @@ onAuthStateChanged(auth, async (user) => {
     if (!autorizado) return; // o guard já exibe a tela de bloqueio
 
     document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('dashboard').style.display = 'block';
+    document.getElementById('dashboard').style.display = 'grid';
     iniciarLogoutPorInatividade(30);
     try { const f = await getDoc(fichaRef()); modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; } catch (_) { modulosDaLoja = null; }
+    { const tl = document.getElementById('topo-loja'); if (tl) tl.textContent = nomeDaLoja; }
     aplicarPapel();
     if (ehGestor(papelAtual)) iniciarIAFeaturesDOM();
     iniciarRealTimeSync();
@@ -148,10 +149,8 @@ const aplicarPapel = () => {
     if (['plataforma', 'proprietario'].includes(papelAtual)) import('./admin-maquininha.js').then((m) => m.iniciarMaquininha()).catch((e) => console.warn('[maquininha]', e && e.message));
     if (['plataforma', 'proprietario'].includes(papelAtual)) import('./admin-copia.js').then((m) => m.iniciarCopia()).catch((e) => console.warn('[copia]', e && e.message));
     const r = document.getElementById('papel-rotulo'); if (r) { r.textContent = rotuloDoPapel(papelAtual); r.hidden = papelAtual === 'proprietario'; }
-    if (!gestor) {                                      // para a equipe, a aba do Dashboard mostra só a fila de pedidos
-        const t = document.querySelector('.tab[data-aba="relatorios"]');
-        if (t) { t.querySelector('.tab-txt').textContent = 'Pedidos'; t.querySelector('.tab-ico').innerHTML = '<i class="ic" data-i="pedidos"></i>'; }
-    }
+    montarBarra(minhas);
+    document.querySelectorAll('.so-dono').forEach((el) => { el.hidden = !['plataforma', 'proprietario'].includes(papelAtual); });
     // título de grupo só aparece se sobrou alguma aba dele; quem tem poucas abas não precisa de grupos nem de menu
     const nav = document.querySelector('.tabs');
     nav.classList.toggle('poucas', minhas.length <= 4);
@@ -166,13 +165,53 @@ const aplicarPapel = () => {
 };
 // No celular o menu fica recolhido numa barra com a aba aberta; "Menu" mostra todas.
 const mostrarAbaAtual = (tab) => {
-    document.getElementById('tabs-atual-nome').textContent = tab.querySelector('.tab-txt').textContent;
+    const nome = tab.querySelector('.tab-txt').textContent;
+    document.getElementById('tabs-atual-nome').textContent = nome;
     document.getElementById('tabs-atual-ico').innerHTML = ico(tab.querySelector('[data-i]')?.dataset.i || 'menu', 'viva');
+    const sec = document.getElementById('topo-secao'); if (sec) sec.textContent = nome;                 // o topo diz em que tela a pessoa está
+    document.querySelectorAll('#barra [data-ir-aba]').forEach((b) => { const on = b.dataset.irAba === tab.dataset.aba; b.classList.toggle('on', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    const bm = document.getElementById('barra-menu'); if (bm) bm.classList.toggle('on', !document.querySelector(`#barra [data-ir-aba="${tab.dataset.aba}"]`));   // tela que só existe no Menu
 };
 const recolherMenu = (sim) => {
     document.querySelector('.tabs').classList.toggle('recolhido', sim);
     document.getElementById('tabs-atual').setAttribute('aria-expanded', String(!sim));
+    const f = document.getElementById('tabs-fundo'); if (f) f.hidden = sim;
+    const bm = document.getElementById('barra-menu'); if (bm) bm.setAttribute('aria-expanded', String(!sim));
 };
+
+// ---------------------------------------------------------------------
+// BARRA DE ATALHOS (celular): as telas do dia a dia a um toque, e "Menu" para o resto.
+// É o desenho dos painéis de loja mais usados (Shopify, Square, iFood): o que se abre
+// dez vezes por dia fica sempre ao alcance do polegar. Respeita o papel de quem entrou.
+// ---------------------------------------------------------------------
+const ORDEM_DA_BARRA = ['relatorios', 'pdv', 'fechamento', 'produtos', 'estoque', 'compras', 'calendario', 'previsao', 'balanco'];
+const montarBarra = (minhas) => {
+    const barra = document.getElementById('barra'); if (!barra) return;
+    const cabeTudo = minhas.length <= 5;
+    const escolhidas = (cabeTudo ? minhas : ORDEM_DA_BARRA.filter((a) => minhas.includes(a)).slice(0, 4));
+    const botao = (aba) => {
+        const t = document.querySelector(`.tab[data-aba="${aba}"]`); if (!t) return '';
+        return `<button type="button" class="barra-btn" data-ir-aba="${aba}"><i class="ic" data-i="${t.querySelector('[data-i]')?.dataset.i || 'menu'}"></i><span>${escapeHTML(t.querySelector('.tab-txt').textContent)}</span>${aba === 'relatorios' ? '<i class="barra-conta" id="barra-conta" hidden></i>' : ''}</button>`;
+    };
+    barra.innerHTML = escolhidas.map(botao).join('') + (cabeTudo ? '' : '<button type="button" class="barra-btn" id="barra-menu" aria-expanded="false" aria-controls="menu-abas"><i class="ic" data-i="menu"></i><span>Menu</span></button>');
+    barra.style.setProperty('--n', String(escolhidas.length + (cabeTudo ? 0 : 1)));
+    document.body.classList.add('com-barra');
+    pintarContaDePedidos();
+};
+let pedidosEsperando = 0;
+const pintarContaDePedidos = () => { const c = document.getElementById('barra-conta'); if (c) { c.textContent = pedidosEsperando; c.hidden = !pedidosEsperando; c.setAttribute('aria-label', `${pedidosEsperando} pedido(s) esperando`); } };
+document.getElementById('barra')?.addEventListener('click', (e) => { if (e.target.closest('#barra-menu')) recolherMenu(!document.querySelector('.tabs').classList.contains('recolhido')); else if (e.target.closest('[data-ir-aba]')) recolherMenu(true); });
+document.getElementById('tabs-fundo')?.addEventListener('click', () => recolherMenu(true));
+
+// "Mais opções" do topo (Plataforma, instalar, impressora, sair): abre e fecha; toque fora fecha.
+{
+    const bm = document.getElementById('btn-mais'), mm = document.getElementById('menu-mais');
+    const abrir = (sim) => { if (!bm || !mm) return; mm.hidden = !sim; bm.setAttribute('aria-expanded', String(sim)); };
+    bm?.addEventListener('click', (e) => { e.stopPropagation(); abrir(mm.hidden); });
+    document.addEventListener('click', (e) => { if (mm && !mm.hidden && !e.target.closest('#menu-mais')) abrir(false); });
+    mm?.addEventListener('click', () => abrir(false));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { abrir(false); if (!document.querySelector('.tabs').classList.contains('recolhido')) recolherMenu(true); } });
+}
 document.getElementById('tabs-atual').addEventListener('click', () => recolherMenu(!document.querySelector('.tabs').classList.contains('recolhido')));
 
 document.querySelector('.tabs').addEventListener('click', (e) => {
@@ -373,6 +412,7 @@ const iniciarRealTimeSync = () => {
         const tabPed = document.querySelector('.tab[data-aba="relatorios"]');
         if (tabPed) { let c = tabPed.querySelector('.tab-conta'); if (!c) { c = document.createElement('i'); c.className = 'tab-conta'; tabPed.appendChild(c); } c.textContent = esperando; c.hidden = !esperando; c.setAttribute('aria-label', `${esperando} pedido(s) esperando`); }
         const ponto = document.getElementById('tabs-ponto'); if (ponto) ponto.hidden = !esperando;
+        pedidosEsperando = esperando; pintarContaDePedidos();
         if (document.getElementById('aba-relatorios')?.classList.contains('active')) {
             renderRelatoriosMaster();
         }
@@ -454,45 +494,58 @@ const getEstoqueBadge = (estoqueFisico, ativo) => {
 const FRACIONAVEIS = ['kg', 'kilo', 'quilograma', 'g', 'grama', 'l', 'litro'];
 const ehFracionavel = (u) => FRACIONAVEIS.includes(String(u || '').toLowerCase());
 
+// ---------------------------------------------------------------------
+// LISTA DE PRODUTOS — linhas compactas (cabem 7 ou 8 por tela, antes eram 2).
+// Tocar na linha abre o produto; a chave à direita põe e tira da loja.
+// Filtros no topo respondem às perguntas do dia: o que está fora? o que está sem foto?
+// ---------------------------------------------------------------------
+let adminFiltro = 'todos';
+const temEstoque = (p) => p.estoqueFisico !== undefined && p.estoqueFisico !== null && p.estoqueFisico !== '';
+const FILTROS_PRODUTO = [
+    ['todos', 'Todos', () => true],
+    ['venda', 'À venda', (p) => p.ativo && !p.soInsumo],
+    ['fora', 'Fora da loja', (p) => !p.ativo && !p.soInsumo],
+    ['baixo', 'Estoque baixo', (p) => temEstoque(p) && Number(p.estoqueFisico) <= 5],
+    ['semfoto', 'Sem foto', (p) => !p.foto && !p.soInsumo],
+    ['oferta', 'Em oferta', (p) => Number(p.precoDe) > Number(p.preco)],
+    ['insumo', 'Só ingrediente', (p) => p.soInsumo === true],
+];
 const renderProdutos = () => {
-    const listaFiltrada = produtosAtuais.filter(p => {
-        if (!adminBuscaTermo) return true;
-        return normalizar(p.nome).includes(adminBuscaTermo) || normalizar(p.cat).includes(adminBuscaTermo);
-    });
+    const daBusca = produtosAtuais.filter(p => !adminBuscaTermo || normalizar(p.nome).includes(adminBuscaTermo) || normalizar(nomeDaCategoria(p.cat)).includes(adminBuscaTermo) || normalizar(p.cat).includes(adminBuscaTermo));
+    const filtros = document.getElementById('pl-filtros');
+    if (filtros) {
+        if (!FILTROS_PRODUTO.some(([k, , f]) => k === adminFiltro && daBusca.some(f))) adminFiltro = 'todos';
+        filtros.innerHTML = FILTROS_PRODUTO.map(([k, rot, f]) => { const n = daBusca.filter(f).length; return n || k === 'todos' ? `<button type="button" class="pl-filtro${adminFiltro === k ? ' on' : ''}" data-pl-filtro="${k}" aria-pressed="${adminFiltro === k}">${rot} <i>${n}</i></button>` : ''; }).join('');
+    }
+    const passa = (FILTROS_PRODUTO.find(([k]) => k === adminFiltro) || FILTROS_PRODUTO[0])[2];
+    const lista = daBusca.filter(passa).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
 
-    const html = listaFiltrada.map(p => {
-        // Aviso quando falta o peso médio num produto vendido a peso:
-        // sem ele, o cliente não vê estimativa ao pedir "5 unidades".
-        const precisaPeso = ehFracionavel(p.unidade) && !p.pesoMedio;
-        const avisoPeso = precisaPeso
-            ? `<span class="badge-estoque baixo" style="margin-top:4px;display:inline-block;"><i class="ic" data-i="balanca"></i> Sem peso médio</span>` : '';
-
+    const html = lista.map(p => {
+        const avisos = [];
+        if (p.soInsumo) avisos.push('<span class="pl-selo">só ingrediente</span>');
+        if (Number(p.precoDe) > Number(p.preco)) avisos.push('<span class="pl-selo oferta">oferta</span>');
+        if (temEstoque(p)) { const q = Number(p.estoqueFisico); avisos.push(q <= 0 ? '<span class="pl-selo ruim">estoque zerado</span>' : q <= 5 ? `<span class="pl-selo atencao">restam ${q}</span>` : `<span class="pl-selo">estoque ${q}</span>`); }
+        if (!p.foto && !p.soInsumo) avisos.push('<span class="pl-selo atencao">sem foto</span>');
+        // sem o peso médio, o cliente não vê estimativa de preço ao pedir "5 unidades" de um produto vendido a peso
+        if (ehFracionavel(p.unidade) && !p.pesoMedio && !p.soInsumo) avisos.push('<span class="pl-selo atencao">sem peso médio</span>');
+        const cat = nomeDaCategoria(p.cat);
         return `
-        <article class="card-produto ${p.ativo ? '' : 'esgotado'}">
-            <div class="prod-info-grande">
-                <div class="prod-img-grande">${p.foto ? `<img src="${escapeHTML(p.foto)}" loading="lazy" alt="${escapeHTML(p.nome)}">` : placeholderSVG}</div>
-                <div class="prod-detalhes">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
-                        <h4>${escapeHTML(p.nome)}</h4>
-                        <button class="btn-social-media" data-action="gerar-post" data-id="${escapeHTML(p.id)}" title="Gerar Post Instagram/WPP">Post IA</button>
-                    </div>
-                    <p>${fmt(p.preco)} <span style="font-size:0.9rem; color:var(--text-light); font-weight:normal">/${escapeHTML(p.unidade)}</span></p>
-                    ${getEstoqueBadge(p.estoqueFisico, p.ativo)}
-                    ${avisoPeso}
-                </div>
-            </div>
-            <div class="botoes-acao">
-                ${p.ativo
-                    ? `<button class="btn btn-outline flex-1" style="border-color:var(--danger); color:var(--danger);" data-action="toggle-estoque" data-id="${escapeHTML(p.id)}" data-status="false">Tirar da loja</button>`
-                    : `<button class="btn btn-outline flex-1" style="background:var(--success); border-color:var(--success); color:white;" data-action="toggle-estoque" data-id="${escapeHTML(p.id)}" data-status="true">Voltar a vender</button>`
-                }
-                <button class="btn btn-outline" style="background: var(--parchment); color: var(--text-dark); border-color: #e0dcd4;" data-action="editar-produto" data-id="${escapeHTML(p.id)}">Editar</button>
-            </div>
+        <article class="pl-item${p.ativo ? '' : ' fora'}">
+            <button type="button" class="pl-abrir" data-action="editar-produto" data-id="${escapeHTML(p.id)}">
+                <span class="pl-foto">${p.foto ? `<img src="${escapeHTML(p.fotoMini || p.foto)}" loading="lazy" decoding="async" alt="">` : placeholderSVG}</span>
+                <span class="pl-txt">
+                    <b>${escapeHTML(p.nome)}</b>
+                    <span class="pl-sub">${Number(p.preco) > 0 ? `${fmt(p.preco)} / ${escapeHTML(p.unidade || 'un')}` : 'sem preço'}${cat ? ` · ${escapeHTML(cat)}` : ''}${p.ativo ? '' : ' · <em>fora da loja</em>'}</span>
+                    ${avisos.length ? `<span class="pl-avisos">${avisos.join('')}</span>` : ''}
+                </span>
+            </button>
+            ${p.soInsumo ? '' : `<button type="button" class="pl-chave" role="switch" aria-checked="${p.ativo ? 'true' : 'false'}" aria-label="${p.ativo ? 'À venda' : 'Fora da loja'}: ${escapeHTML(p.nome)}" data-action="toggle-estoque" data-id="${escapeHTML(p.id)}" data-status="${p.ativo ? 'false' : 'true'}"><i></i></button>`}
         </article>`;
     }).join('');
 
-    document.getElementById('lista-produtos').innerHTML = html || "<p style='color:var(--text-light)'>Nenhum produto encontrado na busca.</p>";
+    document.getElementById('lista-produtos').innerHTML = html || `<p class="pl-vazio">${produtosAtuais.length ? 'Nenhum produto com essa busca.' : 'Nenhum produto cadastrado ainda. Toque em "Novo produto".'}</p>`;
 };
+document.getElementById('pl-filtros')?.addEventListener('click', (e) => { const b = e.target.closest('[data-pl-filtro]'); if (!b) return; adminFiltro = b.dataset.plFiltro; renderProdutos(); });
 
 // Banco de fotos: escolhe uma foto já enviada, sem galeria nem link.
 document.getElementById('btn-banco-fotos')?.addEventListener('click', async () => {
@@ -502,7 +555,7 @@ document.getElementById('btn-banco-fotos')?.addEventListener('click', async () =
             campo.value = f.url; campo.dataset.bancoUrl = f.url; campo.dataset.bancoMini = f.mini || '';
             document.getElementById('edit-foto').value = '';
             if (previa) { const img = document.createElement('img'); img.src = f.mini || f.url; img.alt = 'Foto escolhida'; img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:12px;'; previa.replaceChildren(img); }
-            showToast('Foto escolhida. Toque em "Gravar no Banco" para salvar no produto.');
+            showToast('Foto escolhida. Toque em "Salvar produto" para ficar valendo.');
         });
     } catch (e) { showToast('Não consegui abrir o banco de fotos. Confira a internet.', true); }
 });
@@ -547,7 +600,7 @@ const alternarCampoPesoMedio = () => {
     const unidade = document.getElementById('edit-unidade')?.value;
     if (grupo) grupo.style.display = ehFracionavel(unidade) ? 'block' : 'none';
     const lbl = document.querySelector('label[for="edit-preco"]');
-    if (lbl) lbl.textContent = ROTULOS_PRECO[unidade] || 'Preço Base (R$)';
+    if (lbl) lbl.textContent = ROTULOS_PRECO[unidade] || 'Preço (R$)';
 };
 document.getElementById('edit-unidade')?.addEventListener('change', alternarCampoPesoMedio);
 
@@ -565,6 +618,7 @@ const limparFormularioProduto = () => {
     alternarCampoPesoMedio();
     const previa = document.getElementById('preview-foto-wrapper'); if (previa) previa.innerHTML = placeholderSVG;
     document.getElementById('btn-excluir-produto').style.display = 'none';
+    { const bp = document.getElementById('btn-post-ia'); if (bp) bp.hidden = true; }
 };
 
 const injetarEstoqueUI = () => {
@@ -573,9 +627,9 @@ const injetarEstoqueUI = () => {
         if (precoRow) {
             precoRow.insertAdjacentHTML('afterend', `
                 <div class="form-group-estoque">
-                    <label for="edit-estoque-fisico"><i class="ic" data-i="caixa"></i> Quantidade Física em Stock (Opcional)</label>
-                    <input type="number" id="edit-estoque-fisico" min="0" placeholder="Ex: 50 (Deixe em branco p/ infinito)">
-                    <small style="color:var(--text-light); font-size:0.75rem; display:block; margin-top:4px;">Se preenchido, o produto irá esgotar automaticamente quando chegar a 0 no e-commerce.</small>
+                    <label for="edit-estoque-fisico"><i class="ic" data-i="caixa"></i> Quantidade em estoque (opcional)</label>
+                    <input type="number" id="edit-estoque-fisico" min="0" placeholder="Em branco = sem controle de estoque">
+                    <small style="color:var(--text-light); font-size:0.75rem; display:block; margin-top:4px;">Com um número aqui, o produto sai da loja sozinho quando chegar a zero.</small>
                 </div>
             `);
         }
@@ -1040,7 +1094,7 @@ document.body.addEventListener('click', async (e) => {
     try {
         if (action === 'novo-produto') {
             injetarEstoqueUI();
-            document.getElementById('modal-titulo').textContent = 'Novo Produto';
+            document.getElementById('modal-titulo').textContent = 'Novo produto';
             limparFormularioProduto();
             document.getElementById('btn-excluir-produto').style.display = 'none';
             openModal('modal-produto');
@@ -1050,7 +1104,7 @@ document.body.addEventListener('click', async (e) => {
             injetarEstoqueUI();
             const p = produtosAtuais.find(x => x.id === target.dataset.id);
             if (!p) return;
-            document.getElementById('modal-titulo').textContent = 'Editar Produto';
+            document.getElementById('modal-titulo').textContent = 'Editar produto';
             document.getElementById('edit-id').value = p.id;
             document.getElementById('edit-nome').value = p.nome;
             document.getElementById('edit-preco').value = p.preco;
@@ -1072,6 +1126,7 @@ document.body.addEventListener('click', async (e) => {
             if (previewContainer) previewContainer.innerHTML = p.foto ? `<img src="${escapeHTML(p.foto)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" alt="${escapeHTML(p.nome)}">` : placeholderSVG;
 
             document.getElementById('btn-excluir-produto').style.display = 'block';
+            { const bp = document.getElementById('btn-post-ia'); if (bp) { bp.hidden = !ehGestor(papelAtual); bp.dataset.id = p.id; } }
             openModal('modal-produto');
         }
 
@@ -1222,10 +1277,10 @@ const iniciarIAFeaturesDOM = () => {
         catInput.closest('.form-group').insertAdjacentHTML('afterend', `
             <div class="form-group w-100" id="form-group-descricao">
                 <label style="display:flex; justify-content:space-between; align-items:center;">
-                    Descrição (Exibida no detalhe do produto)
-                    <button type="button" id="btn-ia-descricao" class="btn-ia-action"><i class="ic" data-i="faisca"></i> IA Copywriter</button>
+                    Descrição
+                    <button type="button" id="btn-ia-descricao" class="btn-ia-action"><i class="ic" data-i="faisca"></i> Escrever com IA</button>
                 </label>
-                <textarea id="edit-descricao" rows="3" placeholder="Deixe a nossa IA redigir um texto de conversão irresistível para este produto..." style="resize: vertical;"></textarea>
+                <textarea id="edit-descricao" rows="3" placeholder="O que o cliente lê ao abrir o produto. Pode deixar em branco." style="resize: vertical;"></textarea>
             </div>
         `);
 
@@ -1234,7 +1289,7 @@ const iniciarIAFeaturesDOM = () => {
             const cat = document.getElementById('edit-cat').value;
             if (!nome || !cat) return showToast("Preencha Nome e Categoria primeiro.", true);
             const btn = e.currentTarget; const originText = btn.innerHTML;
-            btn.innerHTML = "A gerar... <i class='ic' data-i='espera'></i>"; btn.disabled = true;
+            btn.innerHTML = "Escrevendo... <i class='ic' data-i='espera'></i>"; btn.disabled = true;
             try {
                 const res = await fetch('/api/assistente', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1249,18 +1304,16 @@ const iniciarIAFeaturesDOM = () => {
         });
     }
 
-    const dashboardControls = document.querySelector('.dash-header');
+    const dashboardControls = document.getElementById('kit-ia-lugar');
     if (dashboardControls && !document.getElementById('btn-ia-kit')) {
         dashboardControls.insertAdjacentHTML('beforeend', `
-            <div style="display:flex; gap:10px; align-items:center;">
-                <button id="btn-ia-kit" class="btn-ia-action" style="padding: 10px 18px; font-size: 0.95rem;"><i class="ic" data-i="faisca"></i> Criar Kit c/ IA</button>
-            </div>
+<button id="btn-ia-kit" class="bt bt-sec"><i class="ic" data-i="faisca"></i> Sugerir kit com IA</button>
         `);
 
         document.getElementById('btn-ia-kit').addEventListener('click', async (e) => {
             if (produtosAtuais.length < 5) return showToast("Precisa de mais produtos no catálogo.", true);
             const btn = e.currentTarget; const originText = btn.innerHTML;
-            btn.innerHTML = "<i class='ic' data-i='espera'></i> A criar kit..."; btn.disabled = true;
+            btn.innerHTML = "<i class='ic' data-i='espera'></i> Criando..."; btn.disabled = true;
             try {
                 const res = await fetch('/api/assistente', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1358,7 +1411,7 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
     } catch (erro) {
         showToast(erro.message || "Erro ao guardar o produto.", true);
     } finally {
-        btn.textContent = "Gravar no Banco"; btn.disabled = false;
+        btn.textContent = "Salvar produto"; btn.disabled = false;
     }
 });
 
@@ -1367,7 +1420,7 @@ document.getElementById('btn-varias-fotos')?.addEventListener('click', async () 
 });
 
 document.getElementById('btn-excluir-produto').addEventListener('click', async () => {
-    if (await customConfirm("Atenção Crítica", "APAGAR este produto permanentemente do banco de dados?")) {
+    if (await customConfirm("Apagar este produto?", "Ele some da loja e do painel. Não dá para desfazer.", { ok: "Apagar", nao: "Não apagar" })) {
         await deleteDoc(tdoc("produtos", document.getElementById('edit-id').value));
         closeModal('modal-produto'); showToast("Produto apagado.");
     }
@@ -1401,11 +1454,11 @@ const extrairEstatisticas = (pedidos) => {
 // ==========================================
 const renderHtmlPedidos = (pedidos) => {
     const dicsStatus = {
-        'pendente':             { tag: '<i class="ic" data-i="sino"></i> NOVO',        cor: 'var(--danger)',  btn: 'Aceitar e Preparar',      proximo: 'preparando' },
-        'aguardando_pagamento': { tag: '<i class="ic" data-i="pix"></i> AGUARDA PIX', cor: 'var(--info)',    btn: 'Confirmar Recebimento',   proximo: 'preparando' },
-        'aguardando_pesagem':   { tag: '<i class="ic" data-i="balanca"></i> A PESAR',     cor: 'var(--earth)',   btn: 'Lançar Pesos na Balança', proximo: null },
-        'preparando':           { tag: '<i class="ic" data-i="caixa"></i> PREPARANDO',  cor: 'var(--warning)', btn: 'Despachar (Enviado)',     proximo: 'enviado' },
-        'enviado':              { tag: '<i class="ic" data-i="entrega"></i> A CAMINHO',   cor: 'var(--info)',    btn: 'Marcar como Entregue',    proximo: 'arquivado' }
+        'pendente':             { tag: '<i class="ic" data-i="sino"></i> NOVO',        cor: 'var(--forest)',  btn: 'Aceitar e separar',      proximo: 'preparando' },
+        'aguardando_pagamento': { tag: '<i class="ic" data-i="pix"></i> AGUARDA PIX', cor: 'var(--info)',    btn: 'Recebi o PIX',   proximo: 'preparando' },
+        'aguardando_pesagem':   { tag: '<i class="ic" data-i="balanca"></i> A PESAR',     cor: 'var(--earth)',   btn: 'Pesar os itens', proximo: null },
+        'preparando':           { tag: '<i class="ic" data-i="caixa"></i> SEPARANDO',  cor: 'var(--earth)', btn: 'Saiu para entrega',     proximo: 'enviado' },
+        'enviado':              { tag: '<i class="ic" data-i="entrega"></i> A CAMINHO',   cor: 'var(--leaf)',    btn: 'Entregue',    proximo: 'arquivado' }
     };
 
     let colNovos = '', colPrep = '', colEnv = '';
@@ -1479,22 +1532,25 @@ const renderHtmlPedidos = (pedidos) => {
         else if (stKey === 'enviado') { colEnv += cardHtml; nEnv++; }
     });
 
-    const coluna = (titulo, conteudo, contador, corBadge, vazio) => `
-        <div style="background: white; padding: 15px; border-radius: 12px; border: 1px solid var(--parchment); box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
-            <h3 style="border-bottom: 2px solid var(--foam); padding-bottom: 10px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items:center; font-size:1.05rem;">
-                ${titulo}
-                <span style="background: ${corBadge}; color: white; border-radius: 12px; padding: 2px 10px; font-size: 0.85rem;">${contador}</span>
-            </h3>
-            ${conteudo || `<p style="color:var(--text-light); text-align:center; padding: 20px 0;">${vazio}</p>`}
-        </div>`;
-
+    // No celular aparece UMA etapa por vez, escolhida nas abas (antes as três ficavam empilhadas e o
+    // pedido novo se perdia lá embaixo). No computador as três colunas ficam lado a lado.
+    const etapas = [['novos', 'Novos', colNovos, nNovos, 'Nenhum pedido novo.'], ['prep', 'Separando', colPrep, nPrep, 'Nada sendo separado.'], ['env', 'Enviados', colEnv, nEnv, 'Nenhum pedido a caminho.']];
+    if (!etapas.some(([k, , , n]) => k === kbEtapa && n > 0)) kbEtapa = (etapas.find(([, , , n]) => n > 0) || etapas[0])[0];
     return `
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-        ${coluna('Novos &amp; A Pesar', colNovos, nNovos, 'var(--forest)', 'Sem pedidos novos.')}
-        ${coluna('Em Preparação', colPrep, nPrep, 'var(--warning)', 'Nada na bancada.')}
-        ${coluna('Enviados', colEnv, nEnv, 'var(--info)', 'Nenhum envio agora.')}
+    <div class="kb-abas" role="tablist" aria-label="Etapa do pedido">
+        ${etapas.map(([k, rot, , n]) => `<button type="button" class="kb-aba${kbEtapa === k ? ' on' : ''}${n ? ' tem' : ''}" role="tab" aria-selected="${kbEtapa === k}" data-kb="${k}">${rot} <i>${n}</i></button>`).join('')}
+    </div>
+    <div class="kb">
+        ${etapas.map(([k, rot, html, n, vazio]) => `<div class="kb-col" data-kb-col="${k}"${kbEtapa === k ? '' : ' hidden'}><h3>${rot} <i>${n}</i></h3>${html || `<p class="kb-vazio">${vazio}</p>`}</div>`).join('')}
     </div>`;
 };
+let kbEtapa = 'novos';
+document.getElementById('lista-historico')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-kb]'); if (!b) return;
+    kbEtapa = b.dataset.kb;
+    document.querySelectorAll('#lista-historico .kb-aba').forEach((x) => { const on = x.dataset.kb === kbEtapa; x.classList.toggle('on', on); x.setAttribute('aria-selected', String(on)); });
+    document.querySelectorAll('#lista-historico .kb-col').forEach((c) => { c.hidden = c.dataset.kbCol !== kbEtapa; });
+});
 
 // Busca dentro do Kanban (cliente, quadra ou lote)
 document.getElementById('pedido-busca-input')?.addEventListener('input', (e) => {
@@ -1566,7 +1622,7 @@ const renderRelatoriosMaster = async () => {
                 <p style="font-weight:700; color:var(--text-mid); font-size:1.05rem;">Nenhum pedido na fila</p>
                 <p style="font-size:.88rem; margin-top:6px; line-height:1.6;">
                     Só aparecem aqui pedidos em andamento.<br>
-                    Os já concluídos ficam em <b><i class="ic" data-i="moedas"></i> Balanço Geral</b>.
+                    Os já concluídos ficam em <b>Balanço</b>.
                 </p>
             </div>`;
         document.getElementById('stat-pedidos').textContent = "0";
@@ -1585,7 +1641,7 @@ const renderRelatoriosMaster = async () => {
         if (rankingContainer) {
             rankingContainer.insertAdjacentHTML('beforebegin', `
                 <div id="area-grafico-receita" class="chart-wrapper">
-                    <h3><i class="ic" data-i="barras"></i> Receita Logística Recente</h3>
+                    <h3><i class="ic" data-i="barras"></i> Valor dos pedidos em andamento, por dia</h3>
                     <canvas id="receita-chart" height="70"></canvas>
                 </div>
             `);
@@ -1838,7 +1894,7 @@ const salvarCupom = async () => {
         console.error(e);
         showToast('Erro ao gravar o cupom.', true);
     } finally {
-        btn.disabled = false; btn.textContent = 'Gravar Cupom';
+        btn.disabled = false; btn.textContent = 'Salvar cupom';
     }
 };
 
@@ -1989,7 +2045,7 @@ const salvarComunicados = async () => {
     } catch (e) {
         showToast('Erro ao salvar comunicados.', true);
     } finally {
-        btn.disabled = false; btn.textContent = 'Gravar Comunicados';
+        btn.disabled = false; btn.textContent = 'Salvar avisos';
     }
 };
 document.getElementById('btn-salvar-comunicados')?.addEventListener('click', salvarComunicados);
@@ -2218,6 +2274,6 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
     } catch (err) {
         showToast(err.message, true);
     } finally {
-        btn.textContent = "Gravar Definições"; btn.disabled = false;
+        btn.textContent = "Salvar configurações"; btn.disabled = false;
     }
 });

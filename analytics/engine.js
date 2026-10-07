@@ -247,7 +247,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     pesos, hz: Object.fromEntries(Object.entries(hz).map(([k, v]) => [k, v.map(isoDeDia)])),
     avisos: [
       ...(norm.nPedidos < 30 ? ['Poucos pedidos no histórico: todas as previsões têm confiança baixa.'] : []),
-      ...(C.USAR_CLIMA && clima && !mapaClima.size ? [clima.cidade ? `Não consegui o clima de "${clima.cidade}" (${clima.motivo || 'sem resposta'}): a previsão segue sem chuva e calor.` : 'Sem cidade cadastrada: a previsão não usa chuva e calor. Preencha a cidade em Operacional.'] : []),
+      ...(C.USAR_CLIMA && clima && !mapaClima.size ? [clima.cidade ? `Não consegui o clima de "${clima.cidade}" (${clima.motivo || 'sem resposta'}): a previsão segue sem chuva e calor.` : 'Sem cidade cadastrada: a previsão não usa chuva e calor. Preencha a cidade em Configurações.'] : []),
       ...(wBU === 0 ? [`Previsão baseada só no histórico agregado (${pesos.motivo || 'bottom-up sem vantagem comprovada'}).`] : []),
     ],
   };

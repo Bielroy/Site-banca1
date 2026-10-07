@@ -238,7 +238,7 @@ function render(forcar = false) {
             : '<p class="cg-vazio">Nenhuma categoria cadastrada ainda. Enquanto estiver vazio, a loja usa as categorias dos produtos, como sempre.</p>'}</div>
 
         <h3 class="cg-titulo cg-titulo2" id="cg-numeros">Números de WhatsApp</h3>
-        <p class="config-sub">Cada categoria manda o pedido para um número. O que não tiver número próprio vai para o <b>número padrão</b>${S.padrao ? ` (<b>${escapeHTML(fmtTel(S.padrao))}</b>)` : ''}, que se troca na aba <i class="ic" data-i="ajustes"></i> Operacional.</p>
+        <p class="config-sub">Cada categoria manda o pedido para um número. O que não tiver número próprio vai para o <b>número padrão</b>${S.padrao ? ` (<b>${escapeHTML(fmtTel(S.padrao))}</b>)` : ''}, que se troca na aba <i class="ic" data-i="ajustes"></i> Configurações.</p>
         <div class="cg-lista">${S.numeros.map((n) => `
             <article class="cg-item cg-num" data-nid="${escapeHTML(n.id)}">
                 <div class="cg-topo">

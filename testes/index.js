@@ -1526,7 +1526,7 @@ teste('ícones: todo ícone pedido no painel existe, e nenhuma tela do painel vo
   });
   assert.ok(usados > 60, `ícones em uso: ${usados}`);
   const abas = [...fs.readFileSync(raiz('admin.html'), 'utf8').matchAll(/class="tab[^"]*" data-aba="([a-z]+)"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="([a-z]+)">/g)];
-  assert.strictEqual(abas.length, 17); abas.forEach((m) => assert.strictEqual(m[1], m[2], 'cada aba usa o ícone com o próprio nome'));
+  assert.strictEqual(abas.length, 17); abas.forEach((m) => assert.strictEqual(m[1] === 'relatorios' ? 'pedidos' : m[1], m[2], 'cada aba usa o ícone com o próprio nome (a de pedidos usa o de pedidos)'));
   for (const [nome, d] of Object.entries(I.ICONES)) { assert.ok(!/<script|on\w+=|href/i.test(d), nome); assert.ok((d.match(/class="s"/g) || []).length <= 3, `${nome}: semente demais`); }
 });
 
