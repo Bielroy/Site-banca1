@@ -1,0 +1,52 @@
+# Roda a cada mudança enviada ao GitHub:
+#   1. os testes do projeto (inclusive os de segurança), com o banco de mentira;
+#   2. as REGRAS do banco e do armazenamento (firestore.rules / storage.rules) no
+#      emulador oficial do Firebase, tentando ler e gravar o que não pode.
+# Não usa nenhuma chave nem toca no site que está no ar.
+name: Testes de segurança
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seguranca-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testes:
+    name: Testes do projeto (banco de mentira)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node testes/index.js
+
+  regras:
+    name: Regras do banco no emulador do Firebase
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Instalar o emulador e a biblioteca de teste (numa pasta à parte)
+        run: npm install --prefix testes/regras --no-audit --no-fund
+      - name: Rodar as regras no emulador
+        run: testes/regras/node_modules/.bin/firebase emulators:exec --only firestore,storage --project demo-banca "node testes/regras/regras.test.js"
