@@ -1399,16 +1399,17 @@ document.body.addEventListener('click', async (e) => {
         // CARD COM UNIDADE E QUILO: cada botão diz o que faz, e o toque faz exatamente isso
         const modo = actionTarget.dataset.modo === 'kg' ? 'kg' : actionTarget.dataset.modo === 'un' ? 'un' : null;
         const noContador = actionTarget.closest('.modo-qtd');
+        // o card é achado ANTES de mexer no pedido: mexer redesenha os botões, e o botão tocado deixa de existir
+        const cardDoToque = actionTarget.closest('.produto-card');
         if (modo && (action === 'add' || action === 'trocar')) {
             lembrarModo(id, modo);
             modificarCarrinho(id, 1, true, modo);
-            const card = actionTarget.closest('.produto-card');
-            if (action === 'add' && card) { hapticFeedback(); voarParaPedido(card); }
+            if (action === 'add' && cardDoToque) { hapticFeedback(); voarParaPedido(cardDoToque); }
             if (action === 'trocar') showToast(modo === 'kg' ? 'Agora por quilo: 1 kg no pedido.' : 'Agora por unidade: 1 unidade no pedido. Pesamos na hora.');
         }
         else if (noContador && (action === 'inc' || action === 'dec')) {
             const item = STATE.carrinho.find(x => x.id === id);
-            if (item) { modificarCarrinho(id, proximaQtd(item, action === 'inc' ? 1 : -1), true); if (action === 'inc') hapticFeedback(); }
+            if (item) { modificarCarrinho(id, proximaQtd(item, action === 'inc' ? 1 : -1), true); if (action === 'inc') { hapticFeedback(); if (cardDoToque) voarParaPedido(cardDoToque); } }
         }
         else if (action === 'add' || action === 'inc') {
             const card = actionTarget.closest('.produto-card');

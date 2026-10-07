@@ -1514,6 +1514,7 @@ teste('card: produto de quilo tem os dois botões (unidade e quilo), cada um com
   const loja = fs.readFileSync(raiz('js/loja.js'), 'utf8'), painel = fs.readFileSync(raiz('js/admin.js'), 'utf8'), html = fs.readFileSync(raiz('admin.html'), 'utf8');
   assert.ok(/data-action="add" data-modo="\$\{b\.modo\}"/.test(loja) && loja.includes("data-action=\"trocar\""), 'o card desenha os dois botões e o "Trocar para"');
   assert.ok(loja.includes('modificarCarrinho(id, 1, true, modo)'), 'o toque põe exatamente 1 do jeito escrito no botão');
+  assert.ok(loja.indexOf("const cardDoToque = actionTarget.closest('.produto-card');") > 0 && loja.indexOf("const cardDoToque = actionTarget.closest('.produto-card');") < loja.indexOf('modificarCarrinho(id, 1, true, modo)'), 'o card é achado antes de redesenhar os botões (senão o produto não voa para o pedido)');
   assert.ok(html.includes('id="edit-mostrar-primeiro"') && painel.includes("mostrarPrimeiro: document.getElementById('edit-mostrar-primeiro')"), 'o cadastro do produto grava qual botão vem em cima');
 });
 
