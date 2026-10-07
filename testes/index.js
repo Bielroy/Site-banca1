@@ -147,6 +147,132 @@ teste('rotina diária recalcula cada loja no lugar certo e exige o segredo', asy
   assert.ok(db._dados.has('analytics_global/atual'));
 });
 
+// ------------------------------------------------------------------ motor: clima, preço, dias fechados, aprender mais rápido
+teste('motor: aprende o efeito da chuva só com evidência e usa na previsão do dia', () => {
+  const D = require(raiz('analytics/demandForecast')), EF = require(raiz('analytics/externalFactors')), { aplicarParametros } = require(raiz('analytics/engine'));
+  aplicarParametros({});
+  const abertos = new Set([0, 1, 2, 3, 4, 5, 6]), d0 = 20000, N = 70;
+  const chove = (t) => t % 6 === 2;                                        // chuva espalhada pelos dias da semana
+  const clima = new Map(); for (let t = 0; t <= N + 1; t++) clima.set(d0 + t, { chuva: t === N ? 20 : t === N + 1 ? 0 : (chove(t) ? 15 : 0), tmax: 30 });
+  const produtos = new Map([['a', { cat: 'folhas', preco: 5 }], ['b', { cat: 'frutas', preco: 8 }], ['c', { cat: 'frutas', preco: 3 }]]);
+  const vendas = (seca, comChuva) => new Map([...produtos.keys()].map((id, i) => [id, new Map(Array.from({ length: N }, (_, t) => [d0 + t, (chove(t) ? comChuva : seca) * (i + 1) + (t % 3) - 1]))]));
+  const preparar = (vd, cl) => D.prepararSeries({ vendasDia: vd, produtos, ids: [...produtos.keys()], asOfD: d0 + N - 1, abertos, atividade: new Map(Array.from({ length: N }, (_, t) => [d0 + t, 9])), contexto: { estadosClima: EF.estadosDoClima(cl), precos: new Map() } });
+  const prever = (prep, dia) => D.preverSerie({ serie: prep.series.get('a'), hoje: dia, hz: { hoje: [dia] }, abertos, extras: [], unidade: 'un', fracEstimada: 0, fatorFuturo: (d) => EF.fator(prep.modelo, 'a', 'folhas', d) }).horizontes.hoje;
+  const prep = preparar(vendas(20, 12), clima), r = EF.resumo(prep.modelo);
+  assert.strictEqual(r.chuva.confiavel, true); assert.ok(r.chuva.fator > 0.55 && r.chuva.fator < 0.75, 'efeito verdadeiro 0,6: ' + r.chuva.fator);
+  const chuvoso = prever(prep, d0 + N), seco = prever(prep, d0 + N + 1);
+  assert.ok(chuvoso.previsto < seco.previsto * 0.8, `dia de chuva ${chuvoso.previsto} tem de ficar bem abaixo do dia seco ${seco.previsto}`);
+  assert.ok(Math.abs(seco.previsto - 20) < 2.5 && Math.abs(chuvoso.previsto - 12) < 2.5, 'os dois perto da verdade (20 e 12)');
+  // a série guardada é a "de um dia comum": os dias de chuva foram trazidos de volta para perto de 20
+  const pts = prep.series.get('a').filter((o) => o.f); assert.ok(pts.length >= 8 && pts.every((o) => o.y > 15), 'dias de chuva corrigidos na série');
+  // sem diferença nas vendas, não inventa efeito; sem clima, nem tenta
+  const igual = EF.resumo(preparar(vendas(20, 20), clima).modelo); assert.strictEqual(igual.chuva.confiavel, false, 'chuva sem efeito não vira regra');
+  const semClima = preparar(vendas(20, 12), new Map()); assert.strictEqual(EF.resumo(semClima.modelo).chuva.n, 0); assert.strictEqual(EF.fator(semClima.modelo, 'a', 'folhas', d0 + N).f, 1);
+  // poucos dias de chuva: ainda não usa
+  const pouco = new Map([...clima].map(([d, c]) => [d, { ...c, chuva: d - d0 < 60 ? 0 : c.chuva }]));
+  assert.strictEqual(EF.resumo(preparar(vendas(20, 12), pouco).modelo).chuva.confiavel, false, 'com 2 dias de chuva o motor espera mais');
+});
+
+teste('motor: oferta declarada sobe a previsão, e a elasticidade passa a ser a medida na loja', () => {
+  const D = require(raiz('analytics/demandForecast')), EF = require(raiz('analytics/externalFactors')), { aplicarParametros } = require(raiz('analytics/engine'));
+  aplicarParametros({});
+  const abertos = new Set([0, 1, 2, 3, 4, 5, 6]), d0 = 20000, N = 60, produtos = new Map([['a', { cat: 'frutas', preco: 10 }]]);
+  const emOferta = (t) => t >= 20 && t < 26 || t >= 40 && t < 45;       // duas ofertas de 20%
+  const precos = (comOfertas) => new Map([['a', new Map(Array.from({ length: N }, (_, t) => [d0 + t, comOfertas && emOferta(t) ? { p: 8, de: 10 } : { p: 10, de: null }]))]]);
+  const vd = (lift) => new Map([['a', new Map(Array.from({ length: N }, (_, t) => [d0 + t, Math.round(30 * (emOferta(t) ? lift : 1)) + (t % 2)]))]]);
+  const prep = (vendas, pr) => D.prepararSeries({ vendasDia: vendas, produtos, ids: ['a'], asOfD: d0 + N - 1, abertos, atividade: new Map(Array.from({ length: N }, (_, t) => [d0 + t, 9])), contexto: { estadosClima: new Map(), precos: pr } });
+  // 1) loja que nunca fez oferta: vale a elasticidade de partida (1) → 20% mais barato ≈ ×1,25
+  const semHist = prep(vd(1), precos(false));
+  const f0 = EF.fator(semHist.modelo, 'a', 'frutas', d0 + N, { p: 8, de: 10 });
+  assert.ok(Math.abs(f0.f - 1.25) < 0.01, 'partida: ' + f0.f); assert.ok(/abaixo do normal/.test(EF.explicar(f0.partes)[0]) && /estimativa de partida/.test(EF.explicar(f0.partes)[0]));
+  assert.strictEqual(EF.fator(semHist.modelo, 'a', 'frutas', d0 + N, { p: 10, de: null }).f, 1, 'preço normal: sem ajuste');
+  // 2) loja em que a oferta de 20% dobrou a venda: a elasticidade medida fica bem acima da de partida
+  const forte = prep(vd(2), precos(true)), e = EF.resumo(forte.modelo).preco;
+  assert.ok(e.n >= 10 && e.elasticidade > 1.8, 'elasticidade medida: ' + JSON.stringify(e));
+  const h = (p, info) => D.preverSerie({ serie: p.series.get('a'), hoje: d0 + N, hz: { hoje: [d0 + N] }, abertos, extras: [], unidade: 'un', fracEstimada: 0, fatorFuturo: (d) => EF.fator(p.modelo, 'a', 'frutas', d, info) }).horizontes.hoje.previsto;
+  const normal = h(forte, { p: 10, de: null }), comOferta = h(forte, { p: 8, de: 10 });
+  assert.ok(Math.abs(normal - 30.5) < 3, 'fora da oferta a previsão não fica inflada pelos dias de oferta: ' + normal);
+  assert.ok(comOferta > normal * 1.5, `com oferta ${comOferta} × sem ${normal}`);
+  // preço relativo: diferença pequena é ignorada; sem histórico e sem "de", não há referência
+  assert.strictEqual(EF.precoRelativo(new Map([[1, { p: 10 }], [2, { p: 10 }], [3, { p: 10 }], [4, { p: 9.7 }]]), 4), 1);
+  assert.strictEqual(EF.precoRelativo(new Map([[4, { p: 7 }]]), 4), 1); assert.strictEqual(EF.precoRelativo(new Map([[4, { p: 7, de: 10 }]]), 4), 0.7);
+});
+
+teste('motor: dia em que a loja não funcionou sai da conta, e venda de balcão sem endereço não vira cliente', () => {
+  const { executarMotor, aplicarParametros } = require(raiz('analytics/engine')); aplicarParametros({});
+  const dia = (n) => new Date(Date.UTC(2026, 7, n, 15)).toISOString();     // agosto + n dias
+  const pedidos = []; let k = 0;
+  for (let n = 1; n <= 40; n++) {
+    if (n === 20) continue;                                               // a loja não abriu
+    for (let c = 1; c <= 5; c++) pedidos.push({ id: 'p' + (++k), data: dia(n), nome: 'Cliente ' + c, quadra: '1', lote: String(c), condominio: 'Jardins', total: 20, itens: [{ id: 'tomate', nome: 'Tomate', qtd: 2, tipo: 'kg', unidade: 'kg', preco: 8.9, precoOriginal: 8.9 }] });
+    for (let b = 0; b < 3; b++) pedidos.push({ id: 'b' + (++k), data: dia(n), nome: 'Balcão', origem: 'balcao', userId: 'equipe:x', total: 9, itens: [{ id: 'tomate', nome: 'Tomate', qtd: 1, tipo: 'kg', unidade: 'kg', preco: 8.9, precoOriginal: 8.9 }] });
+  }
+  const catalogo = [{ id: 'tomate', nome: 'Tomate', unidade: 'kg', preco: 7.5, precoDe: 8.9, cat: 'legumes', ativo: true }, { id: 'jilo', nome: 'Jiló', unidade: 'kg', preco: 6, cat: 'legumes', ativo: false }];
+  const r = executarMotor({ pedidos, catalogo, agregados: [], parametros: {}, eventos: [], snapshots: [], agora: Date.UTC(2026, 7, 41, 15) });
+  assert.strictEqual(r.meta.nClientes, 5, 'só as 5 casas; as 117 vendas de balcão não são clientes'); assert.strictEqual(r.indiceClientes.length, 5); assert.strictEqual(r.clientes.length, 5);
+  assert.strictEqual(r.meta.diasFechados, 1);
+  const hoje = r.previsoes.tomate.horizontes.hoje;
+  // todo dia vende 13 kg (5×2 + 3×1); hoje o tomate está 16% mais barato → previsão acima de 13, e o dia fechado não puxou a média para baixo
+  assert.ok(hoje.previsto > 13.5 && hoje.previsto < 17, 'previsto ' + hoje.previsto); assert.ok(hoje.explicacao.some((x) => /abaixo do normal/.test(x)), hoje.explicacao.join(' | '));
+  assert.ok(Math.abs(r.previsoes.tomate.horizontes.prox30.previsto / 30 - 13) < 1.2, 'depois de uma semana a oferta de hoje não vale mais');
+  // retrato de hoje para o histórico de preços
+  assert.deepStrictEqual(r.contextoNovo.precos.tomate, [7.5, 8.9]); assert.strictEqual(r.contextoNovo.precos.jilo, 6); assert.deepStrictEqual(r.contextoNovo.fora, ['jilo']);
+  assert.strictEqual(r.esperados.hoje.clientes[0].diasDesdeUltima, 1, 'comprou ontem = há 1 dia');
+  // estoque que zerou numa venda conta como dia de falta
+  const r2 = executarMotor({ pedidos, catalogo, agregados: [], parametros: {}, eventos: [], snapshots: [], faltasEstoque: [{ produtoId: 'tomate', dia: '2026-09-08' }, { produtoId: 'tomate', dia: '2026-09-09' }], agora: Date.UTC(2026, 7, 41, 15) });
+  assert.strictEqual(r2.meta.diasComFalta, 2);
+});
+
+teste('clima: lê a resposta do serviço, guarda por loja e segue com o guardado quando a internet falha', async () => {
+  const Cl = require(raiz('lib/clima'));
+  assert.deepStrictEqual(Cl.lerDias({ daily: { time: ['2026-10-05', '2026-10-06', 'lixo'], precipitation_sum: [0, 12.34, 1], temperature_2m_max: [33.26, null, 2] } }), { '2026-10-05': [0, 33.3], '2026-10-06': [12.3, null] });
+  assert.deepStrictEqual(Cl.lerDias(null), {}); assert.deepStrictEqual(Cl.lerDias({ daily: {} }), {});
+  assert.strictEqual(Cl.escolherLugar({ results: [{ name: 'Goiania', latitude: 1, longitude: 2, country_code: 'US', population: 9e6 }, { name: 'Goiânia', latitude: -16.67861, longitude: -49.25389, country_code: 'BR', admin1: 'Goiás' }] }, 'GOIANIA').lugar, 'Goiânia, Goiás');
+  assert.strictEqual(Cl.escolherLugar({}, 'x'), null); assert.strictEqual(Cl.cidadeDaLoja({ pix: { cidade: 'Goiania' } }), 'Goiania'); assert.strictEqual(Cl.cidadeDaLoja({ cidade: 'Anápolis', pix: { cidade: 'X' } }), 'Anápolis'); assert.strictEqual(Cl.cidadeDaLoja({}), '');
+  const db = criarBanco({}), antigo = global.fetch, chamadas = [];
+  try {
+    global.fetch = async (url) => { chamadas.push(String(url)); return { ok: true, json: async () => (String(url).includes('geocoding') ? { results: [{ name: 'Goiânia', latitude: -16.68, longitude: -49.25, country_code: 'BR', admin1: 'Goiás' }] } : { daily: { time: ['2026-10-05', '2026-10-06', '2026-10-07'], precipitation_sum: [0, 14, 2], temperature_2m_max: [33, 28, 31] } }) }; };
+    const agora = Date.UTC(2026, 9, 6, 15);
+    assert.strictEqual((await Cl.atualizar(db, {}, agora)).motivo, 'sem cidade'); assert.strictEqual(chamadas.length, 0, 'sem cidade não chama ninguém');
+    const r = await Cl.atualizar(db, { cidade: 'Goiânia' }, agora);
+    assert.strictEqual(r.atualizado, true); assert.strictEqual(r.lugar, 'Goiânia, Goiás'); assert.deepStrictEqual(r.dias['2026-10-06'], [14, 28]);
+    assert.ok(chamadas[0].includes('name=Goi%C3%A2nia') && chamadas[1].includes('latitude=-16.68') && chamadas[1].includes('past_days=92'));
+    assert.strictEqual(db._dados.get('analytics_config/clima').lat, -16.68);
+    chamadas.length = 0; await Cl.atualizar(db, { cidade: 'Goiânia' }, agora); assert.strictEqual(chamadas.length, 1, 'cidade já localizada: só busca o tempo');
+    global.fetch = async () => { throw new Error('sem internet'); };
+    const f = await Cl.atualizar(db, { cidade: 'Goiânia' }, agora); assert.strictEqual(f.atualizado, false); assert.deepStrictEqual(f.dias['2026-10-06'], [14, 28], 'usa o que estava guardado');
+    global.fetch = async () => ({ ok: true, json: async () => ({ results: [] }) });
+    const n = await Cl.atualizar(db, { cidade: 'Cidade Que Nao Existe' }, agora); assert.strictEqual(n.motivo, 'cidade não encontrada'); assert.deepStrictEqual(n.dias, {}, 'o tempo de outra cidade não é aproveitado');
+  } finally { global.fetch = antigo; }
+});
+
+teste('rotina diária: guarda o retrato de preços do dia sem apagar as vendas do mesmo dia', async () => {
+  const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+  const db = criarBanco({ ...semente(), [`pedidos/x1`]: { nome: 'Ana', quadra: '5', lote: '3', condominio: 'Jardins', total: 10, data: new Date().toISOString(), itens: [{ id: 'tomate', nome: 'Tomate', qtd: 2, tipo: 'kg', unidade: 'kg', preco: 8.9 }] } });
+  const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));
+  const cron = () => chamar(api, { method: 'GET', headers: { Authorization: 'Bearer segredo-cron' } });
+  assert.strictEqual((await cron()).status, 200);
+  const doc1 = db._dados.get(`analytics_vendas/${hoje}`);
+  assert.ok(doc1 && doc1.precos && Object.keys(doc1.precos).length > 0, 'retrato de preços guardado'); assert.strictEqual(doc1.produtos.tomate, 2, 'vendas do dia no mesmo documento');
+  // muda o preço no meio do dia e recalcula: as vendas atualizam, o retrato da madrugada fica
+  const prod = db._dados.get('produtos/tomate'); db._dados.set('produtos/tomate', { ...prod, preco: 1 });
+  db._dados.set('pedidos/x2', { nome: 'Bia', quadra: '5', lote: '4', condominio: 'Jardins', total: 10, data: new Date().toISOString(), itens: [{ id: 'tomate', nome: 'Tomate', qtd: 3, tipo: 'kg', unidade: 'kg', preco: 1 }] });
+  db._dados.delete('analytics_meta/execucao'); assert.strictEqual((await cron()).status, 200);
+  const doc2 = db._dados.get(`analytics_vendas/${hoje}`);
+  assert.strictEqual(doc2.produtos.tomate, 5); assert.deepStrictEqual(doc2.precos, doc1.precos, 'o primeiro retrato do dia é o que vale');
+  assert.ok(!db._dados.has('analytics_config/clima'), 'loja sem cidade: não guarda clima');
+});
+
+teste('motor: na loja simulada, a regulagem atual erra bem menos que a simples e não piora onde não há o que aprender', () => {
+  const { gerar } = require(raiz('testes/mundo-simulado')), M = require(raiz('scripts/medir-motor'));
+  const erro = (r, k) => { const f = r[k].slice(2); return f.reduce((s, x) => s + x.erro, 0) / f.reduce((s, x) => s + x.mu, 0); };   // do 15º dia em diante
+  const com = M.medir(gerar({ seed: 7, dias: 75, nProd: 12, efeitos: true })), sem = M.medir(gerar({ seed: 107, dias: 75, nProd: 12, efeitos: false }));
+  const gCom = erro(com, 'atual') / erro(com, 'simples'), gSem = erro(sem, 'atual') / erro(sem, 'simples');
+  assert.ok(gCom < 0.85, `com chuva, oferta e pagamento o erro tem de cair pelo menos 15%: ${gCom.toFixed(3)}`);
+  assert.ok(gSem < 1.03, `sem efeito nenhum, não pode piorar: ${gSem.toFixed(3)}`);
+  assert.ok(com.atual[0].sem / com.atual[0].tot < 0.15 && com.simples[0].sem / com.simples[0].tot > 0.25, 'na primeira semana a atual já prevê quase tudo');
+});
+
 // ------------------------------------------------------------------ aviso de pagamento
 teste('referência do PIX separa loja e pedido, e recusa formato estranho', () => {
   const T = require(raiz('lib/tenant'));
@@ -685,7 +811,7 @@ teste('avisos: a mensagem cifrada abre só com a chave do aparelho, e o crachá 
   const outro = crypto.createECDH('prime256v1'); outro.generateKeys();
   assert.notDeepStrictEqual(outro.computeSecret(as), comum);
   // crachá (VAPID): assinatura confere com a chave pública e o destino é o serviço do aparelho
-  const srv = crypto.createECDH('prime256v1'); srv.generateKeys(); const k = { priv: A.b64u(srv.getPrivateKey()), pub: A.b64u(srv.getPublicKey()) };
+  const srv = crypto.createECDH('prime256v1'); do srv.generateKeys(); while (srv.getPrivateKey().length !== 32);   /* 1 em 256 chaves sai com 31 bytes e o servidor a recusa: o teste falhava de vez em quando */ const k = { priv: A.b64u(srv.getPrivateKey()), pub: A.b64u(srv.getPublicKey()) };
   const cab = A.cracha('https://fcm.googleapis.com/fcm/send/abc', k); const [, jwt, pub] = cab.match(/^vapid t=([^,]+), k=(.+)$/);
   const [h, p, ass] = jwt.split('.'); assert.strictEqual(pub, k.pub);
   const x = srv.getPublicKey(), chavePub = crypto.createPublicKey({ format: 'jwk', key: { kty: 'EC', crv: 'P-256', x: A.b64u(x.subarray(1, 33)), y: A.b64u(x.subarray(33)) } });
@@ -699,7 +825,7 @@ teste('avisos: a mensagem cifrada abre só com a chave do aparelho, e o crachá 
 });
 teste('avisos: a equipe liga o aparelho, o pedido novo dispara o aviso e uma falha não derruba o pedido', async () => {
   const crypto = require('crypto'), A = require(raiz('lib/avisos'));
-  const srv = crypto.createECDH('prime256v1'); srv.generateKeys(); const ap = crypto.createECDH('prime256v1'); ap.generateKeys();
+  const srv = crypto.createECDH('prime256v1'); do srv.generateKeys(); while (srv.getPrivateKey().length !== 32);   /* 1 em 256 chaves sai com 31 bytes e o servidor a recusa: o teste falhava de vez em quando */ const ap = crypto.createECDH('prime256v1'); ap.generateKeys();
   const assinatura = (n) => ({ endpoint: `https://fcm.googleapis.com/fcm/send/aparelho-${n}`, keys: { p256dh: A.b64u(ap.getPublicKey()), auth: A.b64u(crypto.randomBytes(16)) } });
   const db = criarBancoP(sementeEstoque()); const adm = criarAdmin(db, TOKENS_P);
   const equipe = carregarApi(raiz('api/equipe.js'), adm), checkout = carregarApi(raiz('api/checkout.js'), adm);

@@ -20,7 +20,10 @@ function criarBanco(inicial = {}) {
       path: caminho, id: caminho.split('/').pop(),
       collection: (nome) => collection(`${caminho}/${nome}`),
       get: async () => snapDoc(caminho),
-      set: async (v, o) => { dados.set(caminho, o && o.merge ? aplicar(dados.get(caminho), v, true) : aplicar({}, v)); },
+      set: async (v, o) => {
+        if (o && o.mergeFields) { const novo = aplicar({}, v), out = { ...(dados.get(caminho) || {}) }; o.mergeFields.forEach((k) => { if (k in novo) out[k] = novo[k]; else delete out[k]; }); dados.set(caminho, out); return; }   // troca só os campos citados, inteiros
+        dados.set(caminho, o && o.merge ? aplicar(dados.get(caminho), v, true) : aplicar({}, v));
+      },
       update: async (v) => { if (!dados.has(caminho)) throw new Error('NOT_FOUND ' + caminho); dados.set(caminho, aplicar(dados.get(caminho), v)); },
       delete: async () => { dados.delete(caminho); },
     };

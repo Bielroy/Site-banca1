@@ -13,7 +13,7 @@
 // =====================================================================
 
 const base = {
-  VERSAO: '1.1.0',
+  VERSAO: '1.2.0',
 
   // ---- Tempo -------------------------------------------------------
   TZ_OFFSET_HORAS: -3,            // Brasília (sem horário de verão desde 2019)
@@ -61,10 +61,11 @@ const base = {
   MEIA_VIDA_DEMANDA: 4,           // peso temporal (em ocorrências)
   MIN_OBS_DEMANDA: 3,             // abaixo disso: sem intervalo confiável
   MIN_RESIDUOS: 6,                // resíduos próprios necessários p/ intervalo próprio
-  K_DOW_DEMANDA: 1,               // encolhimento do fator dia-da-semana do produto
-  K_NUCLEO: 1,                    // peso do nível recente frente ao mesmo-dia-da-semana
+  K_DOW_DEMANDA: 3,               // encolhimento do fator dia-da-semana do produto (em direção ao da LOJA)
+  DOW_LOJA_ATIVO: true,           // o produto começa com o perfil de dia da semana da loja inteira e só depois ganha o seu
+  K_NUCLEO: 3,                    // peso do nível recente frente ao mesmo-dia-da-semana
   JANELA_NIVEL: 28,               // dias do 'nível recente'
-  MIN_HIST_NUCLEO: 4,             // observações mínimas p/ qualquer previsão
+  MIN_HIST_NUCLEO: 2,             // observações mínimas p/ qualquer previsão
   EPS_ESCALA: 0.5,                // evita divisão por zero em demanda intermitente
   BACKTEST_DIAS: 14,              // dias recentes usados p/ avaliar top-down vs bottom-up
   MIN_BACKTEST: 5,                // mínimo de dias avaliados p/ ponderar métodos
@@ -87,6 +88,39 @@ const base = {
   // procura real. O motor sobe esse dia até o que era esperado e não usa o dia
   // para medir o próprio erro.
   CORRIGIR_RUPTURA: true,
+
+  // ---- Fatores externos: clima, dias de pagamento e preço (externalFactors.js) ----
+  FATORES_ATIVOS: true,
+  USAR_CLIMA: true, USAR_PAGAMENTO: true, USAR_PRECO: true,
+  JANELA_FATORES: 150,            // dias de histórico usados para medir os efeitos
+  MIN_PONTOS_FATOR: 10,           // dias de série para o produto entrar na medida
+  CHUVA_MM: 5,                    // a partir de quantos mm o dia conta como "de chuva"
+  CALOR_GRAUS: 3,                 // máxima ≥ mediana dos 30 dias anteriores + isto = "calor"
+  FRIO_GRAUS: 4,                  // máxima ≤ mediana − isto = "frio"
+  PAGAMENTO_DE: 5, PAGAMENTO_ATE: 10,
+  MIN_DIAS_ESTADO: 4,             // dias "com" (chuva, calor...) antes de usar o efeito
+  MIN_DIAS_SEM: 8,                // dias "sem" comparáveis
+  MIN_MESES_PAGAMENTO: 2,         // o efeito do pagamento precisa aparecer em 2 meses diferentes
+  Z_ESTADO_MIN: 1.5,              // o efeito medido na loja precisa passar de Z desvios para ser usado
+  Z_ESTADO_CAT: 3,                // idem para uma categoria sozinha, quando a loja inteira não muda (mais exigente)
+  TAU_ESTADO_LOJA: 0.15,          // quanto se acredita, de saída, que um estado mexe na loja (desvio em log ≈ 15%)
+  TAU_ESTADO_FILHO: 0.10,         // quanto a categoria pode se afastar da loja
+  TAU_ESTADO_PROD: 0.08,          // quanto o produto pode se afastar da categoria
+  FATOR_SD_DIA_PADRAO: 0.25, FATOR_SD_DIA_MIN: 0.08,   // variação de um dia para o outro (log) quando ainda não dá para medir
+  FATOR_SOBREDISP: 2,             // as vendas variam mais que uma contagem pura (Poisson)
+  BETA_MAX: 0.7,                  // teto do efeito de um estado: ×0,5 a ×2
+  FATOR_MIN: 0.3, FATOR_MAX: 3.5, // teto do fator combinado do dia
+  FATOR_VOLTAS: 2,
+  PRECO_JANELA_REF: 28,           // preço de referência = mediana destes dias anteriores
+  PRECO_MIN_LOG: 0.05,            // diferença de preço menor que ~5% é ignorada
+  ELAST_PRIOR: 1.0,               // elasticidade de partida: 10% mais barato ≈ 10% a mais de procura
+  ELAST_MAX: 4, TAU_ELAST_LOJA: 0.8, TAU_ELAST_FILHO: 0.5,
+  HORIZONTE_PRECO: 7,             // o preço de hoje só vale para os próximos N dias
+
+  // ---- Dias em que a loja não funcionou ---------------------------
+  // Dia "aberto" sem NENHUM pedido numa loja que costuma ter vários: não funcionou
+  // (feriado, viagem). Sai da série em vez de contar como "ninguém quis".
+  FECHADO_MIN_VISITAS: 4,         // média de pedidos por dia a partir da qual um dia zerado é "não abriu"
 
   // ---- Sazonalidade ----------------------------------------------
   JANELA_EVENTO: 3,               // ±dias em torno de feriado/data especial

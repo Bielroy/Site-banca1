@@ -108,12 +108,32 @@ const kpi = (rot, val, sub, cls = '') => `<article class="pv-kpi ${cls}"><span>$
 const linhaMini = (p, dir) => `<li><span>${escapeHTML(p.nome)}</span><b>${dir}</b></li>`;
 const bloco = (tit, itens, vazio) => `<section class="pv-bloco"><h4>${tit}</h4>${itens.length ? `<ul>${itens.join('')}</ul>` : `<p class="pv-vazio">${vazio}</p>`}</section>`;
 
+// O que o motor já sabe sobre clima, pagamento e preço — em português claro, com quantos dias ele viu.
+const aprendido = (m) => {
+    const f = m.fatores; if (!f) return '';
+    const vezes = (x) => `×${String(x).replace('.', ',')}`;
+    const estado = (rot, e, minimo = 4) => {
+        if (!e) return '';
+        if (e.confiavel && e.fator != null) return `<li><b>${rot}:</b> ${e.fator === 1 ? 'muda só em algumas categorias' : `a loja vende ${vezes(e.fator)}`} <small>(visto em ${e.n} dia(s))</small></li>`;
+        return `<li><b>${rot}:</b> ${e.n >= minimo ? 'sem efeito claro até agora' : `aprendendo (${e.n} de ${minimo} dias)`}</li>`;
+    };
+    const c = m.clima;
+    const clima = c && c.dias ? `Clima de ${escapeHTML(c.lugar || c.cidade)}` : 'Clima desligado';
+    const temClima = !!(c && c.dias);
+    return `<details class="pv-aprendido"><summary><i class="ic" data-i="alvo"></i> O que o motor já aprendeu <small>${clima}${m.diasFechados ? ` · ${m.diasFechados} dia(s) sem funcionar ignorado(s)` : ''}</small></summary><ul>
+        ${temClima ? estado('Dia de chuva', f.chuva) + estado('Dia de calor fora do normal', f.calor) + estado('Dia mais frio que o normal', f.frio) : '<li>Sem a cidade da loja (aba Operacional), a previsão não usa chuva nem calor.</li>'}
+        ${estado('Dias de pagamento (5 a 10)', f.pag, 8)}
+        <li><b>Preço e oferta:</b> ${f.preco && f.preco.n ? `10% mais barato rende cerca de ${Math.round((Math.pow(0.9, -f.preco.elasticidade) - 1) * 100)}% a mais de venda <small>(medido em ${f.preco.n} dia(s) de preço diferente)</small>` : 'ainda sem oferta medida; por enquanto assume que 10% mais barato rende uns 10% a mais'}</li>
+    </ul></details>`;
+};
+
 const resumoErro = (av) => {
     if (!av || !av.length) return null;
     const ok = av.filter((a) => a.n > 0 && a.wape != null);
     if (!ok.length) return null;
     const m = (k) => ok.reduce((s, a) => s + (a[k] || 0), 0) / ok.length;
-    return { n: ok.length, wape: m('wape'), mae: m('mae'), rmse: m('rmse'), cobertura: ok.filter((a) => a.cobertura != null).length ? ok.reduce((s, a) => s + (a.cobertura || 0), 0) / ok.filter((a) => a.cobertura != null).length : null };
+    // cada dia é avaliado duas vezes (a previsão feita na véspera e a do próprio dia): conta os DIAS, não as avaliações
+    return { n: new Set(ok.map((a) => a.diaAlvoIso || a.id)).size, wape: m('wape'), mae: m('mae'), rmse: m('rmse'), cobertura: ok.filter((a) => a.cobertura != null).length ? ok.reduce((s, a) => s + (a.cobertura || 0), 0) / ok.filter((a) => a.cobertura != null).length : null };
 };
 
 const blocoEsperados = () => {
@@ -167,7 +187,7 @@ const render = () => {
         alvo.innerHTML = `<div class="pv-vazio-box"><div style="font-size:2.4rem"><i class="ic" data-i="previsao"></i></div><p><b>Ainda não há previsões calculadas.</b></p>
             <p>O sistema lê os pedidos dos últimos meses e estima quanto cada produto deve vender hoje, amanhã e na semana, com sugestão de compra.</p>
             <button class="btn-ia-action pv-btn-grande" id="pv-recalc"><i class="ic" data-i="previsao"></i> Calcular agora</button>
-            <p class="pv-dica">Leva alguns segundos. Com menos de 4 dias de vendas de um produto, ele aparece como "dados insuficientes".</p></div>`;
+            <p class="pv-dica">Leva alguns segundos. Com menos de 2 dias de vendas de um produto, ele aparece como "dados insuficientes".</p></div>`;
         return;
     }
 
@@ -181,6 +201,7 @@ const render = () => {
         <button class="btn-ia-action" id="pv-recalc">↻ Recalcular</button>
     </div>
     ${avisos}
+    ${aprendido(m)}
     <div class="pv-kpis">
         ${kpi('Hoje', rs(db.resumo && db.resumo.hoje), `faturamento previsto · ≈ ${num(db.resumo && db.resumo.hoje && db.resumo.hoje.pedidosEsperados)} pedidos`)}
         ${kpi('Amanhã', rs(db.resumo && db.resumo.amanha), `faturamento previsto · ≈ ${num(db.resumo && db.resumo.amanha && db.resumo.amanha.pedidosEsperados)} pedidos`)}
@@ -237,9 +258,10 @@ const ligarEventos = () => {
     raiz.addEventListener('click', async (e) => {
         const hz = e.target.closest('[data-pv-hz]'); if (hz) { S.horizonte = hz.dataset.pvHz; render(); return; }
         const esp = e.target.closest('[data-pv-esp]'); if (esp) { S.esperadosDia = esp.dataset.pvEsp; render(); return; }
-        if (e.target.id === 'pv-recalc') return recalcular(e.target);
-        if (e.target.id === 'pv-tentar') return carregar();
-        if (e.target.id === 'pv-backfill') return recalcular(e.target, 365);
+        // closest: o toque pode cair no desenho dentro do botão, e aí o alvo não é o botão
+        const bRec = e.target.closest('#pv-recalc'); if (bRec) return recalcular(bRec);
+        if (e.target.closest('#pv-tentar')) return carregar();
+        const bBack = e.target.closest('#pv-backfill'); if (bBack) return recalcular(bBack, 365);
         const cli = e.target.closest('[data-pv-cli]');
         if (cli) {
             const box = document.getElementById(`pvcli-${cli.dataset.pvCli}`);

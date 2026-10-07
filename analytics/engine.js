@@ -21,6 +21,7 @@ const A = require('./productAssociation');
 const D = require('./demandForecast');
 const E = require('./evaluation');
 const K = require('./ranking');
+const EF = require('./externalFactors');
 const { dowDeDia, diaDeTs, isoDeDia, diaDeIso } = N;
 
 const PADROES = JSON.parse(JSON.stringify(C));
@@ -33,13 +34,16 @@ function aplicarParametros(over) {
 
 const r2 = (x) => S.arred(x, 2);
 
-function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos = [], diasAbertos, snapshots = [], fechamentos = [], agora = Date.now() }) {
+function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos = [], diasAbertos, snapshots = [], fechamentos = [], faltasEstoque = [], clima = null, agora = Date.now() }) {
   aplicarParametros(parametros);
   const t0 = Date.now();
   const hoje = diaDeTs(agora), asOfD = hoje - 1;
   const abertos = new Set(Array.isArray(diasAbertos) && diasAbertos.length ? diasAbertos : C.DIAS_ABERTOS_PADRAO);
   const norm = N.normalizarPedidos(pedidos, catalogo);
-  const { clientes, produtos } = norm;
+  // Venda sem endereço (balcão) entra nas vendas do dia, mas cada uma virava um "cliente" novo:
+  // inflava a contagem de clientes e empurrava os de verdade para fora da lista.
+  const { produtos } = norm;
+  const clientes = norm.clientes.filter((c) => !c.anonimo);
   const iniPed = hoje - C.JANELA_DIAS + 1;           // 1º dia coberto integralmente pelos pedidos lidos
 
   // ---------- séries diárias: pedidos (janela) + agregados (histórico longo) ----------
@@ -65,6 +69,29 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     }
   }
 
+  // estoque que zerou numa venda (lib/estoque): naquele dia o produto também "acabou", mesmo sem marcar no Fechamento
+  for (const f of faltasEstoque) {
+    const d = diaDeIso(f.dia); if (!Number.isFinite(d) || !f.produtoId) continue;
+    if (!rupturas.has(f.produtoId)) rupturas.set(f.produtoId, new Set());
+    rupturas.get(f.produtoId).add(d);
+  }
+
+  // ---------- contexto externo: clima, preço de cada dia, produto fora da loja ----------
+  const precos = new Map(), fora = new Map();
+  const porPreco = (pid, d, p, de) => { if (!(p > 0)) return; if (!precos.has(pid)) precos.set(pid, new Map()); precos.get(pid).set(d, { p, de: de > p ? de : null }); };
+  for (const [pid, mp] of norm.precosDia) for (const [d, p] of mp) porPreco(pid, d, p, null);                 // o que foi cobrado nos pedidos
+  for (const ag of agregados) {                                                                             // retrato diário do cadastro (vale mais: traz o "de" e os dias sem venda)
+    const d = diaDeIso(ag.dia); if (!Number.isFinite(d)) continue;
+    for (const [pid, v] of Object.entries(ag.precos || {})) { const [p, de] = Array.isArray(v) ? v : [v, null]; porPreco(pid, d, Number(p), Number(de) || null); }
+    for (const pid of ag.fora || []) { if (!fora.has(pid)) fora.set(pid, new Set()); fora.get(pid).add(d); }
+  }
+  const mapaClima = new Map();
+  for (const [iso, v] of Object.entries((clima && clima.dias) || {})) { const d = diaDeIso(iso); if (Number.isFinite(d) && Array.isArray(v)) mapaClima.set(d, { chuva: v[0], tmax: v[1] }); }
+  const contexto = { estadosClima: EF.estadosDoClima(mapaClima), precos, fora };
+  // retrato de HOJE para guardar (preço, oferta e quem está fora da loja): é o histórico de preços de amanhã
+  const contextoNovo = { dia: isoDeDia(hoje), precos: {}, fora: [] };
+  for (const p of produtos.values()) { if (!p.noCatalogo) continue; if (p.preco > 0) contextoNovo.precos[p.id] = p.precoDe ? [p.preco, p.precoDe] : p.preco; if (!p.ativo) contextoNovo.fora.push(p.id); }
+
   // agregados a persistir (1 doc/dia, só dias com venda) — alimenta o histórico longo
   const porDia = new Map();
   for (const [pid, mp] of norm.vendasDia) for (const [d, q] of mp) {
@@ -74,7 +101,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
 
   // ---------- perfis (ranking) até HOJE ----------
   const G = P.construirGlobal(clientes, produtos, hoje);
-  G.assoc = A.calcularAssociacoes(clientes.flatMap((c) => c.visitas.filter((v) => v.dia <= hoje).map((v) => [...v.itens.keys()]))).assoc;
+  G.assoc = A.calcularAssociacoes(norm.clientes.flatMap((c) => c.visitas.filter((v) => v.dia <= hoje).map((v) => [...v.itens.keys()]))).assoc;
   const modelos = clientes.map((c) => P.modelarCliente(c, G, hoje, produtos)).filter(Boolean);
 
   // ---------- previsão de demanda (dias completos) ----------
@@ -89,12 +116,14 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
   }
 
   const ativos = [...produtos.values()].filter((p) => p.ativo || (vendasDia.has(p.id) && [...vendasDia.get(p.id).keys()].some((d) => d > hoje - 28)));
-  const series = new Map(), walks = new Map();
-  for (const p of ativos) {
-    const s = D.montarSerie(vendasDia.get(p.id), asOfD, abertos, rupturas.get(p.id));
-    if (!s.length) continue;
-    series.set(p.id, s); walks.set(p.id, D.walkForward(s));
-  }
+  // séries já sem os dias em que a loja não funcionou, com o perfil de dia da semana da loja
+  // e descontados clima, pagamento e preço (ver demandForecast.prepararSeries)
+  const prep = D.prepararSeries({ vendasDia, produtos, ids: ativos.map((p) => p.id), asOfD, abertos, rupturas, atividade: visitasDia, contexto });
+  const { series, modelo: fatores, fechados } = prep;
+  const walks = new Map();
+  for (const [pid, s] of series) walks.set(pid, D.walkForward(s));
+  // preço dos próximos dias = o de hoje no cadastro (só para os próximos HORIZONTE_PRECO dias)
+  const fatorFuturoDe = (p) => (d) => EF.fator(fatores, p.id, p.cat, d, d >= hoje && d - hoje < C.HORIZONTE_PRECO && p.noCatalogo && p.preco > 0 ? { p: p.preco, de: p.precoDe } : null);
   const pesos = D.pesosMetodos({ clientes, produtos, hoje, abertos }, walks);
 
   const buDias = {};
@@ -112,7 +141,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
       serie, hoje, hz, abertos, extras: eventos, wf: walks.get(p.id), wBU,
       bu: { dias: Object.fromEntries(Object.entries(buDias).map(([d, v]) => [d, v.por])), pid: p.id },
       unidade: p.unidade, estoque: p.estoque, fracEstimada: eg ? eg.e / eg.n : 0,
-      nivelServico: (C.NIVEL_SERVICO_CLASSES || {})[p.duracao],
+      nivelServico: (C.NIVEL_SERVICO_CLASSES || {})[p.duracao], fatorFuturo: fatorFuturoDe(p),
     });
     // explicação (só dos horizontes de 1 dia)
     for (const nome of ['hoje', 'amanha', 'proximoDia']) {
@@ -132,13 +161,14 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     for (const pid of ids) { const pr = produtos.get(pid), mp = vendasDia.get(pid); if (!mp || !pr) continue; for (const [d, q] of mp) if (d <= asOfD) m.set(d, (m.get(d) || 0) + q * pr.preco); }
     return m;
   };
-  const prevAgg = (mapa, un) => {
-    const s = D.montarSerie(mapa, asOfD, abertos); if (s.length < C.MIN_HIST_NUCLEO) return null;
-    const r = D.preverSerie({ serie: s, hoje, hz: { hoje: hz.hoje, amanha: hz.amanha, prox7: hz.prox7 }, abertos, extras: eventos, unidade: un, fracEstimada: 0 });
+  const prevAgg = (mapa, un, cat) => {
+    const fl = (d) => EF.fatorLoja(fatores, d, cat);
+    const s = D.montarSerie(mapa, asOfD, abertos, null, { pular: fechados, fatorDe: fl }); if (s.length < Math.max(C.MIN_HIST_NUCLEO, 4)) return null;
+    const r = D.preverSerie({ serie: s, hoje, hz: { hoje: hz.hoje, amanha: hz.amanha, prox7: hz.prox7 }, abertos, extras: eventos, unidade: un, fracEstimada: 0, fatorFuturo: (d) => ({ f: fl(d), partes: [] }) });
     return { horizontes: Object.fromEntries(Object.entries(r.horizontes).map(([k, v]) => [k, v && v.previsto != null ? { previsto: v.previsto, q10: v.q10, q90: v.q90, conf: v.conf } : v])), tendencia: r.tendencia };
   };
   const catIds = {}; produtos.forEach((p) => { (catIds[p.cat] = catIds[p.cat] || []).push(p.id); });
-  const categorias = {}; Object.entries(catIds).forEach(([c, ids]) => { const x = prevAgg(serieReceita(ids), 'R$'); if (x) categorias[c] = x; });
+  const categorias = {}; Object.entries(catIds).forEach(([c, ids]) => { const x = prevAgg(serieReceita(ids), 'R$', c); if (x) categorias[c] = x; });
   const loja = { receita: prevAgg(serieReceita([...produtos.keys()]), 'R$'), visitas: prevAgg(new Map([...visitasDia].filter(([d]) => d <= asOfD)), 'un') };
 
   // ---------- clientes esperados (módulo 10) ----------
@@ -150,7 +180,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     esperados[nome] = {
       dia: isoDeDia(d), pedidosEsperados: r2(b.pedidos),
       clientes: b.clientes.sort((x, y) => y.p - x.p).slice(0, 25).map((c) => ({
-        id: c.id, nome: c.nome, condominio: c.condominio || '', formatoEndereco: c.formatoEndereco || 'ql', quadra: c.quadra, lote: c.lote, p: c.p, diasDesdeUltima: asOfD - c.ultimoDia, intervaloMedio: c.nuMed, jaComprouHoje: nome === 'hoje' && jaHoje.has(c.id),
+        id: c.id, nome: c.nome, condominio: c.condominio || '', formatoEndereco: c.formatoEndereco || 'ql', quadra: c.quadra, lote: c.lote, p: c.p, diasDesdeUltima: hoje - c.ultimoDia, intervaloMedio: c.nuMed, jaComprouHoje: nome === 'hoje' && jaHoje.has(c.id),
         itens: c.itens.sort((x, y) => y.e - x.e).slice(0, 5).map((i) => ({ id: i.id, nome: (produtos.get(i.id) || {}).nome || i.id, p: S.arred(i.p, 2), qtd: i.qtd })),
       })),
     };
@@ -211,13 +241,16 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     nPedidos: norm.nPedidos, nClientes: clientes.length, nClientesModelados: modelos.length, nClientesBottomUp: modelosD.length,
     diasHistorico: norm.ultimoDia >= norm.primeiroDia ? norm.ultimoDia - norm.primeiroDia + 1 : 0, diasDeAgregado,
     diasComFalta: [...rupturas.values()].reduce((n, s) => n + s.size, 0),
+    diasFechados: fechados.size, fatores: EF.resumo(fatores),
+    clima: clima ? { cidade: clima.cidade || '', lugar: clima.lugar || '', dias: mapaClima.size, motivo: clima.motivo || null } : null,
     pesos, hz: Object.fromEntries(Object.entries(hz).map(([k, v]) => [k, v.map(isoDeDia)])),
     avisos: [
       ...(norm.nPedidos < 30 ? ['Poucos pedidos no histórico: todas as previsões têm confiança baixa.'] : []),
+      ...(C.USAR_CLIMA && clima && !mapaClima.size ? [clima.cidade ? `Não consegui o clima de "${clima.cidade}" (${clima.motivo || 'sem resposta'}): a previsão segue sem chuva e calor.` : 'Sem cidade cadastrada: a previsão não usa chuva e calor. Preencha a cidade em Operacional.'] : []),
       ...(wBU === 0 ? [`Previsão baseada só no histórico agregado (${pesos.motivo || 'bottom-up sem vantagem comprovada'}).`] : []),
     ],
   };
-  return { meta, global: G, catalogo: catalogoCompacto, indiceClientes, clientes: modelos, previsoes: prev, categorias, loja, esperados, dashboard, avaliacoes, novosSnapshots, agregadosNovos };
+  return { meta, global: G, catalogo: catalogoCompacto, indiceClientes, clientes: modelos, previsoes: prev, categorias, loja, esperados, dashboard, avaliacoes, novosSnapshots, agregadosNovos, contextoNovo };
 }
 
 module.exports = { executarMotor, aplicarParametros };

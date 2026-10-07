@@ -94,6 +94,7 @@ function normalizarPedidos(pedidos, catalogo = []) {
   catalogo.forEach((p) => produtos.set(p.id, {
     id: p.id, nome: p.nome || p.id, cat: semAcento(p.cat) || 'outros',
     unidade: p.unidade || 'un', foto: p.foto || '', preco: Number(p.preco) || 0,
+    precoDe: Number(p.precoDe) > Number(p.preco) ? Number(p.precoDe) : null,          // oferta declarada no cadastro
     estoque: p.estoqueFisico === '' || p.estoqueFisico == null ? null : Number(p.estoqueFisico),
     ativo: p.ativo !== false, noCatalogo: true,
     duracao: ['curta', 'longa'].includes(p.duracao) ? p.duracao : 'normal',   // quanto tempo aguenta na banca
@@ -122,6 +123,7 @@ function normalizarPedidos(pedidos, catalogo = []) {
   const condsVistos = mapaCondominios(validos);
   const clientes = new Map();          // id → {id, nome, condominio, quadra, lote, uids:Set, visitas:Map(dia→visita)}
   const vendasDia = new Map();         // produtoId → Map(dia → qtd)
+  const precosDia = new Map();         // produtoId → Map(dia → preço cobrado por unidade de venda)
   const pedidosDia = new Map();        // dia → nº de visitas
   const visitasVistas = new Set();
   let primeiroDia = Infinity, ultimoDia = -Infinity;
@@ -129,7 +131,8 @@ function normalizarPedidos(pedidos, catalogo = []) {
   for (const p of validos) {
     const cond = condominioDoPedido(p, condsVistos);
     const chave = chaveCliente(p, cond.chave); const cid = idDeChave(chave);
-    if (!clientes.has(cid)) clientes.set(cid, { id: cid, nome: '', condominio: '', formatoEndereco: 'ql', quadra: '', lote: '', telefone: '', aceitaOfertas: false, gasto: 0, nPedidos: 0, uids: new Set(), visitas: new Map() });
+    // venda sem endereço (balcão, quase sempre): conta nas vendas do dia, mas não é um "cliente" que dê para acompanhar
+    if (!clientes.has(cid)) clientes.set(cid, { id: cid, anonimo: chave.startsWith('ped:'), nome: '', condominio: '', formatoEndereco: 'ql', quadra: '', lote: '', telefone: '', aceitaOfertas: false, gasto: 0, nPedidos: 0, uids: new Set(), visitas: new Map() });
     const cli = clientes.get(cid);
     cli.nome = p.nome || cli.nome; cli.quadra = p.quadra || cli.quadra; cli.lote = p.lote || cli.lote;   // o mais recente vence
     cli.condominio = cond.nome || cli.condominio; if (p.formatoEndereco) cli.formatoEndereco = p.formatoEndereco;
@@ -158,6 +161,8 @@ function normalizarPedidos(pedidos, catalogo = []) {
       atual.estimada = atual.estimada || estimada;
       vis.itens.set(it.id, atual);
 
+      const pu = Number(it.precoOriginal ?? it.preco);
+      if (pu > 0) { if (!precosDia.has(it.id)) precosDia.set(it.id, new Map()); precosDia.get(it.id).set(p._dia, pu); }
       if (qtd != null) {
         if (!vendasDia.has(it.id)) vendasDia.set(it.id, new Map());
         const m = vendasDia.get(it.id); m.set(p._dia, (m.get(p._dia) || 0) + qtd);
@@ -168,7 +173,7 @@ function normalizarPedidos(pedidos, catalogo = []) {
   const lista = [...clientes.values()].map((c) => ({
     ...c, visitas: [...c.visitas.values()].sort((a, b) => a.dia - b.dia),
   }));
-  return { clientes: lista, produtos, vendasDia, pedidosDia, primeiroDia, ultimoDia, kgPorUn, nPedidos: validos.length };
+  return { clientes: lista, produtos, vendasDia, precosDia, pedidosDia, primeiroDia, ultimoDia, kgPorUn, nPedidos: validos.length };
 }
 
 module.exports = {

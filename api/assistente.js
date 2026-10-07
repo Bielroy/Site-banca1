@@ -94,7 +94,7 @@ async function lerCatalogo(tid = T.TENANT_PADRAO) {
     catalogoCache = {
       em: Date.now(),
       lista: snap.docs
-        .map(d => Object.assign({ id: d.id }, d.data()))
+        .map(d => Object.assign({}, d.data(), { id: d.id }))     // o id do registro sempre vale
         // mesmo critério da vitrine (ativo verdadeiro): o que a loja não mostra, a IA não sugere
         .filter(p => p.ativo && !p.soInsumo && p.nome && !ocultas.has(semAcento(p.cat)))
         .map(p => ({ id: p.id, nome: p.nome, cat: p.cat, preco: p.preco, unidade: p.unidade }))

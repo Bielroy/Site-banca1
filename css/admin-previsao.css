@@ -63,3 +63,10 @@
   .pv-blocos { grid-template-columns: repeat(2, 1fr); } .pv-ctrl { position: static; }
 }
 
+
+/* o que o motor já aprendeu (clima, pagamento, preço) */
+.pv-aprendido { margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; background: var(--foam); border: 1px solid #e0dcd4; font-size: .9rem; }
+.pv-aprendido summary { cursor: pointer; font-weight: 700; color: var(--forest); min-height: 28px; }
+.pv-aprendido summary small { font-weight: 400; color: var(--text-mid); margin-left: 6px; }
+.pv-aprendido ul { margin: 10px 0 2px; padding-left: 18px; display: grid; gap: 6px; color: var(--text-dark); }
+.pv-aprendido li small { color: var(--text-mid); }

@@ -41,7 +41,7 @@ async function lerLoteadoEscrita(db, ops) {   // ops: [{tipo:'set'|'update'|'del
   for (let i = 0; i < ops.length; i += 400) {
     const b = db.batch();
     ops.slice(i, i + 400).forEach((o) => {
-      if (o.tipo === 'delete') b.delete(o.ref); else if (o.tipo === 'update') b.update(o.ref, o.dados); else b.set(o.ref, o.dados, o.merge ? { merge: true } : {});
+      if (o.tipo === 'delete') b.delete(o.ref); else if (o.tipo === 'update') b.update(o.ref, o.dados); else b.set(o.ref, o.dados, o.campos ? { mergeFields: o.campos } : o.merge ? { merge: true } : {});
     });
     await b.commit();
   }
@@ -51,6 +51,7 @@ async function lerLoteadoEscrita(db, ops) {   // ops: [{tipo:'set'|'update'|'del
 //  ENTRADAS
 // ---------------------------------------------------------------------
 const { paraMotor } = require('../lib/calendario');
+const Clima = require('../lib/clima');
 async function carregarEntradas(db, { janelaDias } = {}) {
   const [cfgP, evP, cfgLoja, calSnap] = await Promise.all([db.doc('analytics_config/params').get(), db.doc('analytics_config/eventos').get(), db.doc('loja/config').get(),
     db.collection('calendario').get().catch(() => ({ docs: [] }))]);          // calendário operacional (aba Calendário do painel)
@@ -66,20 +67,29 @@ async function carregarEntradas(db, { janelaDias } = {}) {
   // início do 1º dia da janela em horário de Brasília → ISO UTC
   const desde = new Date((hoje - dias) * 86400000 - C.TZ_OFFSET_HORAS * 3600000).toISOString();
 
-  const [pedSnap, prodSnap, aggSnap, snapSnap, fechSnap] = await Promise.all([
+  const [pedSnap, prodSnap, aggSnap, snapSnap, fechSnap, zerouSnap, clima] = await Promise.all([
     db.collection('pedidos').where('data', '>=', desde).orderBy('data', 'asc').limit(C.MAX_PEDIDOS).get(),
     db.collection('produtos').get(),
     db.collection('analytics_vendas').where(admin.firestore.FieldPath.documentId(), '>=', isoDeDia(hoje - C.JANELA_LONGA_DIAS)).get(),
     db.collection('analytics_snapshots').where('avaliado', '==', false).get(),
     // Fechamento da feira: dias em que cada produto acabou. Se a leitura falhar, o motor segue sem essa correção.
     db.collection('fechamentos').where('dia', '>=', isoDeDia(hoje - C.JANELA_LONGA_DIAS)).get().catch(() => ({ docs: [] })),
+    // Vendas que ZERARAM o estoque: naquele dia o produto acabou, mesmo sem ninguém marcar no Fechamento.
+    db.collection('estoque_mov').where('saldo', '<=', 0).limit(4000).get().catch(() => ({ docs: [] })),
+    // Clima da cidade da loja (passado + previsão). Sem cidade ou sem resposta, segue com o que já estava guardado.
+    Clima.atualizar(db, cfgLoja.exists ? cfgLoja.data() : {}, agora).catch((e) => ({ cidade: '', lugar: '', dias: {}, atualizado: false, motivo: String(e && e.message).slice(0, 80) })),
   ]);
+  const brt = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? isoDeDia(diaDeTs(t)) : null; };
   return {
-    pedidos: pedSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-    catalogo: prodSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-    agregados: aggSnap.docs.map((d) => ({ dia: d.id, ...d.data() })),
-    snapshots: snapSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    pedidos: pedSnap.docs.map((d) => ({ ...d.data(), id: d.id })),
+    catalogo: prodSnap.docs.map((d) => ({ ...d.data(), id: d.id })),     // o id do registro sempre vale (produto antigo trazia um campo "id" velho dentro)
+    agregados: aggSnap.docs.map((d) => ({ ...d.data(), dia: d.id })),
+    snapshots: snapSnap.docs.map((d) => ({ ...d.data(), id: d.id })),
     fechamentos: fechSnap.docs.map((d) => ({ dia: d.data().dia || d.id, itens: d.data().itens || {} })),
+    faltasEstoque: zerouSnap.docs.map((d) => d.data()).filter((m) => m && m.tipo === 'venda' && m.produtoId && brt(m.em)).map((m) => ({ produtoId: String(m.produtoId), dia: brt(m.em) })),
+    clima,
+    // o retrato de preços de hoje já foi guardado? (o primeiro cálculo do dia, de madrugada, é o que vale)
+    temRetratoHoje: aggSnap.docs.some((d) => d.id === isoDeDia(hoje) && d.data().precos),
     parametros: { ...parametros, JANELA_DIAS: dias }, eventos,
     diasAbertos: cfgLoja.exists ? cfgLoja.data().diasAbertos : undefined,
     truncado: pedSnap.size >= C.MAX_PEDIDOS, agora,
@@ -100,7 +110,7 @@ function fatiar(obj, limite) {
   return chunks;
 }
 
-async function persistir(db, r) {
+async function persistir(db, r, opcoes = {}) {
   const ops = [], ts = new Date().toISOString();
   const set = (path, dados, merge) => ops.push({ tipo: 'set', ref: db.doc(path), dados: limpo(dados), merge });
 
@@ -118,7 +128,10 @@ async function persistir(db, r) {
     set(`analytics_clientes/${m.id}`, { ...m, geradoEm: ts });
     (m.uids || []).forEach((u) => set(`analytics_uid/${u}`, { clienteId: m.id, atualizadoEm: ts }));
   });
-  r.agregadosNovos.forEach((a) => set(`analytics_vendas/${a.dia}`, { produtos: a.produtos, visitas: a.visitas, atualizadoEm: ts }));
+  // só os campos de venda são trocados: o retrato de preços do mesmo dia (abaixo) não pode ser apagado junto
+  r.agregadosNovos.forEach((a) => ops.push({ tipo: 'set', ref: db.doc(`analytics_vendas/${a.dia}`), dados: limpo({ produtos: a.produtos, visitas: a.visitas, atualizadoEm: ts }), campos: ['produtos', 'visitas', 'atualizadoEm'] }));
+  // retrato do cadastro de hoje (preço, oferta, quem está fora da loja): vira o histórico de preços do motor
+  if (r.contextoNovo && !opcoes.temRetratoHoje) ops.push({ tipo: 'set', ref: db.doc(`analytics_vendas/${r.contextoNovo.dia}`), dados: limpo({ precos: r.contextoNovo.precos, fora: r.contextoNovo.fora, retratoEm: ts }), campos: ['precos', 'fora', 'retratoEm'] });
   r.novosSnapshots.forEach((s) => set(`analytics_snapshots/${s.id}`, { ...s, avaliado: false, criadoEm: ts }));
   r.avaliacoes.forEach((a) => {
     set(`analytics_avaliacao/${a.id}`, { ...a, avaliadoEm: ts });
@@ -146,7 +159,7 @@ async function recalcular(db, { janelaDias, forcar } = {}) {
   try {
     const entradas = await carregarEntradas(db, { janelaDias });
     const r = executarMotor(entradas);
-    const gravado = await persistir(db, r);
+    const gravado = await persistir(db, r, { temRetratoHoje: entradas.temRetratoHoje });
     await ref.set({ emAndamento: false, concluidoEm: Date.now(), ultimaDuracaoMs: r.meta.duracaoMs, erro: null }, { merge: true });
     return { pulado: false, meta: r.meta, gravado, truncado: entradas.truncado };
   } catch (e) {

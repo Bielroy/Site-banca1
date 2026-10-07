@@ -327,6 +327,7 @@ const iniciarRealTimeSync = () => {
             if (campoHor && document.activeElement !== campoHor) campoHor.value = (Array.isArray(ent.horarios) ? ent.horarios : []).join('\n');
             const chkPix = document.getElementById('config-pix'); if (chkPix) chkPix.checked = data.pixAutomatico === true;
             const px = data.pix || {}; [['config-pix-tipo', px.tipo || 'celular'], ['config-pix-chave', px.chave || ''], ['config-pix-nome', px.nome || ''], ['config-pix-cidade', px.cidade || '']].forEach(([id, v]) => { const el = document.getElementById(id); if (el) el.value = v; });
+            const cid = document.getElementById('config-cidade'); if (cid && document.activeElement !== cid) cid.value = data.cidade || '';
             const grupoPix = document.getElementById('grupo-pix'); if (grupoPix) grupoPix.hidden = !ehLojaOriginal;   // a conta do PagBank no servidor é a da loja original
             document.getElementById('config-status-loja').value = data.lojaAberta === false ? "fechada" : "aberta";
             const diasSalvos = data.diasAbertos || [0, 1, 2, 3, 4, 5, 6];
@@ -1657,7 +1658,7 @@ let cuponsAtuais = [];
 
 const iniciarCupons = () => {
     const unsub = onSnapshot(tcol('cupons'), (snap) => {
-        cuponsAtuais = snap.docs.map(d => ({ codigo: d.id, ...d.data() }));
+        cuponsAtuais = snap.docs.map(d => ({ ...d.data(), codigo: d.id }));
         renderCupons();
     }, (e) => {
         console.error('cupons:', e);
@@ -2136,7 +2137,8 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
             if (pixNome.length < 2) throw new Error("Escreva o nome de quem recebe o PIX, como aparece no banco.");
             pix = { tipo: pixTipo, chave, nome: pixNome.slice(0, 25), cidade: pixCidade.slice(0, 15) };
         }
-        await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios, pixAutomatico, entrega, pix }, { merge: true });
+        const cidade = (document.getElementById('config-cidade')?.value || '').trim().slice(0, 60);   // usada pelo motor de previsão para o clima
+        await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios, pixAutomatico, entrega, pix, cidade }, { merge: true });
         showToast("Configurações atualizadas!");
     } catch (err) {
         showToast(err.message, true);
