@@ -16,6 +16,7 @@ import { codigoPix, pixDaLojaValido, chaveBonita } from './pix-chave-lib.js';
 import { listaValida, listaDoCarrinho, separar, mesmoConjunto, podeConvidarAvaliar, nomeDoDia, textoDaNota } from './atalhos-lib.js';
 import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
 import { ligarVerFoto } from './ver-foto.js';
+import { temDoisModos, modoPreferido, limparMemoria, botoesDoCard, textoNoPedido, proximaQtd } from './modo-lib.js';
 ligarVerFoto();   // tocar na foto da janela do produto abre ela inteira
 
 // Lista guardada no aparelho. Dado corrompido ou armazenamento bloqueado NÃO pode derrubar a loja:
@@ -124,9 +125,46 @@ const atualizarBadgesDOM = (produtoId, _qtd, animar = false) => {
     // o mesmo produto pode aparecer duas vezes: na vitrine e na faixa "Seus de sempre"
     document.querySelectorAll(`[data-acao="${CSS.escape(String(produtoId))}"]`).forEach(area => pintarAcao(area, produtoId, animar));
 };
+// UNIDADE ou QUILO: o que este cliente escolheu da última vez em cada produto (fica só neste aparelho).
+let MODO_MEM = {};
+try { MODO_MEM = limparMemoria(JSON.parse(localStorage.getItem(chave('banca_modo')) || '{}')); } catch (_) { /* sem memória: vale o cadastro da loja */ }
+const lembrarModo = (id, modo) => {
+    if (MODO_MEM[id] === modo) return;
+    MODO_MEM[id] = modo;
+    try { localStorage.setItem(chave('banca_modo'), JSON.stringify(limparMemoria(MODO_MEM))); } catch (_) { /* aparelho cheio */ }
+};
+// Produto vendido por quilo: dois botões, cada um dizendo o que põe no pedido e quanto custa.
+// Depois do toque, o escolhido vira o contador e o outro vira "Trocar para ...".
+const pintarDoisModos = (area, p, item) => {
+    const sig = `${item ? `${item.tipo}:${item.qtd}` : '-'}|${modoPreferido(p, MODO_MEM)}|${p.preco}|${p.pesoMedio || ''}`;
+    if (area.dataset.sig === sig) return;
+    area.dataset.sig = sig;
+    const foco = area.contains(document.activeElement) ? document.activeElement.dataset.action : null;
+    const id = escapeHTML(p.id), nome = escapeHTML(p.nome || '');
+    area.classList.add('dupla');
+    if (!item) {
+        const botao = (b, principal) => `<button type="button" class="modo-btn${principal ? ' principal' : ''}" data-action="add" data-modo="${b.modo}" data-id="${id}" aria-label="${escapeHTML(b.fala)}"><b>${escapeHTML(b.titulo)}</b><small>${escapeHTML(b.preco)}</small></button>`;
+        const [primeiro, segundo] = botoesDoCard(p, MODO_MEM);
+        area.innerHTML = botao(primeiro, true) + botao(segundo, false);
+    } else {
+        const t = textoNoPedido(p, item), outro = item.tipo === 'kg' ? 'un' : 'kg';
+        const [bOutro] = botoesDoCard(p, { [p.id]: outro });
+        area.innerHTML = `
+            <div class="card-qtd modo-qtd">
+               <button type="button" data-action="dec" data-id="${id}" aria-label="Tirar de ${nome}">−</button>
+               <output aria-live="polite"><b><span class="longo">${escapeHTML(t.titulo)}</span><span class="curto" aria-hidden="true">${escapeHTML(t.curto)}</span></b><small>${escapeHTML(t.valor)}</small></output>
+               <button type="button" data-action="inc" data-id="${id}" aria-label="Colocar mais de ${nome}">+</button>
+            </div>
+            <button type="button" class="modo-btn trocar" data-action="trocar" data-modo="${outro}" data-id="${id}" aria-label="Trocar ${nome} para ${outro === 'kg' ? 'quilo' : 'unidade'}"><b>Trocar para ${outro === 'kg' ? 'kg' : 'unidade'}</b><small>${escapeHTML(bOutro.preco)}${outro === 'kg' ? ' o quilo' : ' cada'}</small></button>`;
+    }
+    if (foco) (area.querySelector(`[data-action="${foco}"]`) || area.querySelector('[data-action="inc"], .modo-btn'))?.focus({ preventScroll: true });
+};
 const pintarAcao = (area, produtoId, animar) => {
     const item = STATE.carrinho.find(x => x.id === produtoId);
     area.closest('.produto-card')?.classList.toggle('na-sacola', !!item);
+    const prod = STATE.produtos.find(p => p.id === produtoId);
+    if (prod && temDoisModos(prod)) return pintarDoisModos(area, prod, item);
+    if (area.classList.contains('dupla')) { area.classList.remove('dupla'); delete area.dataset.sig; area.textContent = ''; }   // o produto deixou de ser por quilo
 
     const seletor = area.querySelector('.card-qtd');
     if (item && seletor) { seletor.querySelector('output').textContent = textoQtdCard(item); return; }
@@ -409,11 +447,16 @@ const etiquetaHtml = (p) => etiquetaDeOferta(p) + etiquetaBase(p);
 // comparar "R$ 14,85 o quilo" com "R$ 4,46 a unidade" faria a oferta parecer maior do que é.
 const etiquetaDeOferta = (p) => {
     if (!emOferta(p)) return '';
-    const pm = Number(p.pesoMedio || 0), porUnidade = isFracionavel(p.unidade) && pm > 0;
+    const pm = Number(p.pesoMedio || 0), porUnidade = isFracionavel(p.unidade) && pm > 0 && !temDoisModos(p);
     return `<div class="etq-de">de <s>${fmt(porUnidade ? p.precoDe * pm / 1000 : p.precoDe)}</s> por</div>`;
 };
 const etiquetaBase = (p) => {
     const frac = isFracionavel(p.unidade), pm = Number(p.pesoMedio || 0);
+    // por quilo com os dois botões: a etiqueta mostra o quilo; o preço da unidade vai escrito no botão dela
+    if (temDoisModos(p)) {
+        return `<div class="etq-preco">${fmt(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>
+                <div class="etq-ref">pesado na hora</div>`;
+    }
     if (frac && pm > 0) {
         return `<div class="etq-preco">≈ ${fmt(p.preco * pm / 1000)} <small>a unidade</small></div>
                 <div class="etq-ref">${fmt(p.preco)} ${nomeUnidade(p.unidade)} · pesado na hora</div>`;
@@ -678,7 +721,7 @@ const iniciarRealTimeSync = () => {
     let _catsProntas = false;      // espera a 1ª resposta das categorias p/ não "piscar" produto de categoria oculta
     // Junta produtos + categorias do painel (ocultas somem; renomear/ordenar reflete na hora)
     let _lista = '', _porProduto = new Map();
-    const assinaturaDe = (p) => `${p.preco}:${p.precoDe || ''}:${p.foto || ''}:${p.fotoMini || ''}:${p.nome}:${p.cat}:${p.unidade || ''}:${p.pesoMedio || ''}`;
+    const assinaturaDe = (p) => `${p.preco}:${p.precoDe || ''}:${p.foto || ''}:${p.fotoMini || ''}:${p.nome}:${p.cat}:${p.unidade || ''}:${p.pesoMedio || ''}:${p.mostrarPrimeiro || ''}`;
     const aplicarCatalogo = () => {
         if (!_catsProntas || !_produtosChegaram) return;
         STATE.catalogoChegou = true;
@@ -1351,9 +1394,23 @@ document.body.addEventListener('click', async (e) => {
     const actionTarget = e.target.closest('[data-action]'); 
     if (actionTarget) {
         const action = actionTarget.dataset.action; const id = actionTarget.dataset.id;
-        if(action === 'add' || action === 'inc' || action === 'dec' || action === 'fav') e.stopPropagation();
+        if(action === 'add' || action === 'inc' || action === 'dec' || action === 'fav' || action === 'trocar') e.stopPropagation();
 
-        if (action === 'add' || action === 'inc') {
+        // CARD COM UNIDADE E QUILO: cada botão diz o que faz, e o toque faz exatamente isso
+        const modo = actionTarget.dataset.modo === 'kg' ? 'kg' : actionTarget.dataset.modo === 'un' ? 'un' : null;
+        const noContador = actionTarget.closest('.modo-qtd');
+        if (modo && (action === 'add' || action === 'trocar')) {
+            lembrarModo(id, modo);
+            modificarCarrinho(id, 1, true, modo);
+            const card = actionTarget.closest('.produto-card');
+            if (action === 'add' && card) { hapticFeedback(); voarParaPedido(card); }
+            if (action === 'trocar') showToast(modo === 'kg' ? 'Agora por quilo: 1 kg no pedido.' : 'Agora por unidade: 1 unidade no pedido. Pesamos na hora.');
+        }
+        else if (noContador && (action === 'inc' || action === 'dec')) {
+            const item = STATE.carrinho.find(x => x.id === id);
+            if (item) { modificarCarrinho(id, proximaQtd(item, action === 'inc' ? 1 : -1), true); if (action === 'inc') hapticFeedback(); }
+        }
+        else if (action === 'add' || action === 'inc') {
             const card = actionTarget.closest('.produto-card');
             modificarCarrinho(id, 1);
             if (card) { hapticFeedback(); voarParaPedido(card); }
@@ -1409,7 +1466,7 @@ document.body.addEventListener('click', async (e) => {
 
             if (fracionavel) {
                 seletor.style.display = 'flex';
-                const tipoInicial = jaNoCarrinho && jaNoCarrinho.tipo === 'kg' ? 'kg' : 'un';   // unidade é o padrão
+                const tipoInicial = jaNoCarrinho ? (jaNoCarrinho.tipo === 'kg' ? 'kg' : 'un') : modoPreferido(p, MODO_MEM);   // o que já está no pedido; senão, o jeito que este cliente (ou a loja) prefere
                 const btnAlvo = document.querySelector(`.btn-tipo-compra[data-tipo="${tipoInicial}"]`)
                              || document.querySelector('.btn-tipo-compra[data-tipo="un"]');
                 btnAlvo.click(); // já dispara renderPresets + atualizarResumo
@@ -1425,6 +1482,7 @@ document.body.addEventListener('click', async (e) => {
             document.getElementById('md-btn-add').onclick = () => {
                 if (!STATE.produtos.some(x => x.id === p.id)) { showToast('Este produto acabou de sair da loja.', true); closeModal('modal-detalhe-produto'); if (history.state && history.state.modal === 'modal-detalhe-produto') history.back(); return; }
                 // fixo=true: usa exatamente a quantidade escolhida (não incrementa)
+                if (temDoisModos(p)) lembrarModo(p.id, STATE.modalTipoCompra === 'kg' ? 'kg' : 'un');
                 modificarCarrinho(p.id, STATE.modalQtd, true, STATE.modalTipoCompra);
                 const aPesar = STATE.modalTipoCompra === 'un' && isFracionavel(p.unidade);
                 showToast(aPesar ? `${STATE.modalQtd} un no pedido. Pesamos na hora de separar.` : "Adicionado ao pedido");

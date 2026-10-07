@@ -612,6 +612,8 @@ const alternarCampoPesoMedio = () => {
     const grupo = document.getElementById('form-group-peso-medio');
     const unidade = document.getElementById('edit-unidade')?.value;
     if (grupo) grupo.style.display = ehFracionavel(unidade) ? 'block' : 'none';
+    // os dois botões do card (unidade e quilo) só existem em produto vendido por quilo
+    const gm = document.getElementById('grupo-mostrar-primeiro'); if (gm) gm.hidden = !['kg', 'kilo', 'quilograma'].includes(String(unidade || '').toLowerCase());
     const lbl = document.querySelector('label[for="edit-preco"]');
     if (lbl) lbl.textContent = ROTULOS_PRECO[unidade] || 'Preço (R$)';
 };
@@ -626,6 +628,7 @@ const limparFormularioProduto = () => {
     if (document.getElementById('edit-duracao')) document.getElementById('edit-duracao').value = 'normal';
     if (document.getElementById('edit-so-insumo')) document.getElementById('edit-so-insumo').checked = false;
     if (document.getElementById('edit-peso-medio')) document.getElementById('edit-peso-medio').value = '';
+    if (document.getElementById('edit-mostrar-primeiro')) document.getElementById('edit-mostrar-primeiro').value = 'un';
     const url = document.getElementById('edit-foto-url'); if (url) { delete url.dataset.bancoUrl; delete url.dataset.bancoMini; }
     definirUnidade('kg');          // produto novo começa sempre em "Quilo" (antes herdava o do último aberto)
     alternarCampoPesoMedio();
@@ -1131,6 +1134,7 @@ document.body.addEventListener('click', async (e) => {
             // guarda o estoque MOSTRADO ao abrir: se alguém vender enquanto a janela está aberta, gravar o produto não pode devolver o número velho
             { const est = document.getElementById('edit-estoque-fisico'); if (est) { est.value = p.estoqueFisico !== undefined && p.estoqueFisico !== null ? p.estoqueFisico : ''; est.dataset.aoAbrir = String(est.value); } }
             if (document.getElementById('edit-peso-medio')) document.getElementById('edit-peso-medio').value = p.pesoMedio || '';
+            if (document.getElementById('edit-mostrar-primeiro')) document.getElementById('edit-mostrar-primeiro').value = p.mostrarPrimeiro === 'kg' ? 'kg' : 'un';
             if (document.getElementById('edit-duracao')) document.getElementById('edit-duracao').value = ['curta', 'longa'].includes(p.duracao) ? p.duracao : 'normal';
             if (document.getElementById('edit-so-insumo')) document.getElementById('edit-so-insumo').checked = p.soInsumo === true;
             alternarCampoPesoMedio();
@@ -1375,6 +1379,7 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
             cat: chaveDaCategoria(document.getElementById('edit-cat').value).toLowerCase(),
             descricao: document.getElementById('edit-descricao') ? document.getElementById('edit-descricao').value.trim() : '',
             pesoMedio: pesoMedioFinal, // gramas por unidade — alimenta a estimativa na loja
+            mostrarPrimeiro: document.getElementById('edit-mostrar-primeiro')?.value === 'kg' ? 'kg' : 'un',   // qual botão vem em cima no card (unidade ou quilo)
             duracao: document.getElementById('edit-duracao')?.value || 'normal',   // folga da sugestão de compra (motor)
             soInsumo: !!document.getElementById('edit-so-insumo')?.checked,        // ingrediente de receita: fora da loja
             // Sem controle de estoque: mantém o que estava. Antes, editar um produto

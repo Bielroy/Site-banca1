@@ -1487,6 +1487,36 @@ teste('plataforma: dono que veio pelo terminal fica registrado ao usar a tela, e
   assert.strictEqual((await ch('eu', { acao: 'situacao' })).corpo.souEu, true);
 });
 
+teste('card: produto de quilo tem os dois botões (unidade e quilo), cada um com o que põe no pedido e o preço', async () => {
+  const M = await import(raiz('js/modo-lib.js')), fs = require('fs');
+  const cebola = { id: 'cebola', nome: 'Cebola roxa', preco: 11.9, unidade: 'kg', pesoMedio: 100 }, batata = { id: 'batata', nome: 'Batata', preco: 7.5, unidade: 'Kg' };
+  assert.strictEqual(M.temDoisModos(cebola), true); assert.strictEqual(M.temDoisModos(batata), true, 'maiúscula também é quilo');
+  for (const u of ['un', 'maço', 'bdj', 'g', 'l', '', undefined]) assert.strictEqual(M.temDoisModos({ id: 'x', preco: 5, unidade: u }), false, `"${u}" continua com um botão só`);
+  assert.strictEqual(M.temDoisModos({ id: 'x', preco: 0, unidade: 'kg' }), false); assert.strictEqual(M.temDoisModos(null), false);
+  // ordem: unidade em cima, a não ser que a loja ou o cliente prefira o quilo
+  assert.deepStrictEqual(M.botoesDoCard(cebola, {}).map((b) => `${b.modo}|${b.titulo}|${b.preco}`), ['un|+ 1 unidade|≈ R$ 1,19', 'kg|+ 1 kg|R$ 11,90']);
+  assert.deepStrictEqual(M.botoesDoCard({ ...cebola, mostrarPrimeiro: 'kg' }, {}).map((b) => b.modo), ['kg', 'un'], 'a loja marcou "por quilo" no cadastro');
+  assert.deepStrictEqual(M.botoesDoCard({ ...cebola, mostrarPrimeiro: 'kg' }, { cebola: 'un' }).map((b) => b.modo), ['un', 'kg'], 'o que o cliente escolheu ganha do cadastro');
+  assert.deepStrictEqual(M.botoesDoCard(cebola, { cebola: 'kg' }).map((b) => b.modo), ['kg', 'un']);
+  assert.strictEqual(M.botoesDoCard(batata, {})[0].preco, 'pesamos na hora', 'sem peso médio não se inventa preço de unidade');
+  for (const ruim of [{ cebola: 'toneladas' }, { cebola: 1 }, null, 'kg', { toString: 'kg' }]) assert.strictEqual(M.modoPreferido(cebola, ruim), 'un', 'memória estranha não muda nada');
+  assert.strictEqual(M.modoPreferido({ id: 'toString', nome: 'x', preco: 1, unidade: 'kg' }, {}), 'un', 'id com nome de coisa interna não confunde');
+  assert.deepStrictEqual(M.limparMemoria({ cebola: 'kg', 'a b': 'kg', tomate: 'un', x: '<img>', y: null }), { cebola: 'kg', tomate: 'un' }); assert.deepStrictEqual(M.limparMemoria(['kg']), {}); assert.deepStrictEqual(M.limparMemoria('x'), {});
+  // contador: unidade de 1 em 1, quilo de meio em meio; zero tira do pedido
+  assert.strictEqual(M.proximaQtd({ tipo: 'un', qtd: 1 }, 1), 2); assert.strictEqual(M.proximaQtd({ tipo: 'un', qtd: 1 }, -1), 0);
+  assert.strictEqual(M.proximaQtd({ tipo: 'kg', qtd: 1 }, 1), 1.5); assert.strictEqual(M.proximaQtd({ tipo: 'kg', qtd: 1 }, -1), 0.5); assert.strictEqual(M.proximaQtd({ tipo: 'kg', qtd: 0.5 }, -1), 0);
+  assert.strictEqual(M.proximaQtd({ tipo: 'kg', qtd: 0.3 }, -1), 0, 'quantidade fina vinda da tela do produto não vira negativa'); assert.strictEqual(M.proximaQtd({ tipo: 'kg', qtd: 0.3 }, 1), 0.8);
+  assert.deepStrictEqual(M.textoNoPedido(cebola, { tipo: 'un', qtd: 2 }), { titulo: '2 unidades', curto: '2 un', valor: '≈ R$ 2,38' });
+  assert.deepStrictEqual(M.textoNoPedido(cebola, { tipo: 'un', qtd: 1 }), { titulo: '1 unidade', curto: '1 un', valor: '≈ R$ 1,19' });
+  assert.deepStrictEqual(M.textoNoPedido(cebola, { tipo: 'kg', qtd: 1.5 }), { titulo: '1,5 kg', curto: '1,5 kg', valor: 'R$ 17,85' });
+  assert.strictEqual(M.textoNoPedido(batata, { tipo: 'un', qtd: 3 }).valor, 'a pesar');
+  // a loja e o painel usam estas regras
+  const loja = fs.readFileSync(raiz('js/loja.js'), 'utf8'), painel = fs.readFileSync(raiz('js/admin.js'), 'utf8'), html = fs.readFileSync(raiz('admin.html'), 'utf8');
+  assert.ok(/data-action="add" data-modo="\$\{b\.modo\}"/.test(loja) && loja.includes("data-action=\"trocar\""), 'o card desenha os dois botões e o "Trocar para"');
+  assert.ok(loja.includes('modificarCarrinho(id, 1, true, modo)'), 'o toque põe exatamente 1 do jeito escrito no botão');
+  assert.ok(html.includes('id="edit-mostrar-primeiro"') && painel.includes("mostrarPrimeiro: document.getElementById('edit-mostrar-primeiro')"), 'o cadastro do produto grava qual botão vem em cima');
+});
+
 teste('plataforma: modelos iguais nos dois lados, endereço sugerido e abas por módulo', async () => {
   const L = await import(raiz('js/plataforma-lib.js')), Tm = await import(raiz('js/tema.js')).catch(() => null), M = require(raiz('lib/modelos')), P = await import(raiz('js/papeis-lib.js')), T = require(raiz('lib/tenant'));
   if (Tm) assert.deepStrictEqual(JSON.parse(JSON.stringify(Tm.MODELOS)), M.MODELOS, 'js/tema.js e lib/modelos.js têm os mesmos modelos');

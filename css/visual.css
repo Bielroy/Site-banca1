@@ -138,6 +138,51 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .card-qtd button:active { transform: scale(.88); }
 .card-qtd output { font-variant-numeric: tabular-nums; white-space: nowrap; padding: 0 4px; }
 
+/* ---------- 5b. UNIDADE OU QUILO NO CARD ----------
+   Produto vendido por quilo tem dois botões empilhados: o de cima (cheio) é o jeito mais comum,
+   o de baixo (contorno) é o outro. Cada um diz o que põe no pedido e quanto custa.
+   O "Adicionar" dos outros produtos ganhou o mesmo acabamento, para os cards combinarem. */
+.card-add, .modo-btn.principal { background: linear-gradient(180deg, var(--forest-mid), var(--forest)); box-shadow: 0 3px 0 color-mix(in srgb, var(--forest) 70%, #000); }
+.card-add:hover { background: linear-gradient(180deg, var(--forest-mid), var(--forest)); filter: brightness(1.08); }
+.card-acao:not(.dupla) { height: 46px; margin-bottom: 3px; }
+.card-acao.dupla { height: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding-bottom: 3px; container-type: inline-size; }
+.modo-btn {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    min-height: 48px; padding: 4px 8px; border-radius: 999px; font-family: inherit; line-height: 1.12; cursor: pointer;
+    border: 1.6px solid var(--forest-mid); background: var(--superficie); color: var(--forest);
+    transition: transform .12s ease, filter .2s ease;
+}
+.modo-btn b { font-weight: 800; font-size: .92rem; white-space: nowrap; }
+.modo-btn small { font-size: .74rem; font-weight: 700; color: var(--text-mid); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.modo-btn.principal { border: 0; color: var(--sobre-primaria); }
+.modo-btn.principal small { color: inherit; opacity: .9; }
+.modo-btn:active { transform: scale(.96); }
+.modo-btn.trocar { min-height: 44px; border-style: dashed; }
+.card-qtd.modo-qtd { position: static; height: 50px; border: 1.6px solid var(--leaf); min-width: 0; }
+.modo-qtd button { flex: none; }
+.modo-qtd .curto { display: none; }
+.modo-btn, .modo-qtd output { overflow: hidden; }
+.modo-btn b, .modo-btn small, .modo-qtd output b, .modo-qtd output small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+/* card estreito (celular pequeno, duas colunas): "2 un" no lugar de "2 unidades" e letra um pouco menor */
+@container (max-width: 172px) {
+    .modo-qtd .longo { display: none; } .modo-qtd .curto { display: inline; }
+    .modo-btn.trocar b { font-size: .8rem; }
+    .modo-qtd button { width: 34px; height: 42px; border-radius: 17px; }   /* mais estreito, mas alto: continua fácil de tocar */
+    .modo-qtd output small { font-size: .7rem; }
+}
+@container (max-width: 140px) {
+    .modo-btn { padding: 4px 4px; } .modo-btn b { font-size: .84rem; } .modo-btn small { font-size: .7rem; }
+    .modo-btn.trocar b { font-size: .74rem; }
+    .modo-qtd button { width: 30px; height: 42px; border-radius: 15px; }
+    .modo-qtd output { padding: 0; } .modo-qtd output small { font-size: .66rem; letter-spacing: -.01em; }
+}
+.modo-qtd output { display: flex; flex-direction: column; align-items: center; line-height: 1.12; min-width: 0; }
+.modo-qtd output b { font-weight: 800; font-size: .92rem; }
+.modo-qtd output small { font-size: .74rem; font-weight: 700; color: var(--text-mid); }
+/* card de um botão só ao lado de um card de dois: a FOTO cresce e ocupa a sobra (não fica um vazio no meio) */
+.produtos-grid .produto-card .produto-img-wrap { flex: 1 0 auto; }
+.produtos-grid .produto-card .produto-info { flex: 0 0 auto; }
+
 /* ---------- 6. CARRINHO E PEDIDO MÍNIMO ---------- */
 .carrinho { border-radius: 18px; }
 .item-preco--pesar { background: var(--etiqueta); color: var(--etiqueta-tinta); font-family: var(--fonte-texto); font-size: .8rem; padding: 4px 10px; border-radius: 4px; }
