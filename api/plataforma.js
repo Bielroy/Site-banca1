@@ -18,6 +18,8 @@ const admin = require('firebase-admin');
 const T = require('../lib/tenant');
 const { MODELOS, MODULOS } = require('../lib/modelos');
 const Segredos = require('../lib/segredos');
+const P = require('../lib/prudencia');
+const crypto = require('crypto');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -25,16 +27,8 @@ const boot = () => {
   if (!admin.apps.length) admin.initializeApp({ credential: admin.credential.cert({ projectId: process.env.FIREBASE_PROJECT_ID, clientEmail: process.env.FIREBASE_CLIENT_EMAIL, privateKey: formatPrivateKey(process.env.FIREBASE_PRIVATE_KEY) }) });
   if (!db) db = admin.firestore();
 };
-const ORIGENS = ['https://www.bancaadairepedrina.com.br', 'https://bancaadairepedrina.com.br', 'https://site-banca1.vercel.app'];
-const cors = (req, res) => {
-  const extras = String(process.env.ALLOWED_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean);
-  const ok = ORIGENS.concat(extras), origem = req.headers && req.headers.origin;
-  if (origem && ok.includes(origem)) res.setHeader('Access-Control-Allow-Origin', origem);
-  else if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') res.setHeader('Access-Control-Allow-Origin', '*');
-  else res.setHeader('Access-Control-Allow-Origin', ok[0]);
-  res.setHeader('Vary', 'Origin'); res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Loja');
-};
+const H = require('../lib/http');
+const cors = H.cors;            // origem (CORS): lista única em lib/http.js
 const NOME_ORIGINAL = 'Banca Adair e Pedrina', MAX_LOJAS = 200;
 const falha = (status, msg) => Object.assign(new Error(msg), { status });
 const texto = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -86,6 +80,8 @@ async function definirDono(id, email, remover) {
   let u;
   try { u = await admin.auth().getUserByEmail(email); }
   catch (e) { if ((e && e.code !== 'auth/user-not-found') || remover) throw remover ? falha(404, 'Conta não encontrada.') : e; u = await admin.auth().createUser({ email }); }
+  // conta que já existia com e-mail nunca confirmado: troca a senha por uma que ninguém conhece antes de dar o papel (ver api/equipe.js)
+  if (!remover && u.emailVerified !== true) { try { await admin.auth().updateUser(u.uid, { password: crypto.randomBytes(48).toString('base64') }); await admin.auth().revokeRefreshTokens(u.uid); } catch (e) { console.error('[plataforma] blindar', e && e.code); } }
   const claims = u.customClaims || {}, tenants = { ...(claims.tenants || {}) };
   if (remover) { if (tenants[id] !== 'proprietario') throw falha(400, 'Esta conta não é proprietária desta loja.'); delete tenants[id]; } else tenants[id] = 'proprietario';
   const novos = { ...claims, tenants };
@@ -198,20 +194,34 @@ module.exports = async function handler(req, res) {
   try { boot(); } catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
   let dec;
   try {
-    const cab = String((req.headers && req.headers.authorization) || '');
-    dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '');
+    // true = recusa login que foi encerrado ("sair de todos os aparelhos", acesso retirado). É a conta mais poderosa do sistema.
+    dec = await admin.auth().verifyIdToken(H.tokenDe(req), true);
   } catch (e) { return res.status(401).json({ error: 'Entre no painel de novo.' }); }
+  if (dec.email_verified === false) return res.status(403).json({ error: 'Confirme o e-mail desta conta entrando pelo link enviado a ele.' });
+  if (H.passouNaMemoria(`plataforma:${dec.uid}`, 90, 60000)) return res.status(429).json({ error: 'Muitos pedidos seguidos. Aguarde um minuto.' });
+  const anotar = (acao, detalhe) => P.registrar(db, null, { acao, quem: dec.email || dec.uid, uid: dec.uid, detalhe, ip: H.ipDe(req) });
   // PRIMEIRO ACESSO, sem terminal: enquanto a plataforma não tem dono, quem já é dono da loja original
   // (a conta antiga, admin: true, ou proprietário da 'banca') pode assumir. Vale UMA vez: fica gravado
   // em plataforma/dono e ninguém mais passa por aqui.
   if ((req.body || {}).acao === 'assumir') {
-    try { return await assumir(dec, res); }
+    try { await anotar('plataforma-assumir', 'pediu para assumir a plataforma'); return await assumir(dec, res); }
     catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[plataforma] assumir', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
   }
   if (dec.plataforma !== true) return res.status(403).json({ error: 'Área restrita ao dono da plataforma.' });
-  const acoes = { lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res) };
-  const fn = acoes[(req.body || {}).acao];
+  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res) };
+  const nomeAcao = typeof (req.body || {}).acao === 'string' ? (req.body || {}).acao : '';
+  const fn = Object.prototype.hasOwnProperty.call(acoes, nomeAcao) ? acoes[nomeAcao] : null;
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });
+  // Tudo o que MUDA alguma coisa fica na trilha (auditoria_plataforma). Chave e token nunca entram no registro: só "gravou" ou "apagou".
+  if (nomeAcao !== 'lojas' && nomeAcao !== 'auditoria') {
+    const b = req.body || {}, alvo = String(b.id || b.fid || '').slice(0, 40);
+    const detalhe = nomeAcao === 'imgbb' || nomeAcao === 'pagbank' ? (String(b.chave || '').trim() ? 'chave gravada' : 'chave apagada')
+      : nomeAcao === 'proprietario' ? `${alvo}: ${b.remover === true ? 'tirou' : 'definiu'} ${String(b.email || '').slice(0, 80)}`
+      : nomeAcao === 'ativo' ? `${alvo}: ${b.ativo === true ? 'liberou' : 'bloqueou'}`
+      : nomeAcao === 'criar-loja' ? `${alvo} (${String(b.emailDono || 'sem dono').slice(0, 80)})` : alvo;
+    await anotar(`plataforma-${nomeAcao}`, detalhe);
+    if (['proprietario', 'pagbank', 'ativo'].includes(nomeAcao)) await P.alertar(db, T.TENANT_PADRAO, `plataforma-${nomeAcao}`, { titulo: 'Plataforma alterada', corpo: `${dec.email || 'O dono da plataforma'} mudou: ${nomeAcao} (${detalhe}).`, url: '/plataforma.html' });
+  }
   try { return await fn(); }
   catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[plataforma]', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
 };

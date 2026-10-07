@@ -1,0 +1,23 @@
+# dependências e o que o build gera
+node_modules/
+dist/
+dev-dist/
+.vercel/
+
+# chaves e configurações locais: NUNCA vão para o GitHub
+.env
+.env.*
+*.pem
+*service-account*.json
+*serviceAccount*.json
+*firebase-adminsdk*.json
+
+# registros e sobras de ferramentas
+*.log
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebase/
+testes/regras/node_modules/
+testes/regras/package-lock.json
+.DS_Store

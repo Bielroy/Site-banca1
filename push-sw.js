@@ -26,3 +26,9 @@ self.addEventListener('notificationclick', (evento) => {
     return self.clients.openWindow(url);
   })());
 });
+
+// Faxina: versões antigas do site guardavam respostas do banco de dados numa gaveta do aparelho
+// ("firebase-data-cache"). Ela não é mais usada; ao ativar a versão nova, é apagada.
+self.addEventListener('activate', (evento) => {
+  evento.waitUntil(caches.delete('firebase-data-cache').catch(() => false));
+});

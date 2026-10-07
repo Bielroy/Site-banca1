@@ -1347,8 +1347,8 @@ teste('prudência: limite contado no banco, alerta de falha com intervalo e cóp
   const P = require(raiz('lib/prudencia')), T = require(raiz('lib/tenant'));
   // 1) LIMITE: 8 pedidos por conexão em 10 min; o 9º é barrado; outra conexão e outra loja não pagam por isso
   const db = criarBanco(semente()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
-  const mandar = (ipTxt, extra) => chamar(api, { headers: { 'x-forwarded-for': ipTxt }, body: pedido(extra) });
-  // (o 2º endereço muda só para passar pela trava antiga de 5 s, que fica na memória; a conta nova usa o 1º, o de quem compra)
+  // (a trava de rajada fica na memória e é zerada a cada envio: aqui o que se testa é a conta guardada no banco)
+  const mandar = (ipTxt, extra) => { require(raiz('lib/http'))._usos.clear(); return chamar(api, { headers: { 'x-forwarded-for': ipTxt }, body: pedido(extra) }); };
   for (let i = 0; i < 8; i++) assert.strictEqual((await mandar('200.1.1.1, 10.0.0.' + i)).status, 200, 'pedido ' + (i + 1));
   const nono = await mandar('200.1.1.1, 10.0.0.99'); assert.strictEqual(nono.status, 429); assert.ok(/Aguarde/.test(nono.corpo.error));
   assert.strictEqual((await mandar('200.2.2.2')).status, 200, 'outra conexão segue comprando');
@@ -1372,7 +1372,7 @@ teste('prudência: limite contado no banco, alerta de falha com intervalo e cóp
   // falha interna no pedido: a cliente vê frase simples (não o erro técnico) e a equipe é avisada
   const dbRuim = criarBanco(semente()); const apiRuim = carregarApi(raiz('api/checkout.js'), criarAdmin(dbRuim, TOKENS));
   const tx = dbRuim.runTransaction.bind(dbRuim); let n = 0;
-  dbRuim.runTransaction = async (fn) => { n++; if (n === 2) throw Object.assign(new Error('14 UNAVAILABLE: segredo interno'), { code: 14 }); return tx(fn); };   // a 1ª transação é a do limite
+  dbRuim.runTransaction = async (fn) => { n++; if (n === 3) throw Object.assign(new Error('14 UNAVAILABLE: segredo interno'), { code: 14 }); return tx(fn); };   // as 2 primeiras transações são as dos limites (conexão e loja)
   const ruim = await chamar(apiRuim, { headers: ip(), body: pedido() });
   assert.strictEqual(ruim.status, 500); assert.ok(!/UNAVAILABLE|segredo/.test(ruim.corpo.error), ruim.corpo.error);
   assert.ok(dbRuim._dados.has('plataforma/alertas'), 'o alerta ficou registrado');
@@ -1439,12 +1439,16 @@ teste('fotos: envio ao ImgBB só para gestor, só imagem de verdade, e a chave n
 teste('fotos: miniatura só para link https em produção, nas larguras que a Vercel aceita', async () => {
   const F = await import(raiz('js/foto-lib.js')), V = JSON.parse(require('fs').readFileSync(raiz('vercel.json'), 'utf8'));
   assert.deepStrictEqual(V.images.sizes, F.LARGURAS, 'vercel.json e js/foto-lib.js com as mesmas larguras');
-  const u = 'https://fotos.exemplo.com/a/tomate.jpg?x=1&y=2';
+  assert.deepStrictEqual(V.images.remotePatterns.map((p) => p.hostname), F.HOSTS_DAS_FOTOS, 'vercel.json e js/foto-lib.js aceitam fotos dos mesmos lugares');
+  assert.ok(V.images.remotePatterns.every((p) => p.protocol === 'https' && p.hostname !== '**' && p.hostname !== '*'), 'o redutor de imagens não aceita qualquer endereço da internet');
+  for (const fora of ['https://fotos.exemplo.com/a/tomate.jpg', 'https://ibb.co.site-do-mal.com/a.jpg', 'https://site-do-mal.com/i.ibb.co/a.jpg', 'https://xibb.co/a.jpg']) assert.strictEqual(F.miniatura(fora, 384, 'site-banca1.vercel.app'), fora, 'foto guardada em outro lugar aparece no tamanho original: ' + fora);
+  assert.ok(F.miniatura('https://firebasestorage.googleapis.com/v0/b/x/o/a.webp?alt=media', 384, 'site-banca1.vercel.app').startsWith('/_vercel/image?url='));
+  const u = 'https://i.ibb.co/a/tomate.jpg?x=1&y=2';
   assert.strictEqual(F.miniatura(u, 384, 'site-banca1.vercel.app'), '/_vercel/image?url=' + encodeURIComponent(u) + '&w=384&q=75');
   assert.ok(F.miniatura(u, 128, 'www.loja.com.br').includes('&w=128&'));
   assert.ok(F.miniatura(u, 999, 'www.loja.com.br').includes('&w=384&'), 'largura fora da lista cai na padrão');
   for (const host of ['localhost', '127.0.0.1', '192.168.0.10', '']) assert.strictEqual(F.miniatura(u, 384, host), u, host);
-  for (const fica of ['', null, 'data:image/png;base64,AAAA', 'blob:https://x/1', 'http://sem-s.com/a.jpg', 'https://x.com/logo.svg', 'https://x.com/a.jpg" onerror="x']) assert.strictEqual(F.miniatura(fica, 384, 'www.loja.com.br'), String(fica || ''));
+  for (const fica of ['', null, 'data:image/png;base64,AAAA', 'blob:https://x/1', 'http://sem-s.com/a.jpg', 'https://i.ibb.co/logo.svg', 'https://i.ibb.co/a.jpg" onerror="x']) assert.strictEqual(F.miniatura(fica, 384, 'www.loja.com.br'), String(fica || ''));
 });
 
 teste('cabeçalho: cada tipo de negócio tem o seu desenho', async () => {
@@ -1599,6 +1603,9 @@ teste('fotos: envio que cai é repetido; fila respeita o limite de envios ao mes
   await F.emFila([1, 2, 3, 4, 5, 6, 7], 3, async (x) => { pico = Math.max(pico, ++ativos); await new Promise((r) => setTimeout(r, 5)); ativos--; feitos.push(x); });
   assert.strictEqual(pico, 3); assert.strictEqual(feitos.length, 7);
 });
+
+// ------------------------------------------------------------------ testes de segurança (arquivo próprio)
+require('./seguranca')({ teste, raiz, criarBanco, criarAdmin, chamar, carregarApi });
 
 (async () => {
   let falhas = 0;

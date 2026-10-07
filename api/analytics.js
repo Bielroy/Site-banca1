@@ -24,22 +24,9 @@ const T = require('../lib/tenant');
 const P = require('../lib/prudencia');
 const Maq = require('../lib/maquininha');
 
-const ORIGENS_CONFIAVEIS = [
-  'https://www.bancaadairepedrina.com.br',
-  'https://bancaadairepedrina.com.br',
-  'https://site-banca1.vercel.app',
-];
-const aplicarCors = (req, res) => {
-  const extras = String(process.env.ALLOWED_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean);
-  const permitidas = ORIGENS_CONFIAVEIS.concat(extras);
-  const origem = req.headers && req.headers.origin;
-  if (origem && permitidas.indexOf(origem) !== -1) res.setHeader('Access-Control-Allow-Origin', origem);
-  else if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') res.setHeader('Access-Control-Allow-Origin', '*');
-  else res.setHeader('Access-Control-Allow-Origin', permitidas[0]);
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST,GET');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Loja');
-};
+// Origem (CORS): a lista de endereços nossos fica num lugar só, lib/http.js.
+const H = require('../lib/http');
+const aplicarCors = H.cors;
 
 // rate limit leve por uid (em memória; suficiente p/ evitar martelar o Firestore)
 const ultimo = new Map();
@@ -66,7 +53,7 @@ module.exports = async function handler(req, res) {
     // ------------------------- CRON -------------------------
     if (req.method === 'GET') {
       const segredo = process.env.CRON_SECRET;
-      if (!segredo || tokenDe(req) !== segredo) return res.status(401).json({ sucesso: false, error: 'Não autorizado.' });
+      if (!segredo || !H.igualSeguro(tokenDe(req), segredo)) return res.status(401).json({ sucesso: false, error: 'Não autorizado.' });
       // Rotina diária: recalcula CADA loja, uma por vez. Erro em uma não derruba as outras.
       const lojas = await T.listarLojas(banco), saida = {};
       for (const id of lojas) {
@@ -77,6 +64,8 @@ module.exports = async function handler(req, res) {
         catch (e) { console.error('[copia] loja', id, e && e.message); saida[id] = { ...saida[id], copia: { erro: true } }; await P.avisarFalha(banco, id, 'A cópia de segurança', e); }
       }
       await P.limparLimites(banco);
+      // trilha de auditoria: o que passou de 400 dias sai
+      try { await P.limparAuditoria(banco, null); for (const id of lojas) await P.limparAuditoria(banco, id); } catch (e) { console.error('[auditoria] faxina', e && e.message); }
       // MAQUININHA: as vendas de ontem (o PagBank só entrega no dia seguinte). Loja sem credenciais é pulada.
       const ontem = new Date(Date.now() - 27 * 3600000).toISOString().slice(0, 10);
       for (const id of lojas) {
@@ -105,7 +94,7 @@ module.exports = async function handler(req, res) {
 
     // ------------------------- CLIENTE DA LOJA -------------------------
     if (acao === 'ranking') {
-      if (!limitar('r:' + tid + ':' + dec.uid, 1500)) return res.status(429).json({ sucesso: false, error: 'Aguarde um instante.' });
+      if (!limitar('r:' + tid + ':' + dec.uid, 1500) || H.passouNaMemoria(`ranking:${H.ipDe(req)}`, 60, 60000)) return res.status(429).json({ sucesso: false, error: 'Aguarde um instante.' });
       const [g, modelo] = await Promise.all([Store.lerGlobal(db), Store.lerClientePorUid(db, dec.uid)]);
       const out = montarRankingCliente({ modelo, G: g && g.global, catalogo: g && g.catalogo, cesta: corpo.cesta });
       return res.status(200).json({ sucesso: true, geradoEm: g && g.meta ? g.meta.geradoEm : null, ...out });
@@ -120,13 +109,15 @@ module.exports = async function handler(req, res) {
     }
 
     if (acao === 'recalcular') {
-      if (!limitar('recalc:' + tid, 8000)) return res.status(429).json({ sucesso: false, error: 'Um cálculo acabou de rodar.' });
+      // recalcular relê meses de pedidos: no máximo 20 por hora por loja (conta no banco, vale para todas as cópias do servidor)
+      if (!limitar('recalc:' + tid, 8000) || !(await P.limitar(banco, 'recalcular', tid, 20, 3600))) return res.status(429).json({ sucesso: false, error: 'Um cálculo acabou de rodar. Aguarde alguns minutos.' });
       const janela = Math.min(Math.max(parseInt(corpo.janelaDias, 10) || 0, 0), 900) || undefined;
       const r = await Store.recalcular(db, { janelaDias: janela, forcar: true });
       return res.status(200).json({ sucesso: true, ...resumo(r) });
     }
 
     if (acao === 'cliente') {
+      if (typeof corpo.clienteId !== 'string' || !/^[\w-]{1,120}$/.test(corpo.clienteId)) return res.status(400).json({ sucesso: false, error: 'Cliente inválido.' });
       const [g, m] = await Promise.all([Store.lerGlobal(db), Store.lerClientePorId(db, corpo.clienteId)]);
       if (!m || !g) return res.status(404).json({ sucesso: false, error: 'Cliente sem perfil calculado.' });
       const hoje = diaDeTs(Date.now());

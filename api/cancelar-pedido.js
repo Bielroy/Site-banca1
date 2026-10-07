@@ -41,31 +41,9 @@ const PODEM_CANCELAR_NO_PAINEL = ['proprietario', 'administrador', 'funcionario'
 // ALLOWED_ORIGIN continua sendo lida e ACRESCENTA origens à lista
 // (aceita várias separadas por vírgula), mas não é mais obrigatória.
 // ---------------------------------------------------------------------
-const ORIGENS_CONFIAVEIS = [
-  'https://www.bancaadairepedrina.com.br',
-  'https://bancaadairepedrina.com.br',
-  'https://site-banca1.vercel.app',
-];
-
-const aplicarCors = (req, res, metodos) => {
-  const extras = String(process.env.ALLOWED_ORIGIN || '')
-    .split(',').map((s) => s.trim()).filter(Boolean);
-  const permitidas = ORIGENS_CONFIAVEIS.concat(extras);
-  const origem = req.headers && req.headers.origin;
-
-  if (origem && permitidas.indexOf(origem) !== -1) {
-    res.setHeader('Access-Control-Allow-Origin', origem);
-  } else if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') {
-    res.setHeader('Access-Control-Allow-Origin', '*'); // preview e dev
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', permitidas[0]);
-  }
-
-  // Sem o Vary, um proxy poderia servir a resposta de um domínio para outro.
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', metodos || 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Loja');
-};
+// Origem (CORS): a lista de endereços nossos fica num lugar só, lib/http.js.
+const H = require('../lib/http');
+const aplicarCors = H.cors;
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 
@@ -88,6 +66,7 @@ const fixFloat = (n) => Math.round(n * 1000) / 1000;
 const T = require('../lib/tenant');
 const E = require('../lib/estoque');
 const Avisos = require('../lib/avisos');
+const P = require('../lib/prudencia');
 
 // ---------------------------------------------------------------------
 // AVALIAÇÃO: "chegou tudo fresquinho?"  POST { acao: 'avaliar', pedidoId, nota: 1..5, texto? }
@@ -126,7 +105,9 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
 
   const { pedidoId } = req.body || {};
-  if (!pedidoId) return res.status(400).json({ error: 'pedidoId é obrigatório.' });
+  // o id vira nome de documento: só o formato que o próprio site gera (nada de barra, objeto ou texto gigante)
+  if (!H.idSeguro(pedidoId, 6, 80)) return res.status(400).json({ error: 'Pedido não encontrado.' });
+  if (H.passouNaMemoria(`cancelar:${H.ipDe(req)}`, 20, 60000)) return res.status(429).json({ error: 'Muitas tentativas seguidas. Aguarde um minuto.' });
 
   try { bootFirebase(); }
   catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
@@ -166,7 +147,9 @@ module.exports = async function handler(req, res) {
   } catch (e) {
     return res.status(401).json({ error: 'Sessão expirada. Recarregue a página e tente de novo.' });
   }
-  const motivo = daEquipe ? String((req.body || {}).motivo || '').trim().slice(0, 200) : '';
+  const motivo = daEquipe ? H.textoCurto((req.body || {}).motivo, 200) : '';
+  // Cliente: no máximo 10 cancelamentos/avaliações em 10 minutos por pessoa (conta guardada no banco, vale para todas as cópias do servidor).
+  if (!daEquipe && !(await P.limitar(db, 'cancelar', `${tid}|${uidVerificado}`, 10, 600))) return res.status(429).json({ error: 'Muitas tentativas seguidas. Aguarde alguns minutos.' });
 
   // AVALIAÇÃO DEPOIS DA ENTREGA (mesma prova de dono do cancelamento: o token).
   if ((req.body || {}).acao === 'avaliar') return avaliar(req, res, { tid, uid: uidVerificado, pedidoId });
@@ -220,7 +203,11 @@ module.exports = async function handler(req, res) {
       //   item pesado           → o peso baixado na pesagem (pesoBaixado, em quilos)
       //   item ainda "a pesar"  → nada (nunca baixou)
       const aDevolver = new Map();                       // produtoId → quantidade
-      (pedido.itens || []).forEach((i) => {
+      // TRAVA: o estoque, o cupom e o caixa de um pedido só voltam UMA vez. Se o pedido já passou por aqui
+      // (marca `estornadoEm`) e alguém conseguiu tirá-lo de "cancelado" por fora, um novo cancelamento só
+      // muda o status: não devolve produto de novo nem desconta a venda outra vez.
+      const jaEstornado = !!pedido.estornadoEm;
+      (jaEstornado ? [] : (pedido.itens || [])).forEach((i) => {
         const q = Number(i.pesoBaixado) > 0 ? Number(i.pesoBaixado) : (i.aPesar ? 0 : Number(i.qtd));
         if (Number.isFinite(q) && q > 0 && i.id) aDevolver.set(String(i.id), fixFloat((aDevolver.get(String(i.id)) || 0) + q));
       });
@@ -240,7 +227,7 @@ module.exports = async function handler(req, res) {
 
       // Desfaz o uso do cupom, se houver
       let cupomRef = null;
-      if (pedido.cupom && pedido.cupom.codigo) {
+      if (!jaEstornado && pedido.cupom && H.idSeguro(pedido.cupom.codigo, 1, 40)) {
         cupomRef = T.docDe(db, tid, `cupons/${pedido.cupom.codigo}`);
         const cupomSnap = await t.get(cupomRef);
         if (!cupomSnap.exists) cupomRef = null;
@@ -256,10 +243,12 @@ module.exports = async function handler(req, res) {
         canceladoEm: new Date().toISOString(),
         canceladoPor: daEquipe ? 'loja' : 'cliente',
         ...(daEquipe ? { canceladoPorQuem: quem, canceladoMotivo: motivo } : {}),
+        ...(jaEstornado ? {} : { estornadoEm: new Date().toISOString() }),
       });
+      if (jaEstornado) return { itensDevolvidos: 0, jaEstornado: true, estavaPago: !!(pedido.pagamento && pedido.pagamento.status === 'PAID') };
 
-      // Reverte os números agregados
-      const total = Number(pedido.total || 0);
+      // Reverte os números agregados (valor que não é número não entra na conta: estragaria o caixa do dia)
+      const total = Number.isFinite(Number(pedido.total)) ? Number(pedido.total) : 0;
       t.set(T.docDe(db, tid, 'analytics/dashboard'), {
         receitaTotal: admin.firestore.FieldValue.increment(-total),
         totalPedidos: admin.firestore.FieldValue.increment(-1),

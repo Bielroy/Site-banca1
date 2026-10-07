@@ -12,6 +12,7 @@ import { auth, getDoc, getDocs, query, where, orderBy, limit, setDoc } from './f
 import { tcol, tdoc } from './tenant.js';
 import { lerPainel } from './painel-cache.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal } from './utils.js';
+import { numeroDeCampo } from './aparencia-lib.js';
 import { temControle, situacao, sugestaoCompra, fmtQtd, ROTULO_TIPO, MOTIVOS_PERDA, custoDaFicha, margem, UNIDADES_RECEITA, paraEstoque, taxasDePerda, comFolgaDePerda } from './estoque-lib.js';
 
 const S = { produtos: [], filtro: 'todos', busca: '', previsto: null, previstoEm: 0, perdas: null, perdasEm: 0, ligado: false, acao: null };
@@ -140,7 +141,7 @@ function abrirAcao(tipo, p) {
         tipo === 'compra' ? campo('es-qtd', `Quanto entrou (${un})`, dec) + campo('es-custo', `Quanto pagou por ${un} (opcional)`, dec, p.custo ? `Último custo: ${fmt(p.custo)}` : 'Serve para calcular margem e o valor das perdas.') + campo('es-obs', 'Observação (opcional)', 'type="text" maxlength="140" placeholder="Ex.: Ceasa, fornecedor João"')
         : tipo === 'perda' ? campo('es-qtd', `Quanto perdeu (${un})`, dec) + `<div class="form-group"><label for="es-motivo">Motivo</label><select id="es-motivo">${MOTIVOS_PERDA.map(([v, r]) => `<option value="${v}">${r}</option>`).join('')}</select></div>` + campo('es-obs', 'Observação (opcional)', 'type="text" maxlength="140"')
         : tipo === 'ajuste' ? campo('es-contagem', `Quanto tem de verdade (${un})`, dec, 'Conte na banca e digite o total. O sistema calcula a diferença e guarda no histórico.')
-        : campo('es-min', `Mínimo (${un})`, `${dec} value="${p.estoqueMin ?? ''}"`, 'Abaixo disso, o produto aparece em "Comprar".') + campo('es-ideal', `Ideal (${un})`, `${dec} value="${p.estoqueIdeal ?? ''}"`, 'Até quanto comprar para ficar tranquilo.') + campo('es-max', `Máximo (${un}, opcional)`, `${dec} value="${p.estoqueMax ?? ''}"`, 'Acima disso tende a sobrar e estragar.') + campo('es-prazo', 'Dias até a compra chegar (opcional)', `type="text" inputmode="numeric" autocomplete="off" value="${p.prazoDias ?? ''}"`, 'Para fornecedor que entrega depois: a lista de compras soma o que vende nesse intervalo.') + campo('es-custo', `Custo por ${un} (opcional)`, `${dec} value="${p.custo ?? ''}"`));
+        : campo('es-min', `Mínimo (${un})`, `${dec} value="${numeroDeCampo(p.estoqueMin)}"`, 'Abaixo disso, o produto aparece em "Comprar".') + campo('es-ideal', `Ideal (${un})`, `${dec} value="${numeroDeCampo(p.estoqueIdeal)}"`, 'Até quanto comprar para ficar tranquilo.') + campo('es-max', `Máximo (${un}, opcional)`, `${dec} value="${numeroDeCampo(p.estoqueMax)}"`, 'Acima disso tende a sobrar e estragar.') + campo('es-prazo', 'Dias até a compra chegar (opcional)', `type="text" inputmode="numeric" autocomplete="off" value="${numeroDeCampo(p.prazoDias)}"`, 'Para fornecedor que entrega depois: a lista de compras soma o que vende nesse intervalo.') + campo('es-custo', `Custo por ${un} (opcional)`, `${dec} value="${numeroDeCampo(p.custo)}"`));
     openModal('modal-estoque');
 }
 
@@ -180,10 +181,12 @@ const fatoresDe = (un) => UNIDADES_RECEITA[String(un || '').toLowerCase()] || nu
 const linhaFichaHtml = (item, p, n) => {
     const ing = S.produtos.find((x) => x.id === item.id), fat = fatoresDe(ing && ing.unidade);
     // mostra em gramas/ml quando a quantidade é pequena (0,15 kg → 150 g)
-    const emPequeno = fat && item.qtd > 0 && item.qtd < 1, valor = item.qtd ? (emPequeno ? Math.round(item.qtd * 1000 * 100) / 100 : item.qtd) : '';
+    // a quantidade gravada é conferida: só número vai para o campo (o que está no banco pode ter sido escrito por fora da tela)
+    const qtdN = Number.isFinite(Number(item.qtd)) && typeof item.qtd !== 'object' ? Number(item.qtd) : 0;
+    const emPequeno = fat && qtdN > 0 && qtdN < 1, valor = qtdN ? (emPequeno ? Math.round(qtdN * 1000 * 100) / 100 : qtdN) : '';
     const opcoes = S.produtos.filter((x) => x.id !== p.id).sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'))
         .map((x) => `<option value="${escapeHTML(x.id)}"${x.id === item.id ? ' selected' : ''}>${escapeHTML(x.nome)}</option>`).join('');
-    return `<div class="fi-linha" data-n="${n}">
+    return `<div class="fi-linha" data-n="${escapeHTML(n)}">
         <select class="fi-prod" aria-label="Ingrediente"><option value="">Ingrediente</option>${opcoes}</select>
         <input class="fi-qtd" type="text" inputmode="decimal" autocomplete="off" value="${String(valor).replace('.', ',')}" aria-label="Quantidade" placeholder="Qtd">
         ${fat ? `<select class="fi-un" aria-label="Unidade">${fat.map(([r, f]) => `<option value="${f}"${(emPequeno ? f < 1 : f === 1) ? ' selected' : ''}>${r}</option>`).join('')}</select>` : `<span class="fi-un-fixa">${escapeHTML((ing && ing.unidade) || '')}</span>`}
@@ -211,13 +214,14 @@ function pintarCustoFicha(p) {
 }
 function abrirFicha(p) {
     garantirModal(); S.acao = { tipo: 'ficha', p };
-    const f = p.ficha || { rende: '', validadeDias: '', itens: [] };
+    const bruta = p.ficha && typeof p.ficha === 'object' ? p.ficha : {};
+    const f = { rende: numeroDeCampo(bruta.rende), validadeDias: numeroDeCampo(bruta.validadeDias), itens: (Array.isArray(bruta.itens) ? bruta.itens : []).filter((i) => i && typeof i === 'object').slice(0, 40) };
     $('es-m-titulo').textContent = `Ficha técnica de ${p.nome}`; $('es-m-rodape').hidden = false; $('es-m-gravar').textContent = 'Gravar ficha';
     $('es-m-corpo').innerHTML = `
         <p class="config-sub">Do que este produto é feito. Com a ficha, o sistema calcula o custo e, ao produzir, baixa os ingredientes do estoque.</p>
         <div class="grid-2">
-            ${campo('fi-rende', 'Uma receita rende (unidades)', `type="text" inputmode="numeric" autocomplete="off" value="${f.rende || ''}"`)}
-            ${campo('fi-validade', 'Validade (dias, opcional)', `type="text" inputmode="numeric" autocomplete="off" value="${f.validadeDias || ''}"`)}
+            ${campo('fi-rende', 'Uma receita rende (unidades)', `type="text" inputmode="numeric" autocomplete="off" value="${escapeHTML(f.rende === '0' ? '' : f.rende)}"`)}
+            ${campo('fi-validade', 'Validade (dias, opcional)', `type="text" inputmode="numeric" autocomplete="off" value="${escapeHTML(f.validadeDias === '0' ? '' : f.validadeDias)}"`)}
         </div>
         <label class="fi-rotulo">Ingredientes de uma receita</label>
         <div id="fi-linhas">${(f.itens.length ? f.itens : [{ id: '', qtd: 0 }]).map((i, n) => linhaFichaHtml(i, p, n)).join('')}</div>

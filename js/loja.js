@@ -57,7 +57,13 @@ const resetInatividadeTimer = () => {
 const carregarCarrinhoDB = async () => {
     try { 
         const raw = await dbStorage.get(chave('banca_cart'));
-        if(raw && raw.v === CART_VERSION && Array.isArray(raw.items)) { STATE.carrinho = raw.items; resetInatividadeTimer(); }
+        // O carrinho guardado no aparelho é conferido antes de ir para a tela: quantidade tem de ser número,
+        // tipo só 'kg' ou 'un'. O que estiver fora do formato é descartado (nunca vira página).
+        if(raw && raw.v === CART_VERSION && Array.isArray(raw.items)) {
+            STATE.carrinho = raw.items.filter((i) => i && typeof i === 'object' && (typeof i.id === 'string' || typeof i.id === 'number') && Number.isFinite(Number(i.qtd)) && Number(i.qtd) > 0)
+                .map((i) => ({ ...i, id: String(i.id), qtd: Number(i.qtd), tipo: i.tipo === 'kg' ? 'kg' : 'un' }));
+            resetInatividadeTimer();
+        }
     } catch(e) {}
     renderCarrinhoCompleto();   // desenha também o "pedido vazio" na primeira visita
 };
@@ -341,7 +347,7 @@ const renderCarrinhoCompleto = () => {
                 <h3 class="item-nome">${escapeHTML(item.nome)} </h3>
                 <div class="qtd-ctrl">
                     <button class="btn-qtd" data-action="dec" data-id="${escapeHTML(item.id)}" aria-label="Diminuir ${escapeHTML(item.nome)}">−</button>
-                    <input class="qtd-input" type="text" inputmode="decimal" value="${formatarQuantidadeVisual(item.qtd, isPeso)}" data-id="${escapeHTML(item.id)}" aria-label="Quantidade de ${escapeHTML(item.nome)}" enterkeyhint="done">
+                    <input class="qtd-input" type="text" inputmode="decimal" value="${escapeHTML(formatarQuantidadeVisual(Number(item.qtd) || 0, isPeso))}" data-id="${escapeHTML(item.id)}" aria-label="Quantidade de ${escapeHTML(item.nome)}" enterkeyhint="done">
                     <button class="btn-qtd" data-action="inc" data-id="${escapeHTML(item.id)}" aria-label="Aumentar ${escapeHTML(item.nome)}">+</button>
                     <span class="qtd-unid">${isPeso ? escapeHTML(String(item.unidade || 'kg').toLowerCase()) : 'un'}</span>
                 </div>
@@ -577,7 +583,8 @@ const mostrarLinksWhatsApp = (pedido) => {
     if (texto) texto.textContent = links.length > 1
         ? `Seu pedido tem itens de ${links.length} atendimentos da banca. Toque nos ${links.length} botões, um de cada vez, para enviar tudo:`
         : 'Vamos abrir o WhatsApp da banca com o seu pedido pronto. Se não abrir sozinho, toque no botão abaixo.';
-    if (links.length === 1) window.open(links[0].url, '_blank');
+    // só abre o que for mesmo um link do WhatsApp (o endereço vem do servidor; isto é a segunda conferência)
+    if (links.length === 1 && /^https:\/\/wa\.me\/\d{8,15}\?/.test(String(links[0].url))) window.open(links[0].url, '_blank', 'noopener');
 };
 
 // PIX automático: a tela (js/pix-loja.js) só é baixada quando alguém vai pagar.
@@ -826,7 +833,7 @@ const injetarModalDetalheSeNecessario = () => {
                     <small>Valor estimado. O preço final sai na balança, na hora de separar seu pedido.</small>`;
             } else {
                 resumo.className = 'md-resumo md-resumo-pesar';
-                resumo.innerHTML = `<small>Vamos pesar ${qtd} ${qtd === 1 ? 'unidade' : 'unidades'} e o valor final entra no seu pedido.</small>`;
+                resumo.innerHTML = `<small>Vamos pesar ${Number(qtd) || 0} ${qtd === 1 ? 'unidade' : 'unidades'} e o valor final entra no seu pedido.</small>`;
             }
             btn.textContent = `Adicionar ${qtd} ${qtd === 1 ? 'unidade' : 'unidades'}`;
         } else {
@@ -1227,7 +1234,7 @@ function renderAtalhos() {
 // ---------------------------------------------------------------------
 const estrelas = (n) => '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n);
 const avaliacaoHtml = (p, vivo, status) => {
-    const nota = (vivo && vivo.avaliacao && vivo.avaliacao.nota) || p.avaliado;
+    const nota = Math.min(5, Math.max(0, Math.round(Number((vivo && vivo.avaliacao && vivo.avaliacao.nota) || p.avaliado) || 0)));   // sempre um número de 0 a 5
     if (nota) return `<p class="avaliado" aria-label="Você deu ${nota} de 5 estrelas">Sua avaliação: <span>${estrelas(Number(nota))}</span> Obrigado!</p>`;
     // Aparece quando a loja marcou o pedido como entregue, ou 3 horas depois do envio (nem toda banca
     // atualiza a etapa no painel). Pedido cancelado ou com mais de uma semana não pergunta.
@@ -1402,7 +1409,7 @@ document.body.addEventListener('click', async (e) => {
 
             if (fracionavel) {
                 seletor.style.display = 'flex';
-                const tipoInicial = jaNoCarrinho ? jaNoCarrinho.tipo : 'un';   // unidade é o padrão
+                const tipoInicial = jaNoCarrinho && jaNoCarrinho.tipo === 'kg' ? 'kg' : 'un';   // unidade é o padrão
                 const btnAlvo = document.querySelector(`.btn-tipo-compra[data-tipo="${tipoInicial}"]`)
                              || document.querySelector('.btn-tipo-compra[data-tipo="un"]');
                 btnAlvo.click(); // já dispara renderPresets + atualizarResumo

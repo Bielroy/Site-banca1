@@ -2,40 +2,106 @@ rules_version = '2';
 // =====================================================================
 //  REGRAS DO BANCO (Firestore) — quem pode ler e gravar o quê.
 //
-//  ATENÇÃO ANTES DE PUBLICAR
-//  O bloco "LOJA ORIGINAL" abaixo foi REESCRITO a partir do que o código do
-//  site usa, porque as regras que estão hoje no console do Firebase não
-//  estavam no projeto. Compare com as suas regras atuais antes de publicar:
-//  se a sua tiver algo que aqui não tem, me avise em vez de sobrescrever.
+//  ATENÇÃO: este arquivo NÃO vai para o ar sozinho. Depois de mudar,
+//  copie e publique no console do Firebase (PUBLICAR.md, seção "Regras").
+//  Os testes de testes/regras/ rodam estas regras no emulador do Firebase.
 //
 //  COMO O ACESSO FUNCIONA
 //  O papel de cada pessoa vem dentro do login (custom claims), gravado só
-//  pelo servidor (scripts/plataforma.js):
+//  pelo servidor:
 //      tenants: { "id-da-loja": "proprietario" | "administrador" | ... }
 //      plataforma: true      → dono da plataforma (vê todas as lojas)
 //      admin: true           → conta antiga: dona da loja original
-//  Pedidos são criados SÓ pelo servidor (api/checkout.js), que confere preço,
-//  estoque e cupom. Nenhum navegador cria ou altera valor de pedido.
+//  A LOJA do endereço nunca dá permissão: ela só diz ONDE olhar. Quem
+//  autoriza é o papel que está no login, conferido aqui.
+//
+//  O QUE SÓ O SERVIDOR FAZ (nenhum navegador consegue, nem o do dono):
+//      criar pedido, mudar valor/itens de pedido, cancelar pedido, mexer
+//      no estoque físico, no caixa do dia, nas previsões, na equipe, na
+//      trilha de auditoria e na nota média das avaliações.
 // =====================================================================
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function logado() { return request.auth != null; }
-    function plataforma() { return logado() && request.auth.token.plataforma == true; }
-    // papel da pessoa NESTA loja ('' se não tiver)
+    // Papel só vale em conta com E-MAIL CONFIRMADO. Quem entra pelo link do e-mail sempre tem;
+    // isto barra conta criada por fora, com senha, usando o e-mail de alguém da equipe.
+    function confirmado() { return logado() && request.auth.token.get('email_verified', false) == true; }
+    function plataforma() { return confirmado() && request.auth.token.get('plataforma', false) == true; }
+    function mapaDePapeis() { return request.auth.token.get('tenants', {}); }
+    // papel da pessoa NESTA loja ('' se não tiver). A conta antiga (admin: true) vale como proprietária da loja original.
     function papel(tid) {
-      return logado() && request.auth.token.get('tenants', {}).get(tid, '') is string
-        ? request.auth.token.get('tenants', {}).get(tid, '') : '';
+      return !confirmado() ? ''
+        : (mapaDePapeis() is map && mapaDePapeis().get(tid, '') is string && mapaDePapeis().get(tid, '') != '' ? mapaDePapeis().get(tid, '')
+          : (tid == 'banca' && request.auth.token.get('admin', false) == true ? 'proprietario' : ''));
     }
     function gestor(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador']; }
     function equipe(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque']; }
+    // quem ATENDE pedidos (vê nome, telefone e endereço de cliente): estoque e produção ficam de fora
+    function atende(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'funcionario', 'caixa']; }
     function cuidaDeEstoque(tid) { return gestor(tid) || papel(tid) in ['estoque', 'producao']; }
-    function donoOriginal() { return plataforma() || (logado() && request.auth.token.admin == true) || gestor('banca'); }
-    // equipe da loja original (os papéis dela ficam em tenants.banca, como nas outras lojas)
-    function equipeOriginal()  { return donoOriginal() || equipe('banca'); }
-    function estoqueOriginal() { return donoOriginal() || cuidaDeEstoque('banca'); }
-    // quem cuida de estoque sem ser gestor só mexe nos limites de estoque do produto, nunca em preço ou nome
-    function soLimitesDeEstoque() { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estoqueMin', 'estoqueIdeal', 'estoqueMax', 'prazoDias']); }
+    // quem faz o fechamento da feira (o que sobrou / o que faltou)
+    function fechaFeira(tid) { return gestor(tid) || papel(tid) in ['funcionario', 'estoque']; }
+
+    // ---------------- validações (o banco confere o FORMATO; a tela não é barreira) ----------------
+    function numOuNulo(d, k) { return !(k in d) || d[k] == null || (d[k] is number && d[k] >= 0 && d[k] < 10000000); }
+    function textoAte(d, k, n) { return !(k in d) || (d[k] is string && d[k].size() <= n); }
+    function corOk(t, k) { return !(k in t) || (t[k] is string && t[k].matches('^#[0-9a-fA-F]{6}$')); }
+
+    // Quem cuida de estoque sem ser gestor só mexe nos LIMITES do produto (nunca em preço, nome ou foto),
+    // e cada limite tem de ser número (ou vazio). Antes cabia qualquer texto aqui.
+    function soLimitesDeEstoque() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estoqueMin', 'estoqueIdeal', 'estoqueMax', 'prazoDias'])
+        && numOuNulo(request.resource.data, 'estoqueMin') && numOuNulo(request.resource.data, 'estoqueIdeal')
+        && numOuNulo(request.resource.data, 'estoqueMax') && numOuNulo(request.resource.data, 'prazoDias');
+    }
+    // Custo e ficha técnica: só esses dois campos, com o formato certo.
+    function fichaOk(f) {
+      return f is map && f.keys().hasOnly(['rende', 'validadeDias', 'itens'])
+        && f.get('rende', 1) is number && f.get('rende', 1) > 0 && f.get('rende', 1) <= 100000
+        && (f.get('validadeDias', null) == null || (f.get('validadeDias', null) is number && f.get('validadeDias', 0) >= 0 && f.get('validadeDias', 0) <= 3650))
+        && f.get('itens', []) is list && f.get('itens', []).size() <= 40;
+    }
+    function custosOk(d) {
+      return numOuNulo(d, 'custo') && (!('ficha' in d) || d.ficha == null || fichaOk(d.ficha));
+    }
+    // Aparência da loja: nome de verdade, textos curtos e cores no formato #rrggbb.
+    function temaOk(t) {
+      return t is map && t.size() <= 24
+        && corOk(t, 'primaria') && corOk(t, 'secundaria') && corOk(t, 'destaque') && corOk(t, 'fundo')
+        && corOk(t, 'superficie') && corOk(t, 'texto') && corOk(t, 'sobrePrimaria')
+        && textoAte(t, 'fonteTitulo', 40) && textoAte(t, 'fonteTexto', 40) && textoAte(t, 'etiqueta', 20)
+        && textoAte(t, 'fotoFormato', 20) && textoAte(t, 'fotoEncaixe', 20)
+        && (!('raio' in t) || (t.raio is number && t.raio >= 0 && t.raio <= 40));
+    }
+    function aparenciaOk(d) {
+      return d.get('nome', '') is string && d.get('nome', '').size() >= 2 && d.get('nome', '').size() <= 60
+        && textoAte(d, 'subtitulo', 120) && textoAte(d, 'nota', 200) && textoAte(d, 'busca', 80)
+        && (!('tema' in d) || temaOk(d.tema));
+    }
+    // PEDIDO: a equipe só faz o status ANDAR PARA FRENTE.
+    //   novo / aguardando pagamento / a pesar  →  separando  →  a caminho  →  arquivado
+    // "cancelado" não se escreve por aqui (só o servidor cancela, porque ele devolve o estoque e
+    // desconta do caixa) e pedido cancelado ou arquivado não volta a andar.
+    function passo(s) {
+      return s == 'pendente' || s == 'aguardando_pagamento' || s == 'aguardando_pesagem' ? 1
+        : (s == 'preparando' ? 2 : (s == 'enviado' ? 3 : (s == 'arquivado' ? 4 : 0)));
+    }
+    function avancaStatus() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status is string
+        && passo(resource.data.status) >= 1
+        && passo(request.resource.data.status) > passo(resource.data.status);
+    }
+    // Fechamento da feira: um documento por dia (AAAA-MM-DD), só com os campos da tela.
+    function fechamentoOk(id) {
+      return id.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.get('dia', '') == id
+        && request.resource.data.get('itens', {}) is map && request.resource.data.get('itens', {}).size() <= 800
+        && textoAte(request.resource.data, 'atualizadoEm', 40);
+    }
+    // Documentos de `loja` que o CLIENTE precisa ler para comprar. O resto (banco de fotos etc.) é só de quem administra.
+    function lojaPublica(docId) { return docId in ['config', 'comunicados', 'avaliacoes']; }
 
     // ------------------------------------------------------------------
     // PLATAFORMA
@@ -43,31 +109,50 @@ service cloud.firestore {
     // Ficha pública de cada loja: nome, tema, módulos, feira.
     match /tenants/{tid} {
       allow read: if true;
-      allow create, delete: if plataforma();
-      // O gestor muda a APARÊNCIA. Ligar/desligar a loja, módulos e feira é só da plataforma.
+      allow delete: if plataforma();
+      // A plataforma cria qualquer loja. A dona da loja original pode criar a ficha dela (só com os campos de aparência).
+      allow create: if plataforma()
+        || (tid == 'banca' && gestor('banca')
+            && request.resource.data.keys().hasOnly(['nome', 'subtitulo', 'nota', 'busca', 'tema', 'atualizadoEm'])
+            && aparenciaOk(request.resource.data));
+      // O gestor muda a APARÊNCIA. Ligar/desligar a loja, módulos, tipo e feira é só da plataforma.
       allow update: if plataforma()
-        || ((gestor(tid) || (tid == 'banca' && donoOriginal()))
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'subtitulo', 'nota', 'busca', 'tema', 'atualizadoEm']));
-      // a loja original ainda não tem ficha: a dona pode criar a dela (só com os campos de aparência)
-      allow create: if tid == 'banca' && donoOriginal()
-        && request.resource.data.keys().hasOnly(['nome', 'subtitulo', 'nota', 'busca', 'tema', 'atualizadoEm']);
+        || (gestor(tid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'subtitulo', 'nota', 'busca', 'tema', 'atualizadoEm'])
+            && aparenciaOk(request.resource.data));
 
       // ---------------- dados de UMA loja ----------------
-      match /produtos/{id}    { allow read: if true; allow write: if gestor(tid); allow update: if cuidaDeEstoque(tid) && soLimitesDeEstoque(); }
+      match /produtos/{id} {
+        allow read: if true;
+        allow create, delete: if gestor(tid);
+        allow update: if gestor(tid) || (cuidaDeEstoque(tid) && soLimitesDeEstoque());
+      }
       // custo e ficha técnica: fora do produto público, para concorrente e cliente não lerem
-      match /produtos_custos/{id} { allow read, write: if cuidaDeEstoque(tid); }
-      match /categorias/{id}  { allow read: if true; allow write: if gestor(tid); }
-      match /loja/{docId}     { allow read: if true; allow write: if gestor(tid); }
-      match /pedidos/{id} {
-        allow get: if equipe(tid) || (logado() && resource.data.userId == request.auth.uid);
-        allow list: if equipe(tid);
-        allow create: if false;                       // só o servidor
-        // a equipe só muda o STATUS. Itens e valores só mudam pelo servidor (pesagem, cancelamento).
-        allow update: if equipe(tid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      match /produtos_custos/{id} {
+        allow read: if cuidaDeEstoque(tid);
+        allow create: if cuidaDeEstoque(tid) && request.resource.data.keys().hasOnly(['custo', 'ficha']) && custosOk(request.resource.data);
+        allow update: if cuidaDeEstoque(tid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['custo', 'ficha']) && custosOk(request.resource.data);
         allow delete: if gestor(tid);
       }
+      match /categorias/{id}  { allow read: if true; allow write: if gestor(tid); }
+      match /loja/{docId} {
+        allow read: if lojaPublica(docId) || gestor(tid);
+        allow write: if gestor(tid) && docId != 'avaliacoes';      // a nota média das avaliações é do servidor
+      }
+      match /pedidos/{id} {
+        // o cliente lê o PRÓPRIO pedido (o dono vem do login anônimo dele); quem atende lê os da loja
+        allow get: if atende(tid) || (logado() && resource.data.userId == request.auth.uid);
+        allow list: if atende(tid);
+        allow create, delete: if false;               // só o servidor
+        allow update: if atende(tid) && avancaStatus();
+      }
       match /cupons/{id}      { allow read, write: if gestor(tid); }
-      match /fechamentos/{id} { allow read, write: if equipe(tid); }
+      match /fechamentos/{id} {
+        allow read: if fechaFeira(tid);
+        allow create: if fechaFeira(tid) && fechamentoOk(id) && request.resource.data.keys().hasOnly(['dia', 'atualizadoEm', 'itens']);
+        allow update: if fechaFeira(tid) && fechamentoOk(id) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dia', 'atualizadoEm', 'itens']);
+        allow delete: if gestor(tid);
+      }
       match /resumos/{id}     { allow read: if gestor(tid); allow write: if false; }
       match /analytics/{id}   { allow read: if gestor(tid); allow write: if false; }
       match /estoque_mov/{id} { allow read: if cuidaDeEstoque(tid); allow write: if false; }   // só o servidor grava
@@ -76,38 +161,56 @@ service cloud.firestore {
       match /calendario/{id}  { allow read: if equipe(tid); allow write: if gestor(tid); }           // calendário operacional
       match /equipe/{id}      { allow read: if gestor(tid); allow write: if false; }                // espelho da equipe: só o servidor grava
       match /crm/{id}         { allow read, write: if gestor(tid); }                         // anotação de quando cada cliente recebeu mensagem
-      // analytics_*, analytics/dashboard e tudo o mais: só o servidor (regra final nega).
+      // auditoria, avisos, uso_ia, maquininha, analytics_* e tudo o mais: só o servidor (a regra final nega).
     }
 
     // Feiras: grupos de lojas que aparecem juntas na faixa do topo.
     match /feiras/{fid} { allow read: if true; allow write: if plataforma(); }
 
     // ------------------------------------------------------------------
-    // LOJA ORIGINAL (Banca Adair e Pedrina) — dados na raiz, como sempre foi
+    // LOJA ORIGINAL (Banca Adair e Pedrina) — dados na raiz, como sempre foi.
+    // As mesmas regras de cima, com a loja "banca".
     // ------------------------------------------------------------------
-    match /produtos/{id}    { allow read: if true; allow write: if donoOriginal(); allow update: if estoqueOriginal() && soLimitesDeEstoque(); }
-    match /produtos_custos/{id} { allow read, write: if estoqueOriginal(); }
-    match /categorias/{id}  { allow read: if true; allow write: if donoOriginal(); }
-    match /loja/{docId}     { allow read: if true; allow write: if donoOriginal(); }
-    match /pedidos/{id} {
-      allow get: if equipeOriginal() || (logado() && resource.data.userId == request.auth.uid);
-      allow list: if equipeOriginal();
-      allow create: if false;
-      allow update: if equipeOriginal() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
-      allow delete: if donoOriginal();
+    match /produtos/{id} {
+      allow read: if true;
+      allow create, delete: if gestor('banca');
+      allow update: if gestor('banca') || (cuidaDeEstoque('banca') && soLimitesDeEstoque());
     }
-    match /cupons/{id}      { allow read, write: if donoOriginal(); }
-    match /fechamentos/{id} { allow read, write: if equipeOriginal(); }
-    match /resumos/{id}     { allow read: if donoOriginal(); allow write: if false; }
-    match /analytics/{id}   { allow read: if donoOriginal(); allow write: if false; }
-    match /estoque_mov/{id} { allow read: if estoqueOriginal(); allow write: if false; }
-    match /estoque_resumo/{id} { allow read: if estoqueOriginal(); allow write: if false; }
-    match /producoes/{id}   { allow read: if estoqueOriginal(); allow write: if false; }
-    match /crm/{id}         { allow read, write: if donoOriginal(); }
-    match /calendario/{id}  { allow read: if equipeOriginal(); allow write: if donoOriginal(); }
-    match /equipe/{id}      { allow read: if donoOriginal(); allow write: if false; }
+    match /produtos_custos/{id} {
+      allow read: if cuidaDeEstoque('banca');
+      allow create: if cuidaDeEstoque('banca') && request.resource.data.keys().hasOnly(['custo', 'ficha']) && custosOk(request.resource.data);
+      allow update: if cuidaDeEstoque('banca') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['custo', 'ficha']) && custosOk(request.resource.data);
+      allow delete: if gestor('banca');
+    }
+    match /categorias/{id}  { allow read: if true; allow write: if gestor('banca'); }
+    match /loja/{docId} {
+      allow read: if lojaPublica(docId) || gestor('banca');
+      allow write: if gestor('banca') && docId != 'avaliacoes';
+    }
+    match /pedidos/{id} {
+      allow get: if atende('banca') || (logado() && resource.data.userId == request.auth.uid);
+      allow list: if atende('banca');
+      allow create, delete: if false;
+      allow update: if atende('banca') && avancaStatus();
+    }
+    match /cupons/{id}      { allow read, write: if gestor('banca'); }
+    match /fechamentos/{id} {
+      allow read: if fechaFeira('banca');
+      allow create: if fechaFeira('banca') && fechamentoOk(id) && request.resource.data.keys().hasOnly(['dia', 'atualizadoEm', 'itens']);
+      allow update: if fechaFeira('banca') && fechamentoOk(id) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dia', 'atualizadoEm', 'itens']);
+      allow delete: if gestor('banca');
+    }
+    match /resumos/{id}     { allow read: if gestor('banca'); allow write: if false; }
+    match /analytics/{id}   { allow read: if gestor('banca'); allow write: if false; }
+    match /estoque_mov/{id} { allow read: if cuidaDeEstoque('banca'); allow write: if false; }
+    match /estoque_resumo/{id} { allow read: if cuidaDeEstoque('banca'); allow write: if false; }
+    match /producoes/{id}   { allow read: if cuidaDeEstoque('banca'); allow write: if false; }
+    match /crm/{id}         { allow read, write: if gestor('banca'); }
+    match /calendario/{id}  { allow read: if equipe('banca'); allow write: if gestor('banca'); }
+    match /equipe/{id}      { allow read: if gestor('banca'); allow write: if false; }
 
     // Qualquer outro caminho: negado (o servidor usa a conta de serviço e não passa por aqui).
+    // Isto cobre: plataforma/* (chaves e segredos), backups, limites, auditoria e o que for criado no futuro.
     match /{caminho=**} { allow read, write: if false; }
   }
 }

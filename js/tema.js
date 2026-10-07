@@ -18,6 +18,13 @@ import { ARTES, arteDoTipo } from './arte-lib.js';
 if (!ehLojaOriginal) document.documentElement.classList.add('sem-arte');
 // Mesmo cuidado com o botão do Ajudante: nas outras lojas ele só aparece depois que a ficha diz que está ligado.
 if (!ehLojaOriginal) document.body.classList.add('sem-ia');
+// E com os TEXTOS: a página vem escrita com o nome e as frases da Banca. Em outra loja eles somem na hora,
+// antes mesmo de a ficha chegar (ver aplicarFicha), para nunca aparecer o nome de uma loja sobre os produtos de outra.
+if (!ehLojaOriginal) {
+    ['header-nome', 'header-sub', 'header-nota'].forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = ''; });
+    document.querySelectorAll('[data-nome-loja]').forEach((el) => { el.textContent = ''; });
+    document.title = 'Loja';                              // a aba do navegador também não fica com o nome da Banca
+}
 const CAIXOTE = { viewBox: '', html: '' };
 function aplicarArte(tipo) {
     const svg = document.querySelector('.header-arte'); if (!svg) return;
@@ -97,7 +104,9 @@ export function variaveisDoTema(tema) {
 }
 
 const carregarFonte = (nome) => {
-    if (!nome || NO_SITE.has(nome) || document.querySelector(`link[data-fonte="${nome}"]`)) return;
+    // só as fontes da nossa lista: o nome vem da ficha da loja e antes entrava direto num seletor e num endereço
+    if (typeof nome !== 'string' || !(FONTES.titulo[nome] || FONTES.texto[nome])) return;
+    if (NO_SITE.has(nome) || [...document.querySelectorAll('link[data-fonte]')].some((l) => l.dataset.fonte === nome)) return;
     const l = document.createElement('link');
     l.rel = 'stylesheet'; l.dataset.fonte = nome;
     l.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(nome).replace(/%20/g, '+')}:wght@400;600;700&display=swap`;
@@ -133,6 +142,18 @@ function aplicarFicha(ficha, completa = true) {
     if (ficha.nome && !(ehLojaOriginal && !ficha.tema)) {          // a loja original mantém o título desenhado, a não ser que tenha sido personalizada
         escrever('header-nome', ficha.nome);
         document.title = ficha.subtitulo ? `${ficha.nome} | ${ficha.subtitulo}` : ficha.nome;
+    }
+    // OUTRA LOJA NUNCA APARECE COM A CARA DA BANCA. A página já vem escrita com o nome, a frase e o rodapé da
+    // loja original; se a ficha de outra loja viesse sem nome (ou com campos vazios), a tela continuava dizendo
+    // "Banca Adair e Pedrina" com os produtos, o WhatsApp e o PIX de outra pessoa. Agora, fora da loja original,
+    // tudo o que é texto da Banca é trocado SEMPRE: sem nome na ficha, vale o endereço da loja.
+    if (!ehLojaOriginal) {
+        const nome = typeof ficha.nome === 'string' && ficha.nome.trim() ? ficha.nome.trim() : TENANT;
+        const por = (id, texto) => { const el = document.getElementById(id); if (el) el.textContent = texto; };
+        por('header-nome', nome); por('header-sub', typeof ficha.subtitulo === 'string' ? ficha.subtitulo : '');
+        document.title = ficha.subtitulo ? `${nome} | ${ficha.subtitulo}` : nome;
+        document.querySelectorAll('[data-nome-loja]').forEach((el) => { el.textContent = nome; });
+        const nota = document.getElementById('header-nota'); if (nota) { nota.textContent = typeof ficha.nota === 'string' ? ficha.nota : ''; nota.hidden = !nota.textContent; }
     }
     escrever('header-sub', ficha.subtitulo);
     const busca = document.getElementById('busca-input');

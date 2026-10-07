@@ -5,7 +5,8 @@ import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
 import './admin-instalar.js';
-import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual } from './admin-guard.js';
+import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar } from './admin-guard.js';
+import { htmlSimples, csvCampo } from './html-lib.js';
 import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel } from './papeis-lib.js';
 import { ico } from './icones-admin.js';          // também liga a troca das marcas <i class="ic"> pelos desenhos
 import { linhaEndereco } from './endereco.js';
@@ -77,7 +78,10 @@ onAuthStateChanged(auth, async (user) => {
 
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('dashboard').style.display = 'grid';
-    iniciarLogoutPorInatividade(30);
+    // 12 horas sem tocar no painel encerram o login. Era 30 minutos, mas cada entrada nova gasta um link de
+    // e-mail e o plano gratuito do Firebase só envia 5 por dia para a loja inteira: com 30 minutos, a própria
+    // equipe esgotava o limite e ninguém mais entrava naquele dia. No balcão, "Sair" encerra na hora.
+    iniciarLogoutPorInatividade(12 * 60);
     try { const f = await getDoc(fichaRef()); modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; } catch (_) { modulosDaLoja = null; }
     { const tl = document.getElementById('topo-loja'); if (tl) tl.textContent = nomeDaLoja; }
     aplicarPapel();
@@ -98,11 +102,27 @@ document.getElementById('btn-login').addEventListener('click', async () => {
     isLoginProcessing = true; document.getElementById('btn-login').disabled = true;
     msg.textContent = "A enviar link..."; msg.style.color = "var(--text-dark)";
 
+    const guardarEmail = () => { try { window.localStorage.setItem('emailForSignIn', email); } catch (_) {} try { window.sessionStorage.setItem('emailForSignIn', email); } catch (_) {} };
     try {
-        await sendSignInLinkToEmail(auth, email, { url: window.location.href, handleCodeInApp: true });
-        try { window.localStorage.setItem('emailForSignIn', email); } catch (_) {}
-        window.sessionStorage.setItem('emailForSignIn', email);
-        msg.textContent = "Link enviado! Verifique o e-mail."; msg.style.color = "var(--success)";
+        // O pedido do link passa pelo NOSSO servidor: só e-mail que já faz parte de alguma equipe recebe, e a
+        // resposta é a mesma para qualquer e-mail (não dá para descobrir por aqui quem é da equipe).
+        let r = null, j = {};
+        try {
+            r = await fetch('/api/equipe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'pedir-link', email, loja: TENANT }) });
+            j = await r.json().catch(() => ({}));
+        } catch (_) { r = null; }
+        if (r && r.ok) {
+            guardarEmail();
+            msg.textContent = j.mensagem || 'Se este e-mail estiver autorizado, o link chega em instantes.'; msg.style.color = "var(--success)";
+        } else if (r && (r.status === 429 || r.status === 400)) {
+            msg.textContent = j.error || 'Não consegui enviar. Tente de novo em alguns minutos.'; msg.style.color = "var(--danger)";
+        } else {
+            // Plano B: o servidor não conseguiu (fora do ar ou sem configuração). Pede direto ao Firebase, como era antes,
+            // para ninguém ficar trancado para fora por causa de uma falha nossa.
+            await sendSignInLinkToEmail(auth, email, { url: window.location.origin + window.location.pathname + (ehLojaOriginal ? '' : `?loja=${encodeURIComponent(TENANT)}`), handleCodeInApp: true });
+            guardarEmail();
+            msg.textContent = "Se este e-mail estiver autorizado, o link chega em instantes."; msg.style.color = "var(--success)";
+        }
     } catch (error) {
         msg.textContent = "Erro ao enviar. Tente novamente."; msg.style.color = "var(--danger)";
     } finally {
@@ -126,12 +146,13 @@ if (isSignInWithEmailLink(auth, window.location.href)) {
         }
         // Tira o código de uso único da barra de endereço: sem isso, cada
         // recarga da página tentava entrar de novo com um link já gasto.
-        history.replaceState(null, '', window.location.pathname);
+        // (o endereço fica só com a página e a loja: nada do código do link sobra na barra nem no histórico)
+        history.replaceState(null, '', window.location.pathname + (ehLojaOriginal ? '' : `?loja=${encodeURIComponent(TENANT)}`));
     };
     processLogin();
 }
 
-document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
+document.getElementById('btn-logout').addEventListener('click', () => sairELimpar());
 
 // ---------------------------------------------------------------------
 // PAPÉIS: cada pessoa da equipe vê só as abas do papel dela (js/papeis-lib.js).
@@ -287,7 +308,7 @@ const mostrarErroConsulta = (erro, alvoId) => {
                     O Firestore precisa de um índice para esta consulta. É automático:
                     toque no botão, confirme no Firebase e volte aqui em ~1 minuto.
                 </p>
-                <a href="${link}" target="_blank" rel="noopener"
+                <a href="${escapeHTML(link)}" target="_blank" rel="noopener"
                    style="display:inline-block; background:var(--forest); color:#fff; padding:14px 24px; border-radius:12px; font-weight:800; text-decoration:none;">
                    Criar índice agora →
                 </a>
@@ -326,7 +347,7 @@ const avisarModoSimples = (erro) => {
     if (!secao) return;
 
     const acao = link
-        ? `<a href="${link}" target="_blank" rel="noopener" style="color:#92400e; font-weight:800;">Criar o índice agora →</a>`
+        ? `<a href="${escapeHTML(link)}" target="_blank" rel="noopener" style="color:#92400e; font-weight:800;">Criar o índice agora →</a>`
         : `<span style="color:#92400e;">Peça para criar o índice composto de <b>status</b> + <b>data</b>.</span>`;
 
     secao.insertAdjacentHTML('afterbegin', `
@@ -483,14 +504,6 @@ document.getElementById('admin-busca-input')?.addEventListener('input', (e) => {
     renderProdutos();
 });
 
-const getEstoqueBadge = (estoqueFisico, ativo) => {
-    if (!ativo) return `<span class="badge-estoque esgotado">Fora da loja</span>`;
-    if (estoqueFisico === undefined || estoqueFisico === null || estoqueFisico === "") return `<span class="badge-estoque alto">À venda</span>`;
-    if (estoqueFisico <= 0) return `<span class="badge-estoque esgotado">Estoque zerado</span>`;
-    if (estoqueFisico <= 5) return `<span class="badge-estoque baixo">Estoque baixo: restam ${estoqueFisico}</span>`;
-    return `<span class="badge-estoque alto">Estoque: ${estoqueFisico}</span>`;
-};
-
 const FRACIONAVEIS = ['kg', 'kilo', 'quilograma', 'g', 'grama', 'l', 'litro'];
 const ehFracionavel = (u) => FRACIONAVEIS.includes(String(u || '').toLowerCase());
 
@@ -532,7 +545,7 @@ const renderProdutos = () => {
         return `
         <article class="pl-item${p.ativo ? '' : ' fora'}">
             <button type="button" class="pl-abrir" data-action="editar-produto" data-id="${escapeHTML(p.id)}">
-                <span class="pl-foto">${p.foto ? `<img src="${escapeHTML(p.fotoMini || p.foto)}" loading="lazy" decoding="async" alt="">` : placeholderSVG}</span>
+                <span class="pl-foto">${/^https:\/\//i.test(String(p.fotoMini || p.foto || '')) ? `<img src="${escapeHTML(p.fotoMini || p.foto)}" loading="lazy" decoding="async" alt="">` : placeholderSVG}</span>
                 <span class="pl-txt">
                     <b>${escapeHTML(p.nome)}</b>
                     <span class="pl-sub">${Number(p.preco) > 0 ? `${fmt(p.preco)} / ${escapeHTML(p.unidade || 'un')}` : 'sem preço'}${cat ? ` · ${escapeHTML(cat)}` : ''}${p.ativo ? '' : ' · <em>fora da loja</em>'}</span>
@@ -1070,7 +1083,7 @@ const finalizarEsteira = async (btn, enviarWhats) => {
             const url = fone
                 ? `https://wa.me/${fone.startsWith('55') ? fone : '55' + fone}?text=${encodeURIComponent(msg)}`
                 : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-            window.open(url, '_blank');
+            window.open(url, '_blank', 'noopener');
             if (!fone) showToast('Texto copiado — escolha a conversa da cliente.', false);
         } else {
             showToast('Pedido salvo com os valores exatos.');
@@ -1601,7 +1614,7 @@ const acoplarRelatorioIADemanda = (historicoMap) => {
                             <h3 style="margin:0;">Insight Logístico da Inteligência Artificial</h3>
                         </div>
                         <p style="color:var(--text-light); font-size:0.8rem; margin-bottom:16px;">Análise em Tempo Real • Baseado nas vendas faturadas</p>
-                        ${data.relatorio}
+                        ${htmlSimples(data.relatorio)}
                     </div>
                 `;
             } catch (e) {
@@ -1706,11 +1719,7 @@ const baixarCsv = (csv, nome) => {
 const diaBR = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? new Date(t - 3 * 3600000).toISOString().slice(0, 10) : ''; };
 const dataHoraBR = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? new Date(t).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : String(iso || ''); };
 
-const csvCampo = (valor) => {
-    let txt = String(valor ?? '');
-    if (/^[=+\-@]/.test(txt)) txt = `'${txt}`;
-    return `"${txt.replace(/"/g, '""')}"`;
-};
+// csvCampo vem de js/html-lib.js (aspas + trava contra texto que vira fórmula na planilha)
 
 document.getElementById('btn-exportar').addEventListener('click', () => {
     if (pedidosGerais.length === 0) return showToast("Não há pedidos para exportar.", true);

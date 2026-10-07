@@ -62,33 +62,17 @@ const paraCentavos = (v) => Math.round(Number(v) * 100);
 // ALLOWED_ORIGIN continua sendo lida e ACRESCENTA origens à lista
 // (aceita várias separadas por vírgula), mas não é mais obrigatória.
 // ---------------------------------------------------------------------
-const ORIGENS_CONFIAVEIS = [
-  'https://www.bancaadairepedrina.com.br',
-  'https://bancaadairepedrina.com.br',
-  'https://site-banca1.vercel.app',
-];
-
-const aplicarCors = (req, res, metodos) => {
-  const extras = String(process.env.ALLOWED_ORIGIN || '')
-    .split(',').map((s) => s.trim()).filter(Boolean);
-  const permitidas = ORIGENS_CONFIAVEIS.concat(extras);
-  const origem = req.headers && req.headers.origin;
-
-  if (origem && permitidas.indexOf(origem) !== -1) {
-    res.setHeader('Access-Control-Allow-Origin', origem);
-  } else if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') {
-    res.setHeader('Access-Control-Allow-Origin', '*'); // preview e dev
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', permitidas[0]);
-  }
-
-  // Sem o Vary, um proxy poderia servir a resposta de um domínio para outro.
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', metodos || 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-};
+// Origem (CORS): a lista de endereços nossos fica num lugar só, lib/http.js.
+const H = require('../lib/http');
+const aplicarCors = H.cors;
 
 const T = require('../lib/tenant');
+const P = require('../lib/prudencia');
+// Quem da equipe gera PIX de um pedido: quem atende pedidos (não o estoque nem a produção).
+const EQUIPE_DO_PIX = ['proprietario', 'administrador', 'funcionario', 'caixa'];
+const emailValido = (e) => typeof e === 'string' && e.length <= 120 && /^[^\s@<>"']{1,64}@[^\s@<>"']{1,100}\.[a-z]{2,}$/i.test(e);
+// chamada ao banco com prazo: sem isto, o PagBank lento prendia a função até a Vercel derrubar
+const comPrazo = (url, opcoes = {}, ms = 15000) => fetch(url, { ...opcoes, signal: AbortSignal.timeout(ms) });
 
 module.exports = async function handler(req, res) {
   aplicarCors(req, res, 'OPTIONS,POST');
@@ -100,7 +84,8 @@ module.exports = async function handler(req, res) {
   try {
     bootFirebase();
     const { pedidoId, cpf, email } = req.body || {};
-    if (!pedidoId || !/^[\w-]{6,80}$/.test(String(pedidoId))) return res.status(400).json({ error: 'pedidoId é obrigatório.' });
+    if (typeof pedidoId !== 'string' || !/^[\w-]{6,80}$/.test(pedidoId)) return res.status(400).json({ error: 'pedidoId é obrigatório.' });
+    if (H.passouNaMemoria(`pix:${H.ipDe(req)}`, 10, 60000)) return res.status(429).json({ error: 'Muitas tentativas seguidas. Aguarde um minuto.' });
     let tid;
     try { ({ tid } = await T.resolverLoja(db, req)); }
     catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
@@ -129,8 +114,11 @@ module.exports = async function handler(req, res) {
     if (!snap.exists) return res.status(404).json({ error: 'Pedido não encontrado.' });
 
     const pedido = snap.data();
-    if (pedido.userId !== dec.uid && !T.temPapel(dec, tid, T.PAPEIS)) return res.status(404).json({ error: 'Pedido não encontrado.' });
+    if (pedido.userId !== dec.uid && !T.temPapel(dec, tid, EQUIPE_DO_PIX)) return res.status(404).json({ error: 'Pedido não encontrado.' });
     if (pedido.status === 'cancelado') return res.status(409).json({ error: 'Este pedido foi cancelado.' });
+    if (pedido.status === 'arquivado') return res.status(409).json({ error: 'Este pedido já foi concluído. Combine o pagamento pelo WhatsApp.' });
+    // Cada QR é uma ordem criada no banco: no máximo 6 em 10 minutos por pessoa, 300 por dia na loja (conta guardada no banco).
+    if (!(await P.limitar(db, 'pix', `${tid}|${dec.uid}`, 6, 600)) || !(await P.limitar(db, 'pix-loja', tid, 300, 86400))) return res.status(429).json({ error: 'Muitos códigos PIX gerados em pouco tempo. Aguarde alguns minutos ou combine pelo WhatsApp.' });
     if (pedido.temItensAPesar) return res.status(409).json({ error: 'Este pedido ainda tem itens a pesar. O PIX sai depois da pesagem.' });
 
     // Já pago? Não gera novo QR.
@@ -141,7 +129,7 @@ module.exports = async function handler(req, res) {
     // Já existe um QR ainda válido pra esse pedido? Reaproveita (evita
     // gerar QR duplicado se o cliente reabrir o modal / clicar 2x).
     if (pedido.pagamento && pedido.pagamento.orderId && pedido.pagamento.status === 'WAITING') {
-      const check = await fetch(`${PAGBANK_BASE_URL}/orders/${pedido.pagamento.orderId}`, {
+      const check = await comPrazo(`${PAGBANK_BASE_URL}/orders/${encodeURIComponent(pedido.pagamento.orderId)}`, {
         headers: { Authorization: `Bearer ${TOKEN_PAGBANK}` },
       });
       const existente = await check.json();
@@ -157,14 +145,14 @@ module.exports = async function handler(req, res) {
     }
 
     const valor = Number(pedido.total || 0);
-    if (valor <= 0) return res.status(400).json({ error: 'Pedido sem valor cobrável via PIX.' });
+    if (!Number.isFinite(valor) || valor <= 0 || valor > 100000) return res.status(400).json({ error: 'Pedido sem valor cobrável via PIX.' });
 
     const valorCentavos = paraCentavos(valor);
     const expiracao = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min
 
     const customer = {
       name: pedido.nome || 'Cliente Banca',
-      email: email || `${pedidoId}@cliente.banca`,
+      email: emailValido(email) ? email.trim().toLowerCase() : `${pedidoId}@cliente.banca`,
     };
     // CPF é frequentemente exigido pelo PagBank para orders. Só inclui
     // se o front mandou (campo opcional que você pode adicionar depois
@@ -194,7 +182,7 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const orderResp = await fetch(`${PAGBANK_BASE_URL}/orders`, {
+    const orderResp = await comPrazo(`${PAGBANK_BASE_URL}/orders`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${TOKEN_PAGBANK}`,
@@ -222,15 +210,23 @@ module.exports = async function handler(req, res) {
 
     const qrPngUrl = qr.links?.find((l) => l.rel === 'QRCODE.PNG')?.href || null;
 
-    await pedidoRef.set({
-      status: 'aguardando_pagamento',
-      pagamento: {
-        provedor: 'pagbank',
-        orderId: data.id,
-        status: 'WAITING',
-        criadoEm: new Date().toISOString(),
-      },
-    }, { merge: true });
+    // Grava dentro de uma transação, relendo o pedido: enquanto o banco respondia, a loja pode ter aceitado,
+    // cancelado ou o pagamento de um QR anterior pode ter caído. Regras:
+    //  - o status só vira "aguardando_pagamento" se o pedido ainda estava NOVO (antes voltava para trás um
+    //    pedido que a loja já estava separando, ou até um já entregue);
+    //  - pedido já pago não é mexido;
+    //  - o valor do QR fica guardado (valorC) para o aviso de pagamento conferir quanto foi cobrado;
+    //  - as ordens anteriores ficam na lista: se a cliente pagar um QR antigo ainda válido, o aviso é reconhecido.
+    await db.runTransaction(async (t) => {
+      const atualSnap = await t.get(pedidoRef); if (!atualSnap.exists) return;
+      const atual = atualSnap.data(), pg = atual.pagamento || {};
+      if (pg.status === 'PAID') return;
+      const ordens = [...new Set([...(Array.isArray(pg.ordens) ? pg.ordens : []), pg.orderId, data.id].filter((x) => typeof x === 'string' && x))].slice(-6);
+      t.update(pedidoRef, {
+        ...(atual.status === 'pendente' ? { status: 'aguardando_pagamento' } : {}),
+        pagamento: { provedor: 'pagbank', orderId: data.id, ordens, valorC: valorCentavos, status: 'WAITING', criadoEm: new Date().toISOString() },
+      });
+    });
 
     return res.status(200).json({
       sucesso: true,

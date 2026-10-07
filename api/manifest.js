@@ -60,13 +60,26 @@ function manifesto(id, ficha, painel = false) {
   };
 }
 
+const _fichas = new Map();
+async function fichaEmCache(id, agora = Date.now()) {
+  const c = _fichas.get(id);
+  if (c && agora - c.em < 300000) return c.s;
+  if (_fichas.size > 300) _fichas.clear();
+  const snap = await db.collection('tenants').doc(id).get(), dados = snap.exists ? snap.data() : null;
+  const s = { exists: !!dados, data: () => dados };
+  _fichas.set(id, { em: agora, s });
+  return s;
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Método não permitido.' });
   const id = String((req.query && req.query.loja) || '');
   if (!T.idValido(id) || id === T.TENANT_PADRAO) return res.status(404).json({ error: 'Loja não encontrada.' });
   try {
     boot();
-    const s = await db.collection('tenants').doc(id).get();
+    // Endereço público e sem login: a ficha fica 5 minutos na memória, para ninguém gastar leituras do banco
+    // pedindo o mesmo manifesto mil vezes (o endereço aceita qualquer sobra de texto, então o cache da rede não basta).
+    const s = await fichaEmCache(id);
     if (!s.exists || s.data().ativo === false) return res.status(404).json({ error: 'Loja não encontrada.' });
     res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=300');
     if (req.query.icone) { res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8'); res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'"); return res.status(200).send(iconeSvg(s.data(), !!req.query.painel)); }

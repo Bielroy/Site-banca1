@@ -4,9 +4,16 @@
 // =====================================================================
 import { auth } from './firebase.js';
 import { escapeHTML, showToast, customConfirm } from './utils.js';
+import { sairELimpar } from './admin-guard.js';
 import { PAPEIS, ATRIBUIVEIS } from './papeis-lib.js';
 
-const S = { equipe: null, estado: 'carregando', ligado: false, enviando: false };
+const S = { equipe: null, estado: 'carregando', ligado: false, enviando: false, registros: null };
+// nomes simples para o que fica na trilha de auditoria (api/equipe.js grava; ninguém edita nem apaga pelo painel)
+const ACOES = { 'equipe-papel': 'Deu acesso', 'equipe-remover': 'Tirou o acesso', 'zerar-movimento': 'Zerou o movimento', 'copia-restaurar': 'Restaurou o cadastro', 'copia-baixar': 'Baixou a cópia de segurança', maquininha: 'Mexeu na maquininha', 'sair-de-tudo': 'Encerrou o próprio login em todos os aparelhos' };
+const quando = (iso) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''; };
+const registrosHtml = () => (S.registros === null ? '' : (S.registros.length
+    ? `<ul class="eq-lista">${S.registros.map((r) => `<li class="eq-item"><span><b>${escapeHTML(ACOES[r.acao] || r.acao)}</b><small>${escapeHTML(quando(r.em))} · ${escapeHTML(r.quem || '')}${r.detalhe ? ` · ${escapeHTML(r.detalhe)}` : ''}</small></span></li>`).join('')}</ul>`
+    : '<p class="config-sub">Nenhuma ação registrada ainda.</p>'));
 const el = () => document.getElementById('equipe-conteudo');
 const $ = (id) => document.getElementById(id);
 
@@ -38,7 +45,13 @@ function render() {
     </div>
     <h4 class="cp-sub">Quem tem acesso</h4>
     ${lista}
-    <p class="config-sub cal-nota">A pessoa abre o painel, digita o e-mail e entra pelo link que chega na caixa de entrada. Mudança de papel vale quando ela entrar de novo. Ao tirar o acesso, o painel que já estiver aberto pode continuar funcionando por até 1 hora.</p>`;
+    <p class="config-sub cal-nota">A pessoa abre o painel, digita o e-mail e entra pelo link que chega na caixa de entrada. Mudança de papel vale quando ela entrar de novo. Ao tirar o acesso, o painel que já estiver aberto pode continuar mostrando a tela por até 1 hora, mas vendas, estoque e equipe são recusados na hora.</p>
+    <h4 class="cp-sub">Segurança</h4>
+    <p class="config-sub">Perdeu o celular ou entrou num computador que não é seu? Encerre o seu login em todos os aparelhos. Depois é só entrar de novo pelo link do e-mail.</p>
+    <button type="button" class="btn-outline" id="eq-sair-tudo" style="padding:12px 18px">Sair de todos os aparelhos</button>
+    <h4 class="cp-sub">Registro de ações</h4>
+    <p class="config-sub">Quem deu ou tirou acesso, quem baixou a cópia com dados de clientes, quem zerou ou restaurou. Fica guardado no servidor e ninguém apaga pelo painel.</p>
+    ${S.registros === null ? '<button type="button" class="btn-outline" id="eq-ver-registro" style="padding:12px 18px">Ver o registro</button>' : registrosHtml()}`;
 }
 
 async function carregar() {
@@ -59,6 +72,15 @@ function ligar() {
             const email = $('eq-email').value.trim().toLowerCase();
             if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return showToast('Confira o e-mail.', true);
             return definir(email, $('eq-papel').value, $('eq-adicionar'));
+        }
+        if (e.target.closest('#eq-sair-tudo')) {
+            if (!(await customConfirm('Sair de todos os aparelhos?', 'O seu login é encerrado neste e em qualquer outro aparelho. Você vai precisar entrar de novo pelo link do e-mail.'))) return;
+            try { await api({ acao: 'sair-de-tudo' }); showToast('Login encerrado em todos os aparelhos.'); setTimeout(() => sairELimpar(), 1200); } catch (err) { showToast(err.message, true); }
+            return;
+        }
+        if (e.target.closest('#eq-ver-registro')) {
+            try { S.registros = (await api({ acao: 'auditoria' })).registros || []; } catch (err) { showToast(err.message, true); return; }
+            return render();
         }
         const r = e.target.closest('[data-eq-remover]'); if (!r) return;
         const m = S.equipe.find((x) => x.uid === r.dataset.eqRemover); if (!m) return;

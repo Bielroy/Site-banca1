@@ -7,6 +7,13 @@ import { auth } from './firebase.js';
 import { escapeHTML, fmt, showToast } from './utils.js';
 import { linhaEndereco } from './endereco.js';
 
+// Foto que não carrega some (em vez do ícone de imagem quebrada). Um ouvinte só, para a página inteira:
+// manipulador escrito dentro do HTML ("onerror=...") é bloqueado pela política de segurança do site.
+if (typeof document !== 'undefined' && !document.documentElement.dataset.pvFotoErro) {
+    document.documentElement.dataset.pvFotoErro = '1';
+    document.addEventListener('error', (e) => { const t = e.target; if (t && t.classList && t.classList.contains('pv-foto')) t.style.visibility = 'hidden'; }, true);
+}
+
 const CONF_BAIXA = 0.4, CONF_ALTA = 0.7;      // mesmos limiares de analytics/config.js
 const HORIZONTES = [
     ['hoje', 'Hoje'], ['amanha', 'Amanhã'], ['proximoDia', 'Próx. dia'],
@@ -61,7 +68,7 @@ const barraFaixa = (h, un) => {
 
 const cartaoProduto = (p, hz) => {
     const h = p.horizontes && p.horizontes[hz];
-    const cab = `<img class="pv-foto" src="${escapeHTML(p.foto || '')}" alt="" loading="lazy" width="56" height="56" onerror="this.style.visibility='hidden'">
+    const cab = `<img class="pv-foto" src="${escapeHTML(p.foto || '')}" alt="" loading="lazy" width="56" height="56">
                  <div class="pv-tit"><strong>${escapeHTML(p.nome)}</strong><small>${escapeHTML(p.cat || '')} · ${escapeHTML(p.unidade || 'un')}</small></div>`;
     if (!h || h.fechado) return `<article class="pv-card pv-card--vazio"><div class="pv-topo">${cab}</div><p class="pv-aviso">Loja fechada neste período.</p></article>`;
     if (h.semDados) return `<article class="pv-card pv-card--vazio"><div class="pv-topo">${cab}</div><p class="pv-aviso">Ainda não dá para prever: só ${h.nObs || 0} dia(s) de venda deste produto.</p></article>`;

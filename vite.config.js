@@ -99,15 +99,9 @@ export default defineConfig({
             urlPattern: /^https?:\/\/[^/]+\/api\/.*/i,
             handler: 'NetworkOnly',
           },
-          {
-            // Dados do Firestore: tenta a rede, cai no cache se offline
-            urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'firebase-data-cache',
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 },
-            },
-          },
+          // (SAIU o cache das respostas do banco de dados: o programa do Firebase já guarda o que precisa para
+          //  funcionar sem sinal, e esta cópia extra deixava dados do painel — pedidos com nome e endereço —
+          //  gravados numa segunda gaveta do aparelho, que nem a saída do painel apagava.)
           {
             // Fotos dos produtos: servem do cache primeiro (rápido e
             // economiza dados da cliente), atualizando em segundo plano.

@@ -64,7 +64,8 @@ function criarAdmin(db, tokens = {}, usuarios = []) {
     getUser: async (id) => { const u = usuarios.find((x) => x.uid === id); if (!u) throw naoAchei(); return u; },
     createUser: async ({ email }) => { const u = { uid: `novo-${usuarios.length + 1}-conta`, email }; usuarios.push(u); return u; },
     setCustomUserClaims: async (id, c) => { usuarios.find((x) => x.uid === id).customClaims = c; },
-    revokeRefreshTokens: async (id) => { usuarios.find((x) => x.uid === id).revogado = true; },
+    revokeRefreshTokens: async (id) => { const u = usuarios.find((x) => x.uid === id); if (u) u.revogado = true; },
+    updateUser: async (id, dados) => { const u = usuarios.find((x) => x.uid === id); if (!u) throw naoAchei(); if (dados && dados.password) u.senhaTrocada = true; return u; },
   };
   const firestore = () => db;
   firestore.FieldValue = { increment: (n) => ({ [INC]: n }), serverTimestamp: () => new Date().toISOString() };

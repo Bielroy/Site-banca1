@@ -1,19 +1,46 @@
 rules_version = '2';
-// Fotos de produto. Qualquer pessoa vê; só a equipe da loja envia, e só imagem de até 2 MB
-// (o painel já reduz a foto antes de enviar). Compare com as regras atuais do console antes de publicar.
+// =====================================================================
+//  REGRAS DO ARMAZENAMENTO (Firebase Storage) — fotos de produto.
+//
+//  Qualquer pessoa VÊ uma foto pelo link dela (a loja é pública).
+//  Só quem administra a loja ENVIA, e só foto de verdade:
+//    - JPG, PNG ou WebP (SVG não entra: ele pode carregar código);
+//    - até 2 MB (o painel já reduz a foto antes de enviar);
+//    - nome terminando em .jpg, .jpeg, .png ou .webp.
+//  Foto nova é sempre ARQUIVO NOVO: ninguém troca o conteúdo de um link
+//  que já está na vitrine. Apagar, só quem administra.
+//  Ninguém LISTA a pasta de outra loja (nem a própria, sem ser gestor).
+//
+//  Este arquivo NÃO vai para o ar sozinho: publique pelo console do Firebase.
+// =====================================================================
 service firebase.storage {
   match /b/{bucket}/o {
-    function plataforma() { return request.auth != null && request.auth.token.plataforma == true; }
-    function papel(tid) { return request.auth != null ? request.auth.token.get('tenants', {}).get(tid, '') : ''; }
-    function imagemPequena() { return request.resource.size < 2 * 1024 * 1024 && request.resource.contentType.matches('image/.*'); }
+    function confirmado() { return request.auth != null && request.auth.token.get('email_verified', false) == true; }
+    function plataforma() { return confirmado() && request.auth.token.get('plataforma', false) == true; }
+    function papel(tid) {
+      return !confirmado() ? ''
+        : (request.auth.token.get('tenants', {}).get(tid, '') is string && request.auth.token.get('tenants', {}).get(tid, '') != '' ? request.auth.token.get('tenants', {}).get(tid, '')
+          : (tid == 'banca' && request.auth.token.get('admin', false) == true ? 'proprietario' : ''));
+    }
+    function gestor(tid) { return plataforma() || papel(tid) in ['proprietario', 'administrador']; }
+    function fotoOk(arquivo) {
+      return request.resource.size > 0 && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)')
+        && arquivo.size() <= 200 && arquivo.matches('.*[.](webp|jpg|jpeg|png)');
+    }
 
     match /fotos_produtos/{arquivo} {                       // loja original
-      allow read: if true;
-      allow write: if imagemPequena() && (plataforma() || request.auth.token.admin == true || papel('banca') in ['proprietario', 'administrador', 'estoque']);
+      allow get: if true;
+      allow list, delete: if gestor('banca');
+      allow create: if gestor('banca') && fotoOk(arquivo);
+      allow update: if false;
     }
     match /tenants/{tid}/fotos_produtos/{arquivo} {         // demais lojas
-      allow read: if true;
-      allow write: if imagemPequena() && (plataforma() || papel(tid) in ['proprietario', 'administrador', 'estoque', 'producao']);
+      allow get: if true;
+      allow list, delete: if gestor(tid);
+      allow create: if gestor(tid) && fotoOk(arquivo);
+      allow update: if false;
     }
+    // qualquer outro caminho: negado (regra padrão)
   }
 }

@@ -27,16 +27,8 @@ const boot = () => {
   if (!admin.apps.length) admin.initializeApp({ credential: admin.credential.cert({ projectId: process.env.FIREBASE_PROJECT_ID, clientEmail: process.env.FIREBASE_CLIENT_EMAIL, privateKey: formatPrivateKey(process.env.FIREBASE_PRIVATE_KEY) }) });
   if (!db) db = admin.firestore();
 };
-const ORIGENS = ['https://www.bancaadairepedrina.com.br', 'https://bancaadairepedrina.com.br', 'https://site-banca1.vercel.app'];
-const cors = (req, res) => {
-  const extras = String(process.env.ALLOWED_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean);
-  const ok = ORIGENS.concat(extras), origem = req.headers && req.headers.origin;
-  if (origem && ok.includes(origem)) res.setHeader('Access-Control-Allow-Origin', origem);
-  else if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') res.setHeader('Access-Control-Allow-Origin', '*');
-  else res.setHeader('Access-Control-Allow-Origin', ok[0]);
-  res.setHeader('Vary', 'Origin'); res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Loja');
-};
+const H = require('../lib/http');
+const cors = H.cors;            // origem (CORS): lista única em lib/http.js
 const PODEM = ['proprietario', 'administrador', 'funcionario', 'caixa'];
 const PAGAMENTOS = ['PIX', 'Dinheiro', 'Cartão'];
 const inc = (n) => admin.firestore.FieldValue.increment(n);
@@ -172,7 +164,10 @@ async function pesagem(req, res, { tid, dec }) {
       return { total, desconto: V.paraReais(descC), entrega: V.paraReais(taxaC), itens };
     });
     return res.status(200).json({ sucesso: true, ...saida });
-  } catch (e) { return res.status(400).json({ error: e.message || 'Não foi possível salvar a pesagem.' }); }
+  } catch (e) {
+    if (P.ehFalhaInterna(e)) { await P.avisarFalha(db, tid, 'A pesagem de pedidos', e); return res.status(500).json({ error: 'Não consegui salvar a pesagem agora. Tente de novo em instantes.' }); }
+    return res.status(400).json({ error: e.message || 'Não foi possível salvar a pesagem.' });
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -182,9 +177,9 @@ module.exports = async function handler(req, res) {
   try { boot(); } catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
   let dec, tid;
   try {
-    const cab = String((req.headers && req.headers.authorization) || '');
-    dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '');
+    dec = await admin.auth().verifyIdToken(H.tokenDe(req), true);        // true = recusa login encerrado (pessoa tirada da equipe)
   } catch (e) { return res.status(401).json({ error: 'Entre no painel de novo.' }); }
+  if (H.passouNaMemoria(`pdv:${dec.uid}`, 90, 60000)) return res.status(429).json({ error: 'Muitas vendas seguidas. Aguarde um minuto.' });
   let ficha;
   try { ({ tid, ficha } = await T.resolverLoja(db, req)); }
   catch (e) { return res.status(e.status || 400).json({ error: e.message }); }

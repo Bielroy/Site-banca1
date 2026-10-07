@@ -22,29 +22,15 @@ const boot = () => {
   if (!db) db = admin.firestore();
 };
 
-const ORIGENS = ['https://www.bancaadairepedrina.com.br', 'https://bancaadairepedrina.com.br', 'https://site-banca1.vercel.app'];
-const cors = (req, res) => {
-  const extras = String(process.env.ALLOWED_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean);
-  const ok = ORIGENS.concat(extras), origem = req.headers && req.headers.origin;
-  if (origem && ok.includes(origem)) res.setHeader('Access-Control-Allow-Origin', origem);
-  else if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') res.setHeader('Access-Control-Allow-Origin', '*');
-  else res.setHeader('Access-Control-Allow-Origin', ok[0]);
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Loja');
-};
+const H = require('../lib/http');
+const cors = H.cors;            // origem (CORS): lista única em lib/http.js
 
 const texto = (v, max) => String(v == null ? '' : v).normalize('NFC').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
 const PODEM = ['proprietario', 'administrador', 'estoque', 'producao'];
 
-// freio simples por pessoa: no máximo 40 movimentações por minuto
-const usos = new Map();
-const passou = (uid) => {
-  const agora = Date.now(), l = (usos.get(uid) || []).filter((t) => agora - t < 60000);
-  l.push(agora); usos.set(uid, l);
-  if (usos.size > 500) for (const [k, v] of usos) if (!v.some((t) => agora - t < 60000)) usos.delete(k);
-  return l.length > 40;
-};
+// freio por pessoa: no máximo 40 movimentações por minuto
+const passou = (uid) => H.passouNaMemoria(`estoque:${uid}`, 40, 60000);
+const P = require('../lib/prudencia');
 
 // ---------------------------------------------------------------------
 // PRODUÇÃO: "produzi 20 unidades". Numa transação só:
@@ -100,6 +86,7 @@ async function produzir(req, res, { tid, dec, produtoId, chave, unidades }) {
     });
     return res.status(200).json({ sucesso: true, ...saida });
   } catch (e) {
+    if (P.ehFalhaInterna(e)) { console.error('[estoque] produzir', e && e.message); return res.status(500).json({ error: 'Não consegui registrar a produção agora. Tente de novo em instantes.' }); }
     return res.status(400).json({ error: e.message || 'Não foi possível registrar a produção.' });
   }
 }
@@ -112,8 +99,7 @@ module.exports = async function handler(req, res) {
 
   let dec, tid;
   try {
-    const cab = String((req.headers && req.headers.authorization) || '');
-    dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '');
+    dec = await admin.auth().verifyIdToken(H.tokenDe(req), true);        // true = recusa login encerrado (pessoa tirada da equipe)
   } catch (e) { return res.status(401).json({ error: 'Entre no painel de novo.' }); }
   let ficha;
   try { ({ tid, ficha } = await T.resolverLoja(db, req)); }
@@ -156,6 +142,7 @@ module.exports = async function handler(req, res) {
     });
     return res.status(200).json({ sucesso: true, ...saida });
   } catch (e) {
+    if (P.ehFalhaInterna(e)) { console.error('[estoque]', e && e.message); return res.status(500).json({ error: 'Não consegui registrar agora. Tente de novo em instantes.' }); }
     return res.status(400).json({ error: e.message || 'Não foi possível registrar.' });
   }
 };

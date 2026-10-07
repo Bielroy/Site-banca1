@@ -11,9 +11,8 @@ foram conferidas com dados simulados.
 4. `npm run preview` e abra: `/`, `/admin.html`, `/plataforma.html`.
 
 ## 2. Firebase
-1. **Firestore → Regras:** publique `firestore.rules`. Compare antes com as regras atuais do console
-   (o bloco da loja original foi reescrito a partir do código). Teste no simulador de regras:
-   cliente lê produto; cliente NÃO lê pedido de outro; caixa lê pedidos e NÃO grava produto.
+1. **Firestore → Regras:** publique `firestore.rules` (passo a passo na seção 4l). As regras são testadas no
+   emulador do Firebase a cada mudança (GitHub → Actions → "Testes de segurança").
 2. **Storage → Regras:** publique `storage.rules`.
 3. **Índice:** se o painel mostrar "modo simplificado", clique no link do erro no console do navegador.
 4. **Authentication → Authorized domains:** inclua todo endereço em que o painel for aberto.
@@ -144,7 +143,11 @@ link de acesso enviado por e-mail abre no Safari, não no aplicativo. Nunca test
 - O link compartilhado (og:image, canonical, sitemap) aponta para https://site-banca1.vercel.app. Quando houver
   domínio próprio, troque nos arquivos index.html, privacidade.html, sitemap.xml e robots.txt.
 - A prévia do link no WhatsApp é sempre a da Banca, mesmo no link de outra loja (?loja=...).
-- Acesso retirado de alguém pode valer por até 1 hora no painel que já estava aberto.
+- Acesso retirado de alguém: vendas, estoque, fotos, equipe e plataforma são recusados na hora; a LEITURA direta
+  do banco (ver a fila de pedidos num painel que já estava aberto) pode durar até 1 hora, que é quanto vale o
+  login do Firebase.
+- Entrar no painel gasta um link de e-mail, e o plano gratuito do Firebase envia só **5 links de entrada por dia**
+  para o projeto inteiro. Por isso o painel não desloga mais sozinho a cada 30 minutos (agora são 12 horas).
 
 ## 4j. Começar do zero (depois dos testes)
 
@@ -175,3 +178,47 @@ Para medir numa loja simulada: `node scripts/medir-motor.js 1,2,3` (leva cerca d
 O erro de verdade, da loja real, aparece na aba Previsão em "Erro das previsões anteriores".
 
 Nenhuma regra do Firestore mudou. Nenhuma variável nova na Vercel.
+
+## 4l. Segurança (auditoria de outubro/2026) — o que só você consegue fazer
+O código novo já vai para o ar sozinho. **Estes passos são no console e não vão sozinhos.** Faça 1 e 2 no mesmo dia
+da publicação; os outros, quando puder. O desenho completo está em `SEGURANCA.md`.
+
+1. **Publicar as regras do banco.** Firebase → Firestore Database → aba **Regras** → apague o que está lá, cole o
+   conteúdo de `firestore.rules` → **Publicar**. Enquanto não publicar, continuam valendo as regras antigas (o site
+   funciona igual, mas sem as travas novas: status de pedido só para frente, estoque e produção sem ver pedidos,
+   formato conferido em limites, custos e aparência).
+2. **Publicar as regras das fotos.** Firebase → Storage → aba **Regras** → cole `storage.rules` → **Publicar**.
+   (Se o Storage nunca foi ligado no projeto, pule: as fotos vão pelo ImgBB.)
+3. **Domínios autorizados.** Firebase → Authentication → Configurações → **Domínios autorizados**. Deixe só os que
+   são seus: `localhost`, os dois do Firebase (`...firebaseapp.com` e `...web.app`) e `site-banca1.vercel.app`.
+   Se aparecer `bancaadairepedrina.com.br` (ou qualquer outro que você não controla), **remova**: quem registrar
+   esse domínio poderia receber os links de entrada do painel.
+4. **Proteção contra descoberta de e-mail.** Authentication → Configurações → Ações do usuário → deixe ligada a
+   "Proteção contra enumeração de e-mail".
+5. **Verificação em duas etapas no e-mail.** Quem entra no painel entra pelo e-mail: ligue a verificação em duas
+   etapas na conta Google (ou do provedor) de cada pessoa da equipe, principalmente a sua e a do proprietário.
+   É o segundo fator do painel.
+6. **Restringir a chave pública do Firebase.** Google Cloud → APIs e serviços → Credenciais → chave "Browser key":
+   - Restrição de aplicativo: **Sites** → `https://site-banca1.vercel.app/*` e `https://SEU-PROJETO.firebaseapp.com/*`;
+   - Restrição de API: Identity Toolkit, Token Service, Cloud Firestore, Cloud Storage for Firebase, Firebase Installations;
+   - confira que **Generative Language API (Gemini) NÃO** está na lista dessa chave;
+   - se existir uma chave antiga sem uso (o histórico do projeto mostra duas), apague a que não é usada.
+   Teste depois: abrir a loja, fazer um pedido de teste e pedir o link de entrada do painel.
+7. **Variáveis opcionais na Vercel** (só se quiser mudar o padrão): `DIAGNOSTICO_SECRET` (abre o diagnóstico da IA
+   por segredo; sem ela, só o dono da plataforma logado abre), `LOGIN_TETO_HORA` (padrão 30 pedidos de link por hora),
+   `CHECKOUT_TETO_LOJA` (padrão 150 pedidos por loja a cada 10 minutos), `IA_PAINEL_LIMITE_DIA` (padrão 300).
+8. **Plano do Firebase.** No plano gratuito são 5 links de entrada por dia. Se a equipe crescer, o plano Blaze
+   sobe para 25 mil — mas ele cobra por uso: só mude depois de criar um **alerta de orçamento** no Google Cloud.
+
+### Para depois (não está ligado)
+- **App Check** (barra programas que não são o seu site falando com o banco): Firebase → App Check → registrar o app
+  da Web com reCAPTCHA v3, acompanhar as métricas por uns dias e só então ligar "Aplicar". Precisa de mudança no
+  código (carregar o App Check e liberar `https://www.google.com/recaptcha/` e `https://www.gstatic.com/recaptcha/`
+  na política de conteúdo do `vercel.json`). Peça quando quiser ligar.
+- **Limite na borda:** Vercel → projeto → Firewall → regra de limite por IP em `/api/*` (barra antes de chegar ao servidor).
+- **Segundo fator dentro do site / chave de acesso (passkey):** exige o upgrade do login do Firebase (Identity Platform).
+
+### Como conferir que as regras publicadas estão certas
+No GitHub, aba **Actions** → "Testes de segurança": o trabalho "Regras do banco no emulador do Firebase" roda
+`firestore.rules` e `storage.rules` de verdade e tenta ler e gravar o que não pode, com cada tipo de conta.
+Verde = as regras do arquivo fazem o que prometem. (Ele testa o ARQUIVO; publicar no console continua sendo com você.)

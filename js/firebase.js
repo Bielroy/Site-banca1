@@ -5,7 +5,8 @@ import {
     persistentLocalCache, 
     persistentMultipleTabManager,
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
-    query, orderBy, limit, writeBatch, where, updateDoc
+    query, orderBy, limit, writeBatch, where, updateDoc,
+    terminate, clearIndexedDbPersistence
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -31,5 +32,6 @@ export {
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
     query, orderBy, limit, writeBatch, where, updateDoc,
     sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously,
-    ref, uploadBytes, getDownloadURL
+    ref, uploadBytes, getDownloadURL,
+    terminate, clearIndexedDbPersistence
 };

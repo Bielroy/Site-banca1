@@ -16,9 +16,6 @@
 
 const admin = require('firebase-admin');
 
-let kv;
-try { kv = require('@vercel/kv').kv; } catch (e) { /* KV opcional */ }
-
 // ---------------------------------------------------------------------
 // Helpers de dinheiro (centavos evitam erro de ponto flutuante)
 // ---------------------------------------------------------------------
@@ -66,31 +63,9 @@ const WPP_FALLBACK = process.env.WHATSAPP_FALLBACK || '5562999999999';
 // ALLOWED_ORIGIN continua sendo lida e ACRESCENTA origens à lista
 // (aceita várias separadas por vírgula), mas não é mais obrigatória.
 // ---------------------------------------------------------------------
-const ORIGENS_CONFIAVEIS = [
-  'https://www.bancaadairepedrina.com.br',
-  'https://bancaadairepedrina.com.br',
-  'https://site-banca1.vercel.app',
-];
-
-const aplicarCors = (req, res, metodos) => {
-  const extras = String(process.env.ALLOWED_ORIGIN || '')
-    .split(',').map((s) => s.trim()).filter(Boolean);
-  const permitidas = ORIGENS_CONFIAVEIS.concat(extras);
-  const origem = req.headers && req.headers.origin;
-
-  if (origem && permitidas.indexOf(origem) !== -1) {
-    res.setHeader('Access-Control-Allow-Origin', origem);
-  } else if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') {
-    res.setHeader('Access-Control-Allow-Origin', '*'); // preview e dev
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', permitidas[0]);
-  }
-
-  // Sem o Vary, um proxy poderia servir a resposta de um domínio para outro.
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', metodos || 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Loja');
-};
+// Origem (CORS): a lista de endereços nossos fica num lugar só, lib/http.js.
+const H = require('../lib/http');
+const aplicarCors = H.cors;
 
 // ---------------------------------------------------------------------
 // Boot do Firebase Admin (singleton entre invocações "warm")
@@ -110,18 +85,6 @@ const bootFirebase = () => {
     admin.initializeApp({ credential: admin.credential.cert({ projectId, clientEmail, privateKey }) });
   }
   if (!db) db = admin.firestore();
-};
-
-// ---------------------------------------------------------------------
-// Rate limit fallback em memória (com poda p/ não vazar)
-// ---------------------------------------------------------------------
-const rateLimitMap = new Map();
-const RATE_WINDOW_MS = 5000;
-const pruneRateLimit = () => {
-  const agora = Date.now();
-  for (const [ip, ts] of rateLimitMap) {
-    if (agora - ts > RATE_WINDOW_MS) rateLimitMap.delete(ip);
-  }
 };
 
 // ---------------------------------------------------------------------
@@ -212,23 +175,12 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
 
-  const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+  const ip = H.ipDe(req);
 
-  // Rate limit
-  try {
-    if (kv && process.env.KV_REST_API_URL) {
-      const n = await kv.incr(`checkout:${ip}`);
-      if (n === 1) await kv.expire(`checkout:${ip}`, 20);
-      if (n > 3) return res.status(429).json({ error: 'Aguarde antes de enviar um novo pedido.' });
-    } else {
-      pruneRateLimit();
-      const ultimo = rateLimitMap.get(ip);
-      if (ultimo && Date.now() - ultimo < RATE_WINDOW_MS) {
-        return res.status(429).json({ error: 'Processando o pedido anterior...' });
-      }
-      rateLimitMap.set(ip, Date.now());
-    }
-  } catch (e) { /* nunca bloqueia o pedido por falha do limitador */ }
+  // Primeira barreira, de memória (barata): rajada da mesma conexão. O toque repetido no botão não cria pedido
+  // em dobro de qualquer jeito (a chave do pedido garante); isto só segura quem dispara dezenas por segundo.
+  // O limite que vale para todas as cópias do servidor vem logo abaixo, contado no banco.
+  if (H.passouNaMemoria(`pedido:${ip}`, 4, 10000)) return res.status(429).json({ error: 'Aguarde alguns segundos antes de enviar outro pedido.' });
 
   try { bootFirebase(); }
   catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
@@ -240,8 +192,15 @@ module.exports = async function handler(req, res) {
 
   // Limite de verdade: contado no banco (vale para todas as cópias do servidor e não zera sozinho).
   // 8 pedidos em 10 minutos, por conexão, é folga de sobra para uma família e pouco para quem quer encher a loja de pedido falso.
-  const conexao = String(ip).split(',')[0].trim() || 'desconhecida';
+  const conexao = ip || 'desconhecida';
   if (!(await P.limitar(db, 'pedido', `${tid}|${conexao}`, 8, 600))) return res.status(429).json({ error: 'Muitos pedidos seguidos desta conexão. Aguarde alguns minutos e tente de novo.' });
+  // Fusível da LOJA INTEIRA: nenhuma banca de bairro recebe 150 pedidos em 10 minutos. Se chegar a isso, é ataque
+  // vindo de muitas conexões ao mesmo tempo, e o freio por conexão não pega. (CHECKOUT_TETO_LOJA muda o número.)
+  const tetoLoja = Number(process.env.CHECKOUT_TETO_LOJA) > 0 ? Number(process.env.CHECKOUT_TETO_LOJA) : 150;
+  if (!(await P.limitar(db, 'pedido-loja', tid, tetoLoja, 600))) {
+    await P.avisarFalha(db, tid, 'A fila de pedidos (pedidos demais em pouco tempo)', new Error('teto de pedidos da loja atingido'));
+    return res.status(429).json({ error: 'A loja está recebendo pedidos demais agora. Tente de novo em alguns minutos ou chame no WhatsApp.' });
+  }
 
 
   // -------------------------------------------------------------------
@@ -275,6 +234,23 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'Dados do pedido incompletos.' });
   }
   if (itens.length > 100) return res.status(400).json({ error: 'Pedido excede o limite de itens.' });
+  // A chave do pedido e o id de cada produto viram NOME DE DOCUMENTO no banco. Antes entravam como vieram:
+  // uma barra ("a/b/c") gravava o pedido fora da lista de pedidos (baixava o estoque e sumia do painel), e um
+  // valor que não é texto derrubava o servidor por dentro e disparava o alerta de "problema no site".
+  if (!H.idSeguro(idempotencyKey, 8, 80)) return res.status(400).json({ error: 'Não consegui identificar este pedido. Atualize a página e tente de novo.' });
+  const idDeProduto = (v) => { const x = typeof v === 'number' ? String(v) : v; return typeof x === 'string' && x.length >= 1 && x.length <= 120 && !/[\/\u0000-\u001f]/.test(x) && x !== '.' && x !== '..' && !/^__.*__$/.test(x) ? x : null; };
+  for (const i of itens) {
+    const id = i && typeof i === 'object' ? idDeProduto(i.id) : null;
+    if (id === null) return res.status(400).json({ error: 'Um produto do carrinho não foi reconhecido. Atualize a página e monte o carrinho de novo.' });
+    i.id = id;
+  }
+  // Cupom: letras, números, hífen e sublinhado. Qualquer outra coisa nem chega a ser procurada no banco.
+  if (cupom !== undefined && cupom !== null && cupom !== '') {
+    const c = typeof cupom === 'string' ? cupom.trim().toUpperCase() : '';
+    if (!/^[A-Z0-9_-]{1,40}$/.test(c)) return res.status(400).json({ error: 'Cupom não encontrado.' });
+    // (chutar cupom já é freado pelo limite de pedidos por conexão: cada tentativa conta como um pedido)
+    cupom = c;
+  } else cupom = '';
 
   nome   = sanitizeString(nome, 100);
   quadra = sanitizeString(quadra, 60);   // também guarda o nome da rua, nos condomínios que usam rua + número
@@ -303,6 +279,8 @@ module.exports = async function handler(req, res) {
       // Idempotência: pedido já criado -> retorna o mesmo resultado
       if (pedidoSnap.exists) {
         const d = pedidoSnap.data();
+        // A mesma chave vinda de OUTRA pessoa (ou batendo numa venda do balcão) não recebe os dados do pedido de volta.
+        if (d.origem === 'balcao' || (d.userId && d.userId !== 'anonimo' && d.userId !== donoVerificado)) throw Object.assign(new Error('Não consegui identificar este pedido. Atualize a página e tente de novo.'), { status: 409 });
         const links = montarLinksWhatsApp(d, categoriasCfg, configCfg);
         return { id: pedidoRef.id, total: d.total, temItensAPesar: !!d.temItensAPesar,
                  whatsappMsg: links[0].url, whatsapps: links };
@@ -327,7 +305,7 @@ module.exports = async function handler(req, res) {
 
       // O cupom também é lido AQUI: no Firestore, toda leitura de uma
       // transação tem que acontecer antes da primeira escrita.
-      const codigoCupom = cupom ? String(cupom).trim().toUpperCase().slice(0, 40) : '';
+      const codigoCupom = cupom;                 // já conferido e em maiúsculas lá em cima
       const cupomSnap = codigoCupom ? await t.get(T.docDe(db, tid, `cupons/${codigoCupom}`)) : null;
 
       // ---- Cálculo (ainda sem escrever) ----
@@ -342,6 +320,11 @@ module.exports = async function handler(req, res) {
         if (p.ativo === false) throw new Error(`"${p.nome}" está esgotado.`);
         if (p.soInsumo === true) throw new Error(`"${p.nome}" não está à venda.`);   // só ingrediente de ficha técnica
 
+        // Produto sem preço (ou com preço que não é número) não é vendido: antes isso virava "NaN" no total do
+        // pedido e ESTRAGAVA o caixa do dia e o total geral da loja, que são somas.
+        const precoN = typeof p.preco === 'number' ? p.preco : Number(String(p.preco == null ? '' : p.preco).replace(',', '.'));
+        if (!Number.isFinite(precoN) || precoN <= 0 || precoN > 100000) throw new Error(`"${p.nome}" está sem preço. Chame a loja no WhatsApp.`);
+        p.preco = precoN;
         const fracionavel = isFracionavel(p.unidade);
         // tipo escolhido pelo cliente; produto não-fracionável é sempre 'un'
         const tipo = (item.tipo === 'un') ? 'un' : (fracionavel ? 'kg' : 'un');

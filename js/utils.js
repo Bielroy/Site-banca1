@@ -28,14 +28,17 @@ export const isFracionavel = (unidade) => {
 
 export const fixFloat = (num) => Math.round(num * 1000) / 1000;
 
+// Quantidade SEMPRE como número antes de virar texto de tela: o valor vem do pedido ou do carrinho guardado
+// no aparelho, e o que não for número vira 0 (nunca entra cru numa página).
+const soNumero = (qtd) => { const n = typeof qtd === 'object' ? NaN : Number(qtd); return Number.isFinite(n) ? n : 0; };
 export const formatarQuantidadeVisual = (qtd, fracionavel) => {
-  if (!fracionavel) return qtd.toString();
-  return qtd.toString().replace('.', ',');
+  if (!fracionavel) return soNumero(qtd).toString();
+  return soNumero(qtd).toString().replace('.', ',');
 };
 
 export const formatarQtdRelatorio = (qtd, und) => {
-  if (isFracionavel(und)) return `${qtd.toString().replace('.', ',')} ${und || 'kg'}`;
-  return `${qtd}x`;
+  if (isFracionavel(und)) return `${soNumero(qtd).toString().replace('.', ',')} ${escapeHTML(und || 'kg')}`;
+  return `${soNumero(qtd)}x`;
 };
 
 export const hapticFeedback = (type = 'light') => {
@@ -275,7 +278,8 @@ import { arquivoDaPagina, estaDesatualizada, podeRecarregar } from './versao-lib
     try {
       if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistration().then((r) => r && r.update()).catch(() => {});
       // "?v=" faz a resposta vir direto do servidor, nunca de uma cópia guardada
-      const r = await fetch(`${location.pathname}?v=${Date.now()}`, { cache: 'no-store', credentials: 'omit' });
+      // sempre no NOSSO endereço (location.origin na frente): um caminho começando com "//" não vira pedido a outro site
+      const r = await fetch(`${location.origin}${location.pathname.replace(/^\/+/, '/')}?v=${Date.now()}`, { cache: 'no-store', credentials: 'omit' });
       if (r.ok && estaDesatualizada(meuArquivo, await r.text())) { pendente = true; tentarRecarregar(); }
     } catch (_) { /* sem sinal: confere na próxima */ }
     conferindo = false;

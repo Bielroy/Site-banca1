@@ -1,0 +1,10 @@
+{
+  "name": "banca-testes-das-regras",
+  "private": true,
+  "description": "Só para rodar testes/regras/regras.test.js no emulador do Firebase (ver .github/workflows/seguranca.yml). O site não usa este arquivo.",
+  "dependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "firebase": "^10.14.1",
+    "firebase-tools": "^13.29.1"
+  }
+}

@@ -10,6 +10,7 @@ import { getDoc, setDoc } from './firebase.js';
 import { fichaRef, TENANT, urlDaLoja } from './tenant.js';
 import { escapeHTML, showToast } from './utils.js';
 import { aplicarTema, FONTES, MODELOS, FOTO_FORMATOS } from './tema.js';
+import { temaSeguro } from './aparencia-lib.js';
 
 const CORES = [
     ['primaria', 'Cor principal', 'Cabeçalho e botões'],
@@ -21,6 +22,9 @@ const CORES = [
     ['sobrePrimaria', 'Texto sobre a cor principal', 'Quase sempre branco'],
 ];
 let tema = { ...MODELOS.hortifruti }, carregado = false;
+// O tema gravado é conferido antes de ir para a tela e antes de voltar para o banco (ver js/aparencia-lib.js).
+const CFG_TEMA = { padrao: MODELOS.hortifruti, cores: CORES.map(([k]) => k), fontesTitulo: FONTES.titulo, fontesTexto: FONTES.texto, formatos: FOTO_FORMATOS };
+const conferido = (t) => temaSeguro(t, CFG_TEMA);
 const el = () => document.getElementById('aparencia-conteudo');
 const $ = (id) => document.getElementById(id);
 
@@ -58,13 +62,13 @@ function render(ficha) {
                 </div>
             </div>
             <div class="ap-cores">${CORES.map(([k, rot, dica]) => `
-                <label class="ap-cor"><input type="color" id="ap-cor-${k}" data-cor="${k}" value="${tema[k]}"><span><b>${rot}</b>${dica ? `<small>${dica}</small>` : ''}</span></label>`).join('')}
+                <label class="ap-cor"><input type="color" id="ap-cor-${k}" data-cor="${k}" value="${escapeHTML(tema[k])}"><span><b>${rot}</b>${dica ? `<small>${dica}</small>` : ''}</span></label>`).join('')}
             </div>
             <div class="grid-2">
                 <div class="form-group"><label for="ap-fonte-titulo">Letra dos títulos</label><select id="ap-fonte-titulo">${opcoes(FONTES.titulo, tema.fonteTitulo)}</select></div>
                 <div class="form-group"><label for="ap-fonte-texto">Letra do texto</label><select id="ap-fonte-texto">${opcoes(FONTES.texto, tema.fonteTexto)}</select></div>
             </div>
-            <div class="form-group"><label for="ap-raio">Cantos: <span id="ap-raio-valor"></span></label><input type="range" id="ap-raio" min="0" max="24" step="1" value="${tema.raio}"></div>
+            <div class="form-group"><label for="ap-raio">Cantos: <span id="ap-raio-valor"></span></label><input type="range" id="ap-raio" min="0" max="24" step="1" value="${Number(tema.raio) || 0}"></div>
             <div class="form-group"><label for="ap-etiqueta">Etiqueta de preço</label>
                 <select id="ap-etiqueta"><option value="barbante"${tema.etiqueta !== 'limpa' ? ' selected' : ''}>De feira, com barbante</option><option value="limpa"${tema.etiqueta === 'limpa' ? ' selected' : ''}>Limpa</option></select>
             </div>
@@ -104,19 +108,21 @@ function ligar() {
     const raiz = el();
     raiz.addEventListener('input', (e) => {
         const t = e.target;
-        if (t.dataset.cor) tema[t.dataset.cor] = t.value;
+        if (t.dataset.cor && CFG_TEMA.cores.includes(t.dataset.cor)) tema[t.dataset.cor] = t.value;
         else if (t.id === 'ap-raio') { tema.raio = Number(t.value); $('ap-raio-valor').textContent = `${tema.raio}px`; }
         else if (t.id === 'ap-fonte-titulo') tema.fonteTitulo = t.value;
         else if (t.id === 'ap-fonte-texto') tema.fonteTexto = t.value;
         else if (t.id === 'ap-etiqueta') tema.etiqueta = t.value;
         else if (t.id === 'ap-foto-formato') tema.fotoFormato = t.value;
         else if (t.id === 'ap-foto-encaixe') tema.fotoEncaixe = t.value;
+        tema = conferido(tema);
         pintarPrevia();
     });
     raiz.addEventListener('click', async (e) => {
         const m = e.target.closest('[data-modelo]');
         if (m) {
-            tema = { ...MODELOS[m.dataset.modelo], fotoFormato: tema.fotoFormato, fotoEncaixe: tema.fotoEncaixe };   // o modelo troca cores e letras; o formato da foto fica
+            if (!Object.prototype.hasOwnProperty.call(MODELOS, m.dataset.modelo)) return;
+            tema = conferido({ ...MODELOS[m.dataset.modelo], fotoFormato: tema.fotoFormato, fotoEncaixe: tema.fotoEncaixe });   // o modelo troca cores e letras; o formato da foto fica
             CORES.forEach(([k]) => { $(`ap-cor-${k}`).value = tema[k]; });
             $('ap-fonte-titulo').value = tema.fonteTitulo; $('ap-fonte-texto').value = tema.fonteTexto;
             $('ap-raio').value = tema.raio; $('ap-raio-valor').textContent = `${tema.raio}px`; $('ap-etiqueta').value = tema.etiqueta;
@@ -125,9 +131,10 @@ function ligar() {
         const g = e.target.closest('#ap-gravar'); if (!g) return;
         const nome = $('ap-nome').value.trim();
         if (!nome) return showToast('Escreva o nome da loja.', true);
+        if (nome.length < 2) return showToast('O nome da loja precisa de pelo menos 2 letras.', true);
         g.disabled = true; g.textContent = 'Gravando...';
         try {
-            await setDoc(fichaRef(), { nome, subtitulo: $('ap-subtitulo').value.trim(), tema: { ...tema }, atualizadoEm: Date.now() }, { merge: true });
+            await setDoc(fichaRef(), { nome: nome.slice(0, 60), subtitulo: $('ap-subtitulo').value.trim().slice(0, 120), tema: conferido(tema), atualizadoEm: Date.now() }, { merge: true });
             showToast('Aparência gravada. A loja já mudou para os clientes.');
         } catch (err) {
             showToast(err && err.code === 'permission-denied' ? 'Sem permissão para gravar. Publique as regras novas do Firestore.' : 'Não consegui gravar. Confira a internet.', true);
@@ -142,7 +149,7 @@ export async function abrirAparencia() {
     let ficha = {};
     try { const s = await getDoc(fichaRef()); if (s.exists()) ficha = s.data(); }
     catch (e) { el().innerHTML = '<p class="config-sub">Não consegui ler a aparência desta loja. Confira a internet e abra a aba de novo.</p>'; return; }
-    tema = { ...MODELOS.hortifruti, ...(ficha.tema || {}) };
+    tema = conferido(ficha.tema);          // nada do que está gravado vai para a tela sem conferir
     if (!ficha.nome && TENANT === 'banca') ficha.nome = 'Banca Adair e Pedrina';
     carregado = true;
     render(ficha); ligar();

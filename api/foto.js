@@ -18,6 +18,7 @@
 // =====================================================================
 const admin = require('firebase-admin');
 const T = require('../lib/tenant');
+const P = require('../lib/prudencia');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -25,16 +26,8 @@ const boot = () => {
   if (!admin.apps.length) admin.initializeApp({ credential: admin.credential.cert({ projectId: process.env.FIREBASE_PROJECT_ID, clientEmail: process.env.FIREBASE_CLIENT_EMAIL, privateKey: formatPrivateKey(process.env.FIREBASE_PRIVATE_KEY) }) });
   if (!db) db = admin.firestore();
 };
-const ORIGENS = ['https://www.bancaadairepedrina.com.br', 'https://bancaadairepedrina.com.br', 'https://site-banca1.vercel.app'];
-const cors = (req, res) => {
-  const extras = String(process.env.ALLOWED_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean);
-  const ok = ORIGENS.concat(extras), origem = req.headers && req.headers.origin;
-  if (origem && ok.includes(origem)) res.setHeader('Access-Control-Allow-Origin', origem);
-  else if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') res.setHeader('Access-Control-Allow-Origin', '*');
-  else res.setHeader('Access-Control-Allow-Origin', ok[0]);
-  res.setHeader('Vary', 'Origin'); res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Loja');
-};
+const H = require('../lib/http');
+const cors = H.cors;            // origem (CORS): lista única em lib/http.js
 
 const MAX_BYTES = 1.5 * 1024 * 1024;
 const chaveValida = (k) => /^[a-f0-9]{32}$/i.test(String(k || ''));
@@ -63,8 +56,7 @@ module.exports = async function handler(req, res) {
   try { boot(); } catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
   let dec, tid;
   try {
-    const cab = String((req.headers && req.headers.authorization) || '');
-    dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '');
+    dec = await admin.auth().verifyIdToken(H.tokenDe(req), true);        // true = recusa login encerrado (pessoa tirada da equipe)
   } catch (e) { return res.status(401).json({ error: 'Entre no painel de novo.' }); }
   try { ({ tid } = await T.resolverLoja(db, req)); }
   catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
@@ -75,6 +67,8 @@ module.exports = async function handler(req, res) {
     if (b.acao === 'estado') return res.status(200).json({ sucesso: true, ligado: !!chave });
     if (!chave) return res.status(503).json({ error: 'O envio automático de fotos ainda não foi ligado. Peça ao dono da plataforma para colar a chave do ImgBB na tela Plataforma.', codigo: 'sem-imgbb' });
 
+    // Teto de envios: 300 fotos por hora por pessoa (o cadastro em lote de uma loja inteira cabe com folga).
+    if (H.passouNaMemoria(`foto:${dec.uid}`, 40, 60000) || !(await P.limitar(db, 'foto', `${tid}|${dec.uid}`, 300, 3600))) return res.status(429).json({ error: 'Muitas fotos enviadas em pouco tempo. Aguarde alguns minutos.' });
     const b64 = String(b.imagem || '').replace(/^data:[^,]*,/, '');
     if (!b64 || b64.length > MAX_BYTES * 1.4 || !/^[A-Za-z0-9+/=\s]+$/.test(b64)) return res.status(400).json({ error: 'Foto inválida ou grande demais.' });
     const buf = Buffer.from(b64, 'base64');

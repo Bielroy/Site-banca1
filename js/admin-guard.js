@@ -26,13 +26,27 @@
 //  Veja o arquivo set-admin-claim.js que acompanha este.
 // =====================================================================
 
-import { auth, signOut } from './firebase.js';
+import { auth, db, signOut, terminate, clearIndexedDbPersistence } from './firebase.js';
+
+/**
+ * SAIR DE VERDADE. Além de encerrar o login, apaga a cópia dos dados que o painel guarda no aparelho
+ * (pedidos com nome, telefone e endereço de cliente, custos, cupons) e recarrega a página, que limpa
+ * a tela e a memória. Sem isto, quem entrasse depois no mesmo navegador herdava esses dados.
+ */
+export const sairELimpar = async () => {
+    try { await signOut(auth); } catch (_) { /* segue */ }
+    try { await terminate(db); await clearIndexedDbPersistence(db); } catch (_) { /* outra aba aberta ou navegador sem suporte: segue */ }
+    try { sessionStorage.removeItem('emailForSignIn'); localStorage.removeItem('emailForSignIn'); } catch (_) { /* sem armazenamento */ }
+    location.reload();
+};
 import { TENANT, TENANT_PADRAO, urlDaLoja, enderecoEhDaLoja } from './tenant.js';
 
 // Papel da pessoa NESTA loja, lido do token (gravado só pelo servidor).
 // Mesma regra de lib/tenant.js. A conta antiga { admin: true } vale como dona da loja original.
 export const papelNoToken = (claims, tid = TENANT) => {
   const c = claims || {};
+  // conta com e-mail não confirmado não tem papel (mesma regra do servidor e do banco)
+  if (c.email_verified === false) return null;
   if (c.plataforma === true) return 'plataforma';
   if (c.tenants && typeof c.tenants === 'object' && typeof c.tenants[tid] === 'string') return c.tenants[tid];
   if (tid === TENANT_PADRAO && c.admin === true) return 'proprietario';
@@ -64,10 +78,7 @@ const mostrarBloqueio = (mensagem, mostrarSair = true) => {
       </div>
     </div>`);
 
-  document.getElementById('btn-sair-bloqueio')?.addEventListener('click', async () => {
-    try { await signOut(auth); } catch (e) {}
-    location.reload();
-  });
+  document.getElementById('btn-sair-bloqueio')?.addEventListener('click', () => sairELimpar());
 };
 
 /**
@@ -116,9 +127,8 @@ export const iniciarLogoutPorInatividade = (minutos = 30) => {
   const reiniciar = () => {
     clearTimeout(timer);
     timer = setTimeout(async () => {
-      try { await signOut(auth); } catch (e) {}
       mostrarBloqueio('Sessão encerrada por inatividade, para proteger seus dados.', false);
-      setTimeout(() => location.reload(), 2500);
+      setTimeout(() => sairELimpar(), 2500);
     }, minutos * 60 * 1000);
   };
   ['click', 'keydown', 'touchstart', 'scroll'].forEach((ev) =>
