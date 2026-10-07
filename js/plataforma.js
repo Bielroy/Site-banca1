@@ -186,6 +186,9 @@ onAuthStateChanged(auth, async (user) => {
         if (claims.plataforma !== true) {
             const donoDaOriginal = claims.admin === true || (claims.tenants && claims.tenants.banca === 'proprietario');
             if (!donoDaOriginal) return aviso('Área do dono da plataforma.', 'Esta conta cuida de uma loja, não da plataforma.', 'Voltar ao painel');
+            // a plataforma já tem dono: esta conta cuida só da loja, e o botão de assumir nem aparece
+            const sit = await api({ acao: 'situacao' });
+            if (sit.temDono) return aviso('Área do dono da plataforma.', 'A plataforma já tem dono. Esta conta cuida da loja, pelo painel.', 'Voltar ao painel');
             el().innerHTML = `<div class="pf-vazio"><b>Assumir a plataforma</b><p>Daqui você cria outras lojas, escolhe o dono de cada uma e liga os módulos. Só uma conta pode ser a dona da plataforma, e esta escolha vale uma vez.</p><p><button class="btn-salvar-config" id="pf-assumir" style="margin-top:10px">Assumir com ${escapeHTML(user.email || 'esta conta')}</button></p></div>`;
             $('pf-assumir').addEventListener('click', async (ev) => {
                 ev.target.disabled = true;

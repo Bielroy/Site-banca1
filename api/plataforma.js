@@ -2,6 +2,7 @@
 //  /api/plataforma.js — SUPER ADMIN: o dono da plataforma cuida das lojas.
 //  Só entra quem tem  plataforma: true  no login (gravado pelo servidor).
 //
+//  POST { acao: 'situacao' }                                a plataforma já tem dono? (a tela usa para não oferecer "Assumir")
 //  POST { acao: 'lojas' }                                   lista lojas, feiras e o movimento do mês
 //  POST { acao: 'criar-loja', id, nome, modelo, tipoNome?, emailDono? }   (modelo = aparência inicial; tipoNome = tipo escrito à mão)
 //  POST { acao: 'imgbb', chave }                               liga (ou desliga, com chave vazia) o envio de fotos ao ImgBB
@@ -218,11 +219,20 @@ module.exports = async function handler(req, res) {
   // PRIMEIRO ACESSO, sem terminal: enquanto a plataforma não tem dono, quem já é dono da loja original
   // (a conta antiga, admin: true, ou proprietário da 'banca') pode assumir. Vale UMA vez: fica gravado
   // em plataforma/dono e ninguém mais passa por aqui.
+  // A tela pergunta ANTES de oferecer o botão "Assumir": se a plataforma já tem dono, o botão nem aparece.
+  if ((req.body || {}).acao === 'situacao') {
+    try { const s = await db.collection('plataforma').doc('dono').get(); return res.status(200).json({ sucesso: true, temDono: s.exists, souEu: s.exists && s.data().uid === dec.uid }); }
+    catch (e) { console.error('[plataforma] situacao', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
+  }
   if ((req.body || {}).acao === 'assumir') {
     try { await anotar('plataforma-assumir', 'pediu para assumir a plataforma'); return await assumir(dec, res); }
     catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[plataforma] assumir', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
   }
   if (dec.plataforma !== true) return res.status(403).json({ error: 'Área restrita ao dono da plataforma.' });
+  // Dono que ganhou o acesso pelo terminal (sem passar pelo botão) não tinha o registro em plataforma/dono, e aí
+  // outra conta dona da loja original ainda conseguiria assumir. Ao usar a tela, o registro passa a existir.
+  try { await db.runTransaction(async (t) => { const r = db.collection('plataforma').doc('dono'), s = await t.get(r); if (!s.exists) t.set(r, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() }); }); }
+  catch (e) { console.error('[plataforma] dono', e && e.message); }
   const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res) };
   const nomeAcao = typeof (req.body || {}).acao === 'string' ? (req.body || {}).acao : '';
   const fn = Object.prototype.hasOwnProperty.call(acoes, nomeAcao) ? acoes[nomeAcao] : null;

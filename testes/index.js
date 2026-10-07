@@ -1078,6 +1078,8 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   assert.deepStrictEqual(usuarios.find((u) => u.uid === 'a-1').customClaims, { admin: true, plataforma: true });
   assert.strictEqual((await ch('antigo', { acao: 'assumir' })).status, 200, 'repetir não quebra');
   assert.strictEqual((await ch('antigo2', { acao: 'assumir' })).status, 403, 'a segunda conta não assume');
+  const sit = await ch('antigo2', { acao: 'situacao' }); assert.strictEqual(sit.status, 200); assert.strictEqual(sit.corpo.temDono, true, 'a tela fica sabendo que já tem dono e não oferece o botão'); assert.strictEqual(sit.corpo.souEu, false);
+  assert.ok(/acao: 'situacao'[\s\S]{0,200}temDono\) return aviso/.test(require('fs').readFileSync(raiz('js/plataforma.js'), 'utf8')), 'a tela pergunta antes de mostrar "Assumir"');
   assert.strictEqual(usuarios.find((u) => u.uid === 'a-2').customClaims.plataforma, undefined);
   // lista: a loja original aparece mesmo sem ficha; o movimento é só o do mês
   const l = (await ch('super', { acao: 'lojas' })).corpo;
@@ -1467,6 +1469,22 @@ teste('cabeçalho: cada tipo de negócio tem o seu desenho', async () => {
   for (const [tipo, esperado] of Object.entries(casos)) assert.strictEqual(A.arteDoTipo(tipo), esperado, tipo);
   for (const [nome, html] of Object.entries(A.ARTES)) assert.ok(html.length > 40 && !/<script|on\w+=|href/i.test(html), nome);
   assert.ok(Object.values(casos).every((q) => q === 'caixote' || A.ARTES[q]));
+});
+
+teste('plataforma: dono que veio pelo terminal fica registrado ao usar a tela, e ninguém mais assume', async () => {
+  const db = criarBanco({});
+  const usuarios = [{ uid: 'sup-1', email: 'eu@x.com', customClaims: { plataforma: true } }, { uid: 'pai-1', email: 'pai@x.com', customClaims: { tenants: { banca: 'proprietario' } } }];
+  const tokens = { eu: { uid: 'sup-1', email: 'eu@x.com', plataforma: true }, pai: { uid: 'pai-1', email: 'pai@x.com', tenants: { banca: 'proprietario' } }, caixa: { uid: 'c-1', tenants: { banca: 'caixa' } } };
+  const api = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, tokens, usuarios));
+  const ch = (tk, body) => chamar(api, { headers: { authorization: `Bearer ${tk}` }, body });
+  assert.strictEqual((await ch('pai', { acao: 'situacao' })).corpo.temDono, false, 'antes de o dono abrir a tela, não há registro');
+  assert.strictEqual((await ch('eu', { acao: 'lojas' })).status, 200);
+  assert.strictEqual(db._dados.get('plataforma/dono').uid, 'sup-1', 'usar a tela grava quem é o dono');
+  assert.strictEqual((await ch('pai', { acao: 'situacao' })).corpo.temDono, true);
+  assert.strictEqual((await ch('pai', { acao: 'assumir' })).status, 403, 'o proprietário da loja não vira dono da plataforma');
+  assert.deepStrictEqual(usuarios.find((u) => u.uid === 'pai-1').customClaims, { tenants: { banca: 'proprietario' } }, 'a conta dele não ganhou nada');
+  assert.strictEqual((await ch('pai', { acao: 'lojas' })).status, 403); assert.strictEqual((await ch('pai', { acao: 'feira', fid: 'x1', nome: 'X', lojas: ['banca'] })).status, 403);
+  assert.strictEqual((await ch('eu', { acao: 'situacao' })).corpo.souEu, true);
 });
 
 teste('plataforma: modelos iguais nos dois lados, endereço sugerido e abas por módulo', async () => {
