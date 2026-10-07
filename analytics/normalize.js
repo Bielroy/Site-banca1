@@ -132,7 +132,7 @@ function normalizarPedidos(pedidos, catalogo = []) {
     const cond = condominioDoPedido(p, condsVistos);
     const chave = chaveCliente(p, cond.chave); const cid = idDeChave(chave);
     // venda sem endereço (balcão, quase sempre): conta nas vendas do dia, mas não é um "cliente" que dê para acompanhar
-    if (!clientes.has(cid)) clientes.set(cid, { id: cid, anonimo: chave.startsWith('ped:'), nome: '', condominio: '', formatoEndereco: 'ql', quadra: '', lote: '', telefone: '', aceitaOfertas: false, gasto: 0, nPedidos: 0, uids: new Set(), visitas: new Map() });
+    if (!clientes.has(cid)) clientes.set(cid, { id: cid, anonimo: chave.startsWith('ped:'), resumo: p.resumoDoDia === true, nome: '', condominio: '', formatoEndereco: 'ql', quadra: '', lote: '', telefone: '', aceitaOfertas: false, gasto: 0, nPedidos: 0, uids: new Set(), visitas: new Map() });
     const cli = clientes.get(cid);
     cli.nome = p.nome || cli.nome; cli.quadra = p.quadra || cli.quadra; cli.lote = p.lote || cli.lote;   // o mais recente vence
     cli.condominio = cond.nome || cli.condominio; if (p.formatoEndereco) cli.formatoEndereco = p.formatoEndereco;

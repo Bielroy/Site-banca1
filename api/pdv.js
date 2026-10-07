@@ -57,7 +57,12 @@ async function venda(req, res, { tid, dec }) {
   if (new Set(itens.map((i) => String(i.id))).size !== itens.length) return res.status(400).json({ error: 'O mesmo produto aparece duas vezes.' });
   const pag = PAGAMENTOS.includes(b.pag) ? b.pag : null;
   if (!pag) return res.status(400).json({ error: 'Escolha a forma de pagamento.' });
-  const c = b.cliente && typeof b.cliente === 'object' ? b.cliente : {};
+  // RESUMO DE VÁRIAS VENDAS: o que saiu no balcão lançado de uma vez (de cabeça), de hoje ou de ontem.
+  // Vale para caixa, estoque e previsão; não é "um cliente" e não ensina "quem leva X leva Y".
+  const resumo = b.resumo === true, deOntem = resumo && b.dia === 'ontem';
+  const c = !resumo && b.cliente && typeof b.cliente === 'object' ? b.cliente : {};
+  const diaBr = new Date(V.agoraBrasilia().getTime() - (deOntem ? 86400000 : 0)).toISOString().slice(0, 10);
+  const dataPedido = deOntem ? new Date(`${diaBr}T12:00:00-03:00`).toISOString() : new Date().toISOString();   // ontem: meio-dia, para cair no dia certo
 
   try {
     const saida = await db.runTransaction(async (t) => {
@@ -89,20 +94,20 @@ async function venda(req, res, { tid, dec }) {
       const total = V.paraReais(totalC);
       const pedido = {
         id: chave, tenantId: tid, userId: `equipe:${dec.uid}`, origem: 'balcao', vendedor: dec.email || dec.uid,
-        nome: V.texto(c.nome, 100) || 'Balcão', telefone: String(c.telefone || '').replace(/\D/g, '').slice(0, 13),
+        nome: resumo ? 'Balcão (resumo do dia)' : V.texto(c.nome, 100) || 'Balcão', ...(resumo ? { resumoDoDia: true } : {}), telefone: String(c.telefone || '').replace(/\D/g, '').slice(0, 13),
         condominio: V.texto(c.condominio, 60), condominioId: V.texto(c.condominioId, 40).replace(/[^\w-]/g, ''),
         formatoEndereco: ['rua', 'livre'].includes(c.formatoEndereco) ? c.formatoEndereco : 'ql', quadra: V.texto(c.quadra, 60), lote: V.texto(c.lote, 30),
         pag, troco: '', obs: '', itens: linhas, total, clientTotal: total, temItensAPesar: false, cupom: null,
-        status: 'arquivado', data: new Date().toISOString(),
+        status: 'arquivado', data: dataPedido,
       };
       t.set(pedidoRef, pedido);
       E.registrarMovs(t, db, tid, movs, admin.firestore.FieldValue);
-      somarNoCaixa(t, tid, total, 1, V.agoraBrasilia().toISOString().slice(0, 10));
+      somarNoCaixa(t, tid, total, 1, diaBr);
       return { id: chave, total, itens: linhas.length };
     });
     // Venda no balcão também avisa os aparelhos da equipe (quem está longe do caixa acompanha o movimento).
     // Toque repetido não avisa de novo; e o aviso nunca derruba a venda, que já está gravada.
-    if (!saida.repetido) await Avisos.avisarLoja(db, tid, {
+    if (!saida.repetido && !resumo) await Avisos.avisarLoja(db, tid, {
       titulo: 'Venda no balcão', corpo: `${Number(saida.total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} · ${pag}`,
       url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `balcao-${saida.id}`,
     });

@@ -84,11 +84,18 @@ function montar() {
                     <div class="form-group"><label for="pv2-nome">Nome</label><input type="text" id="pv2-nome" maxlength="100" autocomplete="off"></div>
                     <div id="pv2-endereco"></div>
                 </details>
+                <details class="pv2-cliente"><summary>É o resumo de várias vendas?</summary>
+                    <p class="config-sub">Para lançar de uma vez o que saiu no balcão, de cabeça. Entra no caixa, no estoque e na previsão, mas não conta como uma pessoa só.</p>
+                    <label class="chk-linha" for="pv2-eh-resumo"><input type="checkbox" id="pv2-eh-resumo"> Sim, é o resumo de várias vendas</label>
+                    <div class="form-group" id="pv2-resumo-dia-box" hidden><label for="pv2-resumo-dia">De que dia?</label>
+                        <select id="pv2-resumo-dia"><option value="hoje">Hoje</option><option value="ontem">Ontem</option></select></div>
+                </details>
             </div>
             <footer class="modal-footer"><button class="btn-salvar-config" id="pv2-registrar" disabled>Registrar venda</button></footer>
         </div>
     </div>`);
     S.endereco = criarCamposEndereco($('pv2-endereco'), 'pv2e'); S.endereco.definirLista(S.condominios);
+    $('pv2-eh-resumo').addEventListener('change', (ev) => { $('pv2-resumo-dia-box').hidden = !ev.target.checked; });
     pintarLista(); pintarRodape();
 }
 
@@ -103,14 +110,15 @@ const definir = (id, q) => {
 async function registrar() {
     if (S.enviando || !S.itens.size) return;
     const e = S.endereco.ler(), nome = $('pv2-nome').value.trim();
-    const cliente = nome || e.quadra || e.lote ? { nome, ...e } : null;
+    const resumo = $('pv2-eh-resumo')?.checked === true, diaResumo = $('pv2-resumo-dia')?.value === 'ontem' ? 'ontem' : 'hoje';
+    const cliente = !resumo && (nome || e.quadra || e.lote) ? { nome, ...e } : null;     // resumo de várias vendas não é de uma casa só
     if (cliente && (e.quadra || e.lote) && S.endereco.validar()) return showToast(`Endereço do cliente incompleto: ${S.endereco.validar()}`, true);
     S.chave = S.chave || novaChave();                 // a mesma chave até a venda entrar: toque repetido não vende duas vezes
     S.enviando = true; pintarRodape();
     try {
         const token = await auth.currentUser?.getIdToken();
         const r = await fetch('/api/pdv', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ acao: 'venda', chave: S.chave, pag: S.pag, cliente, itens: [...S.itens].map(([id, qtd]) => ({ id, qtd })) }) });
+            body: JSON.stringify({ acao: 'venda', chave: S.chave, pag: S.pag, cliente, ...(resumo ? { resumo: true, dia: diaResumo } : {}), itens: [...S.itens].map(([id, qtd]) => ({ id, qtd })) }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || 'Não foi possível registrar a venda.');
         const rec = Number(String($('pv2-recebido').value || '').replace(',', '.'));
@@ -119,6 +127,7 @@ async function registrar() {
         const pedidoCupom = { id: j.pedidoId || j.id || '', origem: 'balcao', data: new Date().toISOString(), nome: cliente ? cliente.nome : '', ...(cliente || {}), pag: S.pag, itens: itensCupom, total: j.total };
         S.ultima = { total: j.total, pag: S.pag, troco: S.pag === 'Dinheiro' && rec > j.total ? rec - j.total : 0, pedido: pedidoCupom };
         S.itens.clear(); S.chave = null; S.busca = ''; $('pv2-busca').value = ''; $('pv2-recebido').value = ''; $('pv2-nome').value = ''; S.endereco.preencher({});
+        if ($('pv2-eh-resumo')) { $('pv2-eh-resumo').checked = false; $('pv2-resumo-dia').value = 'hoje'; $('pv2-resumo-dia-box').hidden = true; }
         const u = $('pv2-ultima'); u.hidden = false;
         u.innerHTML = `<b>Venda registrada: ${fmt(S.ultima.total)} (${escapeHTML(S.ultima.pag)})</b>${S.ultima.troco ? `<span>Troco: ${fmt(S.ultima.troco)}</span>` : ''}<button type="button" class="btn-outline" id="pv2-imprimir"><i class="ic" data-i="impressora"></i> Imprimir cupom</button>`;
         $('pv2-imprimir').onclick = async (ev) => {

@@ -101,7 +101,8 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
 
   // ---------- perfis (ranking) até HOJE ----------
   const G = P.construirGlobal(clientes, produtos, hoje);
-  G.assoc = A.calcularAssociacoes(norm.clientes.flatMap((c) => c.visitas.filter((v) => v.dia <= hoje).map((v) => [...v.itens.keys()]))).assoc;
+  // cestas do balcão também ensinam "quem leva X leva Y"; o RESUMO de várias vendas não (junta produtos de pessoas diferentes)
+  G.assoc = A.calcularAssociacoes(norm.clientes.filter((c) => !c.resumo).flatMap((c) => c.visitas.filter((v) => v.dia <= hoje).map((v) => [...v.itens.keys()]))).assoc;
   const modelos = clientes.map((c) => P.modelarCliente(c, G, hoje, produtos)).filter(Boolean);
 
   // ---------- previsão de demanda (dias completos) ----------

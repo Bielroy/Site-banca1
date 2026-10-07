@@ -295,6 +295,31 @@ teste('estoque: "Tirar da loja" não é desfeito por venda, perda ou entrada; s�
   assert.strictEqual(r.coberturaCusto, 1, 'entrega de R$ 8 no total não vira "produto sem custo"');
 });
 
+teste('balcão: resumo de várias vendas entra no caixa, no estoque e na previsão, no dia certo, sem virar cliente nem "leva junto"', async () => {
+  const db = criarBancoP(sementeEstoque()); const adm = criarAdmin(db, TOKENS_P), pdv = carregarApi(raiz('api/pdv.js'), adm);
+  const vender = (extra) => { const chave = 'bal-' + Math.random().toString(36).slice(2, 12); return chamar(pdv, { headers: { Authorization: 'Bearer func-banca' }, body: { acao: 'venda', chave, pag: 'Dinheiro', itens: [{ id: 'tomate', qtd: 6.5 }, { id: 'ovos', qtd: 4 }], ...extra } }).then((r) => ({ r, ped: db._dados.get(`pedidos/${chave}`) })); };
+  const brt = (ms) => new Date(ms - 3 * 3600000).toISOString().slice(0, 10), hoje = brt(Date.now()), ontem = brt(Date.now() - 86400000);
+  const a = await vender({ resumo: true, dia: 'ontem', cliente: { nome: 'Fulano', quadra: '1', lote: '2' } });
+  assert.strictEqual(a.r.status, 200, JSON.stringify(a.r.corpo));
+  assert.strictEqual(a.ped.resumoDoDia, true); assert.strictEqual(a.ped.nome, 'Balcão (resumo do dia)'); assert.strictEqual(a.ped.quadra, '', 'resumo não fica no nome de uma casa');
+  assert.strictEqual(brt(Date.parse(a.ped.data)), ontem, 'a data do pedido é a de ontem'); assert.ok(db._dados.get(`resumos/${ontem}`).receita > 0, 'caixa de ontem');
+  assert.strictEqual(db._dados.get('produtos/ovos').estoqueFisico, 6, 'baixou o estoque');
+  const b = await vender({ resumo: true }); assert.strictEqual(brt(Date.parse(b.ped.data)), hoje);
+  const c = await vender({ dia: 'ontem' }); assert.strictEqual(brt(Date.parse(c.ped.data)), hoje, 'venda comum nunca é lançada para trás'); assert.ok(!c.ped.resumoDoDia);
+  // no motor: as quantidades contam no dia; o resumo não é cliente e não cria associação entre os produtos
+  const { executarMotor, aplicarParametros } = require(raiz('analytics/engine')); aplicarParametros({});
+  const catalogo = [{ id: 'tomate', nome: 'Tomate', unidade: 'kg', preco: 8.9, ativo: true }, { id: 'ovos', nome: 'Ovos', unidade: 'un', preco: 14, ativo: true }];
+  const dia = (n) => new Date(Date.UTC(2026, 7, n, 15)).toISOString();
+  const itens = [{ id: 'tomate', nome: 'Tomate', qtd: 6, tipo: 'kg', unidade: 'kg', preco: 8.9 }, { id: 'ovos', nome: 'Ovos', qtd: 4, tipo: 'un', unidade: 'un', preco: 14 }];
+  const resumos = Array.from({ length: 12 }, (_, i) => ({ id: 'r' + i, data: dia(i + 1), nome: 'Balcão (resumo do dia)', origem: 'balcao', resumoDoDia: true, total: 100, itens }));
+  const m = executarMotor({ pedidos: resumos, catalogo, agregados: [], parametros: {}, eventos: [], snapshots: [], agora: Date.UTC(2026, 7, 13, 15) });
+  assert.strictEqual(m.meta.nClientes, 0); assert.ok(Math.abs(m.previsoes.tomate.horizontes.hoje.previsto - 6) < 0.5, 'a previsão aprende com o resumo: ' + m.previsoes.tomate.horizontes.hoje.previsto);
+  assert.ok(!Object.keys((m.global.assoc || {}).tomate || {}).length, 'resumo não ensina que tomate e ovos saem juntos');
+  const avulsas = resumos.map((p) => ({ ...p, resumoDoDia: false }));
+  const m2 = executarMotor({ pedidos: avulsas, catalogo, agregados: [], parametros: {}, eventos: [], snapshots: [], agora: Date.UTC(2026, 7, 13, 15) });
+  assert.ok(JSON.stringify(m2.global.assoc || {}).includes('ovos'), 'venda de balcão de UMA pessoa ensina');
+});
+
 // ------------------------------------------------------------------ aviso de pagamento
 teste('referência do PIX separa loja e pedido, e recusa formato estranho', () => {
   const T = require(raiz('lib/tenant'));

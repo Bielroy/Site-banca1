@@ -2065,7 +2065,9 @@ const renderBalanco = async (dias) => {
         });
     });
 
-    const ticket = validos.length ? totalPeriodo / validos.length : 0;
+    // o resumo de várias vendas do balcão é dinheiro de verdade, mas não é UM pedido: fica fora do ticket médio
+    const unicos = validos.filter((p) => !p.resumoDoDia);
+    const ticket = unicos.length ? unicos.reduce((s, p) => s + (Number(p.total) || 0), 0) / unicos.length : 0;
 
     const cartao = (rotulo, valor, sub, cor) => `
         <article class="stat-box" style="border-left:4px solid ${cor};">
