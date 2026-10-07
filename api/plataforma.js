@@ -9,7 +9,7 @@
 //  POST { acao: 'ativo', id, ativo }                        bloquear / liberar
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
 //  POST { acao: 'proprietario', id, email, remover? }
-//  POST { acao: 'feira', fid, nome, lojas: [ids] }          lojas vazio = desfaz a feira
+//  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids] }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
 //
 //  O primeiro acesso de plataforma ainda é dado pelo terminal
 //  (scripts/plataforma.js): não existe tela que promova alguém a dono de tudo.
@@ -69,7 +69,7 @@ async function lojas(res) {
     const modulos = {}; Object.keys(MODULOS).forEach((m) => { modulos[m] = m === 'ia' && id !== T.TENANT_PADRAO ? !!(f.modulos && f.modulos.ia === true) : T.moduloAtivo(f, m); });
     return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, mes, donos };
   }));
-  const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, lojas: (d.data().lojas || []).map((l) => l.id) }));
+  const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id) }));
   const seg = await db.collection('plataforma').doc('segredos').get();
   const fotos = /^[a-f0-9]{32}$/i.test(String(process.env.IMGBB_API_KEY || (seg.exists && seg.data().imgbb) || ''));
   const pix = !!process.env.PAGBANK_API_TOKEN || Segredos.tokenPagbankValido(seg.exists && seg.data().pagbank);
@@ -156,17 +156,32 @@ async function proprietario(req, res) {
   await definirDono(id, email, b.remover === true);
   return res.status(200).json({ sucesso: true });
 }
+// FEIRA = um dia (ou mais) da semana + as lojas que vão nesse dia. A mesma loja pode estar em várias
+// feiras (quarta num condomínio, sábado em outro); a loja mostra a faixa só da feira de HOJE.
+// Na ficha da loja:  feiras: [ids]  (a lista)  e  feiraId  (campo antigo, mantido para telas já abertas).
+const MAX_FEIRAS_POR_LOJA = 8;
+const feirasDe = (f) => [...new Set([...(Array.isArray(f.feiras) ? f.feiras : []), f.feiraId].filter((x) => typeof x === 'string' && T.idValido(x)))];
 async function feira(req, res) {
   const b = req.body || {}, fid = exigirId(String(b.fid || '')), nome = texto(b.nome, 60), ids = Array.isArray(b.lojas) ? [...new Set(b.lojas.map(String))] : [];
-  if (ids.length === 1 || ids.length > 12) throw falha(400, 'Uma feira tem de 2 a 12 lojas.');
+  const dias = [...new Set((Array.isArray(b.dias) ? b.dias : []).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort((x, y) => x - y);
+  if (ids.length > 12) throw falha(400, 'Uma feira tem no máximo 12 lojas.');
   if (ids.length && nome.length < 2) throw falha(400, 'Dê um nome para a feira.');
   const fichas = []; for (const id of ids) fichas.push([id, await exigirLoja(id)]);
   const refFeira = db.collection('feiras').doc(fid), antiga = await refFeira.get();
-  const saem = antiga.exists ? (antiga.data().lojas || []).map((l) => l.id).filter((id) => !ids.includes(id)) : [];
+  if (!antiga.exists && ids.length && (await db.collection('feiras').get()).size >= 60) throw falha(400, 'A plataforma chegou ao limite de 60 feiras.');
+  const saem = antiga.exists ? (antiga.data().lojas || []).map((l) => l.id).filter((id) => T.idValido(id) && !ids.includes(id)) : [];
   const lote = db.batch();
-  saem.forEach((id) => lote.set(fichaRef(id), { feiraId: '' }, { merge: true }));
-  fichas.forEach(([id, f]) => lote.set(fichaRef(id), { ...base(f), feiraId: fid }, { merge: true }));
-  if (ids.length) lote.set(refFeira, { nome, lojas: fichas.map(([id, f]) => ({ id, nome: f.nome || NOME_ORIGINAL, cor: (f.tema && f.tema.primaria) || '#1a3a2a' })), atualizadoEm: new Date().toISOString() });
+  for (const id of saem) {
+    const s = await fichaRef(id).get(); if (!s.exists) continue;
+    const resto = feirasDe(s.data()).filter((x) => x !== fid);
+    lote.set(fichaRef(id), { feiras: resto, feiraId: resto[0] || '' }, { merge: true });
+  }
+  for (const [id, f] of fichas) {
+    const lista = [...new Set([...feirasDe(f), fid])];
+    if (lista.length > MAX_FEIRAS_POR_LOJA) throw falha(400, `${f.nome || id} já está em ${MAX_FEIRAS_POR_LOJA} feiras. Tire de uma antes.`);
+    lote.set(fichaRef(id), { ...base(f), feiras: lista, feiraId: lista[0] }, { merge: true });
+  }
+  if (ids.length) lote.set(refFeira, { nome, dias, lojas: fichas.map(([id, f]) => ({ id, nome: f.nome || NOME_ORIGINAL, cor: (f.tema && f.tema.primaria) || '#1a3a2a' })), atualizadoEm: new Date().toISOString() });
   else lote.delete(refFeira);
   await lote.commit();
   saem.concat(ids).forEach((id) => T._cacheFichas.delete(id));

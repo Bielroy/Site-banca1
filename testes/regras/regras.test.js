@@ -190,7 +190,7 @@ teste('quem administra (proprietário, administrador) cuida do cadastro, mas nã
     await nega(getDoc(d(eu, cam(loja, 'auditoria/a1')))); await nega(deleteDoc(d(eu, cam(loja, 'auditoria/a1')))); await nega(setDoc(d(eu, cam(loja, 'producoes/x')), { lote: 'x' }));
     await nega(getDoc(d(eu, 'plataforma/segredos'))); await nega(getDoc(d(eu, `plataforma/maquininha_${loja}`))); await nega(getDoc(d(eu, `backups/${loja}_2026-10-01`)));
     // só a plataforma: ligar/desligar a loja, módulos, tipo, feira; criar ou apagar loja
-    for (const campo of [{ ativo: false }, { modulos: { ia: true } }, { tipo: 'outro' }, { feiraId: 'feira-1' }, { criadoEm: 'x' }, { campoNovo: 1 }]) await nega(updateDoc(d(eu, `tenants/${loja}`), campo));
+    for (const campo of [{ ativo: false }, { modulos: { ia: true } }, { tipo: 'outro' }, { feiraId: 'feira-1' }, { feiras: ['feira-1'] }, { criadoEm: 'x' }, { campoNovo: 1 }]) await nega(updateDoc(d(eu, `tenants/${loja}`), campo));
     await nega(deleteDoc(d(eu, `tenants/${loja}`))); await nega(setDoc(d(eu, 'tenants/loja-nova'), { nome: 'Nova', ativo: true })); await nega(setDoc(d(eu, 'feiras/f2'), { nome: 'x', lojas: [] }));
   }
 });

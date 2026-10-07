@@ -1114,7 +1114,7 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   const api3 = carregarApi(raiz('api/plataforma.js'), adm), ch3 = (body) => chamar(api3, { headers: { authorization: 'Bearer super' }, body });
   assert.strictEqual((await ch3({ acao: 'ativo', id: 'nao-existe', ativo: false })).status, 404);
   // feira
-  assert.strictEqual((await ch3({ acao: 'feira', fid: 'jardins', nome: 'Feira', lojas: ['banca'] })).status, 400);
+  assert.strictEqual((await ch3({ acao: 'feira', fid: 'jardins', nome: 'F', lojas: ['banca'] })).status, 400, 'feira sem nome não entra');
   assert.strictEqual((await ch3({ acao: 'feira', fid: 'jardins', nome: 'Feira', lojas: ['banca', 'fantasma'] })).status, 404);
   assert.strictEqual((await ch3({ acao: 'feira', fid: 'jardins', nome: 'Feira do Jardins', lojas: ['banca', 'espetinhos', 'jantinha-da-lu'] })).status, 200);
   assert.deepStrictEqual(db._dados.get('feiras/jardins').lojas.map((x) => `${x.id}|${x.cor}`), ['banca|#1a3a2a', 'espetinhos|#b3261e', 'jantinha-da-lu|#7a2e12']);
@@ -1122,6 +1122,16 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   assert.strictEqual((await ch3({ acao: 'feira', fid: 'jardins', nome: 'Feira do Jardins', lojas: ['banca', 'espetinhos'] })).status, 200);
   assert.strictEqual(db._dados.get('tenants/jantinha-da-lu').feiraId, '', 'quem saiu da feira deixa de apontar para ela');
   assert.strictEqual((await ch3({ acao: 'feira', fid: 'jardins', nome: '', lojas: [] })).status, 200); assert.ok(!db._dados.has('feiras/jardins')); assert.strictEqual(db._dados.get('tenants/banca').feiraId, '');
+  // FEIRA POR DIA: a mesma loja em duas feiras, cada uma no seu dia e com as suas lojas
+  assert.strictEqual((await ch3({ acao: 'feira', fid: 'atenas-quarta', nome: 'Atenas', dias: [3, 3, 9, '2', -1], lojas: ['banca'] })).status, 200, 'feira de uma loja só pode ser cadastrada');
+  assert.deepStrictEqual(db._dados.get('feiras/atenas-quarta').dias, [3], 'só dia de 0 a 6, sem repetir');
+  assert.strictEqual((await ch3({ acao: 'feira', fid: 'munique-sabado', nome: 'Munique', dias: [6], lojas: ['banca', 'espetinhos'] })).status, 200);
+  assert.deepStrictEqual(db._dados.get('tenants/banca').feiras, ['atenas-quarta', 'munique-sabado'], 'a loja fica nas duas feiras');
+  assert.deepStrictEqual(db._dados.get('tenants/espetinhos').feiras, ['munique-sabado']);
+  const lst = await ch3({ acao: 'lojas' }); assert.deepStrictEqual(lst.corpo.feiras.map((f) => `${f.id}:${f.dias}:${f.lojas}`).sort(), ['atenas-quarta:3:banca', 'munique-sabado:6:banca,espetinhos']);
+  assert.strictEqual((await ch3({ acao: 'feira', fid: 'atenas-quarta', nome: '', lojas: [] })).status, 200);
+  assert.deepStrictEqual(db._dados.get('tenants/banca').feiras, ['munique-sabado'], 'desfazer uma feira não tira a loja da outra'); assert.strictEqual(db._dados.get('tenants/banca').feiraId, 'munique-sabado');
+  assert.strictEqual((await ch3({ acao: 'feira', fid: 'munique-sabado', nome: '', lojas: [] })).status, 200); assert.deepStrictEqual(db._dados.get('tenants/banca').feiras, []);
   // tirar o proprietário
   assert.strictEqual((await ch3({ acao: 'proprietario', id: 'jantinha-da-lu', email: 'ze@x.com', remover: true })).status, 200);
   assert.deepStrictEqual(usuarios[0].customClaims, { tenants: { outra: 'caixa' } }); assert.strictEqual(usuarios[0].revogado, true);
@@ -1465,6 +1475,14 @@ teste('plataforma: modelos iguais nos dois lados, endereço sugerido e abas por 
   else assert.ok(require('fs').readFileSync(raiz('js/tema.js'), 'utf8').includes(JSON.stringify(M.MODELOS.jantinha.primaria).replace(/"/g, "'")));
   assert.strictEqual(L.sugerirId('  Espetinhos do Zé!! '), 'espetinhos-do-ze'); assert.strictEqual(L.sugerirId('Açaí & Cia'), 'acai-cia'); assert.ok(T.idValido(L.sugerirId('Jantinha da Lú — Setor Bueno 2')));
   assert.strictEqual(L.idValido(L.sugerirId('x'.repeat(80))), true); assert.strictEqual(L.idValido(''), false);
+  // feira do dia: quarta só tem a banca; sábado tem a banca e os pães; nos outros dias, nenhuma
+  const qua = { nome: 'Atenas', dias: [3], lojas: [{ id: 'banca' }] }, sab = { nome: 'Munique', dias: [6], lojas: [{ id: 'banca' }, { id: 'paes' }] }, sempre = { nome: 'Antiga', lojas: [{ id: 'banca' }, { id: 'x' }] };
+  assert.strictEqual(L.feiraDoDia([qua, sab], 3), qua); assert.strictEqual(L.feiraDoDia([qua, sab], 6), sab); assert.strictEqual(L.feiraDoDia([qua, sab], 4), null, 'dia sem feira: a faixa some');
+  assert.strictEqual(L.feiraDoDia([sempre, qua], 3), qua, 'a feira do dia ganha da que vale sempre'); assert.strictEqual(L.feiraDoDia([sempre, qua], 1), sempre, 'feira sem dia marcado vale todo dia');
+  assert.strictEqual(L.feiraDoDia(null, 3), null); assert.strictEqual(L.feiraDoDia([{ nome: 'quebrada' }, null], 3), null);
+  assert.deepStrictEqual(L.limparDias([6, 3, 3, 7, -1, '2', 1.5]), [3, 6]); assert.strictEqual(L.diasEmTexto([3]), 'Qua'); assert.strictEqual(L.diasEmTexto([3, 6]), 'Qua e Sáb'); assert.strictEqual(L.diasEmTexto([]), 'Todos os dias');
+  assert.deepStrictEqual(L.feirasDaFicha({ feiras: ['a1', 'b2', 'A!', 5], feiraId: 'b2' }), ['a1', 'b2']); assert.deepStrictEqual(L.feirasDaFicha({ feiraId: 'antiga' }), ['antiga']); assert.deepStrictEqual(L.feirasDaFicha(null), []);
+  assert.ok(require('fs').readFileSync(raiz('plataforma.html'), 'utf8').includes('id="toast"'), 'a tela da plataforma tem a caixinha de aviso (sem ela, os avisos sumiam calados)');
   assert.deepStrictEqual(L.totais([{ ativo: true, mes: { receita: 10.1, pedidos: 2 } }, { ativo: false, mes: null }, { ativo: true, mes: { receita: 5.2, pedidos: 1 } }]), { lojas: 3, ativas: 2, receita: 15.3, pedidos: 3 });
   const todas = ['produtos', 'pdv', 'estoque', 'compras', 'crm', 'copiloto', 'calendario', 'relatorios', 'cupons', 'equipe'];
   assert.deepStrictEqual(P.abasDoPapel('proprietario', todas, { pdv: false, estoque: false }), ['produtos', 'crm', 'copiloto', 'calendario', 'relatorios', 'cupons', 'equipe']);

@@ -10,6 +10,7 @@
 //  Sem ficha (ou sem tema), vale o visual original da Banca Adair e Pedrina.
 // =====================================================================
 import { getDoc, doc, db } from './firebase.js';
+import { feiraDoDia, feirasDaFicha } from './plataforma-lib.js';
 import { TENANT, fichaRef, chave, urlDaLoja, ehLojaOriginal } from './tenant.js';
 import { ARTES, arteDoTipo } from './arte-lib.js';
 
@@ -167,7 +168,8 @@ function aplicarFicha(ficha, completa = true) {
 // ---------------------------------------------------------------------
 // TROCA DE LOJA — as lojas da mesma feira aparecem numa faixa no topo.
 // Tocar numa delas (ou deslizar o cabeçalho para o lado) abre a outra loja,
-// já com as cores dela. feiras/{id} = { nome, lojas: [{ id, nome, cor }] }
+// já com as cores dela. feiras/{id} = { nome, dias: [0..6], lojas: [{ id, nome, cor }] }
+// Cada feira vale nos dias marcados; em dia sem feira, a faixa não aparece.
 // ---------------------------------------------------------------------
 function montarFeira(feira) {
     const barra = document.getElementById('feira-lojas');
@@ -204,17 +206,15 @@ function montarFeira(feira) {
 /** Chamado uma vez pela loja. Usa a ficha guardada no aparelho na hora e confere no banco depois. */
 export async function iniciarTema() {
     const K = chave('banca_ficha');
-    try { const g = JSON.parse(localStorage.getItem(K) || 'null'); if (g) { aplicarFicha(g.ficha, g.v === 2); montarFeira(g.feira); } } catch (_) { /* sem cache */ }
+    try { const g = JSON.parse(localStorage.getItem(K) || 'null'); if (g) { aplicarFicha(g.ficha, g.v === 2); montarFeira(Array.isArray(g.feiras) ? feiraDoDia(g.feiras, new Date().getDay()) : g.feira); } } catch (_) { /* sem cache */ }
     try {
         const s = await getDoc(fichaRef());
         const ficha = s.exists() ? s.data() : null;
-        let feira = null;
-        if (ficha && /^[a-z0-9][a-z0-9-]{1,39}$/.test(ficha.feiraId || '')) {
-            const f = await getDoc(doc(db, 'feiras', ficha.feiraId)); feira = f.exists() ? f.data() : null;
-        }
+        // a loja pode estar em várias feiras (uma por dia da semana): lê todas e mostra a de HOJE
+        const feiras = (await Promise.all(feirasDaFicha(ficha).map((id) => getDoc(doc(db, 'feiras', id)).then((f) => (f.exists() ? f.data() : null)).catch(() => null)))).filter(Boolean);
         if (ficha) aplicarFicha(ficha);
-        montarFeira(feira);
-        try { localStorage.setItem(K, JSON.stringify({ v: 2, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feira })); } catch (_) { /* cheio */ }
+        montarFeira(feiraDoDia(feiras, new Date().getDay()));
+        try { localStorage.setItem(K, JSON.stringify({ v: 2, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, feiras: ficha.feiras || null, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feiras })); } catch (_) { /* cheio */ }
         return ficha;
     } catch (e) { console.warn('[tema] usando o visual guardado:', e && e.code); return null; }
 }

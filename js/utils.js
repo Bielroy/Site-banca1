@@ -50,8 +50,9 @@ export const hapticFeedback = (type = 'light') => {
 
 let toastTimer;
 export const showToast = (msg, isError = false) => {
-  const t = document.getElementById('toast');
-  if (!t) return;
+  let t = document.getElementById('toast');
+  // página sem a caixinha de aviso (era o caso da Plataforma): cria na hora, senão o aviso some calado
+  if (!t) { t = document.createElement('div'); t.className = 'toast'; t.id = 'toast'; t.setAttribute('role', 'alert'); document.body.appendChild(t); }
   t.textContent = msg;
   t.style.background = isError ? 'var(--danger)' : 'var(--forest)';
   t.classList.add('visivel');
