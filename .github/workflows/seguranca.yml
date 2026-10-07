@@ -49,4 +49,24 @@ jobs:
       - name: Instalar o emulador e a biblioteca de teste (numa pasta à parte)
         run: npm install --prefix testes/regras --no-audit --no-fund
       - name: Rodar as regras no emulador
-        run: testes/regras/node_modules/.bin/firebase emulators:exec --only firestore,storage --project demo-banca "node testes/regras/regras.test.js"
+        # A saída vai para a tela e, se algo falhar, o resumo vira "anotações" do trabalho
+        # (dá para ler sem baixar o registro inteiro).
+        run: |
+          set +e
+          testes/regras/node_modules/.bin/firebase emulators:exec --only firestore,storage --project demo-banca "node testes/regras/regras.test.js" > saida.txt 2>&1
+          codigo=$?
+          cat saida.txt
+          if [ "$codigo" -ne 0 ]; then
+            grep -A7 "FALHOU" saida.txt | cut -c1-260 > falhas.txt
+            [ -s falhas.txt ] || tail -45 saida.txt | cut -c1-260 > falhas.txt
+            split -l 14 falhas.txt pedaco_
+            n=0
+            for p in pedaco_*; do
+              n=$((n+1)); [ "$n" -gt 9 ] && break
+              msg=$(sed 's/%/%25/g' "$p" | awk '{printf "%s%%0A", $0}')
+              echo "::error title=Regras no emulador ($n)::$msg"
+            done
+          else
+            echo "::notice title=Regras no emulador::$(grep 'testes das regras passaram' saida.txt | tail -1)"
+          fi
+          exit "$codigo"
