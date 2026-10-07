@@ -41,7 +41,8 @@ export function resumoMargens(pedidos, produtos, { margemBaixa = 0.2 } = {}) {
         faturamento: r2(faturamento), nPedidos, ticketMedio: nPedidos ? r2(faturamento / nPedidos) : 0,
         lucroEstimado: comCusto.length ? r2(receitaComCusto - custoTotal) : null,
         margemGeral: receitaComCusto > 0 ? (receitaComCusto - custoTotal) / receitaComCusto : null,
-        coberturaCusto: faturamento > 0 ? Math.min(1, receitaComCusto / faturamento) : 0,      // quanto do faturamento tem custo cadastrado
+        // contra a soma dos ITENS (o total do pedido inclui entrega e cupom, e fazia parecer que havia produto sem custo)
+        coberturaCusto: linhas.length ? Math.min(1, receitaComCusto / Math.max(linhas.reduce((s, l) => s + l.receita, 0), 0.01)) : 0,      // quanto do faturamento tem custo cadastrado
         maisVendidos: [...linhas].sort((a, b) => b.receita - a.receita).slice(0, 8),
         maisLucrativos: [...comCusto].sort((a, b) => b.lucro - a.lucro).slice(0, 8),
         baixaMargem: comCusto.filter((l) => l.margem >= 0 && l.margem < margemBaixa).sort((a, b) => a.margem - b.margem),

@@ -82,7 +82,7 @@ async function venda(req, res, { tid, dec }) {
           // No balcão o produto está na mão do cliente: a venda nunca é barrada por estoque.
           // Se o sistema achava que tinha menos, o saldo vai a zero (e a contagem corrige depois).
           const atual = Number(p.estoqueFisico), novo = Math.max(0, E.fix(atual - qtd));
-          t.update(s.ref, { estoqueFisico: novo, ativo: novo > 0 });
+          t.update(s.ref, { estoqueFisico: novo, ativo: E.ativoDepois(p, novo) });
           movs.push({ produtoId: String(item.id), nome: p.nome, unidade: p.unidade, tipo: 'venda', delta: E.fix(novo - atual), saldo: novo, custoUnit: p.custo, pedidoId: chave, obs: atual < qtd ? `Balcão: vendeu ${qtd}, o sistema tinha ${atual}` : 'Balcão', por: dec.email || dec.uid });
         }
       });
@@ -154,7 +154,7 @@ async function pesagem(req, res, { tid, dec }) {
       for (const [id, kg] of baixa) {
         const p = prods.get(id); if (!p || !E.temControle(p.d.estoqueFisico) || kg === 0) continue;
         const atual = Number(p.d.estoqueFisico), novo = Math.max(0, E.fix(atual - kg));
-        t.update(p.ref, { estoqueFisico: novo, ativo: novo > 0 });
+        t.update(p.ref, { estoqueFisico: novo, ativo: E.ativoDepois(p.d, novo) });
         movs.push({ produtoId: id, nome: p.d.nome, unidade: p.d.unidade, tipo: 'venda', delta: E.fix(novo - atual), saldo: novo, custoUnit: p.d.custo, pedidoId, obs: 'Pesagem do pedido', por: dec.email || dec.uid });
       }
       const abertos = ['pendente', 'aguardando_pesagem', 'aguardando_pagamento'];

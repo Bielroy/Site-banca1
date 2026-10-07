@@ -101,7 +101,7 @@ const base = {
   MIN_DIAS_ESTADO: 4,             // dias "com" (chuva, calor...) antes de usar o efeito
   MIN_DIAS_SEM: 8,                // dias "sem" comparáveis
   MIN_MESES_PAGAMENTO: 2,         // o efeito do pagamento precisa aparecer em 2 meses diferentes
-  Z_ESTADO_MIN: 1.5,              // o efeito medido na loja precisa passar de Z desvios para ser usado
+  Z_ESTADO_MIN: 2.0,              // o efeito medido na loja precisa passar de Z desvios para ser usado
   Z_ESTADO_CAT: 3,                // idem para uma categoria sozinha, quando a loja inteira não muda (mais exigente)
   TAU_ESTADO_LOJA: 0.15,          // quanto se acredita, de saída, que um estado mexe na loja (desvio em log ≈ 15%)
   TAU_ESTADO_FILHO: 0.10,         // quanto a categoria pode se afastar da loja

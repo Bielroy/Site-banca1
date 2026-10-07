@@ -270,13 +270,14 @@ function fatorLoja(modelo, d, cat) {
 /** Frases para o painel. */
 function explicar(partes) {
   return (partes || []).filter((p) => Math.abs(Math.log(p.fator)) >= Math.log(C.LIMIAR_EXPLICAR_FATOR) * 0.5).map((p) => {
-    const x = `×${S.arred(p.fator, 2)}`;
+    const pc = Math.round(Math.abs(p.fator - 1) * 100), x = p.fator >= 1 ? `uns ${pc}% maior` : `uns ${pc}% menor`;
     if (p.tipo === 'preco') {
       const pct = Math.round(Math.abs(1 - p.rho) * 100);
-      return p.rho < 1 ? `Preço ${pct}% abaixo do normal: procura esperada ${x}${p.n ? ` (medido em ${p.n} dia(s) de oferta na loja)` : ' (estimativa de partida: a loja ainda não teve oferta medida)'}`
-        : `Preço ${pct}% acima do normal: procura esperada ${x}`;
+      return p.rho < 1 ? `Preço ${pct}% abaixo do normal: procura ${x}${p.n ? ` (medido em ${p.n} dia(s) de oferta na loja)` : ' (estimativa de partida: a loja ainda não teve oferta medida)'}`
+        : `Preço ${pct}% acima do normal: procura ${x}`;
     }
-    return `Previsto ${ROTULO[p.tipo]}: nesses dias a procura fica ${x} (visto em ${p.n} dia(s))`;
+    if (p.tipo === 'pag') return `Dias de pagamento (5 a 10): procura ${x} (visto em ${p.n} dia(s))`;
+    return `Previsão do tempo: ${ROTULO[p.tipo]}. Nesses dias a procura é ${x} (visto em ${p.n} dia(s))`;
   });
 }
 

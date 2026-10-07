@@ -111,7 +111,7 @@ const bloco = (tit, itens, vazio) => `<section class="pv-bloco"><h4>${tit}</h4>$
 // O que o motor já sabe sobre clima, pagamento e preço — em português claro, com quantos dias ele viu.
 const aprendido = (m) => {
     const f = m.fatores; if (!f) return '';
-    const vezes = (x) => `×${String(x).replace('.', ',')}`;
+    const vezes = (x) => { const pc = Math.round(Math.abs(x - 1) * 100); return x >= 1 ? `uns ${pc}% a mais` : `uns ${pc}% a menos`; };
     const estado = (rot, e, minimo = 4) => {
         if (!e) return '';
         if (e.confiavel && e.fator != null) return `<li><b>${rot}:</b> ${e.fator === 1 ? 'muda só em algumas categorias' : `a loja vende ${vezes(e.fator)}`} <small>(visto em ${e.n} dia(s))</small></li>`;

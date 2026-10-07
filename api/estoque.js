@@ -76,7 +76,7 @@ async function produzir(req, res, { tid, dec, produtoId, chave, unidades }) {
         if (!E.temControle(ing.estoqueFisico)) return;                       // ingrediente sem estoque controlado: só registra o uso
         const novo = E.fix(Number(ing.estoqueFisico) - precisa);
         if (novo < 0) { faltas.push(`${l.nome}: precisa de ${String(precisa).replace('.', ',')} ${l.unidade}, tem ${String(ing.estoqueFisico).replace('.', ',')}`); return; }
-        t.update(T.tdoc(db, tid, 'produtos', l.id), { estoqueFisico: novo, ativo: novo > 0, ultimaModificacao: Date.now() });
+        t.update(T.tdoc(db, tid, 'produtos', l.id), { estoqueFisico: novo, ativo: E.ativoDepois(ing, novo), ultimaModificacao: Date.now() });
         movs.push({ produtoId: l.id, nome: l.nome, unidade: l.unidade, tipo: 'producao', delta: -precisa, saldo: novo, motivo: 'consumo', obs: `Para ${unidades}× ${p.nome}`, custoUnit: l.custo, por: dec.email || dec.uid });
       });
       if (faltas.length) throw new Error(`Falta ingrediente. ${faltas.join('; ')}.`);
@@ -89,7 +89,7 @@ async function produzir(req, res, { tid, dec, produtoId, chave, unidades }) {
       const custoUn = c.completo ? c.porUnidade : null;
       const saldo = E.fix((E.temControle(p.estoqueFisico) ? Number(p.estoqueFisico) : 0) + unidades);
 
-      t.update(prodRef, { estoqueFisico: saldo, ativo: saldo > 0, ultimaModificacao: Date.now() });
+      t.update(prodRef, { estoqueFisico: saldo, ativo: E.ativoDepois(p, saldo), ultimaModificacao: Date.now() });
       if (custoUn) t.set(privRef, { custo: custoUn }, { merge: true });
       movs.push({ chave, produtoId, nome: p.nome, unidade: p.unidade, tipo: 'producao', delta: unidades, saldo, motivo: `lote ${lote}`, custoUnit: custoUn, por: dec.email || dec.uid });
       E.registrarMovs(t, db, tid, movs, admin.firestore.FieldValue);
@@ -148,7 +148,7 @@ module.exports = async function handler(req, res) {
       if (delta === 0 && E.temControle(p.estoqueFisico)) return { semMudanca: true, saldo: novo };
 
       const custoUnit = tipo === 'compra' && Number.isFinite(custoInformado) && custoInformado > 0 && custoInformado < 1e6 ? custoInformado : custoAtual;
-      const patch = { estoqueFisico: novo, ativo: novo > 0, ultimaModificacao: Date.now() };
+      const patch = { estoqueFisico: novo, ativo: E.ativoDepois(p, novo), ultimaModificacao: Date.now() };
       t.update(prodRef, patch);
       if (tipo === 'compra' && custoUnit && custoUnit !== custoAtual) t.set(custoRef, { custo: custoUnit }, { merge: true });   // último custo pago
       E.registrarMovs(t, db, tid, [{ chave, produtoId, nome: p.nome, unidade: p.unidade, tipo, delta, saldo: novo, motivo, obs: texto(b.obs, 140), custoUnit, por: dec.email || dec.uid }], admin.firestore.FieldValue);

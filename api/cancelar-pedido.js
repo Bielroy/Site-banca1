@@ -234,7 +234,7 @@ module.exports = async function handler(req, res) {
         const p = snap.data(), q = aDevolver.get(id);
         if (p.estoqueFisico !== null && p.estoqueFisico !== undefined && p.estoqueFisico !== '') {
           const novo = fixFloat(Number(p.estoqueFisico) + q);
-          devolucoes.push([snap.ref, { estoqueFisico: novo, ativo: novo > 0 }, { produtoId: id, nome: p.nome, unidade: p.unidade, delta: q, saldo: novo, custoUnit: p.custo, por: daEquipe ? quem : 'cliente' }]);
+          devolucoes.push([snap.ref, { estoqueFisico: novo, ativo: E.ativoDepois(p, novo) }, { produtoId: id, nome: p.nome, unidade: p.unidade, delta: q, saldo: novo, custoUnit: p.custo, por: daEquipe ? quem : 'cliente' }]);
         }
       });
 

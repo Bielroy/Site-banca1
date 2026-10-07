@@ -1,12 +1,12 @@
 # Antes de publicar — lista de conferência
 
 Nada disto foi feito no ambiente em que o código foi escrito (sem acesso à internet,
-ao Firebase e à Vercel). Os testes automáticos (`npm test`, 81 testes) passam e as telas
+ao Firebase e à Vercel). Os testes automáticos (`npm test`, 82 testes) passam e as telas
 foram conferidas com dados simulados.
 
 ## 1. Build
 1. `npm install`
-2. `npm test` — deve terminar com "81 de 81 testes passaram".
+2. `npm test` — deve terminar com "82 de 82 testes passaram".
 3. `npm run build` — nunca foi rodado depois das mudanças. Se der erro, copie a mensagem inteira.
 4. `npm run preview` e abra: `/`, `/admin.html`, `/plataforma.html`.
 
@@ -154,3 +154,24 @@ maquininha já buscadas e tudo o que o motor de previsão aprendeu; zera os usos
 Ficam produtos (com o estoque marcado), categorias, configurações, cupons, equipe, calendário e fotos.
 Antes de apagar, guarda uma cópia "AAAA-MM-DD-antes-de-zerar" (some depois de 7 cópias diárias mais novas).
 Vale só para a loja em que o painel está aberto.
+
+## 4k. Motor de previsão 1.2 (clima, preço, pagamento)
+
+O que o motor passou a considerar, além do dia da semana e do calendário:
+
+- **Clima** da cidade da loja (chuva, calor e frio fora do normal). Fonte: Open-Meteo, gratuito e sem chave.
+  A cidade vem de Operacional → "Cidade da loja" (em branco, vale a cidade da chave PIX). O que chega fica em
+  `analytics_config/clima`. Sem cidade ou sem resposta do serviço, a previsão segue sem o clima.
+- **Preço e oferta**: o preço cobrado em cada dia (dos pedidos) e um retrato diário do cadastro
+  (`analytics_vendas/{dia}.precos` e `.fora`), guardado no primeiro cálculo do dia.
+- **Dias de pagamento** (5 a 10 do mês), depois de aparecer em dois meses diferentes.
+- **Dia em que a loja não funcionou** (nenhum pedido numa loja que costuma ter vários): sai da conta.
+- **Estoque que zerou numa venda**: conta como dia de falta, mesmo sem marcar no Fechamento.
+
+Cada efeito só é usado quando se destaca do sobe-e-desce normal (ver `analytics/config.js`, bloco
+"Fatores externos"). A aba Previsão mostra o que já foi aprendido em "O que o motor já aprendeu".
+
+Para medir numa loja simulada: `node scripts/medir-motor.js 1,2,3` (leva cerca de um minuto).
+O erro de verdade, da loja real, aparece na aba Previsão em "Erro das previsões anteriores".
+
+Nenhuma regra do Firestore mudou. Nenhuma variável nova na Vercel.

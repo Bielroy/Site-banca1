@@ -273,6 +273,28 @@ teste('motor: na loja simulada, a regulagem atual erra bem menos que a simples e
   assert.ok(com.atual[0].sem / com.atual[0].tot < 0.15 && com.simples[0].sem / com.simples[0].tot > 0.25, 'na primeira semana a atual já prevê quase tudo');
 });
 
+teste('estoque: "Tirar da loja" não é desfeito por venda, perda ou entrada; só o esgotado automático volta sozinho', async () => {
+  const E = require(raiz('lib/estoque'));
+  assert.strictEqual(E.ativoDepois({ ativo: false, estoqueFisico: 10 }, 9), false, 'escondido à mão, com estoque: continua escondido');
+  assert.strictEqual(E.ativoDepois({ ativo: true, estoqueFisico: 10 }, 9), true);
+  assert.strictEqual(E.ativoDepois({ ativo: true, estoqueFisico: 1 }, 0), false, 'zerou: sai da loja');
+  assert.strictEqual(E.ativoDepois({ ativo: false, estoqueFisico: 0 }, 5), true, 'estava zerado e chegou mercadoria: volta');
+  assert.strictEqual(E.ativoDepois({ ativo: false, estoqueFisico: '' }, 5), false, 'sem controle de estoque e escondido: a primeira contagem não religa');
+  assert.strictEqual(E.ativoDepois({ ativo: true, estoqueFisico: null }, 5), true);
+  // de ponta a ponta: produto escondido com estoque, venda no balcão e perda lançada
+  const db = criarBancoP({ ...sementeEstoque(), 'produtos/ovos': { ...sementeEstoque()['produtos/ovos'], ativo: false, estoqueFisico: 10 } }); const adm = criarAdmin(db, TOKENS_P);
+  const pdv = carregarApi(raiz('api/pdv.js'), adm), est = carregarApi(raiz('api/estoque.js'), adm);
+  const v = await chamar(pdv, { headers: { Authorization: 'Bearer func-banca' }, body: { acao: 'venda', chave: 'bal-' + Math.random().toString(36).slice(2, 12), pag: 'Dinheiro', itens: [{ id: 'ovos', qtd: 1 }] } });
+  assert.strictEqual(v.status, 200, JSON.stringify(v.corpo));
+  assert.strictEqual(db._dados.get('produtos/ovos').estoqueFisico, 9); assert.strictEqual(db._dados.get('produtos/ovos').ativo, false, 'vendeu no balcão e continua fora da loja');
+  const pd = await chamar(est, { headers: { Authorization: 'Bearer dona-banca' }, body: { acao: 'movimentar', produtoId: 'ovos', tipo: 'perda', qtd: 1, motivo: 'quebra', chave: 'mv-' + Math.random().toString(36).slice(2, 12) } });
+  assert.strictEqual(pd.status, 200, JSON.stringify(pd.corpo));
+  assert.strictEqual(db._dados.get('produtos/ovos').estoqueFisico, 8); assert.strictEqual(db._dados.get('produtos/ovos').ativo, false, 'lançou perda e continua fora da loja');
+  const M = await import(raiz('js/margens-lib.js'));
+  const r = M.resumoMargens([{ status: 'pendente', total: 28, itens: [{ id: 'a', nome: 'A', qtd: 2, preco: 10, subtotal: 20 }] }], [{ id: 'a', nome: 'A', custo: 4 }]);
+  assert.strictEqual(r.coberturaCusto, 1, 'entrega de R$ 8 no total não vira "produto sem custo"');
+});
+
 // ------------------------------------------------------------------ aviso de pagamento
 teste('referência do PIX separa loja e pedido, e recusa formato estranho', () => {
   const T = require(raiz('lib/tenant'));

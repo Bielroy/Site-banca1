@@ -46,6 +46,7 @@ const carregarChart = async () => {
 };
 
 let produtosAtuais = [];
+let nomeDaLoja = ehLojaOriginal ? 'Banca Adair e Pedrina' : 'Nossa loja';   // trocado pelo nome da ficha da loja ao entrar
 let pedidosGerais = [];
 let unsubscribes = [];
 let adminBuscaTermo = "";
@@ -77,7 +78,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
     iniciarLogoutPorInatividade(30);
-    try { const f = await getDoc(fichaRef()); modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; } catch (_) { modulosDaLoja = null; }
+    try { const f = await getDoc(fichaRef()); modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; } catch (_) { modulosDaLoja = null; }
     aplicarPapel();
     if (ehGestor(papelAtual)) iniciarIAFeaturesDOM();
     iniciarRealTimeSync();
@@ -208,7 +209,7 @@ document.getElementById('dashboard').addEventListener('click', (e) => {
 // (Estoque, Enviar fotos). Antes só valia para as telas que já existiam ao abrir o painel.
 document.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-fechar]');
-    if (btn) closeModal(btn.dataset.fechar);
+    if (btn) { closeModal(btn.dataset.fechar); if (history.state && history.state.modal === btn.dataset.fechar) history.back(); }   // tira do histórico a entrada da janela que acabou de fechar
 });
 
 const playAlertaPedido = () => {
@@ -550,6 +551,22 @@ const alternarCampoPesoMedio = () => {
 };
 document.getElementById('edit-unidade')?.addEventListener('change', alternarCampoPesoMedio);
 
+// Formulário de produto EM BRANCO. Usado pelo "novo produto" e pelo kit criado com IA:
+// sem isto o kit herdava estoque, preço de oferta e "só ingrediente" do último produto aberto.
+const limparFormularioProduto = () => {
+    ['edit-id', 'edit-nome', 'edit-preco', 'edit-preco-de', 'edit-cat', 'edit-foto', 'edit-foto-url'].forEach(i => document.getElementById(i).value = '');
+    if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = '';
+    const est = document.getElementById('edit-estoque-fisico'); if (est) { est.value = ''; est.dataset.aoAbrir = ''; }
+    if (document.getElementById('edit-duracao')) document.getElementById('edit-duracao').value = 'normal';
+    if (document.getElementById('edit-so-insumo')) document.getElementById('edit-so-insumo').checked = false;
+    if (document.getElementById('edit-peso-medio')) document.getElementById('edit-peso-medio').value = '';
+    const url = document.getElementById('edit-foto-url'); if (url) { delete url.dataset.bancoUrl; delete url.dataset.bancoMini; }
+    definirUnidade('kg');          // produto novo começa sempre em "Quilo" (antes herdava o do último aberto)
+    alternarCampoPesoMedio();
+    const previa = document.getElementById('preview-foto-wrapper'); if (previa) previa.innerHTML = placeholderSVG;
+    document.getElementById('btn-excluir-produto').style.display = 'none';
+};
+
 const injetarEstoqueUI = () => {
     if (!document.getElementById('edit-estoque-fisico')) {
         const precoRow = document.getElementById('edit-preco')?.closest('.grid-2');
@@ -588,6 +605,18 @@ const valorDoItem = (item) => {
 };
 
 const totalDaEsteira = () => ESTEIRA.itens.reduce((soma, i) => soma + valorDoItem(i), 0);
+// A CONTA que o servidor vai fechar (api/pdv.js, pesagem): itens − cupom + entrega.
+// A tela mostrava só a soma dos itens como "Valor exato", e quem salvava sem avisar ficava com o número errado.
+const contaDaEsteira = () => {
+    const c = (v) => Math.round((Number(v) || 0) * 100);
+    const ped = ESTEIRA.pedido || {}, itensC = ESTEIRA.itens.reduce((s, i) => s + c(valorDoItem(i)), 0);
+    const pct = ped.cupom ? Math.min(100, Number(ped.cupom.percentual) || 0) : 0;
+    const descC = Math.min(itensC, pct > 0 ? Math.round(itensC * pct / 100) : c(ped.cupom && ped.cupom.desconto));
+    const ent = ped.entrega || null, liquidoC = itensC - descC;
+    const cheiaC = ent ? c(ent.taxaCheia) : 0, gratisC = ent ? c(ent.gratisAcima) : 0;
+    const taxaC = pct >= 100 ? 0 : (cheiaC > 0 && !(gratisC > 0 && liquidoC >= gratisC) ? cheiaC : 0);
+    return { itens: itensC / 100, desconto: descC / 100, entrega: taxaC / 100, total: (liquidoC + taxaC) / 100, cupom: ped.cupom ? ped.cupom.codigo : '' };
+};
 
 const fotoDoProduto = (item) => {
     const p = produtosAtuais.find(x => x.id === item.id);
@@ -637,7 +666,22 @@ const injetarEsteira = () => {
 const fecharEsteira = () => {
     document.getElementById('picking-palco')?.classList.remove('aberto');
     document.body.style.overflow = '';
+    if (history.state && history.state.esteira) history.back();
 };
+
+// BOTÃO VOLTAR DO CELULAR no painel: fecha o que estiver aberto por cima (confirmação, janela,
+// separação de pedido). Antes não acontecia nada e, no toque seguinte, a pessoa saía do painel
+// e perdia o que estava digitando.
+window.addEventListener('popstate', () => {
+    if (document.querySelector('#overlay-confirm.aberto')) { document.getElementById('btn-confirm-cancel')?.click(); return; }
+    const abertos = [...document.querySelectorAll('.modal-overlay.aberto')];
+    if (abertos.length) { closeModal(abertos[abertos.length - 1].id); return; }
+    const palco = document.getElementById('picking-palco');
+    if (palco && palco.classList.contains('aberto')) {
+        history.pushState({ esteira: true }, '');                       // segura a pessoa na separação até ela confirmar a saída
+        document.getElementById('pk-sair')?.click();
+    }
+});
 
 const renderTrilha = () => {
     const trilha = document.getElementById('pk-trilha');
@@ -748,7 +792,7 @@ const renderItemAtual = () => {
 const renderConferencia = () => {
     const corpo = document.getElementById('pk-corpo');
     const rodape = document.getElementById('pk-rodape');
-    const total = totalDaEsteira();
+    const conta = contaDaEsteira(), total = conta.total;
     const estimado = Number(ESTEIRA.pedido.clientTotal || 0);
 
     const linhas = ESTEIRA.itens.map((item, i) => {
@@ -776,7 +820,10 @@ const renderConferencia = () => {
             ${linhas}
             <div class="pk-total">
                 <div class="pk-total-linha"><span>Estimado no pedido</span><span>${fmt(estimado)}</span></div>
-                <div class="pk-total-final"><span>Valor exato</span><strong>${fmt(total)}</strong></div>
+                ${conta.desconto > 0 || conta.entrega > 0 ? `<div class="pk-total-linha"><span>Soma dos itens</span><span>${fmt(conta.itens)}</span></div>` : ''}
+                ${conta.desconto > 0 ? `<div class="pk-total-linha"><span>Cupom ${escapeHTML(conta.cupom || '')}</span><span>− ${fmt(conta.desconto)}</span></div>` : ''}
+                ${conta.entrega > 0 ? `<div class="pk-total-linha"><span>Entrega</span><span>+ ${fmt(conta.entrega)}</span></div>` : ''}
+                <div class="pk-total-final"><span>Valor a cobrar</span><strong>${fmt(total)}</strong></div>
             </div>
             <div class="pk-acoes-finais">
                 <button class="pk-btn-enviar" id="pk-enviar"><i class="ic" data-i="enviar"></i> Enviar para a cliente</button>
@@ -834,6 +881,7 @@ const abrirEsteira = (pedido) => {
     if (ESTEIRA.itens.length === 0) return showToast('Este pedido não tem itens.', true);
 
     document.getElementById('picking-palco').classList.add('aberto');
+    if (!(history.state && history.state.esteira)) history.pushState({ esteira: true }, '');   // para o botão voltar do celular não sair do painel no meio da pesagem
     document.body.style.overflow = 'hidden';
     renderEsteira();
 };
@@ -884,7 +932,7 @@ const montarMensagemCliente = () => {
     const risco = '━━━━━━━━━━━━━━';
     const L = [];
 
-    L.push('🥬 *Banca Adair e Pedrina*');
+    L.push(`${ehLojaOriginal ? '🥬 ' : ''}*${nomeDaLoja}*`);          // cada loja assina com o próprio nome
     L.push('');
     L.push(`Olá, ${primeiroNomeBonito(p.nome)}! 👋`);
     L.push('');
@@ -918,7 +966,7 @@ const montarMensagemCliente = () => {
     if (ESTEIRA.desconto > 0) L.push(`🎁 Desconto do cupom: -${fmt(ESTEIRA.desconto)}`);
     if (ESTEIRA.entrega > 0) L.push(`🛵 Entrega: ${fmt(ESTEIRA.entrega)}`);
     if (p.entrega?.horario) L.push(`🕒 Entrega: ${p.entrega.horario}`);
-    L.push(`💰 *Total: ${fmt(ESTEIRA.totalFechado ?? totalDaEsteira())}*`);
+    L.push(`💰 *Total: ${fmt(ESTEIRA.totalFechado ?? contaDaEsteira().total)}*`);
     L.push('');
     L.push(`💳 Pagamento: ${p.pag || 'a combinar'}`);
 
@@ -993,17 +1041,7 @@ document.body.addEventListener('click', async (e) => {
         if (action === 'novo-produto') {
             injetarEstoqueUI();
             document.getElementById('modal-titulo').textContent = 'Novo Produto';
-            ['edit-id', 'edit-nome', 'edit-preco', 'edit-preco-de', 'edit-cat', 'edit-foto', 'edit-foto-url'].forEach(i => document.getElementById(i).value = '');
-            if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = '';
-            if (document.getElementById('edit-estoque-fisico')) document.getElementById('edit-estoque-fisico').value = '';
-            if (document.getElementById('edit-duracao')) document.getElementById('edit-duracao').value = 'normal';
-            if (document.getElementById('edit-so-insumo')) document.getElementById('edit-so-insumo').checked = false;
-            if (document.getElementById('edit-peso-medio')) document.getElementById('edit-peso-medio').value = '';
-            definirUnidade('kg');          // produto novo começa sempre em "Quilo" (antes herdava o do último aberto)
-            alternarCampoPesoMedio();
-
-            const previewContainer = document.getElementById('preview-foto-wrapper');
-            if (previewContainer) previewContainer.innerHTML = placeholderSVG;
+            limparFormularioProduto();
             document.getElementById('btn-excluir-produto').style.display = 'none';
             openModal('modal-produto');
         }
@@ -1023,7 +1061,8 @@ document.body.addEventListener('click', async (e) => {
             document.getElementById('edit-foto-url').value = '';
 
             if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = p.descricao || '';
-            if (document.getElementById('edit-estoque-fisico')) document.getElementById('edit-estoque-fisico').value = p.estoqueFisico !== undefined && p.estoqueFisico !== null ? p.estoqueFisico : '';
+            // guarda o estoque MOSTRADO ao abrir: se alguém vender enquanto a janela está aberta, gravar o produto não pode devolver o número velho
+            { const est = document.getElementById('edit-estoque-fisico'); if (est) { est.value = p.estoqueFisico !== undefined && p.estoqueFisico !== null ? p.estoqueFisico : ''; est.dataset.aoAbrir = String(est.value); } }
             if (document.getElementById('edit-peso-medio')) document.getElementById('edit-peso-medio').value = p.pesoMedio || '';
             if (document.getElementById('edit-duracao')) document.getElementById('edit-duracao').value = ['curta', 'longa'].includes(p.duracao) ? p.duracao : 'normal';
             if (document.getElementById('edit-so-insumo')) document.getElementById('edit-so-insumo').checked = p.soInsumo === true;
@@ -1231,6 +1270,7 @@ const iniciarIAFeaturesDOM = () => {
                 if (!data.sucesso) throw new Error(data.error);
 
                 injetarEstoqueUI();
+                limparFormularioProduto();
                 document.getElementById('modal-titulo').textContent = '' + data.kit.nome;
                 document.getElementById('edit-id').value = ''; document.getElementById('edit-nome').value = data.kit.nome;
                 document.getElementById('edit-preco').value = data.kit.preco;
@@ -1305,10 +1345,12 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
         // Número diferente do atual = contagem, que passa pelo servidor e entra no histórico.
         const estoqueAntes = antigo && antigo.estoqueFisico !== undefined && antigo.estoqueFisico !== '' ? antigo.estoqueFisico : null;
         if (estoqueFinal !== null && (!Number.isFinite(estoqueFinal) || estoqueFinal < 0)) throw new Error("A quantidade em estoque precisa ser zero ou maior.");
-        if (estoqueFinal === null && estoqueAntes !== null) pData.estoqueFisico = null;
+        const campoEst = document.getElementById('edit-estoque-fisico');
+        const mexeuNoEstoque = !campoEst || campoEst.dataset.aoAbrir === undefined || String(campoEst.value).trim() !== String(campoEst.dataset.aoAbrir).trim();   // só conta se a pessoa mudou o número
+        if (estoqueFinal === null && estoqueAntes !== null && mexeuNoEstoque) pData.estoqueFisico = null;
 
         await setDoc(tdoc("produtos", id), pData, { merge: true });
-        if (estoqueFinal !== null && estoqueFinal !== estoqueAntes) {
+        if (estoqueFinal !== null && mexeuNoEstoque && estoqueFinal !== estoqueAntes) {
             try { await (await TELAS.estoque()).contarEstoque(id, estoqueFinal, 'Alterado no cadastro do produto'); }
             catch (e) { throw new Error(`Produto guardado, mas o estoque não mudou: ${e.message}`); }
         }
@@ -1628,11 +1670,18 @@ document.getElementById('btn-exportar').addEventListener('click', () => {
 
 document.getElementById('btn-limpar-hist').addEventListener('click', async () => {
     if (pedidosGerais.length === 0) return;
-    if (await customConfirm("Limpeza de Final de Expediente", "Isto ARQUIVARÁ todos os pedidos da tela atual. Confirmar encerramento em lote?")) {
+    // só o que está NA TELA: com uma busca digitada, os pedidos escondidos por ela não são arquivados
+    const termo = pedidoBuscaTermo;
+    const alvo = termo ? pedidosGerais.filter(p => normalizar(p.nome).includes(termo) || normalizar(p.quadra).includes(termo) || String(p.lote || '').includes(termo) || normalizar(p.condominio).includes(termo)) : pedidosGerais;
+    if (!alvo.length) return showToast('Nenhum pedido na tela para arquivar.', true);
+    const abertos = alvo.filter(p => ['pendente', 'aguardando_pesagem', 'aguardando_pagamento'].includes(p.status)).length;
+    if (await customConfirm("Limpeza de Final de Expediente", `Arquivar ${alvo.length} pedido(s)${termo ? ' que aparecem na busca' : ''}?${abertos ? ` Atenção: ${abertos} ainda não foi(ram) separado(s).` : ''}`)) {
         try {
-            const batch = writeBatch(db);
-            pedidosGerais.forEach(p => batch.update(tdoc("pedidos", p.id), { status: 'arquivado' }));
-            await batch.commit();
+            for (let i = 0; i < alvo.length; i += 400) {                 // o banco aceita até 500 gravações por lote
+                const batch = writeBatch(db);
+                alvo.slice(i, i + 400).forEach(p => batch.update(tdoc("pedidos", p.id), { status: 'arquivado' }));
+                await batch.commit();
+            }
             showToast("Expediente finalizado. Pedidos arquivados.");
         } catch (error) {
             console.error(error); showToast("Erro ao processar lote.", true);
@@ -1994,7 +2043,7 @@ const renderBalanco = async (dias) => {
 
     let totalPeriodo = 0, totalHoje = 0, totalSemana = 0;
     let nHoje = 0, nSemana = 0;
-    let aReceber = 0, jaPago = 0;
+    let aReceber = 0, jaPago = 0, naEntrega = 0;
     const porDia = {};
     const porProduto = {};
 
@@ -2008,7 +2057,8 @@ const renderBalanco = async (dias) => {
             const rot = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
             porDia[rot] = (porDia[rot] || 0) + v;
         }
-        if (p.pagamento?.status === 'PAID') jaPago += v; else aReceber += v;
+        // venda de balcão e pedido já concluído (arquivado) foram pagos na hora: não são "a receber"
+        if (p.pagamento?.status === 'PAID') jaPago += v; else if (p.origem === 'balcao' || p.status === 'arquivado') naEntrega += v; else aReceber += v;
         (p.itens || []).forEach(i => {
             const q = Number(i.qtd) || 0;
             porProduto[i.nome] = (porProduto[i.nome] || 0) + q;
@@ -2033,7 +2083,8 @@ const renderBalanco = async (dias) => {
         </div>
         <div class="stats-grid" style="margin-bottom:20px;">
             ${cartao('JÁ PAGO (PIX)', fmt(jaPago), 'confirmado pelo banco', 'var(--success)')}
-            ${cartao('A RECEBER', fmt(aReceber), 'dinheiro, cartão ou PIX pendente', 'var(--warning)')}
+            ${cartao('RECEBIDO NA ENTREGA E NO BALCÃO', fmt(naEntrega), 'pedidos concluídos e vendas de balcão', 'var(--forest)')}
+            ${cartao('A RECEBER', fmt(aReceber), 'pedidos ainda em andamento', 'var(--warning)')}
         </div>
         <div class="chart-wrapper" style="margin-bottom:20px;">
             <h3><i class="ic" data-i="sobe"></i> Faturamento por dia</h3>
