@@ -104,7 +104,6 @@ const listaProdutos = () => {
 };
 
 // ------------------------- blocos do dashboard -------------------------
-const kpi = (rot, val, sub, cls = '') => `<article class="pv-kpi ${cls}"><span>${rot}</span><strong>${val}</strong><small>${sub || ''}</small></article>`;
 const linhaMini = (p, dir) => `<li><span>${escapeHTML(p.nome)}</span><b>${dir}</b></li>`;
 const bloco = (tit, itens, vazio) => `<section class="pv-bloco"><h4>${tit}</h4>${itens.length ? `<ul>${itens.join('')}</ul>` : `<p class="pv-vazio">${vazio}</p>`}</section>`;
 
@@ -202,12 +201,21 @@ const render = () => {
     </div>
     ${avisos}
     ${aprendido(m)}
-    <div class="pv-kpis">
-        ${kpi('Hoje', rs(db.resumo && db.resumo.hoje), `faturamento previsto · ≈ ${num(db.resumo && db.resumo.hoje && db.resumo.hoje.pedidosEsperados)} pedidos`)}
-        ${kpi('Amanhã', rs(db.resumo && db.resumo.amanha), `faturamento previsto · ≈ ${num(db.resumo && db.resumo.amanha && db.resumo.amanha.pedidosEsperados)} pedidos`)}
-        ${kpi('Confiança média', conf == null ? '–' : pct(conf), conf == null ? '' : `${rotConf(conf)} · ${db.nProdutosPrevistos} produtos`, conf != null ? 'pv-conf--' + rotConf(conf) : '')}
-        ${kpi('Erro recente (WAPE)', av ? pct(av.wape) : '–', av ? `${av.n} dia(s) avaliados · ${av.cobertura != null ? pct(av.cobertura) + ' dentro da faixa' : ''}` : 'sem dias avaliados ainda')}
-    </div>
+    <section class="cx-livro pv-resumo" aria-label="Resumo da previsão">
+        <ul class="cx-linhas">
+            ${['hoje', 'amanha'].map((k) => { const x = db.resumo && db.resumo[k]; return `<li class="${x ? '' : 'vazio'}"><span>${k === 'hoje' ? 'Hoje' : 'Amanhã'}<small>${x ? `faturamento previsto${x.pedidosEsperados != null ? ` · cerca de ${num(x.pedidosEsperados)} pedido(s)` : ''}` : 'sem previsão ainda'}</small></span><u></u><b>${x ? fmt(x.faturamentoPrevisto) : '—'}</b></li>`; }).join('')}
+        </ul>
+        <div class="cx-medidor ${conf != null ? 'pv-med--' + rotConf(conf) : 'vazio'}">
+            <div class="cx-med-topo"><span>Confiança das previsões</span><b>${conf == null ? 'ainda sem dados' : `${pct(conf)} · ${rotConf(conf)}`}</b></div>
+            <div class="cx-trilha"><i style="width:${conf == null ? 0 : Math.round(conf * 100)}%"></i></div>
+            ${conf == null ? '' : `<small>${db.nProdutosPrevistos} produto(s) com previsão</small>`}
+        </div>
+        <div class="cx-medidor ${av ? (av.wape <= 0.3 ? 'pv-med--alta' : av.wape <= 0.6 ? 'pv-med--média' : 'pv-med--baixa') : 'vazio'}">
+            <div class="cx-med-topo"><span>Erro das últimas previsões</span><b>${av ? pct(av.wape) : 'nenhum dia conferido ainda'}</b></div>
+            <div class="cx-trilha"><i style="width:${av ? Math.round(Math.min(av.wape, 1) * 100) : 0}%"></i></div>
+            ${av ? `<small>${av.n} dia(s) conferidos${av.cobertura != null ? ` · ${pct(av.cobertura)} das vendas dentro da faixa prevista` : ''}. Quanto menor a barra, melhor.</small>` : '<small>Aparece depois que o primeiro dia previsto terminar.</small>'}
+        </div>
+    </section>
 
     <div class="pv-ctrl">
         <div class="pv-chips">${HORIZONTES.map(([k, r]) => `<button class="pv-chip ${S.horizonte === k ? 'on' : ''}" data-pv-hz="${k}">${r}</button>`).join('')}</div>

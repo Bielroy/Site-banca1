@@ -2069,25 +2069,47 @@ const renderBalanco = async (dias) => {
     const unicos = validos.filter((p) => !p.resumoDoDia);
     const ticket = unicos.length ? unicos.reduce((s, p) => s + (Number(p.total) || 0), 0) / unicos.length : 0;
 
-    const cartao = (rotulo, valor, sub, cor) => `
-        <article class="stat-box" style="border-left:4px solid ${cor};">
-            <span class="stat-label">${rotulo}</span>
-            <strong class="stat-val">${valor}</strong>
-            ${sub ? `<small style="color:var(--text-light); font-size:.78rem;">${sub}</small>` : ''}
-        </article>`;
+    // ---- números para o desenho do caixa ----
+    const rotDia = (d) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    const ult14 = Array.from({ length: 14 }, (_, k) => { const d = new Date(Date.now() - (13 - k) * 86400000), rot = rotDia(d); return { rot, v: porDia[rot] || 0, hoje: k === 13 }; });
+    const pico = Math.max(...ult14.map((x) => x.v), 1);
+    const diasComVenda = Object.keys(porDia).length;
+    const melhor = Object.entries(porDia).sort((a, b) => b[1] - a[1])[0];
+    const totalDinheiro = jaPago + naEntrega + aReceber;
+    const partes = [
+        ['Recebido na entrega e no balcão', 'pedidos concluídos e vendas de balcão', naEntrega, 'var(--forest)'],
+        ['Pago pelo PIX automático', 'confirmado pelo banco', jaPago, 'var(--leaf)'],
+        ['A receber', 'pedidos ainda em andamento', aReceber, 'var(--earth)'],
+    ];
+    const etiqueta = (rotulo, valor, sub) => `<li class="cx-etq"><span>${rotulo}</span><b>${valor}</b><small>${sub}</small></li>`;
 
     alvo.innerHTML = `
-        <div class="stats-grid" style="margin-bottom:20px;">
-            ${cartao('HOJE', fmt(totalHoje), `${nHoje} pedido(s)`, 'var(--success)')}
-            ${cartao('ÚLTIMOS 7 DIAS', fmt(totalSemana), `${nSemana} pedido(s)`, 'var(--forest)')}
-            ${cartao(`PERÍODO (${dias} DIAS)`, fmt(totalPeriodo), `${validos.length} pedido(s)`, 'var(--info)')}
-            ${cartao('TICKET MÉDIO', fmt(ticket), 'por pedido', 'var(--earth)')}
-        </div>
-        <div class="stats-grid" style="margin-bottom:20px;">
-            ${cartao('JÁ PAGO (PIX)', fmt(jaPago), 'confirmado pelo banco', 'var(--success)')}
-            ${cartao('RECEBIDO NA ENTREGA E NO BALCÃO', fmt(naEntrega), 'pedidos concluídos e vendas de balcão', 'var(--forest)')}
-            ${cartao('A RECEBER', fmt(aReceber), 'pedidos ainda em andamento', 'var(--warning)')}
-        </div>
+        <section class="cx-caixa" aria-label="Resumo do caixa">
+            <p class="cx-rot">Entrou no caixa em ${dias} dias</p>
+            <strong class="cx-total">${fmt(totalPeriodo)}</strong>
+            <p class="cx-sub">${validos.length} pedido(s)${diasComVenda ? ` · ${fmt(totalPeriodo / diasComVenda)} por dia com venda` : ''}</p>
+            <div class="cx-barras" role="img" aria-label="Faturamento de cada um dos últimos 14 dias; o maior foi ${fmt(pico)}">
+                ${ult14.map((x) => `<i class="${x.hoje ? 'hoje' : ''}${x.v ? '' : ' zero'}" style="--h:${Math.max(4, Math.round(x.v / pico * 100))}%" title="${x.rot}: ${fmt(x.v)}"></i>`).join('')}
+            </div>
+            <div class="cx-eixo"><span>${ult14[0].rot}</span><span>últimos 14 dias</span><span>hoje</span></div>
+        </section>
+
+        <ul class="cx-trilho" aria-label="Outros números do período">
+            ${etiqueta('Hoje', fmt(totalHoje), `${nHoje} pedido(s)`)}
+            ${etiqueta('Últimos 7 dias', fmt(totalSemana), `${nSemana} pedido(s)`)}
+            ${etiqueta('Ticket médio', unicos.length ? fmt(ticket) : '—', unicos.length ? `em ${unicos.length} pedido(s)` : 'só resumos de balcão no período')}
+            ${melhor ? etiqueta('Melhor dia', fmt(melhor[1]), melhor[0]) : ''}
+        </ul>
+
+        <section class="cx-livro">
+            <h3>Onde está o dinheiro</h3>
+            <div class="cx-faixa" role="img" aria-label="Divisão do dinheiro do período">
+                ${totalDinheiro > 0 ? partes.filter((x) => x[2] > 0).map((x) => `<i style="flex:${x[2]};background:${x[3]}"></i>`).join('') : ''}
+            </div>
+            <ul class="cx-linhas">
+                ${partes.map(([rot, sub, v, cor]) => `<li class="${v > 0 ? '' : 'vazio'}"><i class="cx-cor" style="background:${cor}"></i><span>${rot}<small>${sub}</small></span><u></u><b>${fmt(v)}</b></li>`).join('')}
+            </ul>
+        </section>
         <div class="chart-wrapper" style="margin-bottom:20px;">
             <h3><i class="ic" data-i="sobe"></i> Faturamento por dia</h3>
             <canvas id="balanco-chart" height="90"></canvas>

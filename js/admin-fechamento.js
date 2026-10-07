@@ -229,6 +229,9 @@ function render() {
         <p class="fc-diatitulo">${escapeHTML(dataLonga(S.dia))}${S.dia === hojeBR() ? ' · <b>hoje</b>' : ''}</p>
         <p class="fc-resumo" id="fc-resumo">${htmlResumo()}</p>
 
+        <!-- A busca (grudada em cima) e o botão (grudado embaixo) só acompanham a CONFERÊNCIA.
+             Fora desta caixa eles se soltam: antes ficavam por cima da lista da Ceasa ao rolar. -->
+        <div class="fc-conferencia">
         <div class="fc-ctrl">
             <input id="fc-busca" type="search" placeholder="Buscar produto…" value="${escapeHTML(S.busca)}" aria-label="Buscar produto">
             <label class="fc-check"><input type="checkbox" id="fc-sofaltam" ${S.soFaltam ? 'checked' : ''}> Só os que faltam marcar</label>
@@ -238,6 +241,7 @@ function render() {
         <div id="fc-lista" class="${S.carregando ? 'fc-carregando' : ''}">${htmlLista()}</div>
 
         <div class="fc-barra"><button type="button" class="btn-salvar-config" data-fc="gerar"><i class="ic" data-i="sacola"></i> ${S.listaAberta ? 'Atualizar' : 'Gerar'} lista da Ceasa</button></div>
+        </div>
         ${S.listaAberta ? htmlListaCeasa() : ''}`;
 }
 
