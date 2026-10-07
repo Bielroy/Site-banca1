@@ -32,13 +32,13 @@ service firebase.storage {
     match /fotos_produtos/{arquivo} {                       // loja original
       allow get: if true;
       allow list, delete: if gestor('banca');
-      allow create: if gestor('banca') && fotoOk(arquivo);
+      allow create: if gestor('banca') && fotoOk(arquivo) && resource == null;      // resource == null: o arquivo ainda não existe
       allow update: if false;
     }
     match /tenants/{tid}/fotos_produtos/{arquivo} {         // demais lojas
       allow get: if true;
       allow list, delete: if gestor(tid);
-      allow create: if gestor(tid) && fotoOk(arquivo);
+      allow create: if gestor(tid) && fotoOk(arquivo) && resource == null;
       allow update: if false;
     }
     // qualquer outro caminho: negado (regra padrão)

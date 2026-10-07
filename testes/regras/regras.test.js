@@ -38,8 +38,12 @@ const plataforma = () => conta('dono-plataforma', { plataforma: true });
 const donaAntiga = () => conta('dona-antiga', { admin: true });
 // caminho de um dado: loja original fica na raiz; as outras, em tenants/{id}
 const cam = (loja, resto) => (loja === 'banca' ? resto : `tenants/${loja}/${resto}`);
-const d = (ctx, caminho) => doc(ctx.firestore(), caminho);
-const c = (ctx, caminho) => collection(ctx.firestore(), caminho);
+// cada conta de teste abre o banco UMA vez (a biblioteca não deixa abrir duas vezes a mesma conta)
+const bancos = new WeakMap(), gavetas = new WeakMap();
+const bancoDe = (ctx) => { if (!bancos.has(ctx)) bancos.set(ctx, ctx.firestore()); return bancos.get(ctx); };
+const gavetaDe = (ctx) => { if (!gavetas.has(ctx)) gavetas.set(ctx, ctx.storage()); return gavetas.get(ctx); };
+const d = (ctx, caminho) => doc(bancoDe(ctx), caminho);
+const c = (ctx, caminho) => collection(bancoDe(ctx), caminho);
 
 async function semear() {
   await env.clearFirestore();
@@ -260,7 +264,7 @@ teste('status do pedido só anda para frente; "cancelado" é só do servidor e p
     await pode(updateDoc(ped('ped-pix'), { status: 'preparando' }));                // "Recebi o PIX"
     await pode(setDoc(ped('ped-2'), { status: 'arquivado' }, { merge: true }));     // "Concluir e arquivar" direto
     // lote do "arquivar tudo"
-    await semear(); const lote = writeBatch(eu.firestore());
+    await semear(); const lote = writeBatch(bancoDe(eu));
     for (const id of ['ped-1', 'ped-2', 'ped-enviado', 'ped-pix']) lote.update(ped(id), { status: 'arquivado' });
     await pode(lote.commit());
   }
@@ -320,14 +324,15 @@ teste('dono da plataforma cuida de todas as lojas, mas segredos, pedidos novos e
 
 // ====================================================================== ARMAZENAMENTO (fotos)
 const png = () => new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
-const arq = (ctx, caminho) => ref(ctx.storage(), caminho);
+const arq = (ctx, caminho) => ref(gavetaDe(ctx), caminho);
 teste('fotos: qualquer um vê pelo link; só quem administra a loja envia, e só JPG, PNG ou WebP de até 2 MB', async () => {
   await env.clearStorage();
   await env.withSecurityRulesDisabled(async (ctx) => {
-    await uploadBytes(ref(ctx.storage(), 'tenants/loja-a/fotos_produtos/existente.png'), png(), { contentType: 'image/png' });
-    await uploadBytes(ref(ctx.storage(), 'tenants/loja-b/fotos_produtos/existente.png'), png(), { contentType: 'image/png' });
-    await uploadBytes(ref(ctx.storage(), 'fotos_produtos/existente.png'), png(), { contentType: 'image/png' });
-    await uploadBytes(ref(ctx.storage(), 'segredos/arquivo.txt'), png(), { contentType: 'text/plain' });
+    const g = ctx.storage();
+    await uploadBytes(ref(g, 'tenants/loja-a/fotos_produtos/existente.png'), png(), { contentType: 'image/png' });
+    await uploadBytes(ref(g, 'tenants/loja-b/fotos_produtos/existente.png'), png(), { contentType: 'image/png' });
+    await uploadBytes(ref(g, 'fotos_produtos/existente.png'), png(), { contentType: 'image/png' });
+    await uploadBytes(ref(g, 'segredos/arquivo.txt'), png(), { contentType: 'text/plain' });
   });
   const visitante = anonimo(), dono = de('loja-a', 'proprietario'), admin = de('loja-a', 'administrador');
   // ver pelo link: sim. Listar a pasta: não (nem a loja vizinha).
