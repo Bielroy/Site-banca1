@@ -694,7 +694,7 @@ const pintarHorariosDeEntrega = () => {
     const grupo = document.getElementById('grupo-horario'), campo = document.getElementById('cli-horario'); if (!grupo || !campo) return;
     const { horarios } = lerEntrega(STATE.config), atual = campo.value;
     grupo.hidden = !horarios.length;
-    campo.innerHTML = horarios.length ? '<option value="">Escolha um horário</option>' + horarios.map((h) => `<option value="${escapeHTML(h)}">${escapeHTML(h)}</option>`).join('') : '';
+    campo.innerHTML = horarios.length ? '<option value="">Tanto faz (a combinar)</option>' + horarios.map((h) => `<option value="${escapeHTML(h)}">${escapeHTML(h)}</option>`).join('') : '';
     if (horarios.includes(atual)) campo.value = atual;
 };
 
@@ -1744,13 +1744,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     const faltaEndereco = endCheckout.validar();
     if (faltaEndereco) return showToast(faltaEndereco, true);
     if (!nome) return showToast("Escreva o seu nome para a entrega.", true);
-    const campoHorario = document.getElementById('cli-horario');
-    if (campoHorario && !document.getElementById('grupo-horario').hidden && !campoHorario.value) {
-        // no iPhone, dar foco não rola a tela até o campo: a pessoa lia o aviso e não achava onde escolher
-        try { campoHorario.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { /* navegador antigo */ }
-        campoHorario.focus({ preventScroll: true }); campoHorario.classList.add('campo-faltando'); setTimeout(() => campoHorario.classList.remove('campo-faltando'), 2500);
-        return showToast('Escolha quando prefere receber, no campo destacado.', true);
-    }
+    // Horário de entrega: escolher é OPCIONAL. Sem escolha, o pedido chega à loja como "horário a combinar".
     btn.disabled = true; btn.textContent = 'Enviando pedido...';
 
     try {

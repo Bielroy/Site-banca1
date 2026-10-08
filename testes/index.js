@@ -1731,6 +1731,14 @@ teste('conta do cliente (loja): junta o que voltou do servidor com o que já est
   assert.ok(/acao: 'conta-link'/.test(crm) && /customConfirm\('Gerar um link novo\?'/.test(crm) && !/window\.open\([^)]*j\.link/.test(crm), 'painel: confirma antes e o envio é um link tocado pela pessoa');
 });
 
+teste('horário de entrega é opcional na tela: sem escolha, o pedido segue como "a combinar"', () => {
+  const fs = require('fs'), loja = fs.readFileSync(raiz('js/loja.js'), 'utf8'), html = fs.readFileSync(raiz('index.html'), 'utf8'), E = require(raiz('lib/entrega'));
+  assert.ok(!/Escolha quando prefere receber/.test(loja), 'a tela não barra mais o envio sem horário');
+  assert.ok(/<option value="">Tanto faz \(a combinar\)<\/option>/.test(loja) && /Quando prefere receber\? \(opcional\)/.test(html));
+  const cfg = E.lerConfig({ entrega: { horarios: ['Manhã', 'Tarde'] } });
+  assert.strictEqual(E.horarioValido(cfg, ''), ''); assert.strictEqual(E.horarioACombinar(cfg, ''), true); assert.strictEqual(E.horarioACombinar(cfg, 'Manhã'), false);
+});
+
 // ------------------------------------------------------------------ testes de segurança (arquivo próprio)
 require('./seguranca')({ teste, raiz, criarBanco, criarAdmin, chamar, carregarApi });
 
