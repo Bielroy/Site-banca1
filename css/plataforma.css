@@ -1,49 +1,148 @@
-/* Tela do dono da plataforma (plataforma.html) */
-.pf { max-width: 980px; margin: 0 auto; padding: 20px 16px 80px; }
-.pf-resumo { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }
-.pf-resumo div { background: var(--warm-white); border: 1.5px solid #e6e1d6; border-radius: 14px; padding: 12px; min-width: 0; }
-.pf-resumo b { display: block; font-family: 'Fraunces', serif; font-size: clamp(.95rem, 4.3vw, 1.35rem); color: var(--forest); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pf-resumo span { font-size: .78rem; color: var(--text-mid); }
-.pf-secao { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 26px 0 10px; }
-.pf-secao h3 { font-family: 'Fraunces', serif; font-size: 1.3rem; color: var(--forest); margin: 0; }
-.pf-secao button { min-height: 44px; padding: 8px 16px; }
-.pf-form { display: grid; gap: 4px; padding: 14px; margin-bottom: 14px; background: var(--warm-white); border: 1.5px solid var(--forest); border-radius: 14px; }
-@media (min-width: 720px) { .pf-form { grid-template-columns: 1fr 1fr; column-gap: 14px; } .pf-form > .pf-largo { grid-column: 1 / -1; } }
-.pf-lojas { display: grid; gap: 12px; } @media (min-width: 820px) { .pf-lojas { grid-template-columns: 1fr 1fr; align-items: start; } }
-.pf-loja { background: #fff; border: 1.5px solid #e6e1d6; border-radius: 16px; padding: 14px; min-width: 0; }
-.pf-loja.bloq { background: #fbf4f3; border-color: #e7c8c4; }
-.pf-loja-topo { display: flex; align-items: flex-start; gap: 10px; }
-.pf-cor { width: 14px; height: 14px; border-radius: 50%; flex: none; margin-top: 6px; }
-.pf-loja-topo h4 { flex: 1; min-width: 0; margin: 0; font-size: 1.08rem; overflow-wrap: anywhere; } .pf-loja-topo h4 small { display: block; font-weight: 400; font-size: .8rem; color: var(--text-light); }
-.pf-chip { flex: none; padding: 3px 10px; border-radius: 999px; font-size: .74rem; font-weight: 700; background: #e3f1e7; color: #1f6b3b; } .pf-chip.bloq { background: #f6dcd8; color: #a3271b; }
-.pf-mes { margin: 10px 0; font-size: .92rem; color: var(--text-mid); } .pf-mes b { color: var(--text-dark); font-variant-numeric: tabular-nums; }
-.pf-rotulo { display: block; margin: 12px 0 6px; font-size: .74rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-mid); }
-.pf-donos { list-style: none; display: grid; gap: 4px; } .pf-donos li { display: flex; align-items: center; gap: 8px; font-size: .92rem; overflow-wrap: anywhere; } .pf-donos li span { flex: 1; min-width: 0; }
-.pf-donos button { flex: none; width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--parchment); font-size: 1.1rem; cursor: pointer; }
-.pf-add { display: flex; gap: 8px; margin-top: 6px; } .pf-add input { flex: 1; min-width: 0; min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1.5px solid #e0dcd4; font-size: 16px; }
-.pf-add button { flex: none; min-height: 44px; padding: 8px 14px; }
-.pf-modulos { display: flex; flex-wrap: wrap; gap: 6px; }
-.pf-modulos label { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 12px; border: 1.5px solid #e0dcd4; border-radius: 999px; font-size: .86rem; cursor: pointer; background: #fff; }
-.pf-modulos label:has(input:checked) { border-color: var(--forest); background: var(--warm-white); } .pf-modulos input { accent-color: var(--forest); width: 18px; height: 18px; }
-.pf-acoes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; } .pf-acoes > * { flex: 1 1 auto; min-height: 44px; padding: 8px 12px; text-align: center; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; font-size: .9rem; }
-.pf-perigo { border-color: var(--danger) !important; color: var(--danger) !important; }
-.pf-feira { background: #fff; border: 1.5px solid #e6e1d6; border-radius: 16px; padding: 14px; margin-bottom: 12px; }
-.pf-vazio { padding: 28px 16px; text-align: center; color: var(--text-mid); background: var(--warm-white); border-radius: 14px; }
+/* =====================================================================
+   Tela do dono da plataforma (plataforma.html).
+   Mesma marca do painel: verde-floresta, folha e papel. Títulos em Fraunces,
+   o resto em Figtree. O elemento que marca a tela é a "semana da feira"
+   (as 7 letras dos dias), que aparece na lista e é o seletor de dias.
+   ===================================================================== */
+:root { --pf-linha: #e3ddd0; --pf-papel: #f2ede3; --pf-tinta: #1d2a22; --pf-apagado: #6b6f66; --pf-perigo: #a3271b; }
+.pf { max-width: 860px; margin: 0 auto; padding: 0 16px 96px; color: var(--pf-tinta); font-family: 'Figtree', system-ui, sans-serif; }
+body { background: var(--cream, #faf7f2); }
 
-/* botão desligado precisa parecer desligado */
-.pf button:disabled, .pf .btn-outline:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
-.pf-feira textarea { width: 100%; min-height: 76px; padding: 10px 12px; border: 1.5px solid #e0dcd4; border-radius: 12px; font: inherit; font-size: .92rem; resize: vertical; background: #fff; }
-.pf-link-feira { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pf-link-feira code { flex: 1 1 200px; min-width: 0; padding: 8px 10px; border-radius: 10px; background: #f3efe6; font-size: .82rem; overflow-wrap: anywhere; }
-.pf-feira input[type="time"], .pf-feira input[type="date"] { min-height: 42px; padding: 6px 10px; border: 1.5px solid #e0dcd4; border-radius: 10px; font: inherit; background: #fff; }
-.pf-sem-feira { display: flex; flex-wrap: wrap; gap: 6px; }
-.pf-sem-feira:empty { display: none; }
-.pf-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; border-radius: 999px; background: #fdecea; color: #8a1c1c; font-size: .86rem; font-weight: 600; }
-.pf-chip button { width: 28px; height: 28px; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .06); color: inherit; font-size: 1rem; cursor: pointer; }
+/* ---------- cabeçalho e abas ---------- */
+.pf-cab { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: max(18px, env(safe-area-inset-top)) 0 12px; }
+.pf-cab h1 { margin: 0; font-family: 'Fraunces', serif; font-size: clamp(1.7rem, 6vw, 2.2rem); line-height: 1.05; color: var(--forest); }
+.pf-resumo-linha { margin: 6px 0 0; font-size: .9rem; color: var(--pf-apagado); max-width: 52ch; }
+.pf-voltar { flex: none; padding: 9px 14px; border-radius: 999px; border: 1.5px solid var(--pf-linha); color: var(--forest); font-weight: 700; font-size: .88rem; text-decoration: none; background: #fff; }
+.pf-abas { position: sticky; top: 0; z-index: 20; display: flex; gap: 4px; margin: 0 -16px; padding: 8px 16px; overflow-x: auto; scrollbar-width: none; background: color-mix(in srgb, var(--cream, #faf7f2) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--pf-linha); }
+.pf-abas::-webkit-scrollbar { display: none; }
+.pf-abas button { flex: none; min-height: 40px; padding: 0 14px; border: 0; border-radius: 10px; background: none; color: var(--pf-apagado); font: 700 .95rem/1 'Figtree', sans-serif; cursor: pointer; }
+.pf-abas button.on { background: var(--forest); color: #fff; }
+.pf-conteudo { padding-top: 16px; }
 
-.pf-assin { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.pf-assin label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: .9rem; }
-.pf-assin input { min-height: 42px; padding: 6px 10px; border: 1.5px solid #e0dcd4; border-radius: 10px; font: inherit; background: #fff; }
-.pf-assin input[data-pf-assin-valor] { width: 96px; text-align: right; }
-.pf-assin input[data-pf-assin-dia] { width: 64px; }
-.pf-assin input[data-pf-assin-obs] { flex: 1 1 180px; min-width: 0; }
+/* ---------- botões e campos ---------- */
+.pf-bt { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1.5px solid var(--pf-linha); background: #fff; color: var(--forest); font: 700 .92rem/1.1 'Figtree', sans-serif; text-decoration: none; cursor: pointer; white-space: nowrap; }
+.pf-bt.pri { background: var(--forest); border-color: var(--forest); color: #fff; }
+.pf-bt.perigo { border-color: #e7c3bd; color: var(--pf-perigo); }
+.pf-bt.mini { min-height: 36px; padding: 0 12px; font-size: .84rem; border-radius: 10px; }
+.pf-bt:disabled { opacity: .45; cursor: not-allowed; }
+.pf-bt:focus-visible, .pf-abas button:focus-visible, .pf-linha:focus-visible, .pf-dia:focus-visible { outline: 3px solid var(--leaf); outline-offset: 2px; }
+body.pf-ocupado .pf-bt { pointer-events: none; opacity: .7; }
+.pf input[type="text"], .pf input[type="email"], .pf input[type="password"], .pf input[type="search"], .pf input[type="number"], .pf input[type="time"], .pf input[type="date"], .pf select,
+.pf-folha input[type="text"], .pf-folha input[type="email"], .pf-folha input[type="search"], .pf-folha input[type="time"], .pf-folha input[type="date"], .pf-folha select {
+    min-height: 44px; padding: 8px 12px; border: 1.5px solid var(--pf-linha); border-radius: 12px; background: #fff; color: inherit; font: 400 16px/1.2 'Figtree', sans-serif; min-width: 0; }
+.pf-form-linha { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pf-form-linha input[type="text"], .pf-form-linha input[type="email"], .pf-form-linha input[type="password"] { flex: 1 1 200px; }
+.pf-busca { flex: 1 1 200px; } .pf-busca.largo { width: 100%; margin: 4px 0 10px; }
+.pf-linha-bts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.pf-linha-bts .pf-bt { flex: 1 1 auto; }
+
+/* ---------- topo de cada aba ---------- */
+.pf-topo-aba { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
+.pf-topo-aba p { flex: 1 1 260px; margin: 0; color: var(--pf-apagado); font-size: .92rem; line-height: 1.45; }
+.pf-vazio { padding: 28px 18px; text-align: center; color: var(--pf-apagado); background: var(--pf-papel); border-radius: 16px; }
+.pf-vazio b { display: block; color: var(--pf-tinta); font-size: 1.05rem; margin-bottom: 6px; }
+
+/* ---------- a semana da feira ---------- */
+.pf-semana { display: inline-grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.pf-dia { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--pf-papel); color: #a6a294; font: 700 .72rem/1 'Figtree', sans-serif; }
+.pf-dia.on { background: var(--forest); color: #fff; }
+.pf-semana.todos .pf-dia.on { background: var(--leaf); }
+.pf-semana.editavel { display: grid; gap: 6px; width: 100%; max-width: 420px; }
+.pf-semana.editavel .pf-dia { width: auto; height: 52px; border: 1.5px solid var(--pf-linha); border-radius: 12px; background: #fff; color: var(--pf-apagado); font-size: 1.05rem; cursor: pointer; }
+.pf-semana.editavel .pf-dia.on { background: var(--forest); border-color: var(--forest); color: #fff; }
+
+/* ---------- feiras ---------- */
+.pf-feira-item { padding: 16px 0 18px; border-top: 1px solid var(--pf-linha); }
+.pf-feira-item:first-of-type { border-top: 0; padding-top: 4px; }
+.pf-feira-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.pf-feira-topo h3 { margin: 0; font-family: 'Fraunces', serif; font-size: 1.3rem; color: var(--forest); overflow-wrap: anywhere; }
+.pf-feira-prox { margin: 6px 0 8px; font-weight: 600; font-size: .92rem; }
+.pf-feira-bancas { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 6px; font-size: .9rem; }
+.pf-feira-bancas span { display: inline-flex; align-items: center; gap: 6px; }
+.pf-feira-conds { margin: 0; font-size: .86rem; color: var(--pf-apagado); line-height: 1.45; }
+.pf-alertas { list-style: none; margin: 10px 0 0; padding: 10px 12px; border-radius: 12px; background: #fdf3e2; color: #7a4a06; font-size: .86rem; display: grid; gap: 4px; }
+.pf-ponto { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; }
+
+/* ---------- listas (lojas, condomínios, mensalidades) ---------- */
+.pf-lista { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--pf-linha); }
+.pf-lista > li { border-bottom: 1px solid var(--pf-linha); }
+.pf-nada { padding: 18px 4px; color: var(--pf-apagado); }
+.pf-linha { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 4px; border: 0; background: none; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.pf-linha:hover { background: rgba(26, 58, 42, .03); }
+.pf-linha.bloq .pf-linha-txt b { color: var(--pf-apagado); text-decoration: line-through; }
+.pf-linha-txt { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.pf-linha-txt b { font-size: 1rem; overflow-wrap: anywhere; }
+.pf-linha-txt small, .pf-linha-num small { color: var(--pf-apagado); font-size: .82rem; }
+.pf-linha-num { flex: none; display: grid; text-align: right; gap: 2px; font-variant-numeric: tabular-nums; }
+.pf-cond { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 4px; }
+.pf-cond.editando { display: block; }
+.pf-cond-bts { display: flex; gap: 6px; }
+.pf-novo-cond { margin-bottom: 14px; padding: 14px; border-radius: 16px; background: var(--pf-papel); }
+.pf-novo-cond p { margin: 0 0 10px; font-size: .9rem; color: var(--pf-apagado); line-height: 1.45; }
+.pf-total { margin: 0 0 10px; font-size: .98rem; }
+.pf-total b { font-family: 'Fraunces', serif; font-size: 1.2rem; color: var(--forest); }
+.pf-mensal { padding: 12px 4px; }
+.pf-mensal .pf-linha-txt { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.pf-mensal.bloq .pf-linha-txt b { color: var(--pf-apagado); }
+.pf-mensal.mudou { background: var(--foam, #e8f5ee); }
+.pf-mensal-campos { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pf-mensal-campos label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: .9rem; }
+.pf-mensal-campos input[data-m="valor"] { width: 100px; text-align: right; }
+.pf-mensal-campos input[data-m="dia"] { width: 70px; }
+.pf-mensal-campos input[data-m="obs"] { flex: 1 1 160px; }
+
+/* ---------- chaves ---------- */
+.pf-chave { padding: 16px 0; border-bottom: 1px solid var(--pf-linha); }
+.pf-chave-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.pf-chave h3 { margin: 0; font-family: 'Fraunces', serif; font-size: 1.15rem; color: var(--forest); }
+.pf-chave p { margin: 8px 0 10px; font-size: .9rem; color: var(--pf-apagado); line-height: 1.45; }
+.pf-selo { flex: none; padding: 4px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700; background: #f6dcd8; color: var(--pf-perigo); }
+.pf-selo.ok { background: #e3f1e7; color: #1f6b3b; }
+
+/* ---------- folha de edição ---------- */
+.pf-folha-fundo.modal-overlay { padding: 0; align-items: flex-end; }
+.pf-folha { display: flex; flex-direction: column; width: 100%; max-width: 640px; max-height: 94dvh; background: var(--cream, #faf7f2); border-radius: 20px 20px 0 0; box-shadow: 0 -10px 40px rgba(20, 35, 26, .25); overflow: hidden; }
+@media (min-width: 720px) { .pf-folha-fundo.modal-overlay { align-items: center; padding: 24px; } .pf-folha { border-radius: 20px; max-height: 88dvh; } }
+.pf-folha-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 18px 12px; border-bottom: 1px solid var(--pf-linha); background: #fff; }
+.pf-folha-cab h2 { margin: 0; font-family: 'Fraunces', serif; font-size: 1.35rem; color: var(--forest); overflow-wrap: anywhere; }
+.pf-fechar { flex: none; width: 40px; height: 40px; border: 0; border-radius: 50%; background: var(--pf-papel, #f2ede3); font-size: 1.4rem; cursor: pointer; color: var(--pf-tinta, #1d2a22); }
+.pf-folha-corpo { flex: 1; overflow-y: auto; padding: 4px 18px 18px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.pf-folha-pe { display: flex; gap: 8px; padding: 12px 18px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--pf-linha, #e3ddd0); background: #fff; }
+.pf-folha-pe .pf-bt { flex: 1; }
+.pf-folha-pe:empty { display: none; }
+.pf-sec { padding: 16px 0; border-bottom: 1px solid var(--pf-linha, #e3ddd0); }
+.pf-sec:last-child { border-bottom: 0; }
+.pf-sec > input[type="text"], .pf-sec > input[type="email"], .pf-sec > select { width: 100%; }
+.pf-rot { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-weight: 700; font-size: .98rem; color: var(--pf-tinta, #1d2a22); }
+.pf-rot b { min-width: 24px; padding: 1px 8px; border-radius: 999px; background: var(--forest); color: #fff; font-size: .78rem; text-align: center; }
+.pf-rot.sub { margin-top: 14px; font-size: .92rem; }
+.pf-dica { display: block; margin-top: 6px; color: var(--pf-apagado, #6b6f66); font-size: .84rem; line-height: 1.45; }
+.pf-link { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.pf-link code { flex: 1; min-width: 0; padding: 9px 10px; border-radius: 10px; background: var(--pf-papel, #f2ede3); font-size: .82rem; overflow-wrap: anywhere; }
+.pf-marcar { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 300px; overflow-y: auto; }
+.pf-marcar label { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 12px; border: 1.5px solid var(--pf-linha, #e3ddd0); border-radius: 12px; background: #fff; cursor: pointer; }
+.pf-marcar label:has(input:checked) { border-color: var(--forest); background: #eef6f0; }
+.pf-marcar input { flex: none; width: 20px; height: 20px; accent-color: var(--forest); }
+.pf-marcar span { min-width: 0; display: grid; gap: 1px; }
+.pf-marcar small { color: var(--pf-apagado, #6b6f66); font-size: .8rem; }
+.pf-cond-rapido { margin-top: 10px; }
+.pf-campo-curto { font-weight: 600; font-size: .92rem; }
+.pf-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.pf-chip-data { display: inline-flex; align-items: center; gap: 4px; padding: 4px 4px 4px 12px; border-radius: 999px; background: #fbe6e2; color: #8a1c1c; font-size: .86rem; font-weight: 600; }
+.pf-chip-data button { width: 30px; height: 30px; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .06); color: inherit; font-size: 1.05rem; cursor: pointer; }
+.pf-sec-perigo { display: grid; gap: 4px; justify-items: start; }
+.pf-loja-cab { display: flex; align-items: center; gap: 10px; }
+.pf-loja-cab div { flex: 1; min-width: 0; display: grid; }
+.pf-loja-cab small { color: var(--pf-apagado, #6b6f66); }
+.pf-mes { margin: 0; line-height: 1.5; }
+.pf-donos { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
+.pf-donos li { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+.pf-donos li span { flex: 1; min-width: 0; }
+.pf-toggles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pf-toggles label { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 6px 14px; border: 1.5px solid var(--pf-linha, #e3ddd0); border-radius: 999px; background: #fff; font-size: .9rem; cursor: pointer; }
+.pf-toggles label:has(input:checked) { border-color: var(--forest); background: #eef6f0; }
+.pf-toggles input { width: 18px; height: 18px; accent-color: var(--forest); }
+.pf-mini-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.pf-mini-lista li { display: flex; justify-content: space-between; gap: 8px; }
+.pf-mini-lista small { color: var(--pf-apagado, #6b6f66); }
+@media (prefers-reduced-motion: reduce) { .pf-folha-fundo.modal-overlay, .pf-folha-fundo .pf-folha { animation: none !important; transition: none !important; } }

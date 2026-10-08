@@ -5,7 +5,7 @@ import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques } from './ranking-loja.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
-import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui } from './tema.js';
+import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras } from './tema.js';
 import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
@@ -421,6 +421,16 @@ const perguntarFeira = (lista) => customConfirm('Qual é a sua feira?', `O seu c
 // (celular com a hora errada mostraria preços de outro dia).
 let ACERTO_RELOGIO = 0;
 const agoraLoja = () => Date.now() + ACERTO_RELOGIO;
+// LISTA DE CONDOMÍNIOS do endereço: os que a banca cadastrou + os das feiras dela (cadastro da plataforma).
+// Sem isto, o cliente da feira não achava o condomínio dele na lista e caía em "não está na lista".
+const pintarListaDeCondominios = () => {
+    const daLoja = Array.isArray(STATE.config.condominios) ? STATE.config.condominios : [];
+    const ja = new Set(daLoja.filter((c) => c && c.nome).map((c) => normNome(c.nome)));
+    const lista = daLoja.concat(condominiosDasFeiras().filter((c) => !ja.has(normNome(c.nome))));
+    try { endCheckout.definirLista(lista); endTopo.definirLista(lista); } catch (_) { /* campos ainda não montados */ }
+};
+const normNome = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+document.addEventListener('feiras-da-loja', () => pintarListaDeCondominios());
 /** Para quando é o pedido de um cliente da feira (null = não é cliente de feira desta banca). */
 const entregaDaFeira = () => { const f = feiraDoClienteAqui(); return f ? proximaEntrega(f, agoraLoja()) : null; };
 /** Dia da semana que decide o preço: o da entrega da feira do cliente, ou hoje (Brasília). Mesmo critério do servidor. */
@@ -738,7 +748,7 @@ const iniciarRealTimeSync = () => {
     renderSkeletons();
     const unsubConfig = onSnapshot(tdoc("loja", "config"), (snap) => {
         if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()}; atualizarRodapeCarrinhoDOM();
-        endCheckout.definirLista(STATE.config.condominios); endTopo.definirLista(STATE.config.condominios);
+        pintarListaDeCondominios();
         pintarHorariosDeEntrega();
     }, (e) => console.warn('[loja] config:', e?.code || e));
     unsubscribes.push(unsubConfig);

@@ -177,6 +177,18 @@ const diaBR = () => new Date(Date.now() - 3 * 3600000).getUTCDay();          // 
 let FEIRAS_DA_LOJA = [], FEIRA_CLIENTE = null;
 /** A feira do cliente, se ele for de uma feira DESTA banca (senão null: a loja funciona como sempre). */
 export const feiraDoClienteAqui = () => FEIRA_CLIENTE;
+/**
+ * Condomínios das feiras desta banca (cadastro da plataforma), para a lista de endereço do cliente.
+ * Cliente de uma feira vê os da feira dele; sem feira, os de todas as feiras desta banca.
+ */
+export function condominiosDasFeiras() {
+    const fontes = FEIRA_CLIENTE ? [FEIRA_CLIENTE] : FEIRAS_DA_LOJA, vistos = new Set(), out = [];
+    for (const f of fontes) for (const c of Array.isArray(f && f.conds) ? f.conds : []) {
+        if (!c || !c.nome || vistos.has(c.id)) continue;
+        vistos.add(c.id); out.push({ id: `pf-${c.id}`, nome: String(c.nome).slice(0, 80), formato: ['ql', 'rua', 'livre'].includes(c.formato) ? c.formato : 'ql' });
+    }
+    return out;
+}
 const lojasValidas = (feira) => ((feira && feira.lojas) || []).filter((l) => l && /^[a-z0-9][a-z0-9-]{1,39}$/.test(l.id || '') && l.nome);
 
 function montarFeira(feiras) {
@@ -186,6 +198,7 @@ function montarFeira(feiras) {
     const { feira, doCliente } = feiraDoCliente(feiras, escolhida, diaBR());
     const antes = FEIRA_CLIENTE && FEIRA_CLIENTE.id; FEIRA_CLIENTE = doCliente ? feira : null;
     if ((FEIRA_CLIENTE && FEIRA_CLIENTE.id) !== antes) { try { document.dispatchEvent(new CustomEvent('feira-do-cliente')); } catch (_) { /* navegador antigo */ } }
+    try { document.dispatchEvent(new CustomEvent('feiras-da-loja')); } catch (_) { /* navegador antigo */ }
     if (doCliente) { montarVoltaDaFeira(barra, feira); aplicarAppDaFeira(feira); return; }
     if (escolhida) { barra.hidden = true; return; }             // cliente de outra feira: nenhuma banca de fora aparece aqui
     montarFaixa(barra, feira);

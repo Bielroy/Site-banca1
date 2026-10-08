@@ -10,8 +10,9 @@
 //  POST { acao: 'ativo', id, ativo }                        bloquear / liberar
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
 //  POST { acao: 'proprietario', id, email, remover? }
+//  POST { acao: 'condominio', id?, nome, formato, remover? }  cadastro de condomínios da plataforma
 //  POST { acao: 'assinatura', id, valor, dia, obs }        mensalidade da banca (valor vazio = tira)
-//  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids], condominios: [nomes], horaLimite: 'HH:MM', semFeira: ['AAAA-MM-DD'] }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
+//  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids], condominiosIds: [ids do cadastro], horaLimite: 'HH:MM', semFeira: ['AAAA-MM-DD'] }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
 //
 //  O primeiro acesso de plataforma ainda é dado pelo terminal
 //  (scripts/plataforma.js): não existe tela que promova alguém a dono de tudo.
@@ -24,6 +25,7 @@ const P = require('../lib/prudencia');
 const crypto = require('crypto');
 const Feira = require('../lib/feira');
 const Assinatura = require('../lib/assinatura');
+const Cond = require('../lib/condominios');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -74,11 +76,12 @@ async function lojas(res) {
     const modulos = {}; Object.keys(MODULOS).forEach((m) => { modulos[m] = m === 'ia' && id !== T.TENANT_PADRAO ? !!(f.modulos && f.modulos.ia === true) : T.moduloAtivo(f, m); });
     return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, mes, donos, assinatura: assinaturas.get(id) || null };
   }));
-  const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira) }));
+  const condominios = await Cond.garantir(db, T).catch(() => []);
+  const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, condominiosIds: Cond.idsDaFeira(condominios, d.data()), dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira) }));
   const seg = await db.collection('plataforma').doc('segredos').get();
   const fotos = /^[a-f0-9]{32}$/i.test(String(process.env.IMGBB_API_KEY || (seg.exists && seg.data().imgbb) || ''));
   const pix = !!process.env.PAGBANK_API_TOKEN || Segredos.tokenPagbankValido(seg.exists && seg.data().pagbank);
-  return res.status(200).json({ sucesso: true, lojas: lista, feiras, modelos: Object.keys(MODELOS), modulos: MODULOS, mes: mesAtual(), fotos, pix });
+  return res.status(200).json({ sucesso: true, lojas: lista, feiras, condominios, modelos: Object.keys(MODELOS), modulos: MODULOS, mes: mesAtual(), fotos, pix });
 }
 
 async function definirDono(id, email, remover) {
@@ -197,13 +200,46 @@ async function feira(req, res) {
     if (lista.length > MAX_FEIRAS_POR_LOJA) throw falha(400, `${f.nome || id} já está em ${MAX_FEIRAS_POR_LOJA} feiras. Tire de uma antes.`);
     lote.set(fichaRef(id), { ...base(f), feiras: lista, feiraId: lista[0] }, { merge: true });
   }
-  const condominios = limparCondominios(b.condominios);
+  // CONDOMÍNIOS: marcados do cadastro da plataforma (condominiosIds). Telas antigas ainda mandam nomes escritos.
+  const doCadastro = Array.isArray(b.condominiosIds) ? Cond.copiaParaFeira(Cond.escolher(await Cond.garantir(db, T), b.condominiosIds)) : null;
+  const condominios = doCadastro ? doCadastro.condominios : limparCondominios(b.condominios), conds = doCadastro ? doCadastro.conds : [];
   // horário limite do pedido para o mesmo dia (vazio = aceita o dia todo) e datas sem feira (chuva, feriado)
   const horaLimite = Feira.limparHora(b.horaLimite), semFeira = Feira.limparDatas(b.semFeira);
-  if (ids.length) lote.set(refFeira, { nome, dias, condominios, horaLimite, semFeira, lojas: fichas.map(([id, f]) => ({ id, nome: f.nome || NOME_ORIGINAL, cor: (f.tema && f.tema.primaria) || '#1a3a2a' })), atualizadoEm: new Date().toISOString() });
+  if (ids.length) lote.set(refFeira, { nome, dias, condominios, conds, horaLimite, semFeira, lojas: fichas.map(([id, f]) => ({ id, nome: f.nome || NOME_ORIGINAL, cor: (f.tema && f.tema.primaria) || '#1a3a2a' })), atualizadoEm: new Date().toISOString() });
   else lote.delete(refFeira);
   await lote.commit();
   saem.concat(ids).forEach((id) => T._cacheFichas.delete(id));
+  return res.status(200).json({ sucesso: true });
+}
+
+// CADASTRO DE CONDOMÍNIOS (aba Condomínios). Mudar nome/formato atualiza as feiras que usam;
+// tirar só deixa quando nenhuma feira usa (senão a feira perderia o condomínio sem ninguém perceber).
+async function condominio(req, res) {
+  const b = req.body || {}, lista = await Cond.garantir(db, T);
+  const nome = texto(b.nome, 80), formato = Cond.FORMATOS.includes(b.formato) ? b.formato : 'ql', id = String(b.id || '');
+  const feirasSnap = await db.collection('feiras').get();
+  const usam = (cid) => feirasSnap.docs.filter((d) => Cond.idsDaFeira(lista, d.data()).includes(cid));
+  if (b.remover === true) {
+    const em = usam(id);
+    if (em.length) throw falha(409, `Este condomínio está na feira ${em.map((d) => d.data().nome || d.id).join(', ')}. Tire de lá antes.`);
+    await Cond.salvar(db, lista.filter((c) => c.id !== id));
+    return res.status(200).json({ sucesso: true });
+  }
+  if (Cond.normCond(nome).length < 2) throw falha(400, 'Escreva o nome do condomínio.');
+  const igual = lista.find((c) => Cond.normCond(c.nome) === Cond.normCond(nome) && c.id !== id);
+  if (igual) throw falha(409, `Já existe "${igual.nome}" no cadastro.`);
+  if (id) {
+    const atual = lista.find((c) => c.id === id); if (!atual) throw falha(404, 'Condomínio não encontrado.');
+    const nova = lista.map((c) => (c.id === id ? { ...c, nome, formato } : c));
+    await Cond.salvar(db, nova);
+    // as feiras que usam este condomínio passam a ter o nome e o formato novos
+    const lote = db.batch(); let n = 0;
+    for (const d of usam(id)) { lote.set(d.ref, Cond.copiaParaFeira(Cond.escolher(Cond.limparLista(nova), Cond.idsDaFeira(lista, d.data()))), { merge: true }); n++; }
+    if (n) await lote.commit();
+    return res.status(200).json({ sucesso: true });
+  }
+  if (lista.length >= Cond.MAX) throw falha(400, `O cadastro chegou a ${Cond.MAX} condomínios.`);
+  await Cond.salvar(db, [...lista, { nome, formato }]);
   return res.status(200).json({ sucesso: true });
 }
 
@@ -260,7 +296,7 @@ module.exports = async function handler(req, res) {
   // outra conta dona da loja original ainda conseguiria assumir. Ao usar a tela, o registro passa a existir.
   try { await db.runTransaction(async (t) => { const r = db.collection('plataforma').doc('dono'), s = await t.get(r); if (!s.exists) t.set(r, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() }); }); }
   catch (e) { console.error('[plataforma] dono', e && e.message); }
-  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res) };
+  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
   const nomeAcao = typeof (req.body || {}).acao === 'string' ? (req.body || {}).acao : '';
   const fn = Object.prototype.hasOwnProperty.call(acoes, nomeAcao) ? acoes[nomeAcao] : null;
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });
@@ -271,6 +307,7 @@ module.exports = async function handler(req, res) {
       : nomeAcao === 'proprietario' ? `${alvo}: ${b.remover === true ? 'tirou' : 'definiu'} ${String(b.email || '').slice(0, 80)}`
       : nomeAcao === 'ativo' ? `${alvo}: ${b.ativo === true ? 'liberou' : 'bloqueou'}`
       : nomeAcao === 'criar-loja' ? `${alvo} (${String(b.emailDono || 'sem dono').slice(0, 80)})`
+      : nomeAcao === 'condominio' ? `${b.remover === true ? 'tirou' : b.id ? 'mudou' : 'cadastrou'} ${String(b.nome || b.id || '').slice(0, 60)}`
       : nomeAcao === 'assinatura' ? `${alvo}: ${String(b.valor == null ? '' : b.valor).trim() === '' ? 'sem mensalidade' : `R$ ${String(b.valor).slice(0, 12)}`}` : alvo;
     await anotar(`plataforma-${nomeAcao}`, detalhe);
     if (['proprietario', 'pagbank', 'ativo'].includes(nomeAcao)) await P.alertar(db, T.TENANT_PADRAO, `plataforma-${nomeAcao}`, { titulo: 'Plataforma alterada', corpo: `${dec.email || 'O dono da plataforma'} mudou: ${nomeAcao} (${detalhe}).`, url: '/plataforma.html' });

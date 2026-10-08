@@ -19,13 +19,26 @@
 </head>
 <body>
     <main id="plataforma" class="pf">
-        <div class="toldo" aria-hidden="true"></div>
-        <header class="dash-header">
-            <h2>Plataforma</h2>
-            <div class="dash-acoes"><a class="btn-outline" href="./admin.html" style="padding: 10px 16px; text-decoration:none;"><i class="ic" data-i="loja"></i>Painel da loja</a></div>
+        <header class="pf-cab">
+            <div class="pf-cab-titulo"><h1>Plataforma</h1><p id="pf-resumo" class="pf-resumo-linha"></p></div>
+            <a class="pf-voltar" href="./admin.html">Painel da loja</a>
         </header>
-        <div id="pf-conteudo" aria-live="polite"><p class="config-sub">Conferindo o seu acesso...</p></div>
+        <nav class="pf-abas" id="pf-abas" role="tablist" aria-label="Partes da plataforma" hidden>
+            <button type="button" role="tab" data-aba="feiras">Feiras</button>
+            <button type="button" role="tab" data-aba="lojas">Lojas</button>
+            <button type="button" role="tab" data-aba="condominios">Condomínios</button>
+            <button type="button" role="tab" data-aba="mensalidades">Mensalidades</button>
+            <button type="button" role="tab" data-aba="chaves">Chaves</button>
+        </nav>
+        <div id="pf-conteudo" class="pf-conteudo" aria-live="polite"><p class="config-sub">Conferindo o seu acesso...</p></div>
     </main>
+    <div class="modal-overlay pf-folha-fundo" id="pf-folha" role="dialog" aria-modal="true" aria-labelledby="pf-folha-titulo" aria-hidden="true">
+        <div class="pf-folha">
+            <header class="pf-folha-cab"><h2 id="pf-folha-titulo"></h2><button type="button" class="pf-fechar" data-pf="fechar-folha" aria-label="Fechar">&times;</button></header>
+            <div class="pf-folha-corpo" id="pf-folha-corpo"></div>
+            <footer class="pf-folha-pe" id="pf-folha-pe"></footer>
+        </div>
+    </div>
     <div class="toast" id="toast" role="alert"></div>
     <script type="module" src="./js/plataforma.js"></script>
 </body>

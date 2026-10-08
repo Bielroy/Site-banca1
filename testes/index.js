@@ -367,6 +367,34 @@ teste('motor: feira sem dia marcado não faz o motor prever venda em dia que a b
   const doms = (r.meta.hz.prox7 || []).filter((iso) => new Date(`${iso}T12:00:00Z`).getUTCDay() === 0);
   assert.strictEqual(doms.length, 0, 'domingo continua fechado'); assert.ok((r.meta.hz.prox7 || []).some((iso) => new Date(`${iso}T12:00:00Z`).getUTCDay() === 6), 'sábado (dia marcado da feira) abre');
 });
+teste('plataforma: cadastro de condomínios nasce do que já existe; a feira marca do cadastro; renomear atualiza a feira; não tira o que está em uso', async () => {
+  const sem = { ...semente(), 'loja/config': { ...semente()['loja/config'], condominios: [{ id: 'a', nome: 'Jardins Munique', formato: 'ql' }, { id: 'b', nome: 'Parque', formato: 'rua', ativo: false }] },
+    'feiras/f-velha': { nome: 'Velha', dias: [3], condominios: ['JARDINS munique', 'Vila Nova'], lojas: [{ id: 'banca' }] } };
+  const db = criarBanco(sem); const api = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, TOKENS));
+  const pf = (body) => chamar(api, { headers: { Authorization: 'Bearer plataforma' }, body });
+  let r = await pf({ acao: 'lojas' }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.deepStrictEqual(r.corpo.condominios.map((c) => c.nome), ['Jardins Munique', 'Vila Nova'], 'loja + feira antiga, sem repetir e sem o desligado');
+  assert.deepStrictEqual(r.corpo.feiras.find((f) => f.id === 'f-velha').condominiosIds.sort(), ['jardins-munique', 'vila-nova'], 'feira antiga reconhecida pelo nome');
+  assert.strictEqual((await pf({ acao: 'condominio', nome: 'Aldeia', formato: 'livre' })).status, 200);
+  assert.strictEqual((await pf({ acao: 'condominio', nome: 'aldeia' })).status, 409, 'nome repetido');
+  r = await pf({ acao: 'feira', fid: 'f-nova', nome: 'Nova', dias: [5], lojas: ['banca', 'espetinhos'], condominiosIds: ['aldeia', 'inventado', 'jardins-munique'] });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  const f = db._dados.get('feiras/f-nova');
+  assert.deepStrictEqual(f.conds, [{ id: 'aldeia', nome: 'Aldeia', formato: 'livre' }, { id: 'jardins-munique', nome: 'Jardins Munique', formato: 'ql' }], 'id inventado é ignorado');
+  assert.deepStrictEqual(f.condominios, ['Aldeia', 'Jardins Munique']);
+  assert.strictEqual((await pf({ acao: 'condominio', id: 'aldeia', remover: true })).status, 409, 'em uso numa feira: não sai');
+  assert.strictEqual((await pf({ acao: 'condominio', id: 'aldeia', nome: 'Aldeia do Vale', formato: 'ql' })).status, 200);
+  assert.deepStrictEqual(db._dados.get('feiras/f-nova').conds[0], { id: 'aldeia', nome: 'Aldeia do Vale', formato: 'ql' }, 'renomear atualiza a feira');
+  assert.ok(db._dados.get('feiras/f-nova').condominios.includes('Aldeia do Vale'));
+  assert.strictEqual((await pf({ acao: 'condominio', id: 'vila-nova', remover: true })).status, 409, 'Vila Nova ainda está na feira velha (pelo nome)');
+  assert.notStrictEqual((await chamar(api, { headers: { Authorization: 'Bearer dono-espetinhos' }, body: { acao: 'condominio', nome: 'X y' } })).status, 200, 'só a plataforma mexe no cadastro');
+  const C = require(raiz('lib/condominios'));
+  assert.deepStrictEqual(C.limparLista([{ nome: 'A b' }, { nome: 'a  B' }, { nome: '<x>y', formato: 'rua' }, { nome: '' }]).map((c) => [c.id, c.nome, c.formato]), [['a-b', 'A b', 'ql'], ['x-y', 'x y', 'rua']]);
+});
+teste('loja: os condomínios das feiras entram na lista de endereço (cliente da feira vê os da feira dele)', async () => {
+  const src = require('fs').readFileSync(raiz('js/loja.js'), 'utf8');
+  assert.ok(/condominiosDasFeiras\(\)/.test(src) && /feiras-da-loja/.test(src), 'a loja junta os condomínios das feiras na lista');
+});
 teste('aba Clientes: pedido novo aparece na hora (recalcula só quando há pedido depois do último cálculo)', async () => {
   const db = criarBanco({ ...semente(), 'pedidos/n1': { nome: 'Ana Teste', quadra: '7', lote: '2', condominio: 'Jardins', total: 12, data: new Date().toISOString(), itens: [{ id: 'tomate', nome: 'Tomate', qtd: 1, tipo: 'kg', unidade: 'kg', preco: 8.9 }] } });
   const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));
