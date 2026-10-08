@@ -1,0 +1,24 @@
+/* Tela de entrada da feira (feira.html): as bancas da feira, uma embaixo da outra. */
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; min-height: 100vh; background: var(--cream); color: var(--text-dark); font-family: 'Figtree', system-ui, -apple-system, sans-serif; }
+.fe { max-width: 560px; margin: 0 auto; padding: max(28px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom)); }
+.fe-topo { padding: 22px 20px 24px; border-radius: 24px; background: var(--forest); color: var(--cream); }
+.fe-selo { display: inline-block; padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, .14); font-size: .74rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.fe-topo h1 { margin: 12px 0 6px; font-family: 'Fraunces', serif; font-size: clamp(1.6rem, 6vw, 2.1rem); line-height: 1.12; font-weight: 700; overflow-wrap: anywhere; }
+.fe-dias { margin: 0; font-size: .95rem; opacity: .85; }
+.fe-dias:empty { display: none; }
+.fe-lista { display: grid; gap: 12px; margin-top: 18px; }
+.fe-banca { display: flex; align-items: center; gap: 14px; min-height: 76px; padding: 14px 16px; border-radius: 18px; background: var(--warm-white); border: 1px solid #e6e0d4; box-shadow: var(--shadow-sm); color: inherit; text-decoration: none; transition: transform .12s ease, box-shadow .12s ease; }
+.fe-banca:hover, .fe-banca:focus-visible { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.fe-banca:active { transform: scale(.99); }
+.fe-cor { flex: none; width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; color: #fff; font-family: 'Fraunces', serif; font-weight: 700; font-size: 1.25rem; background: var(--forest); }
+.fe-txt { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.fe-txt b { font-size: 1.06rem; overflow-wrap: anywhere; }
+.fe-txt small { color: var(--text-light); font-size: .86rem; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.fe-seta { flex: none; color: var(--text-light); font-size: 1.4rem; }
+.fe-esqueleto { min-height: 76px; border-radius: 18px; background: linear-gradient(90deg, #efe9dd 25%, #f6f2ea 50%, #efe9dd 75%); background-size: 200% 100%; animation: fe-brilho 1.2s linear infinite; }
+@keyframes fe-brilho { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .fe-esqueleto { animation: none; } .fe-banca { transition: none; } }
+.fe-aviso { margin: 18px 0 0; padding: 16px; border-radius: 16px; background: var(--warning-light); color: #7a4a06; font-weight: 600; line-height: 1.5; }
+.fe-rodape { margin: 22px 4px 0; color: var(--text-light); font-size: .86rem; line-height: 1.5; }

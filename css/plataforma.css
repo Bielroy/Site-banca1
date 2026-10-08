@@ -32,3 +32,6 @@
 
 /* botão desligado precisa parecer desligado */
 .pf button:disabled, .pf .btn-outline:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.pf-feira textarea { width: 100%; min-height: 76px; padding: 10px 12px; border: 1.5px solid #e0dcd4; border-radius: 12px; font: inherit; font-size: .92rem; resize: vertical; background: #fff; }
+.pf-link-feira { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pf-link-feira code { flex: 1 1 200px; min-width: 0; padding: 8px 10px; border-radius: 10px; background: #f3efe6; font-size: .82rem; overflow-wrap: anywhere; }

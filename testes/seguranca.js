@@ -843,17 +843,17 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
     const r1 = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedidoDe() });
     const ck = cookieDe(r1), cid = ck.split('=')[1].split('.')[0];
     const sujo = { sacola: [{ id: 'ovos', qtd: 2, tipo: 'un', preco: 0.01, nome: '<script>alert(1)</script>' }, { id: 'a/b', qtd: 1 }, { id: 'tomate', qtd: -1 }, { id: 'ovos', qtd: 9 }, { id: 'tomate', qtd: 1.5, tipo: 'kg' }, 'x', null],
-      prefs: { favs: ['ovos', {}, 'x/y', 'ovos', null], modo: { tomate: 'kg', ovos: 'banana', '__proto__': 'kg' }, admin: true }, chaves: ['x'], nome: 'Invasor', pedidos: ['pedido-b-0001'] };
+      prefs: { favs: ['ovos', {}, 'x/y', 'ovos', null], modo: { tomate: 'kg', ovos: 'banana', '__proto__': 'kg' }, feira: '../outra', admin: true }, chaves: ['x'], nome: 'Invasor', pedidos: ['pedido-b-0001'] };
     const g = await conta(api, 'conta-guardar', sujo, { Cookie: ck });
     assert.deepStrictEqual(g.corpo, { sucesso: true, guardado: true });
     let c = db._dados.get(`contas/${cid}`);
     assert.deepStrictEqual(c.sacola, [{ id: 'ovos', qtd: 2, tipo: 'un' }, { id: 'tomate', qtd: 1.5, tipo: 'kg' }]);
-    assert.deepStrictEqual(c.prefs, { favs: ['ovos'], modo: { tomate: 'kg' } });
+    assert.deepStrictEqual(c.prefs, { favs: ['ovos'], modo: { tomate: 'kg' }, feira: '' });
     assert.strictEqual(c.nome, 'Ana'); assert.strictEqual(c.chaves.length, 1); assert.strictEqual(c.pedidos.length, 1, 'guardar não mexe em nome, chaves nem pedidos');
     assert.strictEqual((await conta(api, 'conta-guardar', sujo, { Cookie: ck })).corpo.guardado, false, 'nada mudou: não grava de novo');
     // tirar um favorito tira mesmo (o campo é trocado inteiro)
-    await conta(api, 'conta-guardar', { prefs: { favs: [], modo: {} } }, { Cookie: ck });
-    assert.deepStrictEqual(db._dados.get(`contas/${cid}`).prefs, { favs: [], modo: {} });
+    await conta(api, 'conta-guardar', { prefs: { favs: [], modo: {}, feira: 'quarta-jardins' } }, { Cookie: ck });
+    assert.deepStrictEqual(db._dados.get(`contas/${cid}`).prefs, { favs: [], modo: {}, feira: 'quarta-jardins' }, 'a feira do cliente fica na conta');
     // sem crachá (ou com crachá falso) não guarda nem cria nada
     const antes = soDe(db, 'contas/');
     assert.strictEqual((await conta(api, 'conta-guardar', sujo)).corpo.guardado, false);

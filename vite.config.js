@@ -29,7 +29,7 @@ const raiz = process.cwd();
 // diante nenhum deploy entrou no ar. Agora só entra na lista a página que
 // existe de verdade; a que faltar fica de fora e o resto do site sobe.
 // ---------------------------------------------------------------------
-const PAGINAS = { main: 'index.html', admin: 'admin.html', privacidade: 'privacidade.html', plataforma: 'plataforma.html' };
+const PAGINAS = { main: 'index.html', admin: 'admin.html', privacidade: 'privacidade.html', plataforma: 'plataforma.html', feira: 'feira.html' };
 const paginasExistentes = Object.fromEntries(
   Object.entries(PAGINAS)
     .filter(([, arquivo]) => existsSync(resolve(raiz, arquivo)))

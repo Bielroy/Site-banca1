@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Feira | Escolha a sua banca</title>
+    <meta name="description" content="As bancas da sua feira, num lugar só. Escolha a banca e faça o seu pedido.">
+    <meta name="theme-color" content="#1a3a2a">
+    <meta name="robots" content="noindex">
+    <!-- Prévia do link no WhatsApp. É a mesma para todas as feiras: quem monta a prévia não roda o código da página. -->
+    <meta property="og:title" content="Sua feira no celular">
+    <meta property="og:description" content="Toque para ver as bancas da sua feira e fazer o seu pedido.">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="pt_BR">
+    <meta property="og:image" content="https://site-banca1.vercel.app/og-image.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" href="/icon-192.png">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Feira">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght,SOFT@9..144,500..900,0..100&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/variables.css">
+    <link rel="stylesheet" href="/css/feira.css">
+</head>
+<body>
+    <main class="fe" id="fe" aria-live="polite">
+        <header class="fe-topo">
+            <span class="fe-selo">Feira</span>
+            <h1 id="fe-nome">Carregando a feira…</h1>
+            <p id="fe-dias" class="fe-dias"></p>
+        </header>
+        <section class="fe-lista" id="fe-lista" aria-label="Bancas desta feira"></section>
+        <p class="fe-aviso" id="fe-aviso" hidden></p>
+        <p class="fe-rodape">Escolha uma banca para ver os produtos e fazer o seu pedido. Cada banca recebe o pedido dela.</p>
+    </main>
+    <script type="module" src="/js/feira.js"></script>
+</body>
+</html>

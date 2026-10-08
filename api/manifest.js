@@ -4,6 +4,7 @@
 //  GET /api/manifest?loja=espetinhos-do-ze            → manifesto (nome, cor, ícone)
 //  GET /api/manifest?loja=espetinhos-do-ze&icone=1    → o ícone, em SVG
 //  ...&painel=1 em qualquer um dos dois               → o aplicativo do PAINEL da loja (abre /admin.html)
+//  GET /api/manifest?feira=quarta-jardins (&icone=1)   → o aplicativo da FEIRA (abre /feira/quarta-jardins)
 //
 //  Quem instala a loja na tela inicial do celular vê o NOME e o ÍCONE dela,
 //  e não mais os da Banca em todas. O ícone é o desenho do tipo de negócio
@@ -71,8 +72,42 @@ async function fichaEmCache(id, agora = Date.now()) {
   return s;
 }
 
+// O "APP" DE UMA FEIRA: quem instala a partir da tela da feira (ou de uma banca, sendo cliente da feira)
+// fica com um ícone que abre a FEIRA, com todas as bancas dela.
+function manifestoDaFeira(fid, f) {
+  const nome = limpo(f.nome, 60) || 'Feira', primeira = (Array.isArray(f.lojas) && f.lojas[0]) || {}, icone = `/api/manifest?feira=${encodeURIComponent(fid)}&icone=1`;
+  return {
+    id: `/feira/${fid}`, name: nome, short_name: nome.length > 14 ? nome.split(' ').slice(0, 2).join(' ').slice(0, 14) : nome,
+    description: `As bancas da ${nome}. Escolha a banca e peça.`, lang: 'pt-BR', start_url: `/feira/${encodeURIComponent(fid)}`, scope: '/',
+    display: 'standalone', orientation: 'portrait', theme_color: cor(primeira.cor, '#1a3a2a'), background_color: '#faf7f2', categories: ['shopping', 'food'],
+    icons: [{ src: icone, sizes: '512x512', type: 'image/svg+xml', purpose: 'any' }, { src: icone, sizes: '192x192', type: 'image/svg+xml', purpose: 'any' }, { src: icone, sizes: '512x512', type: 'image/svg+xml', purpose: 'maskable' }],
+  };
+}
+const _feiras = new Map();
+async function feiraEmCache(fid, agora = Date.now()) {
+  const c = _feiras.get(fid);
+  if (c && agora - c.em < 300000) return c.v;
+  if (_feiras.size > 200) _feiras.clear();
+  const snap = await db.collection('feiras').doc(fid).get(), v = snap.exists ? snap.data() : null;
+  _feiras.set(fid, { em: agora, v });
+  return v;
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Método não permitido.' });
+  const fid = String((req.query && req.query.feira) || '');
+  if (fid) {
+    if (!T.idValido(fid)) return res.status(404).json({ error: 'Feira não encontrada.' });
+    try {
+      boot();
+      const f = await feiraEmCache(fid);
+      if (!f) return res.status(404).json({ error: 'Feira não encontrada.' });
+      res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=300');
+      if (req.query.icone) { res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8'); res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'"); return res.status(200).send(iconeSvg({ tema: { primaria: ((f.lojas || [])[0] || {}).cor }, tipo: '' })); }
+      res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+      return res.status(200).send(JSON.stringify(manifestoDaFeira(fid, f)));
+    } catch (e) { console.error('[manifest] feira', e && e.message); return res.status(500).json({ error: 'Não foi possível montar o aplicativo desta feira.' }); }
+  }
   const id = String((req.query && req.query.loja) || '');
   if (!T.idValido(id) || id === T.TENANT_PADRAO) return res.status(404).json({ error: 'Loja não encontrada.' });
   try {
@@ -89,3 +124,4 @@ module.exports = async function handler(req, res) {
 };
 module.exports.iconeSvg = iconeSvg;
 module.exports.manifesto = manifesto;
+module.exports.manifestoDaFeira = manifestoDaFeira;

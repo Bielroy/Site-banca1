@@ -5,7 +5,8 @@ import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques } from './ranking-loja.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
-import { iniciarTema } from './tema.js';
+import { iniciarTema, feiraPeloCondominio, feiraDaConta } from './tema.js';
+import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
 import { podePagarPix } from './pix-lib.js';
 import { lerEntrega, previaDaEntrega } from './entrega-lib.js';
@@ -407,7 +408,11 @@ const persistirCarrinhoComDebounce = () => {
 };
 // CONTA DO CLIENTE: a sacola, os favoritos e o "unidade ou quilo" também ficam guardados na loja,
 // para voltarem se o aparelho apagar tudo (o iPhone faz isso depois de 7 dias sem abrir o site).
-const guardarNaConta = () => agendarGuardar(() => ({ sacola: sacolaParaGuardar(STATE.carrinho), prefs: { favs: STATE.favoritos, modo: MODO_MEM } }));
+const guardarNaConta = () => agendarGuardar(() => ({ sacola: sacolaParaGuardar(STATE.carrinho), prefs: { favs: STATE.favoritos, modo: MODO_MEM, feira: lerFeiraCliente() } }));
+// Condomínio que é de uma feira desta banca: o cliente passa a ser daquela feira (e a conta lembra).
+// Se o condomínio tem duas feiras aqui, a pessoa escolhe.
+const perguntarFeira = (lista) => customConfirm('Qual é a sua feira?', `O seu condomínio é atendido em mais de uma feira desta banca. Escolha a sua: cada feira tem os seus preços e o seu dia.`, { ok: lista[0].nome, nao: lista[1].nome }).then((sim) => (sim ? lista[0].id : lista[1].id));
+const feiraDoEnderecoSalvo = (e) => { if (e && e.condominio) feiraPeloCondominio(e.condominio, perguntarFeira).then((id) => { if (id) guardarNaConta(); }).catch(() => {}); };
 
 // Modificado para aceitar o "tipo" de compra (Kg ou Un)
 const modificarCarrinho = (id, delta, fixo = false, tipoCompraForcado = null) => {
@@ -1393,6 +1398,7 @@ const aplicarConta = async (conta, porLink) => {
     const clientes = lerLista('banca_clientes'), semEndereco = !lerEnderecoSalvo();
     if (cliente && (porLink || !clientes.length)) guardar('banca_clientes', [cliente, ...clientes.filter(c => String(c && c.nome || '').toLowerCase() !== cliente.nome.toLowerCase())].slice(0, 5));
     if (endereco && (porLink || semEndereco)) salvarEndereco(endereco);
+    feiraDaConta(conta.feira);                               // celular novo: volta para a feira de antes
     guardar('banca_meus_pedidos', juntarPedidos(lerLista('banca_meus_pedidos'), conta.pedidos));
     STATE.favoritos = unirFavs(STATE.favoritos, conta.favs); guardar('banca_favs', STATE.favoritos);
     MODO_MEM = limparMemoria(unirModo(MODO_MEM, conta.modo)); guardar('banca_modo', MODO_MEM);
@@ -1420,6 +1426,7 @@ const esquecerDados = async () => {
     // (só o login anônimo de cliente: quem está logado no painel neste navegador continua logado)
     try { if (auth.currentUser && auth.currentUser.isAnonymous) await signOut(auth); } catch (_) { /* segue */ }
     ['banca_clientes', 'banca_endereco', 'banca_meus_pedidos', 'banca_favs', 'banca_modo', CHAVE_LISTA].forEach((k) => { try { localStorage.removeItem(chave(k)); } catch (_) { /* segue */ } });
+    esquecerFeiraCliente();
     showToast('Pronto. Este aparelho esqueceu os seus dados.');
     setTimeout(() => location.reload(), 1300);
 };
@@ -1427,7 +1434,7 @@ const esquecerDados = async () => {
 document.getElementById('btn-salvar-endereco').addEventListener('click', () => {
     const falta = endTopo.validar();
     if (falta) return showToast(falta, true);
-    salvarEndereco(endTopo.ler()); pintarResumoEndereco();
+    const endNovo = endTopo.ler(); salvarEndereco(endNovo); pintarResumoEndereco(); feiraDoEnderecoSalvo(endNovo);
     closeModal('modal-endereco');
     if (history.state && history.state.modal === 'modal-endereco') history.back();
     showToast('Endereço guardado neste aparelho');
@@ -1792,7 +1799,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             clientes.unshift(este);
             localStorage.setItem(chave('banca_clientes'), JSON.stringify(clientes.slice(0, 5)));
             if (data.temConta) marcarConta(true);
-            salvarEndereco(endereco); pintarResumoEndereco();
+            salvarEndereco(endereco); pintarResumoEndereco(); feiraDoEnderecoSalvo(endereco);
 
             const meusPedidos = lerLista('banca_meus_pedidos');
             meusPedidos.unshift({

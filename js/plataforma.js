@@ -8,7 +8,7 @@
 import { auth, onAuthStateChanged } from './firebase.js';
 import { urlDaLoja } from './tenant.js';
 import { escapeHTML, fmt, showToast, customConfirm } from './utils.js';
-import { sugerirId, idValido, totais, DIAS_SEMANA, diasEmTexto } from './plataforma-lib.js';
+import { sugerirId, idValido, totais, DIAS_SEMANA, diasEmTexto, limparCondominios } from './plataforma-lib.js';
 import './icones-admin.js';
 
 const S = { dados: null, nova: false, novaFeira: false, ocupado: false };
@@ -51,6 +51,7 @@ function lojaHtml(l, modulos) {
         </div>
     </article>`;
 }
+const linkDaFeira = (fid) => `${location.origin}/feira/${fid}`;
 function feiraHtml(f, lojas, nova) {
     return `
     <div class="pf-feira" data-feira="${escapeHTML(f.id)}">
@@ -60,6 +61,11 @@ function feiraHtml(f, lojas, nova) {
         <small class="dica-campo">Sem dia marcado, a feira vale para todos os dias.</small>
         <span class="pf-rotulo">Lojas que vão nesta feira</span>
         <div class="pf-modulos">${lojas.map((l) => `<label><input type="checkbox" data-pf-feira-loja="${escapeHTML(l.id)}"${f.lojas.includes(l.id) ? ' checked' : ''}> ${escapeHTML(l.nome)}</label>`).join('')}</div>
+        <span class="pf-rotulo">Condomínios desta feira</span>
+        <textarea data-pf-feira-cond rows="3" maxlength="3400" placeholder="Um por linha. Ex.: Jardins Munique">${escapeHTML((f.condominios || []).join('\n'))}</textarea>
+        <small class="dica-campo">Cliente que chega sem o link e escolhe um destes condomínios cai nesta feira. Escreva igual ao nome da lista de condomínios das bancas.</small>
+        ${nova ? '' : `<span class="pf-rotulo">Link da feira</span><div class="pf-link-feira"><code>${escapeHTML(linkDaFeira(f.id))}</code><button type="button" class="btn-outline" data-pf="copiar-link-feira">Copiar</button></div>
+        <small class="dica-campo">Mande este link aos clientes desta feira. Quem entra por ele vê só as bancas desta feira.</small>`}
         <div class="pf-acoes"><button type="button" class="btn-outline" data-pf="salvar-feira">${nova ? 'Criar feira' : 'Salvar'}</button>${nova ? '<button type="button" class="btn-outline" data-pf="cancelar-feira">Cancelar</button>' : '<button type="button" class="btn-outline pf-perigo" data-pf="desfazer-feira">Desfazer feira</button>'}</div>
     </div>`;
 }
@@ -81,7 +87,7 @@ function render() {
     <div class="pf-lojas">${d.lojas.map((l) => lojaHtml(l, d.modulos)).join('')}</div>
     <div class="pf-secao"><h3>Feiras</h3><button class="btn-outline" data-pf="nova-feira">${S.novaFeira ? 'Fechar' : '+ Nova feira'}</button></div>
     ${S.novaFeira ? feiraHtml({ id: '', nome: '', dias: [], lojas: [] }, d.lojas, true) : ''}
-    ${d.feiras.length ? d.feiras.map((f) => feiraHtml(f, d.lojas, false)).join('') : (S.novaFeira ? '' : `<p class="config-sub">Nenhuma feira. Cada feira tem os seus dias da semana e as lojas que vão nela. No dia da feira, o cliente vê só essas lojas na faixa do topo e troca de uma para a outra deslizando o dedo. A faixa aparece quando a feira tem duas lojas ou mais.</p>`)}
+    ${d.feiras.length ? d.feiras.map((f) => feiraHtml(f, d.lojas, false)).join('') : (S.novaFeira ? '' : `<p class="config-sub">Nenhuma feira. Cada feira tem os seus dias da semana e as lojas que vão nela. Cada feira ganha um link: quem entra por ele vê só as bancas daquela feira.</p>`)}
     <div class="pf-secao"><h3>PIX automático (PagBank)</h3><span class="pf-chip${d.pix ? '' : ' bloq'}">${d.pix ? 'Chave guardada' : 'Sem chave'}</span></div>
     <p class="config-sub">${d.pix ? 'A chave do PagBank está guardada. Para o PIX aparecer para o cliente, ligue também "PIX automático" nas Configurações do painel da loja. Para trocar a chave, cole a nova abaixo.' : 'Cole aqui o token da conta PagBank (no site do PagBank: Integrações → Token). Depois, ligue "PIX automático" nas Configurações do painel da loja. Vale para a loja original.'}</p>
     <div class="pf-add pf-imgbb"><input type="password" id="pf-pagbank" autocomplete="off" spellcheck="false" maxlength="300" placeholder="token do PagBank" aria-label="Token do PagBank"><button type="button" class="btn-outline" data-pf="salvar-pagbank">Salvar</button></div>
@@ -165,10 +171,16 @@ function ligar() {
             const nova = !fc.dataset.feira, nome = (nova ? $('pf-feira-nome') : fc.querySelector('[data-pf-feira-nome]')).value.trim();
             const lojas = [...fc.querySelectorAll('[data-pf-feira-loja]:checked')].map((c) => c.dataset.pfFeiraLoja), fid = nova ? sugerirId(nome) : fc.dataset.feira;
             const dias = [...fc.querySelectorAll('[data-pf-feira-dia]:checked')].map((c) => Number(c.dataset.pfFeiraDia));
+            const condominios = limparCondominios(String(fc.querySelector('[data-pf-feira-cond]')?.value || '').split('\n'));
             if (nome.length < 2 || !idValido(fid)) return showToast('Dê um nome para a feira.', true);
             if (lojas.length < 1) return showToast('Marque pelo menos uma loja.', true);
             if (nova && S.dados.feiras.some((f) => f.id === fid)) return showToast('Já existe uma feira com este nome.', true);
-            if (await fazer({ acao: 'feira', fid, nome, dias, lojas }, lojas.length < 2 ? 'Feira salva. A faixa de lojas aparece quando ela tiver duas lojas ou mais.' : 'Feira salva.')) { S.novaFeira = false; render(); }
+            if (await fazer({ acao: 'feira', fid, nome, dias, lojas, condominios }, 'Feira salva.')) { S.novaFeira = false; render(); }
+            return;
+        }
+        if (a === 'copiar-link-feira') {
+            try { await navigator.clipboard.writeText(linkDaFeira(fc.dataset.feira)); showToast('Link da feira copiado.'); }
+            catch (_) { showToast('Não consegui copiar. Segure o dedo no link para copiar.', true); }
             return;
         }
         if (a === 'desfazer-feira') {

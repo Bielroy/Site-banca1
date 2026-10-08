@@ -129,5 +129,11 @@
     "formats": [
       "image/webp"
     ]
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/feira/:id",
+      "destination": "/feira.html"
+    }
+  ]
 }

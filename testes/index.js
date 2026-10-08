@@ -145,6 +145,35 @@ teste('painel: quem cuida de duas bancas vê as duas no seletor; e-mail não con
   assert.deepStrictEqual(P.bancasDaConta({ tenants: { 'ok-1': 'inventado', '../x': 'proprietario' } }), [], 'papel inventado ou id estranho fica de fora');
   assert.deepStrictEqual(P.bancasDaConta(null), []);
 });
+teste('feira do cliente: o link e o condomínio escolhem a feira; banca de outra feira não aparece; sem feira, vale o jeito antigo', async () => {
+  const L = await import(raiz('js/plataforma-lib.js'));
+  const pai = { id: 'quarta-pai', nome: 'Quarta do pai', dias: [3], lojas: [{ id: 'banca', nome: 'Banca' }, { id: 'pastel', nome: 'Pastel' }], condominios: ['Jardins Munique'] };
+  const dele = { id: 'quarta-pastel', nome: 'Feira do pastel', dias: [3], lojas: [{ id: 'pastel', nome: 'Pastel' }, { id: 'queijo', nome: 'Queijo' }], condominios: ['Parque das Flores'] };
+  assert.strictEqual(L.feiraDoCliente([pai, dele], 'quarta-pastel', 3).feira.id, 'quarta-pastel', 'na quarta, o cliente do pastel vê a feira do pastel, não a primeira');
+  assert.strictEqual(L.feiraDoCliente([pai, dele], '', 3).doCliente, false, 'sem feira do cliente: jeito antigo');
+  assert.strictEqual(L.feiraDoCliente([pai], 'quarta-pastel', 3).doCliente, false, 'feira do cliente que não é desta banca não vale aqui');
+  assert.deepStrictEqual(L.feirasDoCondominio([pai, dele], '  JARDINS munique ').map((f) => f.id), ['quarta-pai']);
+  assert.deepStrictEqual(L.feirasDoCondominio([pai, dele], 'Outro'), []);
+  assert.strictEqual(L.feiraDoEndereco({ pathname: '/feira/quarta-pai' }), 'quarta-pai');
+  assert.strictEqual(L.feiraDoEndereco({ pathname: '/', search: '?loja=x&feira=quarta-pai' }), 'quarta-pai');
+  assert.strictEqual(L.feiraDoEndereco({ pathname: '/feira/../admin' }), '');
+  assert.strictEqual(L.feiraDoEndereco({ search: '?feira=<script>' }), '');
+  assert.strictEqual(L.comFeira('/?loja=pastel', 'quarta-pai'), '/?loja=pastel&feira=quarta-pai');
+  assert.strictEqual(L.comFeira('https://pastel.site.com/', 'quarta-pai'), 'https://pastel.site.com/?feira=quarta-pai');
+  assert.deepStrictEqual(L.limparCondominios(['Jardins  Munique', 'jardins munique', '', '<b>x</b>']), ['Jardins Munique', 'b x /b']);
+  assert.strictEqual(L.diasDaFeira([3]), 'Toda quarta'); assert.strictEqual(L.diasDaFeira([6]), 'Todo sábado'); assert.strictEqual(L.diasDaFeira([2, 5]), 'Terça e sexta'); assert.strictEqual(L.diasDaFeira([]), 'Todos os dias');
+});
+teste('plataforma: a feira guarda os condomínios (limpos) e o app da feira abre a feira', async () => {
+  const db = criarBanco(semente()); const api = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, TOKENS));
+  const r = await chamar(api, { headers: { Authorization: 'Bearer plataforma' }, body: { acao: 'feira', fid: 'quarta-pai', nome: 'Quarta do pai', dias: [3], lojas: ['banca', 'espetinhos'], condominios: ['Jardins Munique', 'jardins  munique', 'Parque'] } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.deepStrictEqual(db._dados.get('feiras/quarta-pai').condominios, ['Jardins Munique', 'Parque']);
+  const naoPode = await chamar(api, { headers: { Authorization: 'Bearer dono-espetinhos' }, body: { acao: 'feira', fid: 'x-y', nome: 'X', lojas: ['espetinhos'] } });
+  assert.notStrictEqual(naoPode.status, 200, 'só a plataforma monta feira');
+  const M = carregarApi(raiz('api/manifest.js'), criarAdmin(db, TOKENS));
+  const m = M.manifestoDaFeira('quarta-pai', { nome: 'Quarta do pai', lojas: [{ id: 'banca', cor: '#123456' }] });
+  assert.strictEqual(m.start_url, '/feira/quarta-pai'); assert.strictEqual(m.theme_color, '#123456');
+});
 teste('aba Clientes: pedido novo aparece na hora (recalcula só quando há pedido depois do último cálculo)', async () => {
   const db = criarBanco({ ...semente(), 'pedidos/n1': { nome: 'Ana Teste', quadra: '7', lote: '2', condominio: 'Jardins', total: 12, data: new Date().toISOString(), itens: [{ id: 'tomate', nome: 'Tomate', qtd: 1, tipo: 'kg', unidade: 'kg', preco: 8.9 }] } });
   const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));

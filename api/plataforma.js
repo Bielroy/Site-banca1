@@ -10,7 +10,7 @@
 //  POST { acao: 'ativo', id, ativo }                        bloquear / liberar
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
 //  POST { acao: 'proprietario', id, email, remover? }
-//  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids] }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
+//  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids], condominios: [nomes] }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
 //
 //  O primeiro acesso de plataforma ainda é dado pelo terminal
 //  (scripts/plataforma.js): não existe tela que promova alguém a dono de tudo.
@@ -70,7 +70,7 @@ async function lojas(res) {
     const modulos = {}; Object.keys(MODULOS).forEach((m) => { modulos[m] = m === 'ia' && id !== T.TENANT_PADRAO ? !!(f.modulos && f.modulos.ia === true) : T.moduloAtivo(f, m); });
     return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, mes, donos };
   }));
-  const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id) }));
+  const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [] }));
   const seg = await db.collection('plataforma').doc('segredos').get();
   const fotos = /^[a-f0-9]{32}$/i.test(String(process.env.IMGBB_API_KEY || (seg.exists && seg.data().imgbb) || ''));
   const pix = !!process.env.PAGBANK_API_TOKEN || Segredos.tokenPagbankValido(seg.exists && seg.data().pagbank);
@@ -161,6 +161,17 @@ async function proprietario(req, res) {
 // feiras (quarta num condomínio, sábado em outro); a loja mostra a faixa só da feira de HOJE.
 // Na ficha da loja:  feiras: [ids]  (a lista)  e  feiraId  (campo antigo, mantido para telas já abertas).
 const MAX_FEIRAS_POR_LOJA = 8;
+// Condomínios que a feira atende (o cliente que escolhe um deles cai nesta feira). Mesma regra de js/plataforma-lib.js.
+const normCond = (c) => String(c || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+function limparCondominios(lista) {
+  const vistos = new Set(), out = [];
+  for (const c of Array.isArray(lista) ? lista.slice(0, 200) : []) {
+    const nome = texto(c, 80), k = normCond(nome);
+    if (k.length < 2 || vistos.has(k)) continue;
+    vistos.add(k); out.push(nome); if (out.length >= 40) break;
+  }
+  return out;
+}
 const feirasDe = (f) => [...new Set([...(Array.isArray(f.feiras) ? f.feiras : []), f.feiraId].filter((x) => typeof x === 'string' && T.idValido(x)))];
 async function feira(req, res) {
   const b = req.body || {}, fid = exigirId(String(b.fid || '')), nome = texto(b.nome, 60), ids = Array.isArray(b.lojas) ? [...new Set(b.lojas.map(String))] : [];
@@ -182,7 +193,8 @@ async function feira(req, res) {
     if (lista.length > MAX_FEIRAS_POR_LOJA) throw falha(400, `${f.nome || id} já está em ${MAX_FEIRAS_POR_LOJA} feiras. Tire de uma antes.`);
     lote.set(fichaRef(id), { ...base(f), feiras: lista, feiraId: lista[0] }, { merge: true });
   }
-  if (ids.length) lote.set(refFeira, { nome, dias, lojas: fichas.map(([id, f]) => ({ id, nome: f.nome || NOME_ORIGINAL, cor: (f.tema && f.tema.primaria) || '#1a3a2a' })), atualizadoEm: new Date().toISOString() });
+  const condominios = limparCondominios(b.condominios);
+  if (ids.length) lote.set(refFeira, { nome, dias, condominios, lojas: fichas.map(([id, f]) => ({ id, nome: f.nome || NOME_ORIGINAL, cor: (f.tema && f.tema.primaria) || '#1a3a2a' })), atualizadoEm: new Date().toISOString() });
   else lote.delete(refFeira);
   await lote.commit();
   saem.concat(ids).forEach((id) => T._cacheFichas.delete(id));

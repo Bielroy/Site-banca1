@@ -10,7 +10,8 @@
 //  Sem ficha (ou sem tema), vale o visual original da Banca Adair e Pedrina.
 // =====================================================================
 import { getDoc, doc, db } from './firebase.js';
-import { feiraDoDia, feirasDaFicha } from './plataforma-lib.js';
+import { feiraDoDia, feirasDaFicha, feiraDoCliente, feirasDoCondominio, feiraDoEndereco } from './plataforma-lib.js';
+import { lerFeiraCliente, gravarFeiraCliente } from './feira-cliente.js';
 import { TENANT, fichaRef, chave, urlDaLoja, ehLojaOriginal } from './tenant.js';
 import { ARTES, arteDoTipo } from './arte-lib.js';
 
@@ -166,15 +167,39 @@ function aplicarFicha(ficha, completa = true) {
 }
 
 // ---------------------------------------------------------------------
-// TROCA DE LOJA — as lojas da mesma feira aparecem numa faixa no topo.
-// Tocar numa delas (ou deslizar o cabeçalho para o lado) abre a outra loja,
-// já com as cores dela. feiras/{id} = { nome, dias: [0..6], lojas: [{ id, nome, cor }] }
-// Cada feira vale nos dias marcados; em dia sem feira, a faixa não aparece.
+// FEIRA. feiras/{id} = { nome, dias: [0..6], lojas: [{ id, nome, cor }], condominios: [nomes] }
+//  - Cliente DA FEIRA (entrou pelo link dela, escolheu um condomínio dela ou a conta lembrou):
+//    vê só um atalho "‹ todas as bancas da feira", que volta para a tela de entrada da feira.
+//    Numa banca que não é da feira dele, não aparece atalho para banca nenhuma.
+//  - Cliente sem feira (quem já usava antes): a faixa antiga, com as lojas da feira de hoje.
 // ---------------------------------------------------------------------
-function montarFeira(feira) {
+const diaBR = () => new Date(Date.now() - 3 * 3600000).getUTCDay();          // dia da semana em Brasília
+let FEIRAS_DA_LOJA = [];
+const lojasValidas = (feira) => ((feira && feira.lojas) || []).filter((l) => l && /^[a-z0-9][a-z0-9-]{1,39}$/.test(l.id || '') && l.nome);
+
+function montarFeira(feiras) {
     const barra = document.getElementById('feira-lojas');
-    const lojas = ((feira && feira.lojas) || []).filter((l) => l && /^[a-z0-9][a-z0-9-]{1,39}$/.test(l.id || '') && l.nome);
-    if (!barra || lojas.length < 2) { if (barra) barra.hidden = true; return; }
+    if (!barra) return;
+    const escolhida = lerFeiraCliente();
+    const { feira, doCliente } = feiraDoCliente(feiras, escolhida, diaBR());
+    if (doCliente) { montarVoltaDaFeira(barra, feira); aplicarAppDaFeira(feira); return; }
+    if (escolhida) { barra.hidden = true; return; }             // cliente de outra feira: nenhuma banca de fora aparece aqui
+    montarFaixa(barra, feira);
+}
+
+function montarVoltaDaFeira(barra, feira) {
+    if (lojasValidas(feira).length < 2) { barra.hidden = true; return; }
+    barra.textContent = '';
+    const a = document.createElement('a');
+    a.href = `/feira/${feira.id}`; a.className = 'feira-voltar';
+    a.textContent = `‹ ${feira.nome || 'Feira'} · ver todas as bancas`;
+    barra.appendChild(a);
+    barra.hidden = false;
+}
+
+function montarFaixa(barra, feira) {
+    const lojas = lojasValidas(feira);
+    if (lojas.length < 2) { barra.hidden = true; return; }
     barra.textContent = '';
     lojas.forEach((l) => {
         const a = document.createElement('a');
@@ -195,7 +220,7 @@ function montarFeira(feira) {
     let x0 = null, y0 = null;
     cab.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
     cab.addEventListener('touchend', (e) => {
-        if (x0 === null) return;
+        if (x0 === null || lerFeiraCliente()) return;
         const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
         if (Math.abs(dx) < 70 || Math.abs(dy) > 50) return;
         const vizinha = lojas[i + (dx < 0 ? 1 : -1)];
@@ -203,18 +228,61 @@ function montarFeira(feira) {
     }, { passive: true });
 }
 
+// Cliente da feira que instala o app de dentro de uma banca: o ícone abre a tela da FEIRA, não só esta banca.
+function aplicarAppDaFeira(feira) {
+    if (!feira || !feira.id || lojasValidas(feira).length < 2) return;
+    let m = document.querySelector('link[rel="manifest"]');
+    if (!m) { m = document.createElement('link'); m.rel = 'manifest'; document.head.appendChild(m); }
+    m.href = `/api/manifest?feira=${encodeURIComponent(feira.id)}`;
+    _appDe = TENANT;                                                          // a ficha da loja não troca de volta depois
+}
+
+/**
+ * A feira do cliente muda quando ele escolhe um condomínio que é de uma feira desta banca.
+ * Devolve a feira escolhida (ou '' se o condomínio não é de feira nenhuma daqui).
+ * Com duas feiras no mesmo condomínio, `perguntar(lista)` decide (devolve o id).
+ */
+export async function feiraPeloCondominio(condominio, perguntar) {
+    const achadas = feirasDoCondominio(FEIRAS_DA_LOJA, condominio);
+    if (!achadas.length) return '';
+    const atual = lerFeiraCliente();
+    if (achadas.some((f) => f.id === atual)) return atual;
+    let id = achadas[0].id;
+    if (achadas.length > 1 && typeof perguntar === 'function') { try { id = (await perguntar(achadas)) || id; } catch (_) { /* fica a primeira */ } }
+    gravarFeiraCliente(id);
+    montarFeira(FEIRAS_DA_LOJA);
+    return id;
+}
+/** A conta trouxe a feira (celular novo): vale se este aparelho ainda não tem uma. */
+export function feiraDaConta(id) {
+    if (!id || lerFeiraCliente()) return;
+    gravarFeiraCliente(id); montarFeira(FEIRAS_DA_LOJA);
+}
+
 /** Chamado uma vez pela loja. Usa a ficha guardada no aparelho na hora e confere no banco depois. */
 export async function iniciarTema() {
+    // veio pelo link da feira (?feira=id): este aparelho passa a ser desta feira
+    const doLink = feiraDoEndereco({ search: location.search });
+    if (doLink) gravarFeiraCliente(doLink);
     const K = chave('banca_ficha');
-    try { const g = JSON.parse(localStorage.getItem(K) || 'null'); if (g) { aplicarFicha(g.ficha, g.v === 2); montarFeira(Array.isArray(g.feiras) ? feiraDoDia(g.feiras, new Date().getDay()) : g.feira); } } catch (_) { /* sem cache */ }
+    try {
+        const g = JSON.parse(localStorage.getItem(K) || 'null');
+        if (g) {
+            aplicarFicha(g.ficha, g.v >= 2);
+            FEIRAS_DA_LOJA = g.v === 3 && Array.isArray(g.feiras) ? g.feiras : [];
+            if (g.v === 3) montarFeira(FEIRAS_DA_LOJA);
+            else if (!lerFeiraCliente()) montarFaixa(document.getElementById('feira-lojas') || document.createElement('nav'), Array.isArray(g.feiras) ? feiraDoDia(g.feiras, diaBR()) : g.feira);
+        }
+    } catch (_) { /* sem cache */ }
     try {
         const s = await getDoc(fichaRef());
         const ficha = s.exists() ? s.data() : null;
-        // a loja pode estar em várias feiras (uma por dia da semana): lê todas e mostra a de HOJE
-        const feiras = (await Promise.all(feirasDaFicha(ficha).map((id) => getDoc(doc(db, 'feiras', id)).then((f) => (f.exists() ? f.data() : null)).catch(() => null)))).filter(Boolean);
+        // a loja pode estar em várias feiras: lê todas (com o id) e mostra a do cliente (ou a de hoje)
+        const feiras = (await Promise.all(feirasDaFicha(ficha).map((id) => getDoc(doc(db, 'feiras', id)).then((f) => (f.exists() ? { ...f.data(), id } : null)).catch(() => null)))).filter(Boolean);
         if (ficha) aplicarFicha(ficha);
-        montarFeira(feiraDoDia(feiras, new Date().getDay()));
-        try { localStorage.setItem(K, JSON.stringify({ v: 2, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, feiras: ficha.feiras || null, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feiras })); } catch (_) { /* cheio */ }
+        FEIRAS_DA_LOJA = feiras;
+        montarFeira(feiras);
+        try { localStorage.setItem(K, JSON.stringify({ v: 3, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, feiras: ficha.feiras || null, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feiras })); } catch (_) { /* cheio */ }
         return ficha;
     } catch (e) { console.warn('[tema] usando o visual guardado:', e && e.code); return null; }
 }
