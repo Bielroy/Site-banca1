@@ -4,6 +4,7 @@
 //  POST { acao: 'pedir-link', email }      SEM LOGIN: pede o link de entrada. Só e-mail da equipe recebe; a resposta é sempre a mesma.
 //  POST { acao: 'sair-de-tudo' }             encerra o login desta conta em todos os aparelhos
 //  POST { acao: 'auditoria' }                últimas ações registradas na loja (só proprietário)
+//  POST { acao: 'minha-assinatura' }          a mensalidade desta banca (definida pela plataforma)
 //  POST { acao: 'listar' }
 //  POST { acao: 'definir', email, papel }   papel: administrador | funcionario | caixa | producao | estoque
 //  POST { acao: 'remover', uid }
@@ -26,6 +27,7 @@
 // =====================================================================
 const admin = require('firebase-admin');
 const T = require('../lib/tenant');
+const Assinatura = require('../lib/assinatura');
 const A = require('../lib/avisos');
 const P = require('../lib/prudencia');
 const Maq = require('../lib/maquininha');
@@ -225,6 +227,8 @@ module.exports = async function handler(req, res) {
   if (!T.temPapel(dec, tid, ['proprietario'])) return res.status(403).json({ error: 'Só o proprietário cuida da equipe desta loja.' });
   const acao = (req.body || {}).acao;
   try {
+    // A MENSALIDADE desta banca (definida pela plataforma). Só o proprietário DESTA loja vê, e só a dela.
+    if (acao === 'minha-assinatura') return res.status(200).json({ sucesso: true, assinatura: await Assinatura.ler(db, tid) });
     if (acao === 'listar') return await listar(res, { tid });
     if (acao === 'auditoria') return res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, tid, 40) });
     if (acao === 'definir') return await definir(req, res, { tid, dec });

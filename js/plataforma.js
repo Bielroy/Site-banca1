@@ -42,6 +42,13 @@ function lojaHtml(l, modulos) {
         <div class="pf-add"><input type="email" inputmode="email" autocomplete="off" placeholder="e-mail do proprietário" aria-label="E-mail do novo proprietário de ${escapeHTML(l.nome)}"><button type="button" class="btn-outline" data-pf="dar-dono">Adicionar</button></div>
         ${l.original ? '' : `<span class="pf-rotulo">Tipo de negócio</span>
         <div class="pf-add pf-tipo"><input type="text" maxlength="30" autocomplete="off" value="${escapeHTML(NOMES_MODELO[l.tipo] || l.tipo || '')}" placeholder="Ex.: Padaria" aria-label="Tipo de negócio de ${escapeHTML(l.nome)}"><button type="button" class="btn-outline" data-pf="mudar-tipo">Salvar</button></div>`}
+        <span class="pf-rotulo">Mensalidade (só você e o proprietário desta banca veem)</span>
+        <div class="pf-assin">
+            <label>R$ <input type="text" inputmode="decimal" data-pf-assin-valor value="${l.assinatura ? escapeHTML(String(l.assinatura.valor.toFixed(2)).replace('.', ',')) : ''}" placeholder="0,00" aria-label="Mensalidade de ${escapeHTML(l.nome)}"></label>
+            <label>vence dia <input type="number" inputmode="numeric" min="1" max="28" data-pf-assin-dia value="${l.assinatura && l.assinatura.dia ? l.assinatura.dia : ''}" placeholder="10" aria-label="Dia do vencimento"></label>
+            <input type="text" maxlength="140" data-pf-assin-obs value="${l.assinatura ? escapeHTML(l.assinatura.obs || '') : ''}" placeholder="Observação (opcional)" aria-label="Observação da mensalidade">
+            <button type="button" class="btn-outline" data-pf="salvar-assinatura">Salvar</button>
+        </div>
         <span class="pf-rotulo">Módulos ligados</span>
         <div class="pf-modulos">${Object.entries(modulos).map(([k, rot]) => `<label><input type="checkbox" data-pf-modulo="${k}"${l.modulos[k] ? ' checked' : ''}> ${escapeHTML(rot)}</label>`).join('')}</div>
         <div class="pf-acoes">
@@ -187,6 +194,11 @@ function ligar() {
             if (nova && S.dados.feiras.some((f) => f.id === fid)) return showToast('Já existe uma feira com este nome.', true);
             if (await fazer({ acao: 'feira', fid, nome, dias, lojas, condominios, horaLimite, semFeira }, 'Feira salva.')) { S.novaFeira = false; render(); }
             return;
+        }
+        if (a === 'salvar-assinatura') {
+            const valor = card.querySelector('[data-pf-assin-valor]').value.trim(), dia = Number(card.querySelector('[data-pf-assin-dia]').value) || null, obs = card.querySelector('[data-pf-assin-obs]').value.trim();
+            if (valor && !(Number(valor.replace(',', '.')) >= 0)) return showToast('Confira o valor da mensalidade.', true);
+            return fazer({ acao: 'assinatura', id, valor, dia, obs }, valor ? 'Mensalidade salva.' : 'Mensalidade retirada.');
         }
         if (a === 'por-sem-feira') {
             const dia = String(fc.querySelector('[data-pf-sem-feira-dia]')?.value || ''), caixa = fc.querySelector('[data-pf-sem-feira]');

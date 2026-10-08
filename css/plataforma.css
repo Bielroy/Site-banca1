@@ -40,3 +40,10 @@
 .pf-sem-feira:empty { display: none; }
 .pf-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; border-radius: 999px; background: #fdecea; color: #8a1c1c; font-size: .86rem; font-weight: 600; }
 .pf-chip button { width: 28px; height: 28px; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .06); color: inherit; font-size: 1rem; cursor: pointer; }
+
+.pf-assin { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pf-assin label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: .9rem; }
+.pf-assin input { min-height: 42px; padding: 6px 10px; border: 1.5px solid #e0dcd4; border-radius: 10px; font: inherit; background: #fff; }
+.pf-assin input[data-pf-assin-valor] { width: 96px; text-align: right; }
+.pf-assin input[data-pf-assin-dia] { width: 64px; }
+.pf-assin input[data-pf-assin-obs] { flex: 1 1 180px; min-width: 0; }

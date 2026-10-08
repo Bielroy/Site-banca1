@@ -7,7 +7,7 @@ import { escapeHTML, showToast, customConfirm } from './utils.js';
 import { sairELimpar } from './admin-guard.js';
 import { PAPEIS, ATRIBUIVEIS } from './papeis-lib.js';
 
-const S = { equipe: null, estado: 'carregando', ligado: false, enviando: false, registros: null };
+const S = { equipe: null, estado: 'carregando', ligado: false, enviando: false, registros: null, assinatura: null };
 // nomes simples para o que fica na trilha de auditoria (api/equipe.js grava; ninguém edita nem apaga pelo painel)
 const ACOES = { 'equipe-papel': 'Deu acesso', 'equipe-remover': 'Tirou o acesso', 'zerar-movimento': 'Zerou o movimento', 'copia-restaurar': 'Restaurou o cadastro', 'copia-baixar': 'Baixou a cópia de segurança', maquininha: 'Mexeu na maquininha', 'sair-de-tudo': 'Encerrou o próprio login em todos os aparelhos' };
 const quando = (iso) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''; };
@@ -43,6 +43,7 @@ function render() {
         <div class="form-group"><label for="eq-papel">Papel</label><select id="eq-papel">${opcoes('funcionario')}</select><small class="dica-campo" id="eq-papel-dica">${PAPEIS.funcionario[1]}</small></div>
         <button class="btn-salvar-config" id="eq-adicionar">Dar acesso</button>
     </div>
+    ${assinaturaHtml()}
     <h4 class="cp-sub">Quem tem acesso</h4>
     ${lista}
     <p class="config-sub cal-nota">A pessoa abre o painel, digita o e-mail e entra pelo link que chega na caixa de entrada. Mudança de papel vale quando ela entrar de novo. Ao tirar o acesso, o painel que já estiver aberto pode continuar mostrando a tela por até 1 hora, mas vendas, estoque e equipe são recusados na hora.</p>
@@ -54,7 +55,16 @@ function render() {
     ${S.registros === null ? '<button type="button" class="btn-outline" id="eq-ver-registro" style="padding:12px 18px">Ver o registro</button>' : registrosHtml()}`;
 }
 
+// A MENSALIDADE desta banca, definida pela plataforma. Só o proprietário vê (o servidor confere).
+function assinaturaHtml() {
+    const a = S.assinatura;
+    if (!a) return '';
+    return `<div class="eq-assin"><span class="eq-assin-tit">Sua mensalidade</span><b>${fmtReais(a.valor)} por mês</b>${a.dia ? `<small>Vence todo dia ${a.dia}.</small>` : ''}${a.obs ? `<small>${escapeHTML(a.obs)}</small>` : ''}</div>`;
+}
+const fmtReais = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
 async function carregar() {
+    api({ acao: 'minha-assinatura' }).then((j) => { S.assinatura = j.assinatura || null; render(); }).catch(() => {});
     try { S.equipe = (await api({ acao: 'listar' })).equipe || []; S.estado = 'ok'; }
     catch (e) { S.estado = 'erro'; S.erro = e.message; }
     render();

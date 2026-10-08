@@ -312,6 +312,25 @@ teste('previsão e clientes por feira: uma aba para o próximo dia de cada feira
   assert.strictEqual(L.feiraDeUmCliente(c3, r.meta.feiras), 'sabado-pq', 'comprou antes do link: a feira do condomínio dele');
   assert.strictEqual(L.feiraDeUmCliente({ condominio: 'Outro' }, r.meta.feiras), '');
 });
+teste('mensalidade: só a plataforma define; o proprietário vê só a da banca dele; caixa e dono de outra banca não veem', async () => {
+  const db = criarBanco(semente()); const adm = criarAdmin(db, TOKENS);
+  const pf = carregarApi(raiz('api/plataforma.js'), adm);
+  const def = (token, body) => chamar(pf, { headers: { Authorization: `Bearer ${token}` }, body: { acao: 'assinatura', ...body } });
+  assert.strictEqual((await def('plataforma', { id: 'espetinhos', valor: '59,90', dia: 10, obs: 'Plano feira <b>' })).status, 200);
+  assert.deepStrictEqual(db._dados.get('assinaturas/espetinhos').valor, 59.9); assert.strictEqual(db._dados.get('assinaturas/espetinhos').obs, 'Plano feira b', 'sem HTML');
+  assert.notStrictEqual((await def('dono-espetinhos', { id: 'espetinhos', valor: '1' })).status, 200, 'o feirante não muda a própria mensalidade');
+  assert.strictEqual(db._dados.get('assinaturas/espetinhos').valor, 59.9);
+  const lista = await chamar(pf, { headers: { Authorization: 'Bearer plataforma' }, body: { acao: 'lojas' } });
+  assert.strictEqual(lista.corpo.lojas.find((l) => l.id === 'espetinhos').assinatura.valor, 59.9, 'a plataforma vê todas');
+  const eq = carregarApi(raiz('api/equipe.js'), criarAdmin(db, TOKENS));
+  const ver = (token, loja) => chamar(eq, { headers: { Authorization: `Bearer ${token}`, ...(loja ? { 'X-Loja': loja } : {}) }, body: { acao: 'minha-assinatura' } });
+  let r = await ver('dono-espetinhos', 'espetinhos'); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.deepStrictEqual(r.corpo.assinatura, { valor: 59.9, dia: 10, obs: 'Plano feira b' });
+  assert.strictEqual((await ver('caixa-espetinhos', 'espetinhos')).status, 403, 'caixa não vê');
+  assert.strictEqual((await ver('dona-banca', 'espetinhos')).status, 403, 'dona de outra banca não vê');
+  r = await ver('dona-banca'); assert.strictEqual(r.status, 200); assert.strictEqual(r.corpo.assinatura, null, 'a banca original sem mensalidade');
+  assert.strictEqual((await def('plataforma', { id: 'espetinhos', valor: '' })).status, 200);
+  assert.ok(!db._dados.has('assinaturas/espetinhos'), 'valor vazio tira a mensalidade');
+});
 teste('aba Clientes: pedido novo aparece na hora (recalcula só quando há pedido depois do último cálculo)', async () => {
   const db = criarBanco({ ...semente(), 'pedidos/n1': { nome: 'Ana Teste', quadra: '7', lote: '2', condominio: 'Jardins', total: 12, data: new Date().toISOString(), itens: [{ id: 'tomate', nome: 'Tomate', qtd: 1, tipo: 'kg', unidade: 'kg', preco: 8.9 }] } });
   const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));

@@ -10,6 +10,7 @@
 //  POST { acao: 'ativo', id, ativo }                        bloquear / liberar
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
 //  POST { acao: 'proprietario', id, email, remover? }
+//  POST { acao: 'assinatura', id, valor, dia, obs }        mensalidade da banca (valor vazio = tira)
 //  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids], condominios: [nomes], horaLimite: 'HH:MM', semFeira: ['AAAA-MM-DD'] }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
 //
 //  O primeiro acesso de plataforma ainda é dado pelo terminal
@@ -22,6 +23,7 @@ const Segredos = require('../lib/segredos');
 const P = require('../lib/prudencia');
 const crypto = require('crypto');
 const Feira = require('../lib/feira');
+const Assinatura = require('../lib/assinatura');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -62,14 +64,15 @@ async function donosDe(id) {
 }
 
 async function lojas(res) {
-  const [ts, fs] = await Promise.all([db.collection('tenants').get(), db.collection('feiras').get()]);
+  const [ts, fs, as] = await Promise.all([db.collection('tenants').get(), db.collection('feiras').get(), db.collection('assinaturas').get().catch(() => ({ docs: [] }))]);
+  const assinaturas = new Map(as.docs.map((d) => [d.id, Assinatura.limpar(d.data())]));
   const fichas = new Map(ts.docs.map((d) => [d.id, d.data()]));
   if (!fichas.has(T.TENANT_PADRAO)) fichas.set(T.TENANT_PADRAO, { nome: NOME_ORIGINAL, ativo: true });
   const ids = [...fichas.keys()].filter(T.idValido).sort((a, b) => (a === T.TENANT_PADRAO ? -1 : b === T.TENANT_PADRAO ? 1 : a.localeCompare(b))).slice(0, MAX_LOJAS);
   const lista = await Promise.all(ids.map(async (id) => {
     const f = fichas.get(id), [mes, donos] = await Promise.all([movimentoDoMes(id), donosDe(id)]);
     const modulos = {}; Object.keys(MODULOS).forEach((m) => { modulos[m] = m === 'ia' && id !== T.TENANT_PADRAO ? !!(f.modulos && f.modulos.ia === true) : T.moduloAtivo(f, m); });
-    return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, mes, donos };
+    return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, mes, donos, assinatura: assinaturas.get(id) || null };
   }));
   const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira) }));
   const seg = await db.collection('plataforma').doc('segredos').get();
@@ -204,6 +207,15 @@ async function feira(req, res) {
   return res.status(200).json({ sucesso: true });
 }
 
+// MENSALIDADE da banca: só a plataforma define. O proprietário vê a dele no painel (api/equipe.js).
+async function assinatura(req, res) {
+  const b = req.body || {}, id = String(b.id || ''); await exigirLoja(id);
+  const dados = Assinatura.limpar(b);
+  if (dados) await Assinatura.ref(db, id).set({ ...dados, atualizadoEm: new Date().toISOString() });
+  else await Assinatura.ref(db, id).delete();
+  return res.status(200).json({ sucesso: true, assinatura: dados });
+}
+
 async function assumir(dec, res) {
   const donoDaOriginal = dec.admin === true || (dec.tenants && dec.tenants[T.TENANT_PADRAO] === 'proprietario');
   if (!donoDaOriginal && dec.plataforma !== true) throw falha(403, 'Só quem é dono da loja original pode assumir a plataforma.');
@@ -248,7 +260,7 @@ module.exports = async function handler(req, res) {
   // outra conta dona da loja original ainda conseguiria assumir. Ao usar a tela, o registro passa a existir.
   try { await db.runTransaction(async (t) => { const r = db.collection('plataforma').doc('dono'), s = await t.get(r); if (!s.exists) t.set(r, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() }); }); }
   catch (e) { console.error('[plataforma] dono', e && e.message); }
-  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res) };
+  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res) };
   const nomeAcao = typeof (req.body || {}).acao === 'string' ? (req.body || {}).acao : '';
   const fn = Object.prototype.hasOwnProperty.call(acoes, nomeAcao) ? acoes[nomeAcao] : null;
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });
@@ -258,7 +270,8 @@ module.exports = async function handler(req, res) {
     const detalhe = nomeAcao === 'imgbb' || nomeAcao === 'pagbank' ? (String(b.chave || '').trim() ? 'chave gravada' : 'chave apagada')
       : nomeAcao === 'proprietario' ? `${alvo}: ${b.remover === true ? 'tirou' : 'definiu'} ${String(b.email || '').slice(0, 80)}`
       : nomeAcao === 'ativo' ? `${alvo}: ${b.ativo === true ? 'liberou' : 'bloqueou'}`
-      : nomeAcao === 'criar-loja' ? `${alvo} (${String(b.emailDono || 'sem dono').slice(0, 80)})` : alvo;
+      : nomeAcao === 'criar-loja' ? `${alvo} (${String(b.emailDono || 'sem dono').slice(0, 80)})`
+      : nomeAcao === 'assinatura' ? `${alvo}: ${String(b.valor == null ? '' : b.valor).trim() === '' ? 'sem mensalidade' : `R$ ${String(b.valor).slice(0, 12)}`}` : alvo;
     await anotar(`plataforma-${nomeAcao}`, detalhe);
     if (['proprietario', 'pagbank', 'ativo'].includes(nomeAcao)) await P.alertar(db, T.TENANT_PADRAO, `plataforma-${nomeAcao}`, { titulo: 'Plataforma alterada', corpo: `${dec.email || 'O dono da plataforma'} mudou: ${nomeAcao} (${detalhe}).`, url: '/plataforma.html' });
   }

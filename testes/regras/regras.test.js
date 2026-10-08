@@ -83,6 +83,7 @@ async function semear() {
     }
     por('feiras/feira-1', { nome: 'Feira', lojas: [{ id: 'loja-a', nome: 'Loja A' }, { id: 'loja-b', nome: 'Loja B' }] });
     por('plataforma/segredos', { pagbank: 'token-secreto', imgbb: 'chave-secreta' });
+    por('assinaturas/loja-a', { valor: 59.9, dia: 10 });
     por('plataforma/maquininha_loja-a', { estabelecimento: '123', token: 'segredo' });
     por('plataforma/dono', { uid: 'dono-plataforma' });
     por('backups/loja-a_2026-10-01', { loja: 'loja-a' });
@@ -91,6 +92,14 @@ async function semear() {
     await lote.commit();
   });
 }
+
+// ====================================================================== MENSALIDADE: só pelo servidor
+teste('mensalidade da banca: ninguém lê nem grava direto no banco, nem o próprio dono da banca', async () => {
+  for (const v of [anonimo(), cliente(), de('loja-a', 'proprietario'), de('loja-a', 'administrador'), de('loja-b', 'proprietario')]) {
+    await nega(getDoc(d(v, 'assinaturas/loja-a'))); await nega(getDocs(c(v, 'assinaturas')));
+    await nega(setDoc(d(v, 'assinaturas/loja-a'), { valor: 0 }));
+  }
+});
 
 // ====================================================================== PÚBLICO (sem login)
 teste('visitante sem login lê só a vitrine', async () => {

@@ -230,3 +230,9 @@ body.so-equipe #ped-mais { display: none; }
 .pd-campo input { width: 84px; min-height: 42px; padding: 6px 8px; border: 1.5px solid var(--linha-fina, #e6e0d4); border-radius: 10px; font: inherit; text-align: right; }
 .pd-campo input:disabled { background: var(--parchment); }
 .pd-rodape { position: sticky; bottom: 0; }
+
+/* Mensalidade da banca (aba Equipe, só o proprietário) */
+.eq-assin { display: grid; gap: 2px; margin: 4px 0 14px; padding: 14px 16px; border-radius: 14px; background: var(--foam); border: 1px solid var(--sage); }
+.eq-assin-tit { font-size: .74rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--leaf); }
+.eq-assin b { font-size: 1.15rem; color: var(--forest); }
+.eq-assin small { color: var(--text-mid); }
