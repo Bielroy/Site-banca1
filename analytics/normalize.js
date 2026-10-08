@@ -100,6 +100,7 @@ function normalizarPedidos(pedidos, catalogo = []) {
     estoque: p.estoqueFisico === '' || p.estoqueFisico == null ? null : Number(p.estoqueFisico),
     ativo: p.ativo !== false, noCatalogo: true,
     duracao: ['curta', 'longa'].includes(p.duracao) ? p.duracao : 'normal',   // quanto tempo aguenta na banca
+    precosDia: p.precosDia && typeof p.precosDia === 'object' && !Array.isArray(p.precosDia) ? p.precosDia : null,   // preço por dia da semana
   }));
 
   const validos = [];

@@ -9,6 +9,7 @@
 import { auth } from './firebase.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal } from './utils.js';
 import { criarCamposEndereco } from './endereco.js';
+import { precoDoDia } from './oferta-lib.js';
 
 const S = { produtos: [], itens: new Map(), busca: '', pag: 'PIX', condominios: [], ligado: false, enviando: false, chave: null, ultima: null, endereco: null };
 const el = () => document.getElementById('pdv-conteudo');
@@ -175,7 +176,9 @@ export const definirCondominiosPdv = (lista) => { S.condominios = Array.isArray(
 /** Chamado ao abrir a aba e quando os produtos mudam (preço e estoque ao vivo). */
 export function abrirPdv(produtos) {
     if (!el()) return;
-    S.produtos = produtos || [];
+    // balcão: o preço de HOJE (preço por dia da semana; o servidor cobra o mesmo)
+    const hoje = new Date(Date.now() - 3 * 3600000).getUTCDay();
+    S.produtos = (produtos || []).map((p) => ({ ...p, preco: precoDoDia(p, hoje) }));
     if (!$('pv2-lista')) { montar(); ligar(); return; }
     if (!el().contains(document.activeElement) || document.activeElement.tagName !== 'INPUT') pintarLista();
     pintarRodape();

@@ -74,6 +74,7 @@ function iniciarFirebase() {
 const T = require('../lib/tenant');
 const P = require('../lib/prudencia');
 const Copiloto = require('../lib/copiloto');
+const Feira = require('../lib/feira');
 const contextos = new Map();     // resumo dos dados de cada loja, por poucos minutos
 
 // O catálogo muda pouco; relê no máximo a cada 5 min para não pesar.
@@ -98,7 +99,7 @@ async function lerCatalogo(tid = T.TENANT_PADRAO) {
         .map(d => Object.assign({}, d.data(), { id: d.id }))     // o id do registro sempre vale
         // mesmo critério da vitrine (ativo verdadeiro): o que a loja não mostra, a IA não sugere
         .filter(p => p.ativo && !p.soInsumo && p.nome && !ocultas.has(semAcento(p.cat)))
-        .map(p => ({ id: p.id, nome: p.nome, cat: p.cat, preco: p.preco, unidade: p.unidade }))
+        .map(p => ({ id: p.id, nome: p.nome, cat: p.cat, preco: p.preco, precoDe: p.precoDe, precosDia: p.precosDia, unidade: p.unidade }))
     };
     catalogos.set(tid, catalogoCache);
   } catch (e) {
@@ -184,7 +185,7 @@ function htmlSimples(texto) {
 function promptDoChat(dados) {
   const catalogo = dados.catalogo || [];
   const lista = catalogo.slice(0, 120)
-    .map(p => `${p.id}|${p.nome}|${p.cat || '-'}|R$${Number(p.preco).toFixed(2)}/${p.unidade || 'un'}`)
+    .map(p => `${p.id}|${p.nome}|${p.cat || '-'}|R$${Number(Feira.precoDoDia(p, dados.dia)).toFixed(2)}/${p.unidade || 'un'}`)   // o preço do dia que a vitrine mostra
     .join('\n');
 
   const carrinho = dados.carrinho || [];
@@ -499,7 +500,9 @@ module.exports = async function handler(req, res) {
         prompt: promptDoChat({
           mensagem: mensagemLimpa,
           carrinho: Array.isArray(corpoReq.carrinho) ? corpoReq.carrinho.slice(0, 60) : [],
-          catalogo: catalogo
+          catalogo: catalogo,
+          // dia da semana do preço (o da entrega do cliente). Só muda o TEXTO da IA: quem cobra é o checkout.
+          dia: Number.isInteger(corpoReq.diaPreco) && corpoReq.diaPreco >= 0 && corpoReq.diaPreco <= 6 ? corpoReq.diaPreco : new Date(Date.now() - 3 * 3600000).getUTCDay()
         }),
         historico: corpoReq.historico,
         imagem: img,

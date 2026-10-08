@@ -24,6 +24,7 @@ const TELAS = {
     margens: () => import('./admin-margens.js'), compras: () => import('./admin-compras.js'), pdv: () => import('./admin-pdv.js'),
     crm: () => import('./admin-crm.js'), copiloto: () => import('./admin-copiloto.js'), calendario: () => import('./admin-calendario.js'),
     equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'), avisos: () => import('./admin-avisos.js'),
+    precosDia: () => import('./admin-precos-dia.js'),
 };
 const comImpressao = async (fn) => { try { await fn(await TELAS.impressao()); } catch (e) { console.error(e); showToast('Não consegui abrir a impressão. Confira a internet e toque de novo.', true); } };
 document.getElementById('btn-impressora')?.addEventListener('click', () => comImpressao((m) => m.abrirImpressora()));
@@ -562,6 +563,7 @@ const renderProdutos = () => {
         const avisos = [];
         if (p.soInsumo) avisos.push('<span class="pl-selo">só ingrediente</span>');
         if (Number(p.precoDe) > Number(p.preco)) avisos.push('<span class="pl-selo oferta">oferta</span>');
+        else if (p.precosDia && Object.values(p.precosDia).some((v) => Number(v) > 0)) avisos.push('<span class="pl-selo">preço por dia</span>');
         if (temEstoque(p)) { const q = Number(p.estoqueFisico); avisos.push(q <= 0 ? '<span class="pl-selo ruim">estoque zerado</span>' : q <= 5 ? `<span class="pl-selo atencao">restam ${q}</span>` : `<span class="pl-selo">estoque ${q}</span>`); }
         if (!p.foto && !p.soInsumo) avisos.push('<span class="pl-selo atencao">sem foto</span>');
         // sem o peso médio, o cliente não vê estimativa de preço ao pedir "5 unidades" de um produto vendido a peso
@@ -1459,6 +1461,9 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
     }
 });
 
+document.getElementById('btn-precos-dia')?.addEventListener('click', async () => {
+    try { (await TELAS.precosDia()).abrirPrecosDia(produtosAtuais); } catch (e) { console.error(e); showToast('Não consegui abrir os preços por dia. Confira a internet e toque de novo.', true); }
+});
 document.getElementById('btn-varias-fotos')?.addEventListener('click', async () => {
     try { (await TELAS.fotos()).abrirFotos(produtosAtuais); } catch (e) { showToast('Não consegui abrir. Confira a internet.', true); }
 });
@@ -1759,11 +1764,11 @@ const dataHoraBR = (iso) => { const t = Date.parse(iso); return Number.isFinite(
 
 document.getElementById('btn-exportar').addEventListener('click', () => {
     if (pedidosGerais.length === 0) return showToast("Não há pedidos para exportar.", true);
-    let csv = ['Data', 'Cliente', 'Condomínio', 'Quadra/Rua', 'Lote/Número', 'Status', 'Pagamento', 'Total', 'Itens'].join(CSV_SEP) + "\n";
+    let csv = ['Data', 'Entrega', 'Cliente', 'Condomínio', 'Quadra/Rua', 'Lote/Número', 'Status', 'Pagamento', 'Total', 'Itens'].join(CSV_SEP) + "\n";
     pedidosGerais.forEach(p => {
         const itensTxt = p.itens ? p.itens.map(i => `${formatarQtdRelatorio(i.qtd, i.unidade)} ${i.nome}`).join(' | ') : '';
         const total = (Number(p.total) || 0).toFixed(2).replace('.', ',');
-        csv += [dataHoraBR(p.data), p.nome, p.condominio || '', p.quadra, p.lote, p.status, p.pag, total, itensTxt].map(csvCampo).join(CSV_SEP) + "\n";
+        csv += [dataHoraBR(p.data), p.entregaDia || '', p.nome, p.condominio || '', p.quadra, p.lote, p.status, p.pag, total, itensTxt].map(csvCampo).join(CSV_SEP) + "\n";
     });
     baixarCsv(csv, `Vendas_Logistica_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`);
     showToast('Planilha gerada. Veja em Downloads.');
@@ -2043,7 +2048,7 @@ document.getElementById('btn-exportar-balanco')?.addEventListener('click', () =>
 
     // --- Parte 2: pedido por pedido ---
     csv += '\nPEDIDOS DO PERÍODO\n';
-    csv += ['Data', 'Cliente', 'Condomínio', 'Quadra/Rua', 'Lote/Número', 'Status', 'Pagamento', 'Pago via PIX', 'Cupom', 'Total', 'Itens'].join(CSV_SEP) + '\n';
+    csv += ['Data', 'Entrega', 'Cliente', 'Condomínio', 'Quadra/Rua', 'Lote/Número', 'Status', 'Pagamento', 'Pago via PIX', 'Cupom', 'Total', 'Itens'].join(CSV_SEP) + '\n';
     validos
         .slice()
         .sort((a, b) => String(a.data).localeCompare(String(b.data)))
@@ -2055,7 +2060,7 @@ document.getElementById('btn-exportar-balanco')?.addEventListener('click', () =>
                 ? `${p.cupom.codigo} (-${Number(p.cupom.desconto || 0).toFixed(2).replace('.', ',')})`
                 : '';
             csv += [
-                dataHoraBR(p.data), p.nome, p.condominio || '', p.quadra, p.lote, p.status, p.pag, pago, cupom,
+                dataHoraBR(p.data), p.entregaDia || '', p.nome, p.condominio || '', p.quadra, p.lote, p.status, p.pag, pago, cupom,
                 (Number(p.total) || 0).toFixed(2).replace('.', ','), itensTxt
             ].map(csvCampo).join(CSV_SEP) + '\n';
         });

@@ -182,6 +182,7 @@ export const initIA = (STATE) => {
                 mensagemCliente: texto,
                 historico: repetindo ? STATE.historicoChat.slice(0, -1).slice(-6) : historicoAnterior,
                 carrinho: STATE.carrinho.map(i => ({ id: i.id, nome: i.nome, qtd: i.qtd, unidade: i.unidade })),
+                diaPreco: Number.isInteger(STATE.diaDoPreco) ? STATE.diaDoPreco : undefined,   // a IA fala o preço do mesmo dia que a vitrine mostra
                 imagem: imagemDoEnvio
             };
 

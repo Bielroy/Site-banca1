@@ -242,6 +242,58 @@ teste('plataforma: horário limite e dias sem feira ficam guardados (limpos)', a
   assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
   const f = db._dados.get('feiras/f-1'); assert.strictEqual(f.horaLimite, '11:30'); assert.deepStrictEqual(f.semFeira, [futuro]);
 });
+teste('preço por dia: a loja e o servidor dão o mesmo preço; oferta vence; dia sem preço usa o normal', async () => {
+  const F = require(raiz('lib/feira')), O = await import(raiz('js/oferta-lib.js'));
+  const casos = [
+    { preco: 10, precosDia: { 2: 12.5, 3: 8 } }, { preco: 10, precoDe: 15, precosDia: { 2: 12 } }, { preco: 10, precosDia: { 2: 'lixo', 3: -1, 4: 0 } },
+    { preco: 10, precosDia: null }, { preco: 10, precosDia: [1, 2, 3] }, { preco: 10, precosDia: { 5: 9.999 } }, null,
+  ];
+  for (const p of casos) for (const d of [-1, 0, 1, 2, 3, 4, 5, 6, 7, 2.5, undefined]) assert.deepStrictEqual(O.precoDoDia(p, d), F.precoDoDia(p, d), `diferença: ${JSON.stringify(p)} dia ${d}`);
+  assert.strictEqual(F.precoDoDia(casos[0], 2), 12.5); assert.strictEqual(F.precoDoDia(casos[0], 3), 8); assert.strictEqual(F.precoDoDia(casos[0], 4), 10);
+  assert.strictEqual(F.precoDoDia(casos[1], 2), 10, 'oferta ligada vale em todos os dias');
+  assert.strictEqual(F.precoDoDia(casos[2], 3), 10, 'valor estranho: preço normal');
+  assert.strictEqual(F.precoDoDia(casos[5], 5), 10, 'arredonda em centavos');
+  assert.deepStrictEqual(O.limparPrecosDia({ 0: '7,5', 3: 8, 7: 9, x: 1, 2: '' }), { 0: 7.5, 3: 8 });
+});
+teste('preço por dia: o pedido cobra o preço do dia da ENTREGA (feira) ou de hoje; o navegador não escolhe preço', async () => {
+  const hoje = new Date(Date.now() - 3 * 3600000).getUTCDay(), outro = (hoje + 3) % 7;
+  const base = semente();
+  base['produtos/tomate'] = { ...base['produtos/tomate'], precosDia: { [hoje]: 7, [outro]: 12 } };
+  base['feiras/f-outro'] = { nome: 'Feira', dias: [outro], lojas: [{ id: 'banca' }] };
+  const db = criarBanco(base); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  // sem feira: preço de HOJE
+  let r = await chamar(api, { headers: ip(), body: pedido({ itens: [{ id: 'tomate', qtd: 2, tipo: 'kg', preco: 0.01 }] }) });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(r.corpo.pedido.total, 14, 'hoje: 2 kg × R$ 7');
+  // cliente da feira de outro dia: preço do dia da feira
+  const p = pedido({ feira: 'f-outro', itens: [{ id: 'tomate', qtd: 2, tipo: 'kg' }] });
+  r = await chamar(api, { headers: ip(), body: p });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(r.corpo.pedido.total, 24, 'dia da feira: 2 kg × R$ 12');
+  assert.strictEqual(db._dados.get(`pedidos/${p.idempotencyKey}`).itens[0].preco, 12);
+  // oferta ligada: vale a oferta, em qualquer dia
+  db._dados.set('produtos/tomate', { ...db._dados.get('produtos/tomate'), preco: 5, precoDe: 9 });
+  r = await chamar(api, { headers: ip(), body: pedido({ feira: 'f-outro', itens: [{ id: 'tomate', qtd: 2, tipo: 'kg' }] }) });
+  assert.strictEqual(r.corpo.pedido.total, 10, 'oferta: 2 kg × R$ 5');
+});
+teste('preço por dia: o balcão cobra o preço de hoje', async () => {
+  const hoje = new Date(Date.now() - 3 * 3600000).getUTCDay();
+  const sem = sementeEstoque(); sem['produtos/ovos'] = { ...sem['produtos/ovos'], precosDia: { [hoje]: 11 } };
+  const db = criarBancoP(sem); const api = carregarApi(raiz('api/pdv.js'), criarAdmin(db, TOKENS_P));
+  const chave = 'bal-' + Math.random().toString(36).slice(2, 12);
+  const v = await chamar(api, { headers: { Authorization: 'Bearer func-banca' }, body: { acao: 'venda', chave, pag: 'Dinheiro', itens: [{ id: 'ovos', qtd: 2 }] } });
+  assert.strictEqual(v.status, 200, JSON.stringify(v.corpo));
+  assert.strictEqual(db._dados.get(`pedidos/${chave}`).total, 22);
+});
+teste('motor: preço por dia de propósito (terça cara, quarta barata) não vira promoção; promoção de verdade continua aparecendo', async () => {
+  const EF = require(raiz('analytics/externalFactors'));
+  const mp = new Map(); const base = 20000;          // um dia qualquer (número de dias desde 1970)
+  for (let k = 0; k < 60; k++) { const d = base + k, terca = ((d + 4) % 7) === 2; mp.set(d, { p: terca ? 12 : 8, de: null }); }
+  const umaTerca = [...mp.keys()].reverse().find((d) => ((d + 4) % 7) === 2), umaQuarta = umaTerca + 1;
+  assert.strictEqual(EF.precoRelativo(mp, umaTerca, true), 1, 'terça no preço de sempre da terça');
+  assert.strictEqual(EF.precoRelativo(mp, umaQuarta, true), 1, 'quarta no preço de sempre da quarta');
+  assert.notStrictEqual(EF.precoRelativo(mp, umaTerca, false), 1, 'sem saber do preço por dia, toda terça parecia aumento de preço');
+  mp.set(umaQuarta, { p: 5, de: null });
+  assert.ok(EF.precoRelativo(mp, umaQuarta, true) < 1, 'quarta mais barata que as outras quartas: promoção de verdade');
+});
 teste('aba Clientes: pedido novo aparece na hora (recalcula só quando há pedido depois do último cálculo)', async () => {
   const db = criarBanco({ ...semente(), 'pedidos/n1': { nome: 'Ana Teste', quadra: '7', lote: '2', condominio: 'Jardins', total: 12, data: new Date().toISOString(), itens: [{ id: 'tomate', nome: 'Tomate', qtd: 1, tipo: 'kg', unidade: 'kg', preco: 8.9 }] } });
   const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));

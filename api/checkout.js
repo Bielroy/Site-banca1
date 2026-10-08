@@ -328,6 +328,9 @@ module.exports = async function handler(req, res) {
         if (!diasAbertos.includes(agoraBrasilia().getUTCDay())) throw new Error('A loja não abre hoje.');
       }
 
+      // dia da semana que decide o preço: o da entrega (feira) ou hoje, em Brasília
+      const diaDoPreco = entrega ? entrega.dow : agoraBrasilia().getUTCDay();
+
       // O mesmo produto duas vezes no pedido baixaria o estoque só pela última linha
       const idsVistos = new Set();
       for (const i of itens) {
@@ -358,7 +361,8 @@ module.exports = async function handler(req, res) {
         // pedido e ESTRAGAVA o caixa do dia e o total geral da loja, que são somas.
         const precoN = typeof p.preco === 'number' ? p.preco : Number(String(p.preco == null ? '' : p.preco).replace(',', '.'));
         if (!Number.isFinite(precoN) || precoN <= 0 || precoN > 100000) throw new Error(`"${p.nome}" está sem preço. Chame a loja no WhatsApp.`);
-        p.preco = precoN;
+        // PREÇO DO DIA DA ENTREGA (preço por dia da semana; oferta ligada vence). Nunca o preço que veio do navegador.
+        p.preco = Feira.precoDoDia({ ...p, preco: precoN }, diaDoPreco);
         const fracionavel = isFracionavel(p.unidade);
         // tipo escolhido pelo cliente; produto não-fracionável é sempre 'un'
         const tipo = (item.tipo === 'un') ? 'un' : (fracionavel ? 'kg' : 'un');

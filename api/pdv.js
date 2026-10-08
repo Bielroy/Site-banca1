@@ -18,6 +18,7 @@ const admin = require('firebase-admin');
 const T = require('../lib/tenant');
 const E = require('../lib/estoque');
 const V = require('../lib/venda');
+const Feira = require('../lib/feira');
 const Avisos = require('../lib/avisos');
 const P = require('../lib/prudencia');
 
@@ -66,7 +67,7 @@ async function venda(req, res, { tid, dec }) {
       itens.forEach((item, idx) => {
         const s = prodSnaps[idx];
         if (!s.exists) throw new Error('Um dos produtos não existe mais.');
-        const p = s.data(), frac = V.isFracionavel(p.unidade), preco = Number(p.preco);
+        const p = s.data(), frac = V.isFracionavel(p.unidade), preco = Feira.precoDoDia(p, new Date(Date.now() - 3 * 3600000).getUTCDay());   // balcão: o preço de HOJE
         if (!(preco > 0)) throw new Error(`"${p.nome}" está sem preço de venda.`);
         let qtd = Number(item.qtd);
         if (!Number.isFinite(qtd) || qtd <= 0 || qtd > 10000) throw new Error(`Quantidade inválida para "${p.nome}".`);

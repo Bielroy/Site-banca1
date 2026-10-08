@@ -66,15 +66,21 @@ function estadoDoDia(d, ctx) {
 }
 
 // ---------- preço relativo -----------------------------------------
-/** ρ = preço do dia ÷ preço de referência. 1 quando não dá para saber. mapa: Map(dia → { p, de }) */
-function precoRelativo(mapa, d) {
+/**
+ * ρ = preço do dia ÷ preço de referência. 1 quando não dá para saber. mapa: Map(dia → { p, de })
+ * porDia: o produto tem PREÇO POR DIA DA SEMANA (terça mais cara, quarta mais barata, de propósito).
+ * Aí a referência é o preço dos MESMOS dias da semana nas semanas anteriores: senão toda quarta
+ * pareceria promoção e toda terça pareceria aumento, e o motor erraria a procura dos dois dias.
+ */
+function precoRelativo(mapa, d, porDia = false) {
   if (!mapa) return 1;
   const info = mapa.get(d); if (!info || !(info.p > 0)) return 1;
   let ref = null;
   if (info.de > info.p) ref = info.de;                                    // oferta declarada: o "de" é a referência
   else {
     const ant = [];
-    for (let k = 1; k <= C.PRECO_JANELA_REF; k++) { const x = mapa.get(d - k); if (x && x.p > 0) ant.push(x.de > x.p ? x.de : x.p); }
+    if (porDia) for (let k = 1; k <= 8; k++) { const x = mapa.get(d - 7 * k); if (x && x.p > 0) ant.push(x.de > x.p ? x.de : x.p); }
+    else for (let k = 1; k <= C.PRECO_JANELA_REF; k++) { const x = mapa.get(d - k); if (x && x.p > 0) ant.push(x.de > x.p ? x.de : x.p); }
     if (ant.length >= 3) ref = S.median(ant);
   }
   if (!(ref > 0)) return 1;
@@ -147,7 +153,8 @@ function aprender({ series, produtos, ctx, fim }) {
   const rho = new Map();                                              // pid → Map(dia → ρ) só onde ρ ≠ 1
   if (C.USAR_PRECO && ctx && ctx.precos) for (const [pid, pts] of base) {
     const mp = ctx.precos.get(pid); if (!mp) continue;
-    const r = new Map(); for (const o of pts) { const x = precoRelativo(mp, o.dia); if (x !== 1) r.set(o.dia, x); }
+    const porDia = !!(ctx.porDia && ctx.porDia.has(pid));
+    const r = new Map(); for (const o of pts) { const x = precoRelativo(mp, o.dia, porDia); if (x !== 1) r.set(o.dia, x); }
     if (r.size) rho.set(pid, r);
   }
   const est = new Map(); const estado = (d) => { if (!est.has(d)) est.set(d, estadoDoDia(d, ctx)); return est.get(d); };
@@ -253,7 +260,7 @@ function fator(modelo, pid, cat, d, precoInfo) {
   if (C.USAR_PRECO && modelo.ctx && modelo.ctx.precos) {
     let mp = modelo.ctx.precos.get(pid);
     if (precoInfo && precoInfo.p > 0) { mp = new Map(mp || []); mp.set(d, precoInfo); }
-    const r = precoRelativo(mp, d);
+    const r = precoRelativo(mp, d, !!(modelo.ctx.porDia && modelo.ctx.porDia.has(pid)));
     if (r !== 1) { const b = -elastDe(modelo, pid, cat) * Math.log(r); lf += b; partes.push({ tipo: 'preco', fator: Math.exp(b), rho: r, n: modelo.preco.n }); }
   }
   return { f: Math.exp(S.clamp(lf, Math.log(C.FATOR_MIN), Math.log(C.FATOR_MAX))), partes };

@@ -111,6 +111,7 @@
             <div id="lista-produtos" class="pl-lista">Carregando os produtos...</div>
             <div class="pl-extras">
                 <button class="bt bt-sec" id="btn-varias-fotos">Enviar várias fotos</button>
+                <button class="bt bt-sec" id="btn-precos-dia">Preço por dia da semana</button>
                 <span id="kit-ia-lugar"></span>
             </div>
         </section>
@@ -490,6 +491,19 @@
     </div>
 
     <!-- Modal Compartilhado Custom Confirm -->
+    <div class="modal-overlay" id="modal-precos-dia">
+        <div class="modal">
+            <header class="modal-head">
+                <h2>Preço por dia da semana</h2>
+                <button class="btn-fechar" data-fechar="modal-precos-dia" aria-label="Fechar">&times;</button>
+            </header>
+            <div class="modal-body" id="pd-corpo"></div>
+            <footer class="modal-footer pd-rodape">
+                <button type="button" class="bt bt-pri" id="pd-salvar">Salvar os preços</button>
+            </footer>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="overlay-confirm">
         <div class="modal" style="max-width: 380px; text-align: center;">
             <div class="modal-body" style="padding: 30px 24px;">

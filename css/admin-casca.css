@@ -212,3 +212,21 @@ body.so-equipe #ped-mais { display: none; }
 /* pedido para outro dia (cliente da feira) e feira cancelada nesse dia */
 .ped-para-dia { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: #e0f2fe; color: #0c4a6e; font-size: .86rem; font-weight: 700; }
 .ped-para-dia.cancelada { background: #fdecea; color: #8a1c1c; }
+/* Preço por dia da semana */
+.pd-dias { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 12px 0; }
+.pd-dia { display: grid; place-items: center; min-height: 48px; padding: 4px 0; border: 1.5px solid var(--linha-fina, #e6e0d4); border-radius: 12px; background: #fff; color: var(--text-dark); font: 700 .86rem/1.1 inherit; cursor: pointer; }
+.pd-dia small { font-size: .62rem; font-weight: 600; color: var(--leaf); }
+.pd-dia.on { background: var(--forest); border-color: var(--forest); color: #fff; }
+.pd-dia.on small { color: var(--sage); }
+.pd-busca { width: 100%; min-height: 44px; padding: 8px 12px; border: 1.5px solid var(--linha-fina, #e6e0d4); border-radius: 12px; font: inherit; }
+.pd-tit { margin: 14px 0 8px; font-family: 'Fraunces', serif; color: var(--forest); font-size: 1.1rem; }
+.pd-lista { display: grid; gap: 8px; }
+.pd-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--linha-fina, #e6e0d4); border-radius: 12px; background: #fff; }
+.pd-item.mudou { border-color: var(--leaf); background: var(--foam); }
+.pd-nome { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.pd-nome b { overflow-wrap: anywhere; }
+.pd-nome small { color: var(--text-light); font-size: .8rem; }
+.pd-campo { flex: none; display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: var(--text-mid); }
+.pd-campo input { width: 84px; min-height: 42px; padding: 6px 8px; border: 1.5px solid var(--linha-fina, #e6e0d4); border-radius: 10px; font: inherit; text-align: right; }
+.pd-campo input:disabled { background: var(--parchment); }
+.pd-rodape { position: sticky; bottom: 0; }

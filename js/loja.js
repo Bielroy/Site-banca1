@@ -13,7 +13,7 @@ import { podePagarPix } from './pix-lib.js';
 import { lerEntrega, previaDaEntrega } from './entrega-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
 import { miniatura } from './foto-lib.js';
-import { emOferta, desconto, ofertasDe } from './oferta-lib.js';
+import { emOferta, desconto, ofertasDe, precoDoDia } from './oferta-lib.js';
 import { codigoPix, pixDaLojaValido, chaveBonita } from './pix-chave-lib.js';
 import { listaValida, listaDoCarrinho, separar, mesmoConjunto, podeConvidarAvaliar, nomeDoDia, textoDaNota } from './atalhos-lib.js';
 import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
@@ -419,6 +419,8 @@ const guardarNaConta = () => agendarGuardar(() => ({ sacola: sacolaParaGuardar(S
 const perguntarFeira = (lista) => customConfirm('Qual é a sua feira?', `O seu condomínio é atendido em mais de uma feira desta banca. Escolha a sua: cada feira tem os seus preços e o seu dia.`, { ok: lista[0].nome, nao: lista[1].nome }).then((sim) => (sim ? lista[0].id : lista[1].id));
 /** Para quando é o pedido de um cliente da feira (null = não é cliente de feira desta banca). */
 const entregaDaFeira = () => { const f = feiraDoClienteAqui(); return f ? proximaEntrega(f) : null; };
+/** Dia da semana que decide o preço: o da entrega da feira do cliente, ou hoje (Brasília). Mesmo critério do servidor. */
+const diaDoPreco = () => { const e = entregaDaFeira(); return e ? e.dow : new Date(Date.now() - 3 * 3600000).getUTCDay(); };
 document.addEventListener('feira-do-cliente', () => { try { atualizarRodapeCarrinhoDOM(); } catch (_) { /* carrinho ainda não montado */ } });
 const feiraDoEnderecoSalvo = (e) => { if (e && e.condominio) feiraPeloCondominio(e.condominio, perguntarFeira).then((id) => { if (id) guardarNaConta(); }).catch(() => {}); };
 
@@ -740,7 +742,7 @@ const iniciarRealTimeSync = () => {
 
     // [PATCH 3] Só reconstrói o grid quando o catálogo realmente muda (evita reflows/lag)
     let _assinaturaProdutos = '';
-    let _produtosBrutos = [];
+    let _produtosBrutos = [], _diaDoPrecoAplicado = null;
     let _produtosChegaram = false; // a vitrine só é desenhada depois da 1ª resposta dos produtos
     let _catsProntas = false;      // espera a 1ª resposta das categorias p/ não "piscar" produto de categoria oculta
     // Junta produtos + categorias do painel (ocultas somem; renomear/ordenar reflete na hora)
@@ -749,7 +751,9 @@ const iniciarRealTimeSync = () => {
     const aplicarCatalogo = () => {
         if (!_catsProntas || !_produtosChegaram) return;
         STATE.catalogoChegou = true;
-        STATE.produtos = aplicarCategorias(_produtosBrutos);
+        // preço do DIA DA ENTREGA (feira do cliente, ou hoje): todo o resto da loja usa p.preco
+        const dia = diaDoPreco(); _diaDoPrecoAplicado = dia; STATE.diaDoPreco = dia;
+        STATE.produtos = aplicarCategorias(_produtosBrutos.map((p) => ({ ...p, precoNormal: p.preco, preco: precoDoDia(p, dia) })));
         const lista = STATE.produtos.map(p => p.id).join('|') + '#' + assinaturaCategorias();
         const porProduto = new Map(STATE.produtos.map(p => [p.id, assinaturaDe(p)]));
         const assinatura = lista + '#' + [...porProduto.values()].join('|');
@@ -767,6 +771,9 @@ const iniciarRealTimeSync = () => {
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
         tentarRestaurarSacola();
     };
+    // a feira do cliente mudou (link, condomínio, conta) ou virou o dia: os preços mudam junto
+    document.addEventListener('feira-do-cliente', aplicarCatalogo);
+    setInterval(() => { if (diaDoPreco() !== _diaDoPrecoAplicado) aplicarCatalogo(); }, 60000);
     const unsubProdutos = onSnapshot(tcol("produtos"), (snap) => {
         _produtosChegaram = true;
         _produtosBrutos = snap.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter(p => p.ativo && !p.soInsumo);   // ingrediente de receita não vai para a vitrine

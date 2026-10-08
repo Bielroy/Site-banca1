@@ -23,6 +23,7 @@ const E = require('./evaluation');
 const K = require('./ranking');
 const EF = require('./externalFactors');
 const { dowDeDia, diaDeTs, isoDeDia, diaDeIso } = N;
+const { precoDoDia } = require('../lib/feira');   // preço por dia da semana (mesma regra do checkout)
 
 const PADROES = JSON.parse(JSON.stringify(C));
 function aplicarParametros(over) {
@@ -87,10 +88,12 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
   }
   const mapaClima = new Map();
   for (const [iso, v] of Object.entries((clima && clima.dias) || {})) { const d = diaDeIso(iso); if (Number.isFinite(d) && Array.isArray(v)) mapaClima.set(d, { chuva: v[0], tmax: v[1] }); }
-  const contexto = { estadosClima: EF.estadosDoClima(mapaClima), precos, fora };
+  // produtos com PREÇO POR DIA DA SEMANA: o preço de referência é o dos mesmos dias da semana (externalFactors.precoRelativo)
+  const comPrecoPorDia = new Set([...produtos.values()].filter((p) => p.precosDia && Object.keys(p.precosDia).some((k) => Number(p.precosDia[k]) > 0)).map((p) => p.id));
+  const contexto = { estadosClima: EF.estadosDoClima(mapaClima), precos, fora, porDia: comPrecoPorDia };
   // retrato de HOJE para guardar (preço, oferta e quem está fora da loja): é o histórico de preços de amanhã
   const contextoNovo = { dia: isoDeDia(hoje), precos: {}, fora: [] };
-  for (const p of produtos.values()) { if (!p.noCatalogo) continue; if (p.preco > 0) contextoNovo.precos[p.id] = p.precoDe ? [p.preco, p.precoDe] : p.preco; if (!p.ativo) contextoNovo.fora.push(p.id); }
+  for (const p of produtos.values()) { if (!p.noCatalogo) continue; const pd = precoDoDia(p, dowDeDia(hoje)); if (pd > 0) contextoNovo.precos[p.id] = p.precoDe ? [pd, p.precoDe] : pd; if (!p.ativo) contextoNovo.fora.push(p.id); }   // o preço de HOJE (preço por dia da semana)
 
   // agregados a persistir (1 doc/dia, só dias com venda) — alimenta o histórico longo
   const porDia = new Map();
@@ -124,7 +127,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
   const walks = new Map();
   for (const [pid, s] of series) walks.set(pid, D.walkForward(s));
   // preço dos próximos dias = o de hoje no cadastro (só para os próximos HORIZONTE_PRECO dias)
-  const fatorFuturoDe = (p) => (d) => EF.fator(fatores, p.id, p.cat, d, d >= hoje && d - hoje < C.HORIZONTE_PRECO && p.noCatalogo && p.preco > 0 ? { p: p.preco, de: p.precoDe } : null);
+  const fatorFuturoDe = (p) => (d) => EF.fator(fatores, p.id, p.cat, d, d >= hoje && d - hoje < C.HORIZONTE_PRECO && p.noCatalogo && p.preco > 0 ? { p: precoDoDia(p, dowDeDia(d)), de: p.precoDe } : null);   // o preço daquele dia da semana
   const pesos = D.pesosMetodos({ clientes, produtos, hoje, abertos }, walks);
 
   const buDias = {};
