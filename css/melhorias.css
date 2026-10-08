@@ -231,7 +231,7 @@
 
 /* ---------- PIX automático ---------- */
 .sucesso-pix { margin-bottom: 14px; }
-.btn-pix { display: block; width: 100%; min-height: 48px; padding: 13px 16px; border-radius: 14px; border: 2px solid var(--forest); background: var(--superficie, #fff); color: var(--forest); font: 800 1rem/1.2 inherit; font-family: inherit; cursor: pointer; margin-top: 10px; }
+.btn-pix { display: block; width: 100%; min-height: 48px; padding: 13px 16px; border-radius: 14px; border: 2px solid var(--forest); background: var(--superficie, #fff); color: var(--forest); font-weight: 800; font-size: 1rem; line-height: 1.2; font-family: inherit; font-family: inherit; cursor: pointer; margin-top: 10px; }
 .btn-pix:active { transform: scale(.98); }
 .pedido-pago { margin-top: 10px; font-weight: 700; color: var(--success, #166534); }
 .pix-valor { font-size: 1.05rem; color: var(--text-mid); margin-bottom: 14px; }

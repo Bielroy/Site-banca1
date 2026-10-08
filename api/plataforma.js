@@ -76,7 +76,7 @@ async function lojas(res) {
     const modulos = {}; Object.keys(MODULOS).forEach((m) => { modulos[m] = m === 'ia' && id !== T.TENANT_PADRAO ? !!(f.modulos && f.modulos.ia === true) : T.moduloAtivo(f, m); });
     return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, mes, donos, assinatura: assinaturas.get(id) || null };
   }));
-  const condominios = await Cond.garantir(db, T).catch(() => []);
+  const condominios = await Cond.garantir(db, T);   // sem o cadastro, a tela não abre (senão salvar uma feira apagaria os condomínios dela)
   const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, condominiosIds: Cond.idsDaFeira(condominios, d.data()), dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira) }));
   const seg = await db.collection('plataforma').doc('segredos').get();
   const fotos = /^[a-f0-9]{32}$/i.test(String(process.env.IMGBB_API_KEY || (seg.exists && seg.data().imgbb) || ''));
@@ -187,6 +187,7 @@ async function feira(req, res) {
   if (ids.length && nome.length < 2) throw falha(400, 'Dê um nome para a feira.');
   const fichas = []; for (const id of ids) fichas.push([id, await exigirLoja(id)]);
   const refFeira = db.collection('feiras').doc(fid), antiga = await refFeira.get();
+  if (b.nova === true && antiga.exists) throw falha(409, 'Já existe uma feira com um nome parecido. Escolha outro nome.');   // feira nova nunca substitui outra
   if (!antiga.exists && ids.length && (await db.collection('feiras').get()).size >= 60) throw falha(400, 'A plataforma chegou ao limite de 60 feiras.');
   const saem = antiga.exists ? (antiga.data().lojas || []).map((l) => l.id).filter((id) => T.idValido(id) && !ids.includes(id)) : [];
   const lote = db.batch();
@@ -201,6 +202,7 @@ async function feira(req, res) {
     lote.set(fichaRef(id), { ...base(f), feiras: lista, feiraId: lista[0] }, { merge: true });
   }
   // CONDOMÍNIOS: marcados do cadastro da plataforma (condominiosIds). Telas antigas ainda mandam nomes escritos.
+  if (Array.isArray(b.condominiosIds) && new Set(b.condominiosIds).size > 40) throw falha(400, 'Uma feira atende no máximo 40 condomínios.');
   const doCadastro = Array.isArray(b.condominiosIds) ? Cond.copiaParaFeira(Cond.escolher(await Cond.garantir(db, T), b.condominiosIds)) : null;
   const condominios = doCadastro ? doCadastro.condominios : limparCondominios(b.condominios), conds = doCadastro ? doCadastro.conds : [];
   // horário limite do pedido para o mesmo dia (vazio = aceita o dia todo) e datas sem feira (chuva, feriado)
@@ -230,7 +232,8 @@ async function condominio(req, res) {
   if (igual) throw falha(409, `Já existe "${igual.nome}" no cadastro.`);
   if (id) {
     const atual = lista.find((c) => c.id === id); if (!atual) throw falha(404, 'Condomínio não encontrado.');
-    const nova = lista.map((c) => (c.id === id ? { ...c, nome, formato } : c));
+    // o nome antigo vira apelido: cliente com o endereço antigo guardado continua caindo na feira
+    const nova = lista.map((c) => (c.id === id ? { ...c, nome, formato, apelidos: Cond.normCond(c.nome) === Cond.normCond(nome) ? c.apelidos || [] : [c.nome, ...(c.apelidos || [])] } : c));
     await Cond.salvar(db, nova);
     // as feiras que usam este condomínio passam a ter o nome e o formato novos
     const lote = db.batch(); let n = 0;
@@ -247,6 +250,7 @@ async function condominio(req, res) {
 async function assinatura(req, res) {
   const b = req.body || {}, id = String(b.id || ''); await exigirLoja(id);
   const dados = Assinatura.limpar(b);
+  if (!dados && String(b.valor == null ? '' : b.valor).trim() !== '') throw falha(400, 'Confira o valor da mensalidade.');   // valor ilegível não apaga a mensalidade
   if (dados) await Assinatura.ref(db, id).set({ ...dados, atualizadoEm: new Date().toISOString() });
   else await Assinatura.ref(db, id).delete();
   return res.status(200).json({ sucesso: true, assinatura: dados });

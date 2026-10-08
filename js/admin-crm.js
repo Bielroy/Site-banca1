@@ -31,14 +31,17 @@ function render() {
         return;
     }
     const c = S.seg.contagem;
+    const daFeira = (x) => !S.feiras.length || !S.feira || (S.feira === '-' ? !feiraDeUmCliente(x, S.feiras) : feiraDeUmCliente(x, S.feiras) === S.feira);
+    // com uma feira escolhida, os números de cada filtro contam só os clientes dela
+    const contar = (k) => (S.feiras.length && S.feira ? filtrar(S.seg, { segmento: k }).filter(daFeira).length : c[k]);
     // filtro por FEIRA (só aparece quando a banca está em alguma feira)
     const lista = filtrar(S.seg, { segmento: S.filtro, produtoId: S.produtoId, busca: S.busca })
-        .filter((x) => !S.feiras.length || !S.feira || (S.feira === '-' ? !feiraDeUmCliente(x, S.feiras) : feiraDeUmCliente(x, S.feiras) === S.feira));
+        .filter(daFeira);
     const nomeProd = (id) => (S.produtos.find((p) => p.id === id) || {}).nome;
     const comprados = [...new Set(S.seg.lista.flatMap((x) => x.tp || []))].map((id) => [id, nomeProd(id)]).filter(([, n]) => n).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
     el().innerHTML = `
     <div class="es-topo"><div><h3>Clientes</h3><p class="config-sub">${c.inativos ? `<b>${c.inativos}</b> cliente${c.inativos > 1 ? 's não compram' : ' não compra'} há mais de ${S.seg.diasInativo} dias.` : 'Ninguém parado há mais de 30 dias.'}${S.geradoEm ? ` Dados de ${new Date(S.geradoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}.` : ''}</p></div></div>
-    <div class="es-filtros">${SEGMENTOS.map(([k, r]) => `<button class="es-chip${S.filtro === k ? ' on' : ''}" data-crm-seg="${k}">${r} <b>${c[k]}</b></button>`).join('')}</div>
+    <div class="es-filtros">${SEGMENTOS.map(([k, r]) => `<button class="es-chip${S.filtro === k ? ' on' : ''}" data-crm-seg="${k}">${r} <b>${contar(k)}</b></button>`).join('')}</div>
     <div class="crm-filtros">
         <input type="search" id="crm-busca" class="es-busca" placeholder="Buscar por nome ou endereço..." value="${escapeHTML(S.busca)}" aria-label="Buscar cliente">
         ${S.feiras.length ? `<select id="crm-feira" aria-label="Clientes de qual feira"><option value="">Todas as feiras</option>${S.feiras.map((f) => `<option value="${escapeHTML(f.id)}"${S.feira === f.id ? ' selected' : ''}>${escapeHTML(f.nome)}</option>`).join('')}<option value="-"${S.feira === '-' ? ' selected' : ''}>Sem feira</option></select>` : ''}

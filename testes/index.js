@@ -384,8 +384,16 @@ teste('plataforma: cadastro de condomínios nasce do que já existe; a feira mar
   assert.deepStrictEqual(f.condominios, ['Aldeia', 'Jardins Munique']);
   assert.strictEqual((await pf({ acao: 'condominio', id: 'aldeia', remover: true })).status, 409, 'em uso numa feira: não sai');
   assert.strictEqual((await pf({ acao: 'condominio', id: 'aldeia', nome: 'Aldeia do Vale', formato: 'ql' })).status, 200);
-  assert.deepStrictEqual(db._dados.get('feiras/f-nova').conds[0], { id: 'aldeia', nome: 'Aldeia do Vale', formato: 'ql' }, 'renomear atualiza a feira');
-  assert.ok(db._dados.get('feiras/f-nova').condominios.includes('Aldeia do Vale'));
+  assert.deepStrictEqual(db._dados.get('feiras/f-nova').conds[0], { id: 'aldeia', nome: 'Aldeia do Vale', formato: 'ql', apelidos: ['Aldeia'] }, 'renomear atualiza a feira (o nome antigo fica de apelido)');
+  assert.ok(db._dados.get('feiras/f-nova').condominios.includes('Aldeia do Vale') && db._dados.get('feiras/f-nova').condominios.includes('Aldeia'), 'cliente com o nome antigo guardado continua caindo na feira');
+  r = await pf({ acao: 'feira', nova: true, fid: 'f-nova', nome: 'Nova', lojas: ['banca'], condominiosIds: [] });
+  assert.strictEqual(r.status, 409, 'feira nova não substitui outra com o mesmo endereço');
+  assert.strictEqual(db._dados.get('feiras/f-nova').lojas.length, 2, 'a feira que já existia ficou como estava');
+  r = await pf({ acao: 'feira', fid: 'f-nova', nome: 'Nova', lojas: ['banca'], condominiosIds: Array.from({ length: 41 }, (_, i) => 'c' + i) });
+  assert.strictEqual(r.status, 400, 'mais de 40 condomínios: avisa em vez de cortar calado');
+  assert.strictEqual((await pf({ acao: 'assinatura', id: 'espetinhos', valor: '59,90' })).status, 200);
+  assert.strictEqual((await pf({ acao: 'assinatura', id: 'espetinhos', valor: 'abc' })).status, 400, 'valor ilegível não apaga a mensalidade');
+  assert.strictEqual(db._dados.get('assinaturas/espetinhos').valor, 59.9);
   assert.strictEqual((await pf({ acao: 'condominio', id: 'vila-nova', remover: true })).status, 409, 'Vila Nova ainda está na feira velha (pelo nome)');
   assert.notStrictEqual((await chamar(api, { headers: { Authorization: 'Bearer dono-espetinhos' }, body: { acao: 'condominio', nome: 'X y' } })).status, 200, 'só a plataforma mexe no cadastro');
   const C = require(raiz('lib/condominios'));

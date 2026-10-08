@@ -185,7 +185,7 @@ export function condominiosDasFeiras() {
     const fontes = FEIRA_CLIENTE ? [FEIRA_CLIENTE] : FEIRAS_DA_LOJA, vistos = new Set(), out = [];
     for (const f of fontes) for (const c of Array.isArray(f && f.conds) ? f.conds : []) {
         if (!c || !c.nome || vistos.has(c.id)) continue;
-        vistos.add(c.id); out.push({ id: `pf-${c.id}`, nome: String(c.nome).slice(0, 80), formato: ['ql', 'rua', 'livre'].includes(c.formato) ? c.formato : 'ql' });
+        vistos.add(c.id); out.push({ id: `pf-${c.id}`, nome: String(c.nome).slice(0, 80), formato: ['ql', 'rua', 'livre'].includes(c.formato) ? c.formato : 'ql', apelidos: Array.isArray(c.apelidos) ? c.apelidos.slice(0, 5).map(String) : [] });
     }
     return out;
 }
@@ -295,7 +295,14 @@ export async function iniciarTema() {
         const s = await getDoc(fichaRef());
         const ficha = s.exists() ? s.data() : null;
         // a loja pode estar em várias feiras: lê todas (com o id) e mostra a do cliente (ou a de hoje)
-        const feiras = (await Promise.all(feirasDaFicha(ficha).map((id) => getDoc(doc(db, 'feiras', id)).then((f) => (f.exists() ? { ...f.data(), id } : null)).catch(() => null)))).filter(Boolean);
+        const feirasCruas = (await Promise.all(feirasDaFicha(ficha).map((id) => getDoc(doc(db, 'feiras', id)).then((f) => (f.exists() ? { ...f.data(), id } : null)).catch(() => null)))).filter(Boolean);
+        // a feira guarda uma CÓPIA do nome e da cor de cada banca: confere a ficha de verdade (banca bloqueada some,
+        // nome e cor novos aparecem). Sem resposta da ficha, fica a cópia.
+        const ids = [...new Set(feirasCruas.flatMap((f) => (f.lojas || []).map((l) => l && l.id)).filter((x) => /^[a-z0-9][a-z0-9-]{1,39}$/.test(x || '') && x !== TENANT))].slice(0, 24);
+        const vivas = new Map(await Promise.all(ids.map((id) => getDoc(doc(db, 'tenants', id)).then((f) => [id, f.exists() ? f.data() : null]).catch(() => [id, undefined]))));
+        if (ficha) vivas.set(TENANT, ficha);
+        const feiras = feirasCruas.map((f) => ({ ...f, lojas: (f.lojas || []).filter((l) => { const v = vivas.get(l && l.id); return !(v && v.ativo === false); })
+            .map((l) => { const v = vivas.get(l.id); return v ? { ...l, nome: v.nome || l.nome, cor: (v.tema && v.tema.primaria) || l.cor } : l; }) }));
         if (ficha) aplicarFicha(ficha);
         FEIRAS_DA_LOJA = feiras;
         montarFeira(feiras);

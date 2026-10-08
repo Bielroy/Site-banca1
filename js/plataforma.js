@@ -18,7 +18,7 @@ import './icones-admin.js';
 
 const ABAS = ['feiras', 'lojas', 'condominios', 'mensalidades', 'chaves'];
 const lerAba = () => { try { const a = localStorage.getItem('pf_aba'); return ABAS.includes(a) ? a : 'feiras'; } catch (_) { return 'feiras'; } };
-const S = { dados: null, aba: lerAba(), busca: { lojas: '', condominios: '' }, folha: null, rascunho: null, ocupado: false, editandoCond: '' };
+const S = { dados: null, aba: lerAba(), busca: { lojas: '', condominios: '' }, folha: null, rascunho: null, ocupado: false, editandoCond: '', mensal: {}, confirmando: 0 };
 const el = () => document.getElementById('pf-conteudo');
 const $ = (id) => document.getElementById(id);
 const NOMES_MODELO = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', jantinha: 'Jantinha' };
@@ -34,6 +34,13 @@ async function api(corpo) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || 'Não foi possível concluir.');
     return j;
+}
+const confirmar = async (...args) => { S.confirmando++; try { return await customConfirm(...args); } finally { setTimeout(() => { S.confirmando--; }, 0); } };
+/** "1.500,00" / "1500,5" / "59.9" → número; '' → ''; texto que não é valor → NaN. */
+function lerReais(v) {
+    let t = String(v == null ? '' : v).trim().replace(/^R\$\s*/i, ''); if (!t) return '';
+    if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.'); else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+    return /^\d+(\.\d{1,2})?$/.test(t) ? Number(t) : NaN;
 }
 const aviso = (titulo, texto, link) => { el().innerHTML = `<div class="pf-vazio"><b>${titulo}</b><p>${texto}</p>${link ? `<p><a class="pf-bt" href="./admin.html">${link}</a></p>` : ''}</div>`; };
 
@@ -112,14 +119,14 @@ function abaMensalidades() {
     const d = S.dados, comValor = d.lojas.filter((l) => l.assinatura), total = comValor.reduce((s, l) => s + l.assinatura.valor, 0);
     return `<div class="pf-topo-aba"><p>Só você vê esta lista. Cada proprietário vê apenas a mensalidade da própria banca, na aba Equipe do painel dele.</p></div>
     <p class="pf-total">Previsto por mês: <b>${fmt(total)}</b>, de ${comValor.length} banca${comValor.length === 1 ? '' : 's'}.</p>
-    <ul class="pf-lista">${d.lojas.map((l) => `<li class="pf-mensal${l.ativo ? '' : ' bloq'}" data-loja="${escapeHTML(l.id)}">
+    <ul class="pf-lista">${d.lojas.map((l) => { const r = S.mensal[l.id]; const val = (k, salvo) => escapeHTML(r && r[k] !== undefined ? r[k] : salvo); return `<li class="pf-mensal${l.ativo ? '' : ' bloq'}${r ? ' mudou' : ''}" data-loja="${escapeHTML(l.id)}">
         <span class="pf-linha-txt">${ponto(l.cor)}<b>${escapeHTML(l.nome)}</b>${l.ativo ? '' : '<small>Bloqueada</small>'}</span>
         <div class="pf-mensal-campos">
-            <label>R$ <input type="text" inputmode="decimal" data-m="valor" value="${l.assinatura ? reais(l.assinatura.valor) : ''}" placeholder="0,00" aria-label="Mensalidade de ${escapeHTML(l.nome)}"></label>
-            <label>dia <input type="number" inputmode="numeric" min="1" max="28" data-m="dia" value="${l.assinatura && l.assinatura.dia ? l.assinatura.dia : ''}" placeholder="10" aria-label="Dia do vencimento"></label>
-            <input type="text" maxlength="140" data-m="obs" value="${l.assinatura ? escapeHTML(l.assinatura.obs || '') : ''}" placeholder="Observação" aria-label="Observação">
-            <button type="button" class="pf-bt mini pri" data-pf="salvar-mensal" disabled>Salvar</button>
-        </div></li>`).join('')}</ul>`;
+            <label>R$ <input type="text" inputmode="decimal" data-m="valor" value="${val('valor', l.assinatura ? reais(l.assinatura.valor) : '')}" placeholder="0,00" aria-label="Mensalidade de ${escapeHTML(l.nome)}"></label>
+            <label>dia <input type="number" inputmode="numeric" min="1" max="28" data-m="dia" value="${val('dia', l.assinatura && l.assinatura.dia ? String(l.assinatura.dia) : '')}" placeholder="10" aria-label="Dia do vencimento"></label>
+            <input type="text" maxlength="140" data-m="obs" value="${val('obs', l.assinatura ? l.assinatura.obs || '' : '')}" placeholder="Observação" aria-label="Observação">
+            <button type="button" class="pf-bt mini pri" data-pf="salvar-mensal"${r ? '' : ' disabled'}>Salvar</button>
+        </div></li>`; }).join('')}</ul>`;
 }
 
 function abaChaves() {
@@ -137,14 +144,15 @@ function abrirFolha(tipo, id) {
     S.folha = { tipo, id: id || '' };
     if (tipo === 'feira') {
         const f = id ? S.dados.feiras.find((x) => x.id === id) : null;
-        S.rascunho = { id: f ? f.id : '', nome: f ? f.nome : '', dias: new Set(f ? f.dias : []), lojas: new Set(f ? f.lojas : []), conds: new Set(f ? f.condominiosIds || [] : []), horaLimite: f ? f.horaLimite || '' : '', semFeira: f ? (f.semFeira || []).slice() : [], buscaCond: '', mudou: false };
+        S.rascunho = { id: f ? f.id : '', nome: f ? f.nome : '', dias: new Set(f ? f.dias : []), lojas: new Set((f ? f.lojas : []).filter((id) => lojaPorId(id))), conds: new Set(f ? f.condominiosIds || [] : []), horaLimite: f ? f.horaLimite || '' : '', semFeira: f ? (f.semFeira || []).slice() : [], buscaCond: '', mudou: false };
     }
     pintarFolha();
     const fundo = $('pf-folha'); fundo.classList.add('aberto'); fundo.setAttribute('aria-hidden', 'false'); document.body.style.overflow = 'hidden';
     setTimeout(() => { const alvo = fundo.querySelector('[data-foco]') || fundo.querySelector('.pf-fechar'); alvo && alvo.focus({ preventScroll: true }); }, 60);
 }
 async function fecharFolha(forcar) {
-    if (!forcar && S.rascunho && S.rascunho.mudou && !(await customConfirm('Sair sem salvar?', 'O que você mudou nesta feira vai se perder.', { ok: 'Sair sem salvar', nao: 'Continuar editando' }))) return;
+    if (!forcar && S.ocupado) return showToast('Espere terminar de salvar.');
+    if (!forcar && S.rascunho && S.rascunho.mudou && !(await confirmar('Sair sem salvar?', 'O que você mudou nesta feira vai se perder.', { ok: 'Sair sem salvar', nao: 'Continuar editando' }))) return;
     S.folha = null; S.rascunho = null;
     const fundo = $('pf-folha'); fundo.classList.remove('aberto'); fundo.setAttribute('aria-hidden', 'true');
     if (!document.querySelector('.modal-overlay.aberto')) document.body.style.overflow = '';
@@ -263,7 +271,7 @@ async function agir(b) {
         }
         case 'salvar-feira': return salvarFeira();
         case 'desfazer-feira': {
-            if (!(await customConfirm('Desfazer a feira?', 'As bancas continuam funcionando. O link desta feira deixa de abrir e os clientes dela passam a ver cada banca sozinha.', { ok: 'Desfazer', nao: 'Voltar' }))) return;
+            if (!(await confirmar('Desfazer a feira?', 'As bancas continuam funcionando. O link desta feira deixa de abrir e os clientes dela passam a ver cada banca sozinha.', { ok: 'Desfazer', nao: 'Voltar' }))) return;
             if (await fazer({ acao: 'feira', fid: S.rascunho.id, nome: '', lojas: [] }, 'Feira desfeita.')) fecharFolha(true);
             return;
         }
@@ -279,7 +287,7 @@ async function agir(b) {
             return;
         }
         case 'bloquear': {
-            if (!(await customConfirm(`Bloquear ${loja.nome}?`, `A loja para de receber pedidos e some das feiras. O painel dela deixa de vender no balcão e de mexer no estoque${loja.original ? '. Atenção: esta é a loja original, que está no ar' : ''}. Você pode liberar de novo quando quiser.`, { ok: 'Bloquear', nao: 'Voltar' }))) return;
+            if (!(await confirmar(`Bloquear ${loja.nome}?`, `A loja para de receber pedidos e some das feiras. O painel dela deixa de vender no balcão e de mexer no estoque${loja.original ? '. Atenção: esta é a loja original, que está no ar' : ''}. Você pode liberar de novo quando quiser.`, { ok: 'Bloquear', nao: 'Voltar' }))) return;
             return fazer({ acao: 'ativo', id: lojaId, ativo: false }, 'Loja bloqueada.');
         }
         case 'liberar': return fazer({ acao: 'ativo', id: lojaId, ativo: true }, 'Loja liberada.');
@@ -294,7 +302,7 @@ async function agir(b) {
             return fazer({ acao: 'proprietario', id: lojaId, email }, `${email} agora é proprietário de ${loja.nome}.`);
         }
         case 'tirar-dono': {
-            if (!(await customConfirm('Tirar o proprietário?', `${b.dataset.email} deixa de abrir o painel de ${loja.nome}.`, { ok: 'Tirar', nao: 'Voltar' }))) return;
+            if (!(await confirmar('Tirar o proprietário?', `${b.dataset.email} deixa de abrir o painel de ${loja.nome}.`, { ok: 'Tirar', nao: 'Voltar' }))) return;
             return fazer({ acao: 'proprietario', id: lojaId, email: b.dataset.email, remover: true }, 'Proprietário retirado.');
         }
         case 'cadastrar-cond': {
@@ -313,16 +321,19 @@ async function agir(b) {
         }
         case 'tirar-cond': {
             const li = b.closest('[data-cond]'), c = S.dados.condominios.find((x) => x.id === li.dataset.cond);
-            if (!c || !(await customConfirm(`Tirar ${c.nome}?`, 'Ele sai do cadastro da plataforma. As listas de condomínios que cada banca tem no painel dela não mudam.', { ok: 'Tirar', nao: 'Voltar' }))) return;
+            if (!c || !(await confirmar(`Tirar ${c.nome}?`, 'Ele sai do cadastro da plataforma. As listas de condomínios que cada banca tem no painel dela não mudam.', { ok: 'Tirar', nao: 'Voltar' }))) return;
             return fazer({ acao: 'condominio', id: c.id, remover: true }, `${c.nome} saiu do cadastro.`);
         }
         case 'salvar-mensal': {
             const li = b.closest('[data-loja]'), v = (k) => li.querySelector(`[data-m="${k}"]`).value.trim();
-            const valor = v('valor');
-            if (valor && !(Number(valor.replace(',', '.')) >= 0)) return showToast('Confira o valor da mensalidade.', true);
+            const valor = lerReais(v('valor'));
+            if (Number.isNaN(valor)) return showToast('Confira o valor. Exemplos: 59,90 ou 1.500,00.', true);
             const diaN = Number(v('dia'));
             if (v('dia') && !(Number.isInteger(diaN) && diaN >= 1 && diaN <= 28)) return showToast('O vencimento vai do dia 1 ao dia 28.', true);
-            return fazer({ acao: 'assinatura', id: li.dataset.loja, valor, dia: diaN || null, obs: v('obs') }, valor ? 'Mensalidade salva.' : 'Mensalidade retirada.');
+            const id = li.dataset.loja, guardado = S.mensal[id]; delete S.mensal[id];          // salva só esta linha; as outras continuam como estão na tela
+            const foi = await fazer({ acao: 'assinatura', id, valor: valor === '' ? '' : String(valor), dia: diaN || null, obs: v('obs') }, valor === '' ? 'Mensalidade retirada.' : `Mensalidade de ${fmt(valor)} salva.`);
+            if (!foi) { S.mensal[id] = guardado; render(); }
+            return;
         }
         case 'salvar-pagbank': {
             const chave = $('pf-pagbank').value.trim();
@@ -343,9 +354,10 @@ async function salvarFeira() {
     if (nome.length < 2 || !idValido(fid)) return showToast('Dê um nome para a feira (pelo menos 2 letras).', true);
     if (!r.lojas.size) return showToast('Marque pelo menos uma banca.', true);
     if (r.lojas.size > 12) return showToast('Uma feira tem no máximo 12 bancas.', true);
+    if (r.conds.size > 40) return showToast(`Uma feira atende no máximo 40 condomínios (marcados: ${r.conds.size}).`, true);
     if (nova && S.dados.feiras.some((f) => f.id === fid)) return showToast('Já existe uma feira com um nome parecido. Escolha outro nome.', true);
-    if (!r.conds.size && !(await customConfirm('Salvar sem condomínio?', 'Sem condomínio marcado, só quem abrir o link da feira cai nela. Quem chega sem o link e escolhe o condomínio não é levado a esta feira.', { ok: 'Salvar assim', nao: 'Voltar e marcar' }))) return;
-    const corpo = { acao: 'feira', fid, nome, dias: [...r.dias].sort((a, b) => a - b), lojas: [...r.lojas], condominiosIds: [...r.conds], horaLimite: r.horaLimite, semFeira: r.semFeira };
+    if (!r.conds.size && !(await confirmar('Salvar sem condomínio?', 'Sem condomínio marcado, só quem abrir o link da feira cai nela. Quem chega sem o link e escolhe o condomínio não é levado a esta feira.', { ok: 'Salvar assim', nao: 'Voltar e marcar' }))) return;
+    const corpo = { acao: 'feira', ...(nova ? { nova: true } : {}), fid, nome, dias: [...r.dias].sort((a, b) => a - b), lojas: [...r.lojas], condominiosIds: [...r.conds], horaLimite: r.horaLimite, semFeira: r.semFeira };
     if (await fazer(corpo, nova ? 'Feira criada. Copie o link e mande aos clientes.' : 'Feira salva.')) fecharFolha(true);
 }
 
@@ -359,7 +371,7 @@ function ligar() {
     const clique = async (e) => { const b = e.target.closest('[data-pf]'); if (!b || b.disabled) return; await agir(b); };
     el().addEventListener('click', clique);
     $('pf-folha').addEventListener('click', async (e) => {
-        if (e.target.id === 'pf-folha') return fecharFolha(false);          // toque fora da folha
+        if (e.target.id === 'pf-folha') { if (!S.confirmando) fecharFolha(false); return; }          // toque fora da folha
         const dia = e.target.closest('[data-pf-dia]');
         if (dia && S.rascunho) {
             const n = Number(dia.dataset.pfDia); if (S.rascunho.dias.has(n)) S.rascunho.dias.delete(n); else S.rascunho.dias.add(n);
@@ -369,7 +381,7 @@ function ligar() {
         }
         return clique(e);
     });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && S.folha && !document.querySelector('#overlay-confirm.aberto')) fecharFolha(false); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && S.folha && !S.confirmando && !document.querySelector('#overlay-confirm.aberto')) fecharFolha(false); });
     // digitação: atualiza o que precisa sem redesenhar (o cursor não pula)
     document.addEventListener('input', (e) => {
         const t = e.target;
@@ -384,7 +396,7 @@ function ligar() {
         if (t.id === 'pf-nome' && !$('pf-id').dataset.mexido) $('pf-id').value = sugerirId(t.value);
         if (t.id === 'pf-id') t.dataset.mexido = '1';
         if (t.id === 'pf-nome' || t.id === 'pf-id') $('pf-id-dica').textContent = idValido($('pf-id').value) ? `A loja abre em ${urlDaLoja($('pf-id').value, '/').replace(/^https:\/\//, '')}. Não muda depois.` : 'Não muda depois. Só letras minúsculas, números e hífen.';
-        if (t.dataset.m) { const li = t.closest('[data-loja]'); li.querySelector('[data-pf="salvar-mensal"]').disabled = false; li.classList.add('mudou'); }
+        if (t.dataset.m) { const li = t.closest('[data-loja]'), id = li.dataset.loja; S.mensal[id] = { ...(S.mensal[id] || {}), [t.dataset.m]: t.value }; li.querySelector('[data-pf="salvar-mensal"]').disabled = false; li.classList.add('mudou'); }
     });
     document.addEventListener('change', async (e) => {
         const t = e.target;
@@ -394,6 +406,7 @@ function ligar() {
             if (v === '__novo') $('pf-tipo-nome').focus();
             return;
         }
+        if (t.id === 'pf-f-limite' && S.rascunho) { S.rascunho.horaLimite = t.value; marcarMudanca(); return; }
         if (t.dataset.pfFLoja && S.rascunho) { if (t.checked) S.rascunho.lojas.add(t.dataset.pfFLoja); else S.rascunho.lojas.delete(t.dataset.pfFLoja); $('pf-f-n-lojas').textContent = S.rascunho.lojas.size; marcarMudanca(); return; }
         if (t.dataset.pfFCond && S.rascunho) { if (t.checked) S.rascunho.conds.add(t.dataset.pfFCond); else S.rascunho.conds.delete(t.dataset.pfFCond); $('pf-f-n-conds').textContent = S.rascunho.conds.size; marcarMudanca(); return; }
         if (t.dataset.pfModulo && S.folha && S.folha.tipo === 'loja') {

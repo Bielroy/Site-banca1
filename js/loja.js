@@ -426,7 +426,7 @@ const agoraLoja = () => Date.now() + ACERTO_RELOGIO;
 const pintarListaDeCondominios = () => {
     const daLoja = Array.isArray(STATE.config.condominios) ? STATE.config.condominios : [];
     const ja = new Set(daLoja.filter((c) => c && c.nome).map((c) => normNome(c.nome)));
-    const lista = daLoja.concat(condominiosDasFeiras().filter((c) => !ja.has(normNome(c.nome))));
+    const lista = daLoja.concat(condominiosDasFeiras().filter((c) => ![c.nome, ...(c.apelidos || [])].some((n) => ja.has(normNome(n)))).map(({ apelidos, ...c }) => c));
     try { endCheckout.definirLista(lista); endTopo.definirLista(lista); } catch (_) { /* campos ainda não montados */ }
 };
 const normNome = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();

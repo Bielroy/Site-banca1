@@ -43,7 +43,7 @@ function render() {
         <div class="form-group"><label for="eq-papel">Papel</label><select id="eq-papel">${opcoes('funcionario')}</select><small class="dica-campo" id="eq-papel-dica">${PAPEIS.funcionario[1]}</small></div>
         <button class="btn-salvar-config" id="eq-adicionar">Dar acesso</button>
     </div>
-    ${assinaturaHtml()}
+    <div id="eq-assin-lugar">${assinaturaHtml()}</div>
     <h4 class="cp-sub">Quem tem acesso</h4>
     ${lista}
     <p class="config-sub cal-nota">A pessoa abre o painel, digita o e-mail e entra pelo link que chega na caixa de entrada. Mudança de papel vale quando ela entrar de novo. Ao tirar o acesso, o painel que já estiver aberto pode continuar mostrando a tela por até 1 hora, mas vendas, estoque e equipe são recusados na hora.</p>
@@ -64,7 +64,7 @@ function assinaturaHtml() {
 const fmtReais = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 async function carregar() {
-    api({ acao: 'minha-assinatura' }).then((j) => { S.assinatura = j.assinatura || null; render(); }).catch(() => {});
+    api({ acao: 'minha-assinatura' }).then((j) => { S.assinatura = j.assinatura || null; const lugar = document.getElementById('eq-assin-lugar'); if (lugar) lugar.innerHTML = assinaturaHtml(); }).catch(() => {});
     try { S.equipe = (await api({ acao: 'listar' })).equipe || []; S.estado = 'ok'; }
     catch (e) { S.estado = 'erro'; S.erro = e.message; }
     render();

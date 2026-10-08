@@ -6,7 +6,7 @@ import {
     persistentMultipleTabManager,
     memoryLocalCache,
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
-    query, orderBy, limit, writeBatch, where, updateDoc,
+    query, orderBy, limit, writeBatch, where, updateDoc, deleteField,
     terminate, clearIndexedDbPersistence
 } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -37,7 +37,7 @@ const storage = getStorage(app);
 export { 
     db, auth, storage,
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
-    query, orderBy, limit, writeBatch, where, updateDoc,
+    query, orderBy, limit, writeBatch, where, updateDoc, deleteField,
     sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously,
     ref, uploadBytes, getDownloadURL,
     terminate, clearIndexedDbPersistence
