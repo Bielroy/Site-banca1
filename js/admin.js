@@ -5,7 +5,7 @@ import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
 import './admin-instalar.js';
-import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar } from './admin-guard.js';
+import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar, bancasDaPessoa } from './admin-guard.js';
 import { htmlSimples, csvCampo } from './html-lib.js';
 import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel } from './papeis-lib.js';
 import { ico } from './icones-admin.js';          // também liga a troca das marcas <i class="ic"> pelos desenhos
@@ -85,6 +85,7 @@ onAuthStateChanged(auth, async (user) => {
     try { const f = await getDoc(fichaRef()); modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; } catch (_) { modulosDaLoja = null; }
     { const tl = document.getElementById('topo-loja'); if (tl) tl.textContent = nomeDaLoja; }
     aplicarPapel();
+    montarTrocaDeBanca();
     if (ehGestor(papelAtual)) iniciarIAFeaturesDOM();
     iniciarRealTimeSync();
 });
@@ -223,6 +224,18 @@ let pedidosEsperando = 0;
 const pintarContaDePedidos = () => { const c = document.getElementById('barra-conta'); if (c) { c.textContent = pedidosEsperando; c.hidden = !pedidosEsperando; c.setAttribute('aria-label', `${pedidosEsperando} pedido(s) esperando`); } };
 document.getElementById('barra')?.addEventListener('click', (e) => { if (e.target.closest('#barra-menu')) recolherMenu(!document.querySelector('.tabs').classList.contains('recolhido')); else if (e.target.closest('[data-ir-aba]')) recolherMenu(true); });
 document.getElementById('tabs-fundo')?.addEventListener('click', () => recolherMenu(true));
+
+// TROCAR DE BANCA: quem cuida de mais de uma banca (dono de dois pontos) escolhe qual abrir.
+// Cada banca abre no endereço dela; o servidor e as regras do banco conferem o acesso de novo lá.
+async function montarTrocaDeBanca() {
+    const outras = bancasDaPessoa.filter((id) => id !== TENANT);
+    const caixa = document.getElementById('menu-bancas'), botao = document.getElementById('topo-trocar');
+    if (!caixa || !outras.length) return;
+    const nomes = await Promise.all(outras.map((id) => getDoc(doc(db, 'tenants', id)).then((f) => (f.exists() && f.data().nome) || id).catch(() => id)));
+    caixa.innerHTML = `<span class="menu-bancas-tit">Trocar de banca</span>` + outras.map((id, i) => `<a href="${escapeHTML(urlDaLoja(id, location.pathname))}">${escapeHTML(nomes[i])}</a>`).join('');
+    caixa.hidden = false;
+    if (botao) { botao.hidden = false; botao.onclick = (e) => { e.stopPropagation(); document.getElementById('btn-mais')?.click(); }; }
+}
 
 // "Mais opções" do topo (Plataforma, instalar, impressora, sair): abre e fecha; toque fora fecha.
 {

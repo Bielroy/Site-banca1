@@ -137,6 +137,14 @@ teste('gestor de uma loja não lê a previsão de outra, mesmo pedindo direto à
   assert.strictEqual((await chamar(api, { headers: { 'X-Loja': 'espetinhos' }, body: { acao: 'painel' } })).status, 401, 'sem login');
   r = await ver('plataforma', 'espetinhos'); assert.strictEqual(r.status, 200); assert.strictEqual(r.corpo.meta.dono, 'espetinhos');
 });
+teste('painel: quem cuida de duas bancas vê as duas no seletor; e-mail não confirmado não vê nenhuma', async () => {
+  const P = await import(raiz('js/papeis-lib.js'));
+  assert.deepStrictEqual(P.bancasDaConta({ tenants: { 'pastel-jardins': 'proprietario', 'pastel-parque': 'proprietario' } }), ['pastel-jardins', 'pastel-parque']);
+  assert.deepStrictEqual(P.bancasDaConta({ admin: true, tenants: { banca: 'proprietario', 'x-y': 'caixa' } }), ['banca', 'x-y'], 'conta antiga + papel: sem repetir');
+  assert.deepStrictEqual(P.bancasDaConta({ email_verified: false, tenants: { a1: 'proprietario' } }), []);
+  assert.deepStrictEqual(P.bancasDaConta({ tenants: { 'ok-1': 'inventado', '../x': 'proprietario' } }), [], 'papel inventado ou id estranho fica de fora');
+  assert.deepStrictEqual(P.bancasDaConta(null), []);
+});
 teste('aba Clientes: pedido novo aparece na hora (recalcula só quando há pedido depois do último cálculo)', async () => {
   const db = criarBanco({ ...semente(), 'pedidos/n1': { nome: 'Ana Teste', quadra: '7', lote: '2', condominio: 'Jardins', total: 12, data: new Date().toISOString(), itens: [{ id: 'tomate', nome: 'Tomate', qtd: 1, tipo: 'kg', unidade: 'kg', preco: 8.9 }] } });
   const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));

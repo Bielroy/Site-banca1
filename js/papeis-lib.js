@@ -37,3 +37,17 @@ export function abasDoPapel(papel, todas, modulos) {
 }
 export const podeAbrir = (papel, aba, todas, modulos) => abasDoPapel(papel, todas, modulos).includes(aba);
 export const rotuloDoPapel = (papel) => (papel === 'plataforma' ? 'Plataforma' : (PAPEIS[papel] || ['Equipe'])[0]);
+
+/**
+ * Bancas desta conta (para o seletor do painel), sem repetir e em ordem. Vem do token, gravado só pelo servidor.
+ * Conta com e-mail não confirmado não tem banca nenhuma; a conta antiga { admin: true } é dona da loja original.
+ * Só ids válidos, no máximo 30 (ninguém deve ter tantas; o resto não cabe na tela).
+ */
+export function bancasDaConta(claims) {
+    const c = claims || {};
+    if (c.email_verified === false) return [];
+    const ids = c.tenants && typeof c.tenants === 'object' && !Array.isArray(c.tenants)
+        ? Object.keys(c.tenants).filter((id) => PAPEIS[c.tenants[id]]) : [];
+    if (c.admin === true) ids.push('banca');
+    return [...new Set(ids)].filter((id) => /^[a-z0-9][a-z0-9-]{1,39}$/.test(id)).sort().slice(0, 30);
+}

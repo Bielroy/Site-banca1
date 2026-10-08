@@ -56,7 +56,7 @@
         <header class="topo" id="topo">
             <div class="topo-marca">
                 <svg class="topo-logo" viewBox="96 76 320 320" aria-hidden="true" focusable="false"><circle cx="322" cy="204" r="56" fill="#7CC99B"/><circle cx="216" cy="188" r="76" fill="#E9A862"/><rect x="112" y="232" width="288" height="42" rx="8" fill="#F6F1E4"/><rect x="112" y="289" width="288" height="42" rx="8" fill="#F6F1E4"/><rect x="112" y="346" width="288" height="42" rx="8" fill="#F6F1E4"/><rect x="104" y="224" width="40" height="168" rx="10" fill="#D9C7A3"/><rect x="368" y="224" width="40" height="168" rx="10" fill="#D9C7A3"/></svg>
-                <div class="topo-nomes"><small id="topo-loja">Painel da loja</small><h1 id="topo-secao">Produtos</h1></div>
+                <div class="topo-nomes"><small id="topo-loja">Painel da loja</small><button type="button" class="topo-trocar" id="topo-trocar" hidden>Trocar de banca</button><h1 id="topo-secao">Produtos</h1></div>
             </div>
             <div class="topo-acoes">
                 <small id="papel-rotulo" class="papel-rotulo" hidden></small>
@@ -64,6 +64,7 @@
                 <button type="button" class="topo-btn so-icone" id="btn-mais" aria-label="Mais opções" aria-expanded="false" aria-controls="menu-mais"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg></button>
             </div>
             <div class="menu-mais" id="menu-mais" hidden>
+                <div class="menu-bancas" id="menu-bancas" hidden></div>
                 <a id="link-plataforma" href="./plataforma.html" hidden>Plataforma (todas as lojas)</a>
                 <button type="button" id="btn-instalar-painel" hidden>Instalar o painel no celular</button>
                 <button type="button" id="btn-impressora"><i class="ic" data-i="impressora"></i> Impressora</button>

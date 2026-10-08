@@ -200,3 +200,12 @@
 .pv-card--novo .pv-faixa { margin-top: 10px; }
 
 body.so-equipe #ped-mais { display: none; }
+/* Trocar de banca (quem cuida de mais de uma) */
+.topo-trocar { align-self: flex-start; margin-top: 2px; padding: 2px 8px; border: 1px solid var(--linha-fina); border-radius: 999px; background: #fff; color: var(--forest); font: 600 .72rem/1.4 inherit; cursor: pointer; }
+.topo-trocar[hidden] { display: none; }
+.menu-mais .menu-bancas { display: grid; min-height: 0; padding: 0 0 6px; margin-bottom: 4px; border-bottom: 1px solid var(--linha-fina); border-radius: 0; cursor: default; }
+.menu-mais .menu-bancas[hidden] { display: none; }
+.menu-mais .menu-bancas:hover { background: none; }
+.menu-bancas-tit { padding: 8px 12px 4px; font-size: .74rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: .04em; }
+.menu-bancas a { display: flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 10px; color: var(--text-dark); font-weight: 600; text-decoration: none; }
+.menu-bancas a:hover, .menu-bancas a:focus-visible { background: var(--parchment); }

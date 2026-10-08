@@ -40,6 +40,7 @@ export const sairELimpar = async () => {
     location.reload();
 };
 import { TENANT, TENANT_PADRAO, urlDaLoja, enderecoEhDaLoja } from './tenant.js';
+import { bancasDaConta } from './papeis-lib.js';
 
 // Papel da pessoa NESTA loja, lido do token (gravado só pelo servidor).
 // Mesma regra de lib/tenant.js. A conta antiga { admin: true } vale como dona da loja original.
@@ -53,6 +54,8 @@ export const papelNoToken = (claims, tid = TENANT) => {
   return null;
 };
 export let papelAtual = null;
+/** Bancas que esta conta pode abrir (seletor "Trocar de banca" no menu do painel). */
+export let bancasDaPessoa = [];
 // Toda a equipe entra; cada papel vê só as suas abas (js/papeis-lib.js). O servidor e as regras do banco conferem de novo.
 const PODEM_ENTRAR = ['plataforma', 'proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque'];
 
@@ -96,6 +99,7 @@ export const exigirAdmin = async (user) => {
 
     const claims = tokenResult.claims;
     papelAtual = papelNoToken(claims);
+    bancasDaPessoa = bancasDaConta(claims);
     if (PODEM_ENTRAR.includes(papelAtual)) return true;
 
     // Entrou sem dizer a loja, mas a conta pertence a outra: leva para o painel dela.
