@@ -206,7 +206,7 @@ function folhaLoja(l) {
     <section class="pf-sec"><span class="pf-rot">Módulos ligados</span><small class="pf-dica">Muda na hora, ao tocar.</small>
         <div class="pf-toggles">${Object.entries(S.dados.modulos).map(([k, rot]) => `<label><input type="checkbox" data-pf-modulo="${k}"${l.modulos[k] ? ' checked' : ''}> ${escapeHTML(rot)}</label>`).join('')}</div></section>
     <section class="pf-sec"><span class="pf-rot">Feiras</span>${fs.length ? `<ul class="pf-mini-lista">${fs.map((f) => `<li>${escapeHTML(f.nome)}<small>${escapeHTML(diasEmTexto(f.dias))}</small></li>`).join('')}</ul>` : '<p class="pf-dica">Não está em nenhuma feira.</p>'}<small class="pf-dica">Para colocar ou tirar de uma feira, use a aba Feiras.</small></section>
-    <section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt${l.ativo ? ' perigo' : ' pri'}" data-pf="${l.ativo ? 'bloquear' : 'liberar'}">${l.ativo ? 'Bloquear a loja' : 'Liberar a loja'}</button><small class="pf-dica">Bloqueada, a loja para de receber pedidos, vender no balcão e mexer no estoque, e some das feiras. O cadastro continua editável.</small></section>`;
+    <section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt${l.ativo ? ' perigo' : ' pri'}" data-pf="${l.ativo ? 'bloquear' : 'liberar'}">${l.ativo ? 'Bloquear a loja' : 'Liberar a loja'}</button><small class="pf-dica">Bloqueada, a loja para de receber pedidos e some das feiras, e o painel dela fecha com o aviso "Sua assinatura foi interrompida por falta de pagamento. Pague e volte a usar", mostrando a mensalidade. Nada se perde: ao liberar, tudo volta.</small></section>`;
     return [l.nome, corpo, '<button type="button" class="pf-bt" data-pf="fechar-folha">Fechar</button>'];
 }
 
@@ -287,7 +287,7 @@ async function agir(b) {
             return;
         }
         case 'bloquear': {
-            if (!(await confirmar(`Bloquear ${loja.nome}?`, `A loja para de receber pedidos e some das feiras. O painel dela deixa de vender no balcão e de mexer no estoque${loja.original ? '. Atenção: esta é a loja original, que está no ar' : ''}. Você pode liberar de novo quando quiser.`, { ok: 'Bloquear', nao: 'Voltar' }))) return;
+            if (!(await confirmar(`Bloquear ${loja.nome}?`, `A loja para de receber pedidos e some das feiras. O painel dela fecha e mostra ao proprietário que a assinatura foi interrompida por falta de pagamento, com o valor da mensalidade${loja.original ? '. Atenção: esta é a loja original, que está no ar' : ''}. Você pode liberar de novo quando quiser.`, { ok: 'Bloquear', nao: 'Voltar' }))) return;
             return fazer({ acao: 'ativo', id: lojaId, ativo: false }, 'Loja bloqueada.');
         }
         case 'liberar': return fazer({ acao: 'ativo', id: lojaId, ativo: true }, 'Loja liberada.');

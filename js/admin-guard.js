@@ -85,6 +85,39 @@ const mostrarBloqueio = (mensagem, mostrarSair = true) => {
 };
 
 /**
+ * LOJA BLOQUEADA pela plataforma (falta de pagamento): o painel não abre.
+ * O proprietário vê a mensalidade (valor e vencimento); o resto da equipe, só o aviso.
+ * O servidor já recusa vendas, balcão e estoque de loja bloqueada; esta tela é o aviso claro.
+ */
+export async function mostrarSuspensa(ehDono) {
+  let a = null;
+  if (ehDono) {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const r = await fetch('/api/equipe', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ acao: 'minha-assinatura' }) });
+      if (r.ok) a = (await r.json()).assinatura || null;
+    } catch (_) { /* sem a mensalidade, fica só o aviso */ }
+  }
+  const reais = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const texto = ehDono
+    ? `<p style="opacity:.85;line-height:1.6;margin:0 0 16px;">Sua assinatura foi interrompida por falta de pagamento. Pague a mensalidade e volte a usar o painel.</p>
+       ${a ? `<div style="background:rgba(255,255,255,.08);border-radius:14px;padding:14px 16px;margin:0 0 16px;text-align:left;"><div style="font-size:.85rem;opacity:.75;">Sua mensalidade</div><div style="font-size:1.5rem;font-weight:800;margin:2px 0;">${reais(a.valor)} por mês</div>${a.dia ? `<div style="opacity:.85;">Vence todo dia ${a.dia}.</div>` : ''}${a.obs ? `<div style="opacity:.85;margin-top:4px;">${esc(a.obs)}</div>` : ''}</div>` : ''}
+       <p style="opacity:.7;line-height:1.5;margin:0 0 22px;font-size:.92rem;">Assim que o pagamento for confirmado, o painel volta a funcionar. Seus produtos, clientes e pedidos continuam guardados.</p>`
+    : `<p style="opacity:.85;line-height:1.6;margin:0 0 22px;">O painel desta loja está suspenso no momento. Fale com o proprietário da loja.</p>`;
+  if (document.getElementById(TELA_BLOQUEIO_ID)) document.getElementById(TELA_BLOQUEIO_ID).remove();
+  document.body.insertAdjacentHTML('beforeend', `
+    <div id="${TELA_BLOQUEIO_ID}" role="alertdialog" aria-modal="true" aria-labelledby="suspensa-titulo" style="position:fixed;inset:0;z-index:99999;background:#0f1b14;color:#fff;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,-apple-system,sans-serif;overflow-y:auto;">
+      <div style="max-width:400px;">
+        <h1 id="suspensa-titulo" style="font-size:1.45rem;margin:0 0 12px;">Assinatura interrompida</h1>
+        ${texto}
+        <button id="btn-sair-bloqueio" style="padding:13px 26px;border-radius:10px;border:none;background:#fff;color:#0f1b14;font-weight:700;font-size:1rem;cursor:pointer;">Sair da conta</button>
+      </div>
+    </div>`);
+  document.getElementById('btn-sair-bloqueio')?.addEventListener('click', () => sairELimpar());
+}
+
+/**
  * Verifica se o usuário autenticado é realmente administrador.
  * @param {import('firebase/auth').User} user
  * @returns {Promise<boolean>} true = pode seguir; false = bloqueado

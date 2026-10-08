@@ -203,6 +203,17 @@ module.exports = async function handler(req, res) {
     // sem isto, quem perdeu o acesso continuava mexendo na equipe por até 1 hora.
     dec = await admin.auth().verifyIdToken(H.tokenDe(req), true);
   } catch (e) { return res.status(401).json({ error: 'Entre no painel de novo.' }); }
+  // MENSALIDADE: o proprietário vê a dele MESMO com a loja bloqueada (bloqueio por falta de pagamento:
+  // é justamente aí que ele precisa saber quanto pagar). Por isso vem antes da conferência de loja ativa.
+  if ((req.body || {}).acao === 'minha-assinatura') {
+    const tidM = T.tenantDaRequisicao(req);
+    if (!tidM) return res.status(400).json({ error: 'Loja inválida.' });
+    if (!T.temPapel(dec, tidM, ['proprietario'])) return res.status(403).json({ error: 'Só o proprietário vê a mensalidade desta loja.' });
+    try {
+      const ficha = await T.fichaDaLoja(db, tidM);
+      return res.status(200).json({ sucesso: true, assinatura: await Assinatura.ler(db, tidM), bloqueada: !!(ficha && ficha.ativo === false) });
+    } catch (e) { console.error('[equipe] assinatura', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
+  }
   try { ({ tid } = await T.resolverLoja(db, req)); }
   catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
   if (H.passouNaMemoria(`equipe:${dec.uid}`, 60, 60000)) return res.status(429).json({ error: 'Muitos pedidos seguidos. Aguarde um minuto.' });
@@ -227,8 +238,6 @@ module.exports = async function handler(req, res) {
   if (!T.temPapel(dec, tid, ['proprietario'])) return res.status(403).json({ error: 'Só o proprietário cuida da equipe desta loja.' });
   const acao = (req.body || {}).acao;
   try {
-    // A MENSALIDADE desta banca (definida pela plataforma). Só o proprietário DESTA loja vê, e só a dela.
-    if (acao === 'minha-assinatura') return res.status(200).json({ sucesso: true, assinatura: await Assinatura.ler(db, tid) });
     if (acao === 'listar') return await listar(res, { tid });
     if (acao === 'auditoria') return res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, tid, 40) });
     if (acao === 'definir') return await definir(req, res, { tid, dec });

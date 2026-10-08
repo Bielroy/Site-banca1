@@ -403,6 +403,19 @@ teste('loja: os condomínios das feiras entram na lista de endereço (cliente da
   const src = require('fs').readFileSync(raiz('js/loja.js'), 'utf8');
   assert.ok(/condominiosDasFeiras\(\)/.test(src) && /feiras-da-loja/.test(src), 'a loja junta os condomínios das feiras na lista');
 });
+teste('loja bloqueada: o proprietário ainda vê a mensalidade (para pagar); o resto do painel continua recusado', async () => {
+  const db = criarBanco({ ...semente(), 'assinaturas/fechada': { valor: 79, dia: 5, obs: 'Pix para a plataforma' } });
+  const tokens = { ...TOKENS, 'dono-fechada': { uid: 'u9', tenants: { fechada: 'proprietario' } }, 'caixa-fechada': { uid: 'u10', tenants: { fechada: 'caixa' } } };
+  const eq = carregarApi(raiz('api/equipe.js'), criarAdmin(db, tokens));
+  const pedir = (token, acao) => chamar(eq, { headers: { Authorization: `Bearer ${token}`, 'X-Loja': 'fechada' }, body: { acao } });
+  const r = await pedir('dono-fechada', 'minha-assinatura');
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(r.corpo.bloqueada, true); assert.strictEqual(r.corpo.assinatura.valor, 79);
+  assert.strictEqual((await pedir('caixa-fechada', 'minha-assinatura')).status, 403, 'caixa não vê');
+  assert.strictEqual((await pedir('dono-espetinhos', 'minha-assinatura')).status, 403, 'dono de outra loja não vê');
+  assert.strictEqual((await pedir('dono-fechada', 'listar')).status, 403, 'o resto do painel continua fechado');
+  const src = require('fs').readFileSync(raiz('js/admin-guard.js'), 'utf8');
+  assert.ok(src.includes('Sua assinatura foi interrompida por falta de pagamento'), 'o aviso que o proprietário vê');
+});
 teste('aba Clientes: pedido novo aparece na hora (recalcula só quando há pedido depois do último cálculo)', async () => {
   const db = criarBanco({ ...semente(), 'pedidos/n1': { nome: 'Ana Teste', quadra: '7', lote: '2', condominio: 'Jardins', total: 12, data: new Date().toISOString(), itens: [{ id: 'tomate', nome: 'Tomate', qtd: 1, tipo: 'kg', unidade: 'kg', preco: 8.9 }] } });
   const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));

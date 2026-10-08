@@ -6,7 +6,7 @@ import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
 import './admin-instalar.js';
-import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar, bancasDaPessoa } from './admin-guard.js';
+import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar, bancasDaPessoa, mostrarSuspensa } from './admin-guard.js';
 import { htmlSimples, csvCampo } from './html-lib.js';
 import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel } from './papeis-lib.js';
 import { ico } from './icones-admin.js';          // também liga a troca das marcas <i class="ic"> pelos desenhos
@@ -84,7 +84,10 @@ onAuthStateChanged(auth, async (user) => {
     // e-mail e o plano gratuito do Firebase só envia 5 por dia para a loja inteira: com 30 minutos, a própria
     // equipe esgotava o limite e ninguém mais entrava naquele dia. No balcão, "Sair" encerra na hora.
     iniciarLogoutPorInatividade(12 * 60);
-    try { const f = await getDoc(fichaRef()); modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; lerDiasSemFeira(f.exists() ? f.data() : null); } catch (_) { modulosDaLoja = null; }
+    let suspensa = false;
+    try { const f = await getDoc(fichaRef()); suspensa = f.exists() && f.data().ativo === false; modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; lerDiasSemFeira(f.exists() ? f.data() : null); } catch (_) { modulosDaLoja = null; }
+    // LOJA BLOQUEADA pela plataforma (falta de pagamento): o painel não abre. Só a plataforma continua entrando.
+    if (suspensa && papelAtual !== 'plataforma') { mostrarSuspensa(papelAtual === 'proprietario'); return; }
     { const tl = document.getElementById('topo-loja'); if (tl) tl.textContent = nomeDaLoja; }
     aplicarPapel();
     montarTrocaDeBanca();
