@@ -417,10 +417,19 @@ const guardarNaConta = () => agendarGuardar(() => ({ sacola: sacolaParaGuardar(S
 // Condomínio que é de uma feira desta banca: o cliente passa a ser daquela feira (e a conta lembra).
 // Se o condomínio tem duas feiras aqui, a pessoa escolhe.
 const perguntarFeira = (lista) => customConfirm('Qual é a sua feira?', `O seu condomínio é atendido em mais de uma feira desta banca. Escolha a sua: cada feira tem os seus preços e o seu dia.`, { ok: lista[0].nome, nao: lista[1].nome }).then((sim) => (sim ? lista[0].id : lista[1].id));
+// Relógio da loja: o do celular, corrigido pela hora do servidor quando o pedido volta com "o dia mudou"
+// (celular com a hora errada mostraria preços de outro dia).
+let ACERTO_RELOGIO = 0;
+const agoraLoja = () => Date.now() + ACERTO_RELOGIO;
 /** Para quando é o pedido de um cliente da feira (null = não é cliente de feira desta banca). */
-const entregaDaFeira = () => { const f = feiraDoClienteAqui(); return f ? proximaEntrega(f) : null; };
+const entregaDaFeira = () => { const f = feiraDoClienteAqui(); return f ? proximaEntrega(f, agoraLoja()) : null; };
 /** Dia da semana que decide o preço: o da entrega da feira do cliente, ou hoje (Brasília). Mesmo critério do servidor. */
-const diaDoPreco = () => { const e = entregaDaFeira(); return e ? e.dow : new Date(Date.now() - 3 * 3600000).getUTCDay(); };
+const diaDoPreco = () => { const e = entregaDaFeira(); return e ? e.dow : new Date(agoraLoja() - 3 * 3600000).getUTCDay(); };
+/** Aviso "seu pedido é para..." dentro da tela de envio. */
+const pintarAvisoDeEntrega = () => {
+    const ent = entregaDaFeira(), aviso = document.getElementById('checkout-entrega'); if (!aviso) return;
+    aviso.textContent = ent ? (ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.`) : ''; aviso.hidden = !ent;
+};
 document.addEventListener('feira-do-cliente', () => { try { atualizarRodapeCarrinhoDOM(); } catch (_) { /* carrinho ainda não montado */ } });
 const feiraDoEnderecoSalvo = (e) => { if (e && e.condominio) feiraPeloCondominio(e.condominio, perguntarFeira).then((id) => { if (id) guardarNaConta(); }).catch(() => {}); };
 
@@ -1052,7 +1061,7 @@ const chamarApi = async (url, corpo, { comToken = false, limiteMs = 20000 } = {}
             signal: controle.signal,
         });
         const dados = await resposta.json().catch(() => ({}));
-        if (!resposta.ok) throw new Error(dados.error || 'Não foi possível concluir a operação.');
+        if (!resposta.ok) throw Object.assign(new Error(dados.error || 'Não foi possível concluir a operação.'), { dados, status: resposta.status });
         return dados;
     } finally {
         clearTimeout(relogio);
@@ -1748,8 +1757,7 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     const cara = assinaturaDoCarrinho();
     if (!STATE.checkoutSessionId || STATE.checkoutCara !== cara) { STATE.checkoutSessionId = novoId(); STATE.checkoutCara = cara; }
     pintarHorariosDeEntrega();      // garante a lista de horários na hora de abrir (não depende de a configuração ter chegado antes)
-    { const ent = entregaDaFeira(), aviso = document.getElementById('checkout-entrega');
-      if (aviso) { aviso.textContent = ent ? (ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.`) : ''; aviso.hidden = !ent; } }
+    pintarAvisoDeEntrega();
     openModal('modal-checkout');
 });
 
@@ -1787,10 +1795,20 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             };
         });
 
-        // o condomínio escolhido agora pode ser de uma feira desta banca: decide a feira ANTES de mandar
+        // o condomínio escolhido agora pode ser de uma feira desta banca. Se a feira mudou, os preços e a data
+        // mudam junto: NÃO envia com um valor que a pessoa não viu. Atualiza a sacola e pede para conferir.
+        const feiraAntes = lerFeiraCliente();
         if (endereco.condominio) { try { await feiraPeloCondominio(endereco.condominio, perguntarFeira); } catch (_) { /* segue */ } }
+        if (lerFeiraCliente() !== feiraAntes || (STATE.diaDoPreco != null && diaDoPreco() !== STATE.diaDoPreco)) {
+            document.dispatchEvent(new CustomEvent('feira-do-cliente')); pintarAvisoDeEntrega();
+            const ent = entregaDaFeira();
+            showToast(ent && !ent.hoje ? `Seu condomínio é atendido na feira de ${textoDoDia(ent.dia)}: os preços são os desse dia. Confira e toque em enviar de novo.` : 'Os preços foram atualizados. Confira e toque em enviar de novo.');
+            return;
+        }
+        const ent = entregaDaFeira();
         const payload = {
             feira: lerFeiraCliente(),
+            diaPreco: STATE.diaDoPreco, ...(ent ? { entregaDia: ent.dia } : {}),   // o dia que a loja mostrou: o servidor confere
             nome, quadra, lote, telefone, pag, troco: trocoRaw, obs, cupom,
             condominio: endereco.condominio, condominioId: endereco.condominioId, formatoEndereco: endereco.formatoEndereco,
             aceitaOfertas: !!document.getElementById('cli-ofertas')?.checked,
@@ -1846,6 +1864,14 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         
 
     } catch(err) {
+        // O dia virou (horário limite, meia-noite, relógio do celular): o pedido NÃO foi criado. Acerta o relógio,
+        // refaz os preços e a data na tela e deixa a pessoa conferir antes de enviar de novo.
+        if (err && err.dados && err.dados.codigo === 'dia-mudou') {
+            if (Number.isFinite(err.dados.agora)) ACERTO_RELOGIO = err.dados.agora - Date.now();
+            document.dispatchEvent(new CustomEvent('feira-do-cliente')); pintarAvisoDeEntrega();
+            showToast(err.message, true);
+            return;
+        }
         // Antes ia "Failed to fetch" cru, em inglês, para a tela da cliente
         showToast(mensagemDeErroAmigavel(err), true);
         // O servidor recusou e esta tela está desatualizada? Então o motivo pode ser a própria tela velha:

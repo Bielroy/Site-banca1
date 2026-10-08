@@ -40,8 +40,9 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
   const t0 = Date.now();
   const hoje = diaDeTs(agora), asOfD = hoje - 1;
   const abertos = new Set(Array.isArray(diasAbertos) && diasAbertos.length ? diasAbertos : C.DIAS_ABERTOS_PADRAO);
-  // dia de feira desta banca é dia de venda, mesmo que não esteja nos dias da loja (feira sem dia marcado = todo dia)
-  for (const f of Array.isArray(feiras) ? feiras : []) { const ds = Array.isArray(f.dias) && f.dias.length ? f.dias : [0, 1, 2, 3, 4, 5, 6]; ds.forEach((d) => { if (Number.isInteger(d) && d >= 0 && d <= 6) abertos.add(d); }); }
+  // dia MARCADO de feira desta banca é dia de venda, mesmo que não esteja nos dias da loja.
+  // Feira sem dia marcado não abre a semana inteira: valem os dias da própria loja (senão o motor preveria venda em dia fechado).
+  for (const f of Array.isArray(feiras) ? feiras : []) (Array.isArray(f.dias) ? f.dias : []).forEach((d) => { if (Number.isInteger(d) && d >= 0 && d <= 6) abertos.add(d); });
   const norm = N.normalizarPedidos(pedidos, catalogo);
   // Venda sem endereço (balcão) entra nas vendas do dia, mas cada uma virava um "cliente" novo:
   // inflava a contagem de clientes e empurrava os de verdade para fora da lista.

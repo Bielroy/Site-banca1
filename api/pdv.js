@@ -160,7 +160,8 @@ async function pesagem(req, res, { tid, dec }) {
       E.registrarMovs(t, db, tid, movs, admin.firestore.FieldValue);
       // o caixa já tinha a parte de valor fechado: soma só a diferença
       const dif = V.paraReais(V.paraCentavos(total) - V.paraCentavos(Number(ped.total) || 0));
-      const dia = new Date(new Date(ped.data).getTime() - 3 * 3600000).toISOString().slice(0, 10);
+      // mesmo dia em que o checkout somou o pedido: o da ENTREGA (pedido para a próxima feira) ou o do pedido
+      const dia = /^\d{4}-\d{2}-\d{2}$/.test(String(ped.entregaDia || '')) ? ped.entregaDia : new Date(new Date(ped.data).getTime() - 3 * 3600000).toISOString().slice(0, 10);
       if (dif !== 0 && /^\d{4}-\d{2}-\d{2}$/.test(dia)) somarNoCaixa(t, tid, dif, 0, dia);
       return { total, desconto: V.paraReais(descC), entrega: V.paraReais(taxaC), itens };
     });

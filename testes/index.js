@@ -331,6 +331,42 @@ teste('mensalidade: só a plataforma define; o proprietário vê só a da banca 
   assert.strictEqual((await def('plataforma', { id: 'espetinhos', valor: '' })).status, 200);
   assert.ok(!db._dados.has('assinaturas/espetinhos'), 'valor vazio tira a mensalidade');
 });
+teste('feira: pesagem de pedido para a próxima feira soma no caixa do dia da entrega; o dia que a loja mostrou é conferido; reenvio devolve a data', async () => {
+  const hojeDow = new Date(Date.now() - 3 * 3600000).getUTCDay(), outro = (hojeDow + 2) % 7;
+  const sem = { ...sementeEstoque(), 'feiras/fx': { nome: 'Feira X', dias: [outro], lojas: [{ id: 'banca' }] } };
+  const db = criarBancoP(sem); const adm = criarAdmin(db, TOKENS_P);
+  const checkout = carregarApi(raiz('api/checkout.js'), adm), pdv = carregarApi(raiz('api/pdv.js'), adm);
+  const F = require(raiz('lib/feira')), esperado = F.proximaEntrega(sem['feiras/fx']);
+  // a loja mostrou outro dia (tela aberta desde antes do limite / relógio errado): recusa, sem criar pedido
+  const errado = pedido({ feira: 'fx', diaPreco: (outro + 1) % 7, entregaDia: esperado.dia, itens: [{ id: 'tomate', qtd: 4, tipo: 'un' }, { id: 'ovos', qtd: 1, tipo: 'un' }] });
+  let c = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: errado });
+  assert.strictEqual(c.status, 409, JSON.stringify(c.corpo)); assert.strictEqual(c.corpo.codigo, 'dia-mudou'); assert.strictEqual(c.corpo.entregaDia, esperado.dia); assert.strictEqual(c.corpo.diaPreco, outro);
+  assert.ok(Number.isFinite(c.corpo.agora)); assert.ok(!db._dados.has(`pedidos/${errado.idempotencyKey}`), 'nenhum pedido criado');
+  const outraData = pedido({ feira: 'fx', diaPreco: outro, entregaDia: '2099-01-01', itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }] });
+  assert.strictEqual((await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: outraData })).status, 409, 'data diferente da mostrada também é recusada');
+  // o mesmo dia que a loja mostrou: segue
+  const p = pedido({ feira: 'fx', diaPreco: outro, entregaDia: esperado.dia, itens: [{ id: 'tomate', qtd: 4, tipo: 'un' }, { id: 'ovos', qtd: 1, tipo: 'un' }] });
+  c = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: p });
+  assert.strictEqual(c.status, 200, JSON.stringify(c.corpo));
+  const antes = db._dados.get(`resumos/${esperado.dia}`).receita;
+  const r = await chamar(pdv, { headers: { Authorization: 'Bearer func-banca' }, body: { acao: 'pesagem', pedidoId: p.idempotencyKey, pesos: [{ i: 0, peso: 0.5 }] } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.ok(db._dados.get(`resumos/${esperado.dia}`).receita > antes, 'a pesagem soma no dia da entrega');
+  const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+  if (hoje !== esperado.dia) assert.ok(!db._dados.has(`resumos/${hoje}`) || !db._dados.get(`resumos/${hoje}`).receita, 'e não no dia em que o cliente pediu');
+  // reenvio do mesmo pedido (internet caiu): volta com a data
+  const de_novo = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: p });
+  assert.strictEqual(de_novo.status, 200); assert.strictEqual(de_novo.corpo.pedido.entregaDia, esperado.dia); assert.strictEqual(de_novo.corpo.pedido.paraHoje, false);
+});
+teste('motor: feira sem dia marcado não faz o motor prever venda em dia que a banca não abre', async () => {
+  const { executarMotor, aplicarParametros } = require(raiz('analytics/engine')); aplicarParametros({});
+  const dia = (n) => new Date(Date.UTC(2026, 7, n, 15)).toISOString();
+  const pedidos = []; for (let n = 1; n <= 30; n++) pedidos.push({ id: 'p' + n, data: dia(n), nome: 'A', quadra: '1', lote: '1', total: 10, itens: [{ id: 'tomate', nome: 'Tomate', qtd: 1, tipo: 'kg', unidade: 'kg', preco: 9 }] });
+  const r = executarMotor({ pedidos, catalogo: [{ id: 'tomate', nome: 'Tomate', unidade: 'kg', preco: 9, cat: 'legumes', ativo: true }], agregados: [], parametros: {}, eventos: [], snapshots: [],
+    diasAbertos: [1, 2, 3, 4, 5], feiras: [{ id: 'todo-dia', nome: 'Sem dia', dias: [] }, { id: 'sab', nome: 'Sábado', dias: [6] }], agora: Date.UTC(2026, 8, 5, 15) });   // 05/09/2026 é sábado
+  const doms = (r.meta.hz.prox7 || []).filter((iso) => new Date(`${iso}T12:00:00Z`).getUTCDay() === 0);
+  assert.strictEqual(doms.length, 0, 'domingo continua fechado'); assert.ok((r.meta.hz.prox7 || []).some((iso) => new Date(`${iso}T12:00:00Z`).getUTCDay() === 6), 'sábado (dia marcado da feira) abre');
+});
 teste('aba Clientes: pedido novo aparece na hora (recalcula só quando há pedido depois do último cálculo)', async () => {
   const db = criarBanco({ ...semente(), 'pedidos/n1': { nome: 'Ana Teste', quadra: '7', lote: '2', condominio: 'Jardins', total: 12, data: new Date().toISOString(), itens: [{ id: 'tomate', nome: 'Tomate', qtd: 1, tipo: 'kg', unidade: 'kg', preco: 8.9 }] } });
   const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));

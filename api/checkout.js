@@ -312,7 +312,7 @@ module.exports = async function handler(req, res) {
         if (d.origem === 'balcao' || (d.userId && d.userId !== 'anonimo' && d.userId !== donoVerificado)) throw Object.assign(new Error('Não consegui identificar este pedido. Atualize a página e tente de novo.'), { status: 409 });
         codigoConta = await Conta.codigoDoReenvio(t, db, tid, d, achado, donoVerificado);
         const links = montarLinksWhatsApp({ ...d, ...(codigoConta ? { linkAcesso: Conta.linkDeAcesso(req, tid, codigoConta) } : {}) }, categoriasCfg, configCfg);
-        return { id: pedidoRef.id, total: d.total, temItensAPesar: !!d.temItensAPesar,
+        return { id: pedidoRef.id, total: d.total, temItensAPesar: !!d.temItensAPesar, entregaDia: d.entregaDia, paraHoje: d.paraHoje !== false,
                  whatsappMsg: links[0].url, whatsapps: links };
       }
 
@@ -330,6 +330,14 @@ module.exports = async function handler(req, res) {
 
       // dia da semana que decide o preço: o da entrega (feira) ou hoje, em Brasília
       const diaDoPreco = entrega ? entrega.dow : agoraBrasilia().getUTCDay();
+      // A loja mostrou os preços (e a data) de um dia. Se aqui deu outro dia (passou do horário limite ou da meia-noite
+      // com a tela aberta, relógio do celular errado), o pedido NÃO segue com outro valor: a loja refaz a conta e pergunta de novo.
+      const corpoDia = req.body || {};
+      const mostrouDia = Number.isInteger(corpoDia.diaPreco) ? corpoDia.diaPreco : null, mostrouEntrega = typeof corpoDia.entregaDia === 'string' ? corpoDia.entregaDia : null;
+      if ((mostrouDia !== null && mostrouDia !== diaDoPreco) || (entrega && mostrouEntrega && mostrouEntrega !== entrega.dia)) {
+        throw Object.assign(new Error(entrega && !entrega.hoje ? `Seu pedido agora é para ${Feira.textoDoDia(entrega.dia)}. Os preços foram atualizados: confira e envie de novo.` : 'Os preços mudaram com a virada do dia. Confira e envie de novo.'),
+          { codigo: 'dia-mudou', status: 409, entregaDia: entrega ? entrega.dia : Feira.hojeBR(), diaPreco: diaDoPreco });
+      }
 
       // O mesmo produto duas vezes no pedido baixaria o estoque só pela última linha
       const idsVistos = new Set();
@@ -535,6 +543,7 @@ module.exports = async function handler(req, res) {
     if (codigoConta) Conta.porCookie(res, tid, codigoConta);
     return res.status(200).json({ sucesso: true, pedido: resultado, temConta: !!codigoConta });
   } catch (error) {
+    if (error && error.codigo === 'dia-mudou') return res.status(409).json({ error: error.message, codigo: 'dia-mudou', entregaDia: error.entregaDia, diaPreco: error.diaPreco, agora: Date.now() });
     // Falha NOSSA (banco fora do ar, erro de programa): a equipe recebe um aviso no celular, e a
     // cliente vê uma frase simples em vez do erro técnico. Aviso de regra ("esgotado") segue como era.
     if (P.ehFalhaInterna(error)) {

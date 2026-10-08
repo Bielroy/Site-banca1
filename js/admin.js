@@ -2028,7 +2028,7 @@ document.getElementById('btn-exportar-balanco')?.addEventListener('click', () =>
     // --- Parte 1: total por dia ---
     const porDia = {};
     validos.forEach(p => {
-        const dia = diaBR(p.data);
+        const dia = /^\d{4}-\d{2}-\d{2}$/.test(String(p.entregaDia || '')) ? p.entregaDia : diaBR(p.data);   // dia da entrega (= caixa do dia)
         if (!dia) return;
         if (!porDia[dia]) porDia[dia] = { receita: 0, pedidos: 0 };
         porDia[dia].receita += Number(p.total) || 0;
@@ -2155,7 +2155,7 @@ const renderBalanco = async (dias) => {
 
     validos.forEach(p => {
         const v = Number(p.total) || 0;
-        const d = new Date(p.data);
+        const d = /^\d{4}-\d{2}-\d{2}$/.test(String(p.entregaDia || '')) ? new Date(`${p.entregaDia}T12:00:00-03:00`) : new Date(p.data);   // dia da entrega (= caixa do dia)
         totalPeriodo += v;
         if (!isNaN(d.getTime())) {
             if (d.toDateString() === hojeStr) { totalHoje += v; nHoje++; }
