@@ -87,7 +87,9 @@ export default defineConfig({
           {
             // Abrir o site: sempre tenta a versão que está no ar; sem sinal (ou internet
             // muito lenta), mostra a última que este aparelho viu.
-            urlPattern: ({ request }) => request.mode === 'navigate',
+            // (a PRÉVIA da aparência, /previa, fica de fora: o quadro dentro do painel vai direto à internet.
+            //  Pelo service worker ela chegou a não abrir no celular, com "página indisponível".)
+            urlPattern: ({ request, url }) => request.mode === 'navigate' && !/^\/previa\/?$/.test(url.pathname),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'paginas',

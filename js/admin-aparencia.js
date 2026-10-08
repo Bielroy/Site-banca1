@@ -134,7 +134,8 @@ function render() {
                 <button type="button" class="ap-previa-bt" id="ap-previa-cheia" aria-label="Ver a prévia em tela cheia">Tela cheia</button>
                 <button type="button" class="ap-previa-bt" id="ap-previa-ocultar">${previaOculta ? 'Mostrar prévia' : 'Esconder'}</button>
             </div>
-            <div class="ap-moldura" id="ap-moldura"><div class="ap-tela" id="ap-tela"><iframe id="ap-iframe" title="Prévia da sua loja" src="${escapeHTML(enderecoDaPrevia())}"></iframe></div></div>
+            <div class="ap-moldura" id="ap-moldura"><div class="ap-tela" id="ap-tela"><iframe id="ap-iframe" title="Prévia da sua loja" src="${escapeHTML(enderecoDaPrevia())}"></iframe>
+                <div class="ap-previa-falhou" id="ap-previa-falhou" hidden><p>A prévia não abriu.</p><small>Pode ser a internet. A loja e o que você mexeu aqui continuam como estão.</small><button type="button" class="btn-salvar-config" id="ap-previa-recarregar">Tentar de novo</button></div></div></div>
             <p class="ap-previa-nota">Pode tocar à vontade: nada daqui é gravado nem vira pedido.</p>
         </aside>
         <div class="ap-form" id="ap-form">
@@ -251,7 +252,19 @@ function enviarPrevia() {
     cancelAnimationFrame(quadroRaf);
     quadroRaf = requestAnimationFrame(() => { try { f.contentWindow.postMessage({ tipo: 'banca-previa', ficha: fichaDaPrevia() }, location.origin); } catch (_) { /* quadro ainda carregando */ } });
 }
-let ouvindo = false, observador = null;
+let ouvindo = false, observador = null, previaAbriu = false, vigia = 0;
+/** A loja do quadro avisa quando abre. Se em 12 s não avisou, mostra "Tentar de novo" (em vez de uma tela de erro do navegador). */
+function vigiarPrevia() {
+    previaAbriu = false; clearTimeout(vigia);
+    vigia = setTimeout(() => { if (!previaAbriu && $('ap-previa-falhou')) $('ap-previa-falhou').hidden = false; }, 12000);
+}
+function recarregarPrevia() {
+    const f = $('ap-iframe'); if (!f) return;
+    $('ap-previa-falhou').hidden = true;
+    const base = enderecoDaPrevia();
+    f.src = `${base}${base.includes('?') ? '&' : '?'}t=${Date.now()}`;          // endereço novo: nada guardado no aparelho entra no caminho
+    vigiarPrevia();
+}
 function ligarPrevia() {
     if (!ouvindo) {
         ouvindo = true;
@@ -259,12 +272,14 @@ function ligarPrevia() {
         window.addEventListener('message', (e) => {
             const f = $('ap-iframe');
             if (!f || e.source !== f.contentWindow || e.origin !== location.origin || !e.data || e.data.tipo !== 'banca-previa-pronta') return;
+            previaAbriu = true; clearTimeout(vigia); $('ap-previa-falhou').hidden = true;
             enviarPrevia();
         });
         window.addEventListener('resize', medirPrevia);
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('ap-lado')?.classList.contains('cheia')) alternarCheia(false); });
     }
     $('ap-iframe').addEventListener('load', enviarPrevia);
+    vigiarPrevia();
     observador?.disconnect();
     if ('ResizeObserver' in window) { observador = new ResizeObserver(() => medirPrevia()); observador.observe($('ap-moldura')); }
     medirPrevia();
@@ -374,6 +389,7 @@ function ligar() {
         if (alvo.dataset.tirar) return mudar((s) => { delete s.tema[alvo.dataset.tirar]; if (alvo.dataset.tirar === 'capa' && s.tema.cabecalho === 'capa') s.tema.cabecalho = 'cor'; });
         if (alvo.dataset.disp) { dispositivo = alvo.dataset.disp; gravarPref('ap-dispositivo', dispositivo); medirPrevia(); return sincronizar(); }
         if (alvo.id === 'ap-previa-cheia') return alternarCheia();
+        if (alvo.id === 'ap-previa-recarregar') return recarregarPrevia();
         if (alvo.id === 'ap-previa-ocultar') {
             if ($('ap-lado').classList.contains('cheia')) alternarCheia(false);
             previaOculta = $('ap-lado').classList.toggle('oculta');

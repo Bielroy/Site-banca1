@@ -93,6 +93,11 @@ input[type=range]#ap-raio { width: 100%; accent-color: var(--forest); min-height
 .ap-tela { position: relative; margin: 0 auto; overflow: hidden; border-radius: 22px; background: #fff; box-shadow: 0 0 0 7px #1d1f1d, 0 16px 34px rgba(0,0,0,.22); }
 .ap-moldura[data-disp="computador"] .ap-tela { border-radius: 10px; box-shadow: 0 0 0 5px #1d1f1d, 0 12px 28px rgba(0,0,0,.2); }
 .ap-tela iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; background: #fff; }
+.ap-previa-falhou { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 20px; text-align: center; background: #f4f1ea; }
+.ap-previa-falhou[hidden] { display: none; }
+.ap-previa-falhou p { font-weight: 700; color: var(--text-dark); margin: 0; }
+.ap-previa-falhou small { color: var(--text-mid); font-size: .84rem; max-width: 30ch; }
+.ap-previa-falhou .btn-salvar-config { width: auto; margin-top: 6px; padding: 10px 20px; min-height: 44px; }
 .ap-previa-nota { margin-top: 14px; font-size: .8rem; color: var(--text-light); text-align: center; }
 .ap-lado.oculta .ap-moldura, .ap-lado.oculta .ap-previa-nota { display: none; }
 /* tela cheia: a prévia cobre o painel (no celular, para ver a loja do tamanho real) */
