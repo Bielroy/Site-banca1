@@ -36,6 +36,9 @@ function criarBanco(inicial = {}) {
       get: async () => {
         const docs = filhos().map(snapDoc).filter((s) => filtros.every(([campo, op, valor]) => {
           const x = typeof campo === 'string' ? s.data()[campo] : s.id;
+          if (op === 'array-contains') return Array.isArray(x) && x.includes(valor);
+          if (op === 'array-contains-any') return Array.isArray(x) && x.some((v) => valor.includes(v));
+          if (op === 'in') return valor.includes(x);
           return op === '>=' ? x >= valor : op === '<=' ? x <= valor : op === '<' ? x < valor : op === '==' ? x === valor : true;
         }));
         return { docs, size: docs.length, empty: !docs.length };
@@ -75,7 +78,7 @@ function criarAdmin(db, tokens = {}, usuarios = []) {
 /** Requisição e resposta de mentira no formato da Vercel. */
 function chamar(handler, { method = 'POST', headers = {}, body = {}, query = {} } = {}) {
   return new Promise((resolve, reject) => {
-    const res = { _status: 200, setHeader() {}, status(c) { this._status = c; return this; }, json(j) { resolve({ status: this._status, corpo: j }); return this; }, send(t) { resolve({ status: this._status, corpo: t }); return this; }, end() { resolve({ status: this._status, corpo: null }); } };
+    const res = { _status: 200, _cab: {}, setHeader(k, v) { this._cab[String(k).toLowerCase()] = v; }, status(c) { this._status = c; return this; }, json(j) { resolve({ status: this._status, corpo: j, cabecalhos: this._cab }); return this; }, send(t) { resolve({ status: this._status, corpo: t, cabecalhos: this._cab }); return this; }, end() { resolve({ status: this._status, corpo: null, cabecalhos: this._cab }); } };
     const h = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
     Promise.resolve(handler({ method, headers: h, body, query, socket: {} }, res)).catch(reject);
   });

@@ -396,6 +396,10 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .btn-indicar { width: 100%; min-height: 46px; margin-top: 10px; padding: 10px 16px; cursor: pointer; font-family: inherit; font-size: .92rem; font-weight: 700;
     background: none; color: var(--forest); border: 1.5px dashed color-mix(in srgb, var(--forest) 55%, transparent); border-radius: 999px; }
 .btn-indicar:hover { background: color-mix(in srgb, var(--forest) 7%, transparent); }
+/* Conta do cliente: sair deste aparelho (discreto, no fim de "Meus pedidos") e a dica do link pessoal */
+.btn-esquecer { width: 100%; min-height: 44px; margin-top: 6px; padding: 8px 16px; cursor: pointer; font-family: inherit; font-size: .84rem; font-weight: 600;
+    background: none; border: 0; color: var(--text-mid); text-decoration: underline; text-underline-offset: 3px; touch-action: manipulation; }
+.sucesso-dica { margin: -6px 0 18px; font-size: .86rem; line-height: 1.45; color: var(--text-mid); }
 
 /* botão de instalar o app (cabeçalho): mesmo formato dos vizinhos, com um leve realce */
 .chip-header.btn-instalar { background: color-mix(in srgb, var(--sobre-primaria) 14%, transparent); }

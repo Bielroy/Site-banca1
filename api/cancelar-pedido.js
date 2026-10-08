@@ -67,6 +67,7 @@ const T = require('../lib/tenant');
 const E = require('../lib/estoque');
 const Avisos = require('../lib/avisos');
 const P = require('../lib/prudencia');
+const Conta = require('../lib/conta');
 
 // ---------------------------------------------------------------------
 // AVALIAÇÃO: "chegou tudo fresquinho?"  POST { acao: 'avaliar', pedidoId, nota: 1..5, texto? }
@@ -76,7 +77,7 @@ const P = require('../lib/prudencia');
 //    (loja/avaliacoes: só soma e quantidade, sem nome nem texto de ninguém);
 //  - nota 3 ou menos avisa a equipe no celular, para dar tempo de resolver com a cliente.
 // ---------------------------------------------------------------------
-async function avaliar(req, res, { tid, uid, pedidoId }) {
+async function avaliar(req, res, { tid, uid, pedidoId, peloCracha }) {
   const nota = Number((req.body || {}).nota);
   const texto = String((req.body || {}).texto || '').replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
   if (!Number.isInteger(nota) || nota < 1 || nota > 5) return res.status(400).json({ error: 'Escolha de 1 a 5 estrelas.' });
@@ -86,7 +87,7 @@ async function avaliar(req, res, { tid, uid, pedidoId }) {
       const [ps, rs] = await Promise.all([t.get(pedidoRef), t.get(resumoRef)]);
       if (!ps.exists) throw new Error('Pedido não encontrado.');
       const pedido = ps.data();
-      if (!pedido.userId || pedido.userId === 'anonimo' || pedido.userId !== uid) throw new Error('Só quem fez o pedido pode avaliar.');
+      if (!peloCracha && (!pedido.userId || pedido.userId === 'anonimo' || pedido.userId !== uid)) throw new Error('Só quem fez o pedido pode avaliar.');
       if (pedido.status === 'cancelado') throw new Error('Pedido cancelado não recebe avaliação.');
       if (pedido.avaliacao) throw new Error('Este pedido já foi avaliado. Obrigado!');
       const r = rs.exists ? rs.data() : {}, soma = Number(r.soma || 0) + nota, n = Number(r.n || 0) + 1;
@@ -151,8 +152,12 @@ module.exports = async function handler(req, res) {
   // Cliente: no máximo 10 cancelamentos/avaliações em 10 minutos por pessoa (conta guardada no banco, vale para todas as cópias do servidor).
   if (!daEquipe && !(await P.limitar(db, 'cancelar', `${tid}|${uidVerificado}`, 10, 600))) return res.status(429).json({ error: 'Muitas tentativas seguidas. Aguarde alguns minutos.' });
 
-  // AVALIAÇÃO DEPOIS DA ENTREGA (mesma prova de dono do cancelamento: o token).
-  if ((req.body || {}).acao === 'avaliar') return avaliar(req, res, { tid, uid: uidVerificado, pedidoId });
+  // CELULAR NOVO ou limpeza do iPhone: o login do aparelho muda, mas o crachá da conta (lib/conta.js) prova que
+  // o pedido é desta pessoa. Vale só para pedido que está na conta do crachá apresentado.
+  const peloCracha = daEquipe ? false : await Conta.donoPeloCracha(db, tid, req, pedidoId);
+
+  // AVALIAÇÃO DEPOIS DA ENTREGA (mesma prova de dono do cancelamento: o token ou o crachá).
+  if ((req.body || {}).acao === 'avaliar') return avaliar(req, res, { tid, uid: uidVerificado, pedidoId, peloCracha });
 
   try {
     const resultado = await db.runTransaction(async (t) => {
@@ -173,10 +178,10 @@ module.exports = async function handler(req, res) {
       if (daEquipe) {
         if (pedido.status === 'cancelado') return { jaEstava: true };
       } else {
-      if (!pedido.userId || pedido.userId === 'anonimo') {
+      if (!peloCracha && (!pedido.userId || pedido.userId === 'anonimo')) {
         throw new Error('Não consigo confirmar que este pedido é seu. Chame a banca no WhatsApp, por favor.');
       }
-      if (pedido.userId !== uidVerificado) {
+      if (!peloCracha && pedido.userId !== uidVerificado) {
         throw new Error('Este pedido não pertence a esta sessão.');
       }
 

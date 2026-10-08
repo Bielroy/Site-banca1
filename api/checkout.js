@@ -104,6 +104,7 @@ const Avisos = require('../lib/avisos');
 const P = require('../lib/prudencia');
 const Entrega = require('../lib/entrega');
 const E = require('../lib/estoque');
+const Conta = require('../lib/conta');
 
 function montarTextoWhatsApp(pedido, numero) {
   const dividido = pedido.parte && pedido.parte.de > 1;
@@ -149,6 +150,9 @@ function montarTextoWhatsApp(pedido, numero) {
     msg += `\n➕ _Os itens marcados com ⚖️ serão pesados e o valor final ajustado._`;
   }
   if (obsCliente) msg += `\n\n📝 Obs: ${obsCliente}`;
+  // LINK PESSOAL do cliente (lib/conta.js): fica na conversa dele com a loja e devolve nome, endereço e pedidos
+  // em outro aparelho. Vai uma vez só (na 1ª parte), sempre no fim, para não atrapalhar a leitura do pedido.
+  if (pedido.linkAcesso && primeira) msg += `\n\n🔑 Meu acesso à loja (guarde esta mensagem): ${pedido.linkAcesso}`;
 
   return `https://wa.me/${numero}?text=${encodeURIComponent(textoSeguro(msg))}`;
 }
@@ -177,6 +181,18 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
 
   const ip = H.ipDe(req);
+
+  // CONTA DO CLIENTE (crachá, link pessoal, link gerado pelo painel): mesma função, outras ações. Ver lib/conta.js.
+  const acaoConta = req.body && Conta.ehAcao(req.body.acao) ? req.body.acao : '';
+  // quem nunca pediu não tem crachá: responde na hora, sem abrir o banco
+  if (acaoConta === 'conta-ver' && !Conta.lerCookie(req, T.tenantDaRequisicao(req) || '')) return res.status(200).json({ sucesso: true, conta: null });
+  if (acaoConta) {
+    if (H.passouNaMemoria(`conta-acao:${ip}`, 60, 60000)) return res.status(429).json({ error: 'Muitas tentativas seguidas. Aguarde um minuto.' });
+    try { bootFirebase(); } catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
+    let lojaDaConta;
+    try { lojaDaConta = (await T.resolverLoja(db, req)).tid; } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+    return Conta.tratar({ db, admin, req, res, tid: lojaDaConta, acao: acaoConta });
+  }
 
   // Primeira barreira, de memória (barata): rajada da mesma conexão. O toque repetido no botão não cria pedido
   // em dobro de qualquer jeito (a chave do pedido garante); isto só segura quem dispara dezenas por segundo.
@@ -267,13 +283,19 @@ module.exports = async function handler(req, res) {
   troco  = sanitizeString(troco, 40);
   obs    = sanitizeString(obs, 300);
 
+  // CONTA DO CLIENTE: de onde pode vir a conta deste pedido (crachá ou login deste aparelho). Ver lib/conta.js.
+  const achado = await Conta.localizar(db, tid, req, donoVerificado);
+  let codigoConta = '';
+
   try {
     const resultado = await db.runTransaction(async (t) => {
+      codigoConta = '';                                  // a transação pode rodar de novo: começa limpo
       const pedidoRef = T.tdoc(db, tid, 'pedidos', idempotencyKey);
       const configRef = T.docDe(db, tid, 'loja/config');
+      const contaRef = Conta.refCandidata(db, tid, achado);
 
       // ---- TODAS as leituras ANTES de qualquer escrita (regra do Firestore) ----
-      const [pedidoSnap, configSnap, catsSnap] = await Promise.all([t.get(pedidoRef), t.get(configRef), t.get(T.tcol(db, tid, 'categorias'))]);
+      const [pedidoSnap, configSnap, catsSnap, contaSnap] = await Promise.all([t.get(pedidoRef), t.get(configRef), t.get(T.tcol(db, tid, 'categorias')), contaRef ? t.get(contaRef) : null]);
       const categoriasCfg = catsSnap.docs.map((c) => c.data());
       const configCfg = configSnap.exists ? configSnap.data() : {};
 
@@ -282,7 +304,8 @@ module.exports = async function handler(req, res) {
         const d = pedidoSnap.data();
         // A mesma chave vinda de OUTRA pessoa (ou batendo numa venda do balcão) não recebe os dados do pedido de volta.
         if (d.origem === 'balcao' || (d.userId && d.userId !== 'anonimo' && d.userId !== donoVerificado)) throw Object.assign(new Error('Não consegui identificar este pedido. Atualize a página e tente de novo.'), { status: 409 });
-        const links = montarLinksWhatsApp(d, categoriasCfg, configCfg);
+        codigoConta = await Conta.codigoDoReenvio(t, db, tid, d, achado, donoVerificado);
+        const links = montarLinksWhatsApp({ ...d, ...(codigoConta ? { linkAcesso: Conta.linkDeAcesso(req, tid, codigoConta) } : {}) }, categoriasCfg, configCfg);
         return { id: pedidoRef.id, total: d.total, temItensAPesar: !!d.temItensAPesar,
                  whatsappMsg: links[0].url, whatsapps: links };
       }
@@ -428,10 +451,14 @@ module.exports = async function handler(req, res) {
       const totalExato = paraFlutuante(totalExatoCentavos);
       const temItensAPesar = itensValidados.some((i) => i.aPesar);
 
+      // conta do cliente: usa a que existe (crachá ou login deste aparelho) ou cria uma
+      const conta = Conta.decidir(db, tid, achado, contaSnap, donoVerificado);
+
       const dadosPedido = {
         id: pedidoRef.id,
         tenantId: tid,
         userId: donoVerificado,
+        clienteId: conta.cid,     // ID do cliente: liga os pedidos da mesma pessoa, em qualquer aparelho
         nome, quadra, lote, telefone: telefone || '', pag, troco: troco || '', obs: obsFinal || '',
         condominio, condominioId, formatoEndereco,
         aceitaOfertas: aceitaOfertas === true && !!telefone,   // consentimento para receber ofertas no WhatsApp (LGPD)
@@ -456,6 +483,7 @@ module.exports = async function handler(req, res) {
         t.update(cupomAplicado.ref, { usos: admin.firestore.FieldValue.increment(1) });
       }
       t.set(pedidoRef, dadosPedido);
+      conta.escrever(t, dadosPedido); codigoConta = conta.codigo;
       t.set(T.docDe(db, tid, 'analytics/dashboard'), {
         receitaTotal: admin.firestore.FieldValue.increment(totalExato),
         totalPedidos: admin.firestore.FieldValue.increment(1),
@@ -474,7 +502,7 @@ module.exports = async function handler(req, res) {
         atualizadoEm: new Date().toISOString(),
       }, { merge: true });
 
-      const links = montarLinksWhatsApp(dadosPedido, categoriasCfg, configCfg);
+      const links = montarLinksWhatsApp({ ...dadosPedido, linkAcesso: Conta.linkDeAcesso(req, tid, conta.codigo) }, categoriasCfg, configCfg);
       return { id: pedidoRef.id, total: totalExato, temItensAPesar,
                whatsappMsg: links[0].url, whatsapps: links };
     });
@@ -486,7 +514,9 @@ module.exports = async function handler(req, res) {
       url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `pedido-${resultado.id}`,
     });
 
-    return res.status(200).json({ sucesso: true, pedido: resultado });
+    // o crachá vai num cookie que só o servidor lê; a página só fica sabendo que a conta existe
+    if (codigoConta) Conta.porCookie(res, tid, codigoConta);
+    return res.status(200).json({ sucesso: true, pedido: resultado, temConta: !!codigoConta });
   } catch (error) {
     // Falha NOSSA (banco fora do ar, erro de programa): a equipe recebe um aviso no celular, e a
     // cliente vê uma frase simples em vez do erro técnico. Aviso de regra ("esgotado") segue como era.

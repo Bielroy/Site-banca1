@@ -298,7 +298,8 @@
             <button class="btn-fechar" data-fechar="modal-historico" aria-label="Fechar">&times;</button>
         </header>
         <div class="modal-body" id="lista-meus-pedidos"></div>
-        <footer class="modal-footer"><button type="button" class="btn-indicar" data-action="indicar">Indicar a loja para um vizinho</button></footer>
+        <footer class="modal-footer"><button type="button" class="btn-indicar" data-action="indicar">Indicar a loja para um vizinho</button>
+            <button type="button" class="btn-esquecer" data-action="esquecer-dados">Esquecer meus dados neste aparelho</button></footer>
     </div>
 </div>
 
@@ -311,6 +312,7 @@
             <h2 class="title-success">Pedido registrado!</h2>
             <p class="text-success" id="sucesso-texto" style="color: var(--text-mid); margin-bottom: 18px; line-height: 1.5; font-size: 1.05rem;">Você será redirecionado para o nosso WhatsApp para finalizar. Caso a janela não abra, clique no botão abaixo.</p>
             <div id="sucesso-whatsapps" class="sucesso-whatsapps"></div>
+            <p id="sucesso-dica-acesso" class="sucesso-dica" hidden>Guarde a mensagem do WhatsApp: o link no fim dela traz seus dados de volta se você trocar de celular.</p>
             <div id="sucesso-pix" class="sucesso-pix" hidden></div>
             <button class="btn-finalizar" data-fechar="modal-sucesso">Voltar para a loja</button>
             <button type="button" class="btn-indicar" data-action="indicar">Indicar a loja para um vizinho</button>

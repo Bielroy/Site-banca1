@@ -747,4 +747,267 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
     assert.ok(/image\/\(jpeg\|png\|webp\)/.test(s) && !/image\/\.\*/.test(s), 'armazenamento: só JPG, PNG e WebP (SVG não entra)');
     assert.ok(/allow update: if false;/.test(s) && !/allow write/.test(s), 'armazenamento: criar, trocar e apagar separados');
   });
+  // ================================================================== CONTA DO CLIENTE (crachá, link pessoal, link do painel)
+  const cookieDe = (r) => String((r.cabecalhos || {})['set-cookie'] || '').split(';')[0];                 // "cr_banca=codigo"
+  const textoZap = (r) => decodeURIComponent(String(r.corpo.pedido.whatsappMsg).split('?text=')[1]);
+  const codigoDoZap = (r) => (/#a=([\w.-]+)/.exec(textoZap(r)) || [])[1] || '';
+  const contasDe = (db, prefixo = 'contas/') => [...db._dados.entries()].filter(([k]) => k.startsWith(prefixo)).map(([, v]) => v);
+  const conta = (api, acao, extra = {}, headers = {}) => chamar(api, { headers: { ...ip(), ...headers }, body: { acao, ...extra } });
+
+  teste('SEGURANÇA · conta do cliente: o 1º pedido cria conta, crachá e link; o banco guarda só o hash; os pedidos seguintes caem na mesma conta', async () => {
+    zerarFreios(); const db = criarBanco(base()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOK));
+    const r1 = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedidoDe({ telefone: '62 98888-7777', condominio: 'Jardins Atenas' }) });
+    assert.strictEqual(r1.status, 200); assert.strictEqual(r1.corpo.temConta, true);
+    const bruto = String(r1.cabecalhos['set-cookie']), ck = cookieDe(r1), codigo = ck.split('=')[1];
+    assert.ok(/^cr_banca=[\w-]{16}\.[\w-]{43}$/.test(ck), 'crachá no formato certo, com o nome da loja');
+    for (const trava of ['HttpOnly', 'Secure', 'SameSite=Lax', 'Path=/api', 'Max-Age=34560000']) assert.ok(bruto.includes(trava), 'cookie com ' + trava);
+    assert.ok(textoZap(r1).includes('🔑 Meu acesso') && textoZap(r1).trim().endsWith(`https://site-banca1.vercel.app/#a=${codigo}`), 'o link pessoal é a última coisa da mensagem');
+    assert.strictEqual(codigoDoZap(r1), codigo, 'o link leva o mesmo código do crachá');
+    const [cid, segredo] = codigo.split('.'), c1 = db._dados.get(`contas/${cid}`);
+    assert.ok(c1 && c1.nome === 'Ana' && c1.telefone === '62988887777' && c1.condominio === 'Jardins Atenas');
+    assert.deepStrictEqual(c1.chaves, [crypto.createHash('sha256').update(segredo).digest('hex')], 'só o hash fica no banco');
+    assert.ok(!JSON.stringify([...db._dados.entries()]).includes(segredo), 'o segredo não fica guardado em lugar nenhum do banco');
+    const idPedido1 = r1.corpo.pedido.id;
+    assert.strictEqual(db._dados.get(`pedidos/${idPedido1}`).clienteId, cid, 'o pedido leva o ID do cliente');
+    assert.ok(!('linkAcesso' in db._dados.get(`pedidos/${idPedido1}`)), 'o link não é gravado no pedido');
+
+    // outro aparelho (outro login), com o crachá: mesma conta, sem chave nova
+    const r2 = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente-2', Cookie: `outra=1; ${ck}` }, body: pedidoDe() });
+    assert.strictEqual(r2.status, 200); assert.strictEqual(db._dados.get(`pedidos/${r2.corpo.pedido.id}`).clienteId, cid);
+    assert.strictEqual(contasDe(db).length, 1); assert.strictEqual(cookieDe(r2), ck, 'o crachá é renovado, não trocado');
+    let c = db._dados.get(`contas/${cid}`);
+    assert.deepStrictEqual(c.pedidos, [r2.corpo.pedido.id, idPedido1]); assert.strictEqual(c.chaves.length, 1); assert.deepStrictEqual(c.uids, ['cli-2', 'cli-1']);
+    assert.strictEqual(c.telefone, '62988887777', 'pedido sem telefone não apaga o telefone que já havia');
+
+    // mesmo aparelho (mesmo login), mas o crachá sumiu: volta para a MESMA conta e ganha uma chave nova
+    const r3 = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedidoDe() });
+    assert.strictEqual(db._dados.get(`pedidos/${r3.corpo.pedido.id}`).clienteId, cid); c = db._dados.get(`contas/${cid}`);
+    assert.strictEqual(c.chaves.length, 2); assert.notStrictEqual(cookieDe(r3), ck); assert.strictEqual(contasDe(db).length, 1);
+
+    // sem crachá e sem login: conta nova (nunca se acha conta por nome ou endereço digitado)
+    const r4 = await chamar(api, { headers: ip(), body: pedidoDe({ telefone: '62988887777', condominio: 'Jardins Atenas' }) });
+    assert.strictEqual(r4.status, 200); assert.notStrictEqual(db._dados.get(`pedidos/${r4.corpo.pedido.id}`).clienteId, cid, 'mesmo nome, endereço e telefone NÃO abrem a conta de ninguém');
+    assert.strictEqual(contasDe(db).length, 2);
+
+    // o MESMO pedido reenviado: não cria conta nem pedido de novo; quem tem o crachá recebe o mesmo link
+    const p5 = pedidoDe(); const r5 = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente', Cookie: ck }, body: p5 });
+    const antes = soDe(db, 'contas/'), r5b = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente', Cookie: ck }, body: p5 });
+    assert.strictEqual(r5b.status, 200); assert.strictEqual(soDe(db, 'contas/'), antes); assert.strictEqual(codigoDoZap(r5b), codigo); assert.strictEqual(textoZap(r5b), textoZap(r5));
+    // reenvio por OUTRA pessoa não recebe link nem crachá de ninguém
+    const r5c = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente-2' }, body: p5 });
+    assert.strictEqual(r5c.status, 400); assert.ok(!cookieDe(r5c) && !JSON.stringify(r5c.corpo).includes(cid));
+  });
+
+  teste('SEGURANÇA · conta do cliente: só o código abre a conta; código errado, de outra loja ou chutado não devolve nada', async () => {
+    zerarFreios(); const db = criarBanco(base()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOK));
+    const r1 = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedidoDe({ telefone: '62988887777', condominio: 'Jardins Atenas' }) });
+    const ck = cookieDe(r1), codigo = ck.split('=')[1], [cid, segredo] = codigo.split('.');
+
+    // quem nunca pediu: resposta vazia e NENHUMA leitura ou escrita no banco
+    const retrato = soDe(db, ''), vazio = await conta(api, 'conta-ver');
+    assert.deepStrictEqual(vazio.corpo, { sucesso: true, conta: null }); assert.strictEqual(soDe(db, ''), retrato);
+
+    const v = await conta(api, 'conta-ver', {}, { Cookie: ck });
+    assert.strictEqual(v.status, 200); assert.strictEqual(v.corpo.conta.nome, 'Ana'); assert.strictEqual(v.corpo.conta.quadra, '5'); assert.strictEqual(v.corpo.conta.condominio, 'Jardins Atenas');
+    assert.strictEqual(v.corpo.conta.pedidos.length, 1); assert.deepStrictEqual(v.corpo.conta.pedidos[0].itens.map((i) => i.id), ['ovos']);
+    const cru = JSON.stringify(v.corpo);
+    for (const proibido of ['chaves', 'uids', 'cli-1', segredo, crypto.createHash('sha256').update(segredo).digest('hex'), 'userId']) assert.ok(!cru.includes(proibido), 'a resposta não leva ' + proibido.slice(0, 12));
+
+    // id certo, segredo errado: nada, e o crachá ruim é apagado do aparelho
+    const falso = `${cid}.${'A'.repeat(43)}`, ruim = await conta(api, 'conta-ver', {}, { Cookie: `cr_banca=${falso}` });
+    assert.strictEqual(ruim.corpo.conta, null); assert.ok(String(ruim.cabecalhos['set-cookie']).includes('Max-Age=0'));
+    // crachá de uma loja não abre nada em outra (nem com o nome do cookie trocado)
+    for (const cookie of [ck, `cr_loja-b=${codigo}`]) assert.strictEqual((await conta(api, 'conta-ver', {}, { Cookie: cookie, 'X-Loja': 'loja-b' })).corpo.conta, null);
+    assert.strictEqual((await conta(api, 'conta-entrar', { codigo }, { 'X-Loja': 'loja-b' })).status, 400);
+    assert.strictEqual((await conta(api, 'conta-ver', {}, { Cookie: `cr_loja-que-nao-existe=${codigo}`, 'X-Loja': 'loja-que-nao-existe' })).status, 404);
+
+    // celular novo: entra pelo link da mensagem do WhatsApp
+    const e = await conta(api, 'conta-entrar', { codigo: codigoDoZap(r1) }, { Authorization: 'Bearer cliente-2' });
+    assert.strictEqual(e.status, 200); assert.strictEqual(e.corpo.conta.nome, 'Ana'); assert.strictEqual(cookieDe(e), ck);
+    assert.deepStrictEqual(db._dados.get(`contas/${cid}`).uids, ['cli-2', 'cli-1']);
+
+    // códigos malformados e chutes: sempre a mesma recusa, sem dizer se a conta existe
+    zerarFreios();
+    for (const c of ['', 'abc', `${cid}.`, falso, `${'B'.repeat(16)}.${segredo}`, { $ne: '' }, [codigo], null, 123, `${codigo}/../x`, codigo + ' ']) {
+      const r = await conta(api, 'conta-entrar', { codigo: c });
+      assert.strictEqual(r.status, 400, 'recusa ' + JSON.stringify(c)); assert.ok(!cookieDe(r) && /não vale mais/.test(r.corpo.error));
+    }
+    // freio: a mesma conexão não fica tentando código sem parar
+    zerarFreios(); const mesmo = ip(); let barrou = 0;
+    for (let i = 0; i < 16; i++) { require(raiz('lib/http'))._usos.clear(); const r = await chamar(api, { headers: mesmo, body: { acao: 'conta-entrar', codigo: falso } }); if (r.status === 429) barrou++; }
+    assert.strictEqual(barrou, 4, '12 tentativas a cada 10 minutos por conexão');
+  });
+
+  teste('SEGURANÇA · conta do cliente: a sacola guardada leva só id, quantidade e tipo; "esquecer" tira o crachá e o aparelho, e o link continua valendo', async () => {
+    zerarFreios(); const db = criarBanco(base()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOK));
+    const r1 = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedidoDe() });
+    const ck = cookieDe(r1), cid = ck.split('=')[1].split('.')[0];
+    const sujo = { sacola: [{ id: 'ovos', qtd: 2, tipo: 'un', preco: 0.01, nome: '<script>alert(1)</script>' }, { id: 'a/b', qtd: 1 }, { id: 'tomate', qtd: -1 }, { id: 'ovos', qtd: 9 }, { id: 'tomate', qtd: 1.5, tipo: 'kg' }, 'x', null],
+      prefs: { favs: ['ovos', {}, 'x/y', 'ovos', null], modo: { tomate: 'kg', ovos: 'banana', '__proto__': 'kg' }, admin: true }, chaves: ['x'], nome: 'Invasor', pedidos: ['pedido-b-0001'] };
+    const g = await conta(api, 'conta-guardar', sujo, { Cookie: ck });
+    assert.deepStrictEqual(g.corpo, { sucesso: true, guardado: true });
+    let c = db._dados.get(`contas/${cid}`);
+    assert.deepStrictEqual(c.sacola, [{ id: 'ovos', qtd: 2, tipo: 'un' }, { id: 'tomate', qtd: 1.5, tipo: 'kg' }]);
+    assert.deepStrictEqual(c.prefs, { favs: ['ovos'], modo: { tomate: 'kg' } });
+    assert.strictEqual(c.nome, 'Ana'); assert.strictEqual(c.chaves.length, 1); assert.strictEqual(c.pedidos.length, 1, 'guardar não mexe em nome, chaves nem pedidos');
+    assert.strictEqual((await conta(api, 'conta-guardar', sujo, { Cookie: ck })).corpo.guardado, false, 'nada mudou: não grava de novo');
+    // tirar um favorito tira mesmo (o campo é trocado inteiro)
+    await conta(api, 'conta-guardar', { prefs: { favs: [], modo: {} } }, { Cookie: ck });
+    assert.deepStrictEqual(db._dados.get(`contas/${cid}`).prefs, { favs: [], modo: {} });
+    // sem crachá (ou com crachá falso) não guarda nem cria nada
+    const antes = soDe(db, 'contas/');
+    assert.strictEqual((await conta(api, 'conta-guardar', sujo)).corpo.guardado, false);
+    assert.strictEqual((await conta(api, 'conta-guardar', sujo, { Cookie: `cr_banca=${cid}.${'Z'.repeat(43)}` })).corpo.guardado, false);
+    assert.strictEqual(soDe(db, 'contas/'), antes);
+    // a volta: a sacola vem com o que foi guardado; depois de um pedido, ela esvazia
+    assert.deepStrictEqual((await conta(api, 'conta-ver', {}, { Cookie: ck })).corpo.conta.sacola.map((i) => i.id), ['ovos', 'tomate']);
+    await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente', Cookie: ck }, body: pedidoDe() });
+    assert.deepStrictEqual(db._dados.get(`contas/${cid}`).sacola, []);
+
+    // esquecer neste aparelho
+    const s = await conta(api, 'conta-sair', {}, { Cookie: ck, Authorization: 'Bearer cliente' });
+    assert.strictEqual(s.status, 200); assert.ok(String(s.cabecalhos['set-cookie']).includes('Max-Age=0'));
+    c = db._dados.get(`contas/${cid}`);
+    assert.deepStrictEqual(c.uids, [], 'o login deste aparelho sai da conta'); assert.strictEqual(c.chaves.length, 1, 'o link do WhatsApp continua valendo');
+    // o aparelho que esqueceu NÃO volta para a conta sozinho no próximo pedido
+    const r3 = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedidoDe() });
+    assert.notStrictEqual(db._dados.get(`pedidos/${r3.corpo.pedido.id}`).clienteId, cid);
+    assert.strictEqual((await conta(api, 'conta-entrar', { codigo: codigoDoZap(r1) })).status, 200);
+  });
+
+  teste('SEGURANÇA · conta do cliente: gerar link no painel é só de dono e gerente da PRÓPRIA loja, cria a conta de cliente antigo e invalida os links anteriores', async () => {
+    zerarFreios(); const Nz = require(raiz('analytics/normalize'));
+    const crm = Nz.idDeChave(Nz.chaveCliente({ quadra: '1', lote: '2' }));
+    const db = criarBanco({ ...base(), [`tenants/loja-b/analytics_clientes/${crm}`]: { id: crm, nome: 'Cliente da B', quadra: '1', lote: '2', condominio: '', telefone: '62999990000', uids: ['cli-2'] },
+      'tenants/loja-b/pedidos/pedido-de-outra-casa': { userId: 'cli-2', nome: 'Mãe', quadra: '9', lote: '9', total: 5, status: 'arquivado', data: '2026-01-01T10:00:00.000Z', itens: [{ id: 'p1', nome: 'Pão B', qtd: 1 }] } });
+    const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOK));
+    const painel = (token, acao, extra = {}, loja = 'loja-b') => conta(api, acao, { clienteId: crm, ...extra }, { 'X-Loja': loja, ...(token ? { Authorization: `Bearer ${token}` } : {}) });
+
+    // quem NÃO pode: sem login, cliente, equipe sem ser gestor, gestor de OUTRA loja
+    const antes = soDe(db, 'tenants/loja-b/contas/');
+    for (const acao of ['conta-link', 'conta-ficha']) {
+      assert.strictEqual((await painel('', acao)).status, 401); assert.strictEqual((await painel('token-inventado', acao)).status, 401);
+      for (const t of ['cliente', 'b-funcionario', 'b-caixa', 'b-producao', 'b-estoque', 'a-proprietario', 'a-administrador']) assert.strictEqual((await painel(t, acao)).status, 403, `${t} não faz ${acao}`);
+    }
+    assert.strictEqual(soDe(db, 'tenants/loja-b/contas/'), antes, 'nenhuma tentativa barrada criou conta');
+    // o dono da loja B não gera link de cliente apontando para a loja A
+    assert.strictEqual((await painel('b-proprietario', 'conta-link', {}, 'loja-a')).status, 403);
+    for (const ruim of ['../x', 'c_zzzzzzzzzzzz', '', null, { a: 1 }, 'c_' + 'a'.repeat(13)]) assert.strictEqual((await painel('b-proprietario', 'conta-link', { clienteId: ruim })).status, 400);
+    assert.strictEqual((await painel('b-proprietario', 'conta-link', { clienteId: 'c_000000000000' })).status, 404);
+
+    // cliente antigo, sem conta: o dono gera o link e a conta nasce com os pedidos DESTE endereço
+    const f0 = await painel('b-proprietario', 'conta-ficha');
+    assert.strictEqual(f0.corpo.temAcesso, false); assert.deepStrictEqual(f0.corpo.pedidos.map((p) => p.id), ['pedido-b-0001'], 'pedido do mesmo aparelho para OUTRA casa não entra');
+    const l1 = await painel('b-proprietario', 'conta-link');
+    assert.strictEqual(l1.status, 200); assert.strictEqual(l1.corpo.criada, true); assert.strictEqual(l1.corpo.telefone, '62999990000'); assert.strictEqual(l1.corpo.nome, 'Cliente da B');
+    assert.ok(/^https:\/\/site-banca1\.vercel\.app\/\?loja=loja-b#a=[\w-]{16}\.[\w-]{43}$/.test(l1.corpo.link), 'link da loja certa');
+    const cod1 = l1.corpo.link.split('#a=')[1], cid = cod1.split('.')[0];
+    assert.deepStrictEqual(db._dados.get(`tenants/loja-b/contas/${cid}`).pedidos, ['pedido-b-0001']);
+    const trilha = [...db._dados.entries()].filter(([k]) => k.startsWith('tenants/loja-b/auditoria/')).map(([, v]) => v);
+    assert.strictEqual(trilha.length, 1); assert.strictEqual(trilha[0].acao, 'conta-link'); assert.strictEqual(trilha[0].quem, 'proprietario@loja-b');
+    assert.ok(!JSON.stringify(trilha).includes(cod1.split('.')[1]) && !JSON.stringify(trilha).includes('Cliente da B'), 'a trilha não guarda o código nem dado do cliente');
+
+    // o cliente abre o link no celular novo (login novo) e pede: tudo cai na mesma conta
+    const e1 = await conta(api, 'conta-entrar', { codigo: cod1 }, { 'X-Loja': 'loja-b', Authorization: 'Bearer cliente' });
+    assert.strictEqual(e1.status, 200); assert.strictEqual(e1.corpo.conta.nome, 'Cliente da B'); assert.deepStrictEqual(e1.corpo.conta.pedidos.map((p) => p.id), ['pedido-b-0001']);
+    assert.strictEqual((await conta(api, 'conta-entrar', { codigo: cod1 })).status, 400, 'o link da loja B não vale na loja original');
+    const ck = cookieDe(e1);
+    const ped = await chamar(api, { headers: { ...ip(), 'X-Loja': 'loja-b', Authorization: 'Bearer cliente', Cookie: ck }, body: pedidoDe({ quadra: '1', lote: '2', itens: [{ id: 'p1', qtd: 1, tipo: 'un' }] }) });
+    assert.strictEqual(ped.status, 200); assert.strictEqual(db._dados.get(`tenants/loja-b/pedidos/${ped.corpo.pedido.id}`).clienteId, cid);
+    const f1 = await painel('b-administrador', 'conta-ficha');
+    assert.strictEqual(f1.corpo.temAcesso, true); assert.deepStrictEqual(f1.corpo.pedidos.map((p) => p.id), [ped.corpo.pedido.id, 'pedido-b-0001']);
+
+    // link novo: o anterior e o crachá antigo param de valer; continua UMA conta só, com os mesmos pedidos
+    const l2 = await painel('b-administrador', 'conta-link');
+    assert.strictEqual(l2.corpo.criada, false); const cod2 = l2.corpo.link.split('#a=')[1];
+    assert.strictEqual(cod2.split('.')[0], cid); assert.notStrictEqual(cod2, cod1);
+    assert.strictEqual((await conta(api, 'conta-entrar', { codigo: cod1 }, { 'X-Loja': 'loja-b' })).status, 400, 'o link antigo morreu');
+    assert.strictEqual((await conta(api, 'conta-ver', {}, { 'X-Loja': 'loja-b', Cookie: ck })).corpo.conta, null, 'o crachá antigo morreu');
+    assert.strictEqual((await conta(api, 'conta-entrar', { codigo: cod2 }, { 'X-Loja': 'loja-b' })).corpo.conta.pedidos.length, 2);
+    assert.strictEqual(contasDe(db, 'tenants/loja-b/contas/').length, 1);
+    // o aparelho antigo (crachá morto, login antigo) NÃO volta para a conta sozinho: o pedido dele abre conta nova
+    const velho = await chamar(api, { headers: { ...ip(), 'X-Loja': 'loja-b', Authorization: 'Bearer cliente', Cookie: ck }, body: pedidoDe({ quadra: '1', lote: '2', itens: [{ id: 'p1', qtd: 1, tipo: 'un' }] }) });
+    assert.strictEqual(velho.status, 200); assert.notStrictEqual(db._dados.get(`tenants/loja-b/pedidos/${velho.corpo.pedido.id}`).clienteId, cid);
+    // a plataforma também pode; e nada disto mexeu na loja original nem na loja A
+    assert.strictEqual((await painel('plataforma', 'conta-ficha')).status, 200);
+    assert.strictEqual(contasDe(db, 'contas/').length, 0); assert.strictEqual(contasDe(db, 'tenants/loja-a/contas/').length, 0);
+  });
+
+  teste('SEGURANÇA · conta do cliente: no celular novo, o crachá prova que o pedido é da pessoa (avaliar e cancelar); crachá de outra conta não prova nada', async () => {
+    zerarFreios(); const db = criarBanco(base()); const adm = criarAdmin(db, TOK);
+    const api = carregarApi(raiz('api/checkout.js'), adm), cancelar = carregarApi(raiz('api/cancelar-pedido.js'), adm);
+    const r1 = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedidoDe() }), ck = cookieDe(r1), id1 = r1.corpo.pedido.id;
+    const rOutro = await chamar(api, { headers: ip(), body: pedidoDe({ nome: 'Vizinho' }) }), ckOutro = cookieDe(rOutro);
+    const pedir = (corpo, headers) => chamar(cancelar, { headers: { ...ip(), ...headers }, body: corpo });
+    // outro login, sem crachá: não avalia nem cancela o pedido da Ana
+    assert.strictEqual((await pedir({ acao: 'avaliar', pedidoId: id1, nota: 1 }, { Authorization: 'Bearer cliente-2' })).status, 400);
+    assert.strictEqual((await pedir({ pedidoId: id1 }, { Authorization: 'Bearer cliente-2' })).status, 400);
+    // outro login, com o crachá de OUTRA conta ou com crachá inventado: também não
+    for (const cookie of [ckOutro, `cr_banca=${ck.split('=')[1].split('.')[0]}.${'Q'.repeat(43)}`, ck.replace('cr_banca', 'cr_loja-b')]) {
+      assert.strictEqual((await pedir({ acao: 'avaliar', pedidoId: id1, nota: 1 }, { Authorization: 'Bearer cliente-2', Cookie: cookie })).status, 400);
+    }
+    assert.strictEqual((await pedir({ pedidoId: id1 }, { Authorization: 'Bearer cliente-2', Cookie: ckOutro })).status, 400);
+    assert.strictEqual(db._dados.get(`pedidos/${id1}`).status, 'pendente'); assert.ok(!db._dados.get(`pedidos/${id1}`).avaliacao);
+    // sem login nenhum, o crachá sozinho não basta (a porta continua exigindo a sessão do aparelho)
+    assert.strictEqual((await pedir({ pedidoId: id1 }, { Cookie: ck })).status, 401);
+    // celular novo da Ana (login novo + crachá que veio pelo link): avalia e cancela
+    assert.strictEqual((await pedir({ acao: 'avaliar', pedidoId: id1, nota: 5, texto: 'Tudo certo' }, { Authorization: 'Bearer cliente-2', Cookie: ck })).status, 200);
+    assert.strictEqual(db._dados.get(`pedidos/${id1}`).avaliacao.nota, 5);
+    const c = await pedir({ pedidoId: id1 }, { Authorization: 'Bearer cliente-2', Cookie: ck });
+    assert.strictEqual(c.status, 200); assert.strictEqual(db._dados.get(`pedidos/${id1}`).status, 'cancelado'); assert.strictEqual(db._dados.get('produtos/ovos').estoqueFisico, 9, 'o estoque voltou uma vez só (10 - 1 do vizinho)');
+    // o crachá da Ana não dá poder sobre o pedido do vizinho
+    assert.strictEqual((await pedir({ pedidoId: rOutro.corpo.pedido.id }, { Authorization: 'Bearer cliente-2', Cookie: ck })).status, 400);
+  });
+
+  teste('SEGURANÇA · conta do cliente: quem pede com o endereço do vizinho não ganha o link dele, e aparelho com acesso cancelado não volta reenviando pedido', async () => {
+    zerarFreios(); const Nz = require(raiz('analytics/normalize'));
+    const crm = Nz.idDeChave(Nz.chaveCliente({ quadra: '5', lote: '3', condominio: 'Jardins Atenas' }));
+    const db = criarBanco(base()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, { ...TOK, invasor: { uid: 'inv-1' }, dona: { uid: 'dona', email: 'dona@banca', email_verified: true, admin: true } }));
+    const casa = { condominio: 'Jardins Atenas', quadra: '5', lote: '3' };
+    // a Ana pede duas vezes da casa dela; depois um invasor pede UMA vez com o endereço dela e o telefone dele
+    const a1 = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedidoDe({ ...casa, telefone: '62988887777' }) }), ckAna = cookieDe(a1);
+    const pedidoAna2 = pedidoDe({ ...casa, telefone: '62988887777' });
+    await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente', Cookie: ckAna }, body: pedidoAna2 });
+    const pedidoInv = pedidoDe({ ...casa, nome: 'Invasor', telefone: '62911112222' });
+    const i1 = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer invasor' }, body: pedidoInv }), ckInv = cookieDe(i1), cidInv = ckInv.split('=')[1].split('.')[0];
+    // o motor de clientes junta por ENDEREÇO: os dois aparelhos aparecem na mesma ficha, com o telefone do pedido mais recente (o do invasor)
+    db._dados.set(`analytics_clientes/${crm}`, { id: crm, nome: 'Invasor', ...casa, telefone: '62911112222', uids: ['cli-1', 'inv-1'] });
+    const painel = (acao) => conta(api, acao, { clienteId: crm }, { Authorization: 'Bearer dona' });
+    const f = await painel('conta-ficha');
+    assert.strictEqual(f.corpo.pedidos.length, 2, 'o pedido do invasor não entra no histórico do cliente'); assert.strictEqual(f.corpo.outrosTelefones, 1);
+    const l = await painel('conta-link');
+    assert.strictEqual(l.status, 200); assert.strictEqual(l.corpo.telefone, '62988887777', 'o link vai para o telefone da Ana, não para o do último pedido'); assert.strictEqual(l.corpo.nome, 'Ana'); assert.strictEqual(l.corpo.outrosTelefones, 1);
+    const cod = l.corpo.link.split('#a=')[1], cidAna = cod.split('.')[0];
+    assert.notStrictEqual(cidAna, cidInv); assert.strictEqual(cidAna, ckAna.split('=')[1].split('.')[0], 'a conta do link é a da Ana');
+    assert.strictEqual(db._dados.get(`contas/${cidAna}`).pedidos.length, 2); assert.ok(!db._dados.get(`contas/${cidAna}`).pedidos.includes(i1.corpo.pedido.id));
+    assert.ok(!db._dados.get(`contas/${cidInv}`).fundidaEm, 'a conta do invasor não é misturada com a do cliente');
+    // o invasor continua vendo só o que é dele
+    const vInv = await conta(api, 'conta-ver', {}, { Cookie: ckInv });
+    assert.deepStrictEqual(vInv.corpo.conta.pedidos.map((p) => p.id), [i1.corpo.pedido.id]); assert.ok(!JSON.stringify(vInv.corpo).includes('62988887777'));
+
+    // o crachá antigo da Ana morreu (link novo). Reenviar um pedido ANTIGO dela, do aparelho antigo, não devolve acesso
+    assert.strictEqual((await conta(api, 'conta-ver', {}, { Cookie: ckAna })).corpo.conta, null);
+    const antes = soDe(db, 'contas/'), re = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedidoAna2 });
+    assert.strictEqual(re.status, 200); assert.ok(!cookieDe(re) && !textoZap(re).includes('#a=') && re.corpo.temConta === false, 'reenvio não ganha crachá nem link');
+    assert.strictEqual(soDe(db, 'contas/'), antes, 'nenhuma chave nova foi criada');
+    // pedido de dias atrás também não rende chave nova, mesmo para quem ainda é da conta
+    db._dados.set(`contas/${cidInv}`, { ...db._dados.get(`contas/${cidInv}`) }); db._dados.set(`pedidos/${pedidoInv.idempotencyKey}`, { ...db._dados.get(`pedidos/${pedidoInv.idempotencyKey}`), data: '2026-01-01T10:00:00.000Z' });
+    const reInv = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer invasor' }, body: pedidoInv });
+    assert.ok(!cookieDe(reInv) && db._dados.get(`contas/${cidInv}`).chaves.length === 1);
+
+    // PRÉVIA do link: diz o primeiro nome e o endereço, não entrega crachá e não grava nada
+    const retrato = soDe(db, 'contas/'), pv = await conta(api, 'conta-entrar', { codigo: cod, previa: true }, { Authorization: 'Bearer cliente-2' });
+    assert.deepStrictEqual(pv.corpo, { sucesso: true, previa: { nome: 'Ana', condominio: 'Jardins Atenas', quadra: '5', lote: '3', formatoEndereco: 'ql' } });
+    assert.ok(!cookieDe(pv)); assert.strictEqual(soDe(db, 'contas/'), retrato);
+    assert.strictEqual((await conta(api, 'conta-entrar', { codigo: `${cidAna}.${'k'.repeat(43)}`, previa: true })).status, 400);
+  });
+
+  teste('SEGURANÇA · conta do cliente: o navegador nunca lê a coleção de contas, e o código não fica na barra de endereço', () => {
+    const r = ler('firestore.rules'), loja = ler('js/conta-loja.js'), lib = ler('lib/conta.js');
+    assert.ok(!/match \/contas\//.test(r), 'contas não tem regra própria: cai na regra final, que nega tudo');
+    assert.ok(/history\.replaceState\(history\.state, '', location\.pathname \+ location\.search\)/.test(loja), 'o código sai do endereço assim que é lido');
+    assert.ok(!/localStorage\.setItem\([^)]*codigo/.test(loja) && !/document\.cookie/.test(loja + ler('js/loja.js')), 'a página não guarda o código nem mexe em cookie');
+    assert.ok(/HttpOnly; Secure; SameSite=Lax/.test(lib) && /#a=\$\{codigo\}/.test(lib), 'crachá fechado para a página; código depois do # (não vai para servidor nenhum)');
+    assert.ok(require(raiz('lib/prudencia')).zerarMovimento && /'maquininha', 'contas'\]/.test(ler('lib/prudencia.js')), 'zerar o movimento apaga as contas junto com os pedidos');
+  });
 };

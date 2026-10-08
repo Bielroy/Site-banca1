@@ -1696,6 +1696,41 @@ teste('fotos: envio que cai é repetido; fila respeita o limite de envios ao mes
   assert.strictEqual(pico, 3); assert.strictEqual(feitos.length, 7);
 });
 
+teste('conta do cliente (loja): junta o que voltou do servidor com o que já está no aparelho, sem perder nem inventar', async () => {
+  const C = await import(raiz('js/conta-lib.js')), fs = require('fs');
+  const cod = 'A'.repeat(16) + '.' + 'b'.repeat(43);
+  assert.strictEqual(C.codigoDoEndereco(`#a=${cod}`), cod);
+  for (const ruim of ['', '#', `#a=${cod}x`, `#a=${cod}&b=1`, `#b=${cod}`, '#a=<script>', `#modal-historico`, null, `#a=${'A'.repeat(16)}.${'b'.repeat(42)}`]) assert.strictEqual(C.codigoDoEndereco(ruim), '', 'recusa ' + ruim);
+  // pedidos: sem repetir; o do servidor atualiza status e valor, e o que só existe no aparelho continua lá
+  const locais = [{ id: 'p2', data: '2026-10-05T10:00:00Z', total: 10, descItens: '1x Ovos', itens: [{ id: 'ovos', qtd: 1 }] }, { id: 'so-local', data: '2026-10-01T10:00:00Z', total: 3 }];
+  const j = C.juntarPedidos(locais, [{ id: 'p1', data: '2026-10-06T10:00:00Z', total: 20, status: 'enviado' }, { id: 'p2', data: '2026-10-05T10:00:00Z', total: 12.5, status: 'arquivado' }]);
+  assert.deepStrictEqual(j.map((p) => p.id), ['p1', 'p2', 'so-local']); assert.strictEqual(j[1].total, 12.5); assert.strictEqual(j[1].status, 'arquivado'); assert.strictEqual(j[1].descItens, '1x Ovos');
+  assert.strictEqual(C.juntarPedidos(Array.from({ length: 30 }, (_, i) => ({ id: 'x' + i, data: '2026-01-' + String(i + 1).padStart(2, '0') })), []).length, 10);
+  assert.deepStrictEqual(C.juntarPedidos(null, 'lixo'), []); assert.deepStrictEqual(C.juntarPedidos([null, {}, { id: 'a' }], [undefined]).map((p) => p.id), ['a']);
+  const p = C.perfilParaAparelho({ nome: ' Ana ', quadra: '5', lote: '3', condominio: 'Jardins Atenas', condominioId: 'atenas', formatoEndereco: 'ql', telefone: '(62) 98888-7777' });
+  assert.deepStrictEqual(p.cliente, { nome: 'Ana', quadra: '5', lote: '3', tel: '62988887777' });
+  assert.deepStrictEqual(p.endereco, { condominio: 'Jardins Atenas', condominioId: 'atenas', formatoEndereco: 'ql', quadra: '5', lote: '3' });
+  assert.deepStrictEqual(C.perfilParaAparelho({}), { cliente: null, endereco: null }); assert.strictEqual(C.perfilParaAparelho({ nome: 'Ana', formatoEndereco: 'hack', quadra: '1' }).endereco.formatoEndereco, 'ql');
+  assert.deepStrictEqual(C.unirFavs(['a', 'b'], ['b', 'c', 5, null]), ['a', 'b', 'c']);
+  assert.deepStrictEqual(C.unirModo({ tomate: 'un' }, { tomate: 'kg', cebola: 'kg', x: 'banana' }), { tomate: 'un', cebola: 'kg' }, 'a escolha deste aparelho vence');
+  assert.deepStrictEqual(C.sacolaParaGuardar([{ id: 7, qtd: 2, tipo: 'un', preco: 9, nome: 'x' }, { id: 'a', qtd: 0 }, null, { id: 'b', qtd: 1.5, tipo: 'kg' }]), [{ id: '7', qtd: 2, tipo: 'un' }, { id: 'b', qtd: 1.5, tipo: 'kg' }]);
+  const agora = Date.parse('2026-10-08T12:00:00Z');
+  assert.strictEqual(C.sacolaVale([{ id: 'a' }], '2026-10-01T12:00:00Z', agora), true); assert.strictEqual(C.sacolaVale([{ id: 'a' }], '2026-08-01T12:00:00Z', agora), false, 'sacola de dois meses atrás não volta');
+  assert.strictEqual(C.sacolaVale([], '2026-10-01T12:00:00Z', agora), false); assert.strictEqual(C.sacolaVale([{ id: 'a' }], '', agora), false); assert.strictEqual(C.sacolaVale([{ id: 'a' }], '2027-01-01T00:00:00Z', agora), false);
+  assert.strictEqual(C.foneParaWhats('(62) 98888-7777'), '5562988887777'); assert.strictEqual(C.foneParaWhats('5562988887777'), '5562988887777'); assert.strictEqual(C.foneParaWhats('5511'), ''); assert.strictEqual(C.foneParaWhats(''), '');
+  const msg = C.mensagemDoLink('Ana Paula', 'Banca Adair e Pedrina', 'https://x/#a=1');
+  assert.ok(msg.startsWith('Oi, Ana!') && msg.includes('https://x/#a=1') && /não repasse/.test(msg));
+  // a loja: restaura ao abrir, guarda a sacola na conta, tem o botão de esquecer e a dica do link
+  const loja = fs.readFileSync(raiz('js/loja.js'), 'utf8'), html = fs.readFileSync(raiz('index.html'), 'utf8'), crm = fs.readFileSync(raiz('js/admin-crm.js'), 'utf8');
+  assert.ok(/buscarConta\(\{ semDados: !lerLista\('banca_clientes'\)\.length && !lerEnderecoSalvo\(\), confirmar: confirmarConta \}\)/.test(loja), 'só pergunta ao servidor quando o aparelho está sem dados (ou veio pelo link)');
+  const cl = fs.readFileSync(raiz('js/conta-loja.js'), 'utf8');
+  assert.ok(cl.indexOf("previa: true") > 0 && cl.indexOf("previa: true") < cl.indexOf("await confirmar(previa)") && cl.indexOf("await confirmar(previa)") < cl.indexOf("chamar({ acao: 'conta-entrar', codigo })"), 'link pessoal: primeiro a prévia, depois a pergunta, só então entra');
+  assert.strictEqual(C.foneBonito('5562988887777'), '(62) 98888-7777'); assert.strictEqual(C.foneBonito('6232221111'), '(62) 3222-1111');
+  assert.ok(/if \(STATE\.carrinho\.length\) return;\s+\/\/ a pessoa já começou outro pedido/.test(loja), 'a sacola guardada nunca passa por cima de um pedido em montagem');
+  assert.ok(/data-action="esquecer-dados"/.test(html) && /id="sucesso-dica-acesso"[^>]*hidden/.test(html));
+  assert.ok(/acao: 'conta-link'/.test(crm) && /customConfirm\('Gerar um link novo\?'/.test(crm) && !/window\.open\([^)]*j\.link/.test(crm), 'painel: confirma antes e o envio é um link tocado pela pessoa');
+});
+
 // ------------------------------------------------------------------ testes de segurança (arquivo próprio)
 require('./seguranca')({ teste, raiz, criarBanco, criarAdmin, chamar, carregarApi });
 

@@ -75,6 +75,7 @@ async function semear() {
       por(cam(loja, 'fechamentos/2026-10-01'), { dia: '2026-10-01', atualizadoEm: 'x', itens: {} });
       por(cam(loja, 'calendario/e1'), { data: '2026-10-12', titulo: 'feriado' });
       por(cam(loja, 'auditoria/a1'), { acao: 'x', quem: 'y' });
+      por(cam(loja, 'contas/conta-1'), { id: 'conta-1', nome: 'Ana', quadra: '5', lote: '3', chaves: ['hash'], uids: ['cliente-1'] });
       por(cam(loja, 'avisos/ap1'), { uid: 'u', endpoint: 'https://fcm.googleapis.com/x', keys: {} });
       por(cam(loja, 'uso_ia/2026-10-01'), { chat: 3 });
       por(cam(loja, 'maquininha/2026-10-01'), { total: 10 });
@@ -101,8 +102,8 @@ teste('visitante sem login lê só a vitrine', async () => {
     // o banco de fotos (com os nomes originais dos arquivos) não é da vitrine
     await nega(getDoc(d(v, cam(loja, 'loja/fotos'))));
     for (const privado of ['pedidos/ped-1', 'cupons/DEZ', 'crm/contatos', 'equipe/u1', 'resumos/2026-10-01', 'analytics/dashboard', 'estoque_mov/m1', 'estoque_resumo/2026-10', 'producoes/l1', 'produtos_custos/p1',
-      'fechamentos/2026-10-01', 'calendario/e1', 'auditoria/a1', 'avisos/ap1', 'uso_ia/2026-10-01', 'maquininha/2026-10-01', 'analytics_clientes/c1']) await nega(getDoc(d(v, cam(loja, privado))));
-    for (const colecao of ['pedidos', 'cupons', 'crm', 'equipe', 'produtos_custos', 'fechamentos', 'auditoria', 'avisos']) await nega(getDocs(c(v, cam(loja, colecao))));
+      'fechamentos/2026-10-01', 'calendario/e1', 'auditoria/a1', 'avisos/ap1', 'uso_ia/2026-10-01', 'maquininha/2026-10-01', 'analytics_clientes/c1', 'contas/conta-1']) await nega(getDoc(d(v, cam(loja, privado))));
+    for (const colecao of ['pedidos', 'cupons', 'crm', 'equipe', 'produtos_custos', 'fechamentos', 'auditoria', 'avisos', 'contas']) await nega(getDocs(c(v, cam(loja, colecao))));
   }
   await pode(getDoc(d(v, 'feiras/feira-1')));
   for (const servidor of ['plataforma/segredos', 'plataforma/maquininha_loja-a', 'plataforma/dono', 'backups/loja-a_2026-10-01', 'limites/pedido_x', 'auditoria_plataforma/a1']) await nega(getDoc(d(v, servidor)));

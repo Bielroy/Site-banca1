@@ -1,4 +1,4 @@
-import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc } from './firebase.js';
+import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc, signOut } from './firebase.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage, haVersaoNova, conferirVersaoAgora, recarregarFresco } from './utils.js';
 import { initIA } from './ia.js';
@@ -17,6 +17,8 @@ import { listaValida, listaDoCarrinho, separar, mesmoConjunto, podeConvidarAvali
 import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
 import { ligarVerFoto } from './ver-foto.js';
 import { temDoisModos, modoPreferido, limparMemoria, botoesDoCard, textoNoPedido, proximaQtd } from './modo-lib.js';
+import { juntarPedidos, perfilParaAparelho, unirFavs, unirModo, sacolaParaGuardar, sacolaVale } from './conta-lib.js';
+import { buscarConta, agendarGuardar, marcarConta, sairDaConta } from './conta-loja.js';
 ligarVerFoto();   // tocar na foto da janela do produto abre ela inteira
 
 // Lista guardada no aparelho. Dado corrompido ou armazenamento bloqueado NÃO pode derrubar a loja:
@@ -68,7 +70,7 @@ const carregarCarrinhoDB = async () => {
     } catch(e) {}
     renderCarrinhoCompleto();   // desenha também o "pedido vazio" na primeira visita
 };
-carregarCarrinhoDB(); 
+const carrinhoPronto = carregarCarrinhoDB();
 
 let realTimeSyncIniciado = false;
 onAuthStateChanged(auth, (user) => {
@@ -132,6 +134,7 @@ const lembrarModo = (id, modo) => {
     if (MODO_MEM[id] === modo) return;
     MODO_MEM[id] = modo;
     try { localStorage.setItem(chave('banca_modo'), JSON.stringify(limparMemoria(MODO_MEM))); } catch (_) { /* aparelho cheio */ }
+    guardarNaConta();
 };
 // Produto vendido por quilo: dois botões, cada um dizendo o que põe no pedido e quanto custa.
 // Depois do toque, o escolhido vira o contador e o outro vira "Trocar para ...".
@@ -400,7 +403,11 @@ let debounceSalvarCarrinho;
 const persistirCarrinhoComDebounce = () => {
     clearTimeout(debounceSalvarCarrinho);
     debounceSalvarCarrinho = setTimeout(() => { dbStorage.set(chave('banca_cart'), {v: CART_VERSION, items: STATE.carrinho}); }, 400);
+    guardarNaConta();
 };
+// CONTA DO CLIENTE: a sacola, os favoritos e o "unidade ou quilo" também ficam guardados na loja,
+// para voltarem se o aparelho apagar tudo (o iPhone faz isso depois de 7 dias sem abrir o site).
+const guardarNaConta = () => agendarGuardar(() => ({ sacola: sacolaParaGuardar(STATE.carrinho), prefs: { favs: STATE.favoritos, modo: MODO_MEM } }));
 
 // Modificado para aceitar o "tipo" de compra (Kg ou Un)
 const modificarCarrinho = (id, delta, fixo = false, tipoCompraForcado = null) => {
@@ -745,6 +752,7 @@ const iniciarRealTimeSync = () => {
         }
         syncCarrinhoComPrecosAoVivo();
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
+        tentarRestaurarSacola();
     };
     const unsubProdutos = onSnapshot(tcol("produtos"), (snap) => {
         _produtosChegaram = true;
@@ -1108,7 +1116,8 @@ const renderHistorico = async () => {
     lista.innerHTML = meusPedidos.map(p => {
         const vivo = doBanco[p.id];
         const antigo = Date.now() - new Date(p.data).getTime() >= 86400000;
-        const status = vivo ? vivo.status : (antigo ? 'arquivado' : 'pendente');
+        // sem leitura ao vivo (pedido que voltou pela conta, feito em outro aparelho): vale o status que o servidor mandou
+        const status = vivo ? vivo.status : (p.status === 'cancelado' || p.cancelado ? 'cancelado' : antigo ? 'arquivado' : (ROTULO_STATUS[p.status] ? p.status : 'pendente'));
 
         // Valor: o do banco é a verdade. O do aparelho é só estimativa.
         const totalReal = vivo && typeof vivo.total === 'number' ? vivo.total : p.total;
@@ -1357,6 +1366,64 @@ const pintarResumoEndereco = () => {
     document.getElementById('endereco-resumo').textContent = e && e.condominio ? linhaEndereco(e, { curto: true }) : 'Escolha onde entregar';
 };
 pintarResumoEndereco();
+
+// =========================================================
+// CONTA DO CLIENTE (sem login). O servidor guarda nome, endereço, pedidos, favoritos e sacola
+// ligados a um crachá que a limpeza do iPhone não apaga. Aqui os dados voltam para o aparelho:
+//   - sozinhos, quando a loja abre sem nada guardado;
+//   - pelo link pessoal que vai no fim da mensagem do WhatsApp (celular novo).
+// Regras de quem pode o quê: lib/conta.js (servidor).
+// =========================================================
+let sacolaDaConta = null;
+const tentarRestaurarSacola = () => {
+    if (!sacolaDaConta || !STATE.catalogoChegou) return;
+    const itens = sacolaDaConta; sacolaDaConta = null;
+    if (STATE.carrinho.length) return;                       // a pessoa já começou outro pedido: não mexe
+    const { entram } = separar(itens, STATE.produtos);       // preço e disponibilidade DE HOJE
+    if (!entram.length) return;
+    STATE.carrinho = entram;
+    persistirCarrinhoComDebounce(); renderCarrinhoCompleto(); STATE.produtos.forEach(p => atualizarBadgesDOM(p.id));
+    setTimeout(() => showToast(`Sua sacola voltou com ${entram.length} ${entram.length === 1 ? 'item' : 'itens'}, nos preços de hoje.`), 2600);
+};
+const aplicarConta = async (conta, porLink) => {
+    const { cliente, endereco } = perfilParaAparelho(conta);
+    // cada coisa no seu "try": aparelho com o armazenamento cheio ou bloqueado ainda fica com o resto
+    const guardar = (nome, valor) => { try { localStorage.setItem(chave(nome), JSON.stringify(valor)); } catch (e) { console.warn('[conta] não guardei', nome, e && e.message); } };
+    // lido ANTES de gravar o nome: o endereço salvo "empresta" quadra e lote da lista de nomes quando não tem o seu
+    const clientes = lerLista('banca_clientes'), semEndereco = !lerEnderecoSalvo();
+    if (cliente && (porLink || !clientes.length)) guardar('banca_clientes', [cliente, ...clientes.filter(c => String(c && c.nome || '').toLowerCase() !== cliente.nome.toLowerCase())].slice(0, 5));
+    if (endereco && (porLink || semEndereco)) salvarEndereco(endereco);
+    guardar('banca_meus_pedidos', juntarPedidos(lerLista('banca_meus_pedidos'), conta.pedidos));
+    STATE.favoritos = unirFavs(STATE.favoritos, conta.favs); guardar('banca_favs', STATE.favoritos);
+    MODO_MEM = limparMemoria(unirModo(MODO_MEM, conta.modo)); guardar('banca_modo', MODO_MEM);
+    pintarResumoEndereco(); renderAtalhos();
+    if (STATE.lojaRenderizada) renderLoja(true);            // corações e "unidade ou quilo" de cada card
+    await carrinhoPronto;
+    if (!STATE.carrinho.length && sacolaVale(conta.sacola, conta.sacolaEm)) { sacolaDaConta = conta.sacola; tentarRestaurarSacola(); }
+    const primeiro = String(conta.nome || '').trim().split(/\s+/)[0];
+    showToast(porLink ? `Pronto${primeiro ? ', ' + primeiro : ''}! Seus dados e pedidos voltaram para este aparelho.` : `Que bom te ver de novo${primeiro ? ', ' + primeiro : ''}! A loja lembrou do seu endereço e dos seus pedidos.`);
+};
+// Link pessoal: antes de entrar, mostra de quem é a conta. Link mandado por outra pessoa faria os pedidos caírem na conta dela.
+const confirmarConta = (previa) => customConfirm(`Entrar como ${previa.nome || 'cliente'}?`,
+    `Este link é da conta de ${previa.nome || 'um cliente'}${linhaEndereco(previa, { curto: true }) ? ` (${linhaEndereco(previa, { curto: true })})` : ''}. Se for você, a loja traz seu endereço e seus pedidos para este aparelho. Se você recebeu este link de outra pessoa, toque em "Não sou eu".`,
+    { ok: 'Sou eu', nao: 'Não sou eu' });
+buscarConta({ semDados: !lerLista('banca_clientes').length && !lerEnderecoSalvo(), confirmar: confirmarConta }).then(({ conta, porLink, erro }) => {
+    if (conta) return aplicarConta(conta, porLink);
+    if (porLink && erro) showToast(erro, true);
+}).catch((e) => console.warn('[conta]', e && e.message));
+
+const esquecerDados = async () => {
+    const ok = await customConfirm('Esquecer seus dados neste aparelho?', 'Saem daqui o seu nome, endereço, pedidos e favoritos. Para trazer tudo de volta, toque no link "Meu acesso" que fica no fim de uma mensagem de pedido sua no WhatsApp.', { ok: 'Esquecer', nao: 'Voltar' });
+    if (!ok) return;
+    try { await sairDaConta(); } catch (e) { return showToast(mensagemDeErroAmigavel(e), true); }
+    // o login anônimo deste aparelho também sai: o próximo pedido daqui não herda os pedidos de quem usou antes
+    // (só o login anônimo de cliente: quem está logado no painel neste navegador continua logado)
+    try { if (auth.currentUser && auth.currentUser.isAnonymous) await signOut(auth); } catch (_) { /* segue */ }
+    ['banca_clientes', 'banca_endereco', 'banca_meus_pedidos', 'banca_favs', 'banca_modo', CHAVE_LISTA].forEach((k) => { try { localStorage.removeItem(chave(k)); } catch (_) { /* segue */ } });
+    showToast('Pronto. Este aparelho esqueceu os seus dados.');
+    setTimeout(() => location.reload(), 1300);
+};
+
 document.getElementById('btn-salvar-endereco').addEventListener('click', () => {
     const falta = endTopo.validar();
     if (falta) return showToast(falta, true);
@@ -1378,7 +1445,7 @@ document.body.addEventListener('click', async (e) => {
     if (btnLimpar) {
         if (STATE.carrinho.length === 0) return;
         if (await customConfirm("Esvaziar Pedido", "Tem certeza que deseja esvaziar todo o pedido?")) {
-            STATE.carrinho = []; dbStorage.set(chave('banca_cart'), {v: CART_VERSION, items: []}); 
+            STATE.carrinho = []; dbStorage.set(chave('banca_cart'), {v: CART_VERSION, items: []}); guardarNaConta();
             renderCarrinhoCompleto(); showToast("🛒 Carrinho esvaziado!");
             if (ehCelular() && document.getElementById('carrinho')?.classList.contains('aberto') && history.state?.cart) history.back();
         }
@@ -1511,6 +1578,7 @@ document.body.addEventListener('click', async (e) => {
             if(eraFav) STATE.favoritos = STATE.favoritos.filter(f => f !== id);
             else STATE.favoritos.push(id);
             try { localStorage.setItem(chave('banca_favs'), JSON.stringify(STATE.favoritos)); } catch (_) {}
+            guardarNaConta();
             // o coração muda na hora (antes só mudava ao recarregar a vitrine)
             document.querySelectorAll(`.btn-fav[data-id="${CSS.escape(String(id))}"]`).forEach(b => {
                 b.classList.toggle('ativo', !eraFav); b.setAttribute('aria-pressed', String(!eraFav));
@@ -1523,6 +1591,7 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'open-endereco') { endTopo.preencher(lerEnderecoSalvo()); openModal('modal-endereco'); }
         else if (action === 'repetir-pedido') { repetirPedido(id); }
         else if (action === 'indicar') { indicarLoja(); }
+        else if (action === 'esquecer-dados') { esquecerDados(); }
         else if (action === 'copiar-pix') { copiarPix(actionTarget); }
         else if (action === 'instalar') { instalarApp(); }
         else if (action === 'por-lista') { const l = lerListaSemana(); if (l) porNoPedido(l.itens); }
@@ -1648,6 +1717,8 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     const clientes = lerLista('banca_clientes');
     if (clientes.length > 0) {
         document.getElementById('cli-nome').value = clientes[0].nome || '';
+        const campoTel = document.getElementById('cli-telefone');
+        if (campoTel && !campoTel.value && clientes[0].tel) campoTel.value = clientes[0].tel;
     }
     endCheckout.preencher(lerEnderecoSalvo());
     // A chave identifica ESTE pedido no servidor. Ela só muda quando o pedido muda: se o envio
@@ -1721,8 +1792,12 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         try {
             const clientes = lerLista('banca_clientes');
             const idx = clientes.findIndex(c => String(c && c.nome || '').toLowerCase() === nome.toLowerCase());
-            if(idx >= 0) { clientes[idx] = {nome, quadra, lote}; } else { clientes.unshift({nome, quadra, lote}); }
+            // o cliente deste pedido vai para a frente da lista (é ele que preenche o próximo pedido)
+            const este = { nome, quadra, lote, ...(telefone ? { tel: telefone } : {}) };
+            if (idx >= 0) clientes.splice(idx, 1);
+            clientes.unshift(este);
             localStorage.setItem(chave('banca_clientes'), JSON.stringify(clientes.slice(0, 5)));
+            if (data.temConta) marcarConta(true);
             salvarEndereco(endereco); pintarResumoEndereco();
 
             const meusPedidos = lerLista('banca_meus_pedidos');
@@ -1736,10 +1811,11 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         } catch (e) { console.warn('[loja] pedido enviado, mas não consegui guardar no aparelho:', e && e.message); }
 
         mostrarLinksWhatsApp(data.pedido);
+        const dicaAcesso = document.getElementById('sucesso-dica-acesso'); if (dicaAcesso) dicaAcesso.hidden = !data.temConta;
         oferecerPixNoSucesso({ id: data.pedido.id, total: data.pedido.total, pag, status: 'pendente', temItensAPesar: itensFormatados.some(i => i.aPesar) });
         closeModal('modal-checkout');
         setTimeout(() => openModal('modal-sucesso'), 300); 
-        STATE.carrinho = []; dbStorage.set(chave('banca_cart'), {v: CART_VERSION, items: []});
+        STATE.carrinho = []; dbStorage.set(chave('banca_cart'), {v: CART_VERSION, items: []}); guardarNaConta();
         renderCarrinhoCompleto();
         document.getElementById('cli-obs').value = '';
         const campoCupom = document.getElementById('cli-cupom');
