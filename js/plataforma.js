@@ -8,7 +8,7 @@
 import { auth, onAuthStateChanged } from './firebase.js';
 import { urlDaLoja } from './tenant.js';
 import { escapeHTML, fmt, showToast, customConfirm } from './utils.js';
-import { sugerirId, idValido, totais, DIAS_SEMANA, diasEmTexto, limparCondominios } from './plataforma-lib.js';
+import { sugerirId, idValido, totais, DIAS_SEMANA, diasEmTexto, limparCondominios, textoDoDia } from './plataforma-lib.js';
 import './icones-admin.js';
 
 const S = { dados: null, nova: false, novaFeira: false, ocupado: false };
@@ -61,6 +61,14 @@ function feiraHtml(f, lojas, nova) {
         <small class="dica-campo">Sem dia marcado, a feira vale para todos os dias.</small>
         <span class="pf-rotulo">Lojas que vão nesta feira</span>
         <div class="pf-modulos">${lojas.map((l) => `<label><input type="checkbox" data-pf-feira-loja="${escapeHTML(l.id)}"${f.lojas.includes(l.id) ? ' checked' : ''}> ${escapeHTML(l.nome)}</label>`).join('')}</div>
+        <div class="pf-feira-linha">
+            <div class="form-group"><label>Pedido para o mesmo dia até</label><input type="time" data-pf-feira-limite value="${escapeHTML(f.horaLimite || '')}"></div>
+            <small class="dica-campo">Depois deste horário, no dia da feira, o pedido vai para a próxima feira. Em branco: aceita o dia todo.</small>
+        </div>
+        <span class="pf-rotulo">Dias sem feira (chuva, feriado)</span>
+        <div class="pf-sem-feira" data-pf-sem-feira>${(f.semFeira || []).map((d) => `<span class="pf-chip" data-dia="${escapeHTML(d)}">${escapeHTML(textoDoDia(d))} <button type="button" data-pf="tirar-sem-feira" aria-label="Tirar ${escapeHTML(d)}">×</button></span>`).join('')}</div>
+        <div class="pf-link-feira"><input type="date" data-pf-sem-feira-dia><button type="button" class="btn-outline" data-pf="por-sem-feira">Marcar sem feira</button></div>
+        <small class="dica-campo">Nesse dia a loja mostra a próxima feira. Pedidos já feitos para esse dia aparecem no painel da banca com o aviso "feira cancelada". Salve a feira depois de marcar.</small>
         <span class="pf-rotulo">Condomínios desta feira</span>
         <textarea data-pf-feira-cond rows="3" maxlength="3400" placeholder="Um por linha. Ex.: Jardins Munique">${escapeHTML((f.condominios || []).join('\n'))}</textarea>
         <small class="dica-campo">Cliente que chega sem o link e escolhe um destes condomínios cai nesta feira. Escreva igual ao nome da lista de condomínios das bancas.</small>
@@ -172,12 +180,22 @@ function ligar() {
             const lojas = [...fc.querySelectorAll('[data-pf-feira-loja]:checked')].map((c) => c.dataset.pfFeiraLoja), fid = nova ? sugerirId(nome) : fc.dataset.feira;
             const dias = [...fc.querySelectorAll('[data-pf-feira-dia]:checked')].map((c) => Number(c.dataset.pfFeiraDia));
             const condominios = limparCondominios(String(fc.querySelector('[data-pf-feira-cond]')?.value || '').split('\n'));
+            const horaLimite = String(fc.querySelector('[data-pf-feira-limite]')?.value || '');
+            const semFeira = [...fc.querySelectorAll('[data-pf-sem-feira] [data-dia]')].map((c) => c.dataset.dia);
             if (nome.length < 2 || !idValido(fid)) return showToast('Dê um nome para a feira.', true);
             if (lojas.length < 1) return showToast('Marque pelo menos uma loja.', true);
             if (nova && S.dados.feiras.some((f) => f.id === fid)) return showToast('Já existe uma feira com este nome.', true);
-            if (await fazer({ acao: 'feira', fid, nome, dias, lojas, condominios }, 'Feira salva.')) { S.novaFeira = false; render(); }
+            if (await fazer({ acao: 'feira', fid, nome, dias, lojas, condominios, horaLimite, semFeira }, 'Feira salva.')) { S.novaFeira = false; render(); }
             return;
         }
+        if (a === 'por-sem-feira') {
+            const dia = String(fc.querySelector('[data-pf-sem-feira-dia]')?.value || ''), caixa = fc.querySelector('[data-pf-sem-feira]');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return showToast('Escolha a data.', true);
+            if (caixa.querySelector(`[data-dia="${dia}"]`)) return;
+            caixa.insertAdjacentHTML('beforeend', `<span class="pf-chip" data-dia="${escapeHTML(dia)}">${escapeHTML(textoDoDia(dia))} <button type="button" data-pf="tirar-sem-feira" aria-label="Tirar ${escapeHTML(dia)}">×</button></span>`);
+            return showToast('Data marcada. Toque em Salvar para valer.');
+        }
+        if (a === 'tirar-sem-feira') { b.closest('[data-dia]')?.remove(); return showToast('Toque em Salvar para valer.'); }
         if (a === 'copiar-link-feira') {
             try { await navigator.clipboard.writeText(linkDaFeira(fc.dataset.feira)); showToast('Link da feira copiado.'); }
             catch (_) { showToast('Não consegui copiar. Segure o dedo no link para copiar.', true); }

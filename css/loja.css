@@ -184,3 +184,8 @@
 /* ===== Ranking personalizado (js/ranking-loja.js) ===== */
 .rec-tag { position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 16px); padding: 3px 9px; border-radius: 12px; font-size: 0.72rem; font-weight: 700; line-height: 1.3; background: var(--forest); color: var(--sobre-primaria); box-shadow: var(--shadow-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .rec-tag--repor { background: var(--earth); }
+
+/* Cliente da feira, fora do dia da feira: o pedido vai para o próximo dia de feira */
+.banner-aviso.feira { background: #e0f2fe; color: #0c4a6e; }
+.checkout-entrega, .sucesso-entrega { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; background: #e0f2fe; color: #0c4a6e; font-weight: 700; line-height: 1.4; }
+.checkout-entrega[hidden], .sucesso-entrega[hidden] { display: none; }

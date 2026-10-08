@@ -96,6 +96,7 @@
 
 <div class="banner-aviso fechado" id="banner-offline" aria-live="assertive">Você está sem internet. Usando dados salvos.</div>
 <div class="banner-aviso fechado" id="banner-fechado" aria-live="polite">Estamos fechados no momento. Voltamos em breve!</div>
+<div class="banner-aviso feira" id="banner-feira" aria-live="polite"></div>
 <div class="banner-aviso minimo" id="banner-minimo" aria-live="polite"></div>
 <!-- Comunicado configurado no painel (aviso fixo ou mensagem do dia) -->
 <div class="banner-aviso comunicado" id="banner-comunicado" aria-live="polite"></div>
@@ -237,6 +238,7 @@
                 <input type="tel" id="cli-telefone" inputmode="numeric" placeholder="62 9 9999-9999" autocomplete="tel">
             </div>
             <label class="chk-oferta"><input type="checkbox" id="cli-ofertas"> Quero receber ofertas e novidades da loja no WhatsApp</label>
+            <p class="checkout-entrega" id="checkout-entrega" hidden></p>
             <div class="form-group" id="grupo-horario" hidden>
                 <label for="cli-horario">Quando prefere receber? (opcional)</label>
                 <select id="cli-horario"></select>
@@ -312,6 +314,7 @@
             <h2 class="title-success">Pedido registrado!</h2>
             <p class="text-success" id="sucesso-texto" style="color: var(--text-mid); margin-bottom: 18px; line-height: 1.5; font-size: 1.05rem;">Você será redirecionado para o nosso WhatsApp para finalizar. Caso a janela não abra, clique no botão abaixo.</p>
             <div id="sucesso-whatsapps" class="sucesso-whatsapps"></div>
+            <p id="sucesso-entrega" class="sucesso-entrega" hidden></p>
             <p id="sucesso-dica-acesso" class="sucesso-dica" hidden>Guarde a mensagem do WhatsApp: o link no fim dela traz seus dados de volta se você trocar de celular.</p>
             <div id="sucesso-pix" class="sucesso-pix" hidden></div>
             <button class="btn-finalizar" data-fechar="modal-sucesso">Voltar para a loja</button>

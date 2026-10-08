@@ -13,6 +13,8 @@
 //   • pedidos marcados como fora da previsão (cupom especial) saem;
 //   • pedidos cancelados saem; arquivados ENTRAM (arquivar = concluir).
 //   • duas compras do mesmo cliente no mesmo dia viram UMA visita.
+//   • o dia da venda é o dia da ENTREGA (entregaDia) quando o pedido tem um;
+//     pedido feito na quinta para a feira de terça é venda de terça.
 // =====================================================================
 const crypto = require('crypto');
 const C = require('./config');
@@ -106,7 +108,9 @@ function normalizarPedidos(pedidos, catalogo = []) {
     if (!p || p.status === 'cancelado' || p.foraDaPrevisao === true) continue;
     const ts = Date.parse(p.data);
     if (!Number.isFinite(ts) || !Array.isArray(p.itens) || !p.itens.length) continue;
-    validos.push({ ...p, _ts: ts, _dia: diaDeTs(ts) });
+    // pedido para a próxima feira: a venda é do dia da ENTREGA (é quando o produto sai da banca)
+    const dEnt = /^\d{4}-\d{2}-\d{2}$/.test(String(p.entregaDia || '')) ? diaDeIso(p.entregaDia) : NaN;
+    validos.push({ ...p, _ts: ts, _dia: Number.isFinite(dEnt) ? dEnt : diaDeTs(ts) });
   }
   validos.sort((a, b) => a._ts - b._ts);
 

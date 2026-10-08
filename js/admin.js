@@ -1,6 +1,7 @@
 import { getDoc, auth, db, storage, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, ref, uploadBytes, getDownloadURL, query, orderBy, limit, writeBatch, where, updateDoc } from './firebase.js';
 import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
+import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
 import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal, customConfirm } from './utils.js';
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
@@ -82,7 +83,7 @@ onAuthStateChanged(auth, async (user) => {
     // e-mail e o plano gratuito do Firebase só envia 5 por dia para a loja inteira: com 30 minutos, a própria
     // equipe esgotava o limite e ninguém mais entrava naquele dia. No balcão, "Sair" encerra na hora.
     iniciarLogoutPorInatividade(12 * 60);
-    try { const f = await getDoc(fichaRef()); modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; } catch (_) { modulosDaLoja = null; }
+    try { const f = await getDoc(fichaRef()); modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; lerDiasSemFeira(f.exists() ? f.data() : null); } catch (_) { modulosDaLoja = null; }
     { const tl = document.getElementById('topo-loja'); if (tl) tl.textContent = nomeDaLoja; }
     aplicarPapel();
     montarTrocaDeBanca();
@@ -224,6 +225,17 @@ let pedidosEsperando = 0;
 const pintarContaDePedidos = () => { const c = document.getElementById('barra-conta'); if (c) { c.textContent = pedidosEsperando; c.hidden = !pedidosEsperando; c.setAttribute('aria-label', `${pedidosEsperando} pedido(s) esperando`); } };
 document.getElementById('barra')?.addEventListener('click', (e) => { if (e.target.closest('#barra-menu')) recolherMenu(!document.querySelector('.tabs').classList.contains('recolhido')); else if (e.target.closest('[data-ir-aba]')) recolherMenu(true); });
 document.getElementById('tabs-fundo')?.addEventListener('click', () => recolherMenu(true));
+
+// DIAS SEM FEIRA (chuva, feriado), marcados na Plataforma: o pedido já feito para um desses dias ganha um aviso.
+const SEM_FEIRA = new Map();
+function lerDiasSemFeira(ficha) {
+    feirasDaFicha(ficha).forEach((fid) => getDoc(doc(db, 'feiras', fid)).then((s) => {
+        if (!s.exists()) return;
+        SEM_FEIRA.set(fid, new Set(Array.isArray(s.data().semFeira) ? s.data().semFeira : []));
+        const listDiv = document.getElementById('lista-historico');
+        if (listDiv && pedidosGerais.length) listDiv.innerHTML = renderHtmlPedidos(pedidosGerais);
+    }).catch(() => {}));
+}
 
 // TROCAR DE BANCA: quem cuida de mais de uma banca (dono de dois pontos) escolhe qual abrir.
 // Cada banca abre no endereço dela; o servidor e as regras do banco conferem o acesso de novo lá.
@@ -1530,6 +1542,10 @@ const renderHtmlPedidos = (pedidos) => {
         const infoEntrega = p.entrega && (p.entrega.horario || p.entrega.horarioACombinar || Number(p.entrega.taxa) > 0)
             ? `<div style="font-size:0.82rem;color:var(--forest);margin-top:4px;font-weight:600;"><i class="ic" data-i="entrega"></i> ${escapeHTML([p.entrega.horario || (p.entrega.horarioACombinar ? 'horário a combinar' : ''), Number(p.entrega.taxa) > 0 ? `entrega ${fmt(p.entrega.taxa)}` : ''].filter(Boolean).join(' · '))}</div>` : '';
         const infoTroco = p.troco ? `<div style="font-size:0.82rem;color:var(--earth);margin-top:4px;"><i class="ic" data-i="dinheiro"></i> Troco para: ${escapeHTML(p.troco)}</div>` : '';
+        // pedido para outro dia (cliente da feira pediu fora do dia da feira) e feira cancelada nesse dia
+        const ehFuturo = p.entregaDia && p.entregaDia !== diaBR(p.data);
+        const cancelada = p.feiraId && p.entregaDia && (SEM_FEIRA.get(p.feiraId) || new Set()).has(p.entregaDia);
+        const infoDia = ehFuturo || cancelada ? `<div class="ped-para-dia${cancelada ? ' cancelada' : ''}"><i class="ic" data-i="calendario"></i> Para ${escapeHTML(textoDoDia(p.entregaDia))}${cancelada ? ' · <b>feira cancelada neste dia: avise o cliente</b>' : ''}</div>` : '';
         const infoObs = p.obs ? `<div style="font-size:0.82rem;color:var(--text-mid);margin-top:4px;font-style:italic;"><i class="ic" data-i="nota"></i> ${escapeHTML(p.obs)}</div>` : '';
 
         const cardHtml = `
@@ -1544,6 +1560,7 @@ const renderHtmlPedidos = (pedidos) => {
                 ${infoPag}
                 <span><i class="ic" data-i="calendario"></i> ${dataFmt}</span>
             </div>
+            ${infoDia}
             <div style="font-size: 0.9rem; color: var(--text-dark); margin-bottom: 12px; background: white; padding: 10px; border-radius: 6px; border: 1px solid #eee;">
                 • ${itensStr}
                 ${infoEntrega}

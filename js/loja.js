@@ -5,7 +5,8 @@ import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques } from './ranking-loja.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
-import { iniciarTema, feiraPeloCondominio, feiraDaConta } from './tema.js';
+import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui } from './tema.js';
+import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
 import { podePagarPix } from './pix-lib.js';
@@ -340,8 +341,12 @@ const atualizarRodapeCarrinhoDOM = () => {
     const btnF = document.getElementById('btn-abrir-checkout');
     const bannerMin = document.getElementById('banner-minimo');
     const bannerFechado = document.getElementById('banner-fechado');
-    const lojaAberta = STATE.config.lojaAberta !== false; 
-    const hojePermitido = (STATE.config.diasAbertos || [0,1,2,3,4,5,6]).includes(new Date().getDay());
+    const lojaAberta = STATE.config.lojaAberta !== false;
+    // Cliente da feira: quem manda são os dias da FEIRA. Fora do dia, o pedido vai para o próximo dia de feira.
+    const ent = entregaDaFeira();
+    const hojePermitido = ent ? true : feiraDoClienteAqui() ? false : (STATE.config.diasAbertos || [0,1,2,3,4,5,6]).includes(new Date(Date.now() - 3 * 3600000).getUTCDay());
+    const bannerFeira = document.getElementById('banner-feira');
+    if (bannerFeira) { const futuro = lojaAberta && ent && !ent.hoje; bannerFeira.textContent = futuro ? `Hoje não tem feira. Seu pedido vai para ${textoDoDia(ent.dia)}.` : ''; bannerFeira.classList.toggle('visivel', !!futuro); }
     
     if (!lojaAberta || !hojePermitido) {
         btnF.disabled = true; btnF.textContent = "Loja Fechada";
@@ -412,6 +417,9 @@ const guardarNaConta = () => agendarGuardar(() => ({ sacola: sacolaParaGuardar(S
 // Condomínio que é de uma feira desta banca: o cliente passa a ser daquela feira (e a conta lembra).
 // Se o condomínio tem duas feiras aqui, a pessoa escolhe.
 const perguntarFeira = (lista) => customConfirm('Qual é a sua feira?', `O seu condomínio é atendido em mais de uma feira desta banca. Escolha a sua: cada feira tem os seus preços e o seu dia.`, { ok: lista[0].nome, nao: lista[1].nome }).then((sim) => (sim ? lista[0].id : lista[1].id));
+/** Para quando é o pedido de um cliente da feira (null = não é cliente de feira desta banca). */
+const entregaDaFeira = () => { const f = feiraDoClienteAqui(); return f ? proximaEntrega(f) : null; };
+document.addEventListener('feira-do-cliente', () => { try { atualizarRodapeCarrinhoDOM(); } catch (_) { /* carrinho ainda não montado */ } });
 const feiraDoEnderecoSalvo = (e) => { if (e && e.condominio) feiraPeloCondominio(e.condominio, perguntarFeira).then((id) => { if (id) guardarNaConta(); }).catch(() => {}); };
 
 // Modificado para aceitar o "tipo" de compra (Kg ou Un)
@@ -1733,6 +1741,8 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     const cara = assinaturaDoCarrinho();
     if (!STATE.checkoutSessionId || STATE.checkoutCara !== cara) { STATE.checkoutSessionId = novoId(); STATE.checkoutCara = cara; }
     pintarHorariosDeEntrega();      // garante a lista de horários na hora de abrir (não depende de a configuração ter chegado antes)
+    { const ent = entregaDaFeira(), aviso = document.getElementById('checkout-entrega');
+      if (aviso) { aviso.textContent = ent ? (ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.`) : ''; aviso.hidden = !ent; } }
     openModal('modal-checkout');
 });
 
@@ -1770,7 +1780,10 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             };
         });
 
+        // o condomínio escolhido agora pode ser de uma feira desta banca: decide a feira ANTES de mandar
+        if (endereco.condominio) { try { await feiraPeloCondominio(endereco.condominio, perguntarFeira); } catch (_) { /* segue */ } }
         const payload = {
+            feira: lerFeiraCliente(),
             nome, quadra, lote, telefone, pag, troco: trocoRaw, obs, cupom,
             condominio: endereco.condominio, condominioId: endereco.condominioId, formatoEndereco: endereco.formatoEndereco,
             aceitaOfertas: !!document.getElementById('cli-ofertas')?.checked,
@@ -1813,6 +1826,8 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
         mostrarLinksWhatsApp(data.pedido);
         const dicaAcesso = document.getElementById('sucesso-dica-acesso'); if (dicaAcesso) dicaAcesso.hidden = !data.temConta;
+        const sucEnt = document.getElementById('sucesso-entrega');
+        if (sucEnt) { const futuro = data.pedido && data.pedido.paraHoje === false && data.pedido.entregaDia; sucEnt.textContent = futuro ? `📅 Seu pedido é para ${textoDoDia(data.pedido.entregaDia)}.` : ''; sucEnt.hidden = !futuro; }
         oferecerPixNoSucesso({ id: data.pedido.id, total: data.pedido.total, pag, status: 'pendente', temItensAPesar: itensFormatados.some(i => i.aPesar) });
         closeModal('modal-checkout');
         setTimeout(() => openModal('modal-sucesso'), 300); 

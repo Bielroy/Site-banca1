@@ -105,6 +105,7 @@ const P = require('../lib/prudencia');
 const Entrega = require('../lib/entrega');
 const E = require('../lib/estoque');
 const Conta = require('../lib/conta');
+const Feira = require('../lib/feira');
 
 function montarTextoWhatsApp(pedido, numero) {
   const dividido = pedido.parte && pedido.parte.de > 1;
@@ -116,6 +117,8 @@ function montarTextoWhatsApp(pedido, numero) {
   let msg = dividido ? `*NOVO PEDIDO — parte ${pedido.parte.n} de ${pedido.parte.de}*\n` : `*NOVO PEDIDO*\n`;
   msg += `👤 ${pedido.nome}\n`;
   msg += `📍 ${linhaEndereco(pedido)}\n`;
+  // pedido feito fora do dia da feira: vai para o próximo dia de feira
+  if (pedido.feiraId && pedido.entregaDia && pedido.paraHoje === false) msg += `📅 Para: *${Feira.textoDoDia(pedido.entregaDia)}*\n`;
   if (pedido.entrega && pedido.entrega.horario) msg += `🕒 Entrega: ${pedido.entrega.horario}\n`;
   else if (pedido.entrega && pedido.entrega.horarioACombinar) msg += `🕒 Entrega: horário a combinar\n`;
   msg += `💳 Pagamento: ${pedido.pag || 'A combinar'}\n`;
@@ -286,6 +289,9 @@ module.exports = async function handler(req, res) {
   // CONTA DO CLIENTE: de onde pode vir a conta deste pedido (crachá ou login deste aparelho). Ver lib/conta.js.
   const achado = await Conta.localizar(db, tid, req, donoVerificado);
   let codigoConta = '';
+  // FEIRA do cliente (link da feira ou condomínio). Só vale se ESTA loja estiver nela; senão o pedido segue como sempre.
+  // Ela decide PARA QUANDO é o pedido (hoje, ou o próximo dia de feira).
+  const feiraDoPedido = await Feira.daLoja(db, tid, req.body && req.body.feira);
 
   try {
     const resultado = await db.runTransaction(async (t) => {
@@ -311,10 +317,14 @@ module.exports = async function handler(req, res) {
       }
 
       // Loja fechada? (defesa extra além do front)
-      if (configSnap.exists) {
-        const cfg = configSnap.data();
-        if (cfg.lojaAberta === false) throw new Error('A loja está fechada no momento.');
-        const diasAbertos = cfg.diasAbertos || [0, 1, 2, 3, 4, 5, 6];
+      // Cliente de feira: fora do dia da feira o pedido é aceito para o próximo dia de feira (o "fechar a loja" continua valendo).
+      let entrega = null;
+      if (configSnap.exists && configSnap.data().lojaAberta === false) throw new Error('A loja está fechada no momento.');
+      if (feiraDoPedido) {
+        entrega = Feira.proximaEntrega(feiraDoPedido, Date.now());
+        if (!entrega) throw new Error('Esta feira está sem data marcada. Fale com a banca pelo WhatsApp.');
+      } else if (configSnap.exists) {
+        const diasAbertos = configSnap.data().diasAbertos || [0, 1, 2, 3, 4, 5, 6];
         if (!diasAbertos.includes(agoraBrasilia().getUTCDay())) throw new Error('A loja não abre hoje.');
       }
 
@@ -472,6 +482,9 @@ module.exports = async function handler(req, res) {
         entrega: { taxa: paraFlutuante(taxaEntregaC), taxaCheia: paraFlutuante(cfgEntrega.taxaC), gratisAcima: paraFlutuante(cfgEntrega.gratisAcimaC), horario: horarioEntrega, ...(Entrega.horarioACombinar(cfgEntrega, horarioEntrega) ? { horarioACombinar: true } : {}) },
         status: temItensAPesar ? 'aguardando_pesagem' : 'pendente',
         data: new Date().toISOString(),
+        // PARA QUANDO é o pedido. Caixa do dia, fechamento e previsão contam por esta data.
+        entregaDia: entrega ? entrega.dia : Feira.hojeBR(),
+        ...(entrega ? { feiraId: feiraDoPedido.id, paraHoje: entrega.hoje } : {}),
         origem: 'whatsapp',
       };
 
@@ -494,7 +507,7 @@ module.exports = async function handler(req, res) {
       // volume atual. Estes resumos começam a acumular a partir de agora para
       // que, quando houver histórico longo, o Balanço possa somar 30 documentos
       // em vez de reler centenas de pedidos.
-      const diaChave = agoraBrasilia().toISOString().slice(0, 10);   // dia no horário de Brasília
+      const diaChave = dadosPedido.entregaDia;   // dia da ENTREGA (pedido para a próxima feira cai no caixa daquele dia)
       t.set(T.docDe(db, tid, `resumos/${diaChave}`), {
         dia: diaChave,
         receita: admin.firestore.FieldValue.increment(totalExato),
@@ -503,7 +516,7 @@ module.exports = async function handler(req, res) {
       }, { merge: true });
 
       const links = montarLinksWhatsApp({ ...dadosPedido, linkAcesso: Conta.linkDeAcesso(req, tid, conta.codigo) }, categoriasCfg, configCfg);
-      return { id: pedidoRef.id, total: totalExato, temItensAPesar,
+      return { id: pedidoRef.id, total: totalExato, temItensAPesar, entregaDia: dadosPedido.entregaDia, paraHoje: entrega ? entrega.hoje : true,
                whatsappMsg: links[0].url, whatsapps: links };
     });
 

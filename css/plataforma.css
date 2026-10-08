@@ -35,3 +35,8 @@
 .pf-feira textarea { width: 100%; min-height: 76px; padding: 10px 12px; border: 1.5px solid #e0dcd4; border-radius: 12px; font: inherit; font-size: .92rem; resize: vertical; background: #fff; }
 .pf-link-feira { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .pf-link-feira code { flex: 1 1 200px; min-width: 0; padding: 8px 10px; border-radius: 10px; background: #f3efe6; font-size: .82rem; overflow-wrap: anywhere; }
+.pf-feira input[type="time"], .pf-feira input[type="date"] { min-height: 42px; padding: 6px 10px; border: 1.5px solid #e0dcd4; border-radius: 10px; font: inherit; background: #fff; }
+.pf-sem-feira { display: flex; flex-wrap: wrap; gap: 6px; }
+.pf-sem-feira:empty { display: none; }
+.pf-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; border-radius: 999px; background: #fdecea; color: #8a1c1c; font-size: .86rem; font-weight: 600; }
+.pf-chip button { width: 28px; height: 28px; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .06); color: inherit; font-size: 1rem; cursor: pointer; }

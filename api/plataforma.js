@@ -10,7 +10,7 @@
 //  POST { acao: 'ativo', id, ativo }                        bloquear / liberar
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
 //  POST { acao: 'proprietario', id, email, remover? }
-//  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids], condominios: [nomes] }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
+//  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids], condominios: [nomes], horaLimite: 'HH:MM', semFeira: ['AAAA-MM-DD'] }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
 //
 //  O primeiro acesso de plataforma ainda é dado pelo terminal
 //  (scripts/plataforma.js): não existe tela que promova alguém a dono de tudo.
@@ -21,6 +21,7 @@ const { MODELOS, MODULOS } = require('../lib/modelos');
 const Segredos = require('../lib/segredos');
 const P = require('../lib/prudencia');
 const crypto = require('crypto');
+const Feira = require('../lib/feira');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -70,7 +71,7 @@ async function lojas(res) {
     const modulos = {}; Object.keys(MODULOS).forEach((m) => { modulos[m] = m === 'ia' && id !== T.TENANT_PADRAO ? !!(f.modulos && f.modulos.ia === true) : T.moduloAtivo(f, m); });
     return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, mes, donos };
   }));
-  const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [] }));
+  const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira) }));
   const seg = await db.collection('plataforma').doc('segredos').get();
   const fotos = /^[a-f0-9]{32}$/i.test(String(process.env.IMGBB_API_KEY || (seg.exists && seg.data().imgbb) || ''));
   const pix = !!process.env.PAGBANK_API_TOKEN || Segredos.tokenPagbankValido(seg.exists && seg.data().pagbank);
@@ -194,7 +195,9 @@ async function feira(req, res) {
     lote.set(fichaRef(id), { ...base(f), feiras: lista, feiraId: lista[0] }, { merge: true });
   }
   const condominios = limparCondominios(b.condominios);
-  if (ids.length) lote.set(refFeira, { nome, dias, condominios, lojas: fichas.map(([id, f]) => ({ id, nome: f.nome || NOME_ORIGINAL, cor: (f.tema && f.tema.primaria) || '#1a3a2a' })), atualizadoEm: new Date().toISOString() });
+  // horário limite do pedido para o mesmo dia (vazio = aceita o dia todo) e datas sem feira (chuva, feriado)
+  const horaLimite = Feira.limparHora(b.horaLimite), semFeira = Feira.limparDatas(b.semFeira);
+  if (ids.length) lote.set(refFeira, { nome, dias, condominios, horaLimite, semFeira, lojas: fichas.map(([id, f]) => ({ id, nome: f.nome || NOME_ORIGINAL, cor: (f.tema && f.tema.primaria) || '#1a3a2a' })), atualizadoEm: new Date().toISOString() });
   else lote.delete(refFeira);
   await lote.commit();
   saem.concat(ids).forEach((id) => T._cacheFichas.delete(id));

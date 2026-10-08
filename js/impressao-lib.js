@@ -67,6 +67,7 @@ export function etiquetaDeEntrega(p, { loja = '', volume = 1, volumes = 1 } = {}
     if (loja) L.push(txt(loja, { al: 'c' }));
     L.push(txt(p.nome || 'Cliente', { al: 'c', b: true, g: true }));
     const end = enderecoTxt(p); if (end) L.push(txt(end, { al: 'c', b: true }));
+    if (p.feiraId && /^\d{4}-\d{2}-\d{2}$/.test(String(p.entregaDia || '')) && p.paraHoje === false) L.push(txt(`PARA ${String(p.entregaDia).slice(8, 10)}/${String(p.entregaDia).slice(5, 7)}`, { al: 'c', b: true }));   // pedido para a próxima feira
     if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`Entregar: ${limpo(p.entrega.horario, 40)}`, { al: 'c' }));
     L.push(SEP, { t: 'par', e: `${itens.length} item(ns)`, d: volumes > 1 ? `Volume ${volume}/${volumes}` : '' });
     L.push(txt(pago ? 'JÁ PAGO' : `Cobrar ${reais(p.total)} - ${limpo(p.pag, 20) || 'a combinar'}`, { b: true }));

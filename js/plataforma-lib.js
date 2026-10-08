@@ -83,3 +83,26 @@ export function diasDaFeira(dias) {
     if (d.length === 1) return `${d[0] === 0 || d[0] === 6 ? 'Todo' : 'Toda'} ${nomes[d[0]]}`;
     const t = d.map((n) => nomes[n]); return (t.slice(0, -1).join(', ') + ' e ' + t[t.length - 1]).replace(/^./, (c) => c.toUpperCase());
 }
+
+// ---------------------------------------------------------------------
+// PARA QUANDO É O PEDIDO (mesma conta de lib/feira.js, no servidor; um teste confere que batem).
+// Dia de feira antes do horário limite → hoje. Senão → o próximo dia de feira que não esteja
+// marcado "sem feira". Horário de Brasília. null = nenhuma data nas próximas 8 semanas.
+// ---------------------------------------------------------------------
+const limparHora = (h) => { const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(h || '').trim()); return m ? `${m[1]}:${m[2]}` : ''; };
+export function proximaEntrega(feira, agora = Date.now()) {
+    const f = feira || {}, dias = limparDias(f.dias), sem = new Set(Array.isArray(f.semFeira) ? f.semFeira : []), limite = limparHora(f.horaLimite);
+    const br = new Date(agora - 3 * 3600000), hora = br.toISOString().slice(11, 16);
+    for (let k = 0; k < 56; k++) {
+        const d = new Date(Date.UTC(br.getUTCFullYear(), br.getUTCMonth(), br.getUTCDate() + k)), dia = d.toISOString().slice(0, 10), dow = d.getUTCDay();
+        if (dias.length && !dias.includes(dow)) continue;
+        if (sem.has(dia)) continue;
+        if (k === 0 && limite && hora >= limite) continue;
+        return { dia, hoje: k === 0, dow };
+    }
+    return null;
+}
+const NOMES_DIA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+/** "terça, 14/10" */
+export const textoDoDia = (dia) => { const d = new Date(`${dia}T12:00:00Z`); return Number.isNaN(d.getTime()) ? '' : `${NOMES_DIA[d.getUTCDay()]}, ${String(dia).slice(8, 10)}/${String(dia).slice(5, 7)}`; };
+export { limparHora };

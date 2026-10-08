@@ -260,8 +260,10 @@ module.exports = async function handler(req, res) {
       }, { merge: true });
 
       // mesmo dia (horário de Brasília) em que o checkout somou a venda
+      // (pedido para a próxima feira foi somado no dia da ENTREGA)
       const dt = new Date(pedido.data);
-      const diaChave = Number.isFinite(dt.getTime()) ? new Date(dt.getTime() - 3 * 3600000).toISOString().slice(0, 10) : '';
+      const diaChave = /^\d{4}-\d{2}-\d{2}$/.test(String(pedido.entregaDia || '')) ? pedido.entregaDia
+        : Number.isFinite(dt.getTime()) ? new Date(dt.getTime() - 3 * 3600000).toISOString().slice(0, 10) : '';
       if (diaChave) {
         t.set(T.docDe(db, tid, `resumos/${diaChave}`), {
           receita: admin.firestore.FieldValue.increment(-total),

@@ -174,7 +174,9 @@ function aplicarFicha(ficha, completa = true) {
 //  - Cliente sem feira (quem já usava antes): a faixa antiga, com as lojas da feira de hoje.
 // ---------------------------------------------------------------------
 const diaBR = () => new Date(Date.now() - 3 * 3600000).getUTCDay();          // dia da semana em Brasília
-let FEIRAS_DA_LOJA = [];
+let FEIRAS_DA_LOJA = [], FEIRA_CLIENTE = null;
+/** A feira do cliente, se ele for de uma feira DESTA banca (senão null: a loja funciona como sempre). */
+export const feiraDoClienteAqui = () => FEIRA_CLIENTE;
 const lojasValidas = (feira) => ((feira && feira.lojas) || []).filter((l) => l && /^[a-z0-9][a-z0-9-]{1,39}$/.test(l.id || '') && l.nome);
 
 function montarFeira(feiras) {
@@ -182,6 +184,8 @@ function montarFeira(feiras) {
     if (!barra) return;
     const escolhida = lerFeiraCliente();
     const { feira, doCliente } = feiraDoCliente(feiras, escolhida, diaBR());
+    const antes = FEIRA_CLIENTE && FEIRA_CLIENTE.id; FEIRA_CLIENTE = doCliente ? feira : null;
+    if ((FEIRA_CLIENTE && FEIRA_CLIENTE.id) !== antes) { try { document.dispatchEvent(new CustomEvent('feira-do-cliente')); } catch (_) { /* navegador antigo */ } }
     if (doCliente) { montarVoltaDaFeira(barra, feira); aplicarAppDaFeira(feira); return; }
     if (escolhida) { barra.hidden = true; return; }             // cliente de outra feira: nenhuma banca de fora aparece aqui
     montarFaixa(barra, feira);
