@@ -106,3 +106,14 @@ const NOMES_DIA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 
 /** "terça, 14/10" */
 export const textoDoDia = (dia) => { const d = new Date(`${dia}T12:00:00Z`); return Number.isNaN(d.getTime()) ? '' : `${NOMES_DIA[d.getUTCDay()]}, ${String(dia).slice(8, 10)}/${String(dia).slice(5, 7)}`; };
 export { limparHora };
+
+/**
+ * De qual feira é um cliente da aba Clientes: a do último pedido (fe) ou, para quem comprou antes das feiras
+ * terem link, a feira que atende o condomínio dele. '' = sem feira.
+ */
+export function feiraDeUmCliente(cli, feiras) {
+    const lista = Array.isArray(feiras) ? feiras : [];
+    if (cli && cli.fe && lista.some((f) => f.id === cli.fe)) return cli.fe;
+    const achada = feirasDoCondominio(lista, cli && cli.condominio)[0];
+    return achada ? achada.id : '';
+}

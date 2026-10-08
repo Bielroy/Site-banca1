@@ -15,6 +15,10 @@ if (typeof document !== 'undefined' && !document.documentElement.dataset.pvFotoE
 }
 
 const CONF_BAIXA = 0.4, CONF_ALTA = 0.7;      // mesmos limiares de analytics/config.js
+// PREVISÃO POR FEIRA: uma aba para o próximo dia de cada feira desta banca ("Feira de quarta · qua 14/10").
+const DIA_CURTO = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+const abasDasFeiras = (m) => (m && Array.isArray(m.feiras) ? m.feiras : []).filter((f) => f && f.hz && f.dia)
+    .map((f) => { const d = new Date(`${f.dia}T12:00:00Z`); return [f.hz, `${f.nome} · ${DIA_CURTO[d.getUTCDay()]} ${f.dia.slice(8, 10)}/${f.dia.slice(5, 7)}`]; });
 const HORIZONTES = [
     ['hoje', 'Hoje'], ['amanha', 'Amanhã'], ['proximoDia', 'Próx. dia'],
     ['proximaSemana', 'Semana que vem'], ['prox7', '7 dias'], ['prox30', '30 dias']
@@ -199,6 +203,7 @@ const render = () => {
     }
 
     const m = d.meta || {}, db = d.dashboard || {}, av = resumoErro(d.avaliacoes);
+    if (!HORIZONTES.concat(abasDasFeiras(m)).some(([k]) => k === S.horizonte)) S.horizonte = 'amanha';   // a aba de uma feira que já passou some
     const conf = db.confiancaMedia;
     const avisos = (m.avisos || []).map((a) => `<p class="pv-aviso"><i class="ic" data-i="alerta"></i> ${escapeHTML(a)}</p>`).join('');
     const rs = (x) => (x ? `${fmt(x.faturamentoPrevisto)}` : '–');
@@ -226,7 +231,7 @@ const render = () => {
     </section>
 
     <div class="pv-ctrl">
-        <div class="pv-chips">${HORIZONTES.map(([k, r]) => `<button class="pv-chip ${S.horizonte === k ? 'on' : ''}" data-pv-hz="${k}">${r}</button>`).join('')}</div>
+        <div class="pv-chips">${HORIZONTES.concat(abasDasFeiras(m)).map(([k, r]) => `<button class="pv-chip ${S.horizonte === k ? 'on' : ''}" data-pv-hz="${escapeHTML(k)}">${escapeHTML(r)}</button>`).join('')}</div>
         <div class="pv-ctrl2">
             <input type="search" id="pv-busca" placeholder="Buscar produto..." value="${escapeHTML(S.busca)}">
             <select id="pv-ordem" aria-label="Ordenar">${ORDENS.map(([k, r]) => `<option value="${k}" ${S.ordem === k ? 'selected' : ''}>${r}</option>`).join('')}</select>

@@ -17,8 +17,9 @@ import { lerPainel } from './painel-cache.js';
 import { hojeBR } from './fechamento-lib.js';
 import { SEGMENTOS, segmentar, filtrar, podeContatar, mensagemSugerida } from './crm-lib.js';
 import { mensagemDoLink, foneParaWhats, foneBonito } from './conta-lib.js';
+import { feiraDeUmCliente } from './plataforma-lib.js';
 
-const S = { seg: null, produtos: [], filtro: 'todos', produtoId: '', busca: '', contatos: {}, geradoEm: '', ligado: false, estado: 'carregando', atual: null, nomeLoja: ehLojaOriginal ? 'Banca Adair e Pedrina' : 'loja' };
+const S = { feiras: [], feira: '', seg: null, produtos: [], filtro: 'todos', produtoId: '', busca: '', contatos: {}, geradoEm: '', ligado: false, estado: 'carregando', atual: null, nomeLoja: ehLojaOriginal ? 'Banca Adair e Pedrina' : 'loja' };
 const el = () => document.getElementById('crm-conteudo');
 const $ = (id) => document.getElementById(id);
 const haDias = (n) => (n <= 0 ? 'hoje' : n === 1 ? 'ontem' : `há ${n} dias`);
@@ -29,7 +30,10 @@ function render() {
         el().innerHTML = `<div class="es-topo"><div><h3>Clientes</h3></div></div><div class="cp-vazio"><b>${S.estado === 'carregando' ? 'Carregando clientes (e conferindo pedidos novos)...' : S.estado === 'vazio' ? 'Ainda não há clientes calculados.' : 'Não consegui carregar os clientes.'}</b><span>${S.estado === 'vazio' ? 'A lista aparece sozinha quando chegar o primeiro pedido com endereço. Pedido com cupom especial (família, cortesia) não entra na lista.' : S.estado === 'erro' ? 'Confira a internet e abra a aba de novo.' : ''}</span></div>`;
         return;
     }
-    const c = S.seg.contagem, lista = filtrar(S.seg, { segmento: S.filtro, produtoId: S.produtoId, busca: S.busca });
+    const c = S.seg.contagem;
+    // filtro por FEIRA (só aparece quando a banca está em alguma feira)
+    const lista = filtrar(S.seg, { segmento: S.filtro, produtoId: S.produtoId, busca: S.busca })
+        .filter((x) => !S.feiras.length || !S.feira || (S.feira === '-' ? !feiraDeUmCliente(x, S.feiras) : feiraDeUmCliente(x, S.feiras) === S.feira));
     const nomeProd = (id) => (S.produtos.find((p) => p.id === id) || {}).nome;
     const comprados = [...new Set(S.seg.lista.flatMap((x) => x.tp || []))].map((id) => [id, nomeProd(id)]).filter(([, n]) => n).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
     el().innerHTML = `
@@ -37,6 +41,7 @@ function render() {
     <div class="es-filtros">${SEGMENTOS.map(([k, r]) => `<button class="es-chip${S.filtro === k ? ' on' : ''}" data-crm-seg="${k}">${r} <b>${c[k]}</b></button>`).join('')}</div>
     <div class="crm-filtros">
         <input type="search" id="crm-busca" class="es-busca" placeholder="Buscar por nome ou endereço..." value="${escapeHTML(S.busca)}" aria-label="Buscar cliente">
+        ${S.feiras.length ? `<select id="crm-feira" aria-label="Clientes de qual feira"><option value="">Todas as feiras</option>${S.feiras.map((f) => `<option value="${escapeHTML(f.id)}"${S.feira === f.id ? ' selected' : ''}>${escapeHTML(f.nome)}</option>`).join('')}<option value="-"${S.feira === '-' ? ' selected' : ''}>Sem feira</option></select>` : ''}
         <select id="crm-produto" aria-label="Clientes que compram um produto"><option value="">Que compram qualquer produto</option>${comprados.map(([id, n]) => `<option value="${escapeHTML(id)}"${id === S.produtoId ? ' selected' : ''}>Que compram ${escapeHTML(n)}</option>`).join('')}</select>
     </div>
     <p class="config-sub crm-conta">${lista.length} cliente${lista.length === 1 ? '' : 's'} neste filtro</p>
@@ -169,7 +174,7 @@ function ligar() {
         const s = e.target.closest('[data-crm-seg]'); if (s) { S.filtro = s.dataset.crmSeg; render(); return; }
         const i = e.target.closest('[data-crm-id]'); if (i) { const x = S.seg.lista.find((c) => c.id === i.dataset.crmId); if (x) abrirCliente(x); }
     });
-    el().addEventListener('change', (e) => { if (e.target.id === 'crm-produto') { S.produtoId = e.target.value; render(); } });
+    el().addEventListener('change', (e) => { if (e.target.id === 'crm-produto') { S.produtoId = e.target.value; render(); } else if (e.target.id === 'crm-feira') { S.feira = e.target.value; render(); } });
     el().addEventListener('input', (e) => {
         if (e.target.id !== 'crm-busca') return;
         S.busca = e.target.value; const pos = e.target.selectionStart; render(); const b = $('crm-busca'); b.focus(); b.setSelectionRange(pos, pos);
@@ -200,6 +205,8 @@ function carregarCrm(primeira) {
             if (!primeira && S.seg && geradoEm === S.geradoEm) return;             // nada mudou: não redesenha (não atrapalha quem está digitando)
             const indice = painel.indiceClientes || [];
             S.geradoEm = geradoEm;
+            S.feiras = (painel.meta && Array.isArray(painel.meta.feiras)) ? painel.meta.feiras : [];
+            if (S.feira && S.feira !== '-' && !S.feiras.some((f) => f.id === S.feira)) S.feira = '';
             if (!indice.length) { S.seg = null; S.estado = 'vazio'; }
             else { S.seg = segmentar(indice, hojeBR()); S.estado = 'ok'; }
         } catch (_) { if (primeira || !S.seg) S.estado = 'erro'; else return; }

@@ -79,6 +79,15 @@ async function carregarEntradas(db, { janelaDias } = {}) {
     // Clima da cidade da loja (passado + previsão). Sem cidade ou sem resposta, segue com o que já estava guardado.
     Clima.atualizar(db, cfgLoja.exists ? cfgLoja.data() : {}, agora).catch((e) => ({ cidade: '', lugar: '', dias: {}, atualizado: false, motivo: String(e && e.message).slice(0, 80) })),
   ]);
+  // FEIRAS desta loja (ficam na raiz do banco): a previsão ganha uma aba para o próximo dia de cada feira
+  let feiras = [];
+  try {
+    const raiz = db.raiz || db, tid = db._tenant || 'banca';
+    const ficha = await raiz.collection('tenants').doc(tid).get();
+    const f = ficha.exists ? ficha.data() : {};
+    const ids = [...new Set([...(Array.isArray(f.feiras) ? f.feiras : []), f.feiraId].filter((x) => typeof x === 'string' && /^[a-z0-9][a-z0-9-]{1,39}$/.test(x)))].slice(0, 8);
+    feiras = (await Promise.all(ids.map((id) => raiz.collection('feiras').doc(id).get().then((s) => (s.exists ? { ...s.data(), id } : null)).catch(() => null)))).filter(Boolean);
+  } catch (_) { feiras = []; }
   const brt = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? isoDeDia(diaDeTs(t)) : null; };
   return {
     pedidos: pedSnap.docs.map((d) => ({ ...d.data(), id: d.id })),
@@ -91,7 +100,7 @@ async function carregarEntradas(db, { janelaDias } = {}) {
     // o retrato de preços de hoje já foi guardado? (o primeiro cálculo do dia, de madrugada, é o que vale)
     temRetratoHoje: aggSnap.docs.some((d) => d.id === isoDeDia(hoje) && d.data().precos),
     parametros: { ...parametros, JANELA_DIAS: dias }, eventos,
-    diasAbertos: cfgLoja.exists ? cfgLoja.data().diasAbertos : undefined,
+    diasAbertos: cfgLoja.exists ? cfgLoja.data().diasAbertos : undefined, feiras,
     truncado: pedSnap.size >= C.MAX_PEDIDOS, agora,
   };
 }

@@ -23,7 +23,7 @@ const E = require('./evaluation');
 const K = require('./ranking');
 const EF = require('./externalFactors');
 const { dowDeDia, diaDeTs, isoDeDia, diaDeIso } = N;
-const { precoDoDia } = require('../lib/feira');   // preço por dia da semana (mesma regra do checkout)
+const { precoDoDia, proximaEntrega } = require('../lib/feira');   // preço por dia da semana (mesma regra do checkout)
 
 const PADROES = JSON.parse(JSON.stringify(C));
 function aplicarParametros(over) {
@@ -35,11 +35,13 @@ function aplicarParametros(over) {
 
 const r2 = (x) => S.arred(x, 2);
 
-function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos = [], diasAbertos, snapshots = [], fechamentos = [], faltasEstoque = [], clima = null, agora = Date.now() }) {
+function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos = [], diasAbertos, feiras = [], snapshots = [], fechamentos = [], faltasEstoque = [], clima = null, agora = Date.now() }) {
   aplicarParametros(parametros);
   const t0 = Date.now();
   const hoje = diaDeTs(agora), asOfD = hoje - 1;
   const abertos = new Set(Array.isArray(diasAbertos) && diasAbertos.length ? diasAbertos : C.DIAS_ABERTOS_PADRAO);
+  // dia de feira desta banca é dia de venda, mesmo que não esteja nos dias da loja (feira sem dia marcado = todo dia)
+  for (const f of Array.isArray(feiras) ? feiras : []) { const ds = Array.isArray(f.dias) && f.dias.length ? f.dias : [0, 1, 2, 3, 4, 5, 6]; ds.forEach((d) => { if (Number.isInteger(d) && d >= 0 && d <= 6) abertos.add(d); }); }
   const norm = N.normalizarPedidos(pedidos, catalogo);
   // Venda sem endereço (balcão) entra nas vendas do dia, mas cada uma virava um "cliente" novo:
   // inflava a contagem de clientes e empurrava os de verdade para fora da lista.
@@ -112,6 +114,13 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
   const Gd = P.construirGlobal(clientes, produtos, asOfD);
   const modelosD = D.modelosClientes(clientes, Gd, asOfD, produtos);
   const hz = D.horizontes(hoje, abertos);
+  // PREVISÃO POR FEIRA: o próximo dia de cada feira desta banca (com horário limite e dias sem feira)
+  const feirasHz = [];
+  for (const f of (Array.isArray(feiras) ? feiras : []).slice(0, 8)) {
+    const e = proximaEntrega(f, agora); if (!e || !f.id) continue;
+    const nomeHz = `feira_${f.id}`; hz[nomeHz] = [diaDeIso(e.dia)];
+    feirasHz.push({ id: f.id, nome: String(f.nome || f.id).slice(0, 60), hz: nomeHz, dia: e.dia, condominios: Array.isArray(f.condominios) ? f.condominios.slice(0, 40) : [] });
+  }
 
   // fração de quantidades estimadas (itens "a pesar" ainda sem peso) — qualidade dos dados
   const est = new Map();
@@ -233,7 +242,8 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
 
   // dados compactos para a API pública / painel (sem nada sensível)
   const catalogoCompacto = {}; produtos.forEach((p) => { catalogoCompacto[p.id] = { nome: p.nome, un: p.unidade, cat: p.cat, ativo: p.ativo }; });
-  const indiceClientes = modelos.map((m) => ({ id: m.id, nome: m.nome, condominio: m.condominio || '', formatoEndereco: m.formatoEndereco || 'ql', quadra: m.quadra, lote: m.lote, n: m.nVisitas, nivel: m.nivel, ult: isoDeDia(m.ultimoDia),
+  const feiraDoCli = new Map(clientes.map((c) => [c.id, c.feira || '']));
+  const indiceClientes = modelos.map((m) => ({ id: m.id, nome: m.nome, fe: feiraDoCli.get(m.id) || '', condominio: m.condominio || '', formatoEndereco: m.formatoEndereco || 'ql', quadra: m.quadra, lote: m.lote, n: m.nVisitas, nivel: m.nivel, ult: isoDeDia(m.ultimoDia),
     // CRM (aba Clientes): primeira compra, intervalo típico, gasto, ticket, produtos mais comprados e contato
     pri: isoDeDia(m.primeiroDia), cada: m.nuMed, gasto: m.gasto, ticket: m.ticket, ped: m.nPedidos,
     tp: Object.entries(m.prod || {}).sort((a, b) => (b[1].n || 0) - (a[1].n || 0)).slice(0, 6).map(([id]) => id),
@@ -242,6 +252,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
 
   const meta = {
     versao: C.VERSAO, nivelServico: C.NIVEL_SERVICO, geradoEm: new Date(agora).toISOString(), hoje: isoDeDia(hoje), duracaoMs: Date.now() - t0,
+    feiras: feirasHz,                      // abas da previsão por feira (o próximo dia de cada uma)
     nPedidos: norm.nPedidos, nClientes: clientes.length, nClientesModelados: modelos.length, nClientesBottomUp: modelosD.length,
     diasHistorico: norm.ultimoDia >= norm.primeiroDia ? norm.ultimoDia - norm.primeiroDia + 1 : 0, diasDeAgregado,
     diasComFalta: [...rupturas.values()].reduce((n, s) => n + s.size, 0),

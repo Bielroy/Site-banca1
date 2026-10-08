@@ -294,6 +294,24 @@ teste('motor: preço por dia de propósito (terça cara, quarta barata) não vir
   mp.set(umaQuarta, { p: 5, de: null });
   assert.ok(EF.precoRelativo(mp, umaQuarta, true) < 1, 'quarta mais barata que as outras quartas: promoção de verdade');
 });
+teste('previsão e clientes por feira: uma aba para o próximo dia de cada feira; o cliente fica com a feira do último pedido (ou a do condomínio)', async () => {
+  const { executarMotor, aplicarParametros } = require(raiz('analytics/engine')); aplicarParametros({});
+  const dia = (n) => new Date(Date.UTC(2026, 7, n, 15)).toISOString();
+  const pedidos = []; let k = 0;
+  for (let n = 1; n <= 40; n++) for (let c = 1; c <= 4; c++) pedidos.push({ id: 'p' + (++k), data: dia(n), nome: 'Cliente ' + c, quadra: '1', lote: String(c), condominio: c <= 2 ? 'Jardins' : 'Parque', total: 20, ...(c === 1 && n === 40 ? { feiraId: 'quarta-jd' } : {}), itens: [{ id: 'tomate', nome: 'Tomate', qtd: 2, tipo: 'kg', unidade: 'kg', preco: 8.9 }] });
+  const catalogo = [{ id: 'tomate', nome: 'Tomate', unidade: 'kg', preco: 8.9, cat: 'legumes', ativo: true, precosDia: { 3: 7 } }];
+  const feiras = [{ id: 'quarta-jd', nome: 'Feira de quarta', dias: [3], condominios: ['Jardins'] }, { id: 'sabado-pq', nome: 'Feira de sábado', dias: [6], condominios: ['Parque'] }];
+  const agora = Date.UTC(2026, 8, 10, 15);                       // 10/09/2026, quinta
+  const r = executarMotor({ pedidos, catalogo, agregados: [], parametros: {}, eventos: [], snapshots: [], feiras, agora });
+  assert.deepStrictEqual(r.meta.feiras.map((f) => [f.id, f.dia]), [['quarta-jd', '2026-09-16'], ['sabado-pq', '2026-09-12']]);
+  assert.ok(r.previsoes.tomate.horizontes['feira_quarta-jd'] && r.previsoes.tomate.horizontes['feira_quarta-jd'].previsto != null, 'previsão do dia da feira de quarta');
+  const c1 = r.indiceClientes.find((c) => c.lote === '1'), c3 = r.indiceClientes.find((c) => c.lote === '3');
+  assert.strictEqual(c1.fe, 'quarta-jd', 'feira do último pedido');
+  const L = await import(raiz('js/plataforma-lib.js'));
+  assert.strictEqual(L.feiraDeUmCliente(c1, r.meta.feiras), 'quarta-jd');
+  assert.strictEqual(L.feiraDeUmCliente(c3, r.meta.feiras), 'sabado-pq', 'comprou antes do link: a feira do condomínio dele');
+  assert.strictEqual(L.feiraDeUmCliente({ condominio: 'Outro' }, r.meta.feiras), '');
+});
 teste('aba Clientes: pedido novo aparece na hora (recalcula só quando há pedido depois do último cálculo)', async () => {
   const db = criarBanco({ ...semente(), 'pedidos/n1': { nome: 'Ana Teste', quadra: '7', lote: '2', condominio: 'Jardins', total: 12, data: new Date().toISOString(), itens: [{ id: 'tomate', nome: 'Tomate', qtd: 1, tipo: 'kg', unidade: 'kg', preco: 8.9 }] } });
   const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));
