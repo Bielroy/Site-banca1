@@ -7,7 +7,7 @@
 //        → recalcula tudo.
 //   POST { acao: 'ranking', cesta?: [ids] }        qualquer cliente logado (anônimo vale)
 //        → ranking PERSONALIZADO do próprio cliente (uid do token).
-//   POST { acao: 'painel' }                        só admin
+//   POST { acao: 'painel', atualizar? }            só admin  (atualizar: recalcula antes se há pedido novo)
 //   POST { acao: 'cliente', clienteId }            só admin  → explicação por cliente
 //   POST { acao: 'recalcular', janelaDias? }       só admin  (janelaDias até 900 = backfill)
 //
@@ -104,8 +104,15 @@ module.exports = async function handler(req, res) {
     if (!ehAdmin) return res.status(403).json({ sucesso: false, error: 'Acesso restrito ao administrador.' });
 
     if (acao === 'painel') {
-      const p = await Store.lerPainel(db);
-      return res.status(200).json({ sucesso: true, vazio: !p, ...(p || {}) });
+      let p = await Store.lerPainel(db), atualizou = false;
+      // aba Clientes: se chegou pedido depois do último cálculo, recalcula antes de responder.
+      // Vale o mesmo limite do botão "recalcular"; passou do limite, devolve o cálculo que já existe.
+      if (corpo.atualizar === true && await Store.temPedidoNovo(db, p && p.meta && p.meta.geradoEm)
+          && limitar('recalc:' + tid, 8000) && await P.limitar(banco, 'recalcular', tid, 20, 3600)) {
+        const r = await Store.recalcular(db, {});
+        if (!r.pulado) { p = await Store.lerPainel(db); atualizou = true; }
+      }
+      return res.status(200).json({ sucesso: true, vazio: !p, atualizou, ...(p || {}) });
     }
 
     if (acao === 'recalcular') {

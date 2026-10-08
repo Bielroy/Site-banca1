@@ -199,9 +199,18 @@ async function lerPainel(db) {
   const produtos = {}; ch.docs.forEach((d) => Object.assign(produtos, d.data().produtos || {}));
   return { ...p.data(), produtos, avaliacoes: av.docs.map((d) => d.data()) };
 }
+// Chegou pedido depois do último cálculo? (uma leitura só: o pedido mais recente).
+// Sem cálculo nenhum ainda, qualquer pedido conta como novo.
+async function temPedidoNovo(db, geradoEm) {
+  const s = await db.collection('pedidos').orderBy('data', 'desc').limit(1).get();
+  const ultimo = s.docs.map((d) => String((d.data() || {}).data || '')).sort().pop() || '';
+  if (!ultimo) return false;
+  const tCalc = Date.parse(geradoEm || ''), tPed = Date.parse(ultimo);
+  return !Number.isFinite(tCalc) || (Number.isFinite(tPed) && tPed > tCalc);
+}
 async function lerClientePorId(db, id) {
   const c = await db.doc(`analytics_clientes/${String(id).replace(/[^\w]/g, '')}`).get();
   return c.exists ? c.data() : null;
 }
 
-module.exports = { obterDb, carregarEntradas, persistir, recalcular, lerGlobal, lerClientePorUid, lerPainel, lerClientePorId, fatiar, limpo };
+module.exports = { obterDb, carregarEntradas, persistir, recalcular, lerGlobal, lerClientePorUid, lerPainel, lerClientePorId, temPedidoNovo, fatiar, limpo };

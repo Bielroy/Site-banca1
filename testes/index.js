@@ -137,6 +137,20 @@ teste('gestor de uma loja não lê a previsão de outra, mesmo pedindo direto à
   assert.strictEqual((await chamar(api, { headers: { 'X-Loja': 'espetinhos' }, body: { acao: 'painel' } })).status, 401, 'sem login');
   r = await ver('plataforma', 'espetinhos'); assert.strictEqual(r.status, 200); assert.strictEqual(r.corpo.meta.dono, 'espetinhos');
 });
+teste('aba Clientes: pedido novo aparece na hora (recalcula só quando há pedido depois do último cálculo)', async () => {
+  const db = criarBanco({ ...semente(), 'pedidos/n1': { nome: 'Ana Teste', quadra: '7', lote: '2', condominio: 'Jardins', total: 12, data: new Date().toISOString(), itens: [{ id: 'tomate', nome: 'Tomate', qtd: 1, tipo: 'kg', unidade: 'kg', preco: 8.9 }] } });
+  const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));
+  const ver = (extra) => chamar(api, { headers: { Authorization: 'Bearer dona-banca' }, body: { acao: 'painel', ...extra } });
+  let r = await ver({}); assert.strictEqual(r.status, 200); assert.strictEqual(r.corpo.atualizou, false, 'sem "atualizar" não recalcula');
+  r = await ver({ atualizar: true }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(r.corpo.atualizou, true, 'pedido depois do cálculo: recalcula');
+  assert.ok((r.corpo.indiceClientes || []).some((c) => /Ana/.test(c.nome || c.n || JSON.stringify(c))), 'a cliente nova está na lista');
+  r = await ver({ atualizar: true }); assert.strictEqual(r.corpo.atualizou, false, 'nada novo: não recalcula de novo');
+  // pedido de outra loja não faz esta recalcular
+  db._dados.set('tenants/espetinhos/pedidos/e1', { nome: 'Zé', quadra: '1', lote: '1', total: 5, data: new Date(Date.now() + 5000).toISOString(), itens: [{ id: 'x', nome: 'X', qtd: 1, unidade: 'un', preco: 5 }] });
+  r = await ver({ atualizar: true }); assert.strictEqual(r.corpo.atualizou, false);
+  assert.strictEqual((await chamar(api, { headers: { Authorization: 'Bearer caixa-espetinhos', 'X-Loja': 'espetinhos' }, body: { acao: 'painel', atualizar: true } })).status, 403, 'caixa não dispara cálculo');
+});
 teste('rotina diária recalcula cada loja no lugar certo e exige o segredo', async () => {
   const db = criarBanco(semente()); const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));
   assert.strictEqual((await chamar(api, { method: 'GET', headers: {} })).status, 401);

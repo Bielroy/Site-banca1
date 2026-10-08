@@ -26,7 +26,7 @@ const haDias = (n) => (n <= 0 ? 'hoje' : n === 1 ? 'ontem' : `há ${n} dias`);
 function render() {
     if (!el()) return;
     if (S.estado !== 'ok') {
-        el().innerHTML = `<div class="es-topo"><div><h3>Clientes</h3></div></div><div class="cp-vazio"><b>${S.estado === 'carregando' ? 'Carregando clientes...' : S.estado === 'vazio' ? 'Ainda não há clientes calculados.' : 'Não consegui carregar os clientes.'}</b><span>${S.estado === 'vazio' ? 'A lista aparece depois do primeiro cálculo do motor de previsão (aba Previsão, botão de recalcular) e de alguns pedidos com endereço.' : S.estado === 'erro' ? 'Confira a internet e abra a aba de novo.' : ''}</span></div>`;
+        el().innerHTML = `<div class="es-topo"><div><h3>Clientes</h3></div></div><div class="cp-vazio"><b>${S.estado === 'carregando' ? 'Carregando clientes (e conferindo pedidos novos)...' : S.estado === 'vazio' ? 'Ainda não há clientes calculados.' : 'Não consegui carregar os clientes.'}</b><span>${S.estado === 'vazio' ? 'A lista aparece sozinha quando chegar o primeiro pedido com endereço. Pedido com cupom especial (família, cortesia) não entra na lista.' : S.estado === 'erro' ? 'Confira a internet e abra a aba de novo.' : ''}</span></div>`;
         return;
     }
     const c = S.seg.contagem, lista = filtrar(S.seg, { segmento: S.filtro, produtoId: S.produtoId, busca: S.busca });
@@ -180,16 +180,33 @@ export async function abrirCrm(produtos, nomeLoja) {
     if (!el()) return;
     S.produtos = produtos || []; if (nomeLoja) S.nomeLoja = nomeLoja;
     ligar();
-    if (S.seg) { render(); return; }
+    // Já carregada antes: mostra na hora o que tem e confere em segundo plano se entrou pedido novo.
+    if (S.seg) { render(); carregarCrm(false); return; }
     S.estado = 'carregando'; render();
-    try {
-        const [painel, contatos, ficha] = await Promise.all([lerPainel(), getDoc(tdoc('crm', 'contatos')).catch(() => null), getDoc(fichaRef()).catch(() => null)]);
-        if (ficha && ficha.exists() && ficha.data().nome) S.nomeLoja = ficha.data().nome;
-        S.contatos = contatos && contatos.exists() ? contatos.data() : {};
-        const indice = painel.indiceClientes || [];
-        S.geradoEm = (painel.meta && painel.meta.geradoEm) || '';
-        if (!indice.length) { S.estado = 'vazio'; render(); return; }
-        S.seg = segmentar(indice, hojeBR()); S.estado = 'ok';
-    } catch (_) { S.estado = 'erro'; }
-    render();
+    await carregarCrm(true);
+}
+
+// Pede o painel com "atualizar": se chegou pedido depois do último cálculo, o servidor recalcula
+// antes de responder. Assim um pedido de agora já aparece aqui, sem ir na aba Previsão.
+let carregandoCrm = null;
+function carregarCrm(primeira) {
+    if (carregandoCrm) return carregandoCrm;
+    carregandoCrm = (async () => {
+        try {
+            const [painel, contatos, ficha] = await Promise.all([lerPainel({ atualizar: true }), getDoc(tdoc('crm', 'contatos')).catch(() => null), getDoc(fichaRef()).catch(() => null)]);
+            if (ficha && ficha.exists() && ficha.data().nome) S.nomeLoja = ficha.data().nome;
+            S.contatos = contatos && contatos.exists() ? contatos.data() : {};
+            const geradoEm = (painel.meta && painel.meta.geradoEm) || '';
+            if (!primeira && S.seg && geradoEm === S.geradoEm) return;             // nada mudou: não redesenha (não atrapalha quem está digitando)
+            const indice = painel.indiceClientes || [];
+            S.geradoEm = geradoEm;
+            if (!indice.length) { S.seg = null; S.estado = 'vazio'; }
+            else { S.seg = segmentar(indice, hojeBR()); S.estado = 'ok'; }
+        } catch (_) { if (primeira || !S.seg) S.estado = 'erro'; else return; }
+        // quem está digitando na busca não perde o cursor quando a lista nova chega
+        const ativo = document.activeElement, pos = ativo && ativo.id === 'crm-busca' ? ativo.selectionStart : null;
+        render();
+        if (pos != null && $('crm-busca')) { $('crm-busca').focus(); $('crm-busca').setSelectionRange(pos, pos); }
+    })();
+    return carregandoCrm.finally(() => { carregandoCrm = null; });
 }
