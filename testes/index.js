@@ -1526,6 +1526,23 @@ teste('card: produto de quilo tem os dois botões (unidade e quilo), cada um com
   assert.ok(html.includes('id="edit-mostrar-primeiro"') && painel.includes("mostrarPrimeiro: document.getElementById('edit-mostrar-primeiro')"), 'o cadastro do produto grava qual botão vem em cima');
 });
 
+teste('iPhone e tela desatualizada: recarga busca no servidor, pedido não fica preso e o toque duplo não dá zoom', async () => {
+  const V = await import(raiz('js/versao-lib.js')), fs = require('fs'), ler = (f) => fs.readFileSync(raiz(f), 'utf8');
+  // recarregar com "?v=" novo: a página vem do servidor, não da cópia guardada; os outros parâmetros ficam
+  assert.strictEqual(V.enderecoFresco('/', '', 123), '/?v=123'); assert.strictEqual(V.enderecoFresco('/', '?loja=paes', 123), '/?loja=paes&v=123');
+  assert.strictEqual(V.enderecoFresco('/admin.html', '?v=1&loja=x', 9), '/admin.html?v=9&loja=x', 'troca o v antigo em vez de empilhar');
+  assert.strictEqual(V.enderecoFresco('//outro-site.com/x', '', 5), '/?v=5', 'endereço que apontaria para outro site vira a página inicial'); assert.strictEqual(V.enderecoFresco('', '', 5), '/?v=5');
+  const utils = ler('js/utils.js'), loja = ler('js/loja.js'), fb = ler('js/firebase.js'), css = ler('css/visual.css');
+  assert.ok(/pendente = false; recarregarFresco\(\);/.test(utils) && !/window\.location\.reload\(\);\n  \};/.test(utils), 'a recarga automática busca a página no servidor');
+  assert.ok(loja.includes('if (haVersaoNova()) return recarregarComPedidoGuardado('), 'tela velha se atualiza ANTES de abrir a tela de entrega');
+  assert.ok(/conferirVersaoAgora\(\)\.then\(\(velha\)/.test(loja), 'pedido recusado numa tela velha: atualiza e deixa enviar de novo');
+  assert.ok(/Promise\.race\(\[usuario\.getIdToken\(\)/.test(loja), 'renovar o login não segura o envio do pedido');
+  assert.ok(/ehApple \? memoryLocalCache\(\) : persistentLocalCache/.test(fb), 'no iPhone o banco lê sempre da internet (sem cópia velha da configuração)');
+  assert.ok(/touch-action: manipulation/.test(css), 'dois toques rápidos no + não dão zoom no iPhone');
+  assert.ok(!/^\.card-add:hover/m.test(css), 'efeito de mouse não gruda no celular depois do toque');
+  assert.ok(loja.includes("ehIphone() ? 'Pedido recebido! Agora toque no botão verde"), 'no iPhone a tela pede o toque no botão do WhatsApp em vez de prometer abrir sozinho');
+});
+
 teste('plataforma: modelos iguais nos dois lados, endereço sugerido e abas por módulo', async () => {
   const L = await import(raiz('js/plataforma-lib.js')), Tm = await import(raiz('js/tema.js')).catch(() => null), M = require(raiz('lib/modelos')), P = await import(raiz('js/papeis-lib.js')), T = require(raiz('lib/tenant'));
   if (Tm) assert.deepStrictEqual(JSON.parse(JSON.stringify(Tm.MODELOS)), M.MODELOS, 'js/tema.js e lib/modelos.js têm os mesmos modelos');

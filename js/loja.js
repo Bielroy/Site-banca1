@@ -1,6 +1,6 @@
 import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc } from './firebase.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
-import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage } from './utils.js';
+import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage, haVersaoNova, conferirVersaoAgora, recarregarFresco } from './utils.js';
 import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques } from './ranking-loja.js';
 import './melhorias-ui.js';
@@ -625,7 +625,11 @@ const mostrarLinksWhatsApp = (pedido) => {
     }
     if (texto) texto.textContent = links.length > 1
         ? `Seu pedido tem itens de ${links.length} atendimentos da banca. Toque nos ${links.length} botões, um de cada vez, para enviar tudo:`
-        : 'Vamos abrir o WhatsApp da banca com o seu pedido pronto. Se não abrir sozinho, toque no botão abaixo.';
+        // iPhone: o navegador costuma barrar a abertura automática (ela acontece depois de o servidor responder,
+        // e o iPhone só deixa abrir outro app no instante do toque). O texto pede o toque em vez de prometer.
+        : (ehIphone() ? 'Pedido recebido! Agora toque no botão verde para mandar a mensagem no WhatsApp.'
+            : 'Vamos abrir o WhatsApp da banca com o seu pedido pronto. Se não abrir sozinho, toque no botão abaixo.');
+    if (area) area.classList.toggle('precisa-toque', ehIphone() && links.length === 1);
     // só abre o que for mesmo um link do WhatsApp (o endereço vem do servidor; isto é a segunda conferência)
     if (links.length === 1 && /^https:\/\/wa\.me\/\d{8,15}\?/.test(String(links[0].url))) window.open(links[0].url, '_blank', 'noopener');
 };
@@ -968,7 +972,9 @@ const pegarTokenSessao = async () => {
     try {
         const usuario = auth.currentUser;
         if (!usuario) return '';
-        return await usuario.getIdToken();
+        // Com sinal fraco, renovar o login pode demorar dezenas de segundos e o botão ficava em "Enviando pedido...".
+        // Depois de 8 s o pedido segue sem o login (a venda acontece; só "Meus pedidos" não acompanha este).
+        return await Promise.race([usuario.getIdToken(), new Promise((r) => setTimeout(() => r(''), 8000))]);
     } catch (e) {
         return ''; // sem token a venda continua; só o cancelamento fica indisponível
     }
@@ -1626,7 +1632,19 @@ document.getElementById('cli-pagamento').addEventListener('change', (e) => {
 
 // UI Checkout
 const assinaturaDoCarrinho = () => STATE.carrinho.map(i => `${i.id}:${i.qtd}:${i.tipo || ''}`).join('|');
+// Guarda o carrinho JÁ (sem esperar) e recarrega buscando a versão nova no servidor.
+const recarregarComPedidoGuardado = (aviso) => {
+    try { clearTimeout(debounceSalvarCarrinho); dbStorage.set(chave('banca_cart'), { v: CART_VERSION, items: STATE.carrinho }); } catch (_) { /* segue */ }
+    try { sessionStorage.setItem('banca_atualizou', '1'); } catch (_) { /* sem armazenamento */ }
+    showToast(aviso);
+    setTimeout(recarregarFresco, 1600);
+};
+try { if (sessionStorage.getItem('banca_atualizou')) { sessionStorage.removeItem('banca_atualizou'); setTimeout(() => showToast('Loja atualizada. Seu pedido continua aqui: é só finalizar.'), 1800); } } catch (_) { /* sem armazenamento */ }
+
 document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
+    // TELA DESATUALIZADA: fechar o pedido numa tela velha é onde dá problema (campo que não existe mais,
+    // regra que mudou). Se já sabemos que há versão nova, atualiza ANTES de abrir a tela de entrega.
+    if (haVersaoNova()) return recarregarComPedidoGuardado('A loja foi atualizada. Um instante: seu pedido continua na sacola.');
     const clientes = lerLista('banca_clientes');
     if (clientes.length > 0) {
         document.getElementById('cli-nome').value = clientes[0].nome || '';
@@ -1731,6 +1749,14 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     } catch(err) {
         // Antes ia "Failed to fetch" cru, em inglês, para a tela da cliente
         showToast(mensagemDeErroAmigavel(err), true);
+        // O servidor recusou e esta tela está desatualizada? Então o motivo pode ser a própria tela velha:
+        // guarda nome e endereço, atualiza e deixa a pessoa enviar de novo (o pedido NÃO foi criado).
+        // (sem "await": o botão volta a funcionar na hora; a conferência corre por fora)
+        if (navigator.onLine) conferirVersaoAgora().then((velha) => {
+            if (!velha) return;
+            try { salvarEndereco(endereco); const cl = lerLista('banca_clientes').filter(c => String(c && c.nome || '').toLowerCase() !== nome.toLowerCase()); cl.unshift({ nome, quadra, lote }); localStorage.setItem(chave('banca_clientes'), JSON.stringify(cl.slice(0, 5))); } catch (_) { /* segue */ }
+            recarregarComPedidoGuardado('A loja foi atualizada. Vou recarregar: seu pedido continua na sacola.');
+        }).catch(() => { /* sem sinal: fica o aviso de cima */ });
     } finally {
         btn.disabled = false; btn.textContent = 'Enviar pedido';
     }

@@ -27,3 +27,14 @@ export function podeRecarregar(historico, agora) {
     const h = (historico || []).filter((x) => Number.isFinite(x) && agora - x < 10 * 60 * 1000);
     return h.length < 2 && !h.some((x) => agora - x < 30000);
 }
+
+/**
+ * Endereço para RECARREGAR buscando a página no servidor: o mesmo endereço, com um "?v=" novo.
+ * Sem isto, com internet lenta o aparelho devolvia a cópia guardada (a mesma página velha) e a tela
+ * continuava desatualizada depois de "recarregar". Mantém os outros parâmetros (ex.: ?loja=...).
+ */
+export function enderecoFresco(caminho, busca, agora) {
+    const q = new URLSearchParams(String(busca || '').replace(/^\?/, ''));
+    q.set('v', String(agora));
+    const c = String(caminho || '/'); return `${c.startsWith('/') && !c.startsWith('//') ? c : '/'}?${q.toString()}`;
+}

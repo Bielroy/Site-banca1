@@ -256,7 +256,16 @@ window.addEventListener('unhandledrejection', (event) => {
 //     que o que está na tela (regra em js/versao-lib.js). Se for, a página recarrega
 //     sozinha — nunca no meio de um pedido, de um formulário ou de uma tela aberta.
 // O carrinho, o endereço e "Meus pedidos" ficam guardados no aparelho e não se perdem.
-import { arquivoDaPagina, estaDesatualizada, podeRecarregar } from './versao-lib.js';
+import { arquivoDaPagina, estaDesatualizada, podeRecarregar, enderecoFresco } from './versao-lib.js';
+let _versao = null;
+// o "?v=" da recarga some do endereço depois de abrir (para não ir junto quando a pessoa compartilha o link)
+try { if (typeof location !== 'undefined' && /[?&]v=\d+/.test(location.search)) { const q = new URLSearchParams(location.search); q.delete('v'); history.replaceState(history.state, '', location.pathname + (q.toString() ? `?${q}` : '') + location.hash); } } catch (_) { /* segue */ }
+/** Recarrega buscando a página NO SERVIDOR (nunca a cópia guardada no aparelho). */
+export const recarregarFresco = () => { try { window.location.replace(enderecoFresco(location.pathname, location.search, Date.now())); } catch (_) { window.location.reload(); } };
+/** Já sabemos que existe versão mais nova no ar do que a desta tela? */
+export const haVersaoNova = () => !!(_versao && _versao.pendente());
+/** Confere AGORA se a tela está desatualizada (no máximo `limiteMs` de espera). Devolve true/false. */
+export const conferirVersaoAgora = (limiteMs = 6000) => (_versao ? Promise.race([_versao.conferirJa(), new Promise((r) => setTimeout(() => r(false), limiteMs))]).catch(() => false) : Promise.resolve(false));
 (() => {
   if (typeof document === 'undefined') return;
   const meuArquivo = arquivoDaPagina([...document.querySelectorAll('script[type="module"][src]')].map((s) => s.getAttribute('src')));
@@ -271,7 +280,7 @@ import { arquivoDaPagina, estaDesatualizada, podeRecarregar } from './versao-lib
     const h = historico();
     if (!podeRecarregar(h, Date.now())) { pendente = false; return; }     // trava contra recarregar sem parar
     try { sessionStorage.setItem(CHAVE, JSON.stringify(h.concat(Date.now()).slice(-5))); } catch (_) { /* sem armazenamento: segue */ }
-    pendente = false; window.location.reload();
+    pendente = false; recarregarFresco();
   };
   const conferir = async (forcar) => {
     if (conferindo || pendente || !navigator.onLine || (!forcar && Date.now() - ultima < 120000)) return;
@@ -285,6 +294,17 @@ import { arquivoDaPagina, estaDesatualizada, podeRecarregar } from './versao-lib
     } catch (_) { /* sem sinal: confere na próxima */ }
     conferindo = false;
   };
+  // usado na hora de fechar o pedido: confere sem esperar o relógio e NÃO recarrega sozinho (quem chama decide)
+  const conferirJa = async () => {
+    if (pendente) return true;
+    if (!navigator.onLine) return false;
+    try {
+      const r = await fetch(`${location.origin}${location.pathname.replace(/^\/+/, '/')}?v=${Date.now()}`, { cache: 'no-store', credentials: 'omit' });
+      if (r.ok && estaDesatualizada(meuArquivo, await r.text())) pendente = true;
+    } catch (_) { /* sem sinal */ }
+    return pendente;
+  };
+  _versao = { pendente: () => pendente, conferirJa };
   setTimeout(() => conferir(true), 5000);                                   // logo depois de abrir
   setInterval(() => conferir(false), 15 * 60 * 1000);                       // site aberto por horas (painel no balcão)
   setInterval(tentarRecarregar, 4000);                                      // esperando a pessoa terminar o que está fazendo

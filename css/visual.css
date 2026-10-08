@@ -131,7 +131,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .card-acao { position: relative; height: 46px; margin-top: auto; }
 .card-add, .card-qtd { position: absolute; inset: 0; border-radius: 999px; font-family: inherit; font-weight: 700; font-size: .95rem; }
 .card-add { border: 0; background: var(--forest); color: var(--sobre-primaria); cursor: pointer; transition: background .2s ease, transform .12s ease; }
-.card-add:hover { background: var(--forest-mid); }
+@media (hover: hover) { .card-add:hover { background: var(--forest-mid); } }
 .card-add:active { transform: scale(.96); }
 .card-qtd { display: flex; align-items: center; justify-content: space-between; padding: 3px; background: var(--foam); color: var(--text-dark); }
 .card-qtd button { width: 40px; height: 40px; border: 0; border-radius: 50%; background: var(--superficie); color: var(--forest); font-size: 1.3rem; font-weight: 700; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.08); transition: transform .12s ease; }
@@ -143,7 +143,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
    o de baixo (contorno) é o outro. Cada um diz o que põe no pedido e quanto custa.
    O "Adicionar" dos outros produtos ganhou o mesmo acabamento, para os cards combinarem. */
 .card-add, .modo-btn.principal { background: linear-gradient(180deg, var(--forest-mid), var(--forest)); box-shadow: 0 3px 0 color-mix(in srgb, var(--forest) 70%, #000); }
-.card-add:hover { background: linear-gradient(180deg, var(--forest-mid), var(--forest)); filter: brightness(1.08); }
+@media (hover: hover) { .card-add:hover { background: linear-gradient(180deg, var(--forest-mid), var(--forest)); filter: brightness(1.08); } }   /* no celular o "hover" gruda depois do toque: só vale com mouse */
 .card-acao:not(.dupla) { height: 46px; margin-bottom: 3px; }
 .card-acao.dupla { height: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding-bottom: 3px; container-type: inline-size; }
 .modo-btn {
@@ -411,3 +411,12 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 
 /* campo obrigatório que ficou em branco: pisca a borda para a pessoa achar */
 .form-group .campo-faltando { border-color: var(--danger) !important; box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 22%, transparent) !important; }
+
+/* ---------- IPHONE ----------
+   Dois toques rápidos no + ou no − davam ZOOM na página (o iPhone entende como "toque duplo").
+   "manipulation" mantém rolar e pinçar, e tira só o zoom do toque duplo. */
+button, a, input, select, textarea, label, summary, [data-action], .produto-card, .card-qtd, .modo-btn { touch-action: manipulation; }
+/* depois do pedido, no iPhone, o botão do WhatsApp é o próximo passo: fica grande e chama atenção */
+.precisa-toque .btn-wpp { min-height: 56px; font-size: 1.05rem; animation: chamaToque 1.4s ease-in-out 3; }
+@keyframes chamaToque { 50% { transform: scale(1.04); box-shadow: 0 0 0 6px color-mix(in srgb, #25d366 30%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .precisa-toque .btn-wpp { animation: none; } }
