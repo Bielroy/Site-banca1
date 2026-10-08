@@ -47,7 +47,7 @@
 @keyframes splashSai { from { opacity: 1; } to { opacity: 0; } }
 /* início e fim iguais de propósito: "visibility" só troca no ponto exato do fim, e um arredondamento a deixava visível */
 @keyframes splashFim { from, to { visibility: hidden; } }
-#splash-feira p { font-family: 'Fraunces', serif; font-size: 1.05rem; letter-spacing: .3px; opacity: 0; animation: splashTexto .25s ease .35s forwards; }
+#splash-feira p { font-family: var(--fonte-titulo); font-size: 1.05rem; letter-spacing: .3px; opacity: 0; animation: splashTexto .25s ease .35s forwards; }
 @keyframes splashTexto { to { opacity: .9; } }
 .splash-cesto { font-size: 3.6rem; animation: splashBalanca 1.6s ease-in-out infinite; transform-origin: 50% 0; }
 .splash-frutas { display: flex; gap: 14px; font-size: 1.6rem; }
@@ -210,7 +210,7 @@
     }
     .btn-flutuante-carrinho:active { transform: scale(.97); }
     .btn-flutuante-carrinho.vazio { display: none; }
-    .barra-valor { margin-left: auto; padding-left: 10px; font-family: 'Fraunces', serif; font-weight: 800; }
+    .barra-valor { margin-left: auto; padding-left: 10px; font-family: var(--fonte-titulo); font-weight: 800; }
     .barra-valor:empty { display: none; }
     .layout { padding-bottom: calc(var(--safe-bottom) + 110px); }
 
@@ -227,15 +227,15 @@
 @media (max-width: 340px) { .produtos-grid { grid-template-columns: 1fr; } }
 
 /* Tela de sucesso: os botões do WhatsApp são a ação principal; "Voltar" fica discreto */
-.sucesso-whatsapps:not(:empty) + .btn-finalizar { background: transparent; color: var(--forest); border: 1.5px solid var(--forest); box-shadow: none; }
+.sucesso-whatsapps:not(:empty) + .btn-finalizar { background: transparent; color: var(--forest-texto, var(--forest)); border: 1.5px solid var(--forest); box-shadow: none; }
 
 /* ---------- PIX automático ---------- */
 .sucesso-pix { margin-bottom: 14px; }
-.btn-pix { display: block; width: 100%; min-height: 48px; padding: 13px 16px; border-radius: 14px; border: 2px solid var(--forest); background: var(--superficie, #fff); color: var(--forest); font-weight: 800; font-size: 1rem; line-height: 1.2; font-family: inherit; font-family: inherit; cursor: pointer; margin-top: 10px; }
+.btn-pix { display: block; width: 100%; min-height: 48px; padding: 13px 16px; border-radius: 14px; border: 2px solid var(--forest); background: var(--superficie, #fff); color: var(--forest-texto, var(--forest)); font-weight: 800; font-size: 1rem; line-height: 1.2; font-family: inherit; font-family: inherit; cursor: pointer; margin-top: 10px; }
 .btn-pix:active { transform: scale(.98); }
 .pedido-pago { margin-top: 10px; font-weight: 700; color: var(--success, #166534); }
 .pix-valor { font-size: 1.05rem; color: var(--text-mid); margin-bottom: 14px; }
-.pix-valor b { color: var(--forest); font-size: 1.25rem; white-space: nowrap; }
+.pix-valor b { color: var(--forest-texto, var(--forest)); font-size: 1.25rem; white-space: nowrap; }
 .pix-qr { display: block; margin: 0 auto 14px; width: 220px; height: 220px; max-width: 100%; background: #fff; border-radius: 12px; }
 .pix-rotulo { display: block; font-weight: 700; margin-bottom: 6px; }
 .pix-codigo { width: 100%; font: 0.8rem/1.4 ui-monospace, monospace; padding: 10px; border-radius: 10px; border: 1.5px solid #e0dcd4; resize: none; word-break: break-all; margin-bottom: 10px; background: #fff; color: #222; }

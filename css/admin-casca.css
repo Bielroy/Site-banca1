@@ -164,6 +164,9 @@
   .cp-rodape { bottom: calc(var(--barra-h) + 12px); }
   .toast { bottom: calc(var(--barra-h) + 18px); }
 }
+/* celular: o aviso fica em cima (css/admin-modulo3.css). Sem isto, a regra de cima e a de baixo valiam
+   juntas e o aviso esticava do topo até a barra, cobrindo a tela inteira. */
+@media (max-width: 700px) { .toast { bottom: auto; } }
 
 /* COMPUTADOR: as telas ficam numa coluna à esquerda, sempre à vista */
 @media (min-width: 960px) {

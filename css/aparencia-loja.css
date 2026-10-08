@@ -1,0 +1,75 @@
+/* =====================================================================
+   css/aparencia-loja.css — AS ESCOLHAS DA ABA "APARÊNCIA" NA LOJA
+   Carregado depois de css/visual.css. Cada escolha do painel liga uma
+   classe na página (js/tema.js, variaveisDoTema) e é desenhada aqui.
+   Sem nenhuma classe ligada, nada aqui muda a loja: é o visual de sempre.
+   ===================================================================== */
+
+/* ---------- COR DOS BOTÕES (opcional) ----------
+   Os botões leem a cor principal (--forest). Aqui, só DENTRO deles, a cor
+   principal passa a ser a cor dos botões; o cabeçalho continua com a dele. */
+.com-cor-botao :is(.card-add, .modo-btn, .card-qtd, .btn-finalizar, .btn-flutuante-carrinho, .btn-primary, .md-segmented,
+    .md-preset, .cat-btn, .upsell-box .upsell-botao, .ia-pill-add, .ia-pill-qtd, .btn-pix, .btn-outline) {
+    --forest: var(--cor-botao); --forest-mid: var(--cor-botao-mid); --sobre-primaria: var(--sobre-botao); --forest-texto: var(--cor-botao-texto);
+}
+.com-cor-botao .card-qtd button { color: var(--cor-botao-texto); }
+
+/* ---------- CABEÇALHO ---------- */
+/* degradê: da cor principal para um tom misturado com a secundária */
+.ap-cabecalho-degrade #header-principal { background: linear-gradient(150deg, var(--forest) 0%, color-mix(in srgb, var(--forest) 58%, var(--leaf)) 100%); }
+/* foto de capa: a foto cobre o cabeçalho e uma película da cor principal deixa o texto legível */
+.header-capa { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; pointer-events: none; }
+.ap-cabecalho-capa #header-principal::before { z-index: 1; background-image: none;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--forest) 45%, transparent) 0%, color-mix(in srgb, var(--forest) 82%, transparent) 100%); }
+.ap-cabecalho-capa .header-capa ~ .header-arte { z-index: 1; }
+.ap-cabecalho-capa #header-principal h1, .ap-cabecalho-capa .header-subtitle { text-shadow: 0 1px 12px rgba(0, 0, 0, .35); }
+
+/* logo: ao lado do nome (ou em cima, com o nome no centro) */
+.header-logo { display: block; width: clamp(56px, 15vw, 76px); height: clamp(56px, 15vw, 76px); object-fit: cover; border-radius: 50%; margin-bottom: 12px;
+    background: var(--superficie); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sobre-primaria) 85%, transparent), 0 6px 18px rgba(0, 0, 0, .18); }
+.header-logo.quadrado { border-radius: calc(var(--raio-card) * .9); object-fit: contain; }
+
+/* desenho escondido: os botões do cabeçalho usam a largura toda */
+.ap-arte-esconder .header-arte { display: none; }
+.ap-arte-esconder .header-acoes, .ap-arte-esconder .header-arte.plana ~ .header-inner .header-acoes { padding-right: 0; }
+
+/* nome no centro (o desenho sai, para não brigar com o texto) */
+.ap-alinhamento-centro .header-inner { text-align: center; }
+.ap-alinhamento-centro .header-logo { margin-left: auto; margin-right: auto; }
+.ap-alinhamento-centro .header-acoes { justify-content: center; }
+.ap-alinhamento-centro .header-arte { display: none; }
+.ap-alinhamento-centro .header-acoes, .ap-alinhamento-centro .header-arte.plana ~ .header-inner .header-acoes { padding-right: 0; }
+
+/* borda de baixo do cabeçalho: toldo listrado (padrão), onda lisa ou reta */
+.ap-borda-onda .toldo-loja { background: var(--forest); }
+.ap-cabecalho-degrade.ap-borda-onda .toldo-loja { background: color-mix(in srgb, var(--forest) 58%, var(--leaf)); }
+.ap-borda-reta .toldo-loja { display: none; }
+
+/* ---------- BOTÕES: formato ---------- */
+:is(.ap-botaoFormato-arredondado, .ap-botaoFormato-quadrado) :is(.card-add, .card-qtd, .modo-btn, .cat-btn, .chip-header, .btn-finalizar,
+    .btn-primary, .upsell-box .upsell-botao, .md-preset, .ia-pill-add, .ia-pill-qtd) { border-radius: var(--raio-botao); }
+:is(.ap-botaoFormato-arredondado, .ap-botaoFormato-quadrado) .card-qtd button { border-radius: max(4px, calc(var(--raio-botao) - 4px)); }
+:is(.ap-botaoFormato-arredondado, .ap-botaoFormato-quadrado) .modo-qtd button { border-radius: max(4px, calc(var(--raio-botao) - 4px)); }
+
+/* ---------- CARDS DOS PRODUTOS ---------- */
+.ap-card-sombra .produto-card { border-color: transparent;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--text-dark) 8%, transparent), 0 8px 22px -8px color-mix(in srgb, var(--text-dark) 26%, transparent); }
+.ap-card-plano .produto-card { border-color: transparent; box-shadow: none; }
+:is(.ap-card-sombra, .ap-card-plano) .produto-card.na-sacola { border-color: var(--leaf); }
+
+/* ---------- ETIQUETA "SELO": o preço numa plaquinha arredondada ---------- */
+.etiqueta-selo .etiqueta { transform: none; box-shadow: none; padding: 6px 12px; border-radius: 12px;
+    background: color-mix(in srgb, var(--manga) 20%, var(--superficie)); color: var(--text-dark); }
+.etiqueta-selo .etiqueta::before, .etiqueta-selo .etiqueta::after { display: none; }
+
+/* ---------- FUNDO DA PÁGINA ---------- */
+.ap-fundoEstilo-papel body {
+    background-image: repeating-linear-gradient(0deg, color-mix(in srgb, var(--text-dark) 3%, transparent) 0 1px, transparent 1px 4px),
+                      repeating-linear-gradient(90deg, color-mix(in srgb, var(--text-dark) 2.5%, transparent) 0 1px, transparent 1px 5px); }
+.ap-fundoEstilo-pontos body { background-image: radial-gradient(color-mix(in srgb, var(--text-dark) 11%, transparent) 1.3px, transparent 1.6px); background-size: 18px 18px; }
+.ap-fundoEstilo-listras body { background-image: repeating-linear-gradient(135deg, transparent 0 16px, color-mix(in srgb, var(--text-dark) 4.5%, transparent) 16px 18px); }
+
+/* ---------- LETRA MAIOR (quem enxerga menos agradece) ---------- */
+html.ap-letra-grande { font-size: 112.5%; }
+.ap-letra-grande .produto-nome { font-size: 1.06rem; }
+.ap-letra-grande .card-add, .ap-letra-grande .modo-btn b { font-size: 1rem; }

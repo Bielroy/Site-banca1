@@ -21,7 +21,7 @@ const lerAba = () => { try { const a = localStorage.getItem('pf_aba'); return AB
 const S = { dados: null, aba: lerAba(), busca: { lojas: '', condominios: '' }, folha: null, rascunho: null, ocupado: false, editandoCond: '', mensal: {}, confirmando: 0 };
 const el = () => document.getElementById('pf-conteudo');
 const $ = (id) => document.getElementById(id);
-const NOMES_MODELO = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', jantinha: 'Jantinha' };
+const NOMES_MODELO = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', jantinha: 'Jantinha', padaria: 'Padaria', acai: 'Açaí', mercadinho: 'Mercadinho', doceria: 'Doceria' };
 const FORMATOS = { ql: 'Quadra e lote', rua: 'Rua e número', livre: 'Endereço escrito' };
 const LETRAS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'], NOMES_DIA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const corOk = (c) => (/^#[0-9a-fA-F]{6}$/.test(String(c || '')) ? c : '#1a3a2a');

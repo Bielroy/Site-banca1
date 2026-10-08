@@ -55,7 +55,7 @@
   left: 16px;
   bottom: 16px;
   background: rgba(255, 255, 255, 0.94);
-  color: var(--forest, #1f5c3d);
+  color: var(--forest-texto, var(--forest, #1f5c3d));
   padding: 5px 14px;
   border-radius: 20px;
   font-size: 0.78rem;
@@ -70,7 +70,7 @@
 }
 .md-corpo h2 {
   font-size: 1.55rem;
-  color: var(--forest, #1f5c3d);
+  color: var(--forest-texto, var(--forest, #1f5c3d));
   margin: 0 0 6px;
   line-height: 1.2;
 }
@@ -83,7 +83,7 @@
 .md-preco-base {
   font-size: 1.35rem;
   font-weight: 800;
-  color: var(--forest, #1f5c3d);
+  color: var(--forest-texto, var(--forest, #1f5c3d));
   padding-bottom: 16px;
   border-bottom: 1px solid var(--parchment, #f2efe8);
   margin-bottom: 16px;
@@ -126,7 +126,7 @@
   padding: 12px 8px;
   border: none;
   background: transparent;
-  color: var(--forest, #1f5c3d);
+  color: var(--forest-texto, var(--forest, #1f5c3d));
   font-weight: 700;
   font-size: 0.95rem;
   font-family: inherit;
@@ -195,7 +195,7 @@
   border-radius: 12px;
   border: none;
   background: var(--superficie);
-  color: var(--forest, #1f5c3d);
+  color: var(--forest-texto, var(--forest, #1f5c3d));
   font-size: 1.7rem;
   font-weight: 700;
   line-height: 1;
@@ -220,7 +220,7 @@
   text-align: center;
   font-size: 1.75rem;
   font-weight: 900;
-  color: var(--forest, #1f5c3d);
+  color: var(--forest-texto, var(--forest, #1f5c3d));
   font-family: inherit;
   padding: 0;
   /* 16px+ evita o zoom automático do iOS ao focar o campo */
@@ -261,7 +261,7 @@
 /* Valor fechado (compra por peso) */
 .md-resumo-exato {
   background: var(--foam, #eef5f0);
-  color: var(--forest, #1f5c3d);
+  color: var(--forest-texto, var(--forest, #1f5c3d));
 }
 /* Estimativa (unidade com peso médio cadastrado) */
 .md-resumo-estimado {
@@ -315,7 +315,7 @@
 /* Banner de comunicado da loja (mensagem do dia / oferta) */
 .banner-aviso.comunicado {
   background: var(--foam, #e8f5ee);
-  color: var(--forest, #1a3a2a);
+  color: var(--forest-texto, var(--forest, #1a3a2a));
   border-bottom: 2px solid var(--sage, #b8dfc8);
   font-weight: 700;
 }
@@ -341,9 +341,9 @@
   align-items: baseline;
   gap: 10px;
 }
-.pedido-topo strong { color: var(--forest); font-size: .95rem; }
+.pedido-topo strong { color: var(--forest-texto, var(--forest)); font-size: .95rem; }
 .pedido-total {
-  color: var(--forest);
+  color: var(--forest-texto, var(--forest));
   font-weight: 900;
   font-size: 1.15rem;
   font-variant-numeric: tabular-nums; /* números não "dançam" ao atualizar */
@@ -418,7 +418,7 @@
   text-align: center;
   white-space: nowrap;
 }
-.timeline-passo.feito .timeline-rotulo { color: var(--forest); }
+.timeline-passo.feito .timeline-rotulo { color: var(--forest-texto, var(--forest)); }
 
 .timeline-linha {
   flex: 1;
@@ -455,7 +455,7 @@
   margin-bottom: 90px;
 }
 .site-rodape a {
-  color: var(--forest);
+  color: var(--forest-texto, var(--forest));
   font-weight: 700;
   text-decoration: none;
 }

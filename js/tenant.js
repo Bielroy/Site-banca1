@@ -36,8 +36,15 @@ export const fichaRef = () => doc(db, 'tenants', TENANT);
 /** Pasta das fotos no Storage. */
 export const pastaFotos = () => (ehLojaOriginal ? 'fotos_produtos' : `tenants/${TENANT}/fotos_produtos`);
 
+/**
+ * PRÉVIA DA APARÊNCIA: o painel mostra a loja de verdade dentro da aba Aparência, pelo endereço /previa.
+ * Nela a loja funciona para olhar e tocar, mas nada vai para o banco: o carrinho, os favoritos e o endereço
+ * ficam numa gaveta à parte (não misturam com os de quem usa a loja neste aparelho) e o pedido não é enviado.
+ */
+export const EM_PREVIA = (() => { try { return /^\/previa\/?$/.test(location.pathname); } catch (_) { return false; } })();
+
 /** Chave do armazenamento do aparelho: carrinho, favoritos etc. não se misturam entre lojas. */
-export const chave = (nome) => (ehLojaOriginal ? nome : `${nome}__${TENANT}`);
+export const chave = (nome) => `${EM_PREVIA ? 'previa__' : ''}${ehLojaOriginal ? nome : `${nome}__${TENANT}`}`;
 
 /** Endereço de uma loja (usado para trocar de loja). Com subdomínios ligados, vira https://id.dominio/…; senão, ?loja=id. */
 export const urlDaLoja = (id, pagina = '/') => enderecoDaLoja(id, pagina, { hostname: typeof location !== 'undefined' ? location.hostname : '' }, CFG);

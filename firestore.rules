@@ -66,12 +66,18 @@ service cloud.firestore {
       return numOuNulo(d, 'custo') && (!('ficha' in d) || d.ficha == null || fichaOk(d.ficha));
     }
     // Aparência da loja: nome de verdade, textos curtos e cores no formato #rrggbb.
+    // Logo e capa: só endereço https, sem espaço, aspas, parênteses ou < > (não escapa do atributo nem do CSS).
+    function urlOk(t, k) { return !(k in t) || (t[k] is string && t[k].size() <= 500 && t[k].matches('https://[A-Za-z0-9._~:/?#@!$&*+,;=%-]+')); }
     function temaOk(t) {
-      return t is map && t.size() <= 24
+      return t is map && t.size() <= 40
         && corOk(t, 'primaria') && corOk(t, 'secundaria') && corOk(t, 'destaque') && corOk(t, 'fundo')
-        && corOk(t, 'superficie') && corOk(t, 'texto') && corOk(t, 'sobrePrimaria')
+        && corOk(t, 'superficie') && corOk(t, 'texto') && corOk(t, 'sobrePrimaria') && corOk(t, 'botao')
         && textoAte(t, 'fonteTitulo', 40) && textoAte(t, 'fonteTexto', 40) && textoAte(t, 'etiqueta', 20)
         && textoAte(t, 'fotoFormato', 20) && textoAte(t, 'fotoEncaixe', 20)
+        && textoAte(t, 'cabecalho', 20) && textoAte(t, 'borda', 20) && textoAte(t, 'arte', 20) && textoAte(t, 'alinhamento', 20)
+        && textoAte(t, 'logoFormato', 20) && textoAte(t, 'botaoFormato', 20) && textoAte(t, 'card', 20)
+        && textoAte(t, 'fundoEstilo', 20) && textoAte(t, 'letra', 20)
+        && urlOk(t, 'logo') && urlOk(t, 'capa')
         && (!('raio' in t) || (t.raio is number && t.raio >= 0 && t.raio <= 40));
     }
     function aparenciaOk(d) {

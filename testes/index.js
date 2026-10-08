@@ -1402,7 +1402,7 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   assert.deepStrictEqual(l.lojas.map((x) => x.id), ['banca', 'espetinhos']); assert.deepStrictEqual(l.lojas[1].mes, { receita: 150.5, pedidos: 4 });
   assert.strictEqual(l.lojas[1].modulos.pdv, true); assert.strictEqual(l.lojas[1].modulos.ia, false); assert.strictEqual(l.lojas[0].modulos.ia, true);
   // criar loja
-  for (const ruim of [{ id: 'banca', nome: 'X loja' }, { id: 'Com Espaço', nome: 'X loja' }, { id: 'admin', nome: 'X loja' }, { id: 'ok-loja', nome: '' }, { id: 'ok-loja', nome: 'Loja', modelo: 'padaria' }, { id: 'espetinhos', nome: 'Outra' }])
+  for (const ruim of [{ id: 'banca', nome: 'X loja' }, { id: 'Com Espaço', nome: 'X loja' }, { id: 'admin', nome: 'X loja' }, { id: 'ok-loja', nome: '' }, { id: 'ok-loja', nome: 'Loja', modelo: 'inexistente' }, { id: 'espetinhos', nome: 'Outra' }])
     assert.ok([400, 409].includes((await ch('super', { acao: 'criar-loja', ...ruim })).status), JSON.stringify(ruim));
   const c = await ch('super', { acao: 'criar-loja', id: 'jantinha-da-lu', nome: 'Jantinha da <b>Lu</b>', modelo: 'jantinha', emailDono: 'ZE@x.com' }); assert.strictEqual(c.status, 200, JSON.stringify(c.corpo));
   const ficha = db._dados.get('tenants/jantinha-da-lu'); assert.strictEqual(ficha.tema.fonteTitulo, 'Lora'); assert.ok(!/[<>]/.test(ficha.nome)); assert.deepStrictEqual(ficha.modulos, { ia: false });
@@ -1852,9 +1852,9 @@ teste('iPhone e tela desatualizada: recarga busca no servidor, pedido não fica 
 });
 
 teste('plataforma: modelos iguais nos dois lados, endereço sugerido e abas por módulo', async () => {
-  const L = await import(raiz('js/plataforma-lib.js')), Tm = await import(raiz('js/tema.js')).catch(() => null), M = require(raiz('lib/modelos')), P = await import(raiz('js/papeis-lib.js')), T = require(raiz('lib/tenant'));
-  if (Tm) assert.deepStrictEqual(JSON.parse(JSON.stringify(Tm.MODELOS)), M.MODELOS, 'js/tema.js e lib/modelos.js têm os mesmos modelos');
-  else assert.ok(require('fs').readFileSync(raiz('js/tema.js'), 'utf8').includes(JSON.stringify(M.MODELOS.jantinha.primaria).replace(/"/g, "'")));
+  const L = await import(raiz('js/plataforma-lib.js')), Ap = await import(raiz('js/aparencia-lib.js')), M = require(raiz('lib/modelos')), P = await import(raiz('js/papeis-lib.js')), T = require(raiz('lib/tenant'));
+  for (const [k, m] of Object.entries(M.MODELOS)) assert.deepStrictEqual(m, JSON.parse(JSON.stringify(Ap.MODELOS[k])), `lib/modelos.js e js/aparencia-lib.js: o modelo ${k} é igual nos dois`);
+  for (const k of ['hortifruti', 'espetinhos', 'jantinha']) assert.ok(M.MODELOS[k], k);
   assert.strictEqual(L.sugerirId('  Espetinhos do Zé!! '), 'espetinhos-do-ze'); assert.strictEqual(L.sugerirId('Açaí & Cia'), 'acai-cia'); assert.ok(T.idValido(L.sugerirId('Jantinha da Lú — Setor Bueno 2')));
   assert.strictEqual(L.idValido(L.sugerirId('x'.repeat(80))), true); assert.strictEqual(L.idValido(''), false);
   // feira do dia: quarta só tem a banca; sábado tem a banca e os pães; nos outros dias, nenhuma
@@ -2045,6 +2045,25 @@ teste('horário de entrega é opcional na tela: sem escolha, o pedido segue como
   assert.ok(/<option value="">Tanto faz \(a combinar\)<\/option>/.test(loja) && /Quando prefere receber\? \(opcional\)/.test(html));
   const cfg = E.lerConfig({ entrega: { horarios: ['Manhã', 'Tarde'] } });
   assert.strictEqual(E.horarioValido(cfg, ''), ''); assert.strictEqual(E.horarioACombinar(cfg, ''), true); assert.strictEqual(E.horarioACombinar(cfg, 'Manhã'), false);
+});
+
+teste('aparência: os modelos prontos são legíveis, completos e passam pela conferência do tema', async () => {
+  const A = await import(raiz('js/aparencia-lib.js'));
+  const CORES = ['primaria', 'secundaria', 'destaque', 'fundo', 'superficie', 'texto', 'sobrePrimaria'];
+  const cfg = { padrao: A.MODELOS.hortifruti, cores: CORES, fontesTitulo: A.FONTES.titulo, fontesTexto: A.FONTES.texto, formatos: A.FOTO_FORMATOS };
+  assert.deepStrictEqual(Object.keys(A.MODELOS).sort(), Object.keys(A.NOMES_MODELOS).sort(), 'todo modelo tem nome no painel');
+  for (const [nome, m] of Object.entries(A.MODELOS)) {
+    assert.deepStrictEqual(A.temaSeguro(m, cfg), m, `${nome}: nada do modelo é descartado pela conferência`);
+    for (const k of CORES) assert.ok(A.corValida(m[k]), `${nome}.${k}`);
+    assert.deepStrictEqual(A.avisosDeContraste(m), [], `${nome}: o modelo não pode nascer com aviso de leitura`);
+    assert.ok(A.FONTES.titulo[m.fonteTitulo] && A.FONTES.texto[m.fonteTexto], `${nome}: letras da lista`);
+  }
+  // toda letra da lista tem peso pedido certo (pedir peso que a fonte não tem derruba o carregamento)
+  for (const f of Object.keys(A.PESOS)) assert.ok(A.FONTES.titulo[f] || A.FONTES.texto[f], f);
+  // as opções do painel cabem na regra do banco (texto de até 20 letras) e o padrão de cada uma é o visual de sempre
+  for (const [k, lista] of Object.entries(A.OPCOES)) { assert.ok(lista.length >= 2, k); for (const v of lista) assert.ok(/^[a-z-]{1,20}$/.test(v), `${k}=${v}`); }
+  const regras = require('fs').readFileSync(raiz('firestore.rules'), 'utf8');
+  for (const k of Object.keys(A.OPCOES)) assert.ok(new RegExp(`textoAte\\(t, '${k}', 20\\)`).test(regras), `regra do banco confere o campo ${k}`);
 });
 
 // ------------------------------------------------------------------ testes de segurança (arquivo próprio)

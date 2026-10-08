@@ -1,9 +1,9 @@
 /* Header */
 #header-principal { background: var(--forest); color: var(--sobre-primaria); position: relative; overflow: hidden; padding: 0; }
-#header-principal::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(ellipse 80% 60% at 70% 20%, rgba(78,148,103,0.25) 0%, transparent 60%), radial-gradient(ellipse 50% 80% at 10% 80%, rgba(200,120,58,0.15) 0%, transparent 50%); z-index: 0; }
+#header-principal::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(ellipse 80% 60% at 70% 20%, color-mix(in srgb, var(--leaf) 25%, transparent) 0%, transparent 60%), radial-gradient(ellipse 50% 80% at 10% 80%, color-mix(in srgb, var(--earth) 15%, transparent) 0%, transparent 50%); z-index: 0; }
 .header-inner { position: relative; z-index: 1; padding: 36px 28px 28px; max-width: 1260px; margin: 0 auto; }
 .header-eyebrow { display: inline-flex; align-items: center; gap: 6px; background: rgba(126,200,160,0.2); border: 1px solid rgba(126,200,160,0.3); color: var(--mint); font-size: 0.72rem; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 5px 14px; border-radius: 30px; margin-bottom: 14px; }
-#header-principal h1 { font-family: 'Fraunces', serif; font-size: clamp(2.2rem, 5vw, 3.2rem); font-weight: 900; line-height: 1.05; letter-spacing: -1px; margin-bottom: 6px; }
+#header-principal h1 { font-family: var(--fonte-titulo); font-size: clamp(2.2rem, 5vw, 3.2rem); font-weight: 900; line-height: 1.05; letter-spacing: -1px; margin-bottom: 6px; }
 #header-principal h1 em { font-style: italic; color: var(--earth-light); font-weight: 300; }
 .header-subtitle { font-size: 1.05rem; font-weight: 500; color: var(--sage); margin-bottom: 20px; }
 .header-pills { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -59,7 +59,7 @@
 .produto-categoria { font-size: 0.75rem; font-weight: 700; color: var(--mint-dark); text-transform: uppercase; letter-spacing: 1px; }
 .produto-nome { font-size: 1rem; color: var(--text-dark); line-height: 1.2; font-weight: 700; }
 .produto-preco-row { display: flex; align-items: flex-end; justify-content: space-between; margin-top: auto; padding-top: 8px; pointer-events: auto;}
-.produto-preco { font-family: 'Fraunces', serif; font-size: 1.55rem; font-weight: 800; color: var(--forest); letter-spacing: -0.5px; line-height: 1; }
+.produto-preco { font-family: var(--fonte-titulo); font-size: 1.55rem; font-weight: 800; color: var(--forest-texto, var(--forest)); letter-spacing: -0.5px; line-height: 1; }
 .produto-preco span { font-size: 0.8rem; font-weight: 600; color: var(--text-light); }
 
 .btn-add { width: 44px; height: 44px; border-radius: 50%; border: none; background: var(--forest); color: var(--sobre-primaria); font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2); position: relative; }
@@ -70,7 +70,7 @@
 /* Carrinho Sidebar */
 .carrinho { flex: 0 0 350px; background: var(--warm-white); border-radius: var(--radius); box-shadow: var(--shadow-md); display: flex; flex-direction: column; position: sticky; top: 140px; max-height: calc(100vh - 160px); border: 1px solid rgba(0,0,0,0.04); }
 .carrinho-topo { padding: 20px; border-bottom: 1px solid var(--parchment); display: flex; justify-content: space-between; align-items: center; }
-.carrinho-titulo { font-family: 'Fraunces', serif; font-size: 1.3rem; font-weight: 700; color: var(--forest); display: flex; align-items: center; gap: 8px; }
+.carrinho-titulo { font-family: var(--fonte-titulo); font-size: 1.3rem; font-weight: 700; color: var(--forest-texto, var(--forest)); display: flex; align-items: center; gap: 8px; }
 .carrinho-titulo-badge { background: var(--forest); color: var(--mint); font-size: 0.75rem; padding: 2px 10px; border-radius: 20px; font-weight: bold; }
 .btn-limpar { background: none; border: none; color: var(--text-light); font-weight: 600; cursor: pointer; font-size: 0.85rem; padding: 8px; transition: color 0.2s; }
 .btn-limpar:hover { color: var(--danger); }
@@ -86,7 +86,7 @@
 .btn-qtd:active { background: var(--parchment); transform: scale(0.9); }
 .qtd-input { width: 50px; height: 36px; text-align: center; border: 1.5px solid var(--linha); border-radius: 8px; font-weight: 700; font-size: 0.9rem; outline: none; background: var(--superficie); color: var(--text-dark); transition: 0.2s; }
 .qtd-input:focus { border-color: var(--forest); box-shadow: 0 0 0 3px rgba(26,58,42,0.1); }
-.item-preco { font-family: 'Fraunces', serif; font-weight: 700; font-size: 1.05rem; color: var(--forest); }
+.item-preco { font-family: var(--fonte-titulo); font-weight: 700; font-size: 1.05rem; color: var(--forest-texto, var(--forest)); }
 
 .upsell-box { background: var(--foam); margin: 10px 20px; padding: 12px; border-radius: 12px; font-size: 0.85rem; border: 1px dashed var(--mint-dark); display: flex; justify-content: space-between; align-items: center; }
 .upsell-box button { background: var(--forest); color: var(--sobre-primaria); border: none; padding: 6px 12px; border-radius: 8px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: 0.2s; }
@@ -95,7 +95,7 @@
 .carrinho-rodape { padding: 20px; border-top: 1px solid var(--parchment); background: var(--warm-white); border-radius: 0 0 var(--radius) var(--radius); z-index: 10; }
 .total-box { background: var(--forest); border-radius: 14px; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .total-label { font-size: 0.85rem; font-weight: 700; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 0.5px; }
-.total-valor { font-family: 'Fraunces', serif; font-size: 1.8rem; color: var(--sobre-primaria); font-weight: 700; }
+.total-valor { font-family: var(--fonte-titulo); font-size: 1.8rem; color: var(--sobre-primaria); font-weight: 700; }
 
 .btn-finalizar { width: 100%; padding: 16px; min-height: 52px; background: var(--forest); color: var(--sobre-primaria); border: none; border-radius: var(--radius-sm); font-size: 1.05rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2); }
 .btn-finalizar:hover:not(:disabled) { background: var(--forest-mid); transform: translateY(-2px); }
@@ -103,7 +103,7 @@
 
 /* Empty States */
 .empty-state { text-align: center; padding: 40px 20px; color: var(--text-light); }
-.empty-state svg { width: 64px; height: 64px; opacity: 0.3; margin-bottom: 16px; color: var(--forest); }
+.empty-state svg { width: 64px; height: 64px; opacity: 0.3; margin-bottom: 16px; color: var(--forest-texto, var(--forest)); }
 .empty-state p { font-weight: 600; font-size: 1.1rem; color: var(--text-mid); }
 .empty-state span { font-size: 0.9rem; display: block; margin-top: 4px; }
 
@@ -112,7 +112,7 @@
 .modal-overlay.aberto { display: flex; animation: fadeIn 0.2s ease; }
 .modal { background: var(--superficie); border-radius: var(--radius); width: 100%; max-width: 520px; max-height: 85dvh; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; }
 .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--parchment); background: var(--superficie); z-index: 2; flex-shrink: 0; }
-.modal-head h2 { font-family: 'Fraunces', serif; font-size: 1.5rem; color: var(--forest); }
+.modal-head h2 { font-family: var(--fonte-titulo); font-size: 1.5rem; color: var(--forest-texto, var(--forest)); }
 .modal-body { overflow-y: auto; padding: 24px; flex: 1; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
 .modal-footer { padding: 16px 24px; background: var(--superficie); border-top: 1px solid var(--parchment); flex-shrink: 0; }
 

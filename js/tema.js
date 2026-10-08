@@ -12,8 +12,11 @@
 import { getDoc, doc, db } from './firebase.js';
 import { feiraDoDia, feirasDaFicha, feiraDoCliente, feirasDoCondominio, feiraDoEndereco } from './plataforma-lib.js';
 import { lerFeiraCliente, gravarFeiraCliente } from './feira-cliente.js';
-import { TENANT, fichaRef, chave, urlDaLoja, ehLojaOriginal } from './tenant.js';
+import { TENANT, fichaRef, chave, urlDaLoja, ehLojaOriginal, EM_PREVIA } from './tenant.js';
 import { ARTES, arteDoTipo } from './arte-lib.js';
+import { OPCOES, urlImagem, corLegivel, legivelSobre, FONTES, MODELOS, NOMES_MODELOS, FOTO_FORMATOS, linkDaFonte } from './aparencia-lib.js';
+// As listas moraram aqui por muito tempo; quem já importava daqui continua funcionando.
+export { FONTES, MODELOS, NOMES_MODELOS, FOTO_FORMATOS };
 
 // DESENHO DO CABEÇALHO. A loja original mostra o caixote de frutas, que já vem na página.
 // As outras ficam sem desenho até a ficha chegar, e aí ganham o traço do tipo de negócio delas.
@@ -61,38 +64,33 @@ function aplicarApp(ficha) {
     img.src = `${base}&icone=1`;
 }
 
-/** Fontes que o painel oferece. Para acrescentar uma: ponha aqui e ela aparece no painel. */
-export const FONTES = {
-    titulo: { Fraunces: "'Fraunces', Georgia, serif", 'Bricolage Grotesque': "'Bricolage Grotesque', system-ui, sans-serif", 'Playfair Display': "'Playfair Display', Georgia, serif", Oswald: "'Oswald', 'Arial Narrow', sans-serif", Lora: "'Lora', Georgia, serif" },
-    texto: { Figtree: "'Figtree', system-ui, sans-serif", 'Nunito Sans': "'Nunito Sans', system-ui, sans-serif", 'DM Sans': "'DM Sans', system-ui, sans-serif", Barlow: "'Barlow', system-ui, sans-serif" },
-};
 const NO_SITE = new Set(['Fraunces', 'Figtree']);          // já carregadas pelo index.html
 
-/** Modelos prontos (ponto de partida no painel). */
-export const MODELOS = {
-    hortifruti: { primaria: '#1a3a2a', secundaria: '#4a9467', destaque: '#c4773a', fundo: '#faf7f2', superficie: '#ffffff', texto: '#1a1a18', sobrePrimaria: '#ffffff', fonteTitulo: 'Fraunces', fonteTexto: 'Figtree', raio: 14, etiqueta: 'barbante' },
-    espetinhos: { primaria: '#b3261e', secundaria: '#e8622c', destaque: '#f2b33d', fundo: '#141110', superficie: '#211c1a', texto: '#f4ece6', sobrePrimaria: '#ffffff', fonteTitulo: 'Oswald', fonteTexto: 'Barlow', raio: 8, etiqueta: 'limpa' },
-    jantinha: { primaria: '#7a2e12', secundaria: '#c8662e', destaque: '#e0a23a', fundo: '#fbf3e7', superficie: '#fffaf2', texto: '#2a1c14', sobrePrimaria: '#fff8ef', fonteTitulo: 'Lora', fonteTexto: 'Nunito Sans', raio: 18, etiqueta: 'limpa' },
-};
-
-/** Formatos da área da foto no cartão do produto: rótulo e proporção (largura / altura). */
-export const FOTO_FORMATOS = { quadrada: ['Quadrada', '1 / 1'], alta: ['Em pé', '4 / 5'], 'bem-alta': ['Bem em pé (pacotes, garrafas)', '2 / 3'], larga: ['Deitada', '4 / 3'] };
 
 const cor = (v) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null);
 const mix = (a, pct, b) => `color-mix(in srgb, ${a} ${pct}%, ${b})`;
 
+// Classes que o tema liga na página (cada escolha de OPCOES vira uma classe; a 1ª de cada lista, o padrão, não liga nada)
+const CLASSES_OPCOES = Object.entries(OPCOES).flatMap(([k, lista]) => lista.slice(1).map((v) => [k, v, `${k === 'etiqueta' ? 'etiqueta' : `ap-${k}`}-${v}`]));
+const RAIO_BOTAO = { arredondado: '14px', quadrado: '6px' };
+
 /** Transforma um tema em variáveis de CSS. Devolve { variaveis, classes } sem tocar na página. */
 export function variaveisDoTema(tema) {
     const t = tema || {}, v = {};
-    const p = cor(t.primaria), s = cor(t.secundaria), d = cor(t.destaque), f = cor(t.fundo), sup = cor(t.superficie), tx = cor(t.texto), sp = cor(t.sobrePrimaria);
+    const p = cor(t.primaria), s = cor(t.secundaria), d = cor(t.destaque), f = cor(t.fundo), sup = cor(t.superficie), tx = cor(t.texto), sp = cor(t.sobrePrimaria), bt = cor(t.botao);
     const fundo = f || 'var(--cream)', superf = sup || '#ffffff';
     if (p) { v['--forest'] = p; v['--forest-mid'] = mix(p, 82, superf); }
+    // A cor principal também é usada como COR DE TEXTO (nome do produto, preço, botões de contorno). Num fundo
+    // escuro, um vermelho-escuro some: aqui ela é clareada (ou escurecida) só o necessário para ler bem.
+    if (p) v['--forest-texto'] = corLegivel(p, [sup || '#ffffff', f || '#faf7f2']);
     if (s) { v['--leaf'] = s; v['--mint'] = mix(s, 62, superf); v['--mint-dark'] = mix(s, 78, tx || '#000000'); v['--sage'] = mix(s, 38, superf); v['--foam'] = mix(s, 14, superf); }
     if (d) { v['--earth'] = d; v['--earth-light'] = mix(d, 70, superf); v['--earth-forte'] = mix(d, 72, tx || '#000000'); v['--manga'] = d; }
     if (f) { v['--cream'] = f; v['--parchment'] = mix(f, 90, tx || '#000000'); }
     if (sup) { v['--superficie'] = sup; v['--warm-white'] = sup; }
     if (tx) { v['--text-dark'] = tx; v['--text-mid'] = mix(tx, 76, fundo); v['--text-light'] = mix(tx, 58, fundo); v['--linha'] = mix(tx, 16, fundo); }
     if (sp) v['--sobre-primaria'] = sp;
+    // COR DOS BOTÕES (opcional): sem ela, os botões usam a cor principal, como sempre
+    if (bt) { v['--cor-botao'] = bt; v['--cor-botao-mid'] = mix(bt, 82, '#ffffff'); v['--sobre-botao'] = legivelSobre(bt); v['--cor-botao-texto'] = corLegivel(bt, [sup || '#ffffff', f || '#faf7f2']); }
     if (FONTES.titulo[t.fonteTitulo]) v['--fonte-titulo'] = FONTES.titulo[t.fonteTitulo];
     if (FONTES.texto[t.fonteTexto]) v['--fonte-texto'] = FONTES.texto[t.fonteTexto];
     const raio = Number(t.raio);
@@ -101,21 +99,26 @@ export function variaveisDoTema(tema) {
     if (FOTO_FORMATOS[t.fotoFormato]) v['--foto-proporcao'] = FOTO_FORMATOS[t.fotoFormato][1];
     if (t.fotoFormato === 'alta') v['--foto-hero'] = '1 / 1'; else if (t.fotoFormato === 'bem-alta') v['--foto-hero'] = '4 / 5';   // a foto grande, ao abrir o produto, acompanha
     if (t.fotoEncaixe === 'inteira') v['--foto-encaixe'] = 'contain';
+    if (RAIO_BOTAO[t.botaoFormato]) v['--raio-botao'] = RAIO_BOTAO[t.botaoFormato];
     // etiqueta: em tema escuro o "papel" claro continua claro (é um objeto), com tinta escura
-    return { variaveis: v, classes: { 'etiqueta-limpa': t.etiqueta === 'limpa' } };
+    const classes = { 'com-cor-botao': !!bt };
+    for (const [k, val, classe] of CLASSES_OPCOES) classes[classe] = t[k] === val;
+    // capa só vale com uma foto de verdade; sem ela, o cabeçalho fica na cor lisa
+    if (t.cabecalho === 'capa' && !urlImagem(t.capa)) classes['ap-cabecalho-capa'] = false;
+    return { variaveis: v, classes };
 }
 
-const carregarFonte = (nome) => {
+/** Carrega uma letra da lista no Google Fonts (uma vez só). Usada também pelo painel, nas amostras. */
+export const carregarFonte = (nome) => {
     // só as fontes da nossa lista: o nome vem da ficha da loja e antes entrava direto num seletor e num endereço
-    if (typeof nome !== 'string' || !(FONTES.titulo[nome] || FONTES.texto[nome])) return;
-    if (NO_SITE.has(nome) || [...document.querySelectorAll('link[data-fonte]')].some((l) => l.dataset.fonte === nome)) return;
+    const href = linkDaFonte(nome);
+    if (!href || NO_SITE.has(nome) || [...document.querySelectorAll('link[data-fonte]')].some((l) => l.dataset.fonte === nome)) return;
     const l = document.createElement('link');
-    l.rel = 'stylesheet'; l.dataset.fonte = nome;
-    l.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(nome).replace(/%20/g, '+')}:wght@400;600;700&display=swap`;
+    l.rel = 'stylesheet'; l.dataset.fonte = nome; l.href = href;
     document.head.appendChild(l);
 };
 
-/** Aplica o tema em um elemento (a página inteira, ou a prévia do painel). */
+/** Aplica o tema em um elemento (a página inteira, ou uma amostra no painel). */
 export function aplicarTema(tema, alvo = document.documentElement) {
     const { variaveis, classes } = variaveisDoTema(tema);
     (alvo._temaVars || []).forEach((k) => alvo.style.removeProperty(k));
@@ -124,6 +127,28 @@ export function aplicarTema(tema, alvo = document.documentElement) {
     Object.entries(classes).forEach(([c, on]) => alvo.classList.toggle(c, !!on));
     if (tema) { carregarFonte(tema.fonteTitulo); carregarFonte(tema.fonteTexto); }
     if (alvo === document.documentElement && tema && cor(tema.primaria)) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', tema.primaria);
+}
+
+/**
+ * LOGO e FOTO DE CAPA no cabeçalho da loja. Os endereços vêm da ficha e passam por urlImagem
+ * (só https, sem nada que escape do atributo); entram como <img>, nunca como texto de CSS.
+ */
+function aplicarCabecalho(tema, nome) {
+    const cab = document.getElementById('header-principal'), dentro = cab && cab.querySelector('.header-inner');
+    if (!cab || !dentro) return;
+    const t = tema || {}, logo = urlImagem(t.logo), capa = t.cabecalho === 'capa' ? urlImagem(t.capa) : '';
+    let img = document.getElementById('header-logo');
+    if (logo) {
+        if (!img) { img = document.createElement('img'); img.id = 'header-logo'; img.className = 'header-logo'; img.decoding = 'async'; dentro.insertBefore(img, dentro.firstChild); }
+        if (img.getAttribute('src') !== logo) img.src = logo;
+        img.alt = nome ? `Logo de ${nome}` : 'Logo da loja';
+        img.classList.toggle('quadrado', t.logoFormato === 'quadrado');
+    } else if (img) img.remove();
+    let fundo = document.getElementById('header-capa');
+    if (capa) {
+        if (!fundo) { fundo = document.createElement('img'); fundo.id = 'header-capa'; fundo.className = 'header-capa'; fundo.alt = ''; fundo.setAttribute('aria-hidden', 'true'); fundo.decoding = 'async'; cab.insertBefore(fundo, cab.firstChild); }
+        if (fundo.getAttribute('src') !== capa) fundo.src = capa;
+    } else if (fundo) fundo.remove();
 }
 
 /** Módulo ligado nesta loja? A loja original mantém tudo ligado, como sempre foi. */
@@ -139,6 +164,7 @@ const escrever = (id, texto) => { const el = document.getElementById(id); if (el
 function aplicarFicha(ficha, completa = true) {
     if (!ficha) return;
     aplicarTema(ficha.tema || null);
+    aplicarCabecalho(ficha.tema || null, typeof ficha.nome === 'string' ? ficha.nome : '');
     if (!ehLojaOriginal && completa) aplicarArte(ficha.tipo);
     if (!ehLojaOriginal) aplicarApp(ficha);
     if (ficha.nome && !(ehLojaOriginal && !ficha.tema)) {          // a loja original mantém o título desenhado, a não ser que tenha sido personalizada
@@ -276,6 +302,26 @@ export function feiraDaConta(id) {
     gravarFeiraCliente(id); montarFeira(FEIRAS_DA_LOJA);
 }
 
+// ---------------------------------------------------------------------
+// PRÉVIA (loja aberta dentro do painel, em /previa): o painel manda a aparência que está sendo
+// mexida e a loja mostra na hora, sem gravar. Só vale mensagem da PRÓPRIA página que abriu a prévia
+// (mesmo endereço). Os valores passam pelas mesmas conferências da ficha gravada.
+// ---------------------------------------------------------------------
+let FICHA_PREVIA = null, FICHA_GRAVADA = null;
+const textoAte = (v, n) => (typeof v === 'string' ? v.slice(0, n) : undefined);
+if (EM_PREVIA && typeof window !== 'undefined' && window.parent && window.parent !== window) {
+    window.addEventListener('message', (e) => {
+        if (e.source !== window.parent || e.origin !== location.origin) return;
+        const d = e.data;
+        if (!d || d.tipo !== 'banca-previa' || !d.ficha || typeof d.ficha !== 'object') return;
+        const f = d.ficha;
+        const n = { nome: textoAte(f.nome, 60), subtitulo: textoAte(f.subtitulo, 120), nota: textoAte(f.nota, 200), tema: f.tema && typeof f.tema === 'object' ? f.tema : null };
+        FICHA_PREVIA = Object.fromEntries(Object.entries(n).filter(([, v]) => v !== undefined));     // campo que não veio não apaga o gravado
+        aplicarFicha({ ...(FICHA_GRAVADA || {}), ...FICHA_PREVIA });
+    });
+    try { window.parent.postMessage({ tipo: 'banca-previa-pronta' }, location.origin); } catch (_) { /* painel fechado */ }
+}
+
 /** Chamado uma vez pela loja. Usa a ficha guardada no aparelho na hora e confere no banco depois. */
 export async function iniciarTema() {
     // veio pelo link da feira (?feira=id): este aparelho passa a ser desta feira
@@ -303,7 +349,8 @@ export async function iniciarTema() {
         if (ficha) vivas.set(TENANT, ficha);
         const feiras = feirasCruas.map((f) => ({ ...f, lojas: (f.lojas || []).filter((l) => { const v = vivas.get(l && l.id); return !(v && v.ativo === false); })
             .map((l) => { const v = vivas.get(l.id); return v ? { ...l, nome: v.nome || l.nome, cor: (v.tema && v.tema.primaria) || l.cor } : l; }) }));
-        if (ficha) aplicarFicha(ficha);
+        FICHA_GRAVADA = ficha;
+        if (ficha || FICHA_PREVIA) aplicarFicha({ ...(ficha || {}), ...(FICHA_PREVIA || {}) });
         FEIRAS_DA_LOJA = feiras;
         montarFeira(feiras);
         try { localStorage.setItem(K, JSON.stringify({ v: 3, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, feiras: ficha.feiras || null, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feiras })); } catch (_) { /* cheio */ }

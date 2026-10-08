@@ -41,7 +41,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
     width: auto; aspect-ratio: 1; height: min(calc(100% - 28px), clamp(126px, 32vw, 200px)); }
 .header-arte.plana ~ .header-inner .header-acoes { padding-right: clamp(136px, 35vw, 216px); }
 /* toldo listrado pendurado embaixo do cabeçalho (igual ao do painel); usa a cor principal da loja */
-.toldo-loja { height: 22px; background: repeating-linear-gradient(90deg, var(--forest) 0 22px, #f3ead8 22px 44px);
+.toldo-loja { height: 22px; background: repeating-linear-gradient(90deg, var(--forest) 0 22px, var(--toldo-claro, #f3ead8) 22px 44px);
     -webkit-mask: radial-gradient(circle 11px at 11px 11px, #000 98%, transparent) 0 0 / 22px 22px repeat-x, linear-gradient(#000, #000) 0 0 / 100% 11px no-repeat;
             mask: radial-gradient(circle 11px at 11px 11px, #000 98%, transparent) 0 0 / 22px 22px repeat-x, linear-gradient(#000, #000) 0 0 / 100% 11px no-repeat; }
 .chip-header {
@@ -59,6 +59,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 /* faixa das lojas da feira (só aparece quando há mais de uma loja) */
 .feira-lojas { display: flex; gap: 8px; overflow-x: auto; padding: 10px 16px; background: var(--text-dark); scrollbar-width: none; scroll-snap-type: x proximity; }
 .feira-lojas::-webkit-scrollbar { display: none; }
+.feira-lojas[hidden] { display: none; }   /* sem outra loja na feira, a faixa some (antes ficava uma tira escura vazia no topo) */
 .feira-loja { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 14px; border-radius: 999px; scroll-snap-align: center;
     color: var(--cream); text-decoration: none; font-weight: 600; font-size: .9rem; border: 1px solid color-mix(in srgb, var(--cream) 28%, transparent); }
 .feira-loja i { width: 10px; height: 10px; border-radius: 50%; background: var(--leaf); }
@@ -68,14 +69,14 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 
 /* ---------- 3. BUSCA E CATEGORIAS ---------- */
 .controles-inner { padding: 12px 20px; }
-.btn-voz { color: var(--forest); }
+.btn-voz { color: var(--forest-texto, var(--forest)); }
 .cat-btn { color: var(--text-mid); border-color: var(--linha); }
 
 /* faixa "Seus de sempre": cards lado a lado, rolando para o lado */
 .vitrine { flex: 2; min-width: 0; max-width: 100%; align-self: stretch; display: flex; flex-direction: column; gap: 26px; }
 .faixa-sempre { min-width: 0; max-width: 100%; }
 .vitrine .produtos-grid { flex: none; width: 100%; }
-.faixa-sempre h2 { font-family: var(--fonte-titulo); font-size: 1.3rem; font-weight: 650; color: var(--forest); margin-bottom: 12px; }
+.faixa-sempre h2 { font-family: var(--fonte-titulo); font-size: 1.3rem; font-weight: 650; color: var(--forest-texto, var(--forest)); margin-bottom: 12px; }
 .faixa-rolo { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 10px; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .faixa-rolo::-webkit-scrollbar { display: none; }
 .faixa-rolo .produto-card { flex: 0 0 168px; scroll-snap-align: start; }
@@ -134,7 +135,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 @media (hover: hover) { .card-add:hover { background: var(--forest-mid); } }
 .card-add:active { transform: scale(.96); }
 .card-qtd { display: flex; align-items: center; justify-content: space-between; padding: 3px; background: var(--foam); color: var(--text-dark); }
-.card-qtd button { width: 40px; height: 40px; border: 0; border-radius: 50%; background: var(--superficie); color: var(--forest); font-size: 1.3rem; font-weight: 700; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.08); transition: transform .12s ease; }
+.card-qtd button { width: 40px; height: 40px; border: 0; border-radius: 50%; background: var(--superficie); color: var(--forest-texto, var(--forest)); font-size: 1.3rem; font-weight: 700; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.08); transition: transform .12s ease; }
 .card-qtd button:active { transform: scale(.88); }
 .card-qtd output { font-variant-numeric: tabular-nums; white-space: nowrap; padding: 0 4px; }
 
@@ -149,7 +150,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .modo-btn {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
     min-height: 48px; padding: 4px 8px; border-radius: 999px; font-family: inherit; line-height: 1.12; cursor: pointer;
-    border: 1.6px solid var(--forest-mid); background: var(--superficie); color: var(--forest);
+    border: 1.6px solid var(--forest-mid); background: var(--superficie); color: var(--forest-texto, var(--forest));
     transition: transform .12s ease, filter .2s ease;
 }
 .modo-btn b { font-weight: 800; font-size: .92rem; white-space: nowrap; }
@@ -221,7 +222,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .md-seg-ico .ico { width: 19px; height: 19px; }
 .md-resumo-estimado, .md-resumo-pesar { background: var(--etiqueta); color: var(--etiqueta-tinta); border: 0; }
 .timeline-bola .ico { width: 18px; height: 18px; }
-.timeline-bola { color: var(--forest); }
+.timeline-bola { color: var(--forest-texto, var(--forest)); }
 .ia-topo-cesto .ico { width: 24px; height: 24px; }
 #btn-ia-camera { display: grid; place-items: center; }
 .ia-digitando span { width: 8px; height: 8px; border-radius: 50%; background: var(--leaf); display: inline-block; }
@@ -234,7 +235,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 
 .circulo-sucesso { width: 80px; height: 80px; margin: 0 auto 20px; border-radius: 50%; display: grid; place-items: center; background: var(--success-light); color: var(--success); animation: scaleIn .5s var(--mola); }
 .circulo-sucesso path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: desenha .45s ease forwards .3s; }
-.title-success { font-family: var(--fonte-titulo); color: var(--forest); margin-bottom: 12px; font-size: 1.8rem; }
+.title-success { font-family: var(--fonte-titulo); color: var(--forest-texto, var(--forest)); margin-bottom: 12px; font-size: 1.8rem; }
 
 /* ---------- 10. MOVIMENTO ---------- */
 /* botão ↔ seletor: entra "pulando" */
@@ -280,7 +281,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .atalhos[hidden] { display: none; }
 .atalho { flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 56px; padding: 10px 16px; text-align: left; cursor: pointer;
     background: var(--superficie); color: var(--text-dark); border: 1.5px solid var(--linha); border-radius: var(--raio-card, 14px); font-family: inherit; }
-.atalho b { font-size: .95rem; font-weight: 700; color: var(--forest); }
+.atalho b { font-size: .95rem; font-weight: 700; color: var(--forest-texto, var(--forest)); }
 .atalho small { font-size: .78rem; color: var(--text-mid); white-space: nowrap; }
 .atalho.destaque { border-color: var(--manga); background: color-mix(in srgb, var(--manga) 10%, var(--superficie)); }
 .atalho-par { flex: none; display: flex; align-items: stretch; }
@@ -289,12 +290,12 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
     background: var(--superficie); border: 1.5px solid var(--linha); border-radius: 0 var(--raio-card, 14px) var(--raio-card, 14px) 0; }
 .atalho-par .destaque + .atalho-ver { border-color: var(--manga); }
 @media (max-width: 600px) { .atalhos { margin-right: -16px; padding-right: 16px; } }
-.btn-guardar-lista { width: 100%; min-height: 44px; margin-top: 8px; background: none; border: 0; cursor: pointer; font-family: inherit; font-size: .88rem; font-weight: 600; color: var(--forest); text-decoration: underline; text-underline-offset: 3px; }
+.btn-guardar-lista { width: 100%; min-height: 44px; margin-top: 8px; background: none; border: 0; cursor: pointer; font-family: inherit; font-size: .88rem; font-weight: 600; color: var(--forest-texto, var(--forest)); text-decoration: underline; text-underline-offset: 3px; }
 .header-avaliacao { position: relative; font-size: .86rem; font-weight: 600; margin: -10px 0 14px; color: color-mix(in srgb, var(--sobre-primaria) 88%, transparent); }
 
 /* avaliação do pedido ("Meus pedidos") */
 .avaliar { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--linha); }
-.avaliar-pergunta { display: block; font-weight: 700; color: var(--forest); margin-bottom: 4px; }
+.avaliar-pergunta { display: block; font-weight: 700; color: var(--forest-texto, var(--forest)); margin-bottom: 4px; }
 .avaliar-estrelas { display: flex; gap: 2px; }
 .avaliar-estrelas button { width: 46px; height: 46px; background: none; border: 0; cursor: pointer; font-size: 1.9rem; line-height: 1; color: var(--text-light); }
 .avaliar-estrelas button.on { color: var(--manga); }
@@ -327,7 +328,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .atalho-arte { position: relative; flex: none; width: 52px; height: 52px; border-radius: 12px; background: color-mix(in srgb, var(--sobre-primaria) 13%, transparent); display: grid; place-items: center; }
 .atalho-arte > svg:first-child { width: 42px; height: 42px; animation: atalhoPousa .7s cubic-bezier(.2, .9, .3, 1.3) .5s both; }
 .atalho-volta { position: absolute; right: -7px; bottom: -7px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
-    background: var(--sobre-primaria); color: var(--forest); border: 2px solid var(--forest); }
+    background: var(--sobre-primaria); color: var(--forest-texto, var(--forest)); border: 2px solid var(--forest); }
 .atalho-volta .ico { width: 13px; height: 13px; stroke-width: 2.6; animation: atalhoGira .9s cubic-bezier(.3, .8, .3, 1) .7s both; }
 @keyframes atalhoChama { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--leaf) 65%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
 @keyframes atalhoGira { from { transform: rotate(-270deg); } to { transform: none; } }
@@ -394,7 +395,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 
 /* ---------- INDICAR PARA UM VIZINHO ---------- */
 .btn-indicar { width: 100%; min-height: 46px; margin-top: 10px; padding: 10px 16px; cursor: pointer; font-family: inherit; font-size: .92rem; font-weight: 700;
-    background: none; color: var(--forest); border: 1.5px dashed color-mix(in srgb, var(--forest) 55%, transparent); border-radius: 999px; }
+    background: none; color: var(--forest-texto, var(--forest)); border: 1.5px dashed color-mix(in srgb, var(--forest) 55%, transparent); border-radius: 999px; }
 .btn-indicar:hover { background: color-mix(in srgb, var(--forest) 7%, transparent); }
 /* Conta do cliente: sair deste aparelho (discreto, no fim de "Meus pedidos") e a dica do link pessoal */
 .btn-esquecer { width: 100%; min-height: 44px; margin-top: 6px; padding: 8px 16px; cursor: pointer; font-family: inherit; font-size: .84rem; font-weight: 600;
@@ -407,7 +408,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 
 /* ---------- PIX copia e cola (chave da própria loja) ---------- */
 .pix-cola { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; padding: 14px; text-align: left; border-radius: 14px; background: color-mix(in srgb, var(--leaf) 9%, var(--superficie)); border: 1.5px solid color-mix(in srgb, var(--leaf) 35%, var(--superficie)); }
-.pix-cola b { font-size: 1.05rem; color: var(--forest); }
+.pix-cola b { font-size: 1.05rem; color: var(--forest-texto, var(--forest)); }
 .pix-cola span { font-size: .86rem; color: var(--text-mid); word-break: break-word; }
 .pix-cola small { font-size: .8rem; color: var(--text-mid); line-height: 1.35; }
 .pix-cola .btn-pix { margin: 4px 0; background: var(--forest); color: var(--sobre-primaria); border-color: var(--forest); font-weight: 700; }

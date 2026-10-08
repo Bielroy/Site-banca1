@@ -692,6 +692,31 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
     assert.deepStrictEqual(A.temaSeguro(null, cfg), cfg.padrao); assert.deepStrictEqual(A.temaSeguro('texto', cfg), cfg.padrao);
     assert.strictEqual(A.temaSeguro({ raio: 99 }, cfg).raio, 14); assert.strictEqual(A.temaSeguro({ raio: '8' }, cfg).raio, 8); assert.strictEqual(A.temaSeguro({ fotoFormato: 'alta', fotoEncaixe: 'inteira' }, cfg).fotoFormato, 'alta');
     for (const cor of ['red', '#fff', '#12345g', 'url(javascript:alert(1))', '#123456;background:url(//x)', ['#123456'], 123456]) assert.strictEqual(A.corValida(cor), false, String(cor));
+    // aparência nova: só as opções da lista; logo e capa só com endereço https limpo; cor dos botões só #rrggbb
+    const novo = A.temaSeguro({ cabecalho: 'capa', borda: 'onda', card: veneno, letra: '__proto__', botao: '#3DDC84', logo: 'https://i.ibb.co/AbC/logo.webp', capa: 'https://x.com/a.png?w=1&t=2' }, cfg);
+    assert.strictEqual(novo.cabecalho, 'capa'); assert.strictEqual(novo.borda, 'onda'); assert.ok(!('card' in novo) && !('letra' in novo)); assert.strictEqual(novo.botao, '#3DDC84');
+    assert.strictEqual(novo.logo, 'https://i.ibb.co/AbC/logo.webp'); assert.strictEqual(novo.capa, 'https://x.com/a.png?w=1&t=2');
+    for (const url of ['http://x.com/a.png', 'javascript:alert(1)', 'https://x.com/a b.png', 'https://x.com/a".png', "https://x.com/a'.png", 'https://x.com/a).png', 'https://x.com/<b>', 'https://x.com/a\\b', 'data:image/png;base64,AAAA', 'https://localhost/a', `https://x.com/${'a'.repeat(500)}`, 123, ['https://x.com/a.png'], veneno]) {
+      assert.strictEqual(A.urlImagem(url), '', String(url)); assert.ok(!('logo' in A.temaSeguro({ logo: url }, cfg)), String(url));
+    }
+    assert.ok(!('botao' in A.temaSeguro({ botao: veneno }, cfg)));
+    // contas de cor: texto legível, paleta de uma cor só, ajustar contraste
+    assert.ok(A.contraste('#000000', '#ffffff') > 20); assert.strictEqual(A.legivelSobre('#1a3a2a'), '#ffffff'); assert.strictEqual(A.legivelSobre('#f2e05a'), '#1a1a18');
+    const vermelhoNoEscuro = A.corLegivel('#b3261e', ['#211c1a', '#141110']);
+    assert.ok(A.contraste(vermelhoNoEscuro, '#211c1a') >= 4.5 && A.contraste(vermelhoNoEscuro, '#141110') >= 4.5, vermelhoNoEscuro);
+    assert.strictEqual(A.corLegivel('#1a3a2a', ['#ffffff']), '#1a3a2a', 'cor que já se lê bem não muda');
+    for (const modo of ['claro', 'escuro']) for (const base of ['#1a3a2a', '#c2416b', '#f2b33d', '#0f4c81', '#777777']) {
+      const p = A.paletaDeUmaCor(base, modo);
+      assert.ok(Object.values(p).every(A.corValida), JSON.stringify(p)); assert.strictEqual(p.primaria, base);
+      assert.ok(A.contraste(p.texto, p.fundo) >= 7 && A.contraste(p.texto, p.superficie) >= 7, `${modo} ${base}: texto legível`);
+      assert.ok(A.contraste(p.primaria, p.sobrePrimaria) >= 3, `${modo} ${base}: botão legível`);
+      assert.strictEqual(A.ehEscura(p.fundo), modo === 'escuro');
+    }
+    assert.strictEqual(A.paletaDeUmaCor(veneno), null);
+    const ruim = { primaria: '#f2e05a', sobrePrimaria: '#ffffff', fundo: '#ffffff', superficie: '#ffffff', texto: '#dddddd', botao: '#d94a7a' };
+    const avisos = A.avisosDeContraste(ruim); assert.deepStrictEqual(avisos.map((a) => a.campo).sort(), ['botao', 'sobrePrimaria', 'texto']);
+    let ajustado = ruim; for (const a of avisos) ajustado = A.ajustarContraste(ajustado, a.campo);
+    assert.deepStrictEqual(A.avisosDeContraste(ajustado), [], JSON.stringify(ajustado)); assert.strictEqual(ruim.texto, '#dddddd', 'o original não muda');
     // número para campo de formulário: só número
     for (const ruim of [veneno, {}, [], true, NaN, Infinity, '1"onfocus="x', null, undefined, '']) assert.strictEqual(A.numeroDeCampo(ruim), '', JSON.stringify(ruim));
     assert.strictEqual(A.numeroDeCampo(2.5), '2.5'); assert.strictEqual(A.numeroDeCampo('7'), '7'); assert.strictEqual(A.numeroDeCampo(0), '0');
@@ -719,7 +744,7 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
   // ================================================================== CONFIGURAÇÃO DO SITE
   teste('SEGURANÇA · site: política de conteúdo VALENDO, cabeçalhos de proteção e nenhuma permissão a endereço de fora', async () => {
     const V = JSON.parse(ler('vercel.json'));
-    const globais = Object.fromEntries(V.headers.find((h) => h.source === '/(.*)').headers.map((h) => [h.key, h.value]));
+    const globais = Object.fromEntries(V.headers.find((h) => h.source === '/((?!previa).*)').headers.map((h) => [h.key, h.value]));
     const csp = globais['Content-Security-Policy']; assert.ok(csp, 'a política de conteúdo precisa estar VALENDO (não só em modo de relatório)');
     assert.ok(!globais['Content-Security-Policy-Report-Only']);
     const dir = Object.fromEntries(csp.split(';').map((d) => d.trim().split(/\s+/)).map(([k, ...v]) => [k, v]));
@@ -734,6 +759,14 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
     assert.strictEqual(globais['X-Content-Type-Options'], 'nosniff'); assert.strictEqual(globais['X-Frame-Options'], 'DENY');
     assert.ok(/max-age=\d{8,}/.test(globais['Strict-Transport-Security'])); assert.ok(globais['Referrer-Policy']); assert.ok(/camera=\(\)/.test(globais['Permissions-Policy']));
     assert.ok(globais['Cross-Origin-Opener-Policy'] && globais['Cross-Origin-Resource-Policy']);
+    // A PRÉVIA da aparência (/previa) é a única página que pode abrir dentro de outra, e só dentro do PRÓPRIO site
+    // (o painel). O resto da proteção é igual: mesma política, só muda de onde ela pode ser emoldurada.
+    const previa = Object.fromEntries(V.headers.find((h) => h.source === '/previa').headers.map((h) => [h.key, h.value]));
+    assert.strictEqual(previa['X-Frame-Options'], 'SAMEORIGIN');
+    assert.strictEqual(previa['Content-Security-Policy'], csp.replace("frame-ancestors 'none'", "frame-ancestors 'self'"), 'a prévia tem a mesma política, só emoldurável pelo próprio site');
+    for (const [k, v] of Object.entries(globais)) if (!['X-Frame-Options', 'Content-Security-Policy'].includes(k)) assert.strictEqual(previa[k], v, k);
+    assert.ok(V.rewrites.some((r) => r.source === '/previa' && r.destination === '/index.html'));
+    assert.ok(!'/previa'.match(/^\/((?!previa).*)$/) && '/admin.html'.match(/^\/((?!previa).*)$/) && '/'.match(/^\/((?!previa).*)$/), 'a regra geral vale para tudo, menos a prévia');
     const api = Object.fromEntries(V.headers.find((h) => h.source === '/api/(.*)').headers.map((h) => [h.key, h.value]));
     assert.strictEqual(api['Cache-Control'], 'no-store', 'resposta de API nunca fica guardada'); assert.ok(!api['Access-Control-Allow-Origin'], 'nenhuma origem fixa liberada');
     assert.ok(!/bancaadairepedrina/.test(ler('vercel.json')), 'domínio que não é da loja não aparece na configuração');

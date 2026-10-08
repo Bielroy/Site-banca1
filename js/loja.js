@@ -1,5 +1,5 @@
 import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc, signOut } from './firebase.js';
-import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
+import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja, EM_PREVIA } from './tenant.js';
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage, haVersaoNova, conferirVersaoAgora, recarregarFresco } from './utils.js';
 import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques } from './ranking-loja.js';
@@ -1051,6 +1051,8 @@ const mensagemDeErroAmigavel = (erro) => {
 
 // fetch com aviso antecipado de offline e tempo limite
 const chamarApi = async (url, corpo, { comToken = false, limiteMs = 20000 } = {}) => {
+    // Prévia da aparência (aba do painel): dá para montar o pedido, mas nada é enviado nem cancelado.
+    if (EM_PREVIA) throw new Error('Esta é só a prévia da aparência: aqui nenhum pedido é enviado.');
     if (!navigator.onLine) throw new Error(MSG_SEM_CONEXAO);
 
     const cabecalhos = { 'Content-Type': 'application/json' };
@@ -1447,7 +1449,7 @@ const aplicarConta = async (conta, porLink) => {
 const confirmarConta = (previa) => customConfirm(`Entrar como ${previa.nome || 'cliente'}?`,
     `Este link é da conta de ${previa.nome || 'um cliente'}${linhaEndereco(previa, { curto: true }) ? ` (${linhaEndereco(previa, { curto: true })})` : ''}. Se for você, a loja traz seu endereço e seus pedidos para este aparelho. Se você recebeu este link de outra pessoa, toque em "Não sou eu".`,
     { ok: 'Sou eu', nao: 'Não sou eu' });
-buscarConta({ semDados: !lerLista('banca_clientes').length && !lerEnderecoSalvo(), confirmar: confirmarConta }).then(({ conta, porLink, erro }) => {
+(EM_PREVIA ? Promise.resolve({ conta: null }) : buscarConta({ semDados: !lerLista('banca_clientes').length && !lerEnderecoSalvo(), confirmar: confirmarConta })).then(({ conta, porLink, erro }) => {
     if (conta) return aplicarConta(conta, porLink);
     if (porLink && erro) showToast(erro, true);
 }).catch((e) => console.warn('[conta]', e && e.message));

@@ -18,7 +18,8 @@ import { escapeHTML, showToast, openModal, closeModal } from './utils.js';
 import { validarArquivo, produtoParecido, tamanhoBonito, comTentativas, emFila } from './fotos-lib.js';
 
 /** Reduz e converte. Devolve { blob, ext }. Usada também pelo cadastro de um produto só. */
-export async function otimizarFoto(file, lado = 1000, qualidade = 0.82) {
+// transparente: true mantém o fundo transparente (logo em PNG). Só dá em WebP; sem WebP, vira JPG com fundo branco.
+export async function otimizarFoto(file, lado = 1000, qualidade = 0.82, { transparente = false } = {}) {
     let fonte = await createImageBitmap(file, { imageOrientation: 'from-image' }).catch(() => null);
     if (!fonte) {
         fonte = await new Promise((ok, falha) => { const img = new Image(); img.onload = () => ok(img); img.onerror = () => falha(new Error('imagem inválida')); img.src = URL.createObjectURL(file); });
@@ -27,11 +28,13 @@ export async function otimizarFoto(file, lado = 1000, qualidade = 0.82) {
     if (!w || !h) throw new Error('imagem inválida');
     const escala = Math.min(1, lado / Math.max(w, h)); w = Math.round(w * escala); h = Math.round(h * escala);
     const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);      // PNG transparente ganha fundo branco
-    ctx.drawImage(fonte, 0, 0, w, h); fonte.close?.();
+    const ctx = canvas.getContext('2d');
+    const desenhar = (comFundo) => { ctx.clearRect(0, 0, w, h); if (comFundo) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h); } ctx.drawImage(fonte, 0, 0, w, h); };   // PNG transparente ganha fundo branco
+    desenhar(!transparente);
     const gerar = (tipo) => new Promise((r) => canvas.toBlob(r, tipo, qualidade));
     let blob = await gerar('image/webp');
-    if (!blob || blob.type !== 'image/webp') blob = await gerar('image/jpeg');                     // navegador sem WebP
+    if (!blob || blob.type !== 'image/webp') { if (transparente) desenhar(true); blob = await gerar('image/jpeg'); }   // navegador sem WebP
+    fonte.close?.();
     if (!blob) throw new Error('não consegui converter a imagem');
     return { blob, ext: blob.type === 'image/webp' ? 'webp' : 'jpg' };
 }

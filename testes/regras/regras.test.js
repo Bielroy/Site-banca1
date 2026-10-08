@@ -290,6 +290,15 @@ teste('aparência da loja: só nome de verdade, texto curto e cor no formato #rr
     for (const campo of ['secundaria', 'destaque', 'fundo', 'superficie', 'texto', 'sobrePrimaria']) await nega(setDoc(ficha, { tema: { [campo]: VENENO } }, { merge: true }));
     await nega(setDoc(ficha, { tema: { raio: VENENO } }, { merge: true })); await nega(setDoc(ficha, { tema: { raio: 999 } }, { merge: true })); await nega(setDoc(ficha, { tema: { fonteTitulo: 'x'.repeat(41) } }, { merge: true }));
     await nega(setDoc(ficha, { tema: { fonteTexto: { x: 1 } } }, { merge: true })); await nega(updateDoc(ficha, { tema: VENENO })); await nega(updateDoc(ficha, { tema: [VENENO] }));
+    // aparência nova: logo, capa, cor dos botões e os "jeitos" (cabeçalho, borda, cards...)
+    const NOVO = { ...TEMA, botao: '#3DDC84', cabecalho: 'capa', borda: 'onda', arte: 'esconder', alinhamento: 'centro', logoFormato: 'quadrado', botaoFormato: 'quadrado', card: 'sombra', fundoEstilo: 'pontos', letra: 'grande', etiqueta: 'selo',
+      logo: 'https://i.ibb.co/AbC123/logo-mxyz.webp', capa: 'https://firebasestorage.googleapis.com/v0/b/x.appspot.com/o/tenants%2Floja%2Fcapa.webp?alt=media&token=1a2b-3c' };
+    await pode(setDoc(ficha, { nome: 'Banca do Zé', tema: NOVO }, { merge: true }));
+    for (const url of ['http://i.ibb.co/x.png', 'javascript:alert(1)', 'https://x.com/a b.png', 'https://x.com/a".png', 'https://x.com/a)', 'https://x.com/<x>', `https://x.com/${'a'.repeat(500)}`, 123, ['https://x.com/a.png']]) {
+      await nega(setDoc(ficha, { tema: { ...TEMA, logo: url } }, { merge: true })); await nega(setDoc(ficha, { tema: { ...TEMA, capa: url } }, { merge: true }));
+    }
+    await nega(setDoc(ficha, { tema: { ...TEMA, botao: VENENO } }, { merge: true })); await nega(setDoc(ficha, { tema: { ...TEMA, card: 'x'.repeat(21) } }, { merge: true }));
+    await nega(setDoc(ficha, { tema: { ...TEMA, borda: { x: 1 } } }, { merge: true }));
     // nome vazio fazia a loja aparecer com o nome e a cara da Banca original
     for (const nome of ['', 'a', 'x'.repeat(61), 5, null, { x: 1 }]) await nega(updateDoc(ficha, { nome }));
     await nega(updateDoc(ficha, { subtitulo: 'x'.repeat(121) })); await nega(updateDoc(ficha, { subtitulo: 5 })); await nega(updateDoc(ficha, { nota: 'x'.repeat(201) })); await nega(updateDoc(ficha, { busca: ['x'] }));
