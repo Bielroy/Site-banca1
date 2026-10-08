@@ -116,6 +116,7 @@ function montarTextoWhatsApp(pedido, numero) {
   msg += `👤 ${pedido.nome}\n`;
   msg += `📍 ${linhaEndereco(pedido)}\n`;
   if (pedido.entrega && pedido.entrega.horario) msg += `🕒 Entrega: ${pedido.entrega.horario}\n`;
+  else if (pedido.entrega && pedido.entrega.horarioACombinar) msg += `🕒 Entrega: horário a combinar\n`;
   msg += `💳 Pagamento: ${pedido.pag || 'A combinar'}\n`;
   // Pedido dividido: troco e cupom aparecem UMA vez (na 1ª parte), para dois
   // atendimentos não darem o mesmo troco nem o mesmo desconto.
@@ -441,7 +442,7 @@ module.exports = async function handler(req, res) {
         ...(cupomAplicado && cupomAplicado.especial ? { foraDaPrevisao: true } : {}),   // cupom especial (família, cortesia): o motor de previsão ignora este pedido
         cupom: cupomAplicado ? { codigo: cupomAplicado.codigo, desconto: cupomAplicado.desconto, ...(cupomAplicado.percentual ? { percentual: cupomAplicado.percentual } : {}) } : null,
         // taxa cobrada agora + a regra do dia do pedido (a pesagem usa para reavaliar a entrega grátis)
-        entrega: { taxa: paraFlutuante(taxaEntregaC), taxaCheia: paraFlutuante(cfgEntrega.taxaC), gratisAcima: paraFlutuante(cfgEntrega.gratisAcimaC), horario: horarioEntrega },
+        entrega: { taxa: paraFlutuante(taxaEntregaC), taxaCheia: paraFlutuante(cfgEntrega.taxaC), gratisAcima: paraFlutuante(cfgEntrega.gratisAcimaC), horario: horarioEntrega, ...(Entrega.horarioACombinar(cfgEntrega, horarioEntrega) ? { horarioACombinar: true } : {}) },
         status: temItensAPesar ? 'aguardando_pesagem' : 'pendente',
         data: new Date().toISOString(),
         origem: 'whatsapp',

@@ -1636,6 +1636,7 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     // cair no meio e a pessoa abrir de novo e reenviar, o servidor reconhece e não cria um segundo pedido.
     const cara = assinaturaDoCarrinho();
     if (!STATE.checkoutSessionId || STATE.checkoutCara !== cara) { STATE.checkoutSessionId = novoId(); STATE.checkoutCara = cara; }
+    pintarHorariosDeEntrega();      // garante a lista de horários na hora de abrir (não depende de a configuração ter chegado antes)
     openModal('modal-checkout');
 });
 
@@ -1655,7 +1656,12 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     if (faltaEndereco) return showToast(faltaEndereco, true);
     if (!nome) return showToast("Escreva o seu nome para a entrega.", true);
     const campoHorario = document.getElementById('cli-horario');
-    if (campoHorario && !document.getElementById('grupo-horario').hidden && !campoHorario.value) { campoHorario.focus(); return showToast("Escolha quando prefere receber.", true); }
+    if (campoHorario && !document.getElementById('grupo-horario').hidden && !campoHorario.value) {
+        // no iPhone, dar foco não rola a tela até o campo: a pessoa lia o aviso e não achava onde escolher
+        try { campoHorario.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { /* navegador antigo */ }
+        campoHorario.focus({ preventScroll: true }); campoHorario.classList.add('campo-faltando'); setTimeout(() => campoHorario.classList.remove('campo-faltando'), 2500);
+        return showToast('Escolha quando prefere receber, no campo destacado.', true);
+    }
     btn.disabled = true; btn.textContent = 'Enviando pedido...';
 
     try {

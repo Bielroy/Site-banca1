@@ -806,7 +806,9 @@ teste('entrega: taxa calculada no servidor, grátis acima de um valor, horário 
   assert.deepStrictEqual(cfg, { taxaC: 500, gratisAcimaC: 2000, horarios: ['Manhã (8h às 12h)', 'Tarde', 'b x /b'] });
   assert.strictEqual(Ent.taxaC(cfg, 1999), 500); assert.strictEqual(Ent.taxaC(cfg, 2000), 0); assert.strictEqual(Ent.taxaC(Ent.lerConfig({}), 100), 0);
   assert.strictEqual(Ent.taxaC(Ent.lerConfig({ entrega: { taxa: -3 } }), 100), 0); assert.strictEqual(Ent.taxaC(Ent.lerConfig({ entrega: { taxa: 'abc' } }), 100), 0);
-  assert.throws(() => Ent.horarioValido(cfg, 'Madrugada'), /horário/); assert.throws(() => Ent.horarioValido(cfg, ''), /horário/);
+  // horário fora da lista (ou em branco) NUNCA barra o pedido: vira "a combinar". Cliente com tela antiga ficava preso sem ter o que escolher.
+  assert.strictEqual(Ent.horarioValido(cfg, 'Madrugada'), ''); assert.strictEqual(Ent.horarioValido(cfg, ''), ''); assert.strictEqual(Ent.horarioValido(cfg, undefined), ''); assert.strictEqual(Ent.horarioValido(cfg, { a: 1 }), '');
+  assert.strictEqual(Ent.horarioACombinar(cfg, ''), true); assert.strictEqual(Ent.horarioACombinar(cfg, 'Tarde'), false); assert.strictEqual(Ent.horarioACombinar(Ent.lerConfig({}), ''), false, 'loja que não pergunta não tem o que combinar');
   assert.strictEqual(Ent.horarioValido(cfg, 'Tarde'), 'Tarde'); assert.strictEqual(Ent.horarioValido(Ent.lerConfig({}), 'qualquer coisa'), '', 'loja que não pergunta ignora o campo');
   // prévia do navegador = mesma conta
   const fmtT = (v) => `R$ ${v.toFixed(2).replace('.', ',')}`, c2 = L.lerEntrega({ entrega: { taxa: 5, gratisAcima: 20 } });
@@ -817,8 +819,14 @@ teste('entrega: taxa calculada no servidor, grátis acima de um valor, horário 
   const db = criarBancoP({ ...sementeEstoque(), 'loja/config': { ...(sementeEstoque()['loja/config'] || {}), entrega: { taxa: 5, gratisAcima: 20, horarios: ['Manhã', 'Tarde'] } } }); const adm = criarAdmin(db, TOKENS_P);
   const checkout = carregarApi(raiz('api/checkout.js'), adm);
   const pedir = (extra) => chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedido(extra) });
-  assert.strictEqual((await pedir({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }] })).status, 400, 'sem escolher o horário');
-  assert.strictEqual((await pedir({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: 'Madrugada' })).status, 400);
+  // tela antiga (sem o campo) ou lista velha: o pedido ENTRA, e a loja combina o horário
+  for (const [extra, caso] of [[{}, 'sem o campo'], [{ horarioEntrega: 'Madrugada' }, 'horário que não existe mais'], [{ horarioEntrega: '<b>x</b>' }, 'texto estranho']]) {
+    const pp = pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], ...extra });
+    const rr = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pp }), gravado = db._dados.get(`pedidos/${pp.idempotencyKey}`);
+    assert.strictEqual(rr.status, 200, `${caso}: ${JSON.stringify(rr.corpo)}`); assert.strictEqual(gravado.entrega.horario, '', caso); assert.strictEqual(gravado.entrega.horarioACombinar, true, caso);
+    assert.ok(decodeURIComponent(rr.corpo.pedido.whatsappMsg).includes('Entrega: horário a combinar'), 'a loja fica sabendo pelo WhatsApp');
+  }
+  assert.ok(require('fs').readFileSync(raiz('js/loja.js'), 'utf8').includes("pintarHorariosDeEntrega();      // garante a lista"), 'a lista de horários é montada ao abrir a tela de entrega');
   // ovos 14: abaixo de 20 → paga 5. O navegador mandar "total" ou "taxa" não muda nada.
   let p = pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: 'Tarde', taxaEntrega: 0, entrega: { taxa: 0 } });
   let r = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: p });

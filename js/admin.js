@@ -1036,6 +1036,7 @@ const montarMensagemCliente = () => {
     if (ESTEIRA.desconto > 0) L.push(`🎁 Desconto do cupom: -${fmt(ESTEIRA.desconto)}`);
     if (ESTEIRA.entrega > 0) L.push(`🛵 Entrega: ${fmt(ESTEIRA.entrega)}`);
     if (p.entrega?.horario) L.push(`🕒 Entrega: ${p.entrega.horario}`);
+    else if (p.entrega?.horarioACombinar) L.push('🕒 Entrega: horário a combinar');
     L.push(`💰 *Total: ${fmt(ESTEIRA.totalFechado ?? contaDaEsteira().total)}*`);
     L.push('');
     L.push(`💳 Pagamento: ${p.pag || 'a combinar'}`);
@@ -1513,8 +1514,8 @@ const renderHtmlPedidos = (pedidos) => {
 
         const infoPag = p.pagamento?.status === 'PAID'
             ? `<span style="background:var(--success);color:white;padding:3px 8px;border-radius:12px;font-size:0.72rem;font-weight:700;">✓ PAGO</span>` : '';
-        const infoEntrega = p.entrega && (p.entrega.horario || Number(p.entrega.taxa) > 0)
-            ? `<div style="font-size:0.82rem;color:var(--forest);margin-top:4px;font-weight:600;"><i class="ic" data-i="entrega"></i> ${escapeHTML([p.entrega.horario, Number(p.entrega.taxa) > 0 ? `entrega ${fmt(p.entrega.taxa)}` : ''].filter(Boolean).join(' · '))}</div>` : '';
+        const infoEntrega = p.entrega && (p.entrega.horario || p.entrega.horarioACombinar || Number(p.entrega.taxa) > 0)
+            ? `<div style="font-size:0.82rem;color:var(--forest);margin-top:4px;font-weight:600;"><i class="ic" data-i="entrega"></i> ${escapeHTML([p.entrega.horario || (p.entrega.horarioACombinar ? 'horário a combinar' : ''), Number(p.entrega.taxa) > 0 ? `entrega ${fmt(p.entrega.taxa)}` : ''].filter(Boolean).join(' · '))}</div>` : '';
         const infoTroco = p.troco ? `<div style="font-size:0.82rem;color:var(--earth);margin-top:4px;"><i class="ic" data-i="dinheiro"></i> Troco para: ${escapeHTML(p.troco)}</div>` : '';
         const infoObs = p.obs ? `<div style="font-size:0.82rem;color:var(--text-mid);margin-top:4px;font-style:italic;"><i class="ic" data-i="nota"></i> ${escapeHTML(p.obs)}</div>` : '';
 
