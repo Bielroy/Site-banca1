@@ -31,6 +31,21 @@ jobs:
           node-version: 22
       - run: node testes/index.js
 
+  build:
+    name: Instalação travada e build do site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # npm ci instala EXATAMENTE as versões do package-lock.json (falha se ele e o package.json não baterem)
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+
   regras:
     name: Regras do banco no emulador do Firebase
     runs-on: ubuntu-latest

@@ -369,6 +369,15 @@ const STATUS_NA_FILA = ['pendente', 'aguardando_pesagem', 'aguardando_pagamento'
 // Faixa discreta no topo avisando que o painel está no modo sem índice.
 // Não bloqueia nada: o painel funciona, só está lendo mais que o preciso.
 // Traz o link que cria o índice, para resolver de vez.
+// Pedidos em aberto que a fila mostra de uma vez (era 100). Passou disso, os MAIS ANTIGOS ficam de fora:
+// a faixa abaixo avisa, para nenhum pedido ser esquecido sem ninguém saber.
+const LIMITE_FILA = 300;
+const avisarFilaCheia = (cheia) => {
+    const faixa = document.getElementById('faixa-fila-cheia');
+    if (!cheia) { faixa?.remove(); return; }
+    if (faixa) return;
+    document.getElementById('aba-relatorios')?.insertAdjacentHTML('afterbegin', `<p id="faixa-fila-cheia" class="aviso-limite"><i class="ic" data-i="alerta"></i> Há mais de ${LIMITE_FILA} pedidos em aberto. A fila mostra só os ${LIMITE_FILA} mais recentes: finalize ou arquive os pedidos já entregues para os mais antigos aparecerem.</p>`);
+};
 const avisarModoSimples = (erro) => {
     if (document.getElementById('faixa-modo-simples')) return;
     const link = (String(erro?.message || '').match(/https:\/\/console\.firebase\.google\.com\S+/) || [])[0];
@@ -511,11 +520,12 @@ const iniciarRealTimeSync = () => {
     const qComIndice = query(
         tcol("pedidos"),
         where("status", "in", STATUS_NA_FILA),
-        orderBy("data", "desc"), limit(100)
+        orderBy("data", "desc"), limit(LIMITE_FILA)
     );
 
     const unsubPedidos = onSnapshot(qComIndice, (snap) => {
         aplicarPedidos(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+        avisarFilaCheia(snap.size >= LIMITE_FILA);
         avisarSeChegouPedido(snap);
     }, (erro) => {
         console.error('Consulta de pedidos falhou:', erro);

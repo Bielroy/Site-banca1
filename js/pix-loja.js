@@ -76,7 +76,14 @@ export function abrirPix({ pedidoId, total, chamarApi, erroAmigavel, aoPagar }) 
                 if (!$('modal-pix').classList.contains('aberto') || ++voltas > 360) return parar();      // 360 × 5 s = 30 min
                 try {
                     const s = await getDoc(tdoc('pedidos', pedidoId));
-                    if (s.exists() && s.data().pagamento && s.data().pagamento.status === 'PAID') { telaPago(); if (aoPagar) aoPagar(); }
+                    let pago = s.exists() && s.data().pagamento && s.data().pagamento.status === 'PAID';
+                    // A cada 30 s (depois do primeiro minuto) pergunta ao servidor, que confere direto no PagBank:
+                    // se o aviso do banco se perdeu, o pedido anda mesmo assim.
+                    if (!pago && voltas >= 12 && voltas % 6 === 0) {
+                        const r = await chamarApi('/api/pagamento-pix', { pedidoId, acao: 'conferir' }, { comToken: true, limiteMs: 20000 }).catch(() => null);
+                        pago = !!(r && r.pago);
+                    }
+                    if (pago && relogio) { parar(); telaPago(); if (aoPagar) aoPagar(); }
                 } catch (_) { /* sem sinal: tenta de novo na próxima volta */ }
             }, 5000);
         } catch (err) {

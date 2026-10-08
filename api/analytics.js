@@ -55,13 +55,24 @@ module.exports = async function handler(req, res) {
       const segredo = process.env.CRON_SECRET;
       if (!segredo || !H.igualSeguro(tokenDe(req), segredo)) return res.status(401).json({ sucesso: false, error: 'Não autorizado.' });
       // Rotina diária: recalcula CADA loja, uma por vez. Erro em uma não derruba as outras.
-      const lojas = await T.listarLojas(banco), saida = {};
+      // Guarda de tempo: a função tem 60 s. Com muitas lojas, para de recalcular aos 40 s (sobra tempo para
+      // a faxina e a maquininha) e as que ficaram de fora são anotadas. A ordem gira a cada dia: quem ficou
+      // por último hoje sai na frente amanhã. (As lojas também recalculam sozinhas quando o painel abre.)
+      const inicio = Date.now(), PRAZO_RECALCULO_MS = 40000;
+      const todas = await T.listarLojas(banco), saida = {}, puladas = [];
+      const giro = todas.length ? Math.floor(Date.now() / 86400000) % todas.length : 0;
+      const lojas = todas.slice(giro).concat(todas.slice(0, giro));
       for (const id of lojas) {
+        if (Date.now() - inicio > PRAZO_RECALCULO_MS) { puladas.push(id); saida[id] = { pulada: true }; continue; }
         try { saida[id] = resumo(await Store.recalcular(T.escopo(banco, id), { forcar: true })); }
         catch (e) { console.error('[analytics] loja', id, e); saida[id] = { erro: true }; }
         // CÓPIA DE SEGURANÇA do dia (guarda as últimas 7). Falha aqui não derruba o resto da rotina.
         try { saida[id] = { ...saida[id], copia: await P.copiar(banco, id) }; }
         catch (e) { console.error('[copia] loja', id, e && e.message); saida[id] = { ...saida[id], copia: { erro: true } }; await P.avisarFalha(banco, id, 'A cópia de segurança', e); }
+      }
+      if (puladas.length) {
+        console.warn('[analytics] sem tempo para recalcular:', puladas.join(', '));
+        try { await P.alertar(banco, T.TENANT_PADRAO, 'cron-sem-tempo', { titulo: 'Rotina da noite sem tempo', corpo: `${puladas.length} de ${todas.length} lojas ficaram para amanhã. Hora de dividir a rotina por loja.` }); } catch (_) { /* só aviso */ }
       }
       await P.limparLimites(banco);
       // trilha de auditoria: o que passou de 400 dias sai

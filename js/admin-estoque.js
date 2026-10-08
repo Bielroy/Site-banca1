@@ -30,6 +30,23 @@ async function api(corpo) {
     if (!r.ok) throw new Error(j.error || 'Não foi possível registrar.');
     return j;
 }
+/**
+ * Os movimentos de estoque MAIS RECENTES com um filtro (ex.: só compras, ou só de um produto).
+ * Antes era "filtro + limite 300" sem ordem: com mais de 300 registros o banco devolvia 300 quaisquer
+ * (a ordem é pelo código do documento, que é sorteado) e o histórico mostrava compras antigas no lugar das novas.
+ * Tenta a consulta ordenada (precisa de índice composto no Firebase); sem o índice, lê os 600 movimentos
+ * mais recentes da loja e filtra aqui.
+ */
+export async function movimentosRecentes(campo, valor, quantos) {
+    try {
+        return (await getDocs(query(tcol('estoque_mov'), where(campo, '==', valor), orderBy('em', 'desc'), limit(quantos)))).docs.map((d) => d.data());
+    } catch (e) {
+        if (e && e.code !== 'failed-precondition') throw e;
+        console.info('[estoque] sem índice composto para', campo, '+ em; filtrando aqui. Link para criar:', String(e.message || '').match(/https:\/\/\S+/)?.[0] || '');
+        const docs = (await getDocs(query(tcol('estoque_mov'), orderBy('em', 'desc'), limit(600)))).docs.map((d) => d.data());
+        return docs.filter((m) => m[campo] === valor).slice(0, quantos);
+    }
+}
 /** Usado também pelo cadastro de produto (admin.js) para que a mudança entre no histórico. */
 export const contarEstoque = (produtoId, contagem, obs = '') => api({ acao: 'movimentar', produtoId, tipo: 'ajuste', contagem, obs, chave: novaChave() });
 const novaChave = () => (crypto.randomUUID ? crypto.randomUUID() : `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`);
@@ -314,9 +331,7 @@ async function abrirHistorico(p) {
     $('es-m-corpo').innerHTML = '<p class="config-sub">Carregando...</p>';
     openModal('modal-estoque');
     try {
-        // por produto: filtro simples (não exige índice composto) e ordenação aqui mesmo
-        const q = p ? query(tcol('estoque_mov'), where('produtoId', '==', p.id), limit(300)) : query(tcol('estoque_mov'), orderBy('em', 'desc'), limit(60));
-        const movs = (await getDocs(q)).docs.map((d) => d.data()).sort((x, y) => (x.em < y.em ? 1 : -1)).slice(0, 60);
+        const movs = p ? await movimentosRecentes('produtoId', p.id, 60) : (await getDocs(query(tcol('estoque_mov'), orderBy('em', 'desc'), limit(60)))).docs.map((d) => d.data());
         $('es-m-corpo').innerHTML = movs.length ? `<ul class="es-hist">${movs.map((m) => `
             <li class="${m.qtd < 0 ? 'neg' : 'pos'}">
                 <div><b>${escapeHTML(ROTULO_TIPO[m.tipo] || m.tipo)}</b>${p ? '' : ` · ${escapeHTML(m.nome)}`}${m.motivo ? ` · ${escapeHTML((MOTIVOS_PERDA.find(([v]) => v === m.motivo) || [0, m.motivo])[1])}` : ''}

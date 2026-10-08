@@ -96,6 +96,21 @@ teste('pedido de outra loja fica DENTRO dela, com o preço dela', async () => {
   assert.strictEqual(db._dados.get('tenants/espetinhos/analytics/dashboard').totalPedidos, 1);
   assert.ok(!db._dados.has('analytics/dashboard'));
 });
+teste('loja sem WhatsApp cadastrado não recebe pedido (nada de número de mentira) e a equipe é avisada', async () => {
+  const antes = process.env.WHATSAPP_FALLBACK; delete process.env.WHATSAPP_FALLBACK;
+  try {
+    for (const wpp of [undefined, '', '123']) {
+      const sem = semente(); sem['tenants/espetinhos/loja/config'] = { ...sem['tenants/espetinhos/loja/config'], wpp };
+      const db = criarBanco(sem); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+      const p = pedido({ itens: [{ id: 'tomate', qtd: 1, tipo: 'un' }] });
+      const r = await chamar(api, { headers: { ...ip(), 'X-Loja': 'espetinhos' }, body: p });
+      assert.strictEqual(r.status, 503, String(wpp)); assert.strictEqual(r.corpo.codigo, 'sem-whatsapp');
+      assert.ok(!db._dados.has(`tenants/espetinhos/pedidos/${p.idempotencyKey}`), 'o pedido não é gravado');
+      assert.ok(![...db._dados.keys()].some((k) => k.startsWith('tenants/espetinhos/resumos/')), 'nem entra no caixa');
+      assert.ok(!JSON.stringify(r.corpo).includes('5562999999999'));
+    }
+  } finally { if (antes !== undefined) process.env.WHATSAPP_FALLBACK = antes; }
+});
 teste('cupom de uma loja não vale em outra', async () => {
   const db = criarBanco(semente()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
   const r = await chamar(api, { headers: { ...ip(), 'X-Loja': 'espetinhos' }, body: pedido({ cupom: 'BANCA10', itens: [{ id: 'tomate', qtd: 1, tipo: 'un' }] }) });

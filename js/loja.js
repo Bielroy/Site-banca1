@@ -32,7 +32,7 @@ let unsubscribes = [];
 
 const STATE = {
     uid: null, produtos: [], carrinho: [], catAtiva: 'todas', busca: '',
-    config: { minimo: 0, wpp: '5562999999999', lojaAberta: true, diasAbertos: [0,1,2,3,4,5,6] },
+    config: { minimo: 0, wpp: '', lojaAberta: true, diasAbertos: [0,1,2,3,4,5,6] },
     favoritos: lerLista('banca_favs'),
     lojaRenderizada: false, checkoutSessionId: null, historicoChat: [],
     modalProdutoAtual: null, modalTipoCompra: 'kg', modalQtd: 1 // Estado do seletor do modal

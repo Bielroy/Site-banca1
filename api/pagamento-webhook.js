@@ -28,6 +28,7 @@ const Segredos = require('../lib/segredos');
 const crypto = require('crypto');
 const T = require('../lib/tenant');
 const Avisos = require('../lib/avisos');
+const PagBank = require('../lib/pagbank');
 
 // (o "config" que desliga o parse automático é exportado no FIM do arquivo:
 //  aqui em cima ele era apagado pelo "module.exports = handler" logo abaixo)
@@ -46,10 +47,6 @@ const bootFirebase = () => {
   }
   if (!db) db = admin.firestore();
 };
-
-const PAGBANK_BASE_URL = process.env.PAGBANK_ENV === 'sandbox'
-  ? 'https://sandbox.api.pagseguro.com'
-  : 'https://api.pagseguro.com';
 
 // Lê o corpo bruto da requisição (necessário p/ validar a assinatura).
 // Com teto de tamanho: um aviso de pagamento tem poucos KB; sem teto, qualquer um podia mandar
@@ -85,107 +82,52 @@ function assinaturaValida(rawBody, headerRecebido, token) {
   }
 }
 
-const paraCentavos = (v) => Math.round(Number(v) * 100);
-const ROTULOS = ['WAITING', 'DECLINED', 'CANCELED', 'IN_ANALYSIS', 'AUTHORIZED'];
-/** Quanto foi pago de verdade nesta ordem, em centavos (soma das cobranças pagas). null = o banco não informou. */
-function valorPagoC(order) {
-  let soma = 0, leu = false;
-  for (const c of Array.isArray(order.charges) ? order.charges : []) {
-    if (!c || c.status !== 'PAID') continue;
-    const a = c.amount || {}, v = Number(a.summary && a.summary.paid != null ? a.summary.paid : a.value);
-    if (Number.isFinite(v) && v > 0) { soma += Math.round(v); leu = true; }
-  }
-  return leu ? soma : null;
-}
 const urlPainel = (tid) => (tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`);
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
   res.setHeader('Cache-Control', 'no-store');
 
+  // Códigos de resposta (o PagBank reenvia o aviso quando a resposta não é 2xx):
+  //   200 = processado, ou nada a fazer (ordem que não é nossa, pedido que não existe): não reenviar
+  //   400 = corpo que não é JSON · 401 = assinatura não confere
+  //   503 = falha TEMPORÁRIA (Firebase ou PagBank fora do ar): o banco tenta de novo mais tarde.
+  //         Antes respondia 200 também aqui, e um PIX pago podia ficar sem baixa.
+  // Reprocessar é seguro: pedido já pago não muda (a transação confere).
   let rawBody;
   try { rawBody = await lerCorpoCru(req); } catch (e) { return res.status(e && e.status === 413 ? 413 : 400).end(); }
   const assinaturaHeader = req.headers['x-authenticity-token'];
 
-  // A chave vem da Vercel ou da tela Plataforma (lib/segredos.js). Sem conseguir ler, recusa.
+  // A chave vem da Vercel ou da tela Plataforma (lib/segredos.js).
   let TOKEN_PAGBANK = '';
-  try { bootFirebase(); TOKEN_PAGBANK = await Segredos.pagbank(db); } catch (e) { console.error('[webhook] não consegui ler a chave:', e && e.message); }
+  try { bootFirebase(); TOKEN_PAGBANK = await Segredos.pagbank(db); }
+  catch (e) { console.error('[webhook] não consegui ler a chave:', e && e.message); return res.status(503).json({ tentar: 'depois' }); }
 
-  // Assinatura inválida: responde 200 (evita retries infinitos) mas NÃO processa nada
+  // Assinatura inválida: NÃO processa nada
   if (!assinaturaValida(rawBody, assinaturaHeader, TOKEN_PAGBANK)) {
-    return res.status(200).json({ ignorado: 'assinatura_invalida' });
+    return res.status(401).json({ ignorado: 'assinatura_invalida' });
   }
 
   let payload;
-  try { payload = JSON.parse(rawBody); } catch (e) { return res.status(200).json({ ok: true }); }
+  try { payload = JSON.parse(rawBody); } catch (e) { return res.status(400).json({ ignorado: 'corpo_invalido' }); }
 
   try {
-    bootFirebase();
+    // Do corpo do webhook só aproveitamos o ID da ordem; a fonte de verdade é a consulta ao PagBank
+    // (nunca confia só no corpo do aviso). O ID só passa se tiver cara de ID (entra no endereço da consulta).
+    const { order, temporario } = await PagBank.consultarOrdem(TOKEN_PAGBANK, payload && payload.id);
+    if (temporario) return res.status(503).json({ tentar: 'depois' });
+    if (!order) return res.status(200).json({ ok: true });
 
-    // Do corpo do webhook só aproveitamos o ID da ordem no PagBank, e só se tiver cara de ID
-    // (ele entra no endereço da consulta abaixo: nada de barra, ponto ou interrogação).
-    const orderId = payload && payload.id;          // ex.: "ORDE_..."
-    if (typeof orderId !== 'string' || !/^[A-Za-z0-9_-]{6,80}$/.test(orderId)) return res.status(200).json({ ok: true });
-
-    // 2) Fonte de verdade: reconsulta a ordem na API (nunca confia só no corpo do webhook)
-    const consulta = await fetch(`${PAGBANK_BASE_URL}/orders/${orderId}`, {
-      headers: { Authorization: `Bearer ${TOKEN_PAGBANK}` }, signal: AbortSignal.timeout(15000),
-    });
-    const order = await consulta.json().catch(() => null);
-    if (!consulta.ok || !order || order.id !== orderId) return res.status(200).json({ ok: true });
-
-    // Referência = "pedido" (loja original) ou "loja~pedido" (demais lojas) — ver pagamento-pix.js
-    const ref = String(order.reference_id || '');
-    const [parteA, parteB] = ref.includes('~') ? ref.split('~') : [T.TENANT_PADRAO, ref];
-    const tid = parteA, pedidoId = parteB;
-    if (!pedidoId || !T.idValido(tid) || !/^[\w-]{6,80}$/.test(pedidoId)) return res.status(200).json({ ok: true });
-
-    const charges = Array.isArray(order.charges) ? order.charges : [];
-    const pago = charges.some((c) => c && c.status === 'PAID');
-    const pagoC = valorPagoC(order);
-
-    // 3) Confere e grava numa transação. O que mudou em relação à versão anterior:
-    //   a) a ordem do banco precisa ser uma das que ESTE pedido gerou (antes bastava a referência bater);
-    //   b) o valor pago é comparado com o total do pedido: pagou menos, não vira "pago";
-    //   c) o aviso nunca CRIA pedido (antes o ramo "não pago" criava um documento solto) nem volta o status
-    //      para trás: só o pedido que estava "aguardando pagamento" anda; o já aceito, entregue ou cancelado fica onde está;
-    //   d) pedido cancelado que recebe PIX fica marcado e a equipe é avisada para devolver.
-    // O estoque NÃO é mexido aqui: quem baixa é o checkout, uma vez só.
-    const aviso = await db.runTransaction(async (t) => {
-      const pedidoRef = T.tdoc(db, tid, 'pedidos', pedidoId);
-      const pedidoSnap = await t.get(pedidoRef);
-      if (!pedidoSnap.exists) return null;
-      const pedido = pedidoSnap.data(), pg = pedido.pagamento || {};
-      const minhas = [pg.orderId].concat(Array.isArray(pg.ordens) ? pg.ordens : []);
-      if (!minhas.includes(orderId)) { console.warn('[webhook] ordem que este pedido não gerou; ignorada.'); return null; }
-      if (pg.status === 'PAID') return null;                                  // já processado (o banco repete o aviso)
-
-      if (!pago) {
-        const rotulo = ROTULOS.includes(charges[0] && charges[0].status) ? charges[0].status : 'WAITING';
-        if (pg.status !== rotulo) t.update(pedidoRef, { pagamento: { ...pg, status: rotulo } });
-        return null;
-      }
-
-      const totalC = paraCentavos(pedido.total), cobradoC = Number.isFinite(Number(pg.valorC)) ? Number(pg.valorC) : null;
-      const recebidoC = pagoC !== null ? pagoC : cobradoC;                    // o banco não disse quanto: vale o valor do QR que nós mesmos criamos
-      if (recebidoC !== null && Number.isFinite(totalC) && recebidoC < totalC) {
-        t.update(pedidoRef, { pagamento: { ...pg, status: 'PAGO_PARCIAL', valorPagoC: recebidoC, pagoEm: new Date().toISOString() } });
-        return { titulo: 'PIX menor que o pedido', corpo: `${pedido.nome || 'Cliente'} pagou menos que o total. Confira antes de entregar.` };
-      }
-      const cancelado = pedido.status === 'cancelado';
-      t.update(pedidoRef, {
-        ...(pedido.status === 'aguardando_pagamento' ? { status: pedido.temItensAPesar ? 'aguardando_pesagem' : 'pendente' } : {}),
-        pagamento: { ...pg, status: 'PAID', pagoEm: new Date().toISOString(), ...(recebidoC !== null ? { valorPagoC: recebidoC } : {}), ...(cancelado ? { pagoDepoisDeCancelar: true } : {}) },
-      });
-      return cancelado ? { titulo: 'PIX de pedido cancelado', corpo: `${pedido.nome || 'Cliente'} pagou um pedido que já estava cancelado. Devolva o PIX.` }
-        : { titulo: 'PIX recebido', corpo: `${pedido.nome || 'Cliente'} pagou o pedido.` };
-    });
-    if (aviso) await Avisos.avisarLoja(db, tid, { ...aviso, url: urlPainel(tid), tag: `pix-${pedidoId}` });
-
+    const aviso = await PagBank.aplicarOrdem(db, order);
+    if (aviso) {
+      // o pagamento já foi gravado: se só o aviso para a equipe falhar, NÃO pede reenvio
+      try { await Avisos.avisarLoja(db, aviso.tid, { titulo: aviso.titulo, corpo: aviso.corpo, url: urlPainel(aviso.tid), tag: `pix-${aviso.pedidoId}` }); }
+      catch (e) { console.error('[webhook] aviso à equipe falhou:', e && e.message); }
+    }
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error('Webhook PagBank erro:', err && err.message);
-    return res.status(200).json({ ok: true }); // 200 evita retries em loop
+    return res.status(503).json({ tentar: 'depois' });
   }
 };
 

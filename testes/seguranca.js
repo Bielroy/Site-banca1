@@ -313,13 +313,13 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
     // sem assinatura, assinatura qualquer, assinatura de OUTRO corpo, assinatura feita com chave chutada
     for (const assinatura of ['', 'errada', assinar('{"id":"OUTRO"}'), assinar(JSON.stringify({ id: 'ORDE_AAAA-1111', charges: [{ status: 'PAID' }] }), 'token-chutado'), 'a'.repeat(64)]) {
       const { r, idas } = await avisar(db, ordem(), { assinatura });
-      assert.strictEqual(r.status, 200); assert.strictEqual(idas.length, 0, 'nem chega a consultar o banco'); assert.strictEqual(soDe(db, ''), antes, 'nada mudou');
+      assert.strictEqual(r.status, 401); assert.strictEqual(idas.length, 0, 'nem chega a consultar o banco'); assert.strictEqual(soDe(db, ''), antes, 'nada mudou');
     }
     // sem a chave do PagBank no servidor, TUDO é recusado (falha fechada)
     delete process.env.PAGBANK_API_TOKEN;
     const api = carregarApi(raiz('api/pagamento-webhook.js'), criarAdmin(db, TOK)); const corpo = JSON.stringify({ id: 'ORDE_AAAA-1111' });
     const r = await chamarCru(api, { headers: { 'x-authenticity-token': assinar(corpo, '') }, corpo });
-    assert.strictEqual(r.corpo.ignorado, 'assinatura_invalida'); assert.strictEqual(soDe(db, ''), antes);
+    assert.strictEqual(r.status, 401); assert.strictEqual(r.corpo.ignorado, 'assinatura_invalida'); assert.strictEqual(soDe(db, ''), antes);
     // corpo gigante é cortado antes de ocupar a memória
     process.env.PAGBANK_API_TOKEN = 'token-teste';
     const api2 = carregarApi(raiz('api/pagamento-webhook.js'), criarAdmin(db, TOK));
@@ -366,6 +366,52 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
     // referência apontando para outra loja não acha o pedido da loja original
     db = cenarioPix(); await avisar(db, ordem({ reference_id: 'loja-b~pedido-pix-0001' }));
     assert.strictEqual(db._dados.get('pedidos/pedido-pix-0001').pagamento.status, 'WAITING'); assert.ok(!db._dados.has('tenants/loja-b/pedidos/pedido-pix-0001'));
+  });
+
+  teste('SEGURANÇA · aviso de pagamento: falha temporária pede reenvio (503); corpo inválido 400; nada a fazer 200', async () => {
+    process.env.PAGBANK_API_TOKEN = 'token-teste';
+    const enviar = async (db, falso, texto = JSON.stringify({ id: 'ORDE_AAAA-1111' })) => {
+      const api = carregarApi(raiz('api/pagamento-webhook.js'), criarAdmin(db, TOK));
+      return comFetch(falso, () => chamarCru(api, { headers: { 'x-authenticity-token': assinar(texto) }, corpo: texto }));
+    };
+    // PagBank fora do ar (rede caiu, 500, 429): 503 para o banco reenviar, e o pedido continua igual
+    for (const falso of [async () => { throw new Error('rede caiu'); }, async () => ({ ok: false, status: 500, json: async () => ({}) }), async () => ({ ok: false, status: 429, json: async () => ({}) })]) {
+      const db = cenarioPix(); const r = await enviar(db, falso);
+      assert.strictEqual(r.status, 503); assert.strictEqual(db._dados.get('pedidos/pedido-pix-0001').pagamento.status, 'WAITING');
+    }
+    // banco de dados falhou no meio: 503 (antes respondia 200 e o PIX pago ficava sem baixa)
+    let db = cenarioPix(); db.runTransaction = async () => { throw new Error('14 UNAVAILABLE'); };
+    assert.strictEqual((await enviar(db, async () => ({ ok: true, status: 200, json: async () => ordem() }))).status, 503);
+    // reenviado depois que o banco voltou: processa normalmente
+    db = cenarioPix(); assert.strictEqual((await enviar(db, async () => ({ ok: true, status: 200, json: async () => ordem() }))).status, 200);
+    assert.strictEqual(db._dados.get('pedidos/pedido-pix-0001').pagamento.status, 'PAID');
+    // ordem que o PagBank diz não existir (404): 200, não adianta reenviar
+    db = cenarioPix(); assert.strictEqual((await enviar(db, async () => ({ ok: false, status: 404, json: async () => ({}) }))).status, 200);
+    // corpo assinado mas que não é JSON: 400
+    db = cenarioPix(); assert.strictEqual((await enviar(db, async () => { throw new Error('nem consulta'); }, 'isto não é json')).status, 400);
+  });
+
+  teste('SEGURANÇA · PIX: "conferir pagamento" pergunta ao PagBank e baixa o pedido só do dono, sem gerar QR', async () => {
+    process.env.PAGBANK_API_TOKEN = 'token-teste';
+    const novoDb = () => criarBanco({ ...base(), 'loja/config': { ...base()['loja/config'], pixAutomatico: false }, 'pedidos/pedido-pix-0001': cenarioPix()._dados.get('pedidos/pedido-pix-0001') });
+    let idas = [];
+    const pago = async (url, o) => { idas.push({ url: String(url), metodo: (o && o.method) || 'GET' }); return { ok: true, status: 200, json: async () => ordem() }; };
+    // outra pessoa: 404 e nem consulta o banco
+    let db = novoDb(); let api = carregarApi(raiz('api/pagamento-pix.js'), criarAdmin(db, TOK)); zerarFreios();
+    let r = await comFetch(pago, () => chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente-2' }, body: { pedidoId: 'pedido-pix-0001', acao: 'conferir' } }));
+    assert.strictEqual(r.status, 404); assert.strictEqual(idas.length, 0); assert.strictEqual(db._dados.get('pedidos/pedido-pix-0001').pagamento.status, 'WAITING');
+    // o dono: consulta (só GET, nunca cria ordem), o pedido vira pago e anda, mesmo com o PIX automático desligado depois
+    r = await comFetch(pago, () => chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: { pedidoId: 'pedido-pix-0001', acao: 'conferir' } }));
+    const ped = db._dados.get('pedidos/pedido-pix-0001');
+    assert.strictEqual(r.status, 200); assert.strictEqual(r.corpo.pago, true); assert.strictEqual(ped.pagamento.status, 'PAID'); assert.strictEqual(ped.status, 'pendente');
+    assert.ok(idas.length >= 1 && idas.every((i) => i.metodo === 'GET' && /\/orders\/ORDE_AAAA-1111$/.test(i.url)));
+    // já pago: responde sem consultar de novo
+    idas = []; r = await comFetch(pago, () => chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: { pedidoId: 'pedido-pix-0001', acao: 'conferir' } }));
+    assert.strictEqual(r.corpo.pago, true); assert.strictEqual(idas.length, 0);
+    // ainda não pago no banco: continua aguardando
+    db = novoDb(); api = carregarApi(raiz('api/pagamento-pix.js'), criarAdmin(db, TOK)); zerarFreios();
+    r = await comFetch(async () => ({ ok: true, status: 200, json: async () => ordem({ charges: [{ status: 'WAITING' }] }) }), () => chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: { pedidoId: 'pedido-pix-0001', acao: 'conferir' } }));
+    assert.strictEqual(r.corpo.pago, false); assert.strictEqual(db._dados.get('pedidos/pedido-pix-0001').status, 'aguardando_pagamento');
   });
 
   teste('SEGURANÇA · PIX: gerar o QR não volta o status do pedido, não aceita papel errado e tem limite', async () => {

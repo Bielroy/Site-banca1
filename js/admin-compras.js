@@ -7,12 +7,12 @@
 //  tudo: o estoque sobe, o custo do produto é atualizado e a compra entra
 //  no histórico.
 // =====================================================================
-import { getDoc, getDocs, query, where, limit } from './firebase.js';
+import { getDoc } from './firebase.js';
 import { tcol, tdoc, chave } from './tenant.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal } from './utils.js';
 import { fmtQtd } from './estoque-lib.js';
 import { listaDeCompras, textoDaLista } from './compras-lib.js';
-import { carregarApoio, apoio, movimentar } from './admin-estoque.js';
+import { carregarApoio, apoio, movimentar, movimentosRecentes } from './admin-estoque.js';
 import { hojeBR, addDias, dataLonga } from './fechamento-lib.js';
 
 const S = { produtos: [], acabou: [], acabouEm: 0, lista: null, ligado: false, proximaCompra: null };
@@ -125,7 +125,7 @@ async function abrirHistorico() {
     garantirModal(); $('cp-m-titulo').textContent = 'Histórico de compras'; $('cp-m-rodape').hidden = true;
     $('cp-m-corpo').innerHTML = '<p class="config-sub">Carregando...</p>'; openModal('modal-compras');
     try {
-        const movs = (await getDocs(query(tcol('estoque_mov'), where('tipo', '==', 'compra'), limit(300)))).docs.map((d) => d.data()).sort((a, b) => (a.em < b.em ? 1 : -1));
+        const movs = await movimentosRecentes('tipo', 'compra', 300);
         const dias = new Map();
         movs.forEach((m) => { const d = new Date(new Date(m.em).getTime() - 3 * 3600000).toISOString().slice(0, 10); if (!dias.has(d)) dias.set(d, []); dias.get(d).push(m); });
         $('cp-m-corpo').innerHTML = dias.size ? [...dias.entries()].slice(0, 30).map(([d, ms]) => {

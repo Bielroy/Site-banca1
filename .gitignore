@@ -7,6 +7,7 @@ dev-dist/
 # chaves e configurações locais: NUNCA vão para o GitHub
 .env
 .env.*
+!.env.example
 *.pem
 *service-account*.json
 *serviceAccount*.json

@@ -47,7 +47,10 @@ const sanitizeString = (str, maxLength = 120) => {
 
 const { resolverDestinos } = require('../lib/roteamentoWhatsapp');
 
-const WPP_FALLBACK = process.env.WHATSAPP_FALLBACK || '5562999999999';
+// Número reserva OPCIONAL (variável WHATSAPP_FALLBACK na Vercel). Antes havia um número de mentira aqui:
+// banca sem WhatsApp cadastrado mandava o pedido para um número que não existe. Agora o pedido é recusado.
+const WPP_FALLBACK = process.env.WHATSAPP_FALLBACK || '';
+const { numeroValido } = require('../lib/roteamentoWhatsapp');
 
 // ---------------------------------------------------------------------
 // CORS — lista de origens confiáveis
@@ -164,6 +167,10 @@ function montarTextoWhatsApp(pedido, numero) {
 // Monta 1 link por número de destino (ver lib/roteamentoWhatsapp.js)
 function montarLinksWhatsApp(pedido, categorias, config) {
   const destinos = resolverDestinos({ itens: pedido.itens, categorias, config, fallback: WPP_FALLBACK });
+  // Sem número válido o pedido NÃO é gravado (isto roda dentro da transação, antes de ela confirmar).
+  if (!destinos.length || destinos.some((d) => !numeroValido(String(d.numero || '')))) {
+    throw Object.assign(new Error('Esta banca ainda não cadastrou o WhatsApp para receber pedidos. Tente mais tarde.'), { codigo: 'sem-whatsapp', status: 503 });
+  }
   return destinos.map((d, i) => {
     const sub = d.itens.reduce((t, it) => t + (it.aPesar ? 0 : Number(it.subtotal) || 0), 0);
     const unico = destinos.length === 1;
@@ -543,6 +550,10 @@ module.exports = async function handler(req, res) {
     if (codigoConta) Conta.porCookie(res, tid, codigoConta);
     return res.status(200).json({ sucesso: true, pedido: resultado, temConta: !!codigoConta });
   } catch (error) {
+    if (error && error.codigo === 'sem-whatsapp') {
+      try { await P.alertar(db, tid, 'sem-whatsapp', { titulo: 'Pedido recusado: falta o WhatsApp', corpo: 'Um cliente tentou fazer um pedido, mas a loja está sem número de WhatsApp. Cadastre em Configurações → WhatsApp da loja.' }); } catch (_) { /* o aviso não muda a resposta */ }
+      return res.status(503).json({ error: error.message, codigo: 'sem-whatsapp' });
+    }
     if (error && error.codigo === 'dia-mudou') return res.status(409).json({ error: error.message, codigo: 'dia-mudou', entregaDia: error.entregaDia, diaPreco: error.diaPreco, agora: Date.now() });
     // Falha NOSSA (banco fora do ar, erro de programa): a equipe recebe um aviso no celular, e a
     // cliente vê uma frase simples em vez do erro técnico. Aviso de regra ("esgotado") segue como era.

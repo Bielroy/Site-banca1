@@ -68,11 +68,35 @@ const aplicarCors = H.cors;
 
 const T = require('../lib/tenant');
 const P = require('../lib/prudencia');
+const PagBank = require('../lib/pagbank');
+const Avisos = require('../lib/avisos');
 // Quem da equipe gera PIX de um pedido: quem atende pedidos (não o estoque nem a produção).
 const EQUIPE_DO_PIX = ['proprietario', 'administrador', 'funcionario', 'caixa'];
 const emailValido = (e) => typeof e === 'string' && e.length <= 120 && /^[^\s@<>"']{1,64}@[^\s@<>"']{1,100}\.[a-z]{2,}$/i.test(e);
 // chamada ao banco com prazo: sem isto, o PagBank lento prendia a função até a Vercel derrubar
 const comPrazo = (url, opcoes = {}, ms = 15000) => fetch(url, { ...opcoes, signal: AbortSignal.timeout(ms) });
+
+async function conferir(res, tid, pedidoId, dec, token) {
+  const snap = await T.tdoc(db, tid, 'pedidos', pedidoId).get();
+  if (!snap.exists) return res.status(404).json({ error: 'Pedido não encontrado.' });
+  const pedido = snap.data(), pg = pedido.pagamento || {};
+  if (pedido.userId !== dec.uid && !T.temPapel(dec, tid, EQUIPE_DO_PIX)) return res.status(404).json({ error: 'Pedido não encontrado.' });
+  if (pg.status === 'PAID') return res.status(200).json({ pago: true });
+  // as ordens mais recentes primeiro (no máximo 3 consultas por vez)
+  const ordens = [...new Set([pg.orderId].concat(Array.isArray(pg.ordens) ? pg.ordens.slice().reverse() : []).filter((x) => typeof x === 'string' && x))].slice(0, 3);
+  for (const id of ordens) {
+    const { order } = await PagBank.consultarOrdem(token, id);
+    if (!order || !(order.charges || []).some((c) => c && c.status === 'PAID')) continue;
+    const aviso = await PagBank.aplicarOrdem(db, order);
+    if (aviso) {
+      try { await Avisos.avisarLoja(db, aviso.tid, { titulo: aviso.titulo, corpo: aviso.corpo, url: aviso.tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${aviso.tid}`, tag: `pix-${aviso.pedidoId}` }); }
+      catch (e) { console.error('[pix] aviso à equipe falhou:', e && e.message); }
+    }
+    break;
+  }
+  const depois = (await T.tdoc(db, tid, 'pedidos', pedidoId).get()).data() || {};
+  return res.status(200).json({ pago: !!(depois.pagamento && depois.pagamento.status === 'PAID') });
+}
 
 module.exports = async function handler(req, res) {
   aplicarCors(req, res, 'OPTIONS,POST');
@@ -106,6 +130,11 @@ module.exports = async function handler(req, res) {
     // A chave vem da Vercel ou da tela Plataforma (lib/segredos.js).
     const TOKEN_PAGBANK = await Segredos.pagbank(db);
     if (!TOKEN_PAGBANK) return res.status(503).json({ error: 'O PIX automático ainda não está ligado. Combine o pagamento pelo WhatsApp.' });
+    // "Conferir pagamento": a tela do PIX pergunta de tempos em tempos. Se o aviso do PagBank se perdeu,
+    // consulta as ordens deste pedido direto no banco e grava do mesmo jeito que o aviso gravaria.
+    // Não gera QR nem gasta a cota de QRs; vale mesmo se a loja desligou o PIX depois de gerar o código.
+    if ((req.body || {}).acao === 'conferir') return conferir(res, tid, pedidoId, dec, TOKEN_PAGBANK);
+
     const cfg = await T.docDe(db, tid, 'loja/config').get();
     if (!cfg.exists || cfg.data().pixAutomatico !== true) return res.status(503).json({ error: 'O PIX automático está desligado nesta loja. Combine o pagamento pelo WhatsApp.' });
 
