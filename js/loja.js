@@ -541,7 +541,7 @@ document.addEventListener('error', (e) => {
 
 // As fotos de baixo da tela começam "preguiçosas" para a loja abrir rápido (o navegador já busca
 // sozinho as que estão chegando perto). As demais vêm em lotes só DEPOIS que a pessoa começa a
-// rolar (ou fica 8 s na página): antes, todas as fotos do catálogo desciam junto com a abertura e
+// rolar (ou fica 20 s na página): antes, todas as fotos do catálogo desciam junto com a abertura e
 // disputavam a internet com o que está na tela. Quem pediu economia de dados fica só no automático.
 let _adiantando = 0, _esperandoRolar = null;
 const adiantarFotos = () => {
@@ -557,7 +557,7 @@ const adiantarFotos = () => {
     const comecar = () => { removeEventListener('scroll', comecar); removeEventListener('touchstart', comecar); clearTimeout(_esperandoRolar); _esperandoRolar = null; _adiantando = setTimeout(passo, 300); };
     addEventListener('scroll', comecar, { passive: true, once: true });
     addEventListener('touchstart', comecar, { passive: true, once: true });
-    _esperandoRolar = setTimeout(comecar, 8000);
+    _esperandoRolar = setTimeout(comecar, 20000);
 };
 
 const construirCardsIniciais = () => {

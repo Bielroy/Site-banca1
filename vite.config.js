@@ -66,7 +66,9 @@ export default defineConfig({
       // 'auto' faz o plugin injetar o registro do service worker no HTML.
       // Por isso o registro manual saiu do index.html: ter os dois fazia
       // dois service workers competirem e o site podia servir versão velha.
-      injectRegister: 'auto',
+      // 'script-defer': o arquivo de registro vem com "defer" e não segura a primeira tela
+      // (com 'auto' ele entrava sem defer no <head>: 0,2 s de tela em branco no celular).
+      injectRegister: 'script-defer',
 
       workbox: {
         // aviso de pedido novo: o service worker gerado carrega este arquivo (push-sw.js, na raiz)
