@@ -35,9 +35,14 @@ const anotar = (titulo, linhas) => console.log(`::notice title=${titulo}::${linh
     await p.waitForTimeout(12000);
     const m = await p.evaluate(() => window.__m).catch(() => null);
     if (!m) { anotar(`Pulos ${url}`, ['Não consegui medir.', ...erros]); await ctx.close(); continue; }
+    // o que um visitante de verdade baixou, sem rolar a tela
+    const baixado = await p.evaluate(() => { const r = performance.getEntriesByType('resource'), soma = (f) => r.filter(f).reduce((t, e) => t + (e.transferSize || 0), 0);
+      const fotos = r.filter((e) => e.initiatorType === 'img' || /\.(jpe?g|png|webp|avif)(\?|$)|_vercel\/image/.test(e.name));
+      return { fotos: fotos.length, kbFotos: Math.round(fotos.reduce((t, e) => t + (e.transferSize || 0), 0) / 1024), kbTotal: Math.round(soma(() => true) / 1024) }; }).catch(() => null);
     const total = m.pulos.reduce((t, x) => t + x.v, 0), travado = m.longas.reduce((t, x) => t + Math.max(0, x.d - 50), 0);
     const linhas = [
       `Pulo total: ${total.toFixed(3)} · Travado: ${Math.round(travado)} ms em ${m.longas.length} tarefas longas · Maior elemento aos ${Math.round((m.lcp || {}).t || 0)} ms: ${(m.lcp || {}).el || '?'} ${(m.lcp || {}).url || ''}`,
+      ...(baixado ? [`Baixou sem rolar: ${baixado.kbTotal} KB (${baixado.fotos} fotos, ${baixado.kbFotos} KB)`] : []),
       ...m.pulos.filter((x) => x.v >= 0.005).sort((a, b) => a.t - b.t).slice(0, 10).map((x) => `  ${x.v.toFixed(3)} aos ${Math.round(x.t)} ms: ${x.s.join(' | ')}`),
       ...m.longas.sort((a, b) => b.d - a.d).slice(0, 5).map((x) => `  trava ${Math.round(x.d)} ms aos ${Math.round(x.t)} ms`),
       ...(erros.length ? ['Erros: ' + erros.slice(0, 3).join(' | ')] : []),

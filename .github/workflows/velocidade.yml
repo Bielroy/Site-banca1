@@ -40,7 +40,7 @@ jobs:
             nome=${alvo%%:*}; caminho=${alvo#*:}
             for tentativa in 1 2; do
               if npx -y lighthouse@12.6.0 "$site$caminho" --quiet --output=json --output-path="$nome.json" \
-                --only-categories=performance,accessibility,best-practices \
+                --only-categories=performance,accessibility,best-practices --skip-audits=full-page-screenshot \
                 --chrome-flags="--headless=new --no-sandbox"; then break; fi
               echo "::warning title=Velocidade::Tentativa $tentativa falhou em $caminho"
             done
