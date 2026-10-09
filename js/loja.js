@@ -513,13 +513,14 @@ const etiquetaBase = (p) => {
     return `<div class="etq-preco">${fmt(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>`;
 };
 
-// Um card de produto. `rapido` = foto carregada já (os primeiros da tela).
-const cardHtml = (p, rapido = false) => {
+// Um card de produto. `rapido` = foto carregada já (os primeiros da tela); `prioridade` = a foto passa na frente
+// do resto (só as primeiras da vitrine, que são o "maior elemento" que o celular espera para mostrar a loja).
+const cardHtml = (p, rapido = false, prioridade = false) => {
         const favActive = STATE.favoritos.includes(p.id) ? 'ativo' : '';
         return `
         <article class="produto-card" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}" style="display: flex;">
             <div class="produto-img-wrap">
-                ${p.foto ? `<img src="${escapeHTML(p.fotoMini || miniatura(p.foto, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${rapido ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
+                ${p.foto ? `<img src="${escapeHTML(p.fotoMini || miniatura(p.foto, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
                 <button class="btn-fav ${favActive}" data-action="fav" data-id="${escapeHTML(p.id)}" aria-label="Favoritar ${escapeHTML(p.nome)}" aria-pressed="${favActive ? 'true' : 'false'}">${ICO.coracao}</button>
             </div>
@@ -562,7 +563,7 @@ const adiantarFotos = () => {
 
 const construirCardsIniciais = () => {
     const grid = document.getElementById('lista-produtos');
-    grid.innerHTML = STATE.produtos.map((p, i) => cardHtml(p, i < 4)).join('');
+    grid.innerHTML = STATE.produtos.map((p, i) => cardHtml(p, i < 4, i < 2)).join('');
     STATE.lojaRenderizada = true;
     renderFaixaSempre(true);
     // pinta o botão de cada card de uma vez (antes: uma busca na página inteira para cada produto)
@@ -609,7 +610,7 @@ const renderFaixaSempre = (forcar = false) => {
     _faixaIds = assinatura;
     document.getElementById('faixa-titulo').textContent = titulo;
     const sub = document.getElementById('faixa-sub'); if (sub) sub.textContent = titulo === 'Seus de sempre' ? 'O que você mais leva, a um toque.' : 'Para repetir sem procurar de novo.';
-    lista.innerHTML = ids.map(id => cardHtml(porId.get(id), true)).join('');
+    lista.innerHTML = ids.map((id, i) => cardHtml(porId.get(id), i < 2)).join('');       // a faixa rola para o lado: o resto vem quando aparecer
     ids.forEach(id => atualizarBadgesDOM(id));
 };
 document.addEventListener('ranking-pronto', () => renderFaixaSempre());
@@ -626,7 +627,7 @@ const renderFaixaOfertas = (forcar = false) => {
     if (forcar) _ofertasCara = '';
     if (!visivel || cara === _ofertasCara) return;
     _ofertasCara = cara;
-    lista.innerHTML = ofertas.map(p => cardHtml(p, true)).join('');
+    lista.innerHTML = ofertas.map((p, i) => cardHtml(p, i < 2)).join('');               // antes TODAS as fotos das ofertas vinham na abertura
     ofertas.forEach(p => atualizarBadgesDOM(p.id));
 };
 
