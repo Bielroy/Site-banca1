@@ -4,6 +4,7 @@
 //
 //  POST { acao: 'situacao' }                                a plataforma já tem dono? (a tela usa para não oferecer "Assumir")
 //  POST { acao: 'lojas' }                                   lista lojas, feiras e o movimento do mês
+//  POST { acao: 'erros' }                                   erros do site nos últimos 7 dias (lib/erros.js)
 //  POST { acao: 'criar-loja', id, nome, modelo, tipoNome?, emailDono? }   (modelo = aparência inicial; tipoNome = tipo escrito à mão)
 //  POST { acao: 'imgbb', chave }                               liga (ou desliga, com chave vazia) o envio de fotos ao ImgBB
 //  POST { acao: 'tipo', id, tipo }                              muda o tipo de negócio de uma loja
@@ -26,6 +27,7 @@ const crypto = require('crypto');
 const Feira = require('../lib/feira');
 const Assinatura = require('../lib/assinatura');
 const Cond = require('../lib/condominios');
+const Erros = require('../lib/erros');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -300,12 +302,12 @@ module.exports = async function handler(req, res) {
   // outra conta dona da loja original ainda conseguiria assumir. Ao usar a tela, o registro passa a existir.
   try { await db.runTransaction(async (t) => { const r = db.collection('plataforma').doc('dono'), s = await t.get(r); if (!s.exists) t.set(r, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() }); }); }
   catch (e) { console.error('[plataforma] dono', e && e.message); }
-  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
+  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
   const nomeAcao = typeof (req.body || {}).acao === 'string' ? (req.body || {}).acao : '';
   const fn = Object.prototype.hasOwnProperty.call(acoes, nomeAcao) ? acoes[nomeAcao] : null;
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });
   // Tudo o que MUDA alguma coisa fica na trilha (auditoria_plataforma). Chave e token nunca entram no registro: só "gravou" ou "apagou".
-  if (nomeAcao !== 'lojas' && nomeAcao !== 'auditoria') {
+  if (nomeAcao !== 'lojas' && nomeAcao !== 'auditoria' && nomeAcao !== 'erros') {
     const b = req.body || {}, alvo = String(b.id || b.fid || '').slice(0, 40);
     const detalhe = nomeAcao === 'imgbb' || nomeAcao === 'pagbank' ? (String(b.chave || '').trim() ? 'chave gravada' : 'chave apagada')
       : nomeAcao === 'proprietario' ? `${alvo}: ${b.remover === true ? 'tirou' : 'definiu'} ${String(b.email || '').slice(0, 80)}`

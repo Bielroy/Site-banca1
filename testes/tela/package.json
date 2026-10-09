@@ -1,0 +1,8 @@
+{
+  "name": "banca-testes-de-tela",
+  "private": true,
+  "description": "Só para rodar testes/tela/tela.test.js (navegador de verdade com Firebase de mentira). Ver .github/workflows/seguranca.yml. O site não usa este arquivo.",
+  "dependencies": {
+    "playwright": "1.56.0"
+  }
+}

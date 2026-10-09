@@ -10,6 +10,7 @@
 //   POST { acao: 'painel', atualizar? }            só admin  (atualizar: recalcula antes se há pedido novo)
 //   POST { acao: 'cliente', clienteId }            só admin  → explicação por cliente
 //   POST { acao: 'recalcular', janelaDias? }       só admin  (janelaDias até 900 = backfill)
+//   POST { acao: 'erro', msg, arquivo, linha, ... } SEM login: erro que aconteceu no navegador (lib/erros.js)
 //
 //  VARIÁVEIS: as mesmas do checkout (FIREBASE_*) + CRON_SECRET (recomendada).
 //  Segurança: admin = custom claim `admin === true` no token (mesmo critério
@@ -23,6 +24,7 @@ const { diaDeTs, isoDeDia } = require('../analytics/normalize');
 const T = require('../lib/tenant');
 const P = require('../lib/prudencia');
 const Maq = require('../lib/maquininha');
+const Erros = require('../lib/erros');
 
 // Origem (CORS): a lista de endereços nossos fica num lugar só, lib/http.js.
 const H = require('../lib/http');
@@ -75,6 +77,7 @@ module.exports = async function handler(req, res) {
         try { await P.alertar(banco, T.TENANT_PADRAO, 'cron-sem-tempo', { titulo: 'Rotina da noite sem tempo', corpo: `${puladas.length} de ${todas.length} lojas ficaram para amanhã. Hora de dividir a rotina por loja.` }); } catch (_) { /* só aviso */ }
       }
       await P.limparLimites(banco);
+      try { await Erros.faxina(banco); } catch (e) { console.error('[erros] faxina', e && e.message); }
       // trilha de auditoria: o que passou de 400 dias sai
       try { await P.limparAuditoria(banco, null); for (const id of lojas) await P.limparAuditoria(banco, id); } catch (e) { console.error('[auditoria] faxina', e && e.message); }
       // MAQUININHA: as vendas de ontem (o PagBank só entrega no dia seguinte). Loja sem credenciais é pulada.
@@ -86,6 +89,8 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ sucesso: true, cron: true, ...(saida[T.TENANT_PADRAO] || {}), lojas: saida });
     }
     if (req.method !== 'POST') return res.status(405).json({ sucesso: false, error: 'Método não permitido.' });
+    // erro do navegador: sem login (pode ter acontecido antes dele), com freio por endereço de internet
+    if ((req.body || {}).acao === 'erro') return await Erros.receber(banco, req, res, admin);
 
     // ------------------------- AUTENTICAÇÃO -------------------------
     const token = tokenDe(req);

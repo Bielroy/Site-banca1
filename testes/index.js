@@ -2066,6 +2066,41 @@ teste('aparência: os modelos prontos são legíveis, completos e passam pela co
   for (const k of Object.keys(A.OPCOES)) assert.ok(new RegExp(`textoAte\\(t, '${k}', 20\\)`).test(regras), `regra do banco confere o campo ${k}`);
 });
 
+// ------------------------------------------------------------------ registro de erros do site
+teste('erros do site: o navegador avisa sem login, o mesmo erro do dia é somado, dado pessoal não entra e só a plataforma lê', async () => {
+  const E = require(raiz('lib/erros.js'));
+  assert.strictEqual(E.navegadorResumido('Mozilla/5.0 (Linux; Android 14; SM-A15) AppleWebKit/537.36 Chrome/129.0.0.0 Mobile Safari/537.36'), 'Android · Chrome 129');
+  assert.strictEqual(E.navegadorResumido('Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Version/17.5 Mobile/15E148 Safari/604.1'), 'iPhone · Safari 17');
+  assert.strictEqual(E.semParametros('https://site-banca1.vercel.app/?loja=x&tel=62999#a'), '/', 'endereço sem parâmetros (podia ter telefone ou código)');
+  assert.strictEqual(E.limparRelato({ msg: 'Script error.' }, ''), null, 'erro opaco de script de fora é barulho');
+  assert.strictEqual(E.limparRelato({ msg: 'x', arquivo: 'chrome-extension://abc/c.js' }, ''), null, 'extensão do navegador é barulho');
+  assert.strictEqual(E.limparRelato({ msg: '' }, ''), null);
+  const db = criarBanco(semente()); const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));
+  const ua = { 'user-agent': 'Mozilla/5.0 (Linux; Android 14) Chrome/129.0 Mobile', 'x-forwarded-for': '10.0.0.9' };
+  const erro = (n) => ({ acao: 'erro', tipo: 'erro', msg: `Cannot read properties of undefined (reading 'preco') item ${n}`, arquivo: 'https://site-banca1.vercel.app/assets/main-AB12.js?v=3', linha: 10, coluna: 5, pagina: '/?loja=paes-da-lucia&c=SEGREDO', loja: 'paes-da-lucia', pilha: 'at x (https://site-banca1.vercel.app/assets/main-AB12.js?t=1:10:5)' });
+  let r = await chamar(api, { headers: ua, body: erro(1) }); assert.strictEqual(r.status, 204, 'aceita sem login');
+  r = await chamar(api, { headers: ua, body: erro(2) }); assert.strictEqual(r.status, 204);
+  const docs = [...db._dados.entries()].filter(([k]) => k.startsWith('erros_site/'));
+  assert.strictEqual(docs.length, 1, 'mesmo erro (número diferente) no mesmo dia = um documento só');
+  const d = docs[0][1];
+  assert.strictEqual(d.vezes, 2); assert.strictEqual(d.onde, '/assets/main-AB12.js:10:5'); assert.deepStrictEqual(d.lojas, ['paes-da-lucia']);
+  assert.ok(!JSON.stringify(d).includes('SEGREDO') && !JSON.stringify(d).includes('?'), 'nada dos parâmetros do endereço é guardado');
+  assert.deepStrictEqual(d.navegadores, ['Android · Chrome 129']);
+  // freio: 10 por minuto por endereço de internet
+  let barrados = 0; for (let i = 0; i < 12; i++) if ((await chamar(api, { headers: ua, body: erro(i) })).status === 429) barrados++;
+  assert.ok(barrados >= 2, 'freio por endereço de internet');
+  // leitura: só a plataforma, pela API da plataforma
+  const pf = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, TOKENS));
+  r = await chamar(pf, { headers: { Authorization: 'Bearer plataforma' }, body: { acao: 'erros' } });
+  assert.strictEqual(r.status, 200); assert.strictEqual(r.corpo.erros.length, 1); assert.ok(r.corpo.erros[0].vezes >= 2);
+  r = await chamar(pf, { headers: { Authorization: 'Bearer dona-banca' }, body: { acao: 'erros' } }); assert.strictEqual(r.status, 403, 'dona de loja não lê os erros da plataforma');
+  // faxina: o que passou de 14 dias sai
+  db._dados.set('erros_site/2000-01-01_x', { dia: '2000-01-01', msg: 'velho' });
+  assert.strictEqual(await E.faxina(db), 1); assert.ok(!db._dados.has('erros_site/2000-01-01_x')); assert.strictEqual([...db._dados.keys()].filter((k) => k.startsWith('erros_site/')).length, 1);
+  // as regras do banco não deixam navegador nenhum tocar em erros_site (cai na regra final que nega tudo)
+  assert.ok(!/erros_site/.test(require('fs').readFileSync(raiz('firestore.rules'), 'utf8')));
+});
+
 // ------------------------------------------------------------------ testes de segurança (arquivo próprio)
 require('./seguranca')({ teste, raiz, criarBanco, criarAdmin, chamar, carregarApi });
 

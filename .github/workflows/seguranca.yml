@@ -85,3 +85,34 @@ jobs:
             echo "::notice title=Regras no emulador::$(grep 'testes das regras passaram' saida.txt | tail -1)"
           fi
           exit "$codigo"
+
+  tela:
+    name: Testes de tela (navegador de verdade)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Instalar o navegador de teste (numa pasta à parte)
+        run: |
+          npm install --prefix testes/tela --no-audit --no-fund
+          npx --prefix testes/tela playwright install --with-deps chromium
+      - name: Abrir o site no celular simulado e fazer o que o cliente faz
+        run: |
+          set +e
+          node testes/tela/tela.test.js > saida.txt 2>&1
+          codigo=$?
+          cat saida.txt
+          if [ "$codigo" -ne 0 ]; then
+            grep -A6 "FALHOU" saida.txt | cut -c1-260 > falhas.txt
+            [ -s falhas.txt ] || tail -30 saida.txt | cut -c1-260 > falhas.txt
+            msg=$(head -60 falhas.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Testes de tela::$msg"
+          else
+            echo "::notice title=Testes de tela::$(grep 'testes de tela passaram' saida.txt | tail -1)"
+          fi
+          exit "$codigo"

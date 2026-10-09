@@ -1,3 +1,4 @@
+import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
 import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc, signOut } from './firebase.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja, EM_PREVIA } from './tenant.js';
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage, haVersaoNova, conferirVersaoAgora, recarregarFresco } from './utils.js';

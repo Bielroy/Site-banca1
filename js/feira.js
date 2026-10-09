@@ -7,6 +7,7 @@
 //  Banca desligada na Plataforma não conta. Esta tela só aparece se der erro.
 //  Lê só dados públicos (feiras/{id} e a ficha de cada banca). Sem login.
 // =====================================================================
+import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
 import { db, doc, getDoc } from './firebase.js';
 import { urlDaLoja } from './tenant.js';
 import { feiraDoEndereco, comFeira, diasDaFeira } from './plataforma-lib.js';

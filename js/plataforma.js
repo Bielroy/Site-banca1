@@ -9,6 +9,7 @@
 //  Tudo passa por /api/plataforma, que só aceita quem tem  plataforma: true
 //  no login. Esta tela não protege nada sozinha: sem esse login, o servidor recusa.
 // =====================================================================
+import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
 import { auth, onAuthStateChanged } from './firebase.js';
 import { urlDaLoja } from './tenant.js';
 import { escapeHTML, fmt, showToast, customConfirm } from './utils.js';
@@ -16,7 +17,7 @@ import { sugerirId, idValido, totais, diasDaFeira, textoDoDia, proximaEntrega, n
 const diasEmTexto = (dias) => diasDaFeira(dias);
 import './icones-admin.js';
 
-const ABAS = ['feiras', 'lojas', 'condominios', 'mensalidades', 'chaves'];
+const ABAS = ['feiras', 'lojas', 'condominios', 'mensalidades', 'chaves', 'erros'];
 const lerAba = () => { try { const a = localStorage.getItem('pf_aba'); return ABAS.includes(a) ? a : 'feiras'; } catch (_) { return 'feiras'; } };
 const S = { dados: null, aba: lerAba(), busca: { lojas: '', condominios: '' }, folha: null, rascunho: null, ocupado: false, editandoCond: '', mensal: {}, confirmando: 0 };
 const el = () => document.getElementById('pf-conteudo');
@@ -63,7 +64,8 @@ function render() {
     $('pf-resumo').textContent = `${t.ativas} de ${t.lojas} lojas ativas, ${fmt(t.receita)} vendidos e ${t.pedidos} pedidos neste mês${mensal ? `, ${fmt(mensal)} em mensalidades` : ''}.`;
     const abas = $('pf-abas'); abas.hidden = false;
     abas.querySelectorAll('[data-aba]').forEach((b) => { const on = b.dataset.aba === S.aba; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
-    el().innerHTML = { feiras: abaFeiras, lojas: abaLojas, condominios: abaCondominios, mensalidades: abaMensalidades, chaves: abaChaves }[S.aba]();
+    el().innerHTML = { feiras: abaFeiras, lojas: abaLojas, condominios: abaCondominios, mensalidades: abaMensalidades, chaves: abaChaves, erros: abaErros }[S.aba]();
+    if (S.aba === 'erros' && S.erros === undefined) carregarErros();
 }
 
 function abaFeiras() {
@@ -137,6 +139,29 @@ function abaChaves() {
     <section class="pf-chave"><div class="pf-chave-topo"><h3>Fotos dos produtos (ImgBB)</h3><span class="pf-selo${d.fotos ? ' ok' : ''}">${d.fotos ? 'Envio automático ligado' : 'Desligado'}</span></div>
         <p>${d.fotos ? 'As lojas enviam as fotos pelo painel e elas vão sozinhas para o ImgBB. Para trocar a chave, cole a nova.' : 'Com a chave do ImgBB, as lojas enviam várias fotos de uma vez pelo painel. Para pegar a chave (grátis): crie a conta em imgbb.com, abra api.imgbb.com e toque em "Get API key".'}</p>
         <div class="pf-form-linha"><input type="password" id="pf-imgbb" autocomplete="off" spellcheck="false" maxlength="40" placeholder="Chave do ImgBB (32 letras e números)" aria-label="Chave do ImgBB"><button type="button" class="pf-bt pri" data-pf="salvar-imgbb">Salvar</button></div></section>`;
+}
+
+// ---------------------------------------------------------------- erros do site (lib/erros.js)
+async function carregarErros() {
+    S.erros = null;                                   // null = carregando
+    try { S.erros = (await api({ acao: 'erros' })).erros || []; } catch (e) { S.erros = { falha: e.message }; }
+    if (S.aba === 'erros') render();
+}
+const quando = (iso) => { try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); } catch (_) { return ''; } };
+function abaErros() {
+    const lista = S.erros;
+    const topo = `<div class="pf-topo-aba"><p>O que deu erro no celular dos clientes e da equipe nos últimos 7 dias. O mesmo erro no mesmo dia aparece uma vez, com o número de vezes. Lista vazia é bom sinal.</p><button type="button" class="pf-bt" data-pf="atualizar-erros">Atualizar</button></div>`;
+    if (lista === null || lista === undefined) return `${topo}<p class="config-sub">Carregando...</p>`;
+    if (lista.falha) return `${topo}<div class="pf-vazio"><b>Não consegui abrir a lista.</b><p>${escapeHTML(lista.falha)}</p></div>`;
+    if (!lista.length) return `${topo}<div class="pf-vazio"><b>Nenhum erro nos últimos 7 dias.</b><p>Quando algo quebrar no aparelho de alguém, aparece aqui.</p></div>`;
+    const total = lista.reduce((t, e) => t + (Number(e.vezes) || 0), 0);
+    return `${topo}<p class="pf-total"><b>${lista.length}</b> erro${lista.length > 1 ? 's' : ''} diferente${lista.length > 1 ? 's' : ''}, ${total} vez${total > 1 ? 'es' : ''} no total.</p>
+    <ul class="pf-lista pf-erros">${lista.map((e) => `<li class="pf-erro">
+        <div class="pf-erro-topo"><b>${escapeHTML(e.msg)}</b><span class="pf-selo">${Number(e.vezes) || 1}×</span></div>
+        <small>${escapeHTML(quando(e.ultimo))}${e.onde ? ` · ${escapeHTML(e.onde)}` : ''} · ${escapeHTML((e.paginas || [e.pagina]).join(', '))}</small>
+        <small>${escapeHTML((e.navegadores || []).join(', '))}${(e.lojas || []).length ? ` · lojas: ${escapeHTML(e.lojas.map((id) => (lojaPorId(id) || {}).nome || id).join(', '))}` : ''}</small>
+        ${e.pilha ? `<details><summary>Detalhe técnico</summary><pre>${escapeHTML(e.pilha)}</pre></details>` : ''}
+    </li>`).join('')}</ul>`;
 }
 
 // ---------------------------------------------------------------- folha (edição)
@@ -244,6 +269,7 @@ async function agir(b) {
     const lojaId = b.dataset.loja || (S.folha && S.folha.tipo === 'loja' ? S.folha.id : ''), loja = lojaId && lojaPorId(lojaId);
     switch (a) {
         case 'fechar-folha': return fecharFolha(false);
+        case 'atualizar-erros': return carregarErros();
         case 'nova-feira': return abrirFolha('feira', '');
         case 'editar-feira': return abrirFolha('feira', b.dataset.feira);
         case 'nova-loja': return abrirFolha('nova-loja');

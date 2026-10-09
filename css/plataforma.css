@@ -146,3 +146,11 @@ body.pf-ocupado .pf-bt { pointer-events: none; opacity: .7; }
 .pf-mini-lista li { display: flex; justify-content: space-between; gap: 8px; }
 .pf-mini-lista small { color: var(--pf-apagado, #6b6f66); }
 @media (prefers-reduced-motion: reduce) { .pf-folha-fundo.modal-overlay, .pf-folha-fundo .pf-folha { animation: none !important; transition: none !important; } }
+
+/* aba Erros */
+.pf-erro { padding: 12px 4px; display: grid; gap: 4px; }
+.pf-erro-topo { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; }
+.pf-erro-topo b { font-size: .92rem; word-break: break-word; }
+.pf-erro small { color: var(--pf-apagado); font-size: .8rem; word-break: break-word; }
+.pf-erro details summary { cursor: pointer; font-size: .8rem; color: var(--pf-apagado); }
+.pf-erro pre { white-space: pre-wrap; word-break: break-all; font-size: .74rem; background: var(--pf-papel); padding: 8px 10px; border-radius: 10px; margin: 6px 0 0; max-height: 220px; overflow: auto; }

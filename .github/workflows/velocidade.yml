@@ -1,0 +1,45 @@
+# MEDIÇÃO DE VELOCIDADE NO CELULAR — abre o site QUE ESTÁ NO AR com o Lighthouse (do Google),
+# simulando um celular comum com internet 4G lenta, e escreve o resumo nas anotações do trabalho.
+# Roda depois de cada publicação (espera a Vercel terminar), toda segunda de manhã e quando pedido.
+# É só medição: não reprova nada e não usa nenhuma chave.
+name: Velocidade no celular
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 11 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: velocidade
+  cancel-in-progress: true
+
+jobs:
+  medir:
+    name: Lighthouse no site no ar (celular, 4G lenta)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Esperar a Vercel publicar esta versão
+        if: github.event_name == 'push'
+        run: sleep 180
+      - name: Medir
+        run: |
+          site=https://site-banca1.vercel.app
+          for alvo in "loja:/" "lucia:/?loja=paes-da-lucia"; do
+            nome=${alvo%%:*}; caminho=${alvo#*:}
+            npx -y lighthouse@12.6.0 "$site$caminho" --quiet --output=json --output-path="$nome.json" \
+              --only-categories=performance,accessibility,best-practices \
+              --chrome-flags="--headless=new --no-sandbox" || echo "::warning title=Velocidade::Não consegui medir $caminho"
+          done
+          node testes/velocidade/resumo.js loja.json lucia.json
