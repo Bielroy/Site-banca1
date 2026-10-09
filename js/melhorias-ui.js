@@ -7,9 +7,19 @@
 const splash = document.getElementById('splash-feira');
 const grid = document.getElementById('lista-produtos');
 let splashFechada = false;
+// Enquanto a tela de entrada cobre a loja, o que está por baixo fica INVISÍVEL (body.montando): cabeçalho,
+// faixa da feira e vitrine se ajeitam sem "pular" na frente de ninguém e aparecem já no lugar.
+if (splash) document.body.classList.add('montando');
+// espera o cabeçalho/faixa (js/tema.js avisa 'tema-pronto'), no máximo 1,2 s depois dos produtos
+const esperarTema = () => new Promise((ok) => {
+    if (window.__temaPronto) return ok();
+    const t = setTimeout(ok, 1200);
+    document.addEventListener('tema-pronto', () => { clearTimeout(t); ok(); }, { once: true });
+});
 const fecharSplash = () => {
     if (splashFechada || !splash) return;
     splashFechada = true;
+    document.body.classList.remove('montando');
     if (performance.now() < 400) { splash.remove(); return; }     // carregou rápido: nem chegou a aparecer
     splash.classList.add('saindo');
     setTimeout(() => splash.remove(), 500);
@@ -20,7 +30,7 @@ if (grid) {
     const obs = new MutationObserver(() => {
         if (!grid.querySelector('.produto-card[data-id], .empty-state')) return;
         obs.disconnect();
-        setTimeout(fecharSplash, 150);
+        esperarTema().then(() => setTimeout(fecharSplash, 150));
         setTimeout(() => grid.classList.remove('primeira-carga'), 1200);
     });
     obs.observe(grid, { childList: true, subtree: true });

@@ -17,6 +17,10 @@
 /* Card fora da tela não é desenhado até chegar perto (o navegador guarda o tamanho depois da 1ª vez).
    Com catálogo grande, a vitrine abria com o celular travado desenhando centenas de cards invisíveis. */
 #lista-produtos > .produto-card { content-visibility: auto; contain-intrinsic-size: auto 330px; }
+/* Montagem por baixo da tela de entrada: invisível (não conta como "pulo" de tela). js/melhorias-ui.js tira a classe. */
+body.montando > :not(#splash-feira):not(script) { visibility: hidden; }
+/* O rodapé começa abaixo da tela: antes ele aparecia no meio da página vazia e era empurrado quando a vitrine chegava. */
+main.layout { min-height: 100vh; }
 /* (content-visibility na foto foi retirado: com loading="lazy" não ajudava e
    podia deixar a foto em branco durante uma rolagem rápida) */
 @media (hover: none) {

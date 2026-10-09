@@ -333,6 +333,10 @@ async function irParaBancaDaFeira(fid, feiras) {
     return false;
 }
 
+// Cabeçalho e faixa da feira prontos (com a ficha guardada no aparelho ou a do banco): a tela de entrada
+// (js/melhorias-ui.js) espera isto para mostrar a loja já no lugar certo, sem a tela pular depois.
+const avisarTemaPronto = () => { if (window.__temaPronto) return; window.__temaPronto = true; try { document.dispatchEvent(new Event('tema-pronto')); } catch (_) { /* navegador antigo */ } };
+
 /** Chamado uma vez pela loja. Usa a ficha guardada no aparelho na hora e confere no banco depois. */
 export async function iniciarTema() {
     // veio pelo link da feira (?feira=id): este aparelho passa a ser desta feira
@@ -358,6 +362,7 @@ export async function iniciarTema() {
             FEIRAS_DA_LOJA = g.v === 3 && Array.isArray(g.feiras) ? g.feiras : [];
             if (g.v === 3) montarFeira(FEIRAS_DA_LOJA);
             else if (!lerFeiraCliente()) montarFaixa(document.getElementById('feira-lojas') || document.createElement('nav'), Array.isArray(g.feiras) ? feiraDoDia(g.feiras, diaBR()) : g.feira);
+            avisarTemaPronto();                      // o visual guardado já está na tela
         }
     } catch (_) { /* sem cache */ }
     try {
@@ -378,7 +383,8 @@ export async function iniciarTema() {
         if (ficha || FICHA_PREVIA) aplicarFicha({ ...(ficha || {}), ...(FICHA_PREVIA || {}) });
         FEIRAS_DA_LOJA = feiras;
         montarFeira(feiras);
+        avisarTemaPronto();
         try { localStorage.setItem(K, JSON.stringify({ v: 3, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, feiras: ficha.feiras || null, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feiras })); } catch (_) { /* cheio */ }
         return ficha;
-    } catch (e) { console.warn('[tema] usando o visual guardado:', e && e.code); if (!guardada) ligarFontesDaBanca(); return null; }
+    } catch (e) { console.warn('[tema] usando o visual guardado:', e && e.code); if (!guardada) ligarFontesDaBanca(); avisarTemaPronto(); return null; }
 }
