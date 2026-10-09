@@ -12,7 +12,8 @@
 //  O produto de cada foto é adivinhado pelo NOME DO ARQUIVO e pode ser
 //  trocado na lista antes de enviar.
 // =====================================================================
-import { storage, ref, uploadBytes, getDownloadURL, setDoc, getDoc } from './firebase.js';
+import { setDoc, getDoc } from './firebase.js';
+import { storage, ref, uploadBytes, getDownloadURL } from './firebase-arquivos.js';
 import { tdoc, pastaFotos } from './tenant.js';
 import { escapeHTML, showToast, openModal, closeModal } from './utils.js';
 import { validarArquivo, produtoParecido, tamanhoBonito, comTentativas, emFila } from './fotos-lib.js';

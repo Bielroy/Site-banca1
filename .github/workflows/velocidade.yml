@@ -38,9 +38,12 @@ jobs:
           site=https://site-banca1.vercel.app
           for alvo in "loja:/" "lucia:/?loja=paes-da-lucia"; do
             nome=${alvo%%:*}; caminho=${alvo#*:}
-            npx -y lighthouse@12.6.0 "$site$caminho" --quiet --output=json --output-path="$nome.json" \
-              --only-categories=performance,accessibility,best-practices \
-              --chrome-flags="--headless=new --no-sandbox" || echo "::warning title=Velocidade::Não consegui medir $caminho"
+            for tentativa in 1 2; do
+              if npx -y lighthouse@12.6.0 "$site$caminho" --quiet --output=json --output-path="$nome.json" \
+                --only-categories=performance,accessibility,best-practices \
+                --chrome-flags="--headless=new --no-sandbox"; then break; fi
+              echo "::warning title=Velocidade::Tentativa $tentativa falhou em $caminho"
+            done
           done
           node testes/velocidade/resumo.js loja.json lucia.json
       - name: O que pula e o que trava (navegador de teste no site no ar)

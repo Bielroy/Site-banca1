@@ -9,7 +9,6 @@ import {
     query, orderBy, limit, writeBatch, where, updateDoc, deleteField,
     terminate, clearIndexedDbPersistence
 } from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // A API Key continua protegida pelas variáveis de ambiente do Vite
 const firebaseConfig = {
@@ -32,13 +31,13 @@ const db = initializeFirestore(app, {
 });
 
 const auth = getAuth(app);
-const storage = getStorage(app);
 
+// O armazenamento de arquivos (Firebase Storage) fica em js/firebase-arquivos.js: só o painel usa,
+// e aqui ele ia junto para todo cliente que abre a loja.
 export { 
-    db, auth, storage,
+    app, db, auth,
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
     query, orderBy, limit, writeBatch, where, updateDoc, deleteField,
     sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously,
-    ref, uploadBytes, getDownloadURL,
     terminate, clearIndexedDbPersistence
 };

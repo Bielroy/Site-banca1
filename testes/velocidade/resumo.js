@@ -11,6 +11,7 @@ const seg = (ms) => `${((ms || 0) / 1000).toFixed(1)} s`;
 const linhas = [];
 for (const arq of process.argv.slice(2)) {
   let r; try { r = JSON.parse(fs.readFileSync(arq, 'utf8')); } catch (e) { console.log(`::warning title=Velocidade::Não consegui ler ${arq}`); continue; }
+  if (r.runtimeError && r.runtimeError.code && r.runtimeError.code !== 'NO_ERROR') { console.log(`::warning title=Velocidade (erro do Lighthouse)::${r.requestedUrl}: ${r.runtimeError.code} ${String(r.runtimeError.message || '').slice(0, 300)}`); continue; }
   const a = r.audits || {}, nota = Math.round(((r.categories && r.categories.performance && r.categories.performance.score) || 0) * 100);
   const acess = Math.round(((r.categories && r.categories.accessibility && r.categories.accessibility.score) || 0) * 100);
   const praticas = Math.round(((r.categories && r.categories['best-practices'] && r.categories['best-practices'].score) || 0) * 100);

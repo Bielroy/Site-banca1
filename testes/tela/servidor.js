@@ -88,6 +88,7 @@ function subir(respostas = {}) {
       return;
     }
     if (u === '/js/firebase.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end(FIREBASE_FALSO); }
+    if (u === '/js/firebase-arquivos.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end("export const storage = {}; export const ref = () => ({}); export const uploadBytes = async () => {}; export const getDownloadURL = async () => '';"); }
     // mesmas reescritas do vercel.json
     let arq = u === '/' || u === '/previa' ? 'index.html' : u.slice(1);
     if (/^\/feira\/[^/]+$/.test(u)) { res.statusCode = 307; res.setHeader('Location', `/?feira=${u.split('/')[2]}&entrar=1`); return res.end(); }
