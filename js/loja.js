@@ -14,6 +14,10 @@ import { podePagarPix } from './pix-lib.js';
 import { lerEntrega, previaDaEntrega } from './entrega-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
 import { miniatura } from './foto-lib.js';
+// Foto pequena SEMPRE pelo redutor do próprio site (mesmo endereço da loja). Antes, a foto com miniatura do ImgBB
+// (fotoMini, das fotos enviadas pelo painel novo) ia direto ao i.ibb.co, e em algumas operadoras/redes esse endereço
+// não abre: a loja da Lúcia ficou sem nenhuma foto. Se o redutor falhar, a foto original entra (data-original).
+const fotoPequena = (p, largura) => miniatura(p.fotoMini || p.foto, largura);
 import { emOferta, desconto, ofertasDe, precoDoDia } from './oferta-lib.js';
 import { codigoPix, pixDaLojaValido, chaveBonita } from './pix-chave-lib.js';
 import { listaValida, listaDoCarrinho, separar, mesmoConjunto, podeConvidarAvaliar, nomeDoDia, textoDaNota } from './atalhos-lib.js';
@@ -261,7 +265,7 @@ const renderUpsell = () => {
         if (upsellCont.dataset.sugestao === up.id) return;
         upsellCont.dataset.sugestao = up.id;
         upsellCont.innerHTML = `<div class="upsell-box">
-            ${up.foto ? `<img class="upsell-foto" src="${escapeHTML(up.fotoMini || miniatura(up.foto, 128))}" data-original="${escapeHTML(up.foto)}" alt="" width="52" height="52" loading="lazy">` : ''}
+            ${up.foto ? `<img class="upsell-foto" src="${escapeHTML(fotoPequena(up, 128))}" data-original="${escapeHTML(up.foto)}" alt="" width="52" height="52" loading="lazy">` : ''}
             <span class="upsell-texto"><small>Que tal levar?</small><b>${escapeHTML(up.nome)}</b><em>${fmt(up.preco)} ${nomeUnidade(up.unidade)}</em></span>
             <button class="upsell-botao" data-action="add" data-id="${escapeHTML(up.id)}">Adicionar</button>
         </div>`;
@@ -393,7 +397,7 @@ const renderCarrinhoCompleto = () => {
 
         html += `
         <article class="carrinho-item" id="cart-row-${escapeHTML(item.id)}">
-            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(item.fotoMini || miniatura(item.foto, 128))}" data-original="${escapeHTML(item.foto)}" alt="${escapeHTML(item.nome)}" loading="lazy" width="48" height="48">` : ''}</div>
+            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(fotoPequena(item, 128))}" data-original="${escapeHTML(item.foto)}" alt="${escapeHTML(item.nome)}" loading="lazy" width="48" height="48">` : ''}</div>
             <div class="item-meio">
                 <h3 class="item-nome">${escapeHTML(item.nome)} </h3>
                 <div class="qtd-ctrl">
@@ -520,7 +524,7 @@ const cardHtml = (p, rapido = false, prioridade = false) => {
         return `
         <article class="produto-card" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}" style="display: flex;">
             <div class="produto-img-wrap">
-                ${p.foto ? `<img src="${escapeHTML(p.fotoMini || miniatura(p.foto, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
+                ${p.foto ? `<img src="${escapeHTML(fotoPequena(p, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
                 <button class="btn-fav ${favActive}" data-action="fav" data-id="${escapeHTML(p.id)}" aria-label="Favoritar ${escapeHTML(p.nome)}" aria-pressed="${favActive ? 'true' : 'false'}">${ICO.coracao}</button>
             </div>
@@ -1566,7 +1570,7 @@ document.body.addEventListener('click', async (e) => {
             if (p.foto) {
                 // Abre JÁ com a foto que está na tela (a miniatura do card), para não piscar em branco,
                 // e troca pela foto grande só quando ela terminar de chegar e de ser aberta pelo aparelho.
-                const jaNaTela = (fotoCard && fotoCard.complete && fotoCard.naturalWidth ? fotoCard.currentSrc : '') || p.fotoMini || miniatura(p.foto, 384);
+                const jaNaTela = (fotoCard && fotoCard.complete && fotoCard.naturalWidth ? fotoCard.currentSrc : '') || fotoPequena(p, 384);
                 img.dataset.original = p.foto; img.src = jaNaTela; img.style.visibility = '';
                 if (jaNaTela !== p.foto) {
                     const grande = new Image();

@@ -927,6 +927,10 @@ teste('cupom vale até 23:59 (Brasília) do último dia, inclusive o especial (f
   // o painel pergunta antes de salvar um código que já existe e, por padrão, zera a contagem
   const adminJs = require('fs').readFileSync(raiz('js/admin.js'), 'utf8');
   assert.ok(/zerarUsos \? \{ usos: 0 \}/.test(adminJs) && /já existe/.test(adminJs), 'recriar cupom zera os usos (com pergunta)');
+  assert.ok(/validade < hojeBRCupom\(\)/.test(adminJs) && /action === 'editar-cupom'/.test(adminJs), 'painel recusa validade que já passou e deixa editar o cupom');
+  // fotos: sempre pelo redutor do site (o i.ibb.co direto não abre em algumas redes)
+  const lojaJs = require('fs').readFileSync(raiz('js/loja.js'), 'utf8');
+  assert.ok(!/src="\$\{escapeHTML\([a-z]+\.fotoMini \|\|/.test(lojaJs) && /fotoPequena = \(p, largura\) => miniatura\(p\.fotoMini \|\| p\.foto, largura\)/.test(lojaJs), 'foto da vitrine passa pelo redutor');
 });
 teste('cupom em %: vale também para o que vai para a balança, e o de 100% zera o pedido com a entrega', async () => {
   const db = criarBancoP({ ...sementeEstoque(), 'loja/config': { ...(sementeEstoque()['loja/config'] || {}), status: 'aberta', entrega: { taxa: 6, gratisAcima: 80 } },

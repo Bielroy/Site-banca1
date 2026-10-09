@@ -1,4 +1,5 @@
 import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
+import { miniatura } from './foto-lib.js';   // foto pelo redutor do site (o i.ibb.co direto não abre em algumas redes)
 import { getDoc, auth, db, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, limit, writeBatch, where, updateDoc } from './firebase.js';
 import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
@@ -40,6 +41,8 @@ const abrirTela = async (nome) => {
     catch (e) { console.error(e); showToast('Não consegui abrir esta tela. Confira a internet e toque de novo.', true); }
 };
 import { iniciarCategoriasAdmin, abrirCategorias, chaveDaCategoria, nomeDaCategoria, normalizarWpp } from './admin-categorias.js';
+// Miniatura do redutor falhou? Volta para a foto original (mesmo cuidado da loja).
+document.addEventListener('error', (e) => { const img = e.target; if (!(img instanceof HTMLImageElement) || !img.dataset.original) return; const o = img.dataset.original; delete img.dataset.original; if (img.getAttribute('src') !== o) img.src = o; }, true);
 
 // Chart.js agora é carregado sob demanda (só ao abrir o Dashboard).
 // Isso tira ~200KB do carregamento inicial do painel.
@@ -586,7 +589,7 @@ const renderProdutos = () => {
         return `
         <article class="pl-item${p.ativo ? '' : ' fora'}">
             <button type="button" class="pl-abrir" data-action="editar-produto" data-id="${escapeHTML(p.id)}">
-                <span class="pl-foto">${/^https:\/\//i.test(String(p.fotoMini || p.foto || '')) ? `<img src="${escapeHTML(p.fotoMini || p.foto)}" loading="lazy" decoding="async" alt="">` : placeholderSVG}</span>
+                <span class="pl-foto">${/^https:\/\//i.test(String(p.fotoMini || p.foto || '')) ? `<img src="${escapeHTML(miniatura(p.fotoMini || p.foto, 128))}" data-original="${escapeHTML(p.fotoMini || p.foto)}" loading="lazy" decoding="async" alt="">` : placeholderSVG}</span>
                 <span class="pl-txt">
                     <b>${escapeHTML(p.nome)}</b>
                     <span class="pl-sub">${Number(p.preco) > 0 ? `${fmt(p.preco)} / ${escapeHTML(p.unidade || 'un')}` : 'sem preço'}${cat ? ` · ${escapeHTML(cat)}` : ''}${p.ativo ? '' : ' · <em>fora da loja</em>'}</span>
@@ -1250,6 +1253,18 @@ document.body.addEventListener('click', async (e) => {
             showToast(ligar ? `Cupom ${codigo} ligado` : `Cupom ${codigo} desligado`);
         }
 
+        else if (action === 'editar-cupom') {
+            // põe o cupom no formulário de cima: muda o que quiser (validade, desconto...) e salva
+            const c = cuponsAtuais.find((x) => x.codigo === target.dataset.id); if (!c) return;
+            const por = (id, v) => { const el = document.getElementById(id); if (el) el.value = v == null ? '' : String(v); };
+            por('cup-codigo', c.codigo); por('cup-percentual', Number(c.percentual) > 0 ? c.percentual : ''); por('cup-valorfixo', Number(c.valorFixo) > 0 ? c.valorFixo : '');
+            por('cup-minimo', Number(c.minimoCompra) > 0 ? c.minimoCompra : ''); por('cup-limite', c.limiteUsos == null || c.limiteUsos === '' ? '' : c.limiteUsos); por('cup-validade', c.validoAte || '');
+            const esp = document.getElementById('cup-especial'); if (esp) { esp.checked = c.foraDaPrevisao === true; esp.dataset.mexido = '1'; }
+            document.getElementById('cup-validade')?.dispatchEvent(new Event('input'));
+            document.getElementById('cup-codigo')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            showToast(`Editando ${c.codigo}: mude e toque em Salvar cupom.`);
+        }
+
         else if (action === 'excluir-cupom') {
             const codigo = target.dataset.id;
             if (await customConfirm(
@@ -1837,6 +1852,15 @@ const iniciarCupons = () => {
     unsubscribes.push(unsub);
 };
 
+const hojeBRCupom = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+const dataBR = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '')); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; };
+// a data escolhida aparece por extenso embaixo do campo: o calendário do celular às vezes grava o ano errado
+document.getElementById('cup-validade')?.addEventListener('input', (e) => {
+    const d = document.getElementById('cup-validade-dica'); if (!d) return;
+    const v = e.target.value;
+    d.textContent = !v ? 'Vazio = não vence.' : v < hojeBRCupom() ? `Atenção: ${dataBR(v)} já passou.` : `Vale até ${dataBR(v)}, 23:59.`;
+    d.classList.toggle('erro', !!v && v < hojeBRCupom());
+});
 const cupomVencido = (c) => {
     if (!c.validoAte) return false;
     // Mesma regra de fuso usada no servidor (checkout.js), para o painel não
@@ -1892,10 +1916,11 @@ const renderCupons = () => {
                 <p class="cupom-meta">
                     Usado ${usos}${limite !== null ? ` de ${limite}` : ' vez(es)'}
                     ${Number(c.minimoCompra) > 0 ? ` • mínimo ${fmt(c.minimoCompra)}` : ''}
-                    ${c.validoAte ? ` • até ${new Date(c.validoAte + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}
+                    ${c.validoAte ? ` • ${vencido ? 'venceu em' : 'até'} ${dataBR(c.validoAte) || escapeHTML(c.validoAte)}` : ' • não vence'}
                     ${c.foraDaPrevisao === true ? ' • especial, fora da previsão' : ''}
                 </p>
                 <div class="cupom-acoes">
+                    <button class="btn btn-outline" data-action="editar-cupom" data-id="${escapeHTML(c.codigo)}">Editar</button>
                     <button class="btn btn-outline" data-action="toggle-cupom" data-id="${escapeHTML(c.codigo)}">
                         ${desligado ? 'Ligar' : 'Desligar'}
                     </button>
@@ -1936,6 +1961,9 @@ const salvarCupom = async () => {
     }
 
     const limiteRaw = document.getElementById('cup-limite').value;
+    const validade = document.getElementById('cup-validade').value || '';
+    if (validade && (!/^\d{4}-\d{2}-\d{2}$/.test(validade) || validade > '2199-12-31')) return showToast('Confira a data de validade.', true);
+    if (validade && validade < hojeBRCupom()) return showToast(`A validade ${dataBR(validade)} já passou. Escolha outra data ou deixe vazio (não vence).`, true);
 
     // Código que JÁ EXISTE: antes ele herdava os usos antigos e, com limite, nascia esgotado
     // ("FAMILIA" recriado todo mês parecia vencer antes da hora). Agora a pessoa escolhe.
@@ -1955,13 +1983,14 @@ const salvarCupom = async () => {
             valorFixo,
             minimoCompra: Number(document.getElementById('cup-minimo').value) || 0,
             limiteUsos: limiteRaw === '' ? null : Number(limiteRaw),
-            validoAte: document.getElementById('cup-validade').value || '',
+            validoAte: validade,
             foraDaPrevisao: document.getElementById('cup-especial')?.checked === true,
             ativo: true,
             criadoEm: new Date().toISOString(),
         }, { merge: true });   // merge: sem zerar, a contagem de usos continua
 
-        showToast(`Cupom ${codigo} gravado!`);
+        showToast(`Cupom ${codigo} gravado. ${validade ? `Vale até ${dataBR(validade)}.` : 'Não vence.'}`);
+        const dica = document.getElementById('cup-validade-dica'); if (dica) { dica.textContent = 'Vazio = não vence.'; dica.classList.remove('erro'); }
         ['cup-codigo', 'cup-percentual', 'cup-valorfixo', 'cup-minimo', 'cup-limite', 'cup-validade']
             .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
         const esp = document.getElementById('cup-especial'); if (esp) { esp.checked = false; delete esp.dataset.mexido; }
