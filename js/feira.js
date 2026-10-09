@@ -1,16 +1,16 @@
 // =====================================================================
 //  js/feira.js — TELA DE ENTRADA DA FEIRA (feira.html, endereço /feira/id).
 //
-//  Mostra só as bancas desta feira. Quem abre este link passa a ser "da feira"
-//  (guardado no aparelho): nas bancas, aparece só o atalho de volta para cá e
-//  nunca as bancas de outra feira. Banca desligada na Plataforma não aparece.
-//  Feira com uma banca só: vai direto para ela.
+//  Quem abre este link passa a ser "da feira" (guardado no aparelho) e vai DIRETO
+//  para uma banca da feira (a última que abriu nela, ou a primeira da lista). Lá dentro,
+//  a faixa do topo mostra as bancas desta feira (e nunca as de outra feira).
+//  Banca desligada na Plataforma não conta. Esta tela só aparece se der erro.
 //  Lê só dados públicos (feiras/{id} e a ficha de cada banca). Sem login.
 // =====================================================================
 import { db, doc, getDoc } from './firebase.js';
 import { urlDaLoja } from './tenant.js';
 import { feiraDoEndereco, comFeira, diasDaFeira } from './plataforma-lib.js';
-import { gravarFeiraCliente } from './feira-cliente.js';
+import { gravarFeiraCliente, lerUltimaBanca } from './feira-cliente.js';
 
 const $ = (id) => document.getElementById(id);
 const corOk = (c) => (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c : '');
@@ -66,9 +66,11 @@ async function abrir() {
     }))).filter(Boolean);
 
     if (!bancas.length) return aviso('Nenhuma banca desta feira está atendendo pelo aplicativo agora.');
-    if (bancas.length === 1) { location.replace(comFeira(urlDaLoja(bancas[0].id), fid)); return; }
-    const lista = $('fe-lista'); lista.textContent = '';
-    bancas.forEach((b) => lista.appendChild(cartao(fid, b)));
+    // vai direto para a banca (a faixa do topo dela mostra as outras bancas da feira)
+    const ultima = lerUltimaBanca(fid), destino = bancas.find((b) => b.id === ultima) || bancas[0];
+    location.replace(comFeira(urlDaLoja(destino.id), fid));
+    // se o navegador não sair daqui (raro), a lista fica de reserva
+    setTimeout(() => { const lista = $('fe-lista'); lista.textContent = ''; bancas.forEach((b) => lista.appendChild(cartao(fid, b))); }, 3000);
 }
 
 abrir();

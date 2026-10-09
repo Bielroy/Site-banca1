@@ -11,3 +11,10 @@ const valido = (id) => /^[a-z0-9][a-z0-9-]{1,39}$/.test(String(id || ''));
 export const lerFeiraCliente = () => { try { const v = localStorage.getItem(K) || ''; return valido(v) ? v : ''; } catch (_) { return ''; } };
 export const gravarFeiraCliente = (id) => { try { if (valido(id)) localStorage.setItem(K, id); else localStorage.removeItem(K); } catch (_) { /* sem armazenamento */ } };
 export const esquecerFeiraCliente = () => gravarFeiraCliente('');
+// Última banca que o cliente abriu em cada feira: o link da feira volta direto para ela.
+const KU = 'banca_feira_ultima';
+export const lerUltimaBanca = (fid) => { try { const m = JSON.parse(localStorage.getItem(KU) || '{}'); const v = m && m[fid]; return valido(v) ? v : ''; } catch (_) { return ''; } };
+export const gravarUltimaBanca = (fid, id) => {
+    if (!valido(fid) || !valido(id)) return;
+    try { const m = JSON.parse(localStorage.getItem(KU) || '{}') || {}; m[fid] = id; const chaves = Object.keys(m); if (chaves.length > 20) delete m[chaves[0]]; localStorage.setItem(KU, JSON.stringify(m)); } catch (_) { /* sem armazenamento */ }
+};

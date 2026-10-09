@@ -10,8 +10,8 @@
 //  Sem ficha (ou sem tema), vale o visual original da Banca Adair e Pedrina.
 // =====================================================================
 import { getDoc, doc, db } from './firebase.js';
-import { feiraDoDia, feirasDaFicha, feiraDoCliente, feirasDoCondominio, feiraDoEndereco } from './plataforma-lib.js';
-import { lerFeiraCliente, gravarFeiraCliente } from './feira-cliente.js';
+import { feiraDoDia, feirasDaFicha, feiraDoCliente, feirasDoCondominio, feiraDoEndereco, comFeira } from './plataforma-lib.js';
+import { lerFeiraCliente, gravarFeiraCliente, gravarUltimaBanca } from './feira-cliente.js';
 import { TENANT, fichaRef, chave, urlDaLoja, ehLojaOriginal, EM_PREVIA } from './tenant.js';
 import { ARTES, arteDoTipo } from './arte-lib.js';
 import { OPCOES, urlImagem, corLegivel, legivelSobre, FONTES, MODELOS, NOMES_MODELOS, FOTO_FORMATOS, linkDaFonte } from './aparencia-lib.js';
@@ -195,8 +195,8 @@ function aplicarFicha(ficha, completa = true) {
 // ---------------------------------------------------------------------
 // FEIRA. feiras/{id} = { nome, dias: [0..6], lojas: [{ id, nome, cor }], condominios: [nomes] }
 //  - Cliente DA FEIRA (entrou pelo link dela, escolheu um condomínio dela ou a conta lembrou):
-//    vê só um atalho "‹ todas as bancas da feira", que volta para a tela de entrada da feira.
-//    Numa banca que não é da feira dele, não aparece atalho para banca nenhuma.
+//    vê a faixa com as bancas da feira DELE (qualquer dia). Numa banca que não é da feira dele,
+//    não aparece faixa nenhuma.
 //  - Cliente sem feira (quem já usava antes): a faixa antiga, com as lojas da feira de hoje.
 // ---------------------------------------------------------------------
 const diaBR = () => new Date(Date.now() - 3 * 3600000).getUTCDay();          // dia da semana em Brasília
@@ -225,28 +225,18 @@ function montarFeira(feiras) {
     const antes = FEIRA_CLIENTE && FEIRA_CLIENTE.id; FEIRA_CLIENTE = doCliente ? feira : null;
     if ((FEIRA_CLIENTE && FEIRA_CLIENTE.id) !== antes) { try { document.dispatchEvent(new CustomEvent('feira-do-cliente')); } catch (_) { /* navegador antigo */ } }
     try { document.dispatchEvent(new CustomEvent('feiras-da-loja')); } catch (_) { /* navegador antigo */ }
-    if (doCliente) { montarVoltaDaFeira(barra, feira); aplicarAppDaFeira(feira); return; }
+    if (doCliente) { gravarUltimaBanca(feira.id, TENANT); montarFaixa(barra, feira, feira.id); aplicarAppDaFeira(feira); return; }
     if (escolhida) { barra.hidden = true; return; }             // cliente de outra feira: nenhuma banca de fora aparece aqui
     montarFaixa(barra, feira);
 }
 
-function montarVoltaDaFeira(barra, feira) {
-    if (lojasValidas(feira).length < 2) { barra.hidden = true; return; }
-    barra.textContent = '';
-    const a = document.createElement('a');
-    a.href = `/feira/${feira.id}`; a.className = 'feira-voltar';
-    a.textContent = `‹ ${feira.nome || 'Feira'} · ver todas as bancas`;
-    barra.appendChild(a);
-    barra.hidden = false;
-}
-
-function montarFaixa(barra, feira) {
-    const lojas = lojasValidas(feira);
+function montarFaixa(barra, feira, fid = '') {
+    const lojas = lojasValidas(feira), link = (id) => (fid ? comFeira(urlDaLoja(id), fid) : urlDaLoja(id));
     if (lojas.length < 2) { barra.hidden = true; return; }
     barra.textContent = '';
     lojas.forEach((l) => {
         const a = document.createElement('a');
-        a.href = urlDaLoja(l.id); a.className = 'feira-loja' + (l.id === TENANT ? ' atual' : '');
+        a.href = link(l.id); a.className = 'feira-loja' + (l.id === TENANT ? ' atual' : '');
         if (l.id === TENANT) a.setAttribute('aria-current', 'page');
         const ponto = document.createElement('i'); if (cor(l.cor)) ponto.style.background = l.cor;
         a.append(ponto, document.createTextNode(l.nome));
@@ -263,11 +253,11 @@ function montarFaixa(barra, feira) {
     let x0 = null, y0 = null;
     cab.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
     cab.addEventListener('touchend', (e) => {
-        if (x0 === null || lerFeiraCliente()) return;
+        if (x0 === null || barra.hidden) return;
         const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
         if (Math.abs(dx) < 70 || Math.abs(dy) > 50) return;
         const vizinha = lojas[i + (dx < 0 ? 1 : -1)];
-        if (vizinha) location.href = urlDaLoja(vizinha.id);
+        if (vizinha) location.href = link(vizinha.id);
     }, { passive: true });
 }
 

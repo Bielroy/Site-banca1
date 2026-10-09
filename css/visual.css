@@ -425,6 +425,3 @@ button, a, input, select, textarea, label, summary, [data-action], .produto-card
 .precisa-toque .btn-wpp { min-height: 56px; font-size: 1.05rem; animation: chamaToque 1.4s ease-in-out 3; }
 @keyframes chamaToque { 50% { transform: scale(1.04); box-shadow: 0 0 0 6px color-mix(in srgb, #25d366 30%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .precisa-toque .btn-wpp { animation: none; } }
-/* cliente da feira: só o atalho de volta para a tela com todas as bancas */
-.feira-voltar { display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; border-radius: 999px; background: rgba(255, 255, 255, .12); color: #fff; font-weight: 700; font-size: .86rem; text-decoration: none; white-space: nowrap; }
-.feira-voltar:hover, .feira-voltar:focus-visible { background: rgba(255, 255, 255, .22); }
