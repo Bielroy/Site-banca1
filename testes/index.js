@@ -911,6 +911,23 @@ teste('balcão: vender mais do que o sistema tinha não trava a venda; entradas 
   assert.strictEqual((await vender({ itens: [{ id: 'tomate', qtd: 2 }] }, 'caixa-espetinhos', 'espetinhos')).status, 200);
   assert.strictEqual(db._dados.get('tenants/espetinhos/produtos/tomate').estoqueFisico, 48); assert.strictEqual(db._dados.get('produtos/tomate').estoqueFisico, 11);
 });
+teste('cupom vale até 23:59 (Brasília) do último dia, inclusive o especial (fora da previsão); recriar o código não herda usos', async () => {
+  const RealDate = Date;
+  const fixar = (iso) => { const t = new RealDate(iso).getTime(); global.Date = class extends RealDate { constructor(...a) { super(...(a.length ? a : [t])); } static now() { return t; } }; };
+  try {
+    for (const [quando, ok] of [['2026-10-09T23:30:00-03:00', true], ['2026-10-10T00:01:00-03:00', false]]) {
+      fixar(quando);
+      const db = criarBancoP({ ...sementeEstoque(), 'cupons/FAMILIA': { ativo: true, percentual: 100, foraDaPrevisao: true, validoAte: '2026-10-09', limiteUsos: 5, usos: 0 } });
+      const checkout = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS_P));
+      const r = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedido({ cupom: 'familia', itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }] }) });
+      if (ok) assert.strictEqual(r.status, 200, `${quando}: ${JSON.stringify(r.corpo)}`);
+      else assert.ok(r.status >= 400 && /venceu/.test(r.corpo.error), `${quando}: ${JSON.stringify(r.corpo)}`);
+    }
+  } finally { global.Date = RealDate; }
+  // o painel pergunta antes de salvar um código que já existe e, por padrão, zera a contagem
+  const adminJs = require('fs').readFileSync(raiz('js/admin.js'), 'utf8');
+  assert.ok(/zerarUsos \? \{ usos: 0 \}/.test(adminJs) && /já existe/.test(adminJs), 'recriar cupom zera os usos (com pergunta)');
+});
 teste('cupom em %: vale também para o que vai para a balança, e o de 100% zera o pedido com a entrega', async () => {
   const db = criarBancoP({ ...sementeEstoque(), 'loja/config': { ...(sementeEstoque()['loja/config'] || {}), status: 'aberta', entrega: { taxa: 6, gratisAcima: 80 } },
     'cupons/FAMILIA': { ativo: true, percentual: 100, foraDaPrevisao: true }, 'cupons/DEZ': { ativo: true, percentual: 10 } }); const adm = criarAdmin(db, TOKENS_P);

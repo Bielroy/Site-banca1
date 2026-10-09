@@ -1937,9 +1937,20 @@ const salvarCupom = async () => {
 
     const limiteRaw = document.getElementById('cup-limite').value;
 
+    // Código que JÁ EXISTE: antes ele herdava os usos antigos e, com limite, nascia esgotado
+    // ("FAMILIA" recriado todo mês parecia vencer antes da hora). Agora a pessoa escolhe.
+    const existente = cuponsAtuais.find((c) => c.codigo === codigo);
+    let zerarUsos = true;
+    if (existente && Number(existente.usos || 0) > 0) {
+        zerarUsos = await customConfirm(`O cupom ${codigo} já existe`,
+            `Ele já foi usado ${Number(existente.usos)} vez(es). Ao salvar de novo, a contagem de usos recomeça do zero?${limiteRaw !== '' ? ` (Sem zerar, com limite de ${limiteRaw}, ele ${Number(existente.usos) >= Number(limiteRaw) ? 'já nasce esgotado' : `só aceita mais ${Number(limiteRaw) - Number(existente.usos)}`}.)` : ''}`,
+            { ok: 'Zerar e salvar', nao: 'Manter os usos' });
+    }
+
     btn.disabled = true; btn.textContent = 'Gravando...';
     try {
         await setDoc(tdoc('cupons', codigo), {
+            ...(zerarUsos ? { usos: 0 } : {}),
             percentual,
             valorFixo,
             minimoCompra: Number(document.getElementById('cup-minimo').value) || 0,
@@ -1948,7 +1959,7 @@ const salvarCupom = async () => {
             foraDaPrevisao: document.getElementById('cup-especial')?.checked === true,
             ativo: true,
             criadoEm: new Date().toISOString(),
-        }, { merge: true });   // merge preserva a contagem de usos se já existir
+        }, { merge: true });   // merge: sem zerar, a contagem de usos continua
 
         showToast(`Cupom ${codigo} gravado!`);
         ['cup-codigo', 'cup-percentual', 'cup-valorfixo', 'cup-minimo', 'cup-limite', 'cup-validade']
