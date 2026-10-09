@@ -12,8 +12,10 @@
 // =====================================================================
 
 // --------- Formatadores / segurança ---------
-export const fmt = (n) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(n) || 0);
+// O formatador é criado UMA vez: criar um novo a cada preço custava mais que montar a vitrine inteira
+// (centenas de preços por tela; no celular, centenas de milissegundos travados).
+const REAIS = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+export const fmt = (n) => REAIS.format(Number(n) || 0);
 
 export const escapeHTML = (str) => {
   if (str === null || str === undefined) return '';

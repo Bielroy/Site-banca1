@@ -118,6 +118,38 @@ teste('loja desligada pela plataforma avisa "fora do ar" e não mostra produto',
   semErros(erros.filter((e) => !/permission|permiss/i.test(e))); await fechar();
 });
 
+// ---------------------------------------------------------------- VELOCIDADE / TELA ESTÁVEL
+const medirPulos = () => { window.__pulos = 0; new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__pulos += e.value; }).observe({ type: 'layout-shift', buffered: true }); };
+teste('a ordem personalizada que chega depois NÃO embaralha a vitrine; na próxima visita ela já abre na ordem', async () => {
+  const { pagina, erros, ctx, fechar } = await abrir('/', cenarioPadrao(), { antes: medirPulos });
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForTimeout(2200);                                  // o ranking (de mentira) chega com 1,5 s
+  const pulos = await pagina.evaluate(() => window.__pulos);
+  assert.ok(pulos < 0.05, `a tela pulou ${pulos.toFixed(3)} (antes da correção: 0,43)`);
+  assert.deepStrictEqual(await visiveis(pagina), ['Tomate italiano', 'Alface crespa', 'Banana prata', 'Ovos caipira (dúzia)'], 'cards ficam onde estavam');
+  // segunda visita (mesmo aparelho): a ordem guardada vale desde a abertura
+  const p2 = await ctx.newPage(); p2.on('pageerror', (e) => erros.push(e.message));
+  await p2.goto(servidor.base + '/'); await cards(p2).first().waitFor({ timeout: 8000 });
+  const ordem = await p2.evaluate(() => [...document.querySelectorAll('#lista-produtos .produto-card')].sort((a, b) => (+a.style.order || 0) - (+b.style.order || 0)).map((c) => c.dataset.id));
+  assert.deepStrictEqual(ordem, ['ovos', 'banana', 'alface', 'tomate'], 'ordem do ranking guardado');
+  semErros(erros); await fechar();
+});
+
+teste('letras: a banca liga as letras dela; loja com outras letras não baixa as da banca', async () => {
+  let { pagina, erros, fechar } = await abrir('/');
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  assert.strictEqual(await pagina.getAttribute('#fontes-banca', 'media'), 'all', 'banca usa Fraunces/Figtree');
+  semErros(erros); await fechar();
+  const cen = cenarioPadrao(); cen.lojas['paes-da-lucia'].ficha.tema = { primaria: '#5a3a22', fonteTitulo: 'Playfair Display', fonteTexto: 'Lato' };
+  ({ pagina, erros, fechar } = await abrir('/?loja=paes-da-lucia', cen));
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForTimeout(300);
+  assert.strictEqual(await pagina.getAttribute('#fontes-banca', 'media'), 'print', 'as letras da banca ficam desligadas');
+  const pedidas = await pagina.evaluate(() => [...document.querySelectorAll('link[data-fonte]')].map((l) => l.dataset.fonte).sort());
+  assert.deepStrictEqual(pedidas, ['Lato', 'Playfair Display']);
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- FEIRA
 teste('link da feira abre direto na banca, com a faixa das bancas no topo, e lembra a última', async () => {
   const { pagina, erros, fechar } = await abrir('/feira/florenca');
@@ -171,6 +203,8 @@ teste('painel: a aba Aparência abre e a prévia da loja carrega dentro dela', a
 
 (async () => {
   servidor = await subir({
+    // ranking (de mentira) da banca, ao contrário da ordem do cadastro, chegando 1,5 s depois
+    '/api/analytics': (c) => (c.acao === 'ranking' ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, nivel: 'popular', itens: ['ovos', 'banana', 'alface', 'tomate'].map((id, i) => ({ id, p: 0.9 - i * 0.2 })) }), 1500)) : {}),
     '/api/checkout': (c) => (c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),
     '/api/plataforma': (c) => (c.acao === 'situacao' ? { sucesso: true, temDono: true, souEu: true }
       : c.acao === 'erros' ? { sucesso: true, erros: [{ id: 'e1', msg: "Cannot read properties of undefined (reading 'preco')", vezes: 3, ultimo: new Date().toISOString(), onde: '/assets/main-X.js:10:5', paginas: ['/'], navegadores: ['Android · Chrome 129'], lojas: ['banca'], pilha: 'at x' }] }

@@ -43,3 +43,8 @@ jobs:
               --chrome-flags="--headless=new --no-sandbox" || echo "::warning title=Velocidade::Não consegui medir $caminho"
           done
           node testes/velocidade/resumo.js loja.json lucia.json
+      - name: O que pula e o que trava (navegador de teste no site no ar)
+        run: |
+          npm install --prefix testes/tela --no-audit --no-fund
+          npx --prefix testes/tela playwright install --with-deps chromium
+          node testes/velocidade/pulos.js https://site-banca1.vercel.app/ "https://site-banca1.vercel.app/?loja=paes-da-lucia"

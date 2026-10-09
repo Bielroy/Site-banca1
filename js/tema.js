@@ -64,7 +64,9 @@ function aplicarApp(ficha) {
     img.src = `${base}&icone=1`;
 }
 
-const NO_SITE = new Set(['Fraunces', 'Figtree']);          // já carregadas pelo index.html
+const NO_SITE = new Set(['Fraunces', 'Figtree']);          // já pedidas pelo index.html (<link id="fontes-banca">)
+// As letras da banca chegam desligadas (media="print", para não segurar a primeira tela): liga quando a loja usa.
+const ligarFontesDaBanca = () => { const l = document.getElementById('fontes-banca'); if (l && l.media !== 'all') l.media = 'all'; };
 
 
 const cor = (v) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null);
@@ -112,7 +114,8 @@ export function variaveisDoTema(tema) {
 export const carregarFonte = (nome) => {
     // só as fontes da nossa lista: o nome vem da ficha da loja e antes entrava direto num seletor e num endereço
     const href = linkDaFonte(nome);
-    if (!href || NO_SITE.has(nome) || [...document.querySelectorAll('link[data-fonte]')].some((l) => l.dataset.fonte === nome)) return;
+    if (NO_SITE.has(nome)) { ligarFontesDaBanca(); return; }
+    if (!href || [...document.querySelectorAll('link[data-fonte]')].some((l) => l.dataset.fonte === nome)) return;
     const l = document.createElement('link');
     l.rel = 'stylesheet'; l.dataset.fonte = nome; l.href = href;
     document.head.appendChild(l);
@@ -125,7 +128,8 @@ export function aplicarTema(tema, alvo = document.documentElement) {
     Object.entries(variaveis).forEach(([k, val]) => alvo.style.setProperty(k, val));
     alvo._temaVars = Object.keys(variaveis);
     Object.entries(classes).forEach(([c, on]) => alvo.classList.toggle(c, !!on));
-    if (tema) { carregarFonte(tema.fonteTitulo); carregarFonte(tema.fonteTexto); }
+    // letra que a ficha não escolheu = a da banca (Fraunces / Figtree)
+    carregarFonte((tema && tema.fonteTitulo) || 'Fraunces'); carregarFonte((tema && tema.fonteTexto) || 'Figtree');
     if (alvo === document.documentElement && tema && cor(tema.primaria)) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', tema.primaria);
 }
 
@@ -343,8 +347,12 @@ export async function iniciarTema() {
         if (ultima && ultima !== TENANT) { location.replace(comFeira(urlDaLoja(ultima), doLink)); return null; }
     }
     const K = chave('banca_ficha');
+    let guardada = null;
+    try { guardada = JSON.parse(localStorage.getItem(K) || 'null'); } catch (_) { /* sem cache */ }
+    // loja original sem ficha guardada: as letras de sempre já (as outras lojas esperam a ficha dizer quais)
+    if (ehLojaOriginal && !(guardada && guardada.ficha)) ligarFontesDaBanca();
     try {
-        const g = JSON.parse(localStorage.getItem(K) || 'null');
+        const g = guardada;
         if (g) {
             aplicarFicha(g.ficha, g.v >= 2);
             FEIRAS_DA_LOJA = g.v === 3 && Array.isArray(g.feiras) ? g.feiras : [];
@@ -365,11 +373,12 @@ export async function iniciarTema() {
         const feiras = feirasCruas.map((f) => ({ ...f, lojas: (f.lojas || []).filter((l) => { const v = vivas.get(l && l.id); return !(v && v.ativo === false); })
             .map((l) => { const v = vivas.get(l.id); return v ? { ...l, nome: v.nome || l.nome, cor: (v.tema && v.tema.primaria) || l.cor } : l; }) }));
         if (entrando && await irParaBancaDaFeira(doLink, feiras)) return null;
+        if (!ficha) ligarFontesDaBanca();                    // sem ficha: o visual (e as letras) de sempre
         FICHA_GRAVADA = ficha;
         if (ficha || FICHA_PREVIA) aplicarFicha({ ...(ficha || {}), ...(FICHA_PREVIA || {}) });
         FEIRAS_DA_LOJA = feiras;
         montarFeira(feiras);
         try { localStorage.setItem(K, JSON.stringify({ v: 3, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, feiras: ficha.feiras || null, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feiras })); } catch (_) { /* cheio */ }
         return ficha;
-    } catch (e) { console.warn('[tema] usando o visual guardado:', e && e.code); return null; }
+    } catch (e) { console.warn('[tema] usando o visual guardado:', e && e.code); if (!guardada) ligarFontesDaBanca(); return null; }
 }

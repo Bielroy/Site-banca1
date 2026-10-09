@@ -165,10 +165,13 @@ const pintarDoisModos = (area, p, item) => {
     }
     if (foco) (area.querySelector(`[data-action="${foco}"]`) || area.querySelector('[data-action="inc"], .modo-btn'))?.focus({ preventScroll: true });
 };
+// produto pelo id sem varrer a lista inteira a cada card (com catálogo grande, a vitrine fazia N × N buscas)
+let _mapaProdutos = null, _mapaDe = null;
+const produtoPorId = (id) => { if (_mapaDe !== STATE.produtos) { _mapaDe = STATE.produtos; _mapaProdutos = new Map((STATE.produtos || []).map((p) => [p.id, p])); } return _mapaProdutos.get(id); };
 const pintarAcao = (area, produtoId, animar) => {
     const item = STATE.carrinho.find(x => x.id === produtoId);
     area.closest('.produto-card')?.classList.toggle('na-sacola', !!item);
-    const prod = STATE.produtos.find(p => p.id === produtoId);
+    const prod = produtoPorId(produtoId);
     if (prod && temDoisModos(prod)) return pintarDoisModos(area, prod, item);
     if (area.classList.contains('dupla')) { area.classList.remove('dupla'); delete area.dataset.sig; area.textContent = ''; }   // o produto deixou de ser por quilo
 
@@ -177,7 +180,7 @@ const pintarAcao = (area, produtoId, animar) => {
     if (!item && area.querySelector('.card-add')) return;
 
     const tinhaFoco = area.contains(document.activeElement);
-    const nome = escapeHTML((item || STATE.produtos.find(p => p.id === produtoId) || {}).nome || '');
+    const nome = escapeHTML((item || produtoPorId(produtoId) || {}).nome || '');
     const classe = animar ? ' entra' : '';
     area.innerHTML = item
         ? `<div class="card-qtd${classe}">
@@ -516,7 +519,7 @@ const cardHtml = (p, rapido = false) => {
         return `
         <article class="produto-card" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}" style="display: flex;">
             <div class="produto-img-wrap">
-                ${p.foto ? `<img src="${escapeHTML(p.fotoMini || miniatura(p.foto, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}" decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
+                ${p.foto ? `<img src="${escapeHTML(p.fotoMini || miniatura(p.foto, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${rapido ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
                 <button class="btn-fav ${favActive}" data-action="fav" data-id="${escapeHTML(p.id)}" aria-label="Favoritar ${escapeHTML(p.nome)}" aria-pressed="${favActive ? 'true' : 'false'}">${ICO.coracao}</button>
             </div>
@@ -536,20 +539,25 @@ document.addEventListener('error', (e) => {
     if (img.getAttribute('src') !== original) img.src = original;
 }, true);
 
-// As fotos de baixo da tela começam "preguiçosas" para a loja abrir rápido. Assim que o
-// aparelho sossega, vamos buscando as demais em lotes: quando a cliente rolar, mesmo
-// depressa, a foto já está no aparelho em vez de aparecer atrasada.
-let _adiantando = 0;
+// As fotos de baixo da tela começam "preguiçosas" para a loja abrir rápido (o navegador já busca
+// sozinho as que estão chegando perto). As demais vêm em lotes só DEPOIS que a pessoa começa a
+// rolar (ou fica 8 s na página): antes, todas as fotos do catálogo desciam junto com a abertura e
+// disputavam a internet com o que está na tela. Quem pediu economia de dados fica só no automático.
+let _adiantando = 0, _esperandoRolar = null;
 const adiantarFotos = () => {
     clearTimeout(_adiantando);
-    if (navigator.connection && navigator.connection.saveData) return;      // quem pediu economia de dados fica como estava
+    if (navigator.connection && (navigator.connection.saveData || /(^|-)2g$/.test(navigator.connection.effectiveType || ''))) return;
     const passo = () => {
         const lote = [...document.querySelectorAll('#lista-produtos img[loading="lazy"]')].slice(0, 6);
         if (!lote.length) return;
         lote.forEach(img => { img.loading = 'eager'; });
         _adiantando = setTimeout(passo, 350);
     };
-    _adiantando = setTimeout(passo, 1500);
+    if (_esperandoRolar) return;                 // já está esperando a primeira rolagem
+    const comecar = () => { removeEventListener('scroll', comecar); removeEventListener('touchstart', comecar); clearTimeout(_esperandoRolar); _esperandoRolar = null; _adiantando = setTimeout(passo, 300); };
+    addEventListener('scroll', comecar, { passive: true, once: true });
+    addEventListener('touchstart', comecar, { passive: true, once: true });
+    _esperandoRolar = setTimeout(comecar, 8000);
 };
 
 const construirCardsIniciais = () => {
@@ -557,7 +565,8 @@ const construirCardsIniciais = () => {
     grid.innerHTML = STATE.produtos.map((p, i) => cardHtml(p, i < 4)).join('');
     STATE.lojaRenderizada = true;
     renderFaixaSempre(true);
-    STATE.produtos.forEach(p => atualizarBadgesDOM(p.id));
+    // pinta o botão de cada card de uma vez (antes: uma busca na página inteira para cada produto)
+    document.querySelectorAll('[data-acao]').forEach((area) => pintarAcao(area, area.dataset.acao));
     adiantarFotos();
 };
 

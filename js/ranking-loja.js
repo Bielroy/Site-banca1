@@ -17,8 +17,9 @@
 import { auth } from './firebase.js';
 import { chave } from './tenant.js';
 
-const TTL_MS = 10 * 60 * 1000;           // reaproveita o ranking por 10 min na sessão
-const CHAVE = chave('banca_rank_v1');
+const TTL_MS = 10 * 60 * 1000;           // ranking com menos de 10 min: nem pede de novo
+const VALE_MS = 7 * 24 * 3600 * 1000;    // ranking de até 7 dias: já ordena a vitrine na abertura (sem esperar o servidor)
+const CHAVE = chave('banca_rank_v2');
 
 let escores = new Map();                  // id → { p, motivo?, repor? }
 let nivel = 'sem_dados';
@@ -33,12 +34,15 @@ export const destaques = (max = 8) => (nivel === 'sem_historico' || nivel === 's
     : [...escores.values()].filter((e) => e.motivo).sort((a, b) => b.p - a.p).slice(0, max).map((e) => e.id));
 const avisar = () => document.dispatchEvent(new Event('ranking-pronto'));
 
+// Guardado no aparelho (não só na aba): na próxima abertura a vitrine já nasce na ordem certa.
 const lerCache = (uid) => {
     try {
-        const c = JSON.parse(sessionStorage.getItem(CHAVE) || 'null');
-        return c && c.uid === uid && Date.now() - c.ts < TTL_MS ? c : null;
+        const c = JSON.parse(localStorage.getItem(CHAVE) || 'null');
+        return c && c.uid === uid && Date.now() - c.ts < VALE_MS ? c : null;
     } catch (_) { return null; }
 };
+// a vitrine já está na tela? (então trocar a ordem faria os cards pularem debaixo do dedo)
+const vitrineNaTela = () => !!document.querySelector('#lista-produtos .produto-card');
 
 const guardar = (dados) => {
     escores = new Map((dados.itens || []).map((i) => [i.id, i]));
@@ -55,7 +59,7 @@ export async function iniciarRanking() {
         if (!user) { iniciado = false; return; }
 
         const cache = lerCache(user.uid);
-        if (cache) { guardar(cache.dados); aplicarOrdem(); avisar(); return; }
+        if (cache) { guardar(cache.dados); aplicarOrdem(); avisar(); if (Date.now() - cache.ts < TTL_MS) return; }
 
         const token = await user.getIdToken();
         const ctrl = new AbortController();
@@ -70,12 +74,11 @@ export async function iniciarRanking() {
         const dados = await res.json();
         if (!dados.sucesso || !Array.isArray(dados.itens) || !dados.itens.length) return;
 
-        guardar(dados);
-        try { sessionStorage.setItem(CHAVE, JSON.stringify({ uid: user.uid, ts: Date.now(), dados })); } catch (_) { /* quota */ }
-        // Chegou tarde e a pessoa já está rolando? Não troca os cards de lugar debaixo do dedo dela:
-        // a ordem nova vale na próxima abertura (fica guardada acima).
-        if (window.scrollY < 160) aplicarOrdem();
-        avisar();
+        try { localStorage.setItem(CHAVE, JSON.stringify({ uid: user.uid, ts: Date.now(), dados })); } catch (_) { /* aparelho cheio */ }
+        // Chegou depois que a vitrine apareceu? NÃO troca os cards de lugar (nem põe a faixa "Seus de sempre"
+        // em cima deles): a tela pulava inteira. A ordem nova fica guardada e vale na próxima abertura.
+        if (vitrineNaTela()) return;
+        guardar(dados); aplicarOrdem(); avisar();
     } catch (e) {
         iniciado = false;                      // permite nova tentativa no próximo login/refresh
         console.warn('[ranking] usando ordem padrão:', e && e.message);

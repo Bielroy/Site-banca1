@@ -42,6 +42,9 @@ function lista(p) {
   if (resto === 'categorias') return (f.categorias || []).map((c, i) => ({ id: c.chave || 'c' + i, data: () => c }));
   return [];
 }
+// atraso (ms) para imitar a internet: C.atraso = { ficha, feira, produtos } (padrão: na hora)
+const esperar = (ms) => new Promise((ok) => setTimeout(ok, ms || 0));
+const atrasoDe = (p) => { const a = C.atraso || {}; if (/^tenants\\/[^/]+$/.test(p)) return a.ficha; if (/^feiras\\//.test(p)) return a.feira; return a.produtos; };
 const negado = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
 const ehVitrine = (p) => { const { resto } = lojaDe(p); return resto === 'produtos' || resto === 'categorias' || resto === 'loja/config' || resto === 'loja/comunicados'; };
 const snapDoc = (d, id = 'x') => ({ exists: () => !!d, data: () => d || {}, id });
@@ -50,8 +53,8 @@ export const onSnapshot = (ref, cb, erro) => { setTimeout(() => {
   const { loja } = lojaDe(ref.path);
   if (ehVitrine(ref.path) && bloqueada(loja) && conta.isAnonymous) { if (erro) erro(negado()); return; }
   if (ref.tipo === 'doc') cb(snapDoc(ler(ref.path), ref.path.split('/').pop())); else cb(snapLista(lista(ref.path)));
-}, 20); return nada; };
-export const getDoc = async (ref) => { const { loja } = lojaDe(ref.path); if (ehVitrine(ref.path) && bloqueada(loja) && conta.isAnonymous) throw negado(); return snapDoc(ler(ref.path), ref.path.split('/').pop()); };
+}, 20 + (atrasoDe(ref.path) || 0)); return nada; };
+export const getDoc = async (ref) => { await esperar(atrasoDe(ref.path)); const { loja } = lojaDe(ref.path); if (ehVitrine(ref.path) && bloqueada(loja) && conta.isAnonymous) throw negado(); return snapDoc(ler(ref.path), ref.path.split('/').pop()); };
 export const getDocs = async (ref) => snapLista(lista((ref && ref.path) || ''));
 export const setDoc = async (ref, dados) => { (window.__gravados = window.__gravados || []).push({ path: ref.path, dados }); };
 export const deleteDoc = async () => {}, addDoc = async () => ({ id: 'novo' }), updateDoc = async () => {};
@@ -75,10 +78,12 @@ function subir(respostas = {}) {
       req.on('end', () => {
         let json = {}; try { json = corpo ? JSON.parse(corpo) : {}; } catch (_) { /* corpo não é JSON */ }
         chamadas.push({ caminho: u, corpo: json, cabecalhos: req.headers });
-        const fn = respostas[u], saida = fn ? fn(json) : {};
-        res.setHeader('Content-Type', 'application/json');
-        if (saida && saida.__status) { res.statusCode = saida.__status; delete saida.__status; }
-        res.end(JSON.stringify(saida || {}));
+        const fn = respostas[u];
+        Promise.resolve(fn ? fn(json) : {}).then((saida) => {           // a resposta pode demorar (Promise)
+          res.setHeader('Content-Type', 'application/json');
+          if (saida && saida.__status) { res.statusCode = saida.__status; delete saida.__status; }
+          res.end(JSON.stringify(saida || {}));
+        });
       });
       return;
     }

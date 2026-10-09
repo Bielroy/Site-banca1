@@ -35,7 +35,10 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght,SOFT@9..144,500..900,0..100&display=swap" rel="stylesheet">
+    <!-- Letras da banca (Fraunces e Figtree). Baixadas cedo, mas SEM segurar a primeira tela (media="print"):
+         js/tema.js liga (media="all") quando a loja usa estas letras. Loja com outras letras nem baixa estas. -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght,SOFT@9..144,500..900,0..100&display=swap">
+    <link id="fontes-banca" rel="stylesheet" media="print" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght,SOFT@9..144,500..900,0..100&display=swap">
 
 
     <!-- Dado estruturado (JSON-LD): descreve o negócio em linguagem que o

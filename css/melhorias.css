@@ -14,6 +14,9 @@
 .produto-card .btn-fav { background: rgba(255,255,255,.96); }
 .produto-card .produto-unidade-tag { background: rgba(26,58,42,.92); }
 .produto-card { contain: layout style; -webkit-tap-highlight-color: transparent; }
+/* Card fora da tela não é desenhado até chegar perto (o navegador guarda o tamanho depois da 1ª vez).
+   Com catálogo grande, a vitrine abria com o celular travado desenhando centenas de cards invisíveis. */
+#lista-produtos > .produto-card { content-visibility: auto; contain-intrinsic-size: auto 330px; }
 /* (content-visibility na foto foi retirado: com loading="lazy" não ajudava e
    podia deixar a foto em branco durante uma rolagem rápida) */
 @media (hover: none) {
