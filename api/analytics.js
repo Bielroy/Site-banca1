@@ -56,36 +56,45 @@ module.exports = async function handler(req, res) {
     if (req.method === 'GET') {
       const segredo = process.env.CRON_SECRET;
       if (!segredo || !H.igualSeguro(tokenDe(req), segredo)) return res.status(401).json({ sucesso: false, error: 'Não autorizado.' });
-      // Rotina diária: recalcula CADA loja, uma por vez. Erro em uma não derruba as outras.
-      // Guarda de tempo: a função tem 60 s. Com muitas lojas, para de recalcular aos 40 s (sobra tempo para
-      // a faxina e a maquininha) e as que ficaram de fora são anotadas. A ordem gira a cada dia: quem ficou
-      // por último hoje sai na frente amanhã. (As lojas também recalculam sozinhas quando o painel abre.)
-      const inicio = Date.now(), PRAZO_RECALCULO_MS = 40000;
-      const todas = await T.listarLojas(banco), saida = {}, puladas = [];
+      // Rotina diária, em ETAPAS, cada uma com o seu prazo (a função tem 60 s):
+      //   1. CÓPIA DE SEGURANÇA de cada loja (o mais importante: vem primeiro), até 25 s;
+      //   2. vendas da MAQUININHA de ontem, até 35 s;
+      //   3. RECÁLCULO de cada loja (previsão, ranking), até 48 s desde o começo;
+      //   4. faxinas (rápidas) com o que sobra.
+      // A ordem das lojas gira a cada dia: quem ficou por último hoje sai na frente amanhã.
+      // O que ficar de fora é anotado e vira aviso. (As lojas também recalculam sozinhas quando o painel abre.)
+      const inicio = Date.now(), PRAZO_COPIAS_MS = 25000, PRAZO_MAQUININHA_MS = 35000, PRAZO_RECALCULO_MS = 48000;
+      const todas = await T.listarLojas(banco), saida = {}, semCopia = [], puladas = [];
       const giro = todas.length ? Math.floor(Date.now() / 86400000) % todas.length : 0;
       const lojas = todas.slice(giro).concat(todas.slice(0, giro));
       for (const id of lojas) {
-        if (Date.now() - inicio > PRAZO_RECALCULO_MS) { puladas.push(id); saida[id] = { pulada: true }; continue; }
-        try { saida[id] = resumo(await Store.recalcular(T.escopo(banco, id), { forcar: true })); }
-        catch (e) { console.error('[analytics] loja', id, e); saida[id] = { erro: true }; }
-        // CÓPIA DE SEGURANÇA do dia (guarda as últimas 7). Falha aqui não derruba o resto da rotina.
-        try { saida[id] = { ...saida[id], copia: await P.copiar(banco, id) }; }
-        catch (e) { console.error('[copia] loja', id, e && e.message); saida[id] = { ...saida[id], copia: { erro: true } }; await P.avisarFalha(banco, id, 'A cópia de segurança', e); }
+        saida[id] = {};
+        if (Date.now() - inicio > PRAZO_COPIAS_MS) { semCopia.push(id); saida[id].copia = { pulada: true }; continue; }
+        try { saida[id].copia = await P.copiar(banco, id); }
+        catch (e) { console.error('[copia] loja', id, e && e.message); saida[id].copia = { erro: true }; await P.avisarFalha(banco, id, 'A cópia de segurança', e); }
       }
-      if (puladas.length) {
-        console.warn('[analytics] sem tempo para recalcular:', puladas.join(', '));
-        try { await P.alertar(banco, T.TENANT_PADRAO, 'cron-sem-tempo', { titulo: 'Rotina da noite sem tempo', corpo: `${puladas.length} de ${todas.length} lojas ficaram para amanhã. Hora de dividir a rotina por loja.` }); } catch (_) { /* só aviso */ }
+      // MAQUININHA: as vendas de ontem (o PagBank só entrega no dia seguinte), até 35 s. Loja sem credenciais é pulada.
+      const ontem = new Date(Date.now() - 27 * 3600000).toISOString().slice(0, 10), maquininha = {};
+      for (const id of lojas) {
+        if (Date.now() - inicio > PRAZO_MAQUININHA_MS) { maquininha[id] = { pulada: true }; continue; }
+        try { const m = await Maq.buscarDia(banco, id, ontem); if (m) maquininha[id] = { dia: m.dia, total: m.total, vendas: m.vendas }; }
+        catch (e) { console.error('[maquininha] loja', id, e && e.message); maquininha[id] = { erro: true }; }
+      }
+      for (const id of lojas) {
+        if (Date.now() - inicio > PRAZO_RECALCULO_MS) { puladas.push(id); saida[id] = { ...saida[id], pulada: true }; continue; }
+        try { saida[id] = { ...resumo(await Store.recalcular(T.escopo(banco, id), { forcar: true })), copia: saida[id].copia }; }
+        catch (e) { console.error('[analytics] loja', id, e); saida[id] = { ...saida[id], erro: true }; }
+      }
+      if (puladas.length || semCopia.length) {
+        console.warn('[analytics] sem tempo:', { semCopia, puladas });
+        const partes = [semCopia.length ? `${semCopia.length} sem cópia de segurança hoje` : '', puladas.length ? `${puladas.length} sem recálculo` : ''].filter(Boolean).join(' e ');
+        try { await P.alertar(banco, T.TENANT_PADRAO, 'cron-sem-tempo', { titulo: 'Rotina da noite sem tempo', corpo: `De ${todas.length} lojas, ${partes}. Ficam para amanhã (a ordem gira). Se repetir, é hora de dividir a rotina.` }); } catch (_) { /* só aviso */ }
       }
       await P.limparLimites(banco);
       try { await Erros.faxina(banco); } catch (e) { console.error('[erros] faxina', e && e.message); }
       // trilha de auditoria: o que passou de 400 dias sai
       try { await P.limparAuditoria(banco, null); for (const id of lojas) await P.limparAuditoria(banco, id); } catch (e) { console.error('[auditoria] faxina', e && e.message); }
-      // MAQUININHA: as vendas de ontem (o PagBank só entrega no dia seguinte). Loja sem credenciais é pulada.
-      const ontem = new Date(Date.now() - 27 * 3600000).toISOString().slice(0, 10);
-      for (const id of lojas) {
-        try { const m = await Maq.buscarDia(banco, id, ontem); if (m) saida[id] = { ...saida[id], maquininha: { dia: m.dia, total: m.total, vendas: m.vendas } }; }
-        catch (e) { console.error('[maquininha] loja', id, e && e.message); saida[id] = { ...saida[id], maquininha: { erro: true } }; }
-      }
+      for (const id of Object.keys(maquininha)) saida[id] = { ...saida[id], maquininha: maquininha[id] };
       return res.status(200).json({ sucesso: true, cron: true, ...(saida[T.TENANT_PADRAO] || {}), lojas: saida });
     }
     if (req.method !== 'POST') return res.status(405).json({ sucesso: false, error: 'Método não permitido.' });

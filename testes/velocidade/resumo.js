@@ -25,7 +25,30 @@ for (const arq of process.argv.slice(2)) {
     `Baixou: ${kb((porTipo.total || {}).transferSize)} no total (código ${kb((porTipo.script || {}).transferSize)}, imagens ${kb((porTipo.image || {}).transferSize)}, letras ${kb((porTipo.font || {}).transferSize)})`,
     oport.length ? `O que mais ajudaria: ${oport.join('; ')}` : 'Nada grande a ganhar apontado.',
   ];
-  linhas.push(texto.join('\n'), '');
+  // DETALHES (para quem for corrigir): o que pula, o que pesa, o que não foi compactado
+  const itens = (k) => ((a[k] || {}).details || {}).items || [];
+  const curto = (u) => String(u || '').replace(/^https?:\/\/[^/]+/, '').slice(0, 90);
+  const det = [];
+  const lcp = itens('largest-contentful-paint-element')[0];
+  if (lcp) { const n = (lcp.items || [lcp])[0]; det.push(`Maior elemento: ${((n.node || n).selector || (n.node || n).snippet || '').slice(0, 120)}`); }
+  const pulos = itens('layout-shifts').slice(0, 5).map((x) => `${(x.score || 0).toFixed(3)} ${((x.node || {}).selector || (x.node || {}).snippet || '?').slice(0, 90)}`);
+  if (pulos.length) det.push('O que pula: ' + pulos.join(' | '));
+  const sem = itens('unminified-javascript').concat(itens('unminified-css')).slice(0, 5).map((x) => `${curto(x.url)} (${kb(x.wastedBytes)})`);
+  if (sem.length) det.push('Sem compactar: ' + sem.join(' | '));
+  const boot = itens('bootup-time').slice(0, 5).map((x) => `${curto(x.url)} ${Math.round(x.scripting || x.total || 0)} ms`);
+  if (boot.length) det.push('Código que mais trabalha: ' + boot.join(' | '));
+  const tarefas = itens('mainthread-work-breakdown').slice(0, 5).map((x) => `${x.groupLabel || x.group} ${Math.round(x.duration)} ms`);
+  if (tarefas.length) det.push('Tempo do celular: ' + tarefas.join(' | '));
+  const naoUsado = itens('unused-javascript').slice(0, 4).map((x) => `${curto(x.url)} (${kb(x.wastedBytes)} sem uso)`);
+  if (naoUsado.length) det.push('Código baixado e não usado: ' + naoUsado.join(' | '));
+  const fotos = itens('uses-responsive-images').slice(0, 4).map((x) => `${curto(x.url)} (${kb(x.wastedBytes)} a mais)`);
+  if (fotos.length) det.push('Fotos maiores que o necessário: ' + fotos.join(' | '));
+  const letras = itens('network-requests').filter((x) => x.resourceType === 'Font').map((x) => `${curto(x.url).slice(-40)} ${kb(x.transferSize)}`);
+  if (letras.length) det.push('Letras: ' + letras.join(' | '));
+  const bloqueia = itens('render-blocking-resources').map((x) => `${curto(x.url)} (${seg(x.wastedMs)})`);
+  if (bloqueia.length) det.push('Atrasa a primeira tela: ' + bloqueia.join(' | '));
+  if (det.length) console.log(`::notice title=Detalhes ${nota}/100 ${(r.finalDisplayedUrl || '').replace(/^https?:\/\/[^/]+/, '') || '/'}::${det.join('\n').replace(/%/g, '%25').replace(/\n/g, '%0A')}`);
+  linhas.push(texto.join('\n'), ...det, '');
   const msg = texto.join('\n').replace(/%/g, '%25').replace(/\n/g, '%0A');
   console.log(`::${nota < 50 ? 'warning' : 'notice'} title=Velocidade no celular: ${nota}/100::${msg}`);
 }
