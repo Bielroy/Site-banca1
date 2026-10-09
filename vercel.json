@@ -181,12 +181,15 @@
   },
   "rewrites": [
     {
-      "source": "/feira/:id",
-      "destination": "/feira.html"
-    },
-    {
       "source": "/previa",
       "destination": "/index.html"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/feira/:id",
+      "destination": "/?feira=:id&entrar=1",
+      "permanent": false
     }
   ]
 }

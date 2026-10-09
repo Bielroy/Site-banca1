@@ -11,7 +11,7 @@
 // =====================================================================
 import { getDoc, doc, db } from './firebase.js';
 import { feiraDoDia, feirasDaFicha, feiraDoCliente, feirasDoCondominio, feiraDoEndereco, comFeira } from './plataforma-lib.js';
-import { lerFeiraCliente, gravarFeiraCliente, gravarUltimaBanca } from './feira-cliente.js';
+import { lerFeiraCliente, gravarFeiraCliente, gravarUltimaBanca, lerUltimaBanca } from './feira-cliente.js';
 import { TENANT, fichaRef, chave, urlDaLoja, ehLojaOriginal, EM_PREVIA } from './tenant.js';
 import { ARTES, arteDoTipo } from './arte-lib.js';
 import { OPCOES, urlImagem, corLegivel, legivelSobre, FONTES, MODELOS, NOMES_MODELOS, FOTO_FORMATOS, linkDaFonte } from './aparencia-lib.js';
@@ -312,11 +312,36 @@ if (EM_PREVIA && typeof window !== 'undefined' && window.parent && window.parent
     try { window.parent.postMessage({ tipo: 'banca-previa-pronta' }, location.origin); } catch (_) { /* painel fechado */ }
 }
 
+/**
+ * Link da feira: se ESTA banca não está (ligada) na feira, vai para a primeira banca ligada dela.
+ * Devolve true quando mandou o navegador para outra banca.
+ */
+async function irParaBancaDaFeira(fid, feiras) {
+    const aqui = feiras.find((f) => f.id === fid);
+    if (aqui && (aqui.lojas || []).some((l) => l && l.id === TENANT)) return false;
+    let feira = aqui;
+    if (!feira) { try { const s = await getDoc(doc(db, 'feiras', fid)); feira = s.exists() ? s.data() : null; } catch (_) { feira = null; } }
+    for (const l of lojasValidas(feira)) {
+        if (l.id === TENANT) continue;
+        if (!aqui) { try { const f = await getDoc(doc(db, 'tenants', l.id)); if (f.exists() && f.data().ativo === false) continue; } catch (_) { /* tenta assim mesmo */ } }
+        location.replace(comFeira(urlDaLoja(l.id), fid)); return true;
+    }
+    return false;
+}
+
 /** Chamado uma vez pela loja. Usa a ficha guardada no aparelho na hora e confere no banco depois. */
 export async function iniciarTema() {
     // veio pelo link da feira (?feira=id): este aparelho passa a ser desta feira
     const doLink = feiraDoEndereco({ search: location.search });
     if (doLink) gravarFeiraCliente(doLink);
+    // veio pelo LINK DA FEIRA (/feira/id manda para cá com &entrar=1): abre direto a última banca que o
+    // cliente usou nesta feira. Na primeira vez fica nesta, se ela for da feira (conferido mais abaixo).
+    const entrando = !!doLink && new URLSearchParams(location.search).has('entrar');
+    if (entrando) {
+        try { const u = new URL(location.href); u.searchParams.delete('entrar'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); } catch (_) { /* segue */ }
+        const ultima = lerUltimaBanca(doLink);
+        if (ultima && ultima !== TENANT) { location.replace(comFeira(urlDaLoja(ultima), doLink)); return null; }
+    }
     const K = chave('banca_ficha');
     try {
         const g = JSON.parse(localStorage.getItem(K) || 'null');
@@ -339,6 +364,7 @@ export async function iniciarTema() {
         if (ficha) vivas.set(TENANT, ficha);
         const feiras = feirasCruas.map((f) => ({ ...f, lojas: (f.lojas || []).filter((l) => { const v = vivas.get(l && l.id); return !(v && v.ativo === false); })
             .map((l) => { const v = vivas.get(l.id); return v ? { ...l, nome: v.nome || l.nome, cor: (v.tema && v.tema.primaria) || l.cor } : l; }) }));
+        if (entrando && await irParaBancaDaFeira(doLink, feiras)) return null;
         FICHA_GRAVADA = ficha;
         if (ficha || FICHA_PREVIA) aplicarFicha({ ...(ficha || {}), ...(FICHA_PREVIA || {}) });
         FEIRAS_DA_LOJA = feiras;
