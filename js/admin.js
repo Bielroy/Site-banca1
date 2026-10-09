@@ -4,7 +4,7 @@ import { getDoc, auth, db, onAuthStateChanged, sendSignInLinkToEmail, isSignInWi
 import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
-import { fmt, escapeHTML, formatarQtdRelatorio, showToast, openModal, closeModal, customConfirm } from './utils.js';
+import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm } from './utils.js';
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
 import './admin-instalar.js';
@@ -882,7 +882,7 @@ const renderItemAtual = () => {
             <span class="pk-contador">Produto ${ESTEIRA.indice + 1} de ${ESTEIRA.itens.length}</span>
             ${blocoFoto}
             <h2 class="pk-nome">${escapeHTML(item.nome)}</h2>
-            <p class="pk-pedido-cliente">${formatarQtdRelatorio(item.qtd, item.unidade)} ${escapeHTML(item.unidade || 'un')}</p>
+            <p class="pk-pedido-cliente">A cliente pediu ${qtdDoItem(item)}</p>
             <div class="pk-fixo">
                 <small>Este item não vai à balança — o valor já é fechado.</small>
                 <div class="pk-valor-vivo">${fmt(total)}</div>
@@ -913,7 +913,7 @@ const renderConferencia = () => {
         const foto = fotoDoProduto(item);
         const detalhe = ehItemDeBalanca(item)
             ? `${item.qtd} un • pesou ${String(item.pesoFinal).replace('.', ',')} kg × ${fmt(item.precoOriginal)}`
-            : `${formatarQtdRelatorio(item.qtd, item.unidade)} × ${fmt(item.precoOriginal)}`;
+            : `${qtdDoItem(item)} × ${fmt(item.precoOriginal)}`;
         return `
         <div class="pk-linha">
             ${foto ? `<img class="pk-linha-foto" src="${escapeHTML(foto)}" alt="">`
@@ -1553,7 +1553,7 @@ const renderHtmlPedidos = (pedidos) => {
 
         const itensStr = p.itens ? p.itens.map(i => {
             const extra = i.aPesar ? ' <span style="color:var(--earth);font-weight:bold;">(A Pesar)</span>' : '';
-            return `${formatarQtdRelatorio(i.qtd, i.unidade)} ${escapeHTML(i.nome)}${extra}`;
+            return `${qtdDoItem(i)} ${escapeHTML(i.nome)}${extra}`;
         }).join('<br> • ') : '';
 
         const temAPesar = p.itens && p.itens.some(i => i.aPesar);
@@ -1795,7 +1795,7 @@ document.getElementById('btn-exportar').addEventListener('click', () => {
     if (pedidosGerais.length === 0) return showToast("Não há pedidos para exportar.", true);
     let csv = ['Data', 'Entrega', 'Cliente', 'Condomínio', 'Quadra/Rua', 'Lote/Número', 'Status', 'Pagamento', 'Total', 'Itens'].join(CSV_SEP) + "\n";
     pedidosGerais.forEach(p => {
-        const itensTxt = p.itens ? p.itens.map(i => `${formatarQtdRelatorio(i.qtd, i.unidade)} ${i.nome}`).join(' | ') : '';
+        const itensTxt = p.itens ? p.itens.map(i => `${qtdDoItem(i)} ${i.nome}`).join(' | ') : '';
         const total = (Number(p.total) || 0).toFixed(2).replace('.', ',');
         csv += [dataHoraBR(p.data), p.entregaDia || '', p.nome, p.condominio || '', p.quadra, p.lote, p.status, p.pag, total, itensTxt].map(csvCampo).join(CSV_SEP) + "\n";
     });
@@ -2108,7 +2108,7 @@ document.getElementById('btn-exportar-balanco')?.addEventListener('click', () =>
         .sort((a, b) => String(a.data).localeCompare(String(b.data)))
         .forEach(p => {
             const itensTxt = (p.itens || [])
-                .map(i => `${formatarQtdRelatorio(i.qtd, i.unidade)} ${i.nome}`).join(' | ');
+                .map(i => `${qtdDoItem(i)} ${i.nome}`).join(' | ');
             const pago = p.pagamento && p.pagamento.status === 'PAID' ? 'sim' : 'nao';
             const cupom = p.cupom && p.cupom.codigo
                 ? `${p.cupom.codigo} (-${Number(p.cupom.desconto || 0).toFixed(2).replace('.', ',')})`

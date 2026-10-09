@@ -2122,6 +2122,26 @@ teste('erros do site: o navegador avisa sem login, o mesmo erro do dia é somado
   assert.ok(!/erros_site/.test(require('fs').readFileSync(raiz('firestore.rules'), 'utf8')));
 });
 
+teste('painel: item pedido por UNIDADE de produto de quilo mostra "un", não "kg"', async () => {
+  // utils.js mexe na página ao carregar: uma página de mentira só para importar, e some depois
+  const tinha = ['document', 'window', 'addEventListener'].filter((k) => k in globalThis);
+  const vazio = () => null;
+  Object.assign(globalThis, { document: { addEventListener: vazio, getElementById: vazio, querySelector: vazio, querySelectorAll: () => [], createElement: () => ({}), body: { appendChild: vazio } }, addEventListener: vazio });
+  globalThis.window = globalThis;
+  let U;
+  try { U = await import(raiz('js/utils.js')); }
+  finally { for (const k of ['document', 'window', 'addEventListener']) if (!tinha.includes(k)) delete globalThis[k]; }
+  // como o servidor grava (api/checkout.js): unidade do PRODUTO + tipo que o cliente escolheu
+  assert.strictEqual(U.qtdDoItem({ qtd: 3, tipo: 'un', unidade: 'kg', aPesar: true }), '3 un');
+  assert.strictEqual(U.qtdDoItem({ qtd: 3, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 1.25 }), '3 un (1,25 kg)', 'depois de pesado mostra o peso junto');
+  assert.strictEqual(U.qtdDoItem({ qtd: 1.5, tipo: 'kg', unidade: 'kg' }), '1,5 kg', 'pedido por quilo continua em kg');
+  assert.strictEqual(U.qtdDoItem({ qtd: 2, tipo: 'un', unidade: 'un' }), '2x');
+  assert.strictEqual(U.qtdDoItem({ qtd: 2, tipo: 'un', unidade: 'maço' }), '2x');
+  // o painel não monta mais a quantidade do item só pela unidade do produto
+  const admin = require('fs').readFileSync(raiz('js/admin.js'), 'utf8');
+  assert.ok(!/formatarQtdRelatorio\(i(tem)?\.qtd, i(tem)?\.unidade\)/.test(admin), 'admin.js ainda usa a unidade do produto para a quantidade do pedido');
+});
+
 // ------------------------------------------------------------------ testes de segurança (arquivo próprio)
 require('./seguranca')({ teste, raiz, criarBanco, criarAdmin, chamar, carregarApi });
 

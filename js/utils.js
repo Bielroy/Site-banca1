@@ -43,7 +43,22 @@ export const formatarQtdRelatorio = (qtd, und) => {
   return `${soNumero(qtd)}x`;
 };
 
-export const hapticFeedback = (type = 'light') => {
+// Quantidade de um ITEM DE PEDIDO. O item guarda a unidade do PRODUTO (kg) e, à parte, como o cliente
+// pediu (tipo 'un' ou 'kg'). Pedido por unidade de um produto de quilo ("a pesar") mostra "3 un" — e o
+// peso, depois de pesado: "3 un (1,2 kg)". Antes aparecia "3 kg", como se fosse peso.
+export const qtdDoItem = (item) => {
+  const i = item || {};
+  if (i.tipo === 'un' || i.aPesar === true) {
+    const n = Math.round(soNumero(i.qtd));
+    const peso = soNumero(i.pesoFinal);
+    return isFracionavel(i.unidade) || i.aPesar === true
+      ? `${n} un${peso > 0 ? ` (${String(Math.round(peso * 1000) / 1000).replace('.', ',')} kg)` : ''}`
+      : `${n}x`;
+  }
+  return formatarQtdRelatorio(i.qtd, i.unidade);
+};
+
+export const hapticFeedback =(type = 'light') => {
   if (navigator.vibrate) {
     if (type === 'light') navigator.vibrate(50);
     if (type === 'heavy') navigator.vibrate([100, 50, 100]);
