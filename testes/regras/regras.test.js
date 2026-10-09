@@ -81,6 +81,12 @@ async function semear() {
       por(cam(loja, 'maquininha/2026-10-01'), { total: 10 });
       por(cam(loja, 'analytics_clientes/c1'), { nome: 'Ana', quadra: '1' });
     }
+    // loja DESLIGADA pela plataforma (bloqueio por falta de pagamento)
+    por('tenants/loja-off', { nome: 'Loja desligada', ativo: false, tipo: 'hortifruti', tema: TEMA });
+    por(cam('loja-off', 'produtos/p1'), { nome: 'Pão', preco: 5, unidade: 'un', ativo: true });
+    por(cam('loja-off', 'categorias/paes'), { chave: 'paes', nome: 'Pães', ordem: 1 });
+    por(cam('loja-off', 'loja/config'), { wpp: '5562999990000', lojaAberta: true });
+    por(cam('loja-off', 'loja/comunicados'), { dias: [] });
     por('feiras/feira-1', { nome: 'Feira', lojas: [{ id: 'loja-a', nome: 'Loja A' }, { id: 'loja-b', nome: 'Loja B' }] });
     por('plataforma/segredos', { pagbank: 'token-secreto', imgbb: 'chave-secreta' });
     por('assinaturas/loja-a', { valor: 59.9, dia: 10 });
@@ -117,6 +123,28 @@ teste('visitante sem login lê só a vitrine', async () => {
   await pode(getDoc(d(v, 'feiras/feira-1')));
   for (const servidor of ['plataforma/segredos', 'plataforma/maquininha_loja-a', 'plataforma/dono', 'backups/loja-a_2026-10-01', 'limites/pedido_x', 'auditoria_plataforma/a1']) await nega(getDoc(d(v, servidor)));
   await nega(getDocs(c(v, 'plataforma'))); await nega(getDocs(c(v, 'backups'))); await nega(getDocs(c(v, 'auditoria_plataforma')));
+});
+
+teste('ninguém de fora LISTA todas as lojas ou todas as feiras; abrir uma pelo endereço continua livre', async () => {
+  for (const v of [anonimo(), cliente(), de('loja-a', 'proprietario')]) {
+    await nega(getDocs(c(v, 'tenants'))); await nega(getDocs(c(v, 'feiras')));
+    await pode(getDoc(d(v, 'tenants/loja-a'))); await pode(getDoc(d(v, 'feiras/feira-1')));
+  }
+  await pode(getDocs(c(plataforma(), 'tenants'))); await pode(getDocs(c(plataforma(), 'feiras')));
+});
+
+teste('loja desligada pela plataforma não mostra catálogo nem configuração para o público; a equipe dela continua vendo', async () => {
+  for (const v of [anonimo(), cliente(), de('loja-a', 'proprietario')]) {
+    await nega(getDoc(d(v, cam('loja-off', 'produtos/p1')))); await nega(getDocs(c(v, cam('loja-off', 'produtos'))));
+    await nega(getDocs(c(v, cam('loja-off', 'categorias')))); await nega(getDoc(d(v, cam('loja-off', 'loja/config')))); await nega(getDoc(d(v, cam('loja-off', 'loja/comunicados'))));
+    await pode(getDoc(d(v, 'tenants/loja-off')));          // a ficha continua legível: é ela que diz "loja fora do ar"
+  }
+  for (const papel of PAPEIS) await pode(getDocs(c(de('loja-off', papel), cam('loja-off', 'produtos'))));
+  await pode(getDoc(d(de('loja-off', 'proprietario'), cam('loja-off', 'loja/config'))));
+  await pode(getDocs(c(plataforma(), cam('loja-off', 'produtos'))));
+  // loja original sem ficha (como era antes da plataforma): continua no ar
+  await env.withSecurityRulesDisabled(async (ctx) => { await deleteDoc(doc(ctx.firestore(), 'tenants/banca')); });
+  await pode(getDocs(c(anonimo(), cam('banca', 'produtos')))); await pode(getDoc(d(anonimo(), cam('banca', 'loja/config'))));
 });
 
 teste('visitante sem login (e cliente com login anônimo) não grava NADA', async () => {

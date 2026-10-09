@@ -799,6 +799,11 @@ const iniciarRealTimeSync = () => {
         aplicarCatalogo();
     }, (e) => {
         console.warn('[loja] produtos:', e?.code || e);
+        // o banco recusou: a plataforma desligou esta loja. Avisa, mesmo que houvesse vitrine guardada no aparelho.
+        if (e && e.code === 'permission-denied') {
+            document.getElementById('lista-produtos').innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Esta loja está fora do ar no momento</p><span>Os pedidos por aqui estão pausados. Fale direto com a loja.</span></div>`;
+            STATE.lojaRenderizada = false; return;
+        }
         if (STATE.lojaRenderizada) return;      // já tem vitrine na tela: mantém
         document.getElementById('lista-produtos').innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Não consegui carregar os produtos</p><span>Verifique a internet e tente de novo.</span><button class="btn btn-primary" style="margin-top:14px" data-action="recarregar">Tentar de novo</button></div>`;
     });

@@ -820,8 +820,13 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
     assert.strictEqual((r.match(/allow create, delete: if false;/g) || []).length, 2, 'pedido só nasce e só some pelo servidor (nas duas lojas: original e demais)');
     assert.strictEqual((r.match(/allow update: if atende\([^)]*\) && avancaStatus\(\);/g) || []).length, 2, 'status de pedido só anda para frente');
     assert.ok(/email_verified/.test(r) && /email_verified/.test(s), 'papel só vale com e-mail confirmado');
-    const publicos = [...r.matchAll(/match \/([a-z_]+)\/\{[^}]+\}\s*\{[^}]*allow read: if true/g)].map((m) => m[1]).sort();
-    assert.deepStrictEqual([...new Set(publicos)], ['categorias', 'feiras', 'produtos', 'tenants'], 'leitura pública só do que a vitrine precisa');
+    // ninguém de fora LISTA lojas ou feiras: só abre uma pelo endereço (get). Catálogo só de loja no ar (vitrine).
+    assert.ok(!/allow read: if true/.test(r) && !/allow list: if true/.test(r), 'nenhuma coleção listável por qualquer um');
+    const abertos = [...r.matchAll(/match \/([a-z_]+)\/\{[^}]+\}\s*\{[^}]*?allow get: if true/g)].map((m) => m[1]).sort();
+    assert.deepStrictEqual([...new Set(abertos)], ['feiras', 'tenants'], 'abrir pelo endereço só a ficha da loja e a feira');
+    const vitrine = [...r.matchAll(/match \/([a-z_]+)\/\{[^}]+\}\s*\{[^}]*allow read: if vitrine\(/g)].map((m) => m[1]).sort();
+    assert.deepStrictEqual([...new Set(vitrine)], ['categorias', 'produtos'], 'catálogo só de loja no ar (ou para a equipe dela)');
+    assert.ok(/function lojaNoAr\(tid\)[^\n]*'ativo', true\) != false/.test(r), 'loja desligada pela plataforma sai do ar no banco');
     for (const privado of ['pedidos', 'cupons', 'crm', 'equipe', 'resumos', 'analytics', 'estoque_mov', 'produtos_custos', 'fechamentos', 'calendario']) assert.ok(!new RegExp(`match /${privado}/\\{[^}]+\\}\\s*\\{[^}]*allow read[^;]*: if true`).test(r), privado + ' não é público');
     assert.ok(/image\/\(jpeg\|png\|webp\)/.test(s) && !/image\/\.\*/.test(s), 'armazenamento: só JPG, PNG e WebP (SVG não entra)');
     assert.ok(/allow update: if false;/.test(s) && !/allow write/.test(s), 'armazenamento: criar, trocar e apagar separados');

@@ -108,13 +108,21 @@ service cloud.firestore {
     }
     // Documentos de `loja` que o CLIENTE precisa ler para comprar. O resto (banco de fotos etc.) é só de quem administra.
     function lojaPublica(docId) { return docId in ['config', 'comunicados', 'avaliacoes']; }
+    // Loja NO AR: a plataforma não desligou (ficha.ativo != false). Loja bloqueada não mostra catálogo
+    // nem configuração para o público; a equipe dela continua vendo tudo no painel.
+    // (Loja sem ficha, como a original antes de ter uma, conta como no ar.)
+    function fichaDe(tid) { return /databases/$(database)/documents/tenants/$(tid); }
+    function lojaNoAr(tid) { return !exists(fichaDe(tid)) || get(fichaDe(tid)).data.get('ativo', true) != false; }
+    function vitrine(tid) { return lojaNoAr(tid) || equipe(tid); }
 
     // ------------------------------------------------------------------
     // PLATAFORMA
     // ------------------------------------------------------------------
     // Ficha pública de cada loja: nome, tema, módulos, feira.
     match /tenants/{tid} {
-      allow read: if true;
+      // Abrir UMA loja pelo endereço: livre. LISTAR todas: só a plataforma (o resto do site nunca lista).
+      allow get: if true;
+      allow list: if plataforma();
       allow delete: if plataforma();
       // A plataforma cria qualquer loja. A dona da loja original pode criar a ficha dela (só com os campos de aparência).
       allow create: if plataforma()
@@ -129,7 +137,7 @@ service cloud.firestore {
 
       // ---------------- dados de UMA loja ----------------
       match /produtos/{id} {
-        allow read: if true;
+        allow read: if vitrine(tid);
         allow create, delete: if gestor(tid);
         allow update: if gestor(tid) || (cuidaDeEstoque(tid) && soLimitesDeEstoque());
       }
@@ -140,9 +148,9 @@ service cloud.firestore {
         allow update: if cuidaDeEstoque(tid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['custo', 'ficha']) && custosOk(request.resource.data);
         allow delete: if gestor(tid);
       }
-      match /categorias/{id}  { allow read: if true; allow write: if gestor(tid); }
+      match /categorias/{id}  { allow read: if vitrine(tid); allow write: if gestor(tid); }
       match /loja/{docId} {
-        allow read: if lojaPublica(docId) || gestor(tid);
+        allow read: if (lojaPublica(docId) && vitrine(tid)) || gestor(tid);
         allow write: if gestor(tid) && docId != 'avaliacoes';      // a nota média das avaliações é do servidor
       }
       match /pedidos/{id} {
@@ -171,14 +179,15 @@ service cloud.firestore {
     }
 
     // Feiras: grupos de lojas que aparecem juntas na faixa do topo.
-    match /feiras/{fid} { allow read: if true; allow write: if plataforma(); }
+    // Abrir UMA feira pelo link: livre. LISTAR todas: só a plataforma.
+    match /feiras/{fid} { allow get: if true; allow list: if plataforma(); allow write: if plataforma(); }
 
     // ------------------------------------------------------------------
     // LOJA ORIGINAL (Banca Adair e Pedrina) — dados na raiz, como sempre foi.
     // As mesmas regras de cima, com a loja "banca".
     // ------------------------------------------------------------------
     match /produtos/{id} {
-      allow read: if true;
+      allow read: if vitrine('banca');
       allow create, delete: if gestor('banca');
       allow update: if gestor('banca') || (cuidaDeEstoque('banca') && soLimitesDeEstoque());
     }
@@ -188,9 +197,9 @@ service cloud.firestore {
       allow update: if cuidaDeEstoque('banca') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['custo', 'ficha']) && custosOk(request.resource.data);
       allow delete: if gestor('banca');
     }
-    match /categorias/{id}  { allow read: if true; allow write: if gestor('banca'); }
+    match /categorias/{id}  { allow read: if vitrine('banca'); allow write: if gestor('banca'); }
     match /loja/{docId} {
-      allow read: if lojaPublica(docId) || gestor('banca');
+      allow read: if (lojaPublica(docId) && vitrine('banca')) || gestor('banca');
       allow write: if gestor('banca') && docId != 'avaliacoes';
     }
     match /pedidos/{id} {
