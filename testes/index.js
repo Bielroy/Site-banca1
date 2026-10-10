@@ -2156,6 +2156,146 @@ teste('painel: item pedido por UNIDADE de produto de quilo mostra "un", não "kg
   assert.ok(!/formatarQtdRelatorio\(i(tem)?\.qtd, i(tem)?\.unidade\)/.test(admin), 'admin.js ainda usa a unidade do produto para a quantidade do pedido');
 });
 
+// ------------------------------------------------------------------ Rota A: servidor do Cloud Run + Cloudflare Pages
+teste('cloud run: o servidor entrega body/query/status/json como a Vercel e confia no IP só com o segredo', async () => {
+  const { criarServidor } = require(raiz('server'));
+  const eco = async (req, res) => res.status(201).json({ metodo: req.method, body: req.body, query: req.query, ip: req.headers['x-real-ip'], host: req.headers['x-forwarded-host'] || null, vazou: ['x-proxy-segredo', 'x-cliente-ip', 'x-host-original'].filter((k) => k in req.headers) });
+  const cru = async (req, res) => { let t = ''; for await (const c of req) t += c; res.status(200).json({ cru: t, body: req.body === undefined }); };
+  cru.config = { api: { bodyParser: false } };
+  const quebra = async () => { throw new Error('SEGREDO-INTERNO senha=123'); };
+  const srv = criarServidor({ funcoes: { eco, cru, quebra }, segredo: 'segredo-do-proxy' });
+  await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const j = async (u, o) => { const r = await fetch(base + u, o); return { status: r.status, corpo: await r.json().catch(() => null) }; };
+  try {
+    assert.deepStrictEqual((await j('/saude')).corpo, { ok: true });
+    assert.strictEqual((await j('/api/nao-existe')).status, 404);
+    assert.strictEqual((await j('/api/..%2Fserver')).status, 404, 'só nomes simples de api/');
+    // corpo JSON e parâmetros do endereço, status e json
+    let r = await j('/api/eco?a=1&b=2&b=3', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'x' }) });
+    assert.strictEqual(r.status, 201); assert.deepStrictEqual(r.corpo.body, { acao: 'x' }); assert.deepStrictEqual(r.corpo.query, { a: '1', b: ['2', '3'] });
+    assert.strictEqual((await j('/api/eco', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{quebrado' })).status, 400);
+    assert.strictEqual((await j('/api/eco', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ x: 'a'.repeat(6.5 * 1024 * 1024) }) })).status, 413, 'corpo grande demais');
+    // corpo cru (aviso de pagamento): o servidor não lê antes da função
+    r = await j('/api/cru', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"a": 1}' });
+    assert.deepStrictEqual(r.corpo, { cru: '{"a": 1}', body: true });
+    // erro de dentro da função: 500 sem vazar a mensagem
+    r = await j('/api/quebra'); assert.strictEqual(r.status, 500); assert.ok(!JSON.stringify(r.corpo).includes('SEGREDO'));
+    // IP: direto no servidor, o que vale é o ÚLTIMO do X-Forwarded-For (os da frente o visitante escreve); x-real-ip do visitante é jogado fora
+    r = await j('/api/eco', { headers: { 'X-Forwarded-For': '6.6.6.6, 203.0.113.9', 'X-Real-IP': '7.7.7.7', 'X-Forwarded-Host': 'loja-falsa.exemplo.com', 'X-Cliente-IP': '8.8.8.8' } });
+    assert.strictEqual(r.corpo.ip, '203.0.113.9'); assert.strictEqual(r.corpo.host, null); assert.deepStrictEqual(r.corpo.vazou, []);
+    // com o segredo certo (vindo do Cloudflare): vale o IP e o endereço que ele mandou
+    const doProxy = { 'X-Proxy-Segredo': 'segredo-do-proxy', 'X-Cliente-IP': '198.51.100.7', 'X-Host-Original': 'Loja-Do-Ze.exemplo.com', 'X-Forwarded-For': '1.1.1.1, 104.16.0.1' };
+    r = await j('/api/eco', { headers: doProxy });
+    assert.strictEqual(r.corpo.ip, '198.51.100.7'); assert.strictEqual(r.corpo.host, 'loja-do-ze.exemplo.com'); assert.deepStrictEqual(r.corpo.vazou, [], 'os cabeçalhos de confiança não chegam à função');
+    r = await j('/api/eco', { headers: { ...doProxy, 'X-Proxy-Segredo': 'errado' } });
+    assert.strictEqual(r.corpo.ip, '104.16.0.1', 'segredo errado: ignora o que o "proxy" disse'); assert.strictEqual(r.corpo.host, null);
+    r = await j('/api/eco', { headers: { ...doProxy, 'X-Cliente-IP': 'nao-e-ip; drop table' } });
+    assert.strictEqual(r.corpo.ip, '104.16.0.1', 'IP inválido do proxy não vale');
+  } finally { srv.close(); }
+  // sem segredo configurado, nada é confiado (ninguém "acerta" um segredo vazio)
+  const sem = criarServidor({ funcoes: { eco: async (req, res) => res.json({ ip: req.headers['x-real-ip'] }) }, segredo: '' });
+  await new Promise((ok) => sem.listen(0, '127.0.0.1', ok));
+  try { const r = await fetch(`http://127.0.0.1:${sem.address().port}/api/eco`, { headers: { 'X-Proxy-Segredo': '', 'X-Cliente-IP': '8.8.8.8' } }); assert.notStrictEqual((await r.json()).ip, '8.8.8.8'); } finally { sem.close(); }
+});
+
+teste('cloud run: o servidor enxerga as 12 funções de api/ e o Dockerfile leva o que elas usam', async () => {
+  const { listarFuncoes } = require(raiz('server'));
+  const fs = require('fs');
+  assert.deepStrictEqual(Object.keys(listarFuncoes()).sort(), fs.readdirSync(raiz('api')).filter((f) => f.endsWith('.js')).map((f) => f.slice(0, -3)).sort());
+  const docker = fs.readFileSync(raiz('Dockerfile'), 'utf8');
+  for (const pasta of ['api', 'lib', 'analytics', 'server']) assert.ok(new RegExp(`COPY ${pasta} \\./${pasta}`).test(docker), `o Dockerfile precisa copiar ${pasta}/`);
+  const ignorado = fs.readFileSync(raiz('.dockerignore'), 'utf8').split('\n').map((l) => l.trim().replace(/\/$/, ''));
+  for (const pasta of ['api', 'lib', 'analytics', 'server', 'package.json', 'package-lock.json']) assert.ok(!ignorado.includes(pasta), `.dockerignore esconde ${pasta}, que o Dockerfile precisa copiar`);
+  // tudo que api/ e lib/ importam de ../ existe nas pastas copiadas
+  for (const arq of [...fs.readdirSync(raiz('api')).map((f) => 'api/' + f), ...fs.readdirSync(raiz('lib')).map((f) => 'lib/' + f)].filter((f) => f.endsWith('.js'))) {
+    for (const m of fs.readFileSync(raiz(arq), 'utf8').matchAll(/require\('(\.{1,2}\/[^']+)'\)/g)) {
+      const alvo = require('path').resolve(require('path').dirname(raiz(arq)), m[1]);
+      assert.ok(/[/\\](api|lib|analytics|server)[/\\]/.test(alvo + '/'), `${arq} importa ${m[1]}, que não vai para a imagem`);
+    }
+  }
+});
+
+teste('cloudflare: _headers não soma cabeçalhos em nenhum endereço, /previa tem os dele e /api bate com o vercel.json', async () => {
+  const C = require(raiz('lib/cloudflare-arquivos')), vercel = require(raiz('vercel.json'));
+  const texto = C.gerarHeaders(vercel), trechos = texto.split('\n\n').slice(1).map((t) => { const [fim, ...hs] = t.split('\n'); return { padrao: fim.trim(), hs: Object.fromEntries(hs.map((l) => { const i = l.indexOf(':'); return [l.slice(2, i), l.slice(i + 2)]; })) }; });
+  assert.ok(trechos.length < 100, 'o Cloudflare aceita até 100 trechos'); assert.ok(texto.split('\n').every((l) => l.length < 2000), 'linha de até 2000 letras');
+  const caminhos = ['/', '/admin', '/admin.html', '/plataforma', '/feira', '/privacidade', '/assets/index-ab12.js', '/assets/x.css', '/sw.js', '/workbox-1a2b.js', '/registerSW.js', '/push-sw.js', '/manifest.webmanifest', '/admin.webmanifest', '/icon-192.png', '/icon-painel-512.png', '/og-image.png', '/robots.txt', '/sitemap.xml', '/previa'];
+  for (const c of caminhos) {
+    const vistos = {};
+    for (const t of trechos.filter((x) => C.casa(x.padrao, c))) for (const k of Object.keys(t.hs)) vistos[k] = (vistos[k] || 0) + 1;
+    assert.ok(Object.keys(vistos).length > 0, `${c} ficou sem cabeçalho de segurança`);
+    for (const [k, n] of Object.entries(vistos)) assert.strictEqual(n, 1, `${c}: o cabeçalho ${k} cairia em ${n} trechos e seria somado`);
+  }
+  const de = (c) => Object.assign({}, ...trechos.filter((x) => C.casa(x.padrao, c)).map((x) => x.hs));
+  assert.strictEqual(de('/previa')['X-Frame-Options'], 'SAMEORIGIN'); assert.ok(/frame-ancestors 'self'/.test(de('/previa')['Content-Security-Policy']));
+  assert.strictEqual(de('/')['X-Frame-Options'], 'DENY'); assert.ok(/frame-ancestors 'none'/.test(de('/')['Content-Security-Policy']));
+  assert.ok(/noindex/.test(de('/admin')['X-Robots-Tag']) && /noindex/.test(de('/plataforma')['X-Robots-Tag']) && !de('/')['X-Robots-Tag']);
+  assert.deepStrictEqual(C.gerarRedirects(vercel).split('\n').slice(1, 3), ['/feira/:id /?feira=:id&entrar=1 302', '/previa /index.html 200']);
+  // um bloco novo no vercel.json que o tradutor não conhece derruba o teste (em vez de ficar sem cabeçalho no Cloudflare)
+  assert.throws(() => C.gerarHeaders({ ...vercel, headers: [...vercel.headers, { source: '/novo', headers: [{ key: 'X', value: 'y' }] }] }), /ensine/);
+  // /api: as respostas da função têm os mesmos cabeçalhos que o vercel.json põe
+  const F = await import(raiz('functions/api/[[caminho]].js')), bloco = Object.fromEntries(vercel.headers.find((b) => b.source === '/api/(.*)').headers.map((h) => [h.key, h.value]));
+  const todas = Object.fromEntries(vercel.headers.find((b) => b.source === '/((?!previa).*)').headers.map((h) => [h.key, h.value]));
+  for (const [k, v] of Object.entries(F.CABECALHOS_DA_API)) assert.strictEqual(v, bloco[k] || todas[k], `/api: ${k} difere do vercel.json`);
+  assert.ok(F.CABECALHOS_DA_API['Cache-Control'] === 'no-store');
+});
+
+teste('cloudflare: /api/* é repassado ao servidor só com o necessário, com o segredo, o IP e o endereço do Cloudflare', async () => {
+  const F = await import(raiz('functions/api/[[caminho]].js'));
+  const antes = globalThis.fetch; let visto = null;
+  globalThis.fetch = async (url, o) => { visto = { url, ...o, cab: Object.fromEntries(o.headers) }; const h = new Headers({ 'Content-Type': 'application/json', 'X-Vazou': 'sim' }); h.append('Set-Cookie', 'conta=1; HttpOnly; Secure'); h.append('Set-Cookie', 'outro=2'); return new Response('{"ok":true}', { status: 201, headers: h }); };
+  const env = { API_ORIGEM: 'https://banca-api-abc.a.run.app/', PROXY_SEGREDO: 'seg' };
+  try {
+    const req = new Request('https://loja.exemplo.com/api/checkout?x=1&y=a b', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer t', 'X-Loja': 'paes', 'X-Proxy-Segredo': 'falso', 'X-Cliente-IP': '6.6.6.6', 'X-Forwarded-For': '6.6.6.6', 'CF-Connecting-IP': '198.51.100.7', Cookie: 'conta=abc', Origin: 'https://loja.exemplo.com', 'X-Authenticity-Token': 'assinatura-pagbank', 'X-Real-IP': '9.9.9.9' }, body: '{"a":1}' });
+    const r = await F.onRequest({ request: req, env, params: { caminho: ['checkout'] } });
+    assert.strictEqual(visto.url, 'https://banca-api-abc.a.run.app/api/checkout?x=1&y=a%20b'); assert.strictEqual(visto.method, 'POST');
+    assert.strictEqual(visto.cab['x-proxy-segredo'], 'seg'); assert.strictEqual(visto.cab['x-cliente-ip'], '198.51.100.7'); assert.strictEqual(visto.cab['x-host-original'], 'loja.exemplo.com');
+    assert.strictEqual(visto.cab['authorization'], 'Bearer t'); assert.strictEqual(visto.cab['x-loja'], 'paes');
+    assert.strictEqual(visto.cab['cookie'], 'conta=abc', 'a conta do cliente (cookie) segue'); assert.strictEqual(visto.cab['origin'], 'https://loja.exemplo.com');
+    assert.strictEqual(visto.cab['x-authenticity-token'], 'assinatura-pagbank', 'sem a assinatura do PagBank nenhum PIX seria confirmado');
+    assert.ok(!('x-forwarded-for' in visto.cab) && !('x-real-ip' in visto.cab), 'IP escrito pelo visitante não segue');
+    assert.strictEqual(visto.redirect, 'manual');
+    assert.strictEqual(r.status, 201); assert.strictEqual(r.headers.get('cache-control'), 'no-store', '/api sem Cache-Control próprio nunca fica guardada'); assert.ok(!r.headers.get('x-vazou'));
+    assert.deepStrictEqual(r.headers.getSetCookie(), ['conta=1; HttpOnly; Secure', 'outro=2'], 'os cookies da conta voltam todos');
+    assert.deepStrictEqual(await r.json(), { ok: true });
+    // GET sem corpo
+    await F.onRequest({ request: new Request('https://loja.exemplo.com/api/manifest?loja=x'), env, params: { caminho: ['manifest'] } });
+    assert.strictEqual(visto.body, undefined);
+    // sem configuração: 503 claro, sem tentar chamar nada
+    visto = null; const sem = await F.onRequest({ request: new Request('https://loja.exemplo.com/api/pdv', { method: 'POST', body: '{}' }), env: {}, params: { caminho: ['pdv'] } });
+    assert.strictEqual(sem.status, 503); assert.strictEqual(visto, null);
+    const http = await F.onRequest({ request: new Request('https://l/api/x'), env: { API_ORIGEM: 'http://inseguro.exemplo.com', PROXY_SEGREDO: 's' }, params: { caminho: ['x'] } });
+    assert.strictEqual(http.status, 503, 'só https');
+    // servidor fora do ar: 502 com mensagem em português
+    globalThis.fetch = async () => { throw new Error('connect ECONNREFUSED 10.0.0.1'); };
+    const caiu = await F.onRequest({ request: new Request('https://l/api/x'), env, params: { caminho: ['x'] } });
+    assert.strictEqual(caiu.status, 502); assert.ok(!JSON.stringify(await caiu.json()).includes('10.0.0.1'));
+  } finally { globalThis.fetch = antes; }
+});
+
+teste('cloudflare: o redutor de fotos só aceita os sites e as larguras do vercel.json e nunca vira abridor de site', async () => {
+  const I = await import(raiz('functions/_vercel/image.js')), vercel = require(raiz('vercel.json'));
+  assert.deepStrictEqual(I.LARGURAS, vercel.images.sizes);
+  const dosSites = I.SITES_DE_FOTO.map((s) => s.host || '**' + s.sufixo).sort(), doVercel = vercel.images.remotePatterns.map((p) => p.hostname).filter((h, i, a) => a.indexOf(h) === i).sort();
+  assert.deepStrictEqual(dosSites, doVercel, 'mesma lista de sites do vercel.json (images.remotePatterns)');
+  for (const bom of ['https://i.ibb.co/abc/foto.jpg', 'https://a.b.ibb.co/x.png', 'https://firebasestorage.googleapis.com/v0/b/x/o/y?alt=media', 'https://loja.firebasestorage.app/x', 'https://storage.googleapis.com/b/o']) assert.ok(I.siteDeFotoValido(bom), bom);
+  for (const ruim of ['http://i.ibb.co/x.jpg', 'https://evil-ibb.co/x.jpg', 'https://ibb.co.evil.com/x.jpg', 'https://i.ibb.co@evil.com/x.jpg', 'https://user:pw@i.ibb.co/x.jpg', 'https://i.ibb.co:8443/x.jpg', 'https://.firebasestorage.app/x', 'https://exemplo.com/x.jpg', 'javascript:alert(1)', '', 'https://169.254.169.254/latest']) assert.strictEqual(I.siteDeFotoValido(ruim), null, ruim);
+  const antes = globalThis.fetch; let chamadas = 0;
+  const pedir = (u, w) => I.onRequestGet({ request: new Request(`https://loja.exemplo.com/_vercel/image?url=${encodeURIComponent(u)}&w=${w}&q=75`) });
+  try {
+    globalThis.fetch = async (u, o) => { chamadas++; return new Response('IMG', { status: 200, headers: { 'Content-Type': 'image/webp', 'Content-Length': '3' } }); };
+    const ok = await pedir('https://i.ibb.co/abc/foto.jpg', 128);
+    assert.strictEqual(ok.status, 200); assert.strictEqual(ok.headers.get('content-type'), 'image/webp'); assert.ok(/max-age=2678400/.test(ok.headers.get('cache-control')));
+    assert.strictEqual((await pedir('https://exemplo.com/x.jpg', 128)).status, 400); assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 999)).status, 400);
+    assert.strictEqual(chamadas, 1, 'pedido recusado não busca nada');
+    globalThis.fetch = async () => new Response('<html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+    assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 128)).status, 415, 'só devolve imagem');
+    globalThis.fetch = async () => new Response('x', { status: 404 });
+    assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 128)).status, 502);
+  } finally { globalThis.fetch = antes; }
+});
+
 // ------------------------------------------------------------------ testes de segurança (arquivo próprio)
 require('./seguranca')({ teste, raiz, criarBanco, criarAdmin, chamar, carregarApi });
 

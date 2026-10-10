@@ -7,7 +7,7 @@ name: Testes de segurança
 
 on:
   push:
-    branches: [main]
+    branches: [main, rota-cloudflare]
   pull_request:
 
 permissions:
@@ -45,6 +45,17 @@ jobs:
       # npm ci instala EXATAMENTE as versões do package-lock.json (falha se ele e o package.json não baterem)
       - run: npm ci --no-audit --no-fund
       - run: npm run build
+      # os arquivos do Cloudflare Pages (_headers e _redirects) saem do vercel.json em cima do site de verdade
+      - name: Arquivos do Cloudflare Pages
+        run: |
+          node scripts/cloudflare-arquivos.js
+          test -s dist/_headers && test -s dist/_redirects
+          grep -q "frame-ancestors 'none'" dist/_headers && grep -q "frame-ancestors 'self'" dist/_headers
+          grep -q '^/feira/:id ' dist/_redirects && grep -q '^/previa ' dist/_redirects
+          test "$(grep -c '^/' dist/_headers)" -lt 100
+          # tudo que o _headers nomeia sem "*" existe no build (ou é uma página que o Cloudflare serve sem o .html)
+          for f in sw.js registerSW.js push-sw.js manifest.webmanifest admin.webmanifest og-image.png robots.txt sitemap.xml admin.html plataforma.html feira.html privacidade.html index.html; do test -f "dist/$f" || { echo "faltou dist/$f"; exit 1; }; done
+          ls dist/workbox-*.js dist/icon-*.png > /dev/null
 
   regras:
     name: Regras do banco no emulador do Firebase

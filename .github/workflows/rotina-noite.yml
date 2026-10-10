@@ -1,0 +1,35 @@
+name: Rotina da noite (servidor no Cloud Run)
+
+# Faz o que o "crons" do vercel.json fazia: chama /api/analytics todo dia às 8h UTC (5h em Brasília).
+# Só funciona depois de você criar os dois segredos em GitHub → Settings → Secrets and variables → Actions:
+#    API_ORIGEM    endereço do Cloud Run (https://banca-api-xxxx.a.run.app)
+#    CRON_SECRET   o mesmo CRON_SECRET que está no Cloud Run
+# Enquanto os segredos não existirem, a rotina não faz nada (e não dá erro).
+# ATENÇÃO: com a Vercel e o Cloud Run ligados ao MESMO Firebase, apague o "crons" do vercel.json para a rotina não rodar duas vezes.
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  rotina:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Chamar /api/analytics
+        env:
+          API_ORIGEM: ${{ secrets.API_ORIGEM }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$API_ORIGEM" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::notice::API_ORIGEM e CRON_SECRET ainda não foram criados: rotina ignorada."
+            exit 0
+          fi
+          code=$(curl -sS -o resposta.txt -w '%{http_code}' --max-time 300 -H "Authorization: Bearer $CRON_SECRET" "$API_ORIGEM/api/analytics")
+          echo "Resposta: $code"
+          head -c 600 resposta.txt || true
+          echo
+          [ "$code" = "200" ]
