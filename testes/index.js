@@ -960,6 +960,20 @@ teste('cupom em %: vale também para o que vai para a balança, e o de 100% zera
   assert.strictEqual(r.corpo.total, 0, JSON.stringify(r.corpo));
 });
 
+teste('pesagem com cupom especial de 100%: o pedido sai de "a pesar" e não volta para a balança', async () => {
+  const db = criarBancoP({ ...sementeEstoque(), 'cupons/FAMILIA': { ativo: true, percentual: 100, foraDaPrevisao: true } }); const adm = criarAdmin(db, TOKENS_P);
+  const checkout = carregarApi(raiz('api/checkout.js'), adm);
+  const p = pedido({ cupom: 'FAMILIA', itens: [{ id: 'tomate', qtd: 4, tipo: 'un' }, { id: 'ovos', qtd: 1, tipo: 'un' }] });
+  const c = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: p });
+  assert.strictEqual(c.status, 200, JSON.stringify(c.corpo));
+  const antes = db._dados.get(`pedidos/${p.idempotencyKey}`);
+  const api = carregarApi(raiz('api/pdv.js'), adm);
+  const r = await chamar(api, { headers: { Authorization: 'Bearer func-banca' }, body: { acao: 'pesagem', pedidoId: p.idempotencyKey, pesos: [{ i: 0, peso: 0.62 }] } });
+  const ped = db._dados.get(`pedidos/${p.idempotencyKey}`);
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(ped.status, 'preparando'); assert.strictEqual(ped.total, 0, 'cortesia: tudo de graça'); assert.ok(ped.itens.every((i) => !i.aPesar));
+});
+
 teste('pesagem: calcula pelo peso, MANTÉM o cupom, baixa o estoque por quilo e não baixa duas vezes', async () => {
   const db = criarBancoP({ ...sementeEstoque(), 'cupons/BANCA10': { ativo: true, valorFixo: 5 } }); const adm = criarAdmin(db, TOKENS_P);
   const checkout = carregarApi(raiz('api/checkout.js'), adm);

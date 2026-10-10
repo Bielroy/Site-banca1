@@ -511,7 +511,8 @@ const iniciarRealTimeSync = () => {
         avisarModoSimples(motivo);
         const qSimples = query(tcol("pedidos"), orderBy("data", "desc"), limit(300));
         // O unsubscribe é guardado — sem isso o listener sobreviveria ao logout.
-        const unsub = onSnapshot(qSimples, (snap) => {
+        const unsub = onSnapshot(qSimples, { includeMetadataChanges: true }, (snap) => {
+            avisarCopiaVelha(snap);
             aplicarPedidos(
                 snap.docs.map(d => ({ ...d.data(), id: d.id }))
                          .filter(p => STATUS_NA_FILA.includes(p.status))
@@ -521,13 +522,28 @@ const iniciarRealTimeSync = () => {
         unsubscribes.push(unsub);
     };
 
+    // FILA DESATUALIZADA: o painel guarda uma cópia dos pedidos no aparelho para abrir rápido. Sem conexão
+    // com o banco (internet fraca, rede que bloqueia), a fila mostrava essa cópia velha calada — um pedido já
+    // pesado voltava a pedir "Pesar os itens". Agora uma faixa avisa enquanto o banco não confirma.
+    let timerCopia = null;
+    const avisarCopiaVelha = (snap) => {
+        const daCopia = !!(snap && snap.metadata && snap.metadata.fromCache);
+        clearTimeout(timerCopia);
+        if (!daCopia) { document.getElementById('faixa-fila-copia')?.remove(); return; }
+        timerCopia = setTimeout(() => {                 // 4 s de folga: ao abrir, a cópia aparece antes do banco responder
+            if (document.getElementById('faixa-fila-copia')) return;
+            document.getElementById('aba-relatorios')?.insertAdjacentHTML('afterbegin', `<p id="faixa-fila-copia" class="aviso-limite" role="status"><i class="ic" data-i="alerta"></i> Sem conexão com o banco: a fila pode estar desatualizada. Confira a internet. Ela se atualiza sozinha quando a conexão voltar.</p>`);
+        }, 4000);
+    };
+
     const qComIndice = query(
         tcol("pedidos"),
         where("status", "in", STATUS_NA_FILA),
         orderBy("data", "desc"), limit(LIMITE_FILA)
     );
 
-    const unsubPedidos = onSnapshot(qComIndice, (snap) => {
+    const unsubPedidos = onSnapshot(qComIndice, { includeMetadataChanges: true }, (snap) => {
+        avisarCopiaVelha(snap);
         aplicarPedidos(snap.docs.map(d => ({ ...d.data(), id: d.id })));
         avisarFilaCheia(snap.size >= LIMITE_FILA);
         avisarSeChegouPedido(snap);
@@ -1120,6 +1136,14 @@ const finalizarEsteira = async (btn, enviarWhats) => {
         const fechado = await resp.json().catch(() => ({}));
         if (!resp.ok) throw new Error(fechado.error || 'Erro ao salvar o pedido.');
         ESTEIRA.totalFechado = fechado.total; ESTEIRA.desconto = fechado.desconto || 0; ESTEIRA.entrega = fechado.entrega || 0;
+        // o cartão do pedido muda NA HORA com a resposta do servidor (antes esperava o banco avisar o aparelho;
+        // sem conexão, o pedido pesado continuava pedindo "Pesar os itens")
+        const idPesado = ESTEIRA.pedido.id;
+        pedidosGerais = pedidosGerais.map((p) => p.id !== idPesado ? p : {
+            ...p, itens: Array.isArray(fechado.itens) ? fechado.itens : p.itens, total: fechado.total, temItensAPesar: false, pesadoEm: new Date().toISOString(),
+            status: ['pendente', 'aguardando_pesagem', 'aguardando_pagamento'].includes(p.status) ? 'preparando' : p.status,
+        });
+        if (document.getElementById('aba-relatorios')?.classList.contains('active')) renderRelatoriosMaster();
 
         if (enviarWhats) {
             const msg = montarMensagemCliente();
@@ -1132,9 +1156,9 @@ const finalizarEsteira = async (btn, enviarWhats) => {
                 ? `https://wa.me/${fone.startsWith('55') ? fone : '55' + fone}?text=${encodeURIComponent(msg)}`
                 : `https://wa.me/?text=${encodeURIComponent(msg)}`;
             window.open(url, '_blank', 'noopener');
-            if (!fone) showToast('Texto copiado — escolha a conversa da cliente.', false);
+            showToast(fone ? `Pesagem salva (${fmt(fechado.total || 0)}). Pedido em Separando.` : 'Pesagem salva. Texto copiado — escolha a conversa da cliente.', false);
         } else {
-            showToast('Pedido salvo com os valores exatos.');
+            showToast(`Pesagem salva (${fmt(fechado.total || 0)}). Pedido em Separando.`);
         }
 
         fecharEsteira();
@@ -1557,7 +1581,9 @@ const renderHtmlPedidos = (pedidos) => {
         }).join('<br> • ') : '';
 
         const temAPesar = p.itens && p.itens.some(i => i.aPesar);
-        const stKey = (temAPesar && p.status === 'pendente') ? 'aguardando_pesagem' : p.status;
+        // já pesado (nenhum item a pesar): mesmo se o status ainda disser "a pesar", o cartão vai para Separando
+        const stKey = (temAPesar && p.status === 'pendente') ? 'aguardando_pesagem'
+            : (p.status === 'aguardando_pesagem' && !temAPesar) ? 'preparando' : p.status;
         const st = dicsStatus[stKey] || dicsStatus['pendente'];
 
         // Botão de ação: pesagem tem fluxo próprio; arquivar pede confirmação;

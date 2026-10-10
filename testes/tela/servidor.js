@@ -40,6 +40,7 @@ function lista(p) {
   const { loja, resto } = lojaDe(p), f = L(loja) || {};
   if (resto === 'produtos') return Object.entries(f.produtos || {}).map(([id, d]) => ({ id, data: () => d }));
   if (resto === 'categorias') return (f.categorias || []).map((c, i) => ({ id: c.chave || 'c' + i, data: () => c }));
+  if (resto === 'pedidos') return Object.entries(f.pedidos || {}).map(([id, d]) => ({ id, data: () => d }));
   return [];
 }
 // atraso (ms) para imitar a internet: C.atraso = { ficha, feira, produtos } (padrão: na hora)
@@ -48,8 +49,8 @@ const atrasoDe = (p) => { const a = C.atraso || {}; if (/^tenants\\/[^/]+$/.test
 const negado = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
 const ehVitrine = (p) => { const { resto } = lojaDe(p); return resto === 'produtos' || resto === 'categorias' || resto === 'loja/config' || resto === 'loja/comunicados'; };
 const snapDoc = (d, id = 'x') => ({ exists: () => !!d, data: () => d || {}, id });
-const snapLista = (docs) => ({ docs, empty: !docs.length, size: docs.length, forEach(f) { docs.forEach(f); }, docChanges: () => [] });
-export const onSnapshot = (ref, cb, erro) => { setTimeout(() => {
+const snapLista = (docs) => ({ docs, metadata: { fromCache: !!C.daCopia, hasPendingWrites: false }, empty: !docs.length, size: docs.length, forEach(f) { docs.forEach(f); }, docChanges: () => [] });
+export const onSnapshot = (ref, ...resto) => { if (resto[0] && typeof resto[0] === 'object') resto.shift(); const [cb, erro] = resto; setTimeout(() => {
   const { loja } = lojaDe(ref.path);
   if (ehVitrine(ref.path) && bloqueada(loja) && conta.isAnonymous) { if (erro) erro(negado()); return; }
   if (ref.tipo === 'doc') cb(snapDoc(ler(ref.path), ref.path.split('/').pop())); else cb(snapLista(lista(ref.path)));
@@ -88,6 +89,8 @@ function subir(respostas = {}) {
       return;
     }
     if (u === '/js/firebase.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end(FIREBASE_FALSO); }
+    // gráficos do painel (chart.js vem do npm no build): aqui, um de mentira que não desenha nada
+    if (u === '/__teste/chart.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end('export default class Chart { constructor() {} destroy() {} update() {} };'); }
     if (u === '/js/firebase-arquivos.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end("export const storage = {}; export const ref = () => ({}); export const uploadBytes = async () => {}; export const getDownloadURL = async () => '';"); }
     // mesmas reescritas do vercel.json
     let arq = u === '/' || u === '/previa' ? 'index.html' : u.slice(1);
@@ -95,6 +98,8 @@ function subir(respostas = {}) {
     const caminho = path.join(RAIZ, arq);
     if (!caminho.startsWith(RAIZ) || !fs.existsSync(caminho) || fs.statSync(caminho).isDirectory()) { res.statusCode = 404; return res.end('não achei'); }
     res.setHeader('Content-Type', TIPOS[path.extname(caminho)] || 'application/octet-stream');
+    // páginas: o "chart.js/auto" do painel aponta para o de mentira (no site de verdade quem resolve é o build)
+    if (path.extname(caminho) === '.html') return res.end(fs.readFileSync(caminho, 'utf8').replace('<head>', '<head><script type="importmap">{"imports":{"chart.js/auto":"/__teste/chart.js"}}</script>'));
     res.end(fs.readFileSync(caminho));
   });
   return new Promise((ok) => srv.listen(0, '127.0.0.1', () => ok({ srv, base: `http://127.0.0.1:${srv.address().port}`, chamadas })));

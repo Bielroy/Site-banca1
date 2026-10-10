@@ -201,8 +201,61 @@ teste('painel: a aba Aparência abre e a prévia da loja carrega dentro dela', a
   semErros(erros); await fechar();
 });
 
+// ---------------------------------------------------------------- PAINEL: FILA DE PEDIDOS
+const cenarioFila = (extra = {}) => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } }, ...extra });
+  const agora = new Date().toISOString(), base = { total: 0, pag: 'PIX', quadra: '1', data: agora, cupom: { codigo: 'FAMILIA', percentual: 100, desconto: 0 } };
+  cen.lojas.banca.pedidos = {
+    'ped-a-pesar': { ...base, nome: 'Cliente Novo', lote: '3', status: 'aguardando_pesagem', temItensAPesar: true, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: true, precoOriginal: 9.9, subtotal: 0 }] },
+    // gravado como "a pesar", mas os itens já foram pesados (cópia velha no aparelho, ou status atrasado)
+    'ped-pesado': { ...base, nome: 'Namorada', lote: '2', status: 'aguardando_pesagem', itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 3, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.9, precoOriginal: 9.9, subtotal: 8.91 }] },
+  };
+  return cen;
+};
+const abrirFila = async (cen) => {
+  const aberto = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await aberto.pagina.locator('.tab[data-aba="relatorios"]').click();
+  await aberto.pagina.locator('.card-pedido').first().waitFor({ timeout: 8000 });
+  return aberto;
+};
+const cartao = (p, nome) => p.locator('.card-pedido', { hasText: nome });
+
+teste('painel: pedido pesado sai de "Pesar os itens"; item por unidade aparece em "un", não "kg"', async () => {
+  const { pagina, erros, fechar } = await abrirFila(cenarioFila());
+  const novo = await cartao(pagina, 'Cliente Novo').innerText(), pesado = await cartao(pagina, 'Namorada').innerText();
+  assert.ok(/2 un Tomate/.test(novo) && /Pesar os itens/.test(novo), 'pedido a pesar: "2 un" e o botão de pesar\n' + novo);
+  assert.ok(!/2 kg/.test(novo), 'pedido por unidade não aparece em kg');
+  assert.ok(/SEPARANDO/.test(pesado) && /3 un \(0,9 kg\)/.test(pesado) && !/Pesar os itens/.test(pesado), 'já pesado vai para Separando\n' + pesado);
+  assert.ok(await pagina.locator('#faixa-fila-copia').count() === 0, 'com o banco respondendo, sem faixa de fila desatualizada');
+  semErros(erros); await fechar();
+});
+
+teste('painel: depois de salvar a pesagem, o cartão muda na hora (sem esperar o banco)', async () => {
+  const { pagina, erros, fechar } = await abrirFila(cenarioFila());
+  await cartao(pagina, 'Cliente Novo').getByRole('button', { name: 'Pesar os itens' }).click();
+  await pagina.locator('#pk-peso').fill('0.8');
+  await pagina.locator('#pk-avancar').click();
+  await pagina.locator('#pk-salvar-sem-enviar').click();
+  await pagina.waitForFunction(() => !document.getElementById('picking-palco')?.classList.contains('aberto'), null, { timeout: 5000 });
+  const chamada = servidor.chamadas.filter((c) => c.caminho === '/api/pdv').pop();
+  assert.ok(chamada && chamada.corpo.acao === 'pesagem' && chamada.corpo.pedidoId === 'ped-a-pesar', 'mandou a pesagem para o servidor');
+  await pagina.waitForFunction(() => /SEPARANDO/.test([...document.querySelectorAll('.card-pedido')].find((c) => c.innerText.includes('Cliente Novo'))?.innerText || ''), null, { timeout: 4000 });
+  const depois = await cartao(pagina, 'Cliente Novo').innerText();
+  assert.ok(!/Pesar os itens/.test(depois) && /2 un \(0,8 kg\)/.test(depois), 'o cartão mostra o pedido pesado\n' + depois);
+  semErros(erros); await fechar();
+});
+
+teste('painel: fila vinda da cópia do aparelho (sem conexão com o banco) mostra o aviso', async () => {
+  const { pagina, erros, fechar } = await abrirFila(cenarioFila({ daCopia: true }));
+  await pagina.locator('#faixa-fila-copia').waitFor({ timeout: 7000 });
+  assert.ok(/fila pode estar desatualizada/.test(await pagina.locator('#faixa-fila-copia').innerText()));
+  semErros(erros); await fechar();
+});
+
 (async () => {
   servidor = await subir({
+    // pesagem (de mentira): devolve o pedido pesado como o api/pdv.js de verdade
+    '/api/pdv': (c) => (c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
     // ranking (de mentira) da banca, ao contrário da ordem do cadastro, chegando 1,5 s depois
     '/api/analytics': (c) => (c.acao === 'ranking' ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, nivel: 'popular', itens: ['ovos', 'banana', 'alface', 'tomate'].map((id, i) => ({ id, p: 0.9 - i * 0.2 })) }), 1500)) : {}),
     '/api/checkout': (c) => (c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),
