@@ -2413,6 +2413,41 @@ teste('balcão: venda cruzada sugere o que vai junto, sem repetir o que já est�
   assert.deepStrictEqual(A.sugestoesJuntos(null, ['alface']), []);
 });
 
+
+teste('compras: produto com dias para ficar pronto avisa a data e não produz mais do que vende antes de vencer', async () => {
+  const C = await import(raiz('js/compras-lib.js'));
+  const produtos = [
+    { id: 'pepino', nome: 'Pepino', unidade: 'kg', estoqueFisico: 50, custo: 3 },
+    { id: 'picles', nome: 'Picles', unidade: 'un', estoqueFisico: 0, estoqueMin: 5, estoqueIdeal: 40, prazoDias: 3, ficha: { rende: 10, validadeDias: 10, itens: [{ id: 'pepino', qtd: 2 }] } },
+  ];
+  const L = C.listaDeCompras({ produtos, previsto: { picles: { alvo: 40, vende: 14 } }, hoje: '2026-10-13' });
+  const pr = L.produzir.find((x) => x.id === 'picles');
+  assert.match(pr.motivo, /leva 3 dias para ficar pronto \(começando hoje, fica pronto em 16\/10\)/);
+  // vende 2 por dia e vale 10 dias: no máximo 20 unidades, mesmo que o ideal peça mais
+  assert.strictEqual(pr.qtd, 20); assert.match(pr.motivo, /limitado ao que vende em 10 dias de validade/);
+  const sem = C.listaDeCompras({ produtos: [produtos[0], { ...produtos[1], prazoDias: null, ficha: { ...produtos[1].ficha, validadeDias: null } }], previsto: { picles: { alvo: 40, vende: 14 } } });
+  assert.doesNotMatch(sem.produzir[0].motivo, /pronto|validade/);
+});
+
+teste('balanço: kit comparado com os itens soltos, e simulador de preço acha o preço de maior lucro', async () => {
+  const A = await import(raiz('js/alertas-lib.js'));
+  const produtos = [
+    { id: 'couve', nome: 'Couve', preco: 4, custo: 2 }, { id: 'limao', nome: 'Limão', preco: 2, custo: 1 }, { id: 'gengibre', nome: 'Gengibre', preco: 3, custo: 1 },
+    { id: 'kit', nome: 'Kit Suco Verde', unidade: 'kit', preco: 8, ficha: { rende: 1, itens: [{ id: 'couve', qtd: 1 }, { id: 'limao', qtd: 1 }, { id: 'gengibre', qtd: 1 }] } },
+    { id: 'conserva', nome: 'Conserva de limão', unidade: 'un', preco: 15, ficha: { rende: 1, itens: [{ id: 'limao', qtd: 3 }] } },   // não é kit
+  ];
+  const ks = A.analisarKits(produtos);
+  assert.strictEqual(ks.length, 1);
+  // soltos: R$ 9 (lucro 5); kit: R$ 8 com custo 4 (lucro 4) → precisa vender 25% a mais para empatar
+  assert.deepStrictEqual(ks[0], { id: 'kit', nome: 'Kit Suco Verde', preco: 8, separado: 9, desconto: 1, lucroKit: 4, lucroSolto: 5, empate: 0.25 });
+  const sim = A.simularPreco({ preco: 10, custo: 6, vendeSemana: 100, elasticidade: 1 });
+  assert.strictEqual(sim.length, 7);
+  assert.deepStrictEqual(sim.find((l) => l.variacao === 0), { variacao: 0, preco: 10, vende: 100, lucro: 400, melhor: false });
+  // com elasticidade 1 a receita fica igual, então subir o preço sempre dá mais lucro: o melhor é +20%
+  assert.strictEqual(sim.find((l) => l.melhor).variacao, 0.2);
+  assert.deepStrictEqual(A.simularPreco({ preco: 10, custo: 6, vendeSemana: 0 }), []);
+});
+
 (async () => {
   let falhas = 0;
   for (const [nome, fn] of testes) {

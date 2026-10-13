@@ -70,3 +70,47 @@ export function sugestoesJuntos(juntos, naVenda, max = 3) {
     for (const id of ja) (juntos && juntos[id] || []).forEach((j, i) => { if (!ja.has(j)) conta.set(j, (conta.get(j) || 0) + (3 - Math.min(i, 2))); });
     return [...conta.entries()].sort((a, b) => b[1] - a[1]).slice(0, max).map(([id]) => id);
 }
+
+// ---------------------------------------------------------------------
+// 4. KITS (aba Balanço): kit montado com a ficha técnica × vender os mesmos itens soltos.
+//    Só entra produto com unidade kit/bandeja (ou "kit", "cesta", "bandeja", "combo" no nome)
+//    cujos ingredientes são vendidos soltos na loja e têm preço e custo.
+// ---------------------------------------------------------------------
+const EH_KIT = (p) => ['kit', 'bdj', 'bandeja', 'cesta'].includes(String(p.unidade || '').toLowerCase()) || / (kit|cesta|bandeja|combo) /.test(` ${semAcento(p.nome)} `);
+export function analisarKits(produtos) {
+    const mapa = new Map((produtos || []).map((p) => [String(p.id), p])), out = [];
+    for (const k of produtos || []) {
+        if (!k || k.ativo === false || !k.ficha || !EH_KIT(k) || !(Number(k.preco) > 0)) continue;
+        const rende = Number(k.ficha.rende), itens = Array.isArray(k.ficha.itens) ? k.ficha.itens : [];
+        if (!(rende > 0) || !itens.length) continue;
+        let separado = 0, custo = 0, lucroSolto = 0, ok = true;
+        for (const i of itens) {
+            const p = mapa.get(String(i.id)), q = Number(i.qtd) / rende;
+            if (!p || p.soInsumo || !(Number(p.preco) > 0) || !(Number(p.custo) > 0) || !(q > 0)) { ok = false; break; }
+            separado += q * Number(p.preco); custo += q * Number(p.custo); lucroSolto += q * (Number(p.preco) - Number(p.custo));
+        }
+        if (!ok) continue;
+        const lucroKit = Number(k.preco) - custo;
+        // quanto o kit precisa vender A MAIS (em unidades) para deixar o mesmo lucro que os itens soltos
+        const empate = lucroKit > 0 && lucroSolto > lucroKit ? lucroSolto / lucroKit - 1 : null;
+        out.push({ id: k.id, nome: k.nome, preco: r2(Number(k.preco)), separado: r2(separado), desconto: r2(separado - Number(k.preco)), lucroKit: r2(lucroKit), lucroSolto: r2(lucroSolto), empate: empate == null ? null : Math.round(empate * 100) / 100 });
+    }
+    return out.sort((a, b) => (b.lucroKit - b.lucroSolto) - (a.lucroKit - a.lucroSolto));
+}
+
+// ---------------------------------------------------------------------
+// 5. SIMULADOR DE PREÇO (aba Balanço): venda ≈ venda atual × (preço novo ÷ preço atual)^(−elasticidade).
+//    A elasticidade vem do motor (medida nas ofertas da loja, ou o valor de partida 1).
+//    É estimativa para conversar, nunca troca preço sozinho.
+// ---------------------------------------------------------------------
+export function simularPreco({ preco, custo, vendeSemana, elasticidade = 1, variacoes = [-0.2, -0.1, -0.05, 0, 0.05, 0.1, 0.2] }) {
+    const p0 = Number(preco), c = Number(custo), q0 = Number(vendeSemana), e = Math.max(0, Math.min(4, Number(elasticidade) || 0));
+    if (!(p0 > 0) || !(c >= 0) || !(q0 > 0)) return [];
+    const linhas = variacoes.map((v) => {
+        const p = Math.round(p0 * (1 + v) * 100) / 100, q = q0 * Math.pow(p / p0, -e);
+        return { variacao: v, preco: p, vende: Math.round(q * 100) / 100, lucro: r2(q * (p - c)) };
+    });
+    const melhor = linhas.reduce((m, l) => (l.lucro > m.lucro ? l : m), linhas[0]);
+    linhas.forEach((l) => { l.melhor = l === melhor; });
+    return linhas;
+}

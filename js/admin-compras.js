@@ -48,7 +48,7 @@ function render() {
     if (!el()) return;
     const { previsto, perdas, clima } = apoio();
     const avisosClima = avisosDoClima(clima), etileno = dicasEtileno(S.produtos);
-    const L = S.lista = listaDeCompras({ produtos: S.produtos, previsto, perdas, acabou: S.acabou });
+    const L = S.lista = listaDeCompras({ produtos: S.produtos, previsto, perdas, acabou: S.acabou, hoje: hojeBR() });
     const marcados = lerMarcados(), nMarc = L.comprar.filter((l) => marcados.has(l.id)).length;
     const linha = (l, comEntrada) => `
         <label class="cp-item${marcados.has(l.id) ? ' feito' : ''}">

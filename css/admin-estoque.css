@@ -247,3 +247,7 @@ body.so-equipe #aba-relatorios .relatorios-header, body.so-equipe #aba-relatorio
 .mg-hoje li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,.06); font-size: .9rem; } .mg-hoje li small { display: block; font-size: .78rem; color: var(--text-light); }
 .pv2-juntos { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 10px; font-size: .85rem; }
 .pv2-juntos button { padding: 6px 10px; border-radius: 999px; border: 1.5px solid #2f7a4f; background: transparent; color: #2f7a4f; font-weight: 600; }
+.mg-kits { border-left-color: #6d28d9; } .mg-sim { border-left-color: #0e7490; }
+.mg-sim select { width: 100%; padding: 10px 12px; margin: 6px 0; border-radius: var(--radius-sm); border: 1.5px solid #e0dcd4; font-size: 16px; background: #fff; }
+.mg-sim-melhor { background: rgba(47,122,79,.10); border-radius: 8px; padding-left: 6px !important; padding-right: 6px !important; }
+.mg-sim li small { display: inline; margin-left: 4px; } .mg-sim li span small:last-child { display: block; margin-left: 0; }
