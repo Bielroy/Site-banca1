@@ -15,7 +15,7 @@ import { escapeHTML, fmt, showToast, openModal, closeModal } from './utils.js';
 import { numeroDeCampo } from './aparencia-lib.js';
 import { temControle, situacao, sugestaoCompra, fmtQtd, ROTULO_TIPO, MOTIVOS_PERDA, custoDaFicha, margem, UNIDADES_RECEITA, paraEstoque, taxasDePerda, comFolgaDePerda } from './estoque-lib.js';
 
-const S = { produtos: [], filtro: 'todos', busca: '', previsto: null, previstoEm: 0, perdas: null, perdasEm: 0, ligado: false, acao: null };
+const S = { produtos: [], filtro: 'todos', busca: '', previsto: null, previstoEm: 0, clima: [], perdas: null, perdasEm: 0, ligado: false, acao: null };
 const mapaProdutos = () => new Map(S.produtos.map((p) => [p.id, p]));
 const pctBonito = (x) => `${(x * 100).toFixed(1).replace('.', ',')}%`;
 const el = () => document.getElementById('estoque-conteudo');
@@ -58,7 +58,7 @@ async function carregarPrevisao() {
         const j = await lerPainel(); if (!j.produtos) return;
         const m = {};
         for (const [id, p] of Object.entries(j.produtos)) { const h = p.horizontes && p.horizontes.prox7; if (h && h.recomendacao) m[id] = { alvo: h.recomendacao.sugestao, vende: h.previsto }; }
-        S.previsto = m; S.previstoEm = Date.now(); render();
+        S.previsto = m; S.clima = (j.meta && Array.isArray(j.meta.climaProximo)) ? j.meta.climaProximo : []; S.previstoEm = Date.now(); render();
     } catch (_) { /* sem previsão: segue */ }
 }
 
@@ -360,7 +360,7 @@ function ligar() {
 
 /** Previsão do motor e desperdício já carregados (a aba Compras usa os mesmos, sem ler de novo). */
 export const carregarApoio = () => Promise.all([carregarPrevisao(), carregarPerdas()]);
-export const apoio = () => ({ previsto: S.previsto || {}, perdas: S.perdas || {} });
+export const apoio = () => ({ previsto: S.previsto || {}, perdas: S.perdas || {}, clima: S.clima || [] });
 export const movimentar = (corpo) => api({ acao: 'movimentar', chave: novaChave(), ...corpo });
 
 /** Chamado ao abrir a aba e sempre que os produtos mudam com a aba aberta. */

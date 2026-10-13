@@ -2332,6 +2332,47 @@ teste('cloudflare: o redutor de fotos só aceita os sites e as larguras do verce
 // ------------------------------------------------------------------ testes de segurança (arquivo próprio)
 require('./seguranca')({ teste, raiz, criarBanco, criarAdmin, chamar, carregarApi });
 
+
+teste('motor: salário a partir do 5º dia útil (pula fim de semana e feriado) e vale no dia 20 ou no dia útil seguinte', () => {
+  const EF = require(raiz('analytics/externalFactors.js')), N = require(raiz('analytics/normalize.js'));
+  const marcados = (de, ate, f) => { const o = []; for (let d = N.diaDeIso(de); d <= N.diaDeIso(ate); d++) if (f(d)) o.push(N.isoDeDia(d)); return o; };
+  // outubro/2026: 1 (qui), 2 (sex), 5, 6, 7 → 5º dia útil = dia 7; a janela tem 6 dias
+  assert.deepStrictEqual(marcados('2026-10-01', '2026-10-31', EF.ehPagamento), ['2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11', '2026-10-12']);
+  // novembro/2026: dia 2 é Finados (feriado), então o 5º dia útil é o dia 9
+  assert.strictEqual(marcados('2026-11-01', '2026-11-30', EF.ehPagamento)[0], '2026-11-09');
+  // dia 20/11/2026 é feriado (sexta) → vale na segunda, 23
+  assert.deepStrictEqual(marcados('2026-11-01', '2026-11-30', EF.ehVale), ['2026-11-23', '2026-11-24', '2026-11-25']);
+  const st = EF.estadoDoDia(N.diaDeIso('2026-10-21'), {});
+  assert.strictEqual(st.vale, true); assert.strictEqual(st.pag, false);
+});
+
+teste('compras: aviso de clima explica o efeito aprendido e avisa quando ainda está aprendendo', async () => {
+  const D = await import(raiz('js/dicas-compra-lib.js'));
+  const a = D.avisosDoClima([
+    { dia: '2026-10-15', chuva: 12.4, tmax: 24, efeitos: [{ tipo: 'chuva', fator: 0.82, n: 9 }] },
+    { dia: '2026-10-16', chuva: 0, tmax: 36, efeitos: [{ tipo: 'calor', fator: null, n: 2 }] },
+    { dia: '2026-10-17', efeitos: [] }, null, { dia: 'ontem', efeitos: [{ tipo: 'chuva', fator: 1 }] },
+  ]);
+  assert.strictEqual(a.length, 2);
+  assert.match(a[0].texto, /^qui, 15\/10: previsão de chuva \(12 mm\)\. Nos dias de chuva, a loja vende uns 18% a menos\.$/);
+  assert.strictEqual(a[0].aprendido, true);
+  assert.match(a[1].texto, /calor acima do normal.*ainda está aprendendo/);
+  assert.strictEqual(a[1].aprendido, false);
+  assert.deepStrictEqual(D.avisosDoClima(undefined), []);
+});
+
+teste('compras: dica de etileno só aparece com os dois grupos e não confunde doce de banana nem macarrão', async () => {
+  const D = await import(raiz('js/dicas-compra-lib.js'));
+  const r = D.dicasEtileno([
+    { nome: 'Banana prata' }, { nome: 'Maçã gala' }, { nome: 'Alface crespa' }, { nome: 'Couve-flor' },
+    { nome: 'Doce de banana' }, { nome: 'Macarrão caseiro' }, { nome: 'Rúcula', ativo: false }, { nome: 'Tomates' },
+  ]);
+  assert.deepStrictEqual(r.emissores, ['Banana prata', 'Maçã gala', 'Tomates']);
+  assert.deepStrictEqual(r.sensiveis, ['Alface crespa', 'Couve-flor']);
+  assert.strictEqual(D.dicasEtileno([{ nome: 'Banana' }, { nome: 'Maçã' }]), null);
+  assert.strictEqual(D.dicasEtileno([]), null);
+});
+
 (async () => {
   let falhas = 0;
   for (const [nome, fn] of testes) {

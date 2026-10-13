@@ -251,6 +251,18 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     tel: m.aceitaOfertas ? m.telefone : '', oferta: m.aceitaOfertas === true }))
     .sort((a, b) => b.n - a.n).slice(0, 600);
 
+  // próximos 7 dias de loja aberta com chuva, calor ou frio previstos e o que isso faz com as vendas da loja (aba Compras)
+  const climaProximo = [];
+  if (C.USAR_CLIMA) for (let d = hoje; d < hoje + 7; d++) {
+    const c = mapaClima.get(d), st = contexto.estadosClima.get(d);
+    if (!c || !st || !abertos.has(dowDeDia(d))) continue;
+    const efeitos = ['chuva', 'calor', 'frio'].filter((s) => st[s]).map((s) => {
+      const e = fatores && fatores.estados && fatores.estados[s];
+      return { tipo: s, fator: e && e.confiavel ? r2(Math.exp(e.loja)) : null, n: e ? e.n : 0 };
+    });
+    if (efeitos.length) climaProximo.push({ dia: isoDeDia(d), chuva: c.chuva, tmax: c.tmax, efeitos });
+  }
+
   const meta = {
     versao: C.VERSAO, nivelServico: C.NIVEL_SERVICO, geradoEm: new Date(agora).toISOString(), hoje: isoDeDia(hoje), duracaoMs: Date.now() - t0,
     feiras: feirasHz,                      // abas da previsão por feira (o próximo dia de cada uma)
@@ -259,6 +271,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     diasComFalta: [...rupturas.values()].reduce((n, s) => n + s.size, 0),
     diasFechados: fechados.size, fatores: EF.resumo(fatores),
     clima: clima ? { cidade: clima.cidade || '', lugar: clima.lugar || '', dias: mapaClima.size, motivo: clima.motivo || null } : null,
+    climaProximo,
     pesos, hz: Object.fromEntries(Object.entries(hz).map(([k, v]) => [k, v.map(isoDeDia)])),
     avisos: [
       ...(norm.nPedidos < 30 ? ['Poucos pedidos no histórico: todas as previsões têm confiança baixa.'] : []),
