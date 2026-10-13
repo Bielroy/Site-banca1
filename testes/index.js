@@ -2270,7 +2270,9 @@ teste('cloudflare: _headers não soma cabeçalhos em nenhum endereço, /previa t
   assert.strictEqual(de('/previa')['X-Frame-Options'], 'SAMEORIGIN'); assert.ok(/frame-ancestors 'self'/.test(de('/previa')['Content-Security-Policy']));
   assert.strictEqual(de('/')['X-Frame-Options'], 'DENY'); assert.ok(/frame-ancestors 'none'/.test(de('/')['Content-Security-Policy']));
   assert.ok(/noindex/.test(de('/admin')['X-Robots-Tag']) && /noindex/.test(de('/plataforma')['X-Robots-Tag']) && !de('/')['X-Robots-Tag']);
-  assert.deepStrictEqual(C.gerarRedirects(vercel).split('\n').slice(1, 3), ['/feira/:id /?feira=:id&entrar=1 302', '/previa /index.html 200']);
+  assert.deepStrictEqual(C.gerarRedirects(vercel).split('\n').slice(1).filter(Boolean), ['/feira/:id /?feira=:id&entrar=1 302'], '/previa não é reescrita (os cabeçalhos do /index.html vinham junto)');
+  assert.deepStrictEqual(C.copiasDePagina(vercel), [{ de: 'index.html', para: 'previa.html' }], '/previa vira um arquivo próprio');
+  assert.ok(!C.ENDERECOS_DO_SITE.some((e) => C.casa(e, '/previa') || C.casa(e, '/previa.html')), 'nenhum trecho "de todas as páginas" vale para a prévia');
   // um bloco novo no vercel.json que o tradutor não conhece derruba o teste (em vez de ficar sem cabeçalho no Cloudflare)
   assert.throws(() => C.gerarHeaders({ ...vercel, headers: [...vercel.headers, { source: '/novo', headers: [{ key: 'X', value: 'y' }] }] }), /ensine/);
   // /api: as respostas da função têm os mesmos cabeçalhos que o vercel.json põe
