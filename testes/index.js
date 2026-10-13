@@ -2238,6 +2238,36 @@ teste('cloud run: o servidor entrega body/query/status/json como a Vercel e conf
   try { const r = await fetch(`http://127.0.0.1:${sem.address().port}/api/eco`, { headers: { 'X-Proxy-Segredo': '', 'X-Cliente-IP': '8.8.8.8' } }); assert.notStrictEqual((await r.json()).ip, '8.8.8.8'); } finally { sem.close(); }
 });
 
+teste('servidor: com EXIGIR_PROXY só atende o Cloudflare (e a rotina da noite) e freia quem chama demais', async () => {
+  const { criarServidor } = require(raiz('server'));
+  let chamou = 0;
+  const eco = async (req, res) => { chamou++; res.json({ ok: true }); };
+  const srv = criarServidor({ funcoes: { eco }, segredo: 'segredo-do-proxy', exigirProxy: true, segredoCron: 'cron-123', limitePorMinuto: 5 });
+  await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const st = async (u, h = {}) => (await fetch(base + u, { headers: h })).status;
+  try {
+    // direto, sem segredo: 403 e a função nem roda
+    assert.strictEqual(await st('/api/eco'), 403); assert.strictEqual(chamou, 0);
+    assert.strictEqual(await st('/api/eco', { 'X-Proxy-Segredo': 'chute' }), 403);
+    assert.strictEqual(await st('/api/eco', { Authorization: 'Bearer errado' }), 403);
+    // a saúde continua aberta (o script de atualização e o teste da ponte usam)
+    assert.strictEqual(await st('/saude'), 200); assert.strictEqual(await st('/api/saude'), 200);
+    // rotina da noite com o CRON_SECRET passa
+    assert.strictEqual(await st('/api/eco', { Authorization: 'Bearer cron-123' }), 200);
+    // pelo Cloudflare: passa até o limite POR CLIENTE; o 6º do mesmo IP leva 429, outro IP segue normal
+    const de = (ip) => ({ 'X-Proxy-Segredo': 'segredo-do-proxy', 'X-Cliente-IP': ip });
+    for (let i = 0; i < 5; i++) assert.strictEqual(await st('/api/eco', de('198.51.100.1')), 200);
+    const r = await fetch(base + '/api/eco', { headers: de('198.51.100.1') });
+    assert.strictEqual(r.status, 429); assert.strictEqual(r.headers.get('retry-after'), '60');
+    assert.strictEqual(await st('/api/eco', de('198.51.100.2')), 200, 'um cliente abusando não trava os outros');
+  } finally { srv.close(); }
+  // sem EXIGIR_PROXY (como está hoje), chamada direta continua funcionando
+  const livre = criarServidor({ funcoes: { eco }, segredo: 'segredo-do-proxy', exigirProxy: false, limitePorMinuto: 600 });
+  await new Promise((ok) => livre.listen(0, '127.0.0.1', ok));
+  try { assert.strictEqual((await fetch(`http://127.0.0.1:${livre.address().port}/api/eco`)).status, 200); } finally { livre.close(); }
+});
+
 teste('cloud run: o servidor enxerga as 12 funções de api/ e o Dockerfile leva o que elas usam', async () => {
   const { listarFuncoes } = require(raiz('server'));
   const fs = require('fs');

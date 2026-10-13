@@ -198,5 +198,26 @@ pedido, PIX de pedido cancelado, enxurrada de pedidos.
 - **App Check e CAPTCHA.** Dependem de cadastro e chaves no console; ficaram documentados em PUBLICAR.md.
 - **Registro de mudança de preço e de exclusão de produto.** Essas gravações vão do painel direto ao banco; para
   registrá-las o cadastro teria de passar pelo servidor.
-- **Limite na borda (Firewall da Vercel).** Os freios atuais contam no banco; uma regra na borda barraria antes.
+- **Limite na borda.** Na Rota A ele existe: ver "Spam e ataques" abaixo (regra do Cloudflare + freio do servidor).
+  Na Vercel (reserva) continua só o freio que conta no banco.
 - **Teste com o PagBank de verdade.** O PIX automático e a maquininha nunca rodaram contra uma conta real.
+
+## 12. Spam e ataques (Rota A: Cloudflare + servidor da AWS)
+
+Camadas, de fora para dentro:
+
+| Camada | O que segura | Onde se liga |
+|---|---|---|
+| Cloudflare (usebanca.com) | Ataques de volume (DDoS) contra o site: o Cloudflare absorve sem custo extra | Já ligado: o domínio passa pelo Cloudflare |
+| Regra de limite do Cloudflare | Um mesmo IP chamando `/api/` sem parar é bloqueado na borda, antes de chegar ao servidor | Painel do Cloudflare → Security → WAF → Rate limiting rules (o plano grátis permite 1 regra, contagem de 10 s) |
+| AWS Shield Standard | Ataques de rede (camadas 3 e 4) contra a máquina do Lightsail | Automático, sem configurar |
+| `EXIGIR_PROXY=1` no servidor | Quem descobrir `api.usebanca.com` e chamar direto recebe 403 na hora, sem ler corpo nem tocar no banco. A rotina da noite passa pelo `CRON_SECRET` | Linha `EXIGIR_PROXY=1` em `~/segredos.env` + `bash ~/loja/scripts/atualizar-servidor.sh`. Só ligue com `"ponte":true` em `/api/saude` |
+| Freio por IP no servidor | Mais de `LIMITE_POR_MINUTO` (padrão 600) chamadas por minuto do mesmo cliente → 429. Fica na memória, então barra antes do banco | Já vem ligado |
+| Freios no banco (`lib/prudencia.limitar`) | Login, pedidos, IA: por pessoa, por conexão e por dia | Já vem ligado |
+| Tempo máximo por pedido | Conexão que manda dados em conta-gotas (slowloris) é cortada em 140 s | Já vem ligado |
+
+**Formulário de contato (futuro):** não existe hoje. Se for criado, deve passar pelo servidor com o freio por IP,
+um campo-isca escondido (robô preenche, gente não) e, se o spam continuar, o Turnstile do Cloudflare.
+
+**Em caso de ataque em andamento:** o modo "Under Attack" do Cloudflare segura o site, mas faz desafio no navegador
+e pode atrapalhar as chamadas de `/api/` (pedido, painel). Use só por pouco tempo e desligue depois.
