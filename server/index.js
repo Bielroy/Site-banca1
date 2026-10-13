@@ -112,7 +112,34 @@ function listarFuncoes(pasta = PASTA_API) {
  * Cria o servidor. `funcoes` troca a pasta api/ por outra coisa (os testes usam isso).
  * `segredo` é o PROXY_SEGREDO.
  */
-function criarServidor({ funcoes = listarFuncoes(), segredo = process.env.PROXY_SEGREDO } = {}) {
+function criarServidor({
+  funcoes = listarFuncoes(),
+  segredo = process.env.PROXY_SEGREDO,
+  // PROTEÇÃO CONTRA ABUSO (ver SEGURANCA.md, seção "Spam e ataques"):
+  //  exigirProxy  EXIGIR_PROXY=1: /api/* só atende quem veio pelo Cloudflare (com o PROXY_SEGREDO).
+  //               Quem descobrir o endereço do servidor e chamar direto recebe 403 na hora,
+  //               sem ler corpo nem tocar no banco. A rotina da noite (GitHub) passa com o CRON_SECRET.
+  //  limitePorMinuto  LIMITE_POR_MINUTO (padrão 600): chamadas por IP por minuto antes do 429.
+  //               Uma pessoa usando a loja ou o painel fica muito abaixo disso.
+  exigirProxy = process.env.EXIGIR_PROXY === '1',
+  segredoCron = process.env.CRON_SECRET,
+  limitePorMinuto = Number(process.env.LIMITE_POR_MINUTO) || 600,
+} = {}) {
+  const contagem = new Map();
+  const passouDoLimite = (ip, agora = Date.now()) => {
+    if (!(limitePorMinuto > 0)) return false;
+    if (contagem.size > 20000) {
+      for (const [k, v] of contagem) if (agora - v.inicio > 60000) contagem.delete(k);
+      if (contagem.size > 50000) contagem.clear();                // muitos IPs de uma vez: a memória não cresce sem fim
+    }
+    let r = contagem.get(ip);
+    if (!r || agora - r.inicio > 60000) { r = { inicio: agora, n: 0 }; contagem.set(ip, r); }
+    return ++r.n > limitePorMinuto;
+  };
+  const ehDaRotina = (req) => {
+    const m = /^Bearer\s+(.+)$/i.exec(String(req.headers.authorization || ''));
+    return !!m && igualSeguro(m[1].trim(), segredoCron);
+  };
   const carregadas = new Map();
   const carregar = (nome) => {
     if (!carregadas.has(nome)) carregadas.set(nome, typeof funcoes[nome] === 'function' ? { handler: funcoes[nome], config: funcoes[nome].config } : (() => { const m = require(funcoes[nome]); return { handler: m.default || m, config: m.config || (m.default && m.default.config) }; })());
@@ -132,7 +159,12 @@ function criarServidor({ funcoes = listarFuncoes(), segredo = process.env.PROXY_
       const m = /^\/api\/([a-z0-9-]+)\/?$/.exec(url.pathname);
       if (!m || !Object.prototype.hasOwnProperty.call(funcoes, m[1])) return dar(404, { error: 'Não encontrado.' });
 
-      confiarNoCabecalho(req, segredo);
+      const doProxy = confiarNoCabecalho(req, segredo);
+      if (exigirProxy && !doProxy && !ehDaRotina(req)) return dar(403, { error: 'Acesso direto não permitido.' });
+      if (passouDoLimite(req.headers['x-real-ip'])) {
+        res.setHeader('Retry-After', '60');
+        return dar(429, { error: 'Muitas tentativas seguidas. Espere um minuto e tente de novo.' });
+      }
       const { handler, config } = carregar(m[1]);
       req.query = lerParametros(url);
       const cruo = config && config.api && config.api.bodyParser === false;      // o aviso de pagamento lê o corpo bruto sozinho (assinatura)
@@ -165,6 +197,9 @@ if (require.main === module) {
   // Deixando o Node esperar mais que o Caddy (2 min), quem fecha é sempre o Caddy.
   servidor.keepAliveTimeout = 130000;
   servidor.headersTimeout = 135000;
+  // Quem manda o pedido em conta-gotas para prender a conexão (ataque "slowloris") é cortado em 140 s
+  // (o padrão do Node é 5 min). Fica acima dos dois tempos de cima para não cortar conexão boa do Caddy.
+  servidor.requestTimeout = 140000;
   servidor.listen(porta, () => console.log(`[servidor] no ar na porta ${porta} com: ${Object.keys(listarFuncoes()).join(', ')}`));
   // Ao desligar (atualização, reinício), termina as respostas em andamento antes de sair (no máximo 8 s).
   for (const sinal of ['SIGTERM', 'SIGINT']) {
