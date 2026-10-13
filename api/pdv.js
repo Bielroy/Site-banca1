@@ -29,6 +29,7 @@ const boot = () => {
   if (!db) db = admin.firestore();
 };
 const H = require('../lib/http');
+const Cofre = require('../lib/cofre');
 const cors = H.cors;            // origem (CORS): lista única em lib/http.js
 const PODEM = ['proprietario', 'administrador', 'funcionario', 'caixa'];
 const PAGAMENTOS = ['PIX', 'Dinheiro', 'Cartão'];
@@ -93,7 +94,7 @@ async function venda(req, res, { tid, dec }) {
         pag, troco: '', obs: '', itens: linhas, total, clientTotal: total, temItensAPesar: false, cupom: null,
         status: 'arquivado', data: dataPedido,
       };
-      t.set(pedidoRef, pedido);
+      t.set(pedidoRef, Cofre.fecharCampos(pedido, tid));   // cliente do balcão também vai cifrado (lib/cofre.js)
       E.registrarMovs(t, db, tid, movs, admin.firestore.FieldValue);
       somarNoCaixa(t, tid, total, 1, diaBr);
       return { id: chave, total, itens: linhas.length };
