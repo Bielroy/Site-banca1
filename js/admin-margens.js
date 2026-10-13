@@ -6,6 +6,9 @@
 import { escapeHTML, fmt } from './utils.js';
 import { resumoMargens } from './margens-lib.js';
 import { fmtQtd } from './estoque-lib.js';
+import { lucroDeHoje } from './alertas-lib.js';
+import { lerPainel } from './painel-cache.js';
+import { precoDoDia } from './oferta-lib.js';
 
 const pct = (x) => (x == null ? '–' : `${(x * 100).toFixed(1).replace('.', ',')}%`);
 const tabela = (titulo, dica, linhas, coluna) => `
@@ -33,5 +36,24 @@ export function renderMargens(pedidos, produtos, dias) {
         ${r.baixaMargem.length ? tabela('Margem baixa', 'Menos de 20% de margem.', r.baixaMargem, (l) => `<b>${pct(l.margem)}<small>${fmt(l.lucro)}</small></b>`) : ''}
         ${r.semCusto.length ? tabela('Sem custo cadastrado', '', r.semCusto.slice(0, 8), (l) => `<b>${fmt(l.receita)}</b>`) : ''}
     </div>
+    <div id="mg-hoje"></div>
     <p class="config-sub">O lucro é uma estimativa: usa o custo cadastrado hoje, não o do dia de cada venda, e não inclui despesas como embalagem, gás ou entrega.</p>`;
+    preencherHoje(produtos);
+}
+
+// CURVA ABC DE HOJE: previsão de venda de hoje (motor) × (preço de hoje − custo). Se o motor ainda não rodou, não mostra nada.
+async function preencherHoje(produtos) {
+    try {
+        const j = await lerPainel(), caixa = document.getElementById('mg-hoje');
+        if (!caixa || !j || !j.produtos) return;
+        const prev = {};
+        for (const [id, p] of Object.entries(j.produtos)) { const h = p.horizontes && p.horizontes.hoje; if (h && h.previsto > 0) prev[id] = h.previsto; }
+        const dow = new Date(Date.now() - 3 * 3600000).getUTCDay();
+        const r = lucroDeHoje({ produtos, previsaoHoje: prev, precoDe: (p) => precoDoDia(p, dow) });
+        if (!r.linhas.length) return;
+        const top = r.linhas.filter((l) => l.classe === 'A').slice(0, 8);
+        caixa.innerHTML = `<section class="mg-hoje"><h4>Hoje, quem mais deve dar lucro <small>cerca de ${fmt(r.total)} previstos</small></h4>
+            <ul>${top.map((l) => `<li><span>${escapeHTML(l.nome)}<small>vende perto de ${fmtQtd(l.qtd, l.unidade)} · margem ${pct(l.margem)}</small></span><b>${fmt(l.lucro)}</b></li>`).join('')}</ul>
+            <p class="config-sub">Estes ${top.length} produto(s) somam 80% do lucro previsto para hoje: capriche na exposição e não deixe faltar.${r.semCusto ? ` ${r.semCusto} produto(s) com venda prevista estão sem custo cadastrado e ficaram de fora.` : ''}</p></section>`;
+    } catch (_) { /* sem previsão: o resto da aba segue igual */ }
 }

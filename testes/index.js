@@ -529,6 +529,12 @@ teste('motor: dia em que a loja não funcionou sai da conta, e venda de balcão 
   // estoque que zerou numa venda conta como dia de falta
   const r2 = executarMotor({ pedidos, catalogo, agregados: [], parametros: {}, eventos: [], snapshots: [], faltasEstoque: [{ produtoId: 'tomate', dia: '2026-09-08' }, { produtoId: 'tomate', dia: '2026-09-09' }], agora: Date.UTC(2026, 7, 41, 15) });
   assert.strictEqual(r2.meta.diasComFalta, 2);
+  assert.strictEqual(r2.meta.custoFalta.valor, 0, 'marcou falta mas vendeu o normal: não inventa perda');
+  // no dia 8/9 só o balcão comprou (3 kg em vez de 13): a falta custou uns 10 kg × R$ 7,50
+  const r3 = executarMotor({ pedidos: pedidos.filter((p) => !(p.data === dia(39) && p.id.startsWith('p'))), catalogo, agregados: [], parametros: {}, eventos: [], snapshots: [], faltasEstoque: [{ produtoId: 'tomate', dia: '2026-09-08' }], agora: Date.UTC(2026, 7, 41, 15) });
+  assert.strictEqual(r3.meta.custoFalta.itens[0].id, 'tomate'); assert.strictEqual(r3.meta.custoFalta.itens[0].dias, 1);
+  assert.ok(Math.abs(r3.meta.custoFalta.valor - 75) < 0.01, 'custo ' + r3.meta.custoFalta.valor);
+  assert.deepStrictEqual(r3.meta.juntos, {}, 'um produto só não tem par');
 });
 
 teste('clima: lê a resposta do serviço, guarda por loja e segue com o guardado quando a internet falha', async () => {
@@ -2371,6 +2377,40 @@ teste('compras: dica de etileno só aparece com os dois grupos e não confunde d
   assert.deepStrictEqual(r.sensiveis, ['Alface crespa', 'Couve-flor']);
   assert.strictEqual(D.dicasEtileno([{ nome: 'Banana' }, { nome: 'Maçã' }]), null);
   assert.strictEqual(D.dicasEtileno([]), null);
+});
+
+
+teste('estoque: alerta de sobra só para perecível com estoque acima do que aguenta', async () => {
+  const A = await import(raiz('js/alertas-lib.js'));
+  const produtos = [
+    { id: 'alface', nome: 'Alface crespa', cat: 'folhas', estoqueFisico: 30, preco: 3, unidade: 'un' },     // vende 5/dia → 6 dias; folha aguenta 2
+    { id: 'tomate', nome: 'Tomate', cat: 'legumes', estoqueFisico: 20, preco: 9, unidade: 'kg' },          // vende 4/dia → 5 dias; aguenta 4 → folga normal
+    { id: 'mel', nome: 'Mel', cat: 'mercearia', estoqueFisico: 50, preco: 30 },                          // não é perecível
+    { id: 'bolo', nome: 'Bolo caseiro', cat: 'padaria', estoqueFisico: 10, preco: 25 },                  // perecível porque já teve perda
+    { id: 'rucula', nome: 'Rúcula', estoqueFisico: '', preco: 4 },                                       // sem estoque contado
+  ];
+  const r = A.sobrasPereciveis({ produtos, previsto: { alface: { vende: 35 }, tomate: { vende: 28 }, mel: { vende: 7 }, bolo: { vende: 7 }, rucula: { vende: 70 } }, perdas: { bolo: { taxa: 0.1 } } });
+  assert.deepStrictEqual(r.map((x) => x.id), ['bolo', 'alface']);
+  assert.deepStrictEqual(r.find((x) => x.id === 'alface'), { id: 'alface', nome: 'Alface crespa', unidade: 'un', sobra: 20, dias: 6, aguenta: 2, valor: 60 });
+});
+
+teste('balanço: curva ABC de hoje usa o preço do dia e deixa de fora quem não tem custo', async () => {
+  const A = await import(raiz('js/alertas-lib.js'));
+  const produtos = [
+    { id: 'a', nome: 'A', preco: 10, custo: 4 }, { id: 'b', nome: 'B', preco: 5, custo: 4 }, { id: 'c', nome: 'C', preco: 20, custo: 0 },
+    { id: 'd', nome: 'D', preco: 8, custo: 2, ativo: false }, { id: 'e', nome: 'E', preco: 6, custo: 5 },
+  ];
+  const r = A.lucroDeHoje({ produtos, previsaoHoje: { a: 10, b: 10, c: 5, d: 9, e: 1 }, precoDe: (p) => (p.id === 'a' ? 12 : p.preco) });
+  assert.deepStrictEqual(r.linhas.map((l) => [l.id, l.lucro, l.classe]), [['a', 80, 'A'], ['b', 10, 'B'], ['e', 1, 'C']]);
+  assert.strictEqual(r.total, 91); assert.strictEqual(r.semCusto, 1);
+});
+
+teste('balcão: venda cruzada sugere o que vai junto, sem repetir o que já está na venda', async () => {
+  const A = await import(raiz('js/alertas-lib.js'));
+  const juntos = { alface: ['tomate', 'cebola', 'pepino'], tomate: ['cebola', 'alface'], pao: ['manteiga'] };
+  assert.deepStrictEqual(A.sugestoesJuntos(juntos, ['alface', 'tomate']), ['cebola', 'pepino']);
+  assert.deepStrictEqual(A.sugestoesJuntos(juntos, ['queijo']), []);
+  assert.deepStrictEqual(A.sugestoesJuntos(null, ['alface']), []);
 });
 
 (async () => {

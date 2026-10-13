@@ -10,8 +10,10 @@ import { auth } from './firebase.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal } from './utils.js';
 import { criarCamposEndereco } from './endereco.js';
 import { precoDoDia } from './oferta-lib.js';
+import { lerPainel } from './painel-cache.js';
+import { sugestoesJuntos } from './alertas-lib.js';
 
-const S = { produtos: [], itens: new Map(), busca: '', pag: 'PIX', condominios: [], ligado: false, enviando: false, chave: null, ultima: null, endereco: null };
+const S = { produtos: [], itens: new Map(), busca: '', pag: 'PIX', condominios: [], ligado: false, enviando: false, chave: null, ultima: null, endereco: null, juntos: null };
 const el = () => document.getElementById('pdv-conteudo');
 const $ = (id) => document.getElementById(id);
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -51,7 +53,17 @@ function pintarRodape() {
     $('pv2-dinheiro').hidden = S.pag !== 'Dinheiro';
     $('pv2-troco').textContent = S.pag === 'Dinheiro' && rec > 0 ? (rec >= t ? `Troco: ${fmt(rec - t)}` : `Faltam ${fmt(t - rec)}`) : '';
     document.querySelectorAll('[data-pv2-pag]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pv2Pag === S.pag)));
+    pintarJuntos();
     const b = $('pv2-registrar'); b.disabled = !n || S.enviando; b.textContent = S.enviando ? 'Registrando...' : n ? `Registrar venda · ${fmt(t)}` : 'Registrar venda';
+}
+
+// VENDA CRUZADA: o que costuma ir na mesma compra do que já está na venda (motor: meta.juntos).
+function pintarJuntos() {
+    const caixa = $('pv2-juntos'); if (!caixa) return;
+    const ok = new Set(vendaveis().map((p) => p.id));
+    const ids = S.juntos && S.itens.size ? sugestoesJuntos(S.juntos, [...S.itens.keys()]).filter((id) => ok.has(id)) : [];
+    caixa.hidden = !ids.length;
+    caixa.innerHTML = ids.length ? `<span>Costumam levar junto:</span>${ids.map((id) => { const p = S.produtos.find((x) => x.id === id); return `<button type="button" data-pv2-junto="${escapeHTML(id)}">+ ${escapeHTML(p.nome)}</button>`; }).join('')}` : '';
 }
 
 function montar() {
@@ -61,6 +73,7 @@ function montar() {
     <div class="es-topo"><div><h3>Balcão</h3><p class="config-sub">Venda presencial. Entra no estoque, no faturamento e na previsão.</p></div></div>
     <div id="pv2-ultima" class="pv2-ultima" hidden aria-live="polite"></div>
     <input type="search" id="pv2-busca" class="es-busca" placeholder="Buscar produto..." aria-label="Buscar produto">
+    <div id="pv2-juntos" class="pv2-juntos" hidden aria-live="polite"></div>
     <div id="pv2-lista" class="pv2-lista"></div>
     <div class="pv2-barra">
         <span id="pv2-resumo"></span>
@@ -154,6 +167,8 @@ function ligar() {
             definir(id, (S.itens.get(id) || 0) + (b.dataset.pv2 === 'mais' ? passo : -passo));
             l.outerHTML = linhaHtml(p); pintarRodape(); return;
         }
+        const jt = e.target.closest('[data-pv2-junto]');
+        if (jt) { const p = S.produtos.find((x) => x.id === jt.dataset.pv2Junto); if (p) { definir(p.id, (S.itens.get(p.id) || 0) + (ehPeso(p.unidade) ? 0.1 : 1)); pintarLista(); pintarRodape(); } return; }
         const pg = e.target.closest('[data-pv2-pag]'); if (pg) { S.pag = pg.dataset.pv2Pag; pintarRodape(); if (S.pag === 'Dinheiro') $('pv2-recebido').focus(); return; }
         if (e.target.closest('#pv2-cobrar')) { pintarRodape(); return openModal('modal-pdv'); }
         if (e.target.closest('#pv2-registrar')) return registrar();
@@ -179,7 +194,11 @@ export function abrirPdv(produtos) {
     // balcão: o preço de HOJE (preço por dia da semana; o servidor cobra o mesmo)
     const hoje = new Date(Date.now() - 3 * 3600000).getUTCDay();
     S.produtos = (produtos || []).map((p) => ({ ...p, preco: precoDoDia(p, hoje) }));
-    if (!$('pv2-lista')) { montar(); ligar(); return; }
+    if (!$('pv2-lista')) {
+        montar(); ligar();
+        lerPainel().then((j) => { S.juntos = (j && j.meta && j.meta.juntos) || {}; pintarJuntos(); }).catch(() => { /* sem motor: sem sugestão */ });
+        return;
+    }
     if (!el().contains(document.activeElement) || document.activeElement.tagName !== 'INPUT') pintarLista();
     pintarRodape();
 }

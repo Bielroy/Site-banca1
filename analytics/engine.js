@@ -251,6 +251,33 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     tel: m.aceitaOfertas ? m.telefone : '', oferta: m.aceitaOfertas === true }))
     .sort((a, b) => b.n - a.n).slice(0, 600);
 
+  // CUSTO DA FALTA: nos dias em que o produto acabou (últimos 30), quanto deixou de vender.
+  // Esperado = média do MESMO dia da semana nas 8 semanas anteriores, sem dias de falta nem loja fechada.
+  // É estimativa: quem não achou o produto pode ter levado outro (aí não se perdeu tudo).
+  const faltaItens = [];
+  for (const [pid, dias] of rupturas) {
+    const p = produtos.get(pid); if (!p || !(p.preco > 0)) continue;
+    let qtd = 0, nDias = 0;
+    for (const d of dias) {
+      if (d < hoje - 30 || d > asOfD || fechados.has(d) || !abertos.has(dowDeDia(d))) continue;
+      const obs = [];
+      for (let k = 1; k <= 8; k++) { const x = d - 7 * k; if (!dias.has(x) && !fechados.has(x) && x >= Math.max(iniPed, norm.primeiroDia)) obs.push((vendasDia.get(pid) && vendasDia.get(pid).get(x)) || 0); }
+      if (obs.length < 3) continue;
+      const esperado = obs.reduce((a, b) => a + b, 0) / obs.length, vendeu = (vendasDia.get(pid) && vendasDia.get(pid).get(d)) || 0;
+      if (esperado > vendeu) { qtd += esperado - vendeu; nDias++; }
+    }
+    if (nDias && qtd > 0) faltaItens.push({ id: pid, nome: p.nome, unidade: p.unidade, dias: nDias, qtd: S.arred(qtd, 2), valor: r2(qtd * p.preco) });
+  }
+  faltaItens.sort((a, b) => b.valor - a.valor);
+  const custoFalta = { dias: 30, valor: r2(faltaItens.reduce((s, x) => s + x.valor, 0)), itens: faltaItens.slice(0, 8) };
+
+  // VENDA CRUZADA (Balcão): para cada produto, até 3 que costumam ir na MESMA compra além do acaso (lift encolhido ≥ 1,2)
+  const juntos = {};
+  for (const [pid, lista] of Object.entries(G.assoc || {})) {
+    const ids = lista.filter((x) => x.ls >= 1.2 && produtos.has(x.j) && produtos.get(x.j).ativo).slice(0, 3).map((x) => x.j);
+    if (ids.length && produtos.has(pid)) juntos[pid] = ids;
+  }
+
   // próximos 7 dias de loja aberta com chuva, calor ou frio previstos e o que isso faz com as vendas da loja (aba Compras)
   const climaProximo = [];
   if (C.USAR_CLIMA) for (let d = hoje; d < hoje + 7; d++) {
@@ -271,7 +298,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     diasComFalta: [...rupturas.values()].reduce((n, s) => n + s.size, 0),
     diasFechados: fechados.size, fatores: EF.resumo(fatores),
     clima: clima ? { cidade: clima.cidade || '', lugar: clima.lugar || '', dias: mapaClima.size, motivo: clima.motivo || null } : null,
-    climaProximo,
+    climaProximo, custoFalta, juntos,
     pesos, hz: Object.fromEntries(Object.entries(hz).map(([k, v]) => [k, v.map(isoDeDia)])),
     avisos: [
       ...(norm.nPedidos < 30 ? ['Poucos pedidos no histórico: todas as previsões têm confiança baixa.'] : []),

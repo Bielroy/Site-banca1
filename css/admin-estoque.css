@@ -236,3 +236,14 @@ body.so-equipe #aba-relatorios .relatorios-header, body.so-equipe #aba-relatorio
 .cp-clima ul { margin: 6px 0 0; padding-left: 18px; } .cp-clima li { margin: 4px 0; font-size: .9rem; } .cp-clima small { display: block; margin-top: 6px; font-size: .78rem; color: var(--text-light); }
 .cp-etileno { margin: 14px 0; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--parchment); }
 .cp-etileno summary { cursor: pointer; font-weight: 600; } .cp-etileno p { margin: 8px 0 0; font-size: .9rem; }
+/* alertas da aba Estoque e lucro de hoje (js/alertas-lib.js) */
+.es-alerta { margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; background: var(--parchment); }
+.es-alerta-sobra { border-left: 4px solid #b45309; } .es-alerta-falta { border-left: 4px solid #b91c1c; }
+.es-alerta summary { cursor: pointer; } .es-alerta ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.es-alerta li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,.06); font-size: .9rem; }
+.es-alerta li small, .es-alerta > small { display: block; font-size: .78rem; color: var(--text-light); } .es-alerta > small { margin-top: 6px; }
+.mg-hoje { margin: 16px 0; padding: 12px 14px; border-radius: 12px; background: var(--parchment); border-left: 4px solid #2f7a4f; }
+.mg-hoje h4 small { font-weight: 400; color: var(--text-light); font-size: .8rem; } .mg-hoje ul { list-style: none; padding: 0; margin: 6px 0; }
+.mg-hoje li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,.06); font-size: .9rem; } .mg-hoje li small { display: block; font-size: .78rem; color: var(--text-light); }
+.pv2-juntos { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 10px; font-size: .85rem; }
+.pv2-juntos button { padding: 6px 10px; border-radius: 999px; border: 1.5px solid #2f7a4f; background: transparent; color: #2f7a4f; font-weight: 600; }

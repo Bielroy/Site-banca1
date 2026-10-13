@@ -11,11 +11,12 @@
 import { auth, getDoc, getDocs, query, where, orderBy, limit, setDoc } from './firebase.js';
 import { tcol, tdoc } from './tenant.js';
 import { lerPainel } from './painel-cache.js';
+import { sobrasPereciveis } from './alertas-lib.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal } from './utils.js';
 import { numeroDeCampo } from './aparencia-lib.js';
 import { temControle, situacao, sugestaoCompra, fmtQtd, ROTULO_TIPO, MOTIVOS_PERDA, custoDaFicha, margem, UNIDADES_RECEITA, paraEstoque, taxasDePerda, comFolgaDePerda } from './estoque-lib.js';
 
-const S = { produtos: [], filtro: 'todos', busca: '', previsto: null, previstoEm: 0, clima: [], perdas: null, perdasEm: 0, ligado: false, acao: null };
+const S = { produtos: [], filtro: 'todos', busca: '', previsto: null, previstoEm: 0, clima: [], custoFalta: null, perdas: null, perdasEm: 0, ligado: false, acao: null };
 const mapaProdutos = () => new Map(S.produtos.map((p) => [p.id, p]));
 const pctBonito = (x) => `${(x * 100).toFixed(1).replace('.', ',')}%`;
 const el = () => document.getElementById('estoque-conteudo');
@@ -58,7 +59,7 @@ async function carregarPrevisao() {
         const j = await lerPainel(); if (!j.produtos) return;
         const m = {};
         for (const [id, p] of Object.entries(j.produtos)) { const h = p.horizontes && p.horizontes.prox7; if (h && h.recomendacao) m[id] = { alvo: h.recomendacao.sugestao, vende: h.previsto }; }
-        S.previsto = m; S.clima = (j.meta && Array.isArray(j.meta.climaProximo)) ? j.meta.climaProximo : []; S.previstoEm = Date.now(); render();
+        S.previsto = m; S.clima = (j.meta && Array.isArray(j.meta.climaProximo)) ? j.meta.climaProximo : []; S.custoFalta = (j.meta && j.meta.custoFalta) || null; S.previstoEm = Date.now(); render();
     } catch (_) { /* sem previsão: segue */ }
 }
 
@@ -84,6 +85,14 @@ const linhaDe = (p) => {
     return { p, sit, pv, sug, perda, ficha };
 };
 
+// Sobra de perecível e custo da falta (js/alertas-lib.js + motor). Somem quando não há o que dizer.
+function alertasHtml() {
+    const sobras = S.previsto ? sobrasPereciveis({ produtos: S.produtos, previsto: S.previsto, perdas: S.perdas || {} }) : [];
+    const f = S.custoFalta && S.custoFalta.valor >= 1 ? S.custoFalta : null;
+    return `${sobras.length ? `<div class="es-alerta es-alerta-sobra"><b>Pode sobrar</b><ul>${sobras.map((x) => `<li><span>${escapeHTML(x.nome)}<small>o estoque dá para uns ${x.dias} dias, e aguenta uns ${x.aguenta}. Sobra perto de ${fmtQtd(x.sobra, x.unidade)}${x.valor ? ` (${fmt(x.valor)})` : ''}</small></span></li>`).join('')}</ul><small>Vale uma promoção ou uma bacia antes que perca a cara. Se já virou ingrediente, registre como produção.</small></div>` : ''}
+    ${f ? `<details class="es-alerta es-alerta-falta"><summary><b>A falta custou uns ${fmt(f.valor)}</b> nos últimos ${f.dias} dias</summary><ul>${f.itens.map((x) => `<li><span>${escapeHTML(x.nome)}<small>faltou em ${x.dias} dia(s); deixou de vender perto de ${fmtQtd(x.qtd, x.unidade)}</small></span><b>${fmt(x.valor)}</b></li>`).join('')}</ul><small>Estimativa: compara com o que o produto vende no mesmo dia da semana. Quem não achou pode ter levado outra coisa.</small></details>` : ''}`;
+}
+
 function render() {
     if (!el()) return;
     const todas = S.produtos.map(linhaDe);
@@ -99,6 +108,7 @@ function render() {
         <div><h3>Estoque</h3><p class="config-sub">Quanto tem, o que está acabando e quanto comprar.</p></div>
         <button class="btn-outline es-hist-geral" data-es-acao="historico">Histórico</button>
     </div>
+    ${alertasHtml()}
     <div class="es-filtros">
         ${chip('todos', 'Todos', todas.length)}${chip('comprar', 'Comprar', n((l) => l.sug.comprar > 0))}${chip('baixo', 'Acabando', n((l) => l.sit === 'baixo' || l.sit === 'zerado'))}${chip('sem', 'Sem controle', n((l) => l.sit === 'sem-controle'))}
     </div>
