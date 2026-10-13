@@ -119,11 +119,12 @@ export const initIA = (STATE) => {
     // crases/aspas/asteriscos em volta do id, usa o NOME em vez do id, ou a
     // resposta é cortada antes do "]". Em todos esses casos a pílula sumia
     // sem aviso e a marcação crua aparecia na conversa.
-    const RE_TAG = /\[\s*SUGEST[OÕ]ES\s*:([^\]]*)\]?/i;
+    // Alguns modelos esquecem os colchetes e escrevem "SUGESTOES:id1,id2" numa linha própria: também vale.
+    const RE_TAG = /\[\s*SUGEST[OÕ]ES\s*:([^\]]*)\]?|(?:^|\n)[ \t]*\**SUGEST[OÕ]ES\s*:([^\n]*)/i;
     const semAcento = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
     const textoVisivel = (bruto) => {
         let t = String(bruto || '');
-        const i = t.search(/\[\s*SUGEST/i);
+        const i = t.search(/\[\s*SUGEST|(?:^|\n)[ \t]*\**SUGEST[OÕ]ES\s*:/i);
         if (i >= 0) t = t.slice(0, i);                      // esconde a marcação, mesmo ainda incompleta
         t = t.replace(/\[\s*S?U?G?E?S?T?$/i, '');            // começo da marcação chegando em pedaços
         return t.replace(/\*\*(.+?)\*\*/g, '$1').trim();   // **negrito** do modelo vira texto simples
@@ -132,7 +133,7 @@ export const initIA = (STATE) => {
         const m = String(bruto || '').match(RE_TAG);
         if (!m) return [];
         const achados = [];
-        m[1].split(/[,;\n]/).map(x => x.replace(/[`"'*\s]+/g, ' ').trim()).filter(Boolean).forEach(tok => {
+        (m[1] !== undefined ? m[1] : (m[2] || '')).split(/[,;\n]/).map(x => x.replace(/[`"'*\s]+/g, ' ').trim()).filter(Boolean).forEach(tok => {
             const p = STATE.produtos.find(x => String(x.id) === tok)
                    || STATE.produtos.find(x => semAcento(x.nome) === semAcento(tok));
             if (p && !achados.includes(p)) achados.push(p);
