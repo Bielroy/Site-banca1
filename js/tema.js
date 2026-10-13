@@ -303,6 +303,7 @@ export function feiraDaConta(id) {
 // ---------------------------------------------------------------------
 let FICHA_PREVIA = null, FICHA_GRAVADA = null;
 const textoAte = (v, n) => (typeof v === 'string' ? v.slice(0, n) : undefined);
+if (EM_PREVIA && typeof document !== 'undefined') document.documentElement.classList.add('em-previa');      // esconde o botão Ajuda, que ficava cortado na janelinha
 if (EM_PREVIA && typeof window !== 'undefined' && window.parent && window.parent !== window) {
     window.addEventListener('message', (e) => {
         if (e.source !== window.parent || e.origin !== location.origin) return;
