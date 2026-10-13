@@ -44,12 +44,15 @@ async function dormirComJitter(tentativa) {
   await new Promise(r => setTimeout(r, jitterMs));
 }
 
-// Se o modelo escolhido sumir, tenta estes na ordem.
+// Se o modelo escolhido sumir ou estiver sobrecarregado, tenta estes na ordem.
+// Os "-latest" apontam para o modelo mais novo, que é também o mais disputado: em horário de pico
+// o Google responde 503 ("high demand") ou nem responde. Por isso a fila mistura nomes fixos.
 const ALTERNATIVAS = [
   'gemini-flash-latest',
+  'gemini-2.5-flash',
   'gemini-3.5-flash',
-  'gemini-3.1-flash',
   'gemini-flash-lite-latest',
+  'gemini-2.5-flash-lite',
   'gemini-3.1-flash-lite'
 ];
 
@@ -276,13 +279,34 @@ async function chamar(modelo, corpo, streaming) {
   // Retry automático para 429 (sobrecarregado) e 500 (erro temporário)
   for (let tent = 0; tent < 3; tent++) {
     const metodo = streaming ? 'streamGenerateContent?alt=sse' : 'generateContent';
-    // A chave vai no CABEÇALHO, não no endereço: endereço aparece em registro de erro e de rede.
-    const resp = await fetch(`${BASE}/models/${encodeURIComponent(modelo)}:${metodo}`.replace(/[?&]$/, ''), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
-      body: JSON.stringify(corpo),
-      signal: AbortSignal.timeout(streaming ? 55000 : 25000)          // prazo: a IA lenta não prende a função
-    });
+    // PRAZOS. Antes era um prazo só (55 s) para tudo: um modelo travado segurava o cliente quase um
+    // minuto e ainda não passava para o próximo da fila (o erro de tempo não tinha código). Agora:
+    //   - o modelo tem 15 s (chat) ou 25 s (painel) para COMEÇAR a responder; se não começar, vale como
+    //     "sobrecarregado" (504) e a fila tenta o próximo;
+    //   - depois que o texto começa a chegar, o chat tem até 90 s no total.
+    const ctrl = new AbortController();
+    const tempoEsgotado = () => Object.assign(new Error('A IA demorou para responder.'), { status: 504 });
+    const prazoInicio = setTimeout(() => ctrl.abort(), streaming ? 15000 : 25000);
+    let resp;
+    try {
+      // A chave vai no CABEÇALHO, não no endereço: endereço aparece em registro de erro e de rede.
+      resp = await fetch(`${BASE}/models/${encodeURIComponent(modelo)}:${metodo}`.replace(/[?&]$/, ''), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
+        body: JSON.stringify(corpo),
+        signal: ctrl.signal
+      });
+    } catch (e) {
+      if (ctrl.signal.aborted) throw tempoEsgotado();
+      // falha de rede (DNS, conexão recusada): passageira, a fila tenta de novo
+      throw Object.assign(new Error('Sem conexão com a IA.'), { status: 503 });
+    } finally {
+      clearTimeout(prazoInicio);
+    }
+    if (resp.ok && streaming) {
+      const teto = setTimeout(() => ctrl.abort(), 90000);       // resposta longa demais é cortada (o ia.js mostra "a conexão caiu")
+      if (teto.unref) teto.unref();
+    }
 
     if (resp.ok) return resp;
 
@@ -333,6 +357,8 @@ async function comFallback(corpo, streaming) {
 
         if (MODELO_RUIM.indexOf(e.status) !== -1) break;      // troca de modelo
         if (TRANSITORIO.indexOf(e.status) === -1) throw e;    // erro de verdade
+        // 503/504 = este modelo está lotado ou travado agora: insistir nele só faz o cliente esperar.
+        if (e.status === 503 || e.status === 504) break;
 
         // Sobrecarga: espera um pouco e tenta de novo (0,4s -> 1,2s)
         const espera = 400 * Math.pow(3, tentativa);

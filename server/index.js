@@ -125,6 +125,10 @@ function criarServidor({ funcoes = listarFuncoes(), segredo = process.env.PROXY_
     try {
       const url = new URL(req.url, 'http://servidor');
       if (url.pathname === '/' || url.pathname === '/saude') return dar(200, { ok: true });
+      // /api/saude: aberto pelo site (https://seu-site/api/saude), passa pela ponte do Cloudflare.
+      // "ponte": true = o PROXY_SEGREDO do Cloudflare é IGUAL ao daqui. Se vier false, os freios por IP
+      // enxergam todos os clientes como um só (o Cloudflare) e bloqueiam a loja inteira de uma vez.
+      if (url.pathname === '/api/saude') return dar(200, { ok: true, ponte: confiarNoCabecalho(req, segredo) });
       const m = /^\/api\/([a-z0-9-]+)\/?$/.exec(url.pathname);
       if (!m || !Object.prototype.hasOwnProperty.call(funcoes, m[1])) return dar(404, { error: 'Não encontrado.' });
 
@@ -148,6 +152,28 @@ module.exports = { criarServidor, listarFuncoes, confiarNoCabecalho, interpretar
 if (require.main === module) {
   const porta = Number(process.env.PORT) || 8080;
   if (!process.env.PROXY_SEGREDO) console.warn('[servidor] PROXY_SEGREDO não definido: o IP vem só da conexão (os freios por IP veem o Cloudflare como um só visitante).');
-  criarServidor().listen(porta, () => console.log(`[servidor] no ar na porta ${porta} com: ${Object.keys(listarFuncoes()).join(', ')}`));
-  for (const sinal of ['SIGTERM', 'SIGINT']) process.on(sinal, () => process.exit(0));
+  // Aviso na largada sobre o que falta (só nomes, nunca valores), para não descobrir pelo cliente.
+  const faltam = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY', 'GEMINI_API_KEY', 'IMGBB_API_KEY', 'PUBLIC_BASE_URL', 'CRON_SECRET', 'VAPID_PRIVATE_KEY']
+    .filter((k) => !String(process.env[k] || '').trim());
+  if (!String(process.env.FIREBASE_WEB_API_KEY || process.env.VITE_FIREBASE_API_KEY || '').trim()) faltam.push('FIREBASE_WEB_API_KEY (entrar no painel)');
+  if (!String(process.env.PAGBANK_API_TOKEN || '').trim()) faltam.push('PAGBANK_API_TOKEN (PIX e cartão)');
+  if (faltam.length) console.warn(`[servidor] variáveis vazias: ${faltam.join(', ')}`);
+
+  const servidor = criarServidor();
+  // Na frente deste servidor fica o Caddy (HTTPS), que REAPROVEITA conexões. O Node fecha conexão parada
+  // depois de 5 s; se o Caddy usar uma que acabou de ser fechada, o cliente vê erro 502 de vez em quando.
+  // Deixando o Node esperar mais que o Caddy (2 min), quem fecha é sempre o Caddy.
+  servidor.keepAliveTimeout = 130000;
+  servidor.headersTimeout = 135000;
+  servidor.listen(porta, () => console.log(`[servidor] no ar na porta ${porta} com: ${Object.keys(listarFuncoes()).join(', ')}`));
+  // Ao desligar (atualização, reinício), termina as respostas em andamento antes de sair (no máximo 8 s).
+  for (const sinal of ['SIGTERM', 'SIGINT']) {
+    process.on(sinal, () => {
+      servidor.close(() => process.exit(0));
+      setTimeout(() => process.exit(0), 8000).unref();
+    });
+  }
+  // Uma promessa esquecida numa função não pode derrubar o servidor de todo mundo: registra e segue.
+  // (Erro grave de verdade derruba o processo e o Docker o levanta de novo: --restart unless-stopped.)
+  process.on('unhandledRejection', (e) => console.error('[servidor] promessa sem tratamento:', e && e.stack ? e.stack : e));
 }

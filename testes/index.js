@@ -1308,6 +1308,35 @@ teste('chat público: loja sem o módulo de IA não gasta a cota; entradas grand
     assert.strictEqual(db._dados.get([...db._dados.keys()].find((k) => k.startsWith('tenants/comia/uso_ia/'))).chat, 1, 'uso contado por loja');
   } finally { global.fetch = fetchReal; }
 });
+teste('chat: modelo lotado (503) ou sem rede passa direto para o próximo da fila, sem fazer o cliente esperar', async () => {
+  const db = criarBancoP(semente());
+  process.env.GEMINI_API_KEY = 'chave-de-teste';
+  const modeloAntes = process.env.GEMINI_MODEL; process.env.GEMINI_MODEL = 'modelo-lotado';
+  const pedidos = []; const fetchReal = global.fetch;
+  global.fetch = async (url) => {
+    const m = /models\/([^:]+):/.exec(String(url)); const modelo = m ? decodeURIComponent(m[1]) : '?';
+    pedidos.push(modelo);
+    if (modelo === 'modelo-lotado') return { ok: false, status: 503, json: async () => ({ error: { message: 'This model is currently experiencing high demand.' } }) };
+    if (pedidos.length === 2) throw new TypeError('fetch failed');          // o segundo da fila: rede caiu
+    return new Response('data: {"candidates":[{"content":{"parts":[{"text":"oi"}]}}]}\n\n', { status: 200 });
+  };
+  try {
+    const api = carregarApi(raiz('api/assistente.js'), criarAdmin(db, TOKENS));
+    const inicio = Date.now(); let escrito = '';
+    const r = await new Promise((resolve, reject) => {
+      const res = { _status: 200, setHeader() {}, status(c) { this._status = c; return this; }, json(j) { resolve({ status: this._status, corpo: j }); return this; }, writeHead(c) { this._status = c; }, write(t) { escrito += t; }, end() { resolve({ status: this._status }); } };
+      Promise.resolve(api({ method: 'POST', headers: { 'x-forwarded-for': '9.9.9.' + Math.floor(Math.random() * 250) }, body: { action: 'chat_stream', mensagemCliente: 'oi' }, query: {}, socket: {} }, res)).catch(reject);
+    });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.corpo || ''));
+    assert.ok(escrito.includes('"oi"'), 'a resposta do terceiro modelo chegou ao cliente');
+    assert.strictEqual(pedidos.filter((x) => x === 'modelo-lotado').length, 1, 'não insiste no modelo lotado');
+    assert.deepStrictEqual(pedidos.slice(0, 3), ['modelo-lotado', 'gemini-flash-latest', 'gemini-2.5-flash']);
+    assert.ok(Date.now() - inicio < 5000, 'sem espera longa');
+  } finally {
+    global.fetch = fetchReal;
+    if (modeloAntes === undefined) delete process.env.GEMINI_MODEL; else process.env.GEMINI_MODEL = modeloAntes;
+  }
+});
 teste('textos do cadastro não viram HTML (unidade com marcação é limpa)', async () => {
   const L = await import(raiz('js/estoque-lib.js'));
   const sujo = L.fmtQtd(2, '<img src=x onerror=alert(1)>'); assert.ok(!/[<>"'&]/.test(sujo), sujo); assert.strictEqual(sujo, '2 img src=x on'); assert.strictEqual(L.fmtQtd(1.5, 'kg'), '1,5 kg');
@@ -2192,6 +2221,10 @@ teste('cloud run: o servidor entrega body/query/status/json como a Vercel e conf
     assert.strictEqual(r.corpo.ip, '104.16.0.1', 'segredo errado: ignora o que o "proxy" disse'); assert.strictEqual(r.corpo.host, null);
     r = await j('/api/eco', { headers: { ...doProxy, 'X-Cliente-IP': 'nao-e-ip; drop table' } });
     assert.strictEqual(r.corpo.ip, '104.16.0.1', 'IP inválido do proxy não vale');
+    // /api/saude (aberto pelo site): diz se o segredo da ponte confere, sem mostrar segredo nenhum
+    assert.deepStrictEqual((await j('/api/saude', { headers: doProxy })).corpo, { ok: true, ponte: true });
+    assert.deepStrictEqual((await j('/api/saude', { headers: { ...doProxy, 'X-Proxy-Segredo': 'errado' } })).corpo, { ok: true, ponte: false });
+    assert.deepStrictEqual((await j('/api/saude')).corpo, { ok: true, ponte: false });
   } finally { srv.close(); }
   // sem segredo configurado, nada é confiado (ninguém "acerta" um segredo vazio)
   const sem = criarServidor({ funcoes: { eco: async (req, res) => res.json({ ip: req.headers['x-real-ip'] }) }, segredo: '' });

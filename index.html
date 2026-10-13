@@ -10,7 +10,7 @@
     <meta name="description" content="Compre frutas, verduras e hortaliças frescas com entrega rápida no seu condomínio.">
     <meta name="theme-color" content="#1a3a2a">
 
-    <link rel="canonical" href="https://site-banca1.vercel.app/">
+    <link rel="canonical" href="https://usebanca.com/">
     <meta name="robots" content="index, follow">
 
     <!-- Compartilhamento em WhatsApp, Facebook e Instagram.
@@ -21,9 +21,9 @@
     <meta property="og:title" content="Banca Adair e Pedrina | Frescor Todo Dia">
     <meta property="og:description" content="Frutas, verduras e legumes frescos, escolhidos no dia e entregues no seu condomínio.">
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://site-banca1.vercel.app/">
+    <meta property="og:url" content="https://usebanca.com/">
     <meta property="og:locale" content="pt_BR">
-    <meta property="og:image" content="https://site-banca1.vercel.app/og-image.png">
+    <meta property="og:image" content="https://usebanca.com/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="Banca Adair e Pedrina — hortifruti com entrega no condomínio">
@@ -31,10 +31,14 @@
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Banca Adair e Pedrina | Frescor Todo Dia">
     <meta name="twitter:description" content="Frutas, verduras e legumes frescos, escolhidos no dia.">
-    <meta name="twitter:image" content="https://site-banca1.vercel.app/og-image.png">
+    <meta name="twitter:image" content="https://usebanca.com/og-image.png">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Os produtos vêm do banco do Firebase, e a entrada anônima do cliente vem do login do Google.
+         Abrir essas duas conexões já na chegada adianta a vitrine (o código só pede depois de carregar). -->
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
     <!-- Letras da banca (Fraunces e Figtree). Baixadas cedo, mas SEM segurar a primeira tela (media="print"):
          js/tema.js liga (media="all") quando a loja usa estas letras. Loja com outras letras nem baixa estas. -->
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght,SOFT@9..144,500..900,0..100&display=swap">
@@ -51,8 +55,8 @@
       "@type": "GroceryStore",
       "name": "Banca Adair e Pedrina",
       "description": "Hortifruti com frutas, verduras e legumes frescos e entrega em condomínios.",
-      "url": "https://site-banca1.vercel.app/",
-      "image": "https://site-banca1.vercel.app/og-image.png",
+      "url": "https://usebanca.com/",
+      "image": "https://usebanca.com/og-image.png",
       "priceRange": "$",
       "currenciesAccepted": "BRL",
       "paymentAccepted": "Dinheiro, PIX, Cartão",
