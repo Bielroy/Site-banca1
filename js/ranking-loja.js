@@ -49,7 +49,11 @@ const guardar = (dados) => {
     nivel = dados.nivel || 'sem_dados';
     const ps = (dados.itens || []).map((i) => i.p).sort((a, b) => a - b);
     mediana = ps.length ? ps[Math.floor(ps.length / 2)] : 0.3;
+    maisPedidosIds = (Array.isArray(dados.maisPedidos) ? dados.maisPedidos : []).filter((id) => typeof id === 'string' && id.length < 80).slice(0, 8);
 };
+// "Os mais pedidos" da loja toda (só ids; o servidor só manda com movimento suficiente). Faixa na vitrine.
+let maisPedidosIds = [];
+export const maisPedidos = () => maisPedidosIds;
 
 export async function iniciarRanking() {
     if (iniciado) return;

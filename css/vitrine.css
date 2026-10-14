@@ -1,0 +1,119 @@
+/* =====================================================================
+   css/vitrine.css — selos, faixas novas, quadros no meio da vitrine,
+   bloco "Quem escolhe seu pedido", ícones das categorias e a pergunta
+   "Se faltar algum item".
+   Regras do estudo (out/2026): animação só para dar retorno e com
+   transform/opacity; nada pisca sozinho; quem pediu menos movimento
+   não vê animação nenhuma. Cores sempre das variáveis da loja.
+   ===================================================================== */
+
+/* ---------- containers das faixas novas (vazio = some, sem buraco) ---------- */
+.faixas-extra { display: flex; flex-direction: column; gap: 26px; min-width: 0; max-width: 100%; }
+.faixas-extra:empty, .faixas-extra[hidden] { display: none; }
+
+/* ---------- selos no card e na janela do produto ---------- */
+.selos { display: flex; flex-wrap: wrap; gap: 4px; margin-top: -4px; }
+.selo-casa {
+    display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+    padding: 3px 9px 3px 6px; border-radius: 999px;
+    font-size: .72rem; font-weight: 750; line-height: 1.2; letter-spacing: .1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--forest-texto, var(--forest)); background: color-mix(in srgb, var(--leaf) 16%, var(--superficie));
+}
+.selo-casa .selo-ico { width: 14px; height: 14px; stroke-width: 2; }
+.selo--estacao { color: color-mix(in srgb, var(--earth) 80%, #000); background: color-mix(in srgb, var(--manga) 22%, var(--superficie)); }
+.selo--escolha { color: var(--sobre-primaria); background: var(--earth); }
+#md-selos .selos { margin: 8px 0 2px; }
+#md-selos .selo-casa { font-size: .8rem; padding: 4px 11px 4px 7px; }
+.md-peso { display: block; margin-top: 4px; font-size: .85rem; font-weight: 600; color: var(--text-mid); }
+
+/* o broto do "Chegou hoje" balança uma vez quando aparece (retorno visual, não enfeite contínuo) */
+@media (prefers-reduced-motion: no-preference) {
+    .selo--chegou .selo-ico { transform-origin: 50% 90%; animation: vt-broto .9s ease-out .4s 1 both; }
+}
+@keyframes vt-broto { 0% { transform: rotate(0) } 30% { transform: rotate(-14deg) } 60% { transform: rotate(9deg) } 100% { transform: rotate(0) } }
+
+/* ---------- categorias com desenho ---------- */
+.cat-btn.tem-arte { display: inline-flex; align-items: center; gap: 7px; padding-left: 10px; }
+.arte-cat { width: 24px; height: 24px; flex: none; display: block; }
+.cat-btn.tem-arte.active .arte-cat { filter: drop-shadow(0 1px 0 rgba(0, 0, 0, .18)); }
+@media (prefers-reduced-motion: no-preference) {
+    .cat-btn.tem-arte .arte-cat { transition: transform .18s cubic-bezier(.3, 1.6, .5, 1); }
+    .cat-btn.tem-arte:active .arte-cat, .cat-btn.tem-arte.active .arte-cat { transform: scale(1.14) rotate(-6deg); }
+}
+
+/* ---------- faixas novas: a mesma "banquinha" de "Seus de sempre" (css/visual.css), cada uma com o toldo de uma cor ---------- */
+.faixa-extra h2 { display: inline-flex; align-items: center; gap: 8px; }
+.faixa-ico { display: inline-flex; width: 26px; height: 26px; border-radius: 50%; align-items: center; justify-content: center; flex: none;
+    background: color-mix(in srgb, var(--leaf) 18%, var(--superficie)); color: var(--forest-texto, var(--forest)); }
+.faixa-ico .selo-ico { width: 17px; height: 17px; stroke-width: 2; }
+.faixa--estacao .faixa-ico, .faixa--mais .faixa-ico { background: color-mix(in srgb, var(--manga) 30%, var(--superficie)); color: color-mix(in srgb, var(--earth) 85%, #000); }
+/* toldo de cada faixa: verde (chegou hoje), manga (estação), terra (mais pedidos), madeira (kits) */
+.faixa--chegou { background: color-mix(in srgb, var(--leaf) 14%, var(--superficie)); }
+.faixa--estacao { background: color-mix(in srgb, var(--manga) 10%, var(--superficie)); border-color: color-mix(in srgb, var(--manga) 35%, var(--superficie)); }
+.faixa--estacao::before { background: repeating-linear-gradient(90deg, var(--manga) 0 20px, #f3ead8 20px 40px); }
+.faixa--mais { background: color-mix(in srgb, var(--earth) 7%, var(--superficie)); border-color: color-mix(in srgb, var(--earth) 28%, var(--superficie)); }
+.faixa--mais::before { background: repeating-linear-gradient(90deg, var(--earth) 0 20px, #f3ead8 20px 40px); }
+.faixa--kits { background: color-mix(in srgb, #d9c7a3 18%, var(--superficie)); border-color: color-mix(in srgb, #b89a6a 35%, var(--superficie)); }
+.faixa--kits::before { background: repeating-linear-gradient(90deg, #9c7b4b 0 20px, #f3ead8 20px 40px); }
+/* dentro da faixa "Chegou hoje" o selo igual seria repetido: some ali */
+.faixa--chegou .selo--chegou { display: none; }
+
+/* ---------- quadros ilustrados no meio da vitrine ---------- */
+.bloco-vitrine { grid-column: 1 / -1; min-width: 0; position: relative; overflow: hidden; border-radius: var(--raio-card, 16px); }
+.bloco-vitrine[hidden] { display: none; }
+.bloco-quadro {
+    display: grid; grid-template-columns: minmax(0, 40%) 1fr; align-items: stretch;
+    background: var(--superficie); border: 1.5px solid var(--linha);
+}
+.bloco-quadro.sem-foto { grid-template-columns: 1fr; }
+.bloco-quadro::before {            /* faixa listrada do toldo, fininha, no alto do quadro */
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 6px; z-index: 1;
+    background: repeating-linear-gradient(90deg, var(--forest) 0 16px, var(--cream, #f6f1e4) 16px 32px);
+}
+.bloco-foto { min-height: 100%; background: var(--foam); }
+.bloco-foto img { width: 100%; height: 100%; min-height: 150px; object-fit: cover; display: block; }
+.bloco-texto { padding: 20px 18px 16px; display: flex; flex-direction: column; justify-content: center; gap: 6px; min-width: 0; }
+.bloco-texto h3 { font-family: var(--fonte-titulo); font-size: 1.18rem; line-height: 1.2; font-weight: 650; color: var(--forest-texto, var(--forest)); margin: 0; }
+.bloco-texto p { margin: 0; font-size: .92rem; line-height: 1.45; color: var(--text-mid); }
+.bloco-bt {
+    align-self: flex-start; margin-top: 6px; min-height: 44px; padding: 0 18px; border-radius: 999px; cursor: pointer;
+    font: inherit; font-weight: 700; font-size: .9rem; color: var(--forest-texto, var(--forest));
+    background: transparent; border: 1.5px solid currentColor;
+}
+.bloco-bt:active { transform: scale(.97); }
+@media (min-width: 900px) { .bloco-quadro { grid-template-columns: minmax(0, 34%) 1fr; } .bloco-texto { padding: 26px 28px 22px; } .bloco-texto h3 { font-size: 1.35rem; } }
+
+/* "Quem escolhe seu pedido": a cara de quem separa, na cor principal da loja */
+.bloco-donos {
+    display: flex; align-items: center; gap: 16px; padding: 18px;
+    background: var(--forest); color: var(--sobre-primaria);
+}
+.bloco-donos .bloco-texto { padding: 0; }
+.bloco-donos .bloco-texto h3 { color: var(--sobre-primaria); }
+.bloco-donos .bloco-texto p { color: color-mix(in srgb, var(--sobre-primaria) 82%, transparent); }
+.bloco-chapeu { font-size: .72rem; font-weight: 800; letter-spacing: .9px; text-transform: uppercase; color: var(--manga); }
+.bloco-donos-foto { flex: none; width: 96px; height: 96px; border-radius: 50%; overflow: hidden; background: var(--cream, #f6f1e4); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sobre-primaria) 22%, transparent); }
+.bloco-donos-foto img, .donos-arte { width: 100%; height: 100%; object-fit: cover; display: block; }
+@media (min-width: 900px) { .bloco-donos { padding: 22px 28px; gap: 22px; } .bloco-donos-foto { width: 120px; height: 120px; } }
+
+/* os quadros sobem de leve quando chegam na tela (só CSS; navegador sem suporte mostra parado) */
+@media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+        .bloco-vitrine { animation: vt-sobe linear both; animation-timeline: view(); animation-range: entry 0% entry 40%; }
+    }
+}
+@keyframes vt-sobe { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+
+/* ---------- "Se faltar algum item" (fechamento do pedido) ---------- */
+.troca-grupo { border: 0; padding: 0; margin: 16px 0 0; min-width: 0; }
+.troca-grupo legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
+.troca-ops { display: flex; flex-wrap: wrap; gap: 8px; }
+.troca-op { flex: 1 1 180px; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 8px 14px; border-radius: 12px; cursor: pointer;
+    border: 1.5px solid var(--linha); background: var(--superficie); font-size: .92rem; font-weight: 600; color: var(--text-dark); }
+.troca-op input { width: 18px; height: 18px; accent-color: var(--forest); flex: none; margin: 0; }
+.troca-op:has(input:checked) { border-color: var(--forest); background: color-mix(in srgb, var(--leaf) 12%, var(--superficie)); }
+
+@media (prefers-reduced-motion: reduce) {
+    .selo--chegou .selo-ico, .bloco-vitrine { animation: none !important; }
+    .cat-btn.tem-arte .arte-cat { transition: none !important; transform: none !important; }
+}

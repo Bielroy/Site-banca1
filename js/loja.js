@@ -3,7 +3,9 @@ import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja, EM_PREVIA } from './tenant.js';
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage, haVersaoNova, conferirVersaoAgora, recarregarFresco } from './utils.js';
 import { initIA } from './ia.js';
-import { iniciarRanking, aplicarOrdem, scoreDe, destaques } from './ranking-loja.js';
+import { iniciarRanking, aplicarOrdem, scoreDe, destaques, maisPedidos } from './ranking-loja.js';
+import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca } from './vitrine-lib.js';
+import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS } from './vitrine-arte.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
 import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras } from './tema.js';
@@ -85,6 +87,7 @@ onAuthStateChanged(auth, (user) => {
         STATE.uid = user.uid;
         if (!realTimeSyncIniciado) { iniciarRealTimeSync(); realTimeSyncIniciado = true; }
         iniciarRanking(); // ordena a vitrine para este cliente (falha em silêncio)
+        setTimeout(() => contarFunil('visita'), 1500);   // depois da vitrine: contar não disputa a internet com as fotos
     } else {
         unsubscribes.forEach(u => u()); unsubscribes = []; realTimeSyncIniciado = false;
         iniciarRealTimeSync(); realTimeSyncIniciado = true;
@@ -385,7 +388,7 @@ const renderCarrinhoCompleto = () => {
     const cont = document.getElementById('carrinho-itens');
     STATE.produtos.forEach(p => atualizarBadgesDOM(p.id));   // cards acompanham o pedido
     if (STATE.carrinho.length === 0) {
-        cont.innerHTML = `<div class="empty-state">${iconeCarrinhoVazio}<p>Seu pedido está vazio</p><span>Adicione produtos para começar.</span></div>`;
+        cont.innerHTML = `<div class="empty-state">${iconeCarrinhoVazio}<p>${SACOLA_VAZIA.titulo}</p><span>${SACOLA_VAZIA.dica}</span></div>`;
         atualizarRodapeCarrinhoDOM(); return;
     }
     let html = '';
@@ -481,6 +484,7 @@ const modificarCarrinho = (id, delta, fixo = false, tipoCompraForcado = null) =>
     } else if (valParaAplicar > 0) { 
         novaQtd = fixFloat(fixo ? valParaAplicar : (isPeso ? 1.0 : 1)); 
         STATE.carrinho.push({...p, qtd: novaQtd, tipo: tipoAtual}); 
+        contarFunil('adicionou');
     }
     
     persistirCarrinhoComDebounce(); atualizarBadgesDOM(id, novaQtd, true);
@@ -503,12 +507,14 @@ const etiquetaBase = (p) => {
     const frac = isFracionavel(p.unidade), pm = Number(p.pesoMedio || 0);
     // por quilo com os dois botões: a etiqueta mostra o quilo; o preço da unidade vai escrito no botão dela
     if (temDoisModos(p)) {
+        // com peso médio, o tamanho de 1 unidade ajuda a escolher sem fazer conta ("1 un. ≈ 450 g")
         return `<div class="etq-preco">${fmt(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>
-                <div class="etq-ref">pesado na hora</div>`;
+                <div class="etq-ref">${pm > 0 ? `1 un. ${escapeHTML(pesoAproximado(pm))} · ` : ''}pesado na hora</div>`;
     }
     if (frac && pm > 0) {
+        // R$/kg sempre junto da estimativa (Decreto 5.903/2006: preço sem o cliente precisar calcular)
         return `<div class="etq-preco">≈ ${fmt(p.preco * pm / 1000)} <small>a unidade</small></div>
-                <div class="etq-ref">${fmt(p.preco)} ${nomeUnidade(p.unidade)} · pesado na hora</div>`;
+                <div class="etq-ref">${fmt(p.preco)}/kg · ${escapeHTML(pesoAproximado(pm))} cada · pesado na hora</div>`;
     }
     if (frac) {
         return `<div class="etq-preco">${fmt(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>
@@ -516,6 +522,16 @@ const etiquetaBase = (p) => {
     }
     return `<div class="etq-preco">${fmt(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>`;
 };
+
+// Selos verdadeiros do produto (o dono marca no painel): "Chegou hoje" vale só hoje.
+// No card vai só o mais forte, para não poluir; a janela do produto mostra todos.
+const selosHtml = (p, todos = false) => {
+    const lista = selosDe(p, { hoje: hojeDaLoja(), escolha: vitrineDaLoja().escolha });
+    if (!lista.length) return '';
+    return `<div class="selos">${(todos ? lista : lista.slice(0, 1)).map((s) => `<span class="selo-casa selo--${s.tipo}">${ARTE_SELO[s.tipo] || ''}${escapeHTML(s.texto)}</span>`).join('')}</div>`;
+};
+let _vitrineCache = null, _vitrineDe = Symbol('ainda-não-leu');   // símbolo: na 1ª chamada sempre confere (config ainda sem 'vitrine')
+const vitrineDaLoja = () => { if (_vitrineDe !== STATE.config.vitrine) { _vitrineDe = STATE.config.vitrine; _vitrineCache = vitrineSegura(STATE.config.vitrine); } return _vitrineCache; };
 
 // Um card de produto. `rapido` = foto carregada já (os primeiros da tela); `prioridade` = a foto passa na frente
 // do resto (só as primeiras da vitrine, que são o "maior elemento" que o celular espera para mostrar a loja).
@@ -530,6 +546,7 @@ const cardHtml = (p, rapido = false, prioridade = false) => {
             </div>
             <div class="produto-info">
                 <h3 class="produto-nome">${escapeHTML(p.nome)}</h3>
+                ${selosHtml(p)}
                 <div class="etiqueta">${etiquetaHtml(p)}</div>
                 <div class="card-acao" data-acao="${escapeHTML(p.id)}"></div>
             </div>
@@ -635,11 +652,108 @@ const renderFaixaOfertas = (forcar = false) => {
     ofertas.forEach(p => atualizarBadgesDOM(p.id));
 };
 
+// ---------------------------------------------------------------------
+// FAIXAS NOVAS: "Chegou hoje" (no topo), "Da estação", "Os mais pedidos" e "Kits prontos".
+// Poucas de propósito: no máximo 4 faixas contando Ofertas e "Seus de sempre" (js/vitrine-lib.js).
+// Somem na busca e dentro de uma categoria, como as outras.
+// ---------------------------------------------------------------------
+const ICONE_DA_FAIXA = { chegou: 'chegou', estacao: 'estacao', mais: 'mais', kits: 'kits' };
+let _extrasCara = '';
+const renderFaixasExtras = (forcar = false) => {
+    const topo = document.getElementById('faixas-topo'), meio = document.getElementById('faixas-meio');
+    if (!topo || !meio) return;
+    const livre = !semAcento(STATE.busca).trim() && STATE.catAtiva === 'todas';
+    topo.hidden = meio.hidden = !livre;
+    if (!livre) return;
+    const faixas = faixasDaVitrine(STATE.produtos, {
+        hoje: hojeDaLoja(), maisPedidos: maisPedidos(),
+        temOfertas: !document.getElementById('faixa-ofertas')?.hidden, temSempre: !document.getElementById('faixa-sempre')?.hidden,
+    });
+    const porId = new Map(STATE.produtos.map(p => [p.id, p]));
+    const cara = faixas.map(f => `${f.id}:${f.ids.map(id => (porId.get(id) || {}).preco).join(',')}:${f.ids.join(',')}`).join('|');
+    if (forcar) _extrasCara = '';
+    if (cara === _extrasCara) return;
+    _extrasCara = cara;
+    const html = (f) => `
+        <section class="faixa-sempre faixa-extra faixa--${f.id}" aria-labelledby="fx-${f.id}">
+            <h2 id="fx-${f.id}"><span class="faixa-ico">${ARTE_SELO[ICONE_DA_FAIXA[f.id]] || ''}</span>${escapeHTML(f.titulo)}</h2>
+            <p class="faixa-sub">${escapeHTML(f.sub)}</p>
+            <div class="faixa-rolo">${f.ids.map((id, i) => cardHtml(porId.get(id), i < 2)).join('')}</div>
+        </section>`;
+    topo.innerHTML = faixas.filter(f => f.lugar === 'topo').map(html).join('');
+    meio.innerHTML = faixas.filter(f => f.lugar === 'meio').map(html).join('');
+    faixas.forEach(f => f.ids.forEach(id => atualizarBadgesDOM(id)));
+};
+document.addEventListener('ranking-pronto', () => renderFaixasExtras());
+
+// ---------------------------------------------------------------------
+// QUADROS NO MEIO DA VITRINE: imagens e recados que o dono põe no painel (Aparência → Vitrine)
+// e o bloco "Quem escolhe seu pedido". Entram depois do 6º produto, do 14º... (js/vitrine-lib.js).
+// A vitrine é ordenada por CSS `order` (ranking): o quadro copia o `order` do produto que vem
+// antes dele e entra logo depois dele, para cair no lugar certo em qualquer ordem.
+// ---------------------------------------------------------------------
+let _blocosCara = '';
+const blocoHtml = (b) => {
+    const aba = b.cat && (STATE.abas || []).find(a => a.chave !== 'todas' && a.chave !== 'favoritos' && (semAcento(a.chave) === semAcento(b.cat) || semAcento(a.nome) === semAcento(b.cat)));
+    const foto = (url, classe) => `<img class="${classe}" src="${escapeHTML(miniatura(url, 384))}" data-original="${escapeHTML(url)}" alt="" loading="lazy" decoding="async" width="384" height="288">`;
+    if (b.tipo === 'donos') return `
+        <aside class="bloco-vitrine bloco-donos" data-depois="${b.depoisDe}" aria-label="${escapeHTML(b.titulo)}">
+            <div class="bloco-donos-foto">${b.img ? foto(b.img, 'donos-foto') : ARTE_DONOS}</div>
+            <div class="bloco-texto"><span class="bloco-chapeu">Quem escolhe seu pedido</span><h3>${escapeHTML(b.titulo)}</h3>${b.texto ? `<p>${escapeHTML(b.texto)}</p>` : ''}</div>
+        </aside>`;
+    return `
+        <aside class="bloco-vitrine bloco-quadro${b.img ? '' : ' sem-foto'}" data-depois="${b.depoisDe}" aria-label="${escapeHTML(b.titulo)}">
+            ${b.img ? `<div class="bloco-foto">${foto(b.img, 'quadro-foto')}</div>` : ''}
+            <div class="bloco-texto"><h3>${escapeHTML(b.titulo)}</h3>${b.texto ? `<p>${escapeHTML(b.texto)}</p>` : ''}
+                ${aba ? `<button type="button" class="bloco-bt" data-action="cat-ir" data-cat="${escapeHTML(aba.chave)}">Ver ${escapeHTML(aba.nome)}</button>` : ''}</div>
+        </aside>`;
+};
+const renderBlocos = (visiveis) => {
+    const grid = document.getElementById('lista-produtos'); if (!grid) return;
+    const blocos = visiveis ? blocosDaVitrine(vitrineDaLoja(), visiveis) : [];
+    const cara = JSON.stringify(blocos) + '#' + (STATE.abas || []).map(a => a.chave).join(',');
+    const naTela = grid.querySelectorAll('.bloco-vitrine');
+    if (cara !== _blocosCara || naTela.length !== blocos.length) {
+        _blocosCara = cara;
+        naTela.forEach(b => b.remove());
+        if (blocos.length) grid.insertAdjacentHTML('beforeend', blocos.map(blocoHtml).join(''));
+    }
+    posicionarBlocos();
+};
+const posicionarBlocos = () => {
+    const grid = document.getElementById('lista-produtos'); if (!grid) return;
+    const blocos = [...grid.querySelectorAll('.bloco-vitrine')]; if (!blocos.length) return;
+    const cards = [...grid.querySelectorAll('.produto-card')].filter(c => c.style.display !== 'none')
+        .map((c, i) => ({ c, i, o: Number(c.style.order) || 0 })).sort((a, b) => a.o - b.o || a.i - b.i).map(x => x.c);
+    // do último para o primeiro: mover um quadro não mexe na posição dos que vêm antes
+    blocos.sort((a, b) => Number(b.dataset.depois) - Number(a.dataset.depois)).forEach(b => {
+        const alvo = cards[Number(b.dataset.depois) - 1];
+        if (!alvo) { b.hidden = true; return; }
+        b.hidden = false; b.style.order = alvo.style.order || '';
+        if (alvo.nextElementSibling !== b) alvo.after(b);
+    });
+};
+document.addEventListener('ranking-pronto', posicionarBlocos);
+
+// ---------------------------------------------------------------------
+// FUNIL (para o dono ver o antes e depois da vitrine no painel): cada aparelho conta
+// UMA vez por dia em cada etapa. Só número; a prévia do painel não conta.
+// ---------------------------------------------------------------------
+const contarFunil = async (etapa) => {
+    if (EM_PREVIA || !navigator.onLine) return;
+    const k = chave(`banca_funil_${etapa}`), hoje = hojeDaLoja();
+    try { if (localStorage.getItem(k) === hoje) return; localStorage.setItem(k, hoje); } catch (_) { /* sem armazenamento: o servidor ainda segura a repetição */ }
+    try {
+        const token = await auth.currentUser?.getIdToken(); if (!token) return;
+        fetch('/api/analytics', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ acao: 'funil', etapa }) }).catch(() => {});
+    } catch (_) { /* contar nunca atrapalha a compra */ }
+};
+
 const renderLoja = (forcarRebuild = false) => {
     const grid = document.getElementById('lista-produtos');
     if (!STATE.catalogoChegou) return;     // produtos ainda a caminho: fica o carregando, e não um falso "sem produtos"
     if(!STATE.lojaRenderizada || forcarRebuild) construirCardsIniciais();
-    renderFaixaSempre(); renderFaixaOfertas(forcarRebuild); renderAtalhos();
+    renderFaixaSempre(); renderFaixaOfertas(forcarRebuild); renderFaixasExtras(forcarRebuild); renderAtalhos();
     const termo = semAcento(STATE.busca).trim();
     const cards = grid.querySelectorAll('.produto-card');
     let itensVisiveis = 0;
@@ -660,6 +774,7 @@ const renderLoja = (forcarRebuild = false) => {
     } else if (cards.length === 0) {
         grid.insertAdjacentHTML('beforeend', `<div id="empty-grid-msg" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>A banca está sem produtos no momento</p><span>Volte daqui a pouco.</span></div>`);
     }
+    renderBlocos(!termo && STATE.catAtiva === 'todas' ? itensVisiveis : 0);
 };
 
 // Pedido com itens de mais de um atendimento (ex.: banca + artesanais) gera
@@ -751,7 +866,9 @@ const renderCategorias = () => {
     const abas = [{ chave: 'todas', nome: 'Todos' }, { chave: 'favoritos', nome: 'Favoritos' }, ...abasDeCategoria(STATE.produtos)];
     // se a categoria aberta sumiu (ocultada no painel), volta para "Todos"
     if (!abas.some(a => a.chave === STATE.catAtiva)) STATE.catAtiva = 'todas';
-    document.getElementById('categorias').innerHTML = abas.map(a => `<button class="cat-btn ${a.chave === STATE.catAtiva ? 'active' : ''}" data-action="cat" data-cat="${escapeHTML(a.chave)}">${escapeHTML(a.nome)}</button>`).join('');
+    STATE.abas = abas;
+    const arteDe = (a) => ARTE_CATEGORIA[a.chave === 'todas' || a.chave === 'favoritos' ? a.chave : iconeDaCategoria(a.nome || a.chave)] || '';
+    document.getElementById('categorias').innerHTML = abas.map(a => { const arte = arteDe(a); return `<button class="cat-btn${arte ? ' tem-arte' : ''} ${a.chave === STATE.catAtiva ? 'active' : ''}" data-action="cat" data-cat="${escapeHTML(a.chave)}">${arte}<span>${escapeHTML(a.nome)}</span></button>`; }).join('');
 };
 
 let buscaTimeout;
@@ -762,7 +879,9 @@ document.getElementById('busca-input').addEventListener('input', (e) => {
 const iniciarRealTimeSync = () => {
     renderSkeletons();
     const unsubConfig = onSnapshot(tdoc("loja", "config"), (snap) => {
+        const vitrineAntes = JSON.stringify(vitrineDaLoja());
         if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()}; atualizarRodapeCarrinhoDOM();
+        if (STATE.lojaRenderizada && JSON.stringify(vitrineDaLoja()) !== vitrineAntes) renderLoja(true);   // o dono mudou os quadros ou o texto da escolha
         pintarListaDeCondominios();
         pintarHorariosDeEntrega();
     }, (e) => console.warn('[loja] config:', e?.code || e));
@@ -781,7 +900,7 @@ const iniciarRealTimeSync = () => {
     let _catsProntas = false;      // espera a 1ª resposta das categorias p/ não "piscar" produto de categoria oculta
     // Junta produtos + categorias do painel (ocultas somem; renomear/ordenar reflete na hora)
     let _lista = '', _porProduto = new Map();
-    const assinaturaDe = (p) => `${p.preco}:${p.precoDe || ''}:${p.foto || ''}:${p.fotoMini || ''}:${p.nome}:${p.cat}:${p.unidade || ''}:${p.pesoMedio || ''}:${p.mostrarPrimeiro || ''}`;
+    const assinaturaDe = (p) => `${p.preco}:${p.precoDe || ''}:${p.foto || ''}:${p.fotoMini || ''}:${p.nome}:${p.cat}:${p.unidade || ''}:${p.pesoMedio || ''}:${p.mostrarPrimeiro || ''}:${p.chegouEm || ''}:${p.estacao ? 1 : ''}:${p.escolha ? 1 : ''}`;
     const aplicarCatalogo = () => {
         if (!_catsProntas || !_produtosChegaram) return;
         STATE.catalogoChegou = true;
@@ -1588,8 +1707,9 @@ document.body.addEventListener('click', async (e) => {
             img.alt = p.nome;
             document.getElementById('md-tag').textContent = p.cat || '';
             document.getElementById('md-desc').textContent = p.descricao || "Produto fresco, selecionado no dia.";
+            { let ms = document.getElementById('md-selos'); if (!ms) { ms = document.createElement('div'); ms.id = 'md-selos'; document.getElementById('md-tag').after(ms); } ms.innerHTML = selosHtml(p, true); }
             document.getElementById('md-preco').innerHTML =
-                `${emOferta(p) ? `<s class="md-preco-de">${fmt(p.precoDe)}</s> ` : ''}${fmt(p.preco)} <span class="md-preco-unid">/ ${escapeHTML(p.unidade || 'un')}</span>`;
+                `${emOferta(p) ? `<s class="md-preco-de">${fmt(p.precoDe)}</s> ` : ''}${fmt(p.preco)} <span class="md-preco-unid">/ ${escapeHTML(p.unidade || 'un')}</span>${isFracionavel(p.unidade) && Number(p.pesoMedio) > 0 ? `<small class="md-peso">1 unidade ${escapeHTML(pesoAproximado(p.pesoMedio))}</small>` : ''}`;
 
             // Se o cliente JÁ tem esse item no carrinho, o modal abre no estado atual dele
             const jaNoCarrinho = STATE.carrinho.find(c => c.id === p.id);
@@ -1635,6 +1755,10 @@ document.body.addEventListener('click', async (e) => {
             document.querySelectorAll('#categorias .cat-btn').forEach(b => b.classList.toggle('active', b === actionTarget));
             actionTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
             renderLoja();
+        }
+        else if (action === 'cat-ir') {     // botão "Ver Frutas" de um quadro da vitrine: abre a aba e sobe até ela
+            const aba = document.querySelector(`#categorias .cat-btn[data-cat="${CSS.escape(actionTarget.dataset.cat || '')}"]`);
+            if (aba) { aba.click(); document.querySelector('.controles')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); }
         }
         else if (action === 'fav') { 
             const eraFav = STATE.favoritos.includes(id);
@@ -1790,7 +1914,19 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     if (!STATE.checkoutSessionId || STATE.checkoutCara !== cara) { STATE.checkoutSessionId = novoId(); STATE.checkoutCara = cara; }
     pintarHorariosDeEntrega();      // garante a lista de horários na hora de abrir (não depende de a configuração ter chegado antes)
     pintarAvisoDeEntrega();
+    lerTrocaGuardada();
     openModal('modal-checkout');
+    contarFunil('sacola');
+});
+
+// "Se faltar algum item": a escolha vai no fim da observação do pedido e fica lembrada neste aparelho.
+const trocaEscolhida = () => document.querySelector('input[name="cli-troca"]:checked')?.value || '';
+const lerTrocaGuardada = () => {
+    let v = ''; try { v = localStorage.getItem(chave('banca_troca')) || ''; } catch (_) { /* sem memória */ }
+    const r = document.querySelector(`input[name="cli-troca"][value="${CSS.escape(v)}"]`); if (r && !trocaEscolhida()) r.checked = true;
+};
+document.addEventListener('change', (e) => {
+    if (e.target && e.target.name === 'cli-troca') { try { localStorage.setItem(chave('banca_troca'), e.target.value); } catch (_) { /* sem memória */ } }
 });
 
 // Envio de Pedido com o novo formato de Unidades
@@ -1802,7 +1938,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     const telefone = (document.getElementById('cli-telefone')?.value || '').replace(/\D/g, '');
     const pag = document.getElementById('cli-pagamento').value;
     const trocoRaw = document.getElementById('cli-troco')?.value.trim();
-    const obs = document.getElementById('cli-obs').value.trim();
+    const obs = obsComTroca(document.getElementById('cli-obs').value.trim(), trocaEscolhida());
     const cupom = (document.getElementById('cli-cupom')?.value || '').trim().toUpperCase();
     
     const faltaEndereco = endCheckout.validar();
@@ -1888,6 +2024,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         oferecerPixNoSucesso({ id: data.pedido.id, total: data.pedido.total, pag, status: 'pendente', temItensAPesar: itensFormatados.some(i => i.aPesar) });
         closeModal('modal-checkout');
         setTimeout(() => openModal('modal-sucesso'), 300); 
+        contarFunil('pedido');
         STATE.carrinho = []; dbStorage.set(chave('banca_cart'), {v: CART_VERSION, items: []}); guardarNaConta();
         renderCarrinhoCompleto();
         document.getElementById('cli-obs').value = '';

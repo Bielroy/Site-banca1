@@ -74,6 +74,8 @@
     <!-- Visual novo (etiqueta de preço, seletor no card, animações). Vem por ÚLTIMO de propósito. -->
     <link rel="stylesheet" href="./css/visual.css">
     <link rel="stylesheet" href="./css/aparencia-loja.css">
+    <!-- Vitrine: selos, faixas novas, quadros e ícones das categorias (js/vitrine-lib.js) -->
+    <link rel="stylesheet" href="./css/vitrine.css">
 
     <link rel="icon" href="./icon-192.png">
     <!-- O <link rel="manifest"> não é escrito aqui. O vite-plugin-pwa
@@ -169,6 +171,8 @@
         <!-- "Seus de sempre": o que este cliente costuma levar (ou o último pedido). Preenchida por js/loja.js -->
         <!-- Atalhos de quem volta: pedir de novo, lista da semana, avaliar. Preenchidos por js/loja.js -->
         <nav class="atalhos" id="atalhos" aria-label="Atalhos de compra" hidden></nav>
+        <!-- "Chegou hoje" (o dono marca no painel). Preenchida por js/loja.js -->
+        <div class="faixas-extra" id="faixas-topo"></div>
         <!-- Ofertas de hoje: produtos com preço antigo riscado. Preenchida por js/loja.js -->
         <section class="faixa-sempre faixa-ofertas" id="faixa-ofertas" aria-labelledby="ofertas-titulo" hidden>
             <h2 id="ofertas-titulo">Ofertas de hoje</h2>
@@ -180,6 +184,8 @@
             <p class="faixa-sub" id="faixa-sub">O que você mais leva, a um toque.</p>
             <div class="faixa-rolo" id="faixa-lista"></div>
         </section>
+        <!-- "Da estação", "Os mais pedidos", "Kits prontos". Preenchida por js/loja.js -->
+        <div class="faixas-extra" id="faixas-meio"></div>
         <section class="produtos-grid" id="lista-produtos" aria-label="Lista de Produtos"></section>
     </div>
 
@@ -276,6 +282,15 @@
                 <label for="cli-obs">Observações (opcional)</label>
                 <textarea id="cli-obs" rows="2" placeholder="Ex: tomates bem maduros, deixar na portaria..."></textarea>
             </div>
+
+            <!-- Se faltar algum item: a escolha vai junto na observação do pedido (js/vitrine-lib.js, obsComTroca) -->
+            <fieldset class="form-group troca-grupo">
+                <legend>Se faltar algum item</legend>
+                <div class="troca-ops">
+                    <label class="troca-op"><input type="radio" name="cli-troca" value="trocar"><span>Pode trocar por um parecido</span></label>
+                    <label class="troca-op"><input type="radio" name="cli-troca" value="nao"><span>Não trocar, só tirar</span></label>
+                </div>
+            </fieldset>
 
             <div class="form-group">
                 <label for="cli-cupom">Cupom de desconto (opcional)</label>

@@ -201,6 +201,57 @@ teste('painel: a aba Aparência abre e a prévia da loja carrega dentro dela', a
   semErros(erros); await fechar();
 });
 
+teste('painel: Vitrine (na aba Aparência) cria um quadro com botão de categoria e grava em loja/config', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/testes/tela/painel-aparencia.html', cen);
+  await pagina.waitForSelector('#vt-gravar', { timeout: 8000 });
+  assert.ok(await pagina.locator('#vt-gravar').isDisabled(), 'nada mudou: Gravar desligado');
+  await pagina.click('[data-acao-vt="mais"]');
+  await pagina.fill('[data-q="0"][data-campo="titulo"]', 'Manga no ponto');
+  await pagina.fill('[data-q="0"][data-campo="texto"]', 'Aperte de leve.');
+  await pagina.selectOption('select[data-q="0"]', 'frutas');
+  await pagina.fill('#vt-donos-titulo', 'Adair e Pedrina');
+  await pagina.fill('#vt-donos-texto', 'Escolhemos cada pedido.');
+  await pagina.click('#vt-gravar');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config'), null, { timeout: 4000 });
+  const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config').dados);
+  assert.deepStrictEqual(g, { vitrine: { quadros: [{ titulo: 'Manga no ponto', texto: 'Aperte de leve.', cat: 'frutas' }], donos: { titulo: 'Adair e Pedrina', texto: 'Escolhemos cada pedido.' } } });
+  assert.ok(await pagina.locator('#vt-funil table').isVisible(), 'quadro de visitas aparece (zerado)');
+  semErros(erros); await fechar();
+});
+
+teste('loja: quadro e "quem escolhe" entram no meio da vitrine, selos aparecem e o botão do quadro abre a categoria', async () => {
+  const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+  const cen = cenarioPadrao();
+  const b = cen.lojas.banca;
+  for (let i = 0; i < 12; i++) b.produtos['extra' + i] = { nome: 'Fruta ' + i, preco: 5, unidade: 'un', cat: 'frutas', ativo: true };
+  b.produtos.banana = { ...b.produtos.banana, chegouEm: hoje, estacao: true };
+  b.produtos.alface = { ...b.produtos.alface, chegouEm: hoje };
+  b.config = { ...b.config, vitrine: { escolha: 'Escolha da Pedrina', quadros: [{ titulo: 'Manga no ponto', texto: 'Aperte de leve.', cat: 'verduras' }], donos: { titulo: 'Adair e Pedrina', texto: 'Escolhemos cada pedido.' } } };
+  b.produtos.ovos = { ...b.produtos.ovos, escolha: true };
+  const { pagina, erros, fechar } = await abrir('/', cen);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForSelector('.bloco-quadro', { timeout: 4000 });
+  assert.strictEqual(await pagina.locator('#faixas-topo .faixa--chegou .produto-card').count(), 2, 'faixa "Chegou hoje" com os 2 marcados hoje');
+  assert.strictEqual(await pagina.locator('#lista-produtos .produto-card[data-id="ovos"] .selo--escolha').innerText(), 'Escolha da Pedrina');
+  const ordem = await pagina.evaluate(() => [...document.querySelectorAll('#lista-produtos > *')].filter((e) => e.offsetParent).map((e) => (e.classList.contains('bloco-quadro') ? 'Q' : e.classList.contains('bloco-donos') ? 'D' : 'p')).join(''));
+  assert.strictEqual(ordem.indexOf('Q'), 6, 'quadro depois do 6º produto: ' + ordem);
+  assert.strictEqual(ordem.replace('Q', '').indexOf('D'), 14, '"quem escolhe" depois do 14º: ' + ordem);
+  await pagina.fill('#busca-input', 'banana');
+  await pagina.waitForFunction(() => !document.querySelector('.bloco-quadro') || document.querySelector('.bloco-quadro').offsetParent === null, null, { timeout: 4000 });
+  await pagina.fill('#busca-input', '');
+  await pagina.waitForFunction(() => document.querySelector('.bloco-quadro')?.offsetParent, null, { timeout: 4000 });
+  // como uma pessoa: rola até o quadro, espera parar e toca (a rolagem da loja é suave)
+  await pagina.locator('.bloco-quadro').evaluate((e) => e.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await pagina.waitForTimeout(600);
+  await pagina.click('.bloco-quadro .bloco-bt');
+  await esperarVisiveis(pagina, () => [...document.querySelectorAll('#lista-produtos .produto-card')].filter((c) => c.offsetParent !== null).length === 1);
+  assert.deepStrictEqual(await visiveis(pagina), ['Alface crespa'], 'o botão "Ver Verduras" abriu a categoria');
+  const largura = await pagina.evaluate(() => document.documentElement.scrollWidth);
+  assert.ok(largura <= 392, `a página ficou mais larga que o celular (${largura}px)`);
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- PAINEL: FILA DE PEDIDOS
 const cenarioFila = (extra = {}) => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } }, ...extra });

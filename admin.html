@@ -32,6 +32,7 @@
     <link rel="stylesheet" href="./css/admin-estoque.css">
     <link rel="stylesheet" href="./css/admin-icones.css">
     <link rel="stylesheet" href="./css/admin-casca.css">
+    <link rel="stylesheet" href="./css/admin-vitrine.css">
 </head>
 <body>
 
@@ -258,6 +259,8 @@
 
         <section id="aba-aparencia" class="aba-content">
             <div id="aparencia-conteudo"></div>
+            <!-- Vitrine: quadros, "quem escolhe seu pedido", nome do selo e números (js/admin-vitrine.js) -->
+            <div id="vitrine-conteudo"></div>
         </section>
 
         <section id="aba-config" class="aba-content">
@@ -417,6 +420,17 @@
                     <p class="ou-divisor">OU</p>
                     <input type="url" id="edit-foto-url" placeholder="Ou cole aqui o link de uma foto">
                     <button type="button" class="btn-outline btn-banco-fotos" id="btn-banco-fotos">Escolher do banco de fotos</button>
+                    <details class="guia-foto">
+                        <summary>Como tirar uma foto que dá vontade de comprar</summary>
+                        <ol>
+                            <li><b>Luz de janela</b>, de lado. Sem flash e sem sol direto.</li>
+                            <li><b>Sempre o mesmo fundo</b>: uma tábua clara, um pano creme ou o próprio caixote.</li>
+                            <li><b>Sempre o mesmo jeito</b>: celular inclinado (meio de lado) ou bem de cima, foto quadrada, o produto ocupando quase tudo.</li>
+                            <li><b>Mostre como vai ser entregue</b>: o maço, a bandeja, 1 unidade ao lado da mão para dar ideia do tamanho.</li>
+                            <li>Tire 3 e fique com a mais nítida. Pode clarear no próprio celular, mas <b>não mude a cor nem esconda defeito</b>: a foto é uma promessa.</li>
+                        </ol>
+                        <small>Foto do produto de verdade vende mais que foto da internet ou feita por IA, e evita reclamação de "veio diferente".</small>
+                    </details>
                 </div>
                 <div class="form-group"><label for="edit-nome">Nome do produto</label><input type="text" id="edit-nome"></div>
                 <div class="form-group">
@@ -460,6 +474,15 @@
                     </small>
                     </div>
                 </div>
+
+                <!-- Selos na loja (js/vitrine-lib.js). Só o que for verdade: o selo é uma promessa para o cliente. -->
+                <fieldset class="form-group selos-produto">
+                    <legend>Selos na loja (opcional)</legend>
+                    <label class="chk-linha"><input type="checkbox" id="edit-selo-chegou"> <span><b>Chegou hoje</b> <small>vale só hoje; amanhã some sozinho</small></span></label>
+                    <label class="chk-linha"><input type="checkbox" id="edit-selo-estacao"> <span><b>Da estação</b> <small>está na safra</small></span></label>
+                    <label class="chk-linha"><input type="checkbox" id="edit-selo-escolha"> <span><b>Escolha da casa</b> <small>o que vocês recomendam (o nome do selo muda em Aparência → Vitrine)</small></span></label>
+                    <small class="dica-campo">Cada selo coloca o produto numa faixa no topo da loja ("Chegou hoje", "Da estação"). No dia a dia, o botão <b>hoje</b> na lista de produtos marca o "Chegou hoje" num toque.</small>
+                </fieldset>
 
                 <div class="form-group">
                     <label class="chk-linha"><input type="checkbox" id="edit-so-insumo"> Só ingrediente (não aparece na loja)</label>

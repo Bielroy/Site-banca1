@@ -7,6 +7,7 @@ import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
 import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm } from './utils.js';
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
+import { hojeDaLoja } from './vitrine-lib.js';
 import './admin-instalar.js';
 import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar, bancasDaPessoa, mostrarSuspensa } from './admin-guard.js';
 import { htmlSimples, csvCampo } from './html-lib.js';
@@ -26,16 +27,19 @@ const TELAS = {
     margens: () => import('./admin-margens.js'), compras: () => import('./admin-compras.js'), pdv: () => import('./admin-pdv.js'),
     crm: () => import('./admin-crm.js'), copiloto: () => import('./admin-copiloto.js'), calendario: () => import('./admin-calendario.js'),
     equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'), avisos: () => import('./admin-avisos.js'),
-    precosDia: () => import('./admin-precos-dia.js'),
+    precosDia: () => import('./admin-precos-dia.js'), vitrine: () => import('./admin-vitrine.js'),
 };
 const comImpressao = async (fn) => { try { await fn(await TELAS.impressao()); } catch (e) { console.error(e); showToast('Não consegui abrir a impressão. Confira a internet e toque de novo.', true); } };
 document.getElementById('btn-impressora')?.addEventListener('click', () => comImpressao((m) => m.abrirImpressora()));
 document.getElementById('btn-avisos')?.addEventListener('click', async () => { try { (await TELAS.avisos()).abrirAvisos(); } catch (e) { console.error(e); showToast('Não consegui abrir os avisos. Confira a internet e toque de novo.', true); } });
 let condominiosAtuais = [];
 const ABRIR = {
-    aparencia: (m) => m.abrirAparencia(), estoque: (m) => m.abrirEstoque(produtosAtuais), compras: (m) => m.abrirCompras(produtosAtuais),
+    aparencia: (m) => { m.abrirAparencia(); TELAS.vitrine().then((v) => v.abrirVitrine(categoriasComProduto())).catch((e) => console.error(e)); }, estoque: (m) => m.abrirEstoque(produtosAtuais), compras: (m) => m.abrirCompras(produtosAtuais),
     pdv: (m) => { m.definirCondominiosPdv(condominiosAtuais); m.abrirPdv(produtosAtuais); }, crm: (m) => m.abrirCrm(produtosAtuais), copiloto: (m) => m.abrirCopiloto(), calendario: (m) => m.abrirCalendario({ podeEditar: ehGestor(papelAtual) }), equipe: (m) => m.abrirEquipe(),
 };
+// categorias que têm produto à venda (para o botão "Ver Frutas" dos quadros da vitrine)
+const categoriasComProduto = () => [...new Set(produtosAtuais.filter((p) => p.ativo && !p.soInsumo && p.cat).map((p) => p.cat))]
+    .map((chave) => ({ chave, nome: nomeDaCategoria(chave) || chave })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 const abrirTela = async (nome) => {
     try { ABRIR[nome](await TELAS[nome]()); }
     catch (e) { console.error(e); showToast('Não consegui abrir esta tela. Confira a internet e toque de novo.', true); }
@@ -580,6 +584,8 @@ const FILTROS_PRODUTO = [
     ['baixo', 'Estoque baixo', (p) => temEstoque(p) && Number(p.estoqueFisico) <= 5],
     ['semfoto', 'Sem foto', (p) => !p.foto && !p.soInsumo],
     ['oferta', 'Em oferta', (p) => Number(p.precoDe) > Number(p.preco)],
+    ['chegou', 'Chegou hoje', (p) => p.chegouEm === hojeDaLoja()],
+    ['selo', 'Com selo', (p) => p.chegouEm === hojeDaLoja() || p.estacao === true || p.escolha === true],
     ['insumo', 'Só ingrediente', (p) => p.soInsumo === true],
 ];
 const renderProdutos = () => {
@@ -598,6 +604,9 @@ const renderProdutos = () => {
         if (Number(p.precoDe) > Number(p.preco)) avisos.push('<span class="pl-selo oferta">oferta</span>');
         else if (p.precosDia && Object.values(p.precosDia).some((v) => Number(v) > 0)) avisos.push('<span class="pl-selo">preço por dia</span>');
         if (temEstoque(p)) { const q = Number(p.estoqueFisico); avisos.push(q <= 0 ? '<span class="pl-selo ruim">estoque zerado</span>' : q <= 5 ? `<span class="pl-selo atencao">restam ${q}</span>` : `<span class="pl-selo">estoque ${q}</span>`); }
+        if (p.chegouEm === hojeDaLoja()) avisos.push('<span class="pl-selo bom">chegou hoje</span>');
+        if (p.estacao === true) avisos.push('<span class="pl-selo bom">da estação</span>');
+        if (p.escolha === true) avisos.push('<span class="pl-selo bom">escolha da casa</span>');
         if (!p.foto && !p.soInsumo) avisos.push('<span class="pl-selo atencao">sem foto</span>');
         // sem o peso médio, o cliente não vê estimativa de preço ao pedir "5 unidades" de um produto vendido a peso
         if (ehFracionavel(p.unidade) && !p.pesoMedio && !p.soInsumo) avisos.push('<span class="pl-selo atencao">sem peso médio</span>');
@@ -612,6 +621,7 @@ const renderProdutos = () => {
                     ${avisos.length ? `<span class="pl-avisos">${avisos.join('')}</span>` : ''}
                 </span>
             </button>
+            ${p.soInsumo || !p.ativo ? '' : `<button type="button" class="pl-chegou${p.chegouEm === hojeDaLoja() ? ' on' : ''}" data-action="chegou-hoje" data-id="${escapeHTML(p.id)}" aria-pressed="${p.chegouEm === hojeDaLoja()}" aria-label="Chegou hoje: ${escapeHTML(p.nome)}" title="Marcar que chegou hoje (some sozinho amanhã)">${ico('broto')}<span>hoje</span></button>`}
             ${p.soInsumo ? '' : `<button type="button" class="pl-chave" role="switch" aria-checked="${p.ativo ? 'true' : 'false'}" aria-label="${p.ativo ? 'À venda' : 'Fora da loja'}: ${escapeHTML(p.nome)}" data-action="toggle-estoque" data-id="${escapeHTML(p.id)}" data-status="${p.ativo ? 'false' : 'true'}"><i></i></button>`}
         </article>`;
     }).join('');
@@ -687,6 +697,7 @@ const limparFormularioProduto = () => {
     const est = document.getElementById('edit-estoque-fisico'); if (est) { est.value = ''; est.dataset.aoAbrir = ''; }
     if (document.getElementById('edit-duracao')) document.getElementById('edit-duracao').value = 'normal';
     if (document.getElementById('edit-so-insumo')) document.getElementById('edit-so-insumo').checked = false;
+    ['edit-selo-chegou', 'edit-selo-estacao', 'edit-selo-escolha'].forEach((i) => { const c = document.getElementById(i); if (c) c.checked = false; });
     if (document.getElementById('edit-peso-medio')) document.getElementById('edit-peso-medio').value = '';
     if (document.getElementById('edit-mostrar-primeiro')) document.getElementById('edit-mostrar-primeiro').value = 'un';
     const url = document.getElementById('edit-foto-url'); if (url) { delete url.dataset.bancoUrl; delete url.dataset.bancoMini; }
@@ -1206,6 +1217,7 @@ document.body.addEventListener('click', async (e) => {
             if (document.getElementById('edit-mostrar-primeiro')) document.getElementById('edit-mostrar-primeiro').value = p.mostrarPrimeiro === 'kg' ? 'kg' : 'un';
             if (document.getElementById('edit-duracao')) document.getElementById('edit-duracao').value = ['curta', 'longa'].includes(p.duracao) ? p.duracao : 'normal';
             if (document.getElementById('edit-so-insumo')) document.getElementById('edit-so-insumo').checked = p.soInsumo === true;
+            { const m = (i, v) => { const c = document.getElementById(i); if (c) c.checked = v; }; m('edit-selo-chegou', p.chegouEm === hojeDaLoja()); m('edit-selo-estacao', p.estacao === true); m('edit-selo-escolha', p.escolha === true); }
             alternarCampoPesoMedio();
 
             const previewContainer = document.getElementById('preview-foto-wrapper');
@@ -1239,6 +1251,12 @@ document.body.addEventListener('click', async (e) => {
             }
         }
 
+        else if (action === 'chegou-hoje') {      // selo "Chegou hoje": vale só no dia; amanhã some sozinho
+            const id = target.dataset.id, p = produtosAtuais.find(x => x.id === id); if (!p) return;
+            const marcar = p.chegouEm !== hojeDaLoja();
+            await setDoc(tdoc("produtos", id), { chegouEm: marcar ? hojeDaLoja() : null, ultimaModificacao: Date.now() }, { merge: true });
+            showToast(marcar ? `${p.nome}: "Chegou hoje" na loja até o fim do dia.` : `${p.nome}: selo tirado.`);
+        }
         else if (action === 'toggle-estoque') {
             const id = target.dataset.id;
             const novoStatus = target.dataset.status === 'true';
@@ -1463,6 +1481,10 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
             mostrarPrimeiro: document.getElementById('edit-mostrar-primeiro')?.value === 'kg' ? 'kg' : 'un',   // qual botão vem em cima no card (unidade ou quilo)
             duracao: document.getElementById('edit-duracao')?.value || 'normal',   // folga da sugestão de compra (motor)
             soInsumo: !!document.getElementById('edit-so-insumo')?.checked,        // ingrediente de receita: fora da loja
+            // selos verdadeiros na loja (js/vitrine-lib.js). "Chegou hoje" guarda o DIA: amanhã some sozinho.
+            chegouEm: document.getElementById('edit-selo-chegou')?.checked ? hojeDaLoja() : null,
+            estacao: !!document.getElementById('edit-selo-estacao')?.checked,
+            escolha: !!document.getElementById('edit-selo-escolha')?.checked,
             // Sem controle de estoque: mantém o que estava. Antes, editar um produto
             // marcado como "Esgotado" o colocava de volta à venda sem ninguém pedir.
             ativo: antigo ? antigo.ativo !== false : true,

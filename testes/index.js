@@ -2480,6 +2480,99 @@ teste('balanço: kit comparado com os itens soltos, e simulador de preço acha o
   assert.deepStrictEqual(A.simularPreco({ preco: 10, custo: 6, vendeSemana: 0 }), []);
 });
 
+teste('vitrine: selos só verdadeiros, "Chegou hoje" some no dia seguinte e o texto da escolha é da loja', async () => {
+  const V = await import(raiz('js/vitrine-lib.js'));
+  assert.strictEqual(V.hojeDaLoja(Date.parse('2026-10-15T02:30:00Z')), '2026-10-14', 'antes das 3h UTC ainda é o dia anterior no Brasil');
+  const p = { id: 'a', chegouEm: '2026-10-14', estacao: true, escolha: true };
+  assert.deepStrictEqual(V.selosDe(p, { hoje: '2026-10-14', escolha: 'Escolha da Pedrina' }).map((s) => s.texto), ['Chegou hoje', 'Escolha da Pedrina', 'Da estação']);
+  assert.deepStrictEqual(V.selosDe(p, { hoje: '2026-10-15' }).map((s) => s.tipo), ['escolha', 'estacao'], 'amanhã o "chegou hoje" não vale mais');
+  assert.deepStrictEqual(V.selosDe({ id: 'b', estacao: 'sim', escolha: 1 }), [], 'só true conta');
+  assert.strictEqual(V.selosDe(p, { hoje: '2026-10-14', escolha: '   ' })[1].texto, 'Escolha da casa');
+});
+
+teste('vitrine: faixas novas respeitam o mínimo de produtos e o limite de 4 faixas no total', async () => {
+  const V = await import(raiz('js/vitrine-lib.js'));
+  const hoje = '2026-10-14';
+  const ps = [
+    { id: 'm', nome: 'Manga', chegouEm: hoje, estacao: true }, { id: 'u', nome: 'Uva', chegouEm: hoje },
+    { id: 'c', nome: 'Caqui', estacao: true }, { id: 'k1', nome: 'Kit sopa', unidade: 'kit' }, { id: 'k2', nome: 'Cesta da semana', unidade: 'cesta' },
+    { id: 't', nome: 'Tomate' }, { id: 'b', nome: 'Batata' },
+  ];
+  let f = V.faixasDaVitrine(ps, { hoje, maisPedidos: ['t', 'b', 'm', 'u', 'sumiu'] });
+  assert.deepStrictEqual(f.map((x) => [x.id, x.lugar]), [['chegou', 'topo'], ['estacao', 'meio'], ['mais', 'meio'], ['kits', 'meio']]);
+  assert.deepStrictEqual(f[2].ids, ['t', 'b', 'm', 'u'], 'produto que saiu da loja não entra');
+  f = V.faixasDaVitrine(ps, { hoje, maisPedidos: ['t', 'b', 'm', 'u'], temOfertas: true, temSempre: true });
+  assert.deepStrictEqual(f.map((x) => x.id), ['chegou', 'estacao'], 'com Ofertas e Seus de sempre, sobram 2 vagas');
+  f = V.faixasDaVitrine(ps, { hoje: '2026-10-15', maisPedidos: ['t', 'b', 'm'] });
+  assert.deepStrictEqual(f.map((x) => x.id), ['estacao', 'kits'], 'sem "chegou" de hoje; "mais pedidos" precisa de 4');
+  assert.deepStrictEqual(V.faixasDaVitrine(null), []);
+});
+
+teste('vitrine: peso aproximado, ícone da categoria, quadros conferidos e lugar dos blocos', async () => {
+  const V = await import(raiz('js/vitrine-lib.js'));
+  assert.strictEqual(V.pesoAproximado(196), '≈ 200 g');
+  assert.strictEqual(V.pesoAproximado(45), '≈ 45 g');
+  assert.strictEqual(V.pesoAproximado(1240), '≈ 1,2 kg');
+  assert.strictEqual(V.pesoAproximado(''), '');
+  assert.strictEqual(V.iconeDaCategoria('Verduras e folhas'), 'folha');
+  assert.strictEqual(V.iconeDaCategoria('FRUTAS'), 'fruta');
+  assert.strictEqual(V.iconeDaCategoria('Raízes'), 'raiz');
+  assert.strictEqual(V.iconeDaCategoria('Temperos'), 'tempero');
+  assert.strictEqual(V.iconeDaCategoria('Pães'), '');
+  const v = V.vitrineSegura({
+    quadros: [
+      { img: 'https://i.ibb.co/x/a.webp', titulo: 'Como escolher manga', texto: 'Aperte de leve...', cat: 'frutas' },
+      { img: 'javascript:alert(1)', titulo: 'Sem foto', texto: '' },                       // foto ruim e sem texto: sai
+      { img: 'https://i.ibb.co/x/"onerror=1', titulo: 'Aspas', texto: 'ok' },               // aspas: a foto sai, o texto fica
+      { titulo: '', texto: 'sem título' },
+      { titulo: 'quinto', texto: 'x' }, { titulo: 'sexto', texto: 'x' },
+    ],
+    donos: { img: 'https://i.ibb.co/x/d.webp', titulo: 'Adair e Pedrina', texto: 'Escolhemos cada pedido.' },
+    escolha: 'Escolha da Pedrina, a melhor de todas',
+  });
+  assert.deepStrictEqual(v.quadros.map((q) => q.titulo), ['Como escolher manga', 'Aspas'], 'no máximo 4 lidos; os inválidos saem');
+  assert.strictEqual(v.quadros[1].img, undefined);
+  assert.strictEqual(v.escolha.length, 24);
+  const b = V.blocosDaVitrine(v, 30);
+  assert.deepStrictEqual(b.map((x) => [x.tipo, x.depoisDe]), [['quadro', 6], ['donos', 14], ['quadro', 22]]);
+  assert.deepStrictEqual(V.blocosDaVitrine(v, 10).map((x) => x.tipo), ['quadro'], 'vitrine curta: só o que cabe');
+});
+
+teste('vitrine: escolha de troca vai no fim da observação e o funil compara as duas últimas semanas', async () => {
+  const V = await import(raiz('js/vitrine-lib.js'));
+  assert.strictEqual(V.obsComTroca('deixar na portaria', 'trocar'), 'deixar na portaria | Se faltar algum item: pode trocar por um parecido');
+  assert.strictEqual(V.obsComTroca('', 'nao'), 'Se faltar algum item: não trocar, só tirar');
+  assert.strictEqual(V.obsComTroca('x', 'qualquer'), 'x');
+  const longa = V.obsComTroca('a'.repeat(300), 'trocar');
+  assert.ok(longa.length <= 300 && longa.endsWith('por um parecido'), 'nunca passa do limite do servidor e a troca não se perde');
+  const dias = { '2026-10-14': { visita: 40, adicionou: 20, sacola: 10, pedido: 8 }, '2026-10-08': { visita: 10, adicionou: 3, sacola: 2, pedido: 1 }, '2026-10-07': { visita: 50, adicionou: 10, sacola: 5, pedido: 4 }, '2026-09-01': { visita: 999 } };
+  const r = V.resumoFunil(dias, '2026-10-14');
+  assert.deepStrictEqual([r.semana.visita, r.semana.pedido, r.semana.txPedido], [50, 9, 18]);
+  assert.deepStrictEqual([r.anterior.visita, r.anterior.txSacola], [50, 20]);
+  assert.strictEqual(r.poucos, false);
+  assert.strictEqual(V.resumoFunil({}, '2026-10-14').semana.txPedido, null);
+});
+
+teste('funil da vitrine: conta uma vez por aparelho e etapa, só na loja certa, e "mais pedidos" esconde produto de pouca venda', async () => {
+  const db = criarBanco(semente()); const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));
+  const contar = (token, etapa, loja) => chamar(api, { headers: { Authorization: `Bearer ${token}`, ...(loja ? { 'X-Loja': loja } : {}) }, body: { acao: 'funil', etapa } });
+  assert.strictEqual((await contar('cliente', 'visita')).corpo.contado, true);
+  assert.strictEqual((await contar('cliente', 'visita')).corpo.contado, false, 'o mesmo aparelho não conta duas vezes');
+  assert.strictEqual((await contar('cliente', 'adicionou')).corpo.contado, true);
+  assert.strictEqual((await contar('cliente', 'visita', 'espetinhos')).corpo.contado, true, 'outra loja conta à parte');
+  assert.strictEqual((await contar('cliente', 'apagar-tudo')).status, 400);
+  assert.strictEqual((await chamar(api, { body: { acao: 'funil', etapa: 'visita' } })).status, 401, 'sem login não conta');
+  const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+  const banca = (await db.doc(`analytics/funil-${hoje.slice(0, 7)}`).get()).data();
+  assert.deepStrictEqual(banca.dias[hoje.slice(8)], { visita: 1, adicionou: 1 });
+  const esp = (await db.doc(`tenants/espetinhos/analytics/funil-${hoje.slice(0, 7)}`).get()).data();
+  assert.deepStrictEqual(esp.dias[hoje.slice(8)], { visita: 1 });
+  const { maisPedidosDe } = require(raiz('analytics/publicApi.js'));
+  const pop = { a: { p: 0.9, n: 30 }, b: { p: 0.5, n: 12 }, c: { p: 0.4, n: 9 }, d: { p: 0.3, n: 3 }, e: { p: 0.95, n: 2 }, f: { p: 0.2, n: 40 } };
+  assert.deepStrictEqual(maisPedidosDe({ pop }, new Set(['a', 'b', 'c', 'd', 'e', 'f'])), ['a', 'b', 'c', 'd', 'f'], 'comprado só 2 vezes não aparece');
+  assert.deepStrictEqual(maisPedidosDe({ pop }, new Set(['a', 'b', 'e'])), [], 'menos de 4: sem faixa');
+});
+
 (async () => {
   let falhas = 0;
   for (const [nome, fn] of testes) {
