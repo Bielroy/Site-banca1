@@ -159,6 +159,8 @@ teste('link da feira abre direto na banca, com a faixa das bancas no topo, e lem
   assert.deepStrictEqual(nomes.map((n) => n.trim()), ['Banca Adair e Pedrina', 'Pães da Lúcia']);
   await pagina.click('#feira-lojas a:not(.atual)');
   await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 6000 });
+  // a loja grava "a última banca desta feira" depois de abrir: espera essa gravação antes de voltar ao link
+  await pagina.waitForFunction(() => /paes-da-lucia/.test(localStorage.getItem('banca_feira_ultima') || ''), null, { timeout: 6000 });
   await pagina.goto(servidor.base + '/feira/florenca');
   await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 6000 });
   semErros(erros); await fechar();
@@ -269,6 +271,36 @@ teste('lista da semana: cartão na sacola guarda a lista, "Só guardar" esvazia 
   await pagina.click('#atalhos [data-action="por-lista"]');
   await pagina.waitForFunction(() => document.getElementById('qtd-badge')?.textContent.trim() === '2', null, { timeout: 3000 });
   assert.strictEqual(await pagina.locator('#lista-semana-titulo').innerText(), 'Esta é a sua lista da semana');
+  semErros(erros); await fechar();
+});
+
+teste('painel: rótulo adesivo do milho é montado, salvo no produto e 15 cópias vão para a impressão', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/testes/tela/painel-rotulos.html?p=milho', cen);
+  await pagina.waitForSelector('#modal-rotulos.aberto', { timeout: 8000 });
+  assert.strictEqual(await pagina.locator('#rt-produto').inputValue(), 'milho');
+  assert.ok(await pagina.locator('#rt-montar').evaluate((d) => d.open), 'produto sem rótulo: já abre para montar');
+  await pagina.fill('#rt-nome', 'Milho da roça');
+  await pagina.fill('#rt-sub', 'Colhido hoje');
+  await pagina.selectOption('#rt-validade', '5');
+  await pagina.click('#rt-salvar');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'produtos/milho'), null, { timeout: 4000 });
+  const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'produtos/milho').dados.rotulo);
+  assert.deepStrictEqual(g, { titulo: 'Milho da roça', sub: 'Colhido hoje', preco: false, loja: true, validadeDias: 5, borda: 'feira' });
+  // a prévia desenhou alguma coisa (não ficou branca)
+  const tinta = await pagina.evaluate(() => { const c = document.getElementById('rt-canvas'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 128) n++; return { n, w: c.width }; });
+  assert.ok(tinta.n > 500 && tinta.w === 762, 'rótulo desenhado no tamanho da folha A4 de 21: ' + JSON.stringify(tinta));
+  await pagina.fill('#rt-qtd', '15');
+  assert.match(await pagina.locator('#rt-resumo').innerText(), /15 rótulos .* 1 folha A4/);
+  await pagina.evaluate(() => { window.print = () => {}; HTMLIFrameElement.prototype.__x = 1; });
+  await pagina.click('#rt-imprimir');
+  await pagina.waitForFunction(() => [...document.querySelectorAll('iframe')].some((f) => /Rótulos/.test(f.srcdoc || '')), null, { timeout: 6000 });
+  const n = await pagina.evaluate(() => ([...document.querySelectorAll('iframe')].find((f) => /Rótulos/.test(f.srcdoc)).srcdoc.match(/<img /g) || []).length);
+  assert.strictEqual(n, 15, '15 rótulos na página de impressão');
+  // produto com rótulo salvo: abre fechado, pronto para imprimir
+  await pagina.selectOption('#rt-produto', 'tomatinho');
+  assert.ok(!(await pagina.locator('#rt-montar').evaluate((d) => d.open)), 'com rótulo salvo: só dizer quantos e imprimir');
+  assert.strictEqual(await pagina.locator('#rt-nome').inputValue(), 'Tomatinhos');
   semErros(erros); await fechar();
 });
 

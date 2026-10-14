@@ -27,7 +27,7 @@ const TELAS = {
     margens: () => import('./admin-margens.js'), compras: () => import('./admin-compras.js'), pdv: () => import('./admin-pdv.js'),
     crm: () => import('./admin-crm.js'), copiloto: () => import('./admin-copiloto.js'), calendario: () => import('./admin-calendario.js'),
     equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'), avisos: () => import('./admin-avisos.js'),
-    precosDia: () => import('./admin-precos-dia.js'), vitrine: () => import('./admin-vitrine.js'),
+    precosDia: () => import('./admin-precos-dia.js'), vitrine: () => import('./admin-vitrine.js'), rotulos: () => import('./admin-rotulos.js'),
 };
 const comImpressao = async (fn) => { try { await fn(await TELAS.impressao()); } catch (e) { console.error(e); showToast('Não consegui abrir a impressão. Confira a internet e toque de novo.', true); } };
 document.getElementById('btn-impressora')?.addEventListener('click', () => comImpressao((m) => m.abrirImpressora()));
@@ -705,6 +705,7 @@ const limparFormularioProduto = () => {
     alternarCampoPesoMedio();
     const previa = document.getElementById('preview-foto-wrapper'); if (previa) previa.innerHTML = placeholderSVG;
     document.getElementById('btn-excluir-produto').style.display = 'none';
+    { const g = document.getElementById('grupo-rotulo-produto'); if (g) g.hidden = true; }
     { const bp = document.getElementById('btn-post-ia'); if (bp) bp.hidden = true; }
 };
 
@@ -1193,6 +1194,7 @@ document.body.addEventListener('click', async (e) => {
             document.getElementById('modal-titulo').textContent = 'Novo produto';
             limparFormularioProduto();
             document.getElementById('btn-excluir-produto').style.display = 'none';
+    { const g = document.getElementById('grupo-rotulo-produto'); if (g) g.hidden = true; }
             openModal('modal-produto');
         }
 
@@ -1224,6 +1226,7 @@ document.body.addEventListener('click', async (e) => {
             if (previewContainer) previewContainer.innerHTML = p.foto ? `<img src="${escapeHTML(p.foto)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" alt="${escapeHTML(p.nome)}">` : placeholderSVG;
 
             document.getElementById('btn-excluir-produto').style.display = 'block';
+            { const g = document.getElementById('grupo-rotulo-produto'); if (g) g.hidden = false; }
             { const bp = document.getElementById('btn-post-ia'); if (bp) { bp.hidden = !ehGestor(papelAtual); bp.dataset.id = p.id; } }
             openModal('modal-produto');
         }
@@ -1251,6 +1254,11 @@ document.body.addEventListener('click', async (e) => {
             }
         }
 
+        else if (action === 'rotulos' || action === 'rotulo-do-produto') {    // rótulos adesivos personalizados
+            const id = action === 'rotulo-do-produto' ? document.getElementById('edit-id').value : '';
+            try { (await TELAS.rotulos()).abrirRotulos(produtosAtuais, id); }
+            catch (e) { console.error(e); showToast('Não consegui abrir os rótulos. Confira a internet e toque de novo.', true); }
+        }
         else if (action === 'chegou-hoje') {      // selo "Chegou hoje": vale só no dia; amanhã some sozinho
             const id = target.dataset.id, p = produtosAtuais.find(x => x.id === id); if (!p) return;
             const marcar = p.chegouEm !== hojeDaLoja();

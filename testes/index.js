@@ -2573,6 +2573,48 @@ teste('funil da vitrine: conta uma vez por aparelho e etapa, só na loja certa, 
   assert.deepStrictEqual(maisPedidosDe({ pop }, new Set(['a', 'b', 'e'])), [], 'menos de 4: sem faixa');
 });
 
+teste('rótulos: rótulo conferido, texto com preço e validade, cópias limitadas e folha A4 com etiquetas já usadas', async () => {
+  const R = await import(raiz('js/rotulo-lib.js'));
+  const r = R.rotuloSeguro({ titulo: '  Tomatinhos  ', sub: 'Tomate seco · 200 g', img: 'https://i.ibb.co/x/t.png', preco: true, validadeDias: 15, borda: 'qualquer', extra: 'some', loja: false });
+  assert.deepStrictEqual(r, { titulo: 'Tomatinhos', sub: 'Tomate seco · 200 g', preco: true, loja: false, validadeDias: 15, borda: 'feira', img: 'https://i.ibb.co/x/t.png' });
+  assert.strictEqual(R.rotuloSeguro({ img: 'javascript:alert(1)' }).img, undefined);
+  assert.strictEqual(R.rotuloSeguro({ validadeDias: -3 }).validadeDias, null);
+  const c = R.conteudoDoRotulo(r, { nome: 'Tomate seco', preco: 18, unidade: 'un' }, { agora: Date.parse('2026-10-14T15:00:00Z'), loja: 'Banca Adair e Pedrina' });
+  assert.deepStrictEqual(c.linhas, ['R$ 18,00 a unidade', 'Fab. 14/10/2026 · Val. 29/10/2026']);
+  assert.strictEqual(c.loja, '', 'loja desligada no rótulo');
+  assert.strictEqual(R.conteudoDoRotulo({}, { nome: 'Milho verde' }).titulo, 'Milho verde', 'sem nome próprio: usa o do produto');
+  assert.deepStrictEqual([R.copiasValidas('15'), R.copiasValidas(0), R.copiasValidas(9999), R.copiasValidas('x')], [15, 1, 200, 1]);
+  assert.deepStrictEqual(R.pixelsDo('rolo58'), { w: 384, h: 256, pmm: 8 }, 'térmica 58: 384 pontos de largura');
+  assert.strictEqual(R.folhasNecessarias('a4-21', 15), 1);
+  assert.strictEqual(R.folhasNecessarias('a4-21', 15, 10), 2, '10 já usadas: 15 não cabem nas 11 que sobram');
+  const png = 'data:image/png;base64,iVBORw0KGgo=';
+  const pag = R.paginaDeRotulos(png, 'a4-21', 15, { pular: 2 });
+  assert.strictEqual((pag.match(/<img /g) || []).length, 15);
+  assert.strictEqual((pag.match(/class="r"/g) || []).length, 17, '2 posições vazias no começo da folha');
+  assert.ok(pag.includes('left:7.20mm;top:15.10mm'), 'primeira etiqueta na posição certa da folha');
+  const rolo = R.paginaDeRotulos(png, '50x30', 3);
+  assert.ok(rolo.includes('size: 50mm 30mm') && (rolo.match(/<img /g) || []).length === 3);
+  assert.throws(() => R.paginaDeRotulos('javascript:x', 'a4-21', 1));
+  assert.throws(() => R.paginaDeRotulos('" onerror="x', 'a4-21', 1));
+});
+
+teste('rótulos: térmica recebe a imagem em pontos pretos (GS v 0), em faixas, com corte entre as cópias', async () => {
+  const R = await import(raiz('js/rotulo-lib.js'));
+  const w = 16, h = 3, cinza = new Uint8ClampedArray(w * h).fill(255);
+  cinza[0] = 0; cinza[15] = 0; cinza[w * 2 + 8] = 0;                    // três pontos pretos
+  const p = R.pontilhar(cinza, w, h);
+  assert.deepStrictEqual([p[0], p[15], p[w * 2 + 8], p[1]], [1, 1, 1, 0]);
+  const b = R.rasterEscPos(p, w, h, { copias: 2 });
+  const cab = [0x1b, 0x40, 0x1b, 0x61, 0x01, 0x1d, 0x76, 0x30, 0x00, 2, 0, 3, 0];
+  assert.deepStrictEqual([...b.slice(0, 13)], cab);
+  assert.deepStrictEqual([...b.slice(13, 19)], [0x80, 0x01, 0, 0, 0, 0x80], 'linha 1: ponto no 1º e no 16º; linha 3: no 9º');
+  assert.strictEqual(b.length, 2 * (13 + 6 + 3 + 4), 'duas cópias, cada uma com imagem, avanço e corte');
+  const cinza2 = R.paraCinza(new Uint8ClampedArray([0, 0, 0, 0, 255, 255, 255, 255]), 2, 1);
+  assert.deepStrictEqual([...cinza2], [255, 255], 'transparente vira branco');
+  const alta = R.rasterEscPos(new Uint8Array(8 * 300), 8, 300);
+  assert.strictEqual(alta.filter((x, i) => x === 0x1d && alta[i + 1] === 0x76).length, 3, 'imagem de 300 linhas vai em 3 faixas');
+});
+
 (async () => {
   let falhas = 0;
   for (const [nome, fn] of testes) {

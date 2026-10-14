@@ -111,7 +111,8 @@ function enviarApp(bytes) {
 }
 
 // ---------------------------------------------------------------- impressão do aparelho
-function enviarSistema(folhas, largura) {
+function enviarSistema(folhas, largura) { return enviarPagina(paraHtml(folhas, { largura })); }
+function enviarPagina(html) {
     return new Promise((resolve, reject) => {
         const f = document.createElement('iframe');
         f.setAttribute('aria-hidden', 'true'); f.title = 'Impressão'; f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
@@ -120,9 +121,24 @@ function enviarSistema(folhas, largura) {
             try { const w = f.contentWindow; w.onafterprint = limpar; w.focus(); w.print(); setTimeout(limpar, 120000); resolve(); }
             catch (e) { f.remove(); reject(erro('Este navegador não abriu a tela de imprimir.')); }
         };
-        f.srcdoc = paraHtml(folhas, { largura });
+        f.srcdoc = html;
         document.body.appendChild(f);
     });
+}
+
+/**
+ * RÓTULOS (js/admin-rotulos.js): o desenho já vem pronto.
+ *  pagina = página com os rótulos → tela de imprimir do aparelho (folha A4, rolo de adesivo, qualquer impressora).
+ *  bytes  = comandos ESC/POS da imagem → a térmica escolhida em "Impressora" (Bluetooth, cabo ou app).
+ */
+export async function imprimirPagina(html) { const falta = suporte().sistema; if (falta) throw erro(falta); return enviarPagina(html); }
+export async function imprimirNaTermica(bytes) {
+    const c = lerConfig();
+    if (c.modo === 'sistema') throw erro('Para a térmica, escolha o caminho dela em "Impressora" (no topo do painel).');
+    const falta = suporte()[c.modo]; if (falta) throw erro(falta);
+    if (c.modo === 'bluetooth') return enviarBt(bytes);
+    if (c.modo === 'serial') return enviarSerial(bytes);
+    if (c.modo === 'app') return enviarApp(bytes);
 }
 
 /** Abre a escolha da impressora (precisa vir de um toque). Devolve o nome para mostrar. */
