@@ -17,6 +17,7 @@ import { tdoc } from './tenant.js';
 import { escapeHTML, showToast } from './utils.js';
 import { vitrineSegura, MAX_QUADROS, ESCOLHA_PADRAO, resumoFunil, ETAPAS, NOMES_ETAPAS, hojeDaLoja } from './vitrine-lib.js';
 import { validarArquivo } from './fotos-lib.js';
+import { miniatura } from './foto-lib.js';
 
 const el = () => document.getElementById('vitrine-conteudo');
 let estado = null, gravado = '', categorias = [], ligado = false, enviando = 0, funilHtml = '';
@@ -24,7 +25,8 @@ const IDEIAS = ['Como escolher manga madura', 'Receita da semana: sopa de legume
 
 // prévia LOCAL da foto escolhida (blob:): aparece na hora, sem esperar o ImgBB liberar o endereço novo
 const previas = new WeakMap();
-const fotoMini = (url, previa) => (previa || url ? `<img src="${escapeHTML(previa || url)}" alt="" data-remota="${escapeHTML(url || '')}">` : '<span>sem foto</span>');
+// a do ImgBB vai pelo redutor do site: em algumas redes o i.ibb.co não abre direto no celular
+const fotoMini = (url, previa) => { const r = url ? miniatura(url, 384) : ''; return previa || r ? `<img src="${escapeHTML(previa || r)}" alt="" data-remota="${escapeHTML(r)}">` : '<span>sem foto</span>'; };
 const campoFoto = (alvo, url, dica, dono) => `
     <div class="vt-foto">
         <div class="vt-foto-mini">${fotoMini(url, dono && previas.get(dono))}</div>

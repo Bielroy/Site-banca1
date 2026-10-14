@@ -1,7 +1,7 @@
 // =====================================================================
 //  functions/_vercel/image.js — REDUTOR DE FOTOS no Cloudflare (no lugar do /_vercel/image da Vercel).
 //
-//  O site pede /_vercel/image?url=<foto>&w=128|384&q=75 (js/foto-lib.js). Aqui a foto é buscada pelo
+//  O site pede /_vercel/image?url=<foto>&w=128|384|828&q=75 (js/foto-lib.js). Aqui a foto é buscada pelo
 //  servidor do Cloudflare e devolvida reduzida (WebP) quando o Cloudflare oferece a redução de imagens.
 //  Se não oferecer (plano ou endereço sem o recurso), devolve a foto original: a loja funciona igual,
 //  só com foto mais pesada. Como a busca é de servidor para servidor, também funciona em redes que
@@ -10,7 +10,7 @@
 //  Só aceita as mesmas larguras e os mesmos sites de fotos do vercel.json (um teste confere).
 //  Qualquer outro endereço é recusado: sem isso este caminho serviria de "abridor de qualquer site".
 // =====================================================================
-export const LARGURAS = [128, 384];
+export const LARGURAS = [128, 384, 828];
 export const SITES_DE_FOTO = [
   { host: 'i.ibb.co' }, { sufixo: '.ibb.co' }, { host: 'firebasestorage.googleapis.com' }, { sufixo: '.firebasestorage.app' }, { host: 'storage.googleapis.com' },
 ];

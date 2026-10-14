@@ -147,7 +147,8 @@
   "images": {
     "sizes": [
       128,
-      384
+      384,
+      828
     ],
     "remotePatterns": [
       {

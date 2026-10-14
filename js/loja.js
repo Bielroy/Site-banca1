@@ -695,10 +695,9 @@ document.addEventListener('ranking-pronto', () => renderFaixasExtras());
 let _blocosCara = '';
 const blocoHtml = (b) => {
     const aba = b.cat && (STATE.abas || []).find(a => a.chave !== 'todas' && a.chave !== 'favoritos' && (semAcento(a.chave) === semAcento(b.cat) || semAcento(a.nome) === semAcento(b.cat)));
-    // a foto do quadro ocupa a largura toda no celular: vai a original (já sobe otimizada, até 1000 px), senão fica borrada
-    const foto = (url, classe) => classe === 'quadro-foto'
-        ? `<img class="${classe}" src="${escapeHTML(url)}" alt="" loading="lazy" decoding="async" width="1000" height="750">`
-        : `<img class="${classe}" src="${escapeHTML(miniatura(url, 384))}" data-original="${escapeHTML(url)}" alt="" loading="lazy" decoding="async" width="384" height="288">`;
+    // SEMPRE pelo redutor do site (em algumas redes o i.ibb.co não abre direto no celular).
+    // A do quadro ocupa a largura toda no celular: 828 px para não ficar borrada; a dos donos é pequena.
+    const foto = (url, classe) => { const l = classe === 'quadro-foto' ? 828 : 384; return `<img class="${classe}" src="${escapeHTML(miniatura(url, l))}" data-original="${escapeHTML(url)}" alt="" loading="lazy" decoding="async" width="${l}" height="${l * 3 / 4}">`; };
     if (b.tipo === 'donos') return `
         <aside class="bloco-vitrine bloco-donos" data-depois="${b.depoisDe}" aria-label="${escapeHTML(b.titulo)}">
             <div class="bloco-donos-foto">${b.img ? foto(b.img, 'donos-foto') : ARTE_DONOS}</div>
