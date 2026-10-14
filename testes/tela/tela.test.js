@@ -207,7 +207,11 @@ teste('painel: Vitrine (na aba Aparência) cria um quadro com botão de categori
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
   const { pagina, erros, fechar } = await abrir('/testes/tela/painel-aparencia.html', cen);
   await pagina.waitForSelector('#vt-gravar', { timeout: 8000 });
-  assert.ok(await pagina.locator('#vt-gravar').isDisabled(), 'nada mudou: Gravar desligado');
+  // sem mudança o botão continua tocável (apagado parecia quebrado): só avisa e não grava nada
+  assert.ok(await pagina.locator('#vt-gravar').isEnabled(), 'Gravar sempre tocável fora do envio de foto');
+  await pagina.click('#vt-gravar');
+  await pagina.waitForTimeout(300);
+  assert.ok(!(await pagina.evaluate(() => (window.__gravados || []).some((g) => g.path === 'loja/config'))), 'sem mudança: não grava');
   await pagina.click('[data-acao-vt="mais"]');
   await pagina.fill('[data-q="0"][data-campo="titulo"]', 'Manga no ponto');
   await pagina.fill('[data-q="0"][data-campo="texto"]', 'Aperte de leve.');

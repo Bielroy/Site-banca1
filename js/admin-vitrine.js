@@ -22,10 +22,12 @@ const el = () => document.getElementById('vitrine-conteudo');
 let estado = null, gravado = '', categorias = [], ligado = false, enviando = 0, funilHtml = '';
 const IDEIAS = ['Como escolher manga madura', 'Receita da semana: sopa de legumes', 'Chegou a safra do morango', 'Como guardar folhas por mais tempo'];
 
-const fotoMini = (url) => (url ? `<img src="${escapeHTML(url)}" alt="">` : '<span>sem foto</span>');
-const campoFoto = (alvo, url, dica) => `
+// prévia LOCAL da foto escolhida (blob:): aparece na hora, sem esperar o ImgBB liberar o endereço novo
+const previas = new WeakMap();
+const fotoMini = (url, previa) => (previa || url ? `<img src="${escapeHTML(previa || url)}" alt="" data-remota="${escapeHTML(url || '')}">` : '<span>sem foto</span>');
+const campoFoto = (alvo, url, dica, dono) => `
     <div class="vt-foto">
-        <div class="vt-foto-mini">${fotoMini(url)}</div>
+        <div class="vt-foto-mini">${fotoMini(url, dono && previas.get(dono))}</div>
         <div class="vt-foto-bts">
             <label class="btn-outline vt-enviar"><input type="file" accept="image/*" data-foto="${alvo}" hidden><span>${url ? 'Trocar foto' : 'Pôr foto'}</span></label>
             ${url ? `<button type="button" class="vt-tirar" data-tirar-foto="${alvo}">Tirar</button>` : ''}
@@ -38,7 +40,7 @@ function render() {
     const quadros = v.quadros.map((q, i) => `
         <fieldset class="vt-quadro" data-i="${i}">
             <legend>Quadro ${i + 1} <small>entra depois do ${6 + 8 * i}º produto</small></legend>
-            ${campoFoto(`q${i}`, q.img, 'Foto deitada fica melhor. Pode ser da banca, de uma receita, da safra.')}
+            ${campoFoto(`q${i}`, q.img, 'Foto deitada fica melhor. Pode ser da banca, de uma receita, da safra.', q)}
             <div class="form-group"><label>Título</label><input type="text" maxlength="50" data-q="${i}" data-campo="titulo" value="${escapeHTML(q.titulo || '')}" placeholder="${escapeHTML(IDEIAS[i % IDEIAS.length])}"></div>
             <div class="form-group"><label>Recado (até 160 letras)</label><textarea rows="2" maxlength="160" data-q="${i}" data-campo="texto" placeholder="Ex.: aperte de leve; se ceder um pouquinho, está no ponto.">${escapeHTML(q.texto || '')}</textarea></div>
             <div class="form-group"><label>Botão para uma categoria (opcional)</label><select data-q="${i}" data-campo="cat"><option value="">Sem botão</option>${cats}</select></div>
@@ -54,7 +56,7 @@ function render() {
         <details class="ap-sec vt-sec" open>
             <summary><span><b>Quem escolhe seu pedido</b><small>A foto de vocês e uma frase. Gente de verdade passa confiança.</small></span></summary>
             <div class="ap-sec-corpo">
-                ${campoFoto('donos', v.donos.img, 'Sem foto, entra o desenho do caixote. Uma foto de vocês na banca funciona muito bem.')}
+                ${campoFoto('donos', v.donos.img, 'Sem foto, entra o desenho do caixote. Uma foto de vocês na banca funciona muito bem.', v.donos)}
                 <div class="form-group"><label for="vt-donos-titulo">Nome</label><input id="vt-donos-titulo" type="text" maxlength="50" data-donos="titulo" value="${escapeHTML(v.donos.titulo || '')}" placeholder="Ex.: Adair e Pedrina"></div>
                 <div class="form-group"><label for="vt-donos-texto">Frase (até 200 letras)</label><textarea id="vt-donos-texto" rows="2" maxlength="200" data-donos="texto" placeholder="Ex.: Há 20 anos na feira. Escolhemos cada item como se fosse para a nossa casa.">${escapeHTML(v.donos.texto || '')}</textarea></div>
                 <small class="dica-campo">Deixe o nome em branco para não mostrar este bloco.</small>
@@ -91,26 +93,38 @@ const atual = () => JSON.stringify(estado);
 function pintarEstado() {
     const pendente = atual() !== gravado, est = document.getElementById('vt-estado');
     if (est) est.textContent = enviando ? 'Enviando foto...' : (pendente ? 'Mudanças ainda não gravadas' : 'Tudo gravado');
-    document.getElementById('vt-gravar')?.toggleAttribute('disabled', !pendente || !!enviando);
+    // só trava ENQUANTO a foto sobe; sem mudança, o toque só avisa (botão apagado parecia quebrado)
+    document.getElementById('vt-gravar')?.toggleAttribute('disabled', !!enviando);
 }
+const PRAZO_FOTO = 90000;
+const comPrazo = (p) => Promise.race([p, new Promise((_, f) => setTimeout(() => f(Object.assign(new Error('demorou'), { amigavel: 'A foto demorou demais para subir. Tente de novo (ou uma foto menor).' })), PRAZO_FOTO))]);
 
 async function enviarFoto(alvo, arquivo) {
     const problema = validarArquivo(arquivo || {}); if (problema) return showToast(problema, true);
-    enviando++; pintarEstado();
+    // guarda o QUADRO (não o número): se um quadro for tirado durante o envio, a foto não cai no quadro errado
+    const dono = alvo === 'donos' ? estado.donos : estado.quadros[Number(alvo.slice(1))];
+    if (!dono) return;
+    const antiga = previas.get(dono); if (antiga) URL.revokeObjectURL(antiga);
+    previas.set(dono, URL.createObjectURL(arquivo));
+    enviando++; render();
     try {
-        const F = await import('./admin-fotos.js');
-        const otima = await F.otimizarFoto(arquivo, 1000, 0.82);
-        const url = await F.enviarFoto('vitrine', otima, `-${Date.now().toString(36)}`);
+        const url = await comPrazo((async () => {
+            const F = await import('./admin-fotos.js');
+            const otima = await F.otimizarFoto(arquivo, 1000, 0.82);
+            return F.enviarFoto('vitrine', otima, `-${Date.now().toString(36)}`);
+        })());
         if (!/^https:\/\//.test(String(url || ''))) throw new Error('endereço não aceito');
-        if (alvo === 'donos') estado.donos.img = url; else { const q = estado.quadros[Number(alvo.slice(1))]; if (q) q.img = url; }
-        render();
+        dono.img = url;
         showToast('Foto pronta. Toque em "Gravar a vitrine".');
-    } catch (e) { showToast((e && e.amigavel) || 'Não consegui enviar a foto. Confira a internet e tente de novo.', true); }
-    finally { enviando--; pintarEstado(); }
+    } catch (e) {
+        const p = previas.get(dono); if (p) URL.revokeObjectURL(p); previas.delete(dono);
+        showToast((e && e.amigavel) || 'Não consegui enviar esta foto. Tente de novo, ou mande como JPG.', true);
+    } finally { enviando = Math.max(0, enviando - 1); render(); }
 }
 
 async function gravar() {
     const bt = document.getElementById('vt-gravar'); if (!bt || bt.disabled) return;
+    if (atual() === gravado) return showToast('Tudo já está gravado. Mude algo e toque de novo.');
     const incompleto = estado.quadros.findIndex((q) => String(q.titulo || '').trim() && !q.img && !String(q.texto || '').trim());
     if (incompleto > -1) return showToast(`O quadro ${incompleto + 1} precisa de uma foto ou de um recado.`, true);
     const semTitulo = estado.quadros.findIndex((q) => !String(q.titulo || '').trim() && (q.img || String(q.texto || '').trim()));
@@ -136,9 +150,16 @@ function ligar() {
         else if (t.hasAttribute('data-escolha')) estado.escolha = t.value;
         pintarEstado();
     });
+    // foto recém-enviada ao ImgBB às vezes leva uns segundos para abrir: tenta de novo antes de mostrar quebrada
+    raiz.addEventListener('error', (e) => {
+        const img = e.target; if (!(img instanceof HTMLImageElement) || !img.closest('.vt-foto-mini')) return;
+        const n = Number(img.dataset.tent || 0), remota = img.dataset.remota || '';
+        if (remota && n < 5) { img.dataset.tent = String(n + 1); setTimeout(() => { img.src = `${remota}${remota.includes('?') ? '&' : '?'}t=${Date.now()}`; }, 1500 * (n + 1)); }
+        else img.replaceWith(Object.assign(document.createElement('span'), { textContent: 'foto guardada' }));
+    }, true);
     raiz.addEventListener('change', (e) => {
         const t = e.target;
-        if (t.dataset.foto && t.files && t.files[0]) enviarFoto(t.dataset.foto, t.files[0]);
+        if (t.dataset.foto && t.files && t.files[0]) { const f = t.files[0]; t.value = ''; enviarFoto(t.dataset.foto, f); }
         else if (t.tagName === 'SELECT' && t.dataset.q !== undefined) { const q = estado.quadros[Number(t.dataset.q)]; if (q) q.cat = t.value; pintarEstado(); }
     });
     raiz.addEventListener('click', (e) => {
@@ -146,7 +167,7 @@ function ligar() {
         if (b.id === 'vt-gravar') return gravar();
         if (b.dataset.acaoVt === 'mais' && estado.quadros.length < MAX_QUADROS) { estado.quadros.push({ titulo: '', texto: '', cat: '' }); render(); return; }
         if (b.dataset.remover !== undefined) { estado.quadros.splice(Number(b.dataset.remover), 1); render(); return; }
-        if (b.dataset.tirarFoto) { const a = b.dataset.tirarFoto; if (a === 'donos') delete estado.donos.img; else delete (estado.quadros[Number(a.slice(1))] || {}).img; render(); }
+        if (b.dataset.tirarFoto) { const a = b.dataset.tirarFoto; const d = a === 'donos' ? estado.donos : estado.quadros[Number(a.slice(1))]; if (d) { delete d.img; previas.delete(d); } render(); }
     });
 }
 
