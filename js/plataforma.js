@@ -60,6 +60,8 @@ const ponto = (cor) => `<i class="pf-ponto" style="background:${corOk(cor)}" ari
 
 // ---------------------------------------------------------------- abas
 function render() {
+    // a aba pode ser tocada antes de a lista da plataforma chegar (ou se ela falhar): mostra "carregando", não quebra
+    if (!S.dados) { el().innerHTML = '<p class="pf-vazio">Carregando a plataforma...</p>'; return; }
     const d = S.dados, t = totais(d.lojas), mensal = d.lojas.reduce((s, l) => s + (l.assinatura ? l.assinatura.valor : 0), 0);
     $('pf-resumo').textContent = `${t.ativas} de ${t.lojas} lojas ativas, ${fmt(t.receita)} vendidos e ${t.pedidos} pedidos neste mês${mensal ? `, ${fmt(mensal)} em mensalidades` : ''}.`;
     const abas = $('pf-abas'); abas.hidden = false;

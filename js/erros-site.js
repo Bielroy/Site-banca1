@@ -59,6 +59,9 @@ if (!desligado && typeof window !== 'undefined' && !window.__errosSite) {
         // falha de internet não é defeito do site
         const msg = r && r.message ? r.message : typeof r === 'string' ? r : '';
         if (!msg || /Failed to fetch|NetworkError|Load failed|network error|unavailable|offline/i.test(msg)) return;
+        // o registro do aplicativo (service worker) é opcional: o navegador de alguns aparelhos ou de navegadores
+        // embutidos recusa, e a loja funciona igual. Não é defeito do site, então não vai para a aba Erros.
+        if (/ServiceWorker|serviceWorker|^Rejected$/i.test(msg) && /registerSW|sw\.js|serviceWorker/i.test(String(r && r.stack || msg) + ' ' + String(msg))) return;
         avisarErro({ tipo: 'promessa', msg, pilha: r && r.stack });
     });
 }
