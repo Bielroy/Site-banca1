@@ -117,3 +117,28 @@
     .selo--chegou .selo-ico, .bloco-vitrine { animation: none !important; }
     .cat-btn.tem-arte .arte-cat { transition: none !important; transform: none !important; }
 }
+
+/* ---------- LISTA DA SEMANA: cartão na sacola (acima do total) e botão na tela de pedido enviado ---------- */
+.lista-semana-card {
+    display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 10px 10px 10px 12px; border-radius: 14px;
+    background: color-mix(in srgb, var(--manga) 14%, var(--superficie)); border: 1.5px dashed color-mix(in srgb, var(--earth) 45%, var(--linha));
+}
+.lista-semana-card[hidden] { display: none; }
+.lista-semana-card.igual { border-style: solid; border-color: color-mix(in srgb, var(--leaf) 45%, var(--linha)); background: color-mix(in srgb, var(--leaf) 12%, var(--superficie)); }
+.lista-semana-ico { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--superficie); color: var(--earth); }
+.lista-semana-card.igual .lista-semana-ico { color: var(--forest-texto, var(--forest)); }
+.lista-semana-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; line-height: 1.25; }
+.lista-semana-txt b { font-size: .92rem; color: var(--forest-texto, var(--forest)); }
+.lista-semana-txt small { font-size: .78rem; color: var(--text-mid); }
+.lista-semana-bt {
+    flex: none; min-height: 44px; padding: 0 14px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+    font: inherit; font-size: .86rem; font-weight: 800; color: var(--sobre-primaria); background: var(--earth); border: 0;
+}
+.lista-semana-bt[hidden] { display: none; }
+.lista-semana-bt:active { transform: scale(.96); }
+.btn-lista-sucesso {
+    width: 100%; min-height: 48px; margin: 4px 0 10px; padding: 8px 14px; border-radius: 12px; cursor: pointer;
+    font: inherit; font-weight: 700; font-size: .92rem; color: var(--forest-texto, var(--forest));
+    background: color-mix(in srgb, var(--manga) 16%, var(--superficie)); border: 1.5px dashed color-mix(in srgb, var(--earth) 45%, var(--linha));
+}
+.btn-lista-sucesso[hidden] { display: none; }

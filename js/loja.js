@@ -1393,17 +1393,54 @@ const repetirPedido = (pedId) => {
     return porNoPedido(ped.itens);
 };
 
-const guardarListaDaSemana = () => {
+// LISTA DA SEMANA, bem à vista: um cartão na sacola (acima do total) diz o que faz e muda de texto
+// conforme a lista guardada: "Guardar lista", "Atualizar lista" ou "Esta é a sua lista".
+const pintarCartaoDaLista = () => {
+    const card = document.getElementById('lista-semana-card'); if (!card) return;
+    card.hidden = !STATE.carrinho.length || EM_PREVIA;
+    if (card.hidden) return;
+    const lista = lerListaSemana(), igual = !!lista && mesmoConjunto(STATE.carrinho, lista.itens);
+    document.getElementById('lista-semana-titulo').textContent = igual ? 'Esta é a sua lista da semana' : (lista ? 'Mudou a sua lista?' : 'Compra isso toda semana?');
+    document.getElementById('lista-semana-sub').textContent = igual ? 'Fica no topo da loja para repetir num toque.' : (lista ? 'Troque a lista guardada por esta sacola.' : 'Guarde como sua lista e repita num toque.');
+    const bt = document.getElementById('btn-guardar-lista');
+    bt.hidden = igual; bt.textContent = lista ? 'Atualizar lista' : 'Guardar lista';
+    card.classList.toggle('igual', igual);
+};
+const gravarLista = (lista) => {
+    try { localStorage.setItem(chave(CHAVE_LISTA), JSON.stringify(lista)); return true; } catch (_) { showToast('Não consegui guardar a lista neste aparelho.', true); return false; }
+};
+// Guardar a sacola como lista. Depois pergunta: pedir agora, ou só deixar guardada para a próxima semana
+// (aí a sacola esvazia sozinha: é o jeito de "montar a lista" sem fazer pedido hoje).
+const guardarListaDaSemana = async () => {
     const lista = listaDoCarrinho(STATE.carrinho);
-    if (!lista) return;
-    try { localStorage.setItem(chave(CHAVE_LISTA), JSON.stringify(lista)); } catch (_) { showToast('Não consegui guardar a lista neste aparelho.', true); return; }
-    showToast(`Lista da semana guardada com ${lista.itens.length} ${lista.itens.length === 1 ? 'item' : 'itens'}. Ela fica no topo da loja.`);
-    renderAtalhos();
+    if (!lista || !gravarLista(lista)) return;
+    renderAtalhos(); pintarCartaoDaLista(); hapticFeedback();
+    const n = lista.itens.length, itens = `${n} ${n === 1 ? 'item' : 'itens'}`;
+    const pedirAgora = await customConfirm('Lista guardada!', `Sua lista da semana tem ${itens} e fica no topo da loja: na próxima vez, é um toque para pôr tudo na sacola, com os preços do dia. Quer pedir agora ou deixar só guardada?`, { ok: 'Pedir agora', nao: 'Só guardar' });
+    if (pedirAgora) return;
+    STATE.carrinho = []; dbStorage.set(chave('banca_cart'), { v: CART_VERSION, items: [] }); guardarNaConta();
+    renderCarrinhoCompleto(); renderAtalhos();
+    if (ehCelular() && document.getElementById('carrinho')?.classList.contains('aberto') && history.state?.cart) history.back();
+    showToast(`Lista guardada para a próxima semana (${itens}). Ela está no topo da loja.`);
+};
+// depois do pedido: oferecer guardar o que acabou de pedir como lista (só se for diferente da guardada)
+let _listaDoUltimoPedido = null;
+const oferecerListaNoSucesso = (lista) => {
+    _listaDoUltimoPedido = lista;
+    const b = document.getElementById('btn-lista-sucesso'); if (!b) return;
+    const atual = lerListaSemana();
+    b.hidden = !lista || (!!atual && mesmoConjunto(atual.itens, lista.itens));
+    b.textContent = atual ? 'Trocar minha lista da semana por este pedido' : 'Guardar este pedido como minha lista da semana';
+};
+const guardarListaDoPedido = (botao) => {
+    if (!_listaDoUltimoPedido || !gravarLista(_listaDoUltimoPedido)) return;
+    botao.hidden = true; renderAtalhos(); hapticFeedback();
+    showToast('Pronto! Na próxima semana, toque em "Minha lista da semana" no topo da loja.');
 };
 const verListaDaSemana = async () => {
     const lista = lerListaSemana(); if (!lista) return;
     const nomes = lista.itens.map(i => i.nome).filter(Boolean).join(', ');
-    const apagar = await customConfirm('Minha lista da semana', `${nomes || lista.itens.length + ' itens'}. Para mudar a lista, monte o pedido como quiser e toque em "Guardar como minha lista da semana".`, { ok: 'Apagar a lista', nao: 'Fechar' });
+    const apagar = await customConfirm('Minha lista da semana', `${nomes || lista.itens.length + ' itens'}. Para mudar, monte a sacola como quiser e toque em "Atualizar lista" (aparece na sacola, acima do total).`, { ok: 'Apagar a lista', nao: 'Fechar' });
     if (!apagar) return;
     try { localStorage.removeItem(chave(CHAVE_LISTA)); } catch (_) {}
     showToast('Lista apagada.'); renderAtalhos();
@@ -1450,7 +1487,7 @@ const indicarLoja = async () => {
 const dataCurta = (iso) => { try { return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }); } catch (_) { return ''; } };
 function renderAtalhos() {
     const nav = document.getElementById('atalhos'); if (!nav) return;
-    const guardar = document.getElementById('btn-guardar-lista'); if (guardar) guardar.hidden = STATE.carrinho.length < 2;
+    pintarCartaoDaLista();
     const livre = STATE.catalogoChegou && !semAcento(STATE.busca).trim() && STATE.catAtiva === 'todas';
     const pedidos = lerLista('banca_meus_pedidos'), ultimo = pedidos.find(p => Array.isArray(p.itens) && p.itens.length && !p.cancelado), lista = lerListaSemana();
     const avaliar = pedidos.find(p => podeConvidarAvaliar(p));
@@ -1784,6 +1821,7 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'por-lista') { const l = lerListaSemana(); if (l) porNoPedido(l.itens); }
         else if (action === 'ver-lista') { verListaDaSemana(); }
         else if (action === 'guardar-lista') { guardarListaDaSemana(); }
+        else if (action === 'guardar-lista-pedido') { guardarListaDoPedido(actionTarget); }
         else if (action === 'estrela') { marcarEstrela(actionTarget); }
         else if (action === 'enviar-avaliacao') { enviarAvaliacao(actionTarget); }
         else if (action === 'cancelar-pedido') { cancelarPedido(id); }
@@ -2023,6 +2061,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         if (sucEnt) { const futuro = data.pedido && data.pedido.paraHoje === false && data.pedido.entregaDia; sucEnt.textContent = futuro ? `📅 Seu pedido é para ${textoDoDia(data.pedido.entregaDia)}.` : ''; sucEnt.hidden = !futuro; }
         oferecerPixNoSucesso({ id: data.pedido.id, total: data.pedido.total, pag, status: 'pendente', temItensAPesar: itensFormatados.some(i => i.aPesar) });
         closeModal('modal-checkout');
+        oferecerListaNoSucesso(listaDoCarrinho(STATE.carrinho));
         setTimeout(() => openModal('modal-sucesso'), 300); 
         contarFunil('pedido');
         STATE.carrinho = []; dbStorage.set(chave('banca_cart'), {v: CART_VERSION, items: []}); guardarNaConta();

@@ -219,12 +219,17 @@
                 <span id="frete-texto"></span>
                 <div class="min-trilho"><i id="frete-barra"></i></div>
             </div>
+            <!-- LISTA DA SEMANA: guardar o que está na sacola e repetir num toque (antes era um link escondido no pé) -->
+            <div class="lista-semana-card" id="lista-semana-card" hidden>
+                <span class="lista-semana-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M7 4h10a2 2 0 0 1 2 2v14l-3-2-2 2-2-2-2 2-3-2V6a2 2 0 0 1 2-2z"/><path d="M9 9h6M9 13h4"/></svg></span>
+                <span class="lista-semana-txt"><b id="lista-semana-titulo">Compra isso toda semana?</b><small id="lista-semana-sub">Guarde como sua lista e repita num toque.</small></span>
+                <button type="button" class="lista-semana-bt" id="btn-guardar-lista" data-action="guardar-lista">Guardar lista</button>
+            </div>
             <div class="total-box">
                 <span class="total-label" id="total-label">Total</span>
                 <span class="total-valor" id="total-val">R$ 0,00</span>
             </div>
             <button class="btn-finalizar" id="btn-abrir-checkout" disabled>Finalizar Pedido</button>
-            <button type="button" class="btn-guardar-lista" id="btn-guardar-lista" data-action="guardar-lista" hidden>Guardar como minha lista da semana</button>
         </footer>
     </aside>
 </main>
@@ -340,6 +345,7 @@
             <p id="sucesso-entrega" class="sucesso-entrega" hidden></p>
             <p id="sucesso-dica-acesso" class="sucesso-dica" hidden>Guarde a mensagem do WhatsApp: o link no fim dela traz seus dados de volta se você trocar de celular.</p>
             <div id="sucesso-pix" class="sucesso-pix" hidden></div>
+            <button type="button" class="btn-lista-sucesso" id="btn-lista-sucesso" data-action="guardar-lista-pedido" hidden>Guardar este pedido como minha lista da semana</button>
             <button class="btn-finalizar" data-fechar="modal-sucesso">Voltar para a loja</button>
             <button type="button" class="btn-indicar" data-action="indicar">Indicar a loja para um vizinho</button>
         </div>

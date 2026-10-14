@@ -252,6 +252,26 @@ teste('loja: quadro e "quem escolhe" entram no meio da vitrine, selos aparecem e
   semErros(erros); await fechar();
 });
 
+teste('lista da semana: cartão na sacola guarda a lista, "Só guardar" esvazia a sacola e a lista vai para o topo', async () => {
+  const { pagina, erros, fechar } = await abrir('/');
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  assert.ok(await pagina.locator('#lista-semana-card').isHidden(), 'sacola vazia: sem cartão');
+  await pagina.locator('#lista-produtos .produto-card[data-id="alface"] .card-add').click();
+  await pagina.locator('#lista-produtos .produto-card[data-id="ovos"] .card-add').click();
+  await pagina.locator('#btn-carrinho-mobile').click();
+  await pagina.waitForSelector('#lista-semana-card:not([hidden])', { timeout: 3000 });
+  assert.strictEqual(await pagina.locator('#btn-guardar-lista').innerText(), 'Guardar lista');
+  await pagina.click('#btn-guardar-lista');
+  await pagina.getByRole('button', { name: 'Só guardar' }).click();
+  await pagina.waitForFunction(() => document.getElementById('qtd-badge')?.textContent.trim() === '0', null, { timeout: 3000 });
+  await pagina.waitForSelector('#atalhos [data-action="por-lista"]', { timeout: 3000 });
+  assert.match(await pagina.locator('#atalhos [data-action="por-lista"]').innerText(), /Minha lista da semana[\s\S]*2 itens/);
+  await pagina.click('#atalhos [data-action="por-lista"]');
+  await pagina.waitForFunction(() => document.getElementById('qtd-badge')?.textContent.trim() === '2', null, { timeout: 3000 });
+  assert.strictEqual(await pagina.locator('#lista-semana-titulo').innerText(), 'Esta é a sua lista da semana');
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- PAINEL: FILA DE PEDIDOS
 const cenarioFila = (extra = {}) => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } }, ...extra });
