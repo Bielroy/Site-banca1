@@ -81,6 +81,15 @@
     background: transparent; border: 1.5px solid currentColor;
 }
 .bloco-bt:active { transform: scale(.97); }
+/* celular: a foto manda (larga, em cima, sem cortar o letreiro) e o texto vem embaixo, mais enxuto */
+@media (max-width: 599px) {
+    .bloco-quadro:not(.sem-foto) { grid-template-columns: 1fr; }
+    .bloco-quadro:not(.sem-foto) .bloco-foto { aspect-ratio: 4 / 3; min-height: 0; }
+    .bloco-quadro:not(.sem-foto) .bloco-foto img { min-height: 0; }
+    .bloco-quadro:not(.sem-foto) .bloco-texto { padding: 14px 16px 16px; }
+    .bloco-quadro:not(.sem-foto) .bloco-texto h3 { font-size: 1.12rem; }
+    .bloco-quadro:not(.sem-foto) .bloco-texto p { font-size: .88rem; }
+}
 @media (min-width: 900px) { .bloco-quadro { grid-template-columns: minmax(0, 34%) 1fr; } .bloco-texto { padding: 26px 28px 22px; } .bloco-texto h3 { font-size: 1.35rem; } }
 
 /* "Quem escolhe seu pedido": a cara de quem separa, na cor principal da loja */
