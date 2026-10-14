@@ -2638,7 +2638,7 @@ teste('cartaz da feira: leva o link e o nome DESTA feira, texto escapado, sem sc
   assert.ok(html.includes('@page { size: A4; margin: 0; }'));
   const outra = C.cartazHtml({ feira: { nome: 'Outra' }, link: 'https://usebanca.com/feira/outra' });
   assert.notStrictEqual(C.qrSvg('https://usebanca.com/feira/outra'), C.qrSvg('https://usebanca.com/feira/feira-do-bairro'), 'cada feira tem o seu QR');
-  assert.ok(outra.includes(C.qrSvg('https://usebanca.com/feira/outra')));
+  assert.ok(outra.includes(C.qrSvg('https://usebanca.com/feira/outra').replace('<svg ', '<svg class="codigo" ')), 'o QR da feira entra no cartaz');
   assert.strictEqual(C.qrSvg('https://x.com/' + 'a'.repeat(300)), '', 'link longo demais: sem QR (não quebra)');
 });
 
