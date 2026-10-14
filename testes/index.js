@@ -2615,6 +2615,33 @@ teste('rótulos: térmica recebe a imagem em pontos pretos (GS v 0), em faixas, 
   assert.strictEqual(alta.filter((x, i) => x === 0x1d && alta[i + 1] === 0x76).length, 3, 'imagem de 300 linhas vai em 3 faixas');
 });
 
+teste('QR Code: a grade de dois links conhecidos não mudou (ambas foram lidas por um leitor de QR de verdade) e link longo demais é recusado', async () => {
+  const Q = await import(raiz('js/qr-lib.js')), crypto = require('crypto');
+  const hash = (t) => crypto.createHash('sha1').update(Q.qrDe(t).map((l) => l.map((v) => (v ? 1 : 0)).join('')).join('\n')).digest('hex');
+  assert.strictEqual(hash('https://usebanca.com'), 'bb903b63ac736fbbda243ff697a2c9764c2b2756', 'versão 2');
+  assert.strictEqual(hash('https://usebanca.com/feira/feira-do-bairro-sao-jose'), 'f4e65f66cb4331e7227f1fe33851a857ee48d41a', 'versão 4');
+  const g = Q.qrDe('https://usebanca.com');
+  assert.strictEqual(g.length, 25, 'versão 2 = 25 quadradinhos de lado');
+  for (const [x, y] of [[0, 0], [18, 0], [0, 18]]) assert.ok(g[y][x] && g[y + 6][x + 6] && !g[y + 1][x + 1], 'marca de busca nos 3 cantos');
+  assert.ok(Q.qrDe('z'.repeat(Q.MAX_BYTES)), 'cabe o máximo');
+  assert.strictEqual(Q.qrDe('z'.repeat(Q.MAX_BYTES + 1)), null, 'passou do máximo: sem QR');
+  assert.ok(/^M\d+ \d+h\d+v1h-\d+z/.test(Q.qrCaminho(g)));
+});
+
+teste('cartaz da feira: leva o link e o nome DESTA feira, texto escapado, sem script e com o círculo da fitinha NFC', async () => {
+  const C = await import(raiz('js/cartaz-lib.js'));
+  const html = C.cartazHtml({ feira: { nome: 'Feira <b>do</b> Bairro' }, link: 'https://usebanca.com/feira/feira-do-bairro' });
+  assert.ok(html.includes('usebanca.com/feira/feira-do-bairro'), 'link escrito embaixo do QR');
+  assert.ok(html.includes('Feira &lt;b&gt;do&lt;/b&gt; Bairro') && !html.includes('<b>do</b>'), 'nome escapado');
+  assert.ok(!/<script/i.test(html) && !/https?:\/\/(?!usebanca\.com)/.test(html.replace(/xmlns="[^"]*"/g, '')), 'sem script e sem arquivo de fora');
+  assert.ok(/Agora temos <span>aplicativo!<\/span>/.test(html) && /Encoste o celular aqui/.test(html) && /<svg[^>]+aria-label="QR Code/.test(html));
+  assert.ok(html.includes('@page { size: A4; margin: 0; }'));
+  const outra = C.cartazHtml({ feira: { nome: 'Outra' }, link: 'https://usebanca.com/feira/outra' });
+  assert.notStrictEqual(C.qrSvg('https://usebanca.com/feira/outra'), C.qrSvg('https://usebanca.com/feira/feira-do-bairro'), 'cada feira tem o seu QR');
+  assert.ok(outra.includes(C.qrSvg('https://usebanca.com/feira/outra')));
+  assert.strictEqual(C.qrSvg('https://x.com/' + 'a'.repeat(300)), '', 'link longo demais: sem QR (não quebra)');
+});
+
 (async () => {
   let falhas = 0;
   for (const [nome, fn] of testes) {

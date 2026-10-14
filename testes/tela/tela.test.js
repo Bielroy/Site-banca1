@@ -192,6 +192,20 @@ teste('plataforma: a aba Erros mostra os erros agrupados', async () => {
   semErros(erros); await fechar();
 });
 
+teste('plataforma: "Cartaz com QR" de cada feira manda para a impressão o cartaz com o link DAQUELA feira', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
+  const { pagina, erros, fechar } = await abrir('/plataforma.html', cen, { antes: () => { try { localStorage.setItem('pf_aba', 'feiras'); } catch (_) { /* segue */ } } });
+  await pagina.waitForSelector('[data-pf="cartaz-feira"]', { timeout: 8000 });
+  assert.strictEqual(await pagina.locator('[data-pf="cartaz-feira"]').count(), 2, 'um botão por feira');
+  await pagina.evaluate(() => { window.print = () => {}; new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.tagName === 'IFRAME' && n.srcdoc) window.__cartaz = n.srcdoc; }))).observe(document.body, { childList: true }); });
+  await pagina.click('[data-pf="cartaz-feira"][data-feira="feira-do-lago"]');
+  await pagina.waitForFunction(() => !!window.__cartaz, null, { timeout: 5000 });
+  const html = await pagina.evaluate(() => window.__cartaz);
+  assert.ok(html.includes('Feira do Lago') && html.includes('/feira/feira-do-lago') && !html.includes('feira-do-bairro'), 'cartaz da feira clicada');
+  assert.ok(/aria-label="QR Code: [^"]*\/feira\/feira-do-lago"/.test(html) && /<path fill="#1a3a2a" d="M/.test(html), 'QR desenhado');
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- PAINEL
 teste('painel: a aba Aparência abre e a prévia da loja carrega dentro dela', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
@@ -368,7 +382,7 @@ teste('painel: fila vinda da cópia do aparelho (sem conexão com o banco) mostr
     '/api/checkout': (c) => (c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),
     '/api/plataforma': (c) => (c.acao === 'situacao' ? { sucesso: true, temDono: true, souEu: true }
       : c.acao === 'erros' ? { sucesso: true, erros: [{ id: 'e1', msg: "Cannot read properties of undefined (reading 'preco')", vezes: 3, ultimo: new Date().toISOString(), onde: '/assets/main-X.js:10:5', paginas: ['/'], navegadores: ['Android · Chrome 129'], lojas: ['banca'], pilha: 'at x' }] }
-      : c.acao === 'lojas' ? { sucesso: true, lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', ativo: true, original: true, donos: ['dona@teste.com'], cor: '#1a3a2a', mes: { receita: 0, pedidos: 0 } }], feiras: [], condominios: [], pix: false, fotos: false } : {}),
+      : c.acao === 'lojas' ? { sucesso: true, lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', ativo: true, original: true, donos: ['dona@teste.com'], cor: '#1a3a2a', mes: { receita: 0, pedidos: 0 } }], feiras: [{ id: 'feira-do-bairro', nome: 'Feira do Bairro', dias: [2], lojas: ['banca'], condominiosIds: [] }, { id: 'feira-do-lago', nome: 'Feira do Lago', dias: [4], lojas: ['banca'], condominiosIds: [] }], condominios: [], pix: false, fotos: false } : {}),
   });
   navegador = await chromium.launch();
   let falhas = 0;
