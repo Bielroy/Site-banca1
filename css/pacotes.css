@@ -63,7 +63,10 @@
 .etq-promo {
     display: inline-block; margin-top: 4px; background: var(--manga); color: #1a3a2a;
     font-family: var(--fonte-texto); font-size: .72rem; font-weight: 800; border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: top;
 }
+/* "pode misturar pacotes": linha própria embaixo do selo (junto dele não cabia na etiqueta do celular) */
+.etq-mistura { display: block; margin-top: 3px; font-family: var(--fonte-texto); font-size: .72rem; font-weight: 700; line-height: 1.2; color: var(--pardo-escuro); }
 
 /* "Também tem em pacote": o pacote aparece destacado na vitrine por um instante */
 .produto-card.pacote-mostrar { animation: pacoteMostrar 1.6s ease; }

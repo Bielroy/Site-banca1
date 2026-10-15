@@ -269,7 +269,10 @@ teste('pacotes: "4 por R$ 10" misturando 2 de batata e 2 de cenoura (cartão, sa
   const { pagina, erros, fechar } = await abrir('/', cen);
   await cards(pagina).first().waitFor({ timeout: 8000 });
   const bb = pagina.locator('#lista-produtos .produto-card[data-id="bb"]'), cb = pagina.locator('#lista-produtos .produto-card[data-id="cb"]');
-  assert.ok(/4 por R\$ 10 · pode misturar/.test(await bb.locator('.etq-promo').innerText()), 'a etiqueta avisa que dá para misturar');
+  assert.ok(/4 por R\$ 10/.test(await bb.locator('.etq-promo').innerText()) && /pode misturar pacotes/.test(await bb.locator('.etq-mistura').innerText()), 'a etiqueta avisa que dá para misturar');
+  // nada passa da borda da etiqueta (no celular o selo saía para fora)
+  const fora = await pagina.evaluate(() => [...document.querySelectorAll('#lista-produtos .etiqueta')].some((e) => { const r = e.getBoundingClientRect(); return [...e.querySelectorAll('*')].some((f) => f.getBoundingClientRect().right > r.right + 1); }));
+  assert.ok(!fora, 'selo da promoção cabe dentro da etiqueta');
   await bb.scrollIntoViewIfNeeded();
   await bb.locator('[data-action="add"]').click();
   await cb.locator('[data-action="add"]').click(); await cb.locator('[data-action="inc"]').click();

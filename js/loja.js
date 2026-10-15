@@ -584,7 +584,7 @@ const modificarCarrinho = (id, delta, fixo = false, tipoCompraForcado = null) =>
 const NOME_UNIDADE = { un: 'a unidade', 'maço': 'o maço', maco: 'o maço', bdj: 'a bandeja', kit: 'o kit', kg: 'o quilo', kilo: 'o quilo', quilograma: 'o quilo', l: 'o litro', litro: 'o litro', g: 'o grama', grama: 'o grama' };
 const nomeUnidade = (u) => NOME_UNIDADE[String(u || 'un').toLowerCase()] || `por ${escapeHTML(u)}`;
 const etiquetaHtml = (p) => etiquetaDeOferta(p) + etiquetaBase(p) + etiquetaPromo(p);
-const etiquetaPromo = (p) => { const pr = promoDe(p); return pr ? `<span class="etq-promo">${escapeHTML(textoPromo(pr))}${misturaPromo(p) ? ' · pode misturar' : ''}</span>` : ''; };
+const etiquetaPromo = (p) => { const pr = promoDe(p); return pr ? `<span class="etq-promo">${escapeHTML(textoPromo(pr))}</span>${misturaPromo(p) ? '<span class="etq-mistura">pode misturar pacotes</span>' : ''}` : ''; };
 // preço antigo riscado (o preço que vale continua sendo o de baixo; o servidor só conhece esse)
 // Quando a etiqueta mostra o preço POR UNIDADE (item pesado com peso médio), o preço antigo também vai por unidade:
 // comparar "R$ 14,85 o quilo" com "R$ 4,46 a unidade" faria a oferta parecer maior do que é.
