@@ -221,11 +221,26 @@ export function condominiosDasFeiras() {
 }
 const lojasValidas = (feira) => ((feira && feira.lojas) || []).filter((l) => l && /^[a-z0-9][a-z0-9-]{1,39}$/.test(l.id || '') && l.nome);
 
+// SELO DA FEIRA no cabeçalho ("Feira do Madri"): só para quem entrou pelo link/QR daquela feira.
+// Quem abre a loja pelo endereço normal não vê nada. O nome é o que está cadastrado na Plataforma.
+const PIN_FEIRA = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>';
+function pintarSeloFeira(feira) {
+    const h1 = document.getElementById('header-nome');
+    let selo = document.getElementById('selo-feira');
+    const nome = feira && typeof feira.nome === 'string' ? feira.nome.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+    if (!h1 || !nome) { if (selo) selo.remove(); return; }
+    if (!selo) { selo = document.createElement('p'); selo.id = 'selo-feira'; selo.className = 'selo-feira'; h1.before(selo); }
+    selo.innerHTML = PIN_FEIRA;
+    const t = document.createElement('span'); t.textContent = nome; selo.append(t);
+    selo.setAttribute('aria-label', `Você está comprando pela ${nome}`);
+}
+
 function montarFeira(feiras) {
-    const barra = document.getElementById('feira-lojas');
-    if (!barra) return;
     const escolhida = lerFeiraCliente();
     const { feira, doCliente } = feiraDoCliente(feiras, escolhida, diaBR());
+    pintarSeloFeira(doCliente ? feira : null);
+    const barra = document.getElementById('feira-lojas');
+    if (!barra) return;
     const antes = FEIRA_CLIENTE && FEIRA_CLIENTE.id; FEIRA_CLIENTE = doCliente ? feira : null;
     if ((FEIRA_CLIENTE && FEIRA_CLIENTE.id) !== antes) { try { document.dispatchEvent(new CustomEvent('feira-do-cliente')); } catch (_) { /* navegador antigo */ } }
     try { document.dispatchEvent(new CustomEvent('feiras-da-loja')); } catch (_) { /* navegador antigo */ }

@@ -157,12 +157,23 @@ teste('link da feira abre direto na banca, com a faixa das bancas no topo, e lem
   assert.ok(!pagina.url().includes('entrar='), 'o "entrar" sai do endereço');
   const nomes = await pagina.locator('#feira-lojas a').allInnerTexts();
   assert.deepStrictEqual(nomes.map((n) => n.trim()), ['Banca Adair e Pedrina', 'Pães da Lúcia']);
+  // selo discreto no cabeçalho: o cliente vê de qual feira entrou
+  await pagina.waitForSelector('#selo-feira', { timeout: 4000 });
+  assert.strictEqual((await pagina.locator('#selo-feira').innerText()).trim(), 'Feira Florença');
+  assert.ok(await pagina.evaluate(() => document.getElementById('selo-feira').nextElementSibling.id === 'header-nome'), 'fica logo acima do nome da banca');
   await pagina.click('#feira-lojas a:not(.atual)');
   await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 6000 });
   // a loja grava "a última banca desta feira" depois de abrir: espera essa gravação antes de voltar ao link
   await pagina.waitForFunction(() => /paes-da-lucia/.test(localStorage.getItem('banca_feira_ultima') || ''), null, { timeout: 6000 });
   await pagina.goto(servidor.base + '/feira/florenca');
   await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 6000 });
+  semErros(erros); await fechar();
+});
+teste('loja aberta pelo endereço normal (sem link de feira) não mostra selo de feira', async () => {
+  const { pagina, erros, fechar } = await abrir('/');
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForTimeout(400);
+  assert.strictEqual(await pagina.locator('#selo-feira').count(), 0);
   semErros(erros); await fechar();
 });
 
