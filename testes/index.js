@@ -2271,6 +2271,112 @@ teste('servidor: com EXIGIR_PROXY só atende o Cloudflare (e a rotina da noite) 
   try { assert.strictEqual((await fetch(`http://127.0.0.1:${livre.address().port}/api/eco`)).status, 200); } finally { livre.close(); }
 });
 
+// ------------------------------------------------------------------ cofre: dados do cliente cifrados no banco
+const comChaveDoCofre = async (fn) => {
+  const antes = process.env.DADOS_CHAVE; process.env.DADOS_CHAVE = Buffer.alloc(32, 7).toString('base64');
+  try { return await fn(); } finally { if (antes === undefined) delete process.env.DADOS_CHAVE; else process.env.DADOS_CHAVE = antes; }
+};
+teste('cofre: cifra e abre; sem chave nada muda; cada loja tem a sua chave; dado trocado ou mexido não abre', async () => {
+  const Cofre = require(raiz('lib/cofre'));
+  const antes = process.env.DADOS_CHAVE; delete process.env.DADOS_CHAVE;
+  try {
+    assert.strictEqual(Cofre.ligado(), false);
+    assert.strictEqual(Cofre.fechar('Ana', 'banca', 'nome'), 'Ana', 'sem chave, grava como antes');
+    let guardado;
+    await comChaveDoCofre(async () => {
+      assert.strictEqual(Cofre.ligado(), true);
+      const c = Cofre.fechar('Ana Souza', 'banca', 'nome'); guardado = c;
+      assert.ok(c.startsWith('c1:') && !c.includes('Ana'));
+      assert.notStrictEqual(c, Cofre.fechar('Ana Souza', 'banca', 'nome'), 'cada cifra sai diferente');
+      assert.strictEqual(Cofre.abrir(c, 'banca', 'nome'), 'Ana Souza');
+      assert.strictEqual(Cofre.abrir(c, 'espetinhos', 'nome'), Cofre.PROTEGIDO, 'a chave de outra loja não abre');
+      assert.strictEqual(Cofre.abrir(c, 'banca', 'telefone'), Cofre.PROTEGIDO, 'colado no lugar de outro campo não abre');
+      const meio = Math.floor(c.length / 2), mexido = c.slice(0, meio) + (c[meio] === 'A' ? 'B' : 'A') + c.slice(meio + 1);
+      assert.strictEqual(Cofre.abrir(mexido, 'banca', 'nome'), Cofre.PROTEGIDO, 'cifra adulterada não abre');
+      assert.strictEqual(Cofre.abrir('Ana antiga', 'banca', 'nome'), 'Ana antiga', 'dado antigo, sem cifra, segue legível');
+      assert.strictEqual(Cofre.fechar(c, 'banca', 'nome'), c, 'não cifra duas vezes');
+      const j = Cofre.fecharJSON([{ nome: 'Ana' }], 'banca', 'indiceClientes');
+      assert.ok(typeof j === 'string' && !j.includes('Ana'));
+      assert.deepStrictEqual(Cofre.abrirJSON(j, 'banca', 'indiceClientes', []), [{ nome: 'Ana' }]);
+      assert.deepStrictEqual(Cofre.abrirJSON([{ nome: 'x' }], 'banca', 'indiceClientes', []), [{ nome: 'x' }], 'lista antiga, sem cifra');
+      const aberto = { nome: 'Ana', telefone: '62999990000', quadra: '5', lote: '3', obs: '', total: 10 };
+      const f = Cofre.fecharCampos(aberto, 'banca');
+      assert.strictEqual(f.total, 10); assert.strictEqual(f.obs, ''); assert.ok(Cofre.cifrado(f.telefone) && Cofre.cifrado(f.quadra));
+      assert.deepStrictEqual(Cofre.abrirCampos(f, 'banca'), aberto);
+      // o painel (WebCrypto do navegador) abre o que o servidor fechou
+      const L = await import(raiz('js/cofre-lib.js'));
+      L.carregarChave(() => Cofre.chaveParaPainel('banca'));
+      assert.deepStrictEqual(await L.abrirPedido(f), aberto);
+      L.carregarChave(() => Cofre.chaveParaPainel('espetinhos'));
+      assert.strictEqual((await L.abrirPedido(f)).nome, L.PROTEGIDO, 'chave de outra loja no painel');
+      L.esquecerChave();
+      assert.strictEqual((await L.abrirPedido(f)).nome, L.PROTEGIDO, 'painel sem chave');
+      assert.deepStrictEqual(await L.abrirPedido(aberto), aberto, 'pedido antigo aparece normal');
+    });
+    assert.strictEqual(Cofre.abrir(guardado, 'banca', 'nome'), Cofre.PROTEGIDO, 'servidor sem a chave: protegido, sem quebrar');
+  } finally { if (antes !== undefined) process.env.DADOS_CHAVE = antes; }
+});
+teste('cofre: pedido e conta vão cifrados ao banco; a mensagem do cliente sai aberta; só quem atende recebe a chave', async () => {
+  await comChaveDoCofre(async () => {
+    const Cofre = require(raiz('lib/cofre'));
+    const tokens = { ...TOKENS, 'producao-espetinhos': { uid: 'u7', tenants: { espetinhos: 'producao' } } };
+    const db = criarBanco(semente()); const adm = criarAdmin(db, tokens);
+    const checkout = carregarApi(raiz('api/checkout.js'), adm);
+    const p = pedido({ nome: 'Helena Prado', telefone: '62988887777', obs: 'portão azul', itens: [{ id: 'tomate', qtd: 1, tipo: 'un' }] });
+    const enviar = () => chamar(checkout, { headers: { ...ip(), 'X-Loja': 'espetinhos', Authorization: 'Bearer cliente' }, body: p });
+    const r = await enviar();
+    assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+    const salvo = db._dados.get(`tenants/espetinhos/pedidos/${p.idempotencyKey}`);
+    for (const s of ['Helena', '62988887777', 'portão azul']) assert.ok(!JSON.stringify(salvo).includes(s), `"${s}" aberto no pedido do banco`);
+    assert.strictEqual(Cofre.abrir(salvo.nome, 'espetinhos', 'nome'), 'Helena Prado');
+    assert.strictEqual(salvo.total > 0, true, 'valores e itens seguem normais');
+    const contas = [...db._dados.entries()].filter(([k]) => k.startsWith('tenants/espetinhos/contas/'));
+    assert.ok(contas.length, 'a conta do cliente foi criada');
+    assert.ok(!JSON.stringify(contas).includes('Helena') && !JSON.stringify(contas).includes('62988887777'), 'conta cifrada no banco');
+    assert.ok(decodeURIComponent(r.corpo.pedido.whatsappMsg).includes('Helena'), 'a mensagem do WhatsApp (do próprio cliente) sai com o nome');
+    const r2 = await enviar();
+    assert.strictEqual(r2.status, 200); assert.ok(decodeURIComponent(r2.corpo.pedido.whatsappMsg).includes('Helena'), 'reenvio: abre o pedido guardado');
+    // a chave: só quem atende esta loja
+    const eq = carregarApi(raiz('api/equipe.js'), adm);
+    const chave = (tok) => chamar(eq, { headers: { 'X-Loja': 'espetinhos', Authorization: `Bearer ${tok}` }, body: { acao: 'chave-dados' } });
+    const k = await chave('caixa-espetinhos');
+    assert.strictEqual(k.status, 200); assert.strictEqual(k.corpo.chave, Cofre.chaveParaPainel('espetinhos'));
+    assert.strictEqual((await chave('dono-espetinhos')).status, 200);
+    assert.strictEqual((await chave('producao-espetinhos')).status, 403, 'produção não vê dado de cliente');
+    assert.strictEqual((await chave('cliente')).status, 403);
+    assert.strictEqual((await chave('dona-banca')).status, 403, 'dona de outra loja');
+    assert.notStrictEqual(Cofre.chaveParaPainel('espetinhos'), Cofre.chaveParaPainel('banca'));
+    const L = await import(raiz('js/cofre-lib.js'));
+    L.carregarChave(() => k.corpo.chave);
+    const aberto = await L.abrirPedido(salvo);
+    assert.strictEqual(aberto.nome, 'Helena Prado'); assert.strictEqual(aberto.obs, 'portão azul'); assert.strictEqual(aberto.telefone, '62988887777');
+    L.esquecerChave();
+  });
+});
+teste('cofre: a previsão guarda nomes e endereços cifrados e o painel recebe tudo aberto', async () => {
+  await comChaveDoCofre(async () => {
+    const db = criarBanco({});
+    const Store = carregarApi(raiz('analytics/store.js'), criarAdmin(db, TOKENS));   // troca o firebase-admin pelo falso
+    const { executarMotor, aplicarParametros } = require(raiz('analytics/engine')); aplicarParametros({});
+    const NOMES = ['Helena Prado', 'Otávio Reis', 'Marina Lobo', 'Rui Antunes'];
+    const dia = (n) => new Date(Date.UTC(2026, 7, n, 15)).toISOString();
+    const pedidos = []; let k = 0;
+    for (let n = 1; n <= 40; n++) for (let c = 1; c <= 4; c++) pedidos.push({ id: 'p' + (++k), data: dia(n), nome: NOMES[c - 1], telefone: '6299990000' + c, aceitaOfertas: true, quadra: '7', lote: String(c), condominio: 'Jardins', total: 20, itens: [{ id: 'tomate', nome: 'Tomate', qtd: 2, tipo: 'kg', unidade: 'kg', preco: 8.9 }] });
+    const catalogo = [{ id: 'tomate', nome: 'Tomate', unidade: 'kg', preco: 8.9, cat: 'legumes', ativo: true }];
+    const r = executarMotor({ pedidos, catalogo, agregados: [], parametros: {}, eventos: [], snapshots: [], feiras: [], agora: Date.UTC(2026, 8, 10, 15) });
+    assert.ok(r.indiceClientes.some((c) => c.nome === 'Helena Prado'), 'o motor viu os nomes');
+    await Store.persistir(db, r, {});
+    const tudo = JSON.stringify([...db._dados.values()]);
+    for (const s of [...NOMES.map((x) => x.split(' ')[0]), '62999900001']) assert.ok(!tudo.includes(s), `"${s}" aberto no que o motor gravou`);
+    const lido = await Store.lerPainel(db);
+    assert.ok(lido.indiceClientes.some((c) => c.nome === 'Helena Prado' && c.lote === '1'));
+    assert.ok(lido.produtos.tomate && lido.produtos.tomate.horizontes, 'a previsão por produto volta aberta');
+    const um = lido.indiceClientes.find((c) => c.nome === 'Helena Prado');
+    const m = await Store.lerClientePorId(db, um.id);
+    assert.strictEqual(m.nome, 'Helena Prado'); assert.strictEqual(m.quadra, '7');
+  });
+});
+
 teste('cloud run: o servidor enxerga as 12 funções de api/ e o Dockerfile leva o que elas usam', async () => {
   const { listarFuncoes } = require(raiz('server'));
   const fs = require('fs');

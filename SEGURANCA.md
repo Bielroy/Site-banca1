@@ -221,3 +221,26 @@ um campo-isca escondido (robô preenche, gente não) e, se o spam continuar, o T
 
 **Em caso de ataque em andamento:** o modo "Under Attack" do Cloudflare segura o site, mas faz desafio no navegador
 e pode atrapalhar as chamadas de `/api/` (pedido, painel). Use só por pouco tempo e desligue depois.
+
+## Dados do cliente cifrados no banco (cofre)
+
+`lib/cofre.js` cifra **nome, telefone, endereço (quadra/rua e lote/número) e observação** do cliente antes de gravar
+(AES-256-GCM). Vale para pedidos, pedidos do balcão, contas de cliente e tudo o que o motor de previsão grava com
+dados de cliente (lista de clientes, clientes esperados, explicações da previsão).
+
+| Quem | Vê os dados? |
+|---|---|
+| Quem ler o banco, o console do Firebase ou uma cópia de segurança | Não: só `c1:…` |
+| Servidor (AWS) | Sim: tem a `DADOS_CHAVE` |
+| Painel de quem atende (dono, gerente, funcionário, caixa) | Sim: recebe a chave **da loja** depois do login (`/api/equipe`, `chave-dados`), só na memória da página |
+| Produção, estoque, cliente, outra loja | Não |
+| O próprio cliente | Vê os dados dele pela conta (o servidor abre) e na mensagem do WhatsApp |
+
+- **Uma chave por loja:** saem da `DADOS_CHAVE` com HKDF e o id da loja. A equipe de uma loja não abre os dados de outra.
+- **O nome do campo entra na cifra:** um telefone cifrado colado no lugar do nome não abre.
+- **Sem a `DADOS_CHAVE`** o site funciona como antes (grava sem cifra) e o que já estava cifrado aparece como "(protegido)".
+- **Perder a chave = perder esses dados.** Guarde uma cópia fora do servidor (gerenciador de senhas).
+- **Dados antigos:** `docker exec loja node server/cifrar-antigos.js` conta; com `--gravar`, cifra e recalcula a previsão.
+- **Cópias de segurança antigas** (até 7 dias) ainda têm os dados abertos e saem sozinhas na rotação.
+- **O que continua aberto de propósito:** valores, itens, condomínio, forma de pagamento e datas (o caixa, o estoque e a
+  previsão precisam). CPF e e-mail do PIX não são guardados: vão direto ao PagBank.

@@ -31,6 +31,7 @@ const Assinatura = require('../lib/assinatura');
 const A = require('../lib/avisos');
 const P = require('../lib/prudencia');
 const Maq = require('../lib/maquininha');
+const Cofre = require('../lib/cofre');
 const hojeBrasilia = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
 const ontemBrasilia = () => new Date(Date.now() - 27 * 3600000).toISOString().slice(0, 10);
 
@@ -234,6 +235,13 @@ module.exports = async function handler(req, res) {
       else return res.status(200).json({ sucesso: true, ...(await A.avisarLoja(db, tid, { titulo: 'Aviso de teste', corpo: 'É assim que o pedido novo vai aparecer.', url: '/admin.html', tag: 'teste' })) });
       return res.status(200).json({ sucesso: true });
     } catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[avisos]', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
+  }
+  // CHAVE DOS DADOS DO CLIENTE (lib/cofre.js): só quem atende (os mesmos papéis que leem pedidos nas regras do banco).
+  // O login foi conferido com "encerrado?" (verifyIdToken com true): quem saiu da equipe não recebe mais a chave.
+  if ((req.body || {}).acao === 'chave-dados') {
+    if (!T.temPapel(dec, tid, ['proprietario', 'administrador', 'funcionario', 'caixa'])) return res.status(403).json({ error: 'Sua conta não vê os dados dos clientes desta loja.' });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({ sucesso: true, ligado: Cofre.ligado(), chave: Cofre.chaveParaPainel(tid) });
   }
   if (!T.temPapel(dec, tid, ['proprietario'])) return res.status(403).json({ error: 'Só o proprietário cuida da equipe desta loja.' });
   const acao = (req.body || {}).acao;

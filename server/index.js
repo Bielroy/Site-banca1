@@ -189,6 +189,7 @@ if (require.main === module) {
     .filter((k) => !String(process.env[k] || '').trim());
   if (!String(process.env.FIREBASE_WEB_API_KEY || process.env.VITE_FIREBASE_API_KEY || '').trim()) faltam.push('FIREBASE_WEB_API_KEY (entrar no painel)');
   if (!String(process.env.PAGBANK_API_TOKEN || '').trim()) faltam.push('PAGBANK_API_TOKEN (PIX e cartão)');
+  if (!require('../lib/cofre').ligado()) faltam.push('DADOS_CHAVE (dados de cliente gravados SEM cifra)');
   if (faltam.length) console.warn(`[servidor] variáveis vazias: ${faltam.join(', ')}`);
 
   const servidor = criarServidor();

@@ -13,6 +13,7 @@ import { ARTE_PACOTE } from './vitrine-arte.js';
 import './admin-instalar.js';
 import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar, bancasDaPessoa, mostrarSuspensa } from './admin-guard.js';
 import { htmlSimples, csvCampo } from './html-lib.js';
+import { carregarChave, abrirPedidos } from './cofre-lib.js';   // nome, telefone e endereço do cliente chegam cifrados do banco
 import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel } from './papeis-lib.js';
 import { ico } from './icones-admin.js';          // também liga a troca das marcas <i class="ic"> pelos desenhos
 import { linhaEndereco } from './endereco.js';
@@ -405,7 +406,24 @@ const avisarModoSimples = (erro) => {
         </div>`);
 };
 
+// CHAVE DOS DADOS DO CLIENTE: o servidor só entrega a quem atende a loja. Fica só na memória desta página.
+const buscarChaveDosDados = async () => {
+    // internet fraca na hora do login: tenta 3 vezes antes de desistir (sem a chave, os nomes aparecem "(protegido)")
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
+        try {
+            const token = await auth.currentUser?.getIdToken();
+            const r = await fetch('/api/equipe', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ acao: 'chave-dados' }) });
+            const j = await r.json().catch(() => ({}));
+            if (r.ok) return j.chave || '';
+            if (r.status < 500 && r.status !== 429) return '';          // sem permissão: não adianta insistir
+        } catch (_) { /* sem conexão: tenta de novo */ }
+        await new Promise((ok) => setTimeout(ok, 1500 * (tentativa + 1)));
+    }
+    return '';
+};
+
 const iniciarRealTimeSync = () => {
+    carregarChave(buscarChaveDosDados);
     // Custo e ficha técnica moram em produtos_custos (privado). Aqui os dois se juntam,
     // e todas as abas continuam lendo p.custo e p.ficha como antes.
     let produtosBase = [], custosPorId = new Map();
@@ -474,6 +492,15 @@ const iniciarRealTimeSync = () => {
     // -----------------------------------------------------------------
     let cargaInicial = true;
 
+    // Os pedidos chegam com os dados do cliente cifrados: abre antes de desenhar. A conta "vez" garante que
+    // uma leva mais antiga, que terminou de abrir depois, não passe por cima da mais nova.
+    let vezDaFila = 0;
+    const receberPedidos = async (lista) => {
+        const vez = ++vezDaFila;
+        const abertos = await abrirPedidos(lista);
+        if (vez === vezDaFila) aplicarPedidos(abertos);
+    };
+
     const aplicarPedidos = (docs) => {
         pedidosGerais = docs;
         // quantos pedidos esperam alguém: aparece na aba e no botão do menu
@@ -519,7 +546,7 @@ const iniciarRealTimeSync = () => {
         // O unsubscribe é guardado — sem isso o listener sobreviveria ao logout.
         const unsub = onSnapshot(qSimples, { includeMetadataChanges: true }, (snap) => {
             avisarCopiaVelha(snap);
-            aplicarPedidos(
+            receberPedidos(
                 snap.docs.map(d => ({ ...d.data(), id: d.id }))
                          .filter(p => STATUS_NA_FILA.includes(p.status))
             );
@@ -550,7 +577,7 @@ const iniciarRealTimeSync = () => {
 
     const unsubPedidos = onSnapshot(qComIndice, { includeMetadataChanges: true }, (snap) => {
         avisarCopiaVelha(snap);
-        aplicarPedidos(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+        receberPedidos(snap.docs.map(d => ({ ...d.data(), id: d.id })));
         avisarFilaCheia(snap.size >= LIMITE_FILA);
         avisarSeChegouPedido(snap);
     }, (erro) => {
@@ -2286,7 +2313,7 @@ const carregarBalanco = async (dias = 30) => {
                 const parar = onSnapshot(q, (s) => { parar(); resolve(s); }, reject);
               });
 
-        balancoCache = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+        balancoCache = await abrirPedidos(snap.docs.map(d => ({ ...d.data(), id: d.id })));
         renderBalanco(dias);
         TELAS.margens().then((m) => m.renderMargens(balancoCache, produtosAtuais, dias)).catch(() => {});   // custos e margens, com os mesmos pedidos
         // Antes cortava em 800 sem avisar: o total do período saía menor que o real.

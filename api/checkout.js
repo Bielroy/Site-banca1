@@ -108,6 +108,7 @@ const P = require('../lib/prudencia');
 const Entrega = require('../lib/entrega');
 const E = require('../lib/estoque');
 const Conta = require('../lib/conta');
+const Cofre = require('../lib/cofre');
 const Feira = require('../lib/feira');
 const Pac = require('../lib/pacote');   // pacote fechado e promoção "4 por R$ 10" (mesma conta de js/pacote-lib.js)
 
@@ -318,7 +319,7 @@ module.exports = async function handler(req, res) {
 
       // Idempotência: pedido já criado -> retorna o mesmo resultado
       if (pedidoSnap.exists) {
-        const d = pedidoSnap.data();
+        const d = Cofre.abrirCampos(pedidoSnap.data(), tid);   // nome e endereço vêm cifrados do banco (lib/cofre.js)
         // A mesma chave vinda de OUTRA pessoa (ou batendo numa venda do balcão) não recebe os dados do pedido de volta.
         if (d.origem === 'balcao' || (d.userId && d.userId !== 'anonimo' && d.userId !== donoVerificado)) throw Object.assign(new Error('Não consegui identificar este pedido. Atualize a página e tente de novo.'), { status: 409 });
         codigoConta = await Conta.codigoDoReenvio(t, db, tid, d, achado, donoVerificado);
@@ -535,7 +536,7 @@ module.exports = async function handler(req, res) {
       if (cupomAplicado) {
         t.update(cupomAplicado.ref, { usos: admin.firestore.FieldValue.increment(1) });
       }
-      t.set(pedidoRef, dadosPedido);
+      t.set(pedidoRef, Cofre.fecharCampos(dadosPedido, tid));   // nome, telefone, endereço e observação vão cifrados
       conta.escrever(t, dadosPedido); codigoConta = conta.codigo;
       t.set(T.docDe(db, tid, 'analytics/dashboard'), {
         receitaTotal: admin.firestore.FieldValue.increment(totalExato),
