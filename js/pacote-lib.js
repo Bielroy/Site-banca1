@@ -21,6 +21,25 @@ const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, ''
 export const MAX_PROMO_QTD = 50;
 export const PACOTES_PADRAO = { titulo: 'Pacotes prontos', texto: 'Já vêm fechados. Você escolhe quantos pacotes e pronto: não vai para a balança.' };
 
+// ---------------------------------------------------------------------
+// CANTINHO DOS TEMPEROS: área própria no fim da vitrine (depois dos pacotes) para os potinhos.
+// Vale pela CATEGORIA, sem marcar produto por produto: a loja escolhe a categoria em Aparência → Vitrine;
+// sem escolha, entra a categoria com "tempero" no nome. "-" = não separar.
+// ---------------------------------------------------------------------
+export const TEMPEROS_PADRAO = { titulo: 'Cantinho dos temperos', texto: 'Potinhos prontos, do jeitinho que você leva da banca.' };
+export const NOMES_POTE = { um: 'potinho', varios: 'potinhos' };
+export const SEM_TEMPEROS = '-';
+/** O produto vai para o cantinho dos temperos? `cfg` = vitrine.temperos ({ cat }). Pacote fica no bloco dele. */
+export function ehTempero(p, cfg) {
+    if (!p || ehPacote(p)) return false;
+    const cat = semAcento(p.cat).trim(); if (!cat) return false;
+    const esc = cfg && typeof cfg.cat === 'string' ? semAcento(cfg.cat).trim() : '';
+    if (esc === SEM_TEMPEROS) return false;
+    return esc ? cat === esc : /tempero/.test(cat);
+}
+/** Tempero vendido por potinho (não vai para a balança): botão "+ 1 potinho", "3 potinhos". */
+export const ehPotinho = (p, cfg) => ehTempero(p, cfg) && !fracionavel(p.unidade);
+
 /** É pacote fechado? Só produto que NÃO vai para a balança (pacote "por quilo" não existe). */
 export const ehPacote = (p) => !!p && p.pacote === true && !fracionavel(p.unidade);
 

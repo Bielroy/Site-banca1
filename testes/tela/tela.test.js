@@ -301,6 +301,43 @@ teste('pacotes: "4 por R$ 10" misturando 2 de batata e 2 de cenoura (cartão, sa
   semErros(erros); await fechar();
 });
 
+teste('temperos: cantinho no fim (depois dos pacotes), "+ 1 potinho", sacola com o grupo Temperos e comanda em potinhos', async () => {
+  const cen = cenarioPacotes();
+  Object.assign(cen.lojas.banca.produtos, {
+    colorau: { nome: 'Colorau', preco: 4, unidade: 'un', cat: 'temperos', ativo: true },
+    cominho: { nome: 'Cominho', preco: 4.5, unidade: 'un', cat: 'temperos', ativo: true },
+  });
+  const { pagina, erros, fechar } = await abrir('/', cen);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  const ordem = await pagina.evaluate(() => [...document.querySelectorAll('#lista-produtos > .produto-card, #lista-produtos > .bloco-pacotes, #lista-produtos > .bloco-temperos')]
+    .map((e, i) => ({ o: Number(e.style.order) || 0, i, k: e.classList.contains('bloco-pacotes') ? 'PACOTES' : e.classList.contains('bloco-temperos') ? 'TEMPEROS' : e.dataset.id })).sort((a, b) => a.o - b.o || a.i - b.i).map((x) => x.k));
+  assert.strictEqual(ordem[ordem.length - 3], 'TEMPEROS', ordem.join(','));
+  assert.deepStrictEqual(ordem.slice(-2).sort(), ['colorau', 'cominho'], 'os temperos ficam no fim, depois dos pacotes: ' + ordem.join(','));
+  assert.ok(ordem.indexOf('PACOTES') < ordem.indexOf('TEMPEROS'), ordem.join(','));
+  assert.ok(/Cantinho dos temperos/.test(await pagina.locator('.bloco-temperos').innerText()));
+  const col = pagina.locator('#lista-produtos .produto-card[data-id="colorau"]');
+  assert.ok(/TEMPERO/i.test(await col.locator('.lacre-tempero').innerText()));
+  assert.ok(/o potinho/.test(await col.locator('.etiqueta').innerText()));
+  await col.scrollIntoViewIfNeeded();
+  assert.strictEqual((await col.locator('[data-action="add"]').innerText()).trim(), '+ 1 potinho');
+  await col.locator('[data-action="add"]').click(); await col.locator('[data-action="inc"]').click();
+  await pagina.waitForFunction(() => /2 potinhos/.test(document.querySelector('#lista-produtos .produto-card[data-id="colorau"] .card-qtd')?.innerText || ''), null, { timeout: 3000 });
+  // a aba da categoria mostra só os temperos, com o cabeçalho do cantinho
+  await pagina.locator('#categorias .cat-btn[data-cat="temperos"]').click();
+  await esperarVisiveis(pagina, () => [...document.querySelectorAll('#lista-produtos .produto-card')].filter((c) => c.offsetParent !== null).length === 2);
+  assert.ok(await pagina.locator('.bloco-temperos').isVisible());
+  await pagina.locator('#categorias .cat-btn[data-cat="todas"]').click();
+  const bb = pagina.locator('#lista-produtos .produto-card[data-id="bb"]');
+  await bb.scrollIntoViewIfNeeded(); await bb.locator('[data-action="add"]').click();
+  await pagina.locator('#btn-carrinho-mobile').click();
+  const sacola = await pagina.locator('#carrinho-itens').innerText();
+  assert.ok(/Temperos/i.test(sacola) && /2 potinhos/.test(sacola) && /Pacotes prontos/i.test(sacola), sacola);
+  await pagina.locator('#btn-abrir-checkout').click();
+  const comanda = await pagina.locator('#comanda').innerText();
+  assert.ok(/2 potinhos/.test(comanda) && /Colorau/.test(comanda) && /R\$\s8,00/.test(comanda), comanda);
+  semErros(erros); await fechar();
+});
+
 teste('pacotes: no painel, peso do pacote em branco é aceito e promoção mais cara é recusada', async () => {
   const cen = cenarioPacotes(); cen.conta = { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } };
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
@@ -327,6 +364,9 @@ teste('pacotes: no painel da Vitrine, título do bloco dos pacotes e faixa "Molh
   await pagina.waitForSelector('#vt-gravar', { timeout: 8000 });
   await pagina.locator('summary:has-text("Bloco dos pacotes")').click();
   await pagina.fill('#vt-pac-titulo', 'Pacotinhos da banca');
+  await pagina.locator('summary:has-text("Cantinho dos temperos")').click();
+  await pagina.fill('#vt-tmp-titulo', 'Temperos da Pedrina');
+  await pagina.locator('#vt-tmp-cat').selectOption({ index: 1 });
   await pagina.locator('summary:has-text("Faixas que você cria")').click();
   await pagina.click('[data-acao-vt="mais-faixa"]');
   await pagina.fill('[data-fx="0"][data-campo="titulo"]', 'Frutas da semana');
@@ -338,6 +378,7 @@ teste('pacotes: no painel da Vitrine, título do bloco dos pacotes e faixa "Molh
   await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config'), null, { timeout: 4000 });
   const v = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config').dados.vitrine);
   assert.deepStrictEqual(v.pacotes, { titulo: 'Pacotinhos da banca', texto: '' });
+  assert.strictEqual(v.temperos.titulo, 'Temperos da Pedrina'); assert.ok(v.temperos.cat && v.temperos.cat !== '-', 'a categoria escolhida é gravada: ' + JSON.stringify(v.temperos));
   assert.deepStrictEqual(v.faixas, [{ titulo: 'Frutas da semana', texto: '', cat: 'frutas' }]);
   semErros(erros); await fechar();
 });

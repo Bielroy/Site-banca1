@@ -16,8 +16,8 @@ import { getDoc, setDoc } from './firebase.js';
 import { tdoc } from './tenant.js';
 import { escapeHTML, showToast } from './utils.js';
 import { vitrineSegura, MAX_QUADROS, MAX_FAIXAS_LOJA, ESCOLHA_PADRAO, resumoFunil, ETAPAS, NOMES_ETAPAS, hojeDaLoja } from './vitrine-lib.js';
-import { PACOTES_PADRAO } from './pacote-lib.js';
-import { ARTE_PACOTE } from './vitrine-arte.js';
+import { PACOTES_PADRAO, TEMPEROS_PADRAO, SEM_TEMPEROS } from './pacote-lib.js';
+import { ARTE_PACOTE, ARTE_POTE } from './vitrine-arte.js';
 import { validarArquivo } from './fotos-lib.js';
 import { miniatura } from './foto-lib.js';
 
@@ -86,6 +86,20 @@ function render() {
                 <div class="form-group"><label for="vt-pac-titulo">Título</label><input id="vt-pac-titulo" type="text" maxlength="40" data-pac="titulo" value="${escapeHTML(v.pacotes.titulo || '')}" placeholder="${escapeHTML(PACOTES_PADRAO.titulo)}"></div>
                 <div class="form-group"><label for="vt-pac-texto">Frase de apoio (até 160 letras)</label><textarea id="vt-pac-texto" rows="2" maxlength="160" data-pac="texto" placeholder="${escapeHTML(PACOTES_PADRAO.texto)}">${escapeHTML(v.pacotes.texto || '')}</textarea></div>
                 <small class="dica-campo">Entram aqui os produtos marcados como <b>pacote fechado</b> (Produtos → abrir o produto). Em branco, fica o texto de exemplo.</small>
+            </div>
+        </details>
+
+        <details class="ap-sec vt-sec" data-sec="temperos"${aberta('temperos', false)}>
+            <summary><span class="vt-sum-pac">${ARTE_POTE}<b>Cantinho dos temperos</b><small>Área própria para os potinhos, depois dos pacotes</small></span></summary>
+            <div class="ap-sec-corpo">
+                <div class="form-group"><label for="vt-tmp-cat">Quais produtos entram</label><select id="vt-tmp-cat" data-tmp="cat">
+                    <option value=""${!v.temperos.cat ? ' selected' : ''}>Sozinho: a categoria com "tempero" no nome</option>
+                    ${categorias.map((c) => `<option value="${escapeHTML(c.chave)}"${v.temperos.cat === c.chave ? ' selected' : ''}>Categoria: ${escapeHTML(c.nome)}</option>`).join('')}
+                    <option value="${SEM_TEMPEROS}"${v.temperos.cat === SEM_TEMPEROS ? ' selected' : ''}>Não separar os temperos</option>
+                </select></div>
+                <div class="form-group"><label for="vt-tmp-titulo">Título</label><input id="vt-tmp-titulo" type="text" maxlength="40" data-tmp="titulo" value="${escapeHTML(v.temperos.titulo || '')}" placeholder="${escapeHTML(TEMPEROS_PADRAO.titulo)}"></div>
+                <div class="form-group"><label for="vt-tmp-texto">Frase de apoio (até 160 letras)</label><textarea id="vt-tmp-texto" rows="2" maxlength="160" data-tmp="texto" placeholder="${escapeHTML(TEMPEROS_PADRAO.texto)}">${escapeHTML(v.temperos.texto || '')}</textarea></div>
+                <small class="dica-campo">Não precisa marcar produto por produto: tudo o que estiver na categoria escolhida vai para o cantinho, com botão <b>+ 1 potinho</b>. Em branco, fica o texto de exemplo.</small>
             </div>
         </details>
 
@@ -185,6 +199,7 @@ function ligar() {
         else if (t.dataset.donos) estado.donos[t.dataset.donos] = t.value;
         else if (t.hasAttribute('data-escolha')) estado.escolha = t.value;
         else if (t.dataset.pac) estado.pacotes[t.dataset.pac] = t.value;
+        else if (t.dataset.tmp) estado.temperos[t.dataset.tmp] = t.value;
         else if (t.dataset.fx !== undefined && t.tagName !== 'SELECT') { const f = estado.faixas[Number(t.dataset.fx)]; if (f) f[t.dataset.campo] = t.value; }
         pintarEstado();
     });
@@ -199,6 +214,7 @@ function ligar() {
         const t = e.target;
         if (t.dataset.foto && t.files && t.files[0]) { const f = t.files[0]; t.value = ''; enviarFoto(t.dataset.foto, f); }
         else if (t.tagName === 'SELECT' && t.dataset.q !== undefined) { const q = estado.quadros[Number(t.dataset.q)]; if (q) q.cat = t.value; pintarEstado(); }
+        else if (t.tagName === 'SELECT' && t.dataset.tmp) { estado.temperos[t.dataset.tmp] = t.value; pintarEstado(); }
         else if (t.tagName === 'SELECT' && t.dataset.fx !== undefined) { const f = estado.faixas[Number(t.dataset.fx)]; if (f) f.cat = t.value; pintarEstado(); }
     });
     raiz.addEventListener('click', (e) => {
@@ -252,7 +268,7 @@ export async function abrirVitrine(cats = []) {
     catch (_) { el().innerHTML = '<p class="config-sub">Não consegui ler a vitrine. Confira a internet e abra a aba de novo.</p>'; return; }
     const v = vitrineSegura(cfg.vitrine);
     estado = { quadros: v.quadros.map((q) => ({ cat: '', ...q })), donos: { titulo: '', texto: '', ...(v.donos || {}) }, escolha: v.escolha || '',
-        pacotes: { titulo: '', texto: '', ...(v.pacotes || {}) }, faixas: (v.faixas || []).map((f) => ({ texto: '', ...f })) };
+        pacotes: { titulo: '', texto: '', ...(v.pacotes || {}) }, temperos: { titulo: '', texto: '', cat: '', ...(v.temperos || {}) }, faixas: (v.faixas || []).map((f) => ({ texto: '', ...f })) };
     gravado = atual();
     render(); ligar(); pintarFunil();
 }

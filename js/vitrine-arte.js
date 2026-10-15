@@ -39,6 +39,8 @@ export const ARTE_SELO = {
 };
 
 /** Pacotinho de papel pardo com janela (bloco "Pacotes prontos", atalho, selo do cartão, sacola e painel). */
+/** Potinho de tempero (cantinho dos temperos): tampa, rótulo e grãos coloridos. */
+export const ARTE_POTE = arte(`<rect x="7" y="2.6" width="10" height="3.6" rx="1" fill="#7a3416"/><path d="M6.2 7.4c0-.7.5-1.2 1.2-1.2h9.2c.7 0 1.2.5 1.2 1.2V20a1.6 1.6 0 0 1-1.6 1.6H7.8A1.6 1.6 0 0 1 6.2 20z" fill="#e9b48f"/><rect x="7.6" y="10" width="8.8" height="7.4" rx="1.2" fill="#fff7ef"/><circle cx="10.4" cy="14.4" r="1.3" fill="#c0452a"/><circle cx="13.2" cy="13.2" r="1.1" fill="#d98c2b"/><circle cx="13.6" cy="15.6" r="1" fill="#6f8f3a"/><path d="M6.2 9.2h11.6" stroke="#c96b3c" stroke-width=".9"/>`);
 export const ARTE_PACOTE = arte(`<path d="M5.2 7.5h13.6l-1.1 13.1a1.5 1.5 0 0 1-1.5 1.4H7.8a1.5 1.5 0 0 1-1.5-1.4z" fill="#d9b27a"/><path d="M5.2 7.5 6.4 3.6c.1-.4.5-.6.9-.6h9.4c.4 0 .8.2.9.6l1.2 3.9z" fill="#b98a4e"/><path d="M5.6 7.6l1.1-.9 1.1.9 1.1-.9 1.1.9 1.1-.9 1.1.9 1.1-.9 1.1.9 1.1-.9 1.1.9 1.1-.9 1.1.9" fill="none" stroke="#8a5f2a" stroke-width=".7" stroke-linejoin="round"/><rect x="7.4" y="9.4" width="9.2" height="7" rx="1.6" fill="#f6efe2"/><ellipse cx="9.9" cy="14.5" rx="1.7" ry="1.35" fill="#c9a06b"/><ellipse cx="13.9" cy="14.6" rx="1.8" ry="1.35" fill="#b98f5a"/><ellipse cx="11.9" cy="12.2" rx="1.6" ry="1.3" fill="#d8b07a"/><rect x="7.4" y="17.6" width="9.2" height="2.3" rx=".5" fill="#f6efe2"/><path d="M8.8 18.75h4.6" stroke="#9c7b4b" stroke-width=".8" stroke-linecap="round"/>`);
 
 /** Balança (grupo "Pesados na hora" da sacola e da comanda), no traço da cor do texto. */

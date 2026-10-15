@@ -2781,6 +2781,22 @@ teste('checkout: o servidor junta pacotes diferentes na mesma promoção', async
   assert.ok(msg.includes('2 pacotes de Batata baby — R$ 5,00'), msg);
   assert.ok(msg.includes('2 pacotes de Cenoura baby — R$ 5,00'), msg);
 });
+teste('temperos: o cantinho vale pela categoria (sozinho: "tempero" no nome), pacote fica no bloco dele e "-" desliga', async () => {
+  const P = await import(raiz('js/pacote-lib.js')), V = await import(raiz('js/vitrine-lib.js'));
+  const col = { cat: 'Temperos', unidade: 'un' };
+  assert.strictEqual(P.ehTempero(col), true, 'sem escolha: categoria com "tempero" no nome');
+  assert.strictEqual(P.ehTempero({ cat: 'temperos-secos', unidade: 'un' }), true);
+  assert.strictEqual(P.ehTempero({ cat: 'Molhos', unidade: 'un' }), false);
+  assert.strictEqual(P.ehTempero({ cat: 'Molhos', unidade: 'un' }, { cat: 'molhos' }), true, 'a loja escolheu outra categoria');
+  assert.strictEqual(P.ehTempero(col, { cat: 'molhos' }), false, 'com categoria escolhida, só ela entra');
+  assert.strictEqual(P.ehTempero(col, { cat: P.SEM_TEMPEROS }), false, '"Não separar os temperos"');
+  assert.strictEqual(P.ehTempero({ ...col, pacote: true }), false, 'pacote fechado fica no bloco dos pacotes');
+  assert.strictEqual(P.ehTempero({ unidade: 'un' }), false, 'sem categoria');
+  assert.strictEqual(P.ehPotinho(col), true); assert.strictEqual(P.ehPotinho({ cat: 'temperos', unidade: 'kg' }), false, 'tempero pesado não vira "potinho"');
+  assert.strictEqual(P.emPalavras(3, P.NOMES_POTE), '3 potinhos'); assert.strictEqual(P.emPalavras(1, P.NOMES_POTE), '1 potinho');
+  assert.deepStrictEqual(V.vitrineSegura({ temperos: { titulo: ' Temperinhos <i> ', cat: 'molhos', lixo: 1 } }).temperos, { titulo: 'Temperinhos <i>', texto: '', cat: 'molhos' });
+  assert.strictEqual(V.vitrineSegura({ temperos: { titulo: '', texto: '', cat: '' } }).temperos, undefined, 'tudo em branco: o padrão');
+});
 teste('pacote: o item do pedido aparece como "4 pacotes" no painel, e não "4x"', async () => {
   const U = await import(raiz('js/utils.js'));
   assert.strictEqual(U.qtdDoItem({ qtd: 4, tipo: 'un', unidade: 'un', pacote: true, pesoPacote: '500 g' }), '4 pacotes de 500 g');

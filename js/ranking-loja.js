@@ -97,8 +97,9 @@ export function aplicarOrdem() {
         const e = escores.get(card.dataset.id);
         // maior probabilidade → menor `order`. Produto sem pontuação (novo) entra na mediana,
         // em vez de ser enterrado no fim — senão nunca teria chance de ser descoberto.
+        // temperos (cantinho, order 2999) vêm depois dos pacotes
         // pacote fechado fica no bloco do fim da vitrine (cabeçalho "Pacotes prontos" com order 1999), na ordem da lista inteligente
-        card.style.order = String(Math.round((1 - (e ? e.p : mediana)) * 1000) + (card.dataset.pacote === '1' ? 2000 : 0));
+        card.style.order = String(Math.round((1 - (e ? e.p : mediana)) * 1000) + (card.dataset.pacote === '1' ? 2000 : card.dataset.tempero === '1' ? 3000 : 0));
 
         card.querySelector('.rec-tag')?.remove();
         if (e && e.motivo && nivel !== 'sem_historico') {

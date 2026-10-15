@@ -139,6 +139,10 @@ export function vitrineSegura(bruto) {
     const pc = v.pacotes && typeof v.pacotes === 'object' ? v.pacotes : {};
     const pacotes = { titulo: texto(pc.titulo, 40), texto: texto(pc.texto, 160) };
     if (pacotes.titulo) saida.pacotes = pacotes;
+    // cantinho dos temperos: título, frase e a categoria que entra nele ('' = a que tem "tempero" no nome; '-' = não separar)
+    const tp = v.temperos && typeof v.temperos === 'object' ? v.temperos : {};
+    const temperos = { titulo: texto(tp.titulo, 40), texto: texto(tp.texto, 160), cat: texto(tp.cat, 60) };
+    if (temperos.titulo || temperos.texto || temperos.cat) saida.temperos = temperos;
     // faixas da loja por categoria
     const faixas = (Array.isArray(v.faixas) ? v.faixas : []).slice(0, 20).map((f) => {
         const x = f && typeof f === 'object' ? f : {};

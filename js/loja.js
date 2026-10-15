@@ -5,8 +5,8 @@ import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, sho
 import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques, maisPedidos } from './ranking-loja.js';
 import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca } from './vitrine-lib.js';
-import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA } from './vitrine-arte.js';
-import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, chavePromo, contaDaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO } from './pacote-lib.js';
+import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_POTE } from './vitrine-arte.js';
+import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, chavePromo, contaDaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO, ehTempero, ehPotinho, NOMES_POTE, TEMPEROS_PADRAO } from './pacote-lib.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
 import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras } from './tema.js';
@@ -155,11 +155,17 @@ const repintarGrupoPromo = (id) => {
     });
 };
 const itemEhPacote = (item) => ehPacote(produtoDoItem(item));
+// CANTINHO DOS TEMPEROS (js/pacote-lib.js): vale pela categoria escolhida em Aparência → Vitrine
+const cfgTemperos = () => vitrineDaLoja().temperos;
+const ehTemp = (p) => ehTempero(p, cfgTemperos());
+const ehPote = (p) => ehPotinho(p, cfgTemperos());
+const itemEhPote = (item) => item.tipo !== 'kg' && ehPote(produtoDoItem(item));
 /** Quantidade em palavras, para não haver dúvida do que vai: "2 batatas · ≈ 360 g", "1,5 kg", "4 pacotes de 500 g". */
 const qtdEmPalavras = (item) => {
     const p = produtoDoItem(item), n = Number(item.qtd) || 0;
     if (isFracionavel(item.unidade) && item.tipo !== 'un') return `${formatarQuantidadeVisual(n, true)} ${String(item.unidade || 'kg').toLowerCase()}`;
     if (itemEhPacote(item)) { const peso = pesoDoPacote(p); return `${emPalavras(Math.round(n), NOMES_PACOTE)}${peso ? ` de ${peso}` : ''}`; }
+    if (itemEhPote(item)) return emPalavras(Math.round(n), NOMES_POTE);
     if (isFracionavel(item.unidade)) { const pm = pesoMedioDe(item); return `${emPalavras(Math.round(n), nomesDaUnidade(p.nomeUn))}${pm > 0 ? ` · ${pesoAproximado(pm * n)}` : ''}`; }
     return emPalavras(Math.round(n), { um: 'unidade', varios: 'unidades' });
 };
@@ -167,6 +173,7 @@ const qtdEmPalavras = (item) => {
 const textoQtdCard = (item) => {
     const frac = isFracionavel(item.unidade);
     if (!frac && itemEhPacote(item)) return emPalavras(Math.round(Number(item.qtd) || 0), NOMES_PACOTE);
+    if (!frac && itemEhPote(item)) return emPalavras(Math.round(Number(item.qtd) || 0), NOMES_POTE);
     if (frac && item.tipo !== 'un') return `${formatarQuantidadeVisual(item.qtd, true)} ${String(item.unidade || 'kg').toLowerCase()}`;
     return `${item.qtd} ${!frac && item.unidade && item.unidade !== 'un' ? item.unidade : 'un'}`;
 };
@@ -223,7 +230,7 @@ const pintarAcao = (area, produtoId, animar) => {
     if (area.classList.contains('dupla')) { area.classList.remove('dupla'); delete area.dataset.sig; area.textContent = ''; }   // o produto deixou de ser por quilo
 
     const seletor = area.querySelector('.card-qtd');
-    const pac = ehPacote(prod), promo = prod ? promoDe(prod) : null;
+    const pac = ehPacote(prod), pote = !pac && ehPote(prod), promo = prod ? promoDe(prod) : null;
     // com pacote ou promoção, o contador diz o valor (a promoção muda a conta) e quanto falta para ela
     const extra = (it) => (pac || promo) && it ? `<small>${fmt(subtotalDoItem(it))}</small>` : '';
     // "quanto falta" só antes de completar a 1ª promoção (com 5 de "4 por R$ 10", "mais 3" confundiria)
@@ -249,7 +256,7 @@ const pintarAcao = (area, produtoId, animar) => {
                <output aria-live="polite">${pac || promo ? `<b>${escapeHTML(textoQtdCard(item))}</b>${extra(item)}` : escapeHTML(textoQtdCard(item))}</output>
                <button type="button" data-action="inc" data-id="${escapeHTML(produtoId)}" aria-label="Colocar mais um de ${nome}">+</button>
            </div>${dica(item)}`
-        : `<button type="button" class="card-add${pac ? ' card-add--pacote' : ''}${classe}" data-action="add" data-id="${escapeHTML(produtoId)}" aria-label="${pac ? `Adicionar 1 pacote de ${nome}` : `Adicionar ${nome}`}">${pac ? '+ 1 pacote' : 'Adicionar'}</button>`;
+        : `<button type="button" class="card-add${pac ? ' card-add--pacote' : pote ? ' card-add--tempero' : ''}${classe}" data-action="add" data-id="${escapeHTML(produtoId)}" aria-label="${pac ? `Adicionar 1 pacote de ${nome}` : pote ? `Adicionar 1 potinho de ${nome}` : `Adicionar ${nome}`}">${pac ? '+ 1 pacote' : pote ? '+ 1 potinho' : 'Adicionar'}</button>`;
     if (tinhaFoco) area.querySelector('[data-action="inc"], .card-add')?.focus({ preventScroll: true });
 };
 
@@ -447,9 +454,10 @@ const renderSkeletons = () => {
 const GRUPOS_SACOLA = [
     { id: 'peso', titulo: 'Pesados na hora', sub: 'valor final pela balança', ico: () => ARTE_BALANCA },
     { id: 'pacote', titulo: 'Pacotes prontos', sub: 'preço fechado', ico: () => ARTE_PACOTE },
+    { id: 'tempero', titulo: 'Temperos', sub: 'preço por potinho', ico: () => ARTE_POTE },
     { id: 'un', titulo: 'Por unidade', sub: '', ico: () => '' },
 ];
-const grupoDoItem = (item) => (isFracionavel(item.unidade) ? 'peso' : itemEhPacote(item) ? 'pacote' : 'un');
+const grupoDoItem = (item) => (isFracionavel(item.unidade) ? 'peso' : itemEhPacote(item) ? 'pacote' : itemEhPote(item) ? 'tempero' : 'un');
 const palavrasHtml = (item) => {
     const pr = promoDoItem(item), usou = naPromoDoItem(item) > 0;
     return `<b>${escapeHTML(qtdEmPalavras(item))}</b>${usou ? `<small>promoção ${escapeHTML(textoPromo(pr))}</small>` : ''}`;
@@ -467,8 +475,8 @@ const renderCarrinhoCompleto = () => {
         // pediu poucas unidades de algo pesado e existe o pacote "parecido": só informa, sem perguntar nada
         const parecido = item.tipo === 'un' && isFracionavel(item.unidade) && Math.round(item.qtd) <= 3 ? pacoteParecido(prod, STATE.produtos) : null;
         return `
-        <article class="carrinho-item${itemEhPacote(item) ? ' carrinho-item--pacote' : ''}" id="cart-row-${escapeHTML(item.id)}">
-            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(fotoPequena(item, 128))}" data-original="${escapeHTML(item.foto)}" alt="${escapeHTML(item.nome)}" loading="lazy" width="48" height="48">` : (itemEhPacote(item) ? ARTE_PACOTE : '')}</div>
+        <article class="carrinho-item${itemEhPacote(item) ? ' carrinho-item--pacote' : itemEhPote(item) ? ' carrinho-item--tempero' : ''}" id="cart-row-${escapeHTML(item.id)}">
+            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(fotoPequena(item, 128))}" data-original="${escapeHTML(item.foto)}" alt="${escapeHTML(item.nome)}" loading="lazy" width="48" height="48">` : (itemEhPacote(item) ? ARTE_PACOTE : itemEhPote(item) ? ARTE_POTE : '')}</div>
             <div class="item-meio">
                 <h3 class="item-nome">${escapeHTML(item.nome)} </h3>
                 <p class="item-palavras">${palavrasHtml(item)}</p>
@@ -476,7 +484,7 @@ const renderCarrinhoCompleto = () => {
                     <button class="btn-qtd" data-action="dec" data-id="${escapeHTML(item.id)}" aria-label="Diminuir ${escapeHTML(item.nome)}">−</button>
                     <input class="qtd-input" type="text" inputmode="decimal" value="${escapeHTML(formatarQuantidadeVisual(Number(item.qtd) || 0, isPeso))}" data-id="${escapeHTML(item.id)}" aria-label="Quantidade de ${escapeHTML(item.nome)}" enterkeyhint="done">
                     <button class="btn-qtd" data-action="inc" data-id="${escapeHTML(item.id)}" aria-label="Aumentar ${escapeHTML(item.nome)}">+</button>
-                    <span class="qtd-unid">${isPeso ? escapeHTML(String(item.unidade || 'kg').toLowerCase()) : itemEhPacote(item) ? 'pct' : 'un'}</span>
+                    <span class="qtd-unid">${isPeso ? escapeHTML(String(item.unidade || 'kg').toLowerCase()) : itemEhPacote(item) ? 'pct' : itemEhPote(item) ? 'pote' : 'un'}</span>
                 </div>
                 ${parecido ? `<button type="button" class="item-tambem" data-action="ver-pacote" data-id="${escapeHTML(parecido.id)}">Também tem em pacote: <u>${escapeHTML(parecido.nome)}</u></button>` : ''}
             </div>
@@ -536,6 +544,7 @@ const _avisados = new Set();
 const avisarAoAdicionar = (p, tipo) => {
     if (!p || _avisados.has(p.id)) return;
     if (ehPacote(p)) { _avisados.add(p.id); const peso = pesoDoPacote(p); showToast(`1 pacote de ${p.nome}${peso ? ` (${peso})` : ''} na sacola.`); return; }
+    if (ehPote(p)) { _avisados.add(p.id); showToast(`1 potinho de ${p.nome} na sacola.`); return; }
     if (tipo === 'un' && isFracionavel(p.unidade)) {
         const par = pacoteParecido(p, STATE.produtos); if (!par) return;
         _avisados.add(p.id);
@@ -596,6 +605,7 @@ const etiquetaDeOferta = (p) => {
 const etiquetaBase = (p) => {
     const frac = isFracionavel(p.unidade), pm = Number(p.pesoMedio || 0);
     if (ehPacote(p)) return `<div class="etq-preco">${fmt(p.preco)} <small>o pacote</small></div>`;
+    if (ehPote(p)) return `<div class="etq-preco">${fmt(p.preco)} <small>o potinho</small></div>`;
     // por quilo com os dois botões: a etiqueta mostra o quilo; o preço da unidade vai escrito no botão dela
     if (temDoisModos(p)) {
         // com peso médio, o tamanho de 1 unidade ajuda a escolher sem fazer conta ("1 un. ≈ 450 g")
@@ -628,12 +638,14 @@ const vitrineDaLoja = () => { if (_vitrineDe !== STATE.config.vitrine) { _vitrin
 // do resto (só as primeiras da vitrine, que são o "maior elemento" que o celular espera para mostrar a loja).
 const cardHtml = (p, rapido = false, prioridade = false) => {
         const favActive = STATE.favoritos.includes(p.id) ? 'ativo' : '';
+        const pac = ehPacote(p), tmp = !pac && ehTemp(p);
         return `
-        <article class="produto-card${ehPacote(p) ? ' produto-card--pacote' : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}"${ehPacote(p) ? ' data-pacote="1"' : ''} style="display: flex;${ehPacote(p) ? ' order: 2000;' : ''}">
+        <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : ''} style="display: flex;${pac ? ' order: 2000;' : tmp ? ' order: 3000;' : ''}">
             <div class="produto-img-wrap">
                 ${p.foto ? `<img src="${escapeHTML(fotoPequena(p, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
-                ${ehPacote(p) ? `<span class="lacre-pacote">${ARTE_PACOTE}Pacote</span>${pesoDoPacote(p) ? `<span class="peso-pacote">${escapeHTML(pesoDoPacote(p))}</span>` : ''}` : ''}
+                ${pac ? `<span class="lacre-pacote">${ARTE_PACOTE}Pacote</span>${pesoDoPacote(p) ? `<span class="peso-pacote">${escapeHTML(pesoDoPacote(p))}</span>` : ''}` : ''}
+                ${tmp ? `<span class="lacre-tempero">${ARTE_POTE}Tempero</span>` : ''}
                 <button class="btn-fav ${favActive}" data-action="fav" data-id="${escapeHTML(p.id)}" aria-label="Favoritar ${escapeHTML(p.nome)}" aria-pressed="${favActive ? 'true' : 'false'}">${ICO.coracao}</button>
             </div>
             <div class="produto-info">
@@ -818,7 +830,7 @@ const renderBlocos = (visiveis) => {
 const posicionarBlocos = () => {
     const grid = document.getElementById('lista-produtos'); if (!grid) return;
     const blocos = [...grid.querySelectorAll('.bloco-vitrine')]; if (!blocos.length) return;
-    const cards = [...grid.querySelectorAll('.produto-card')].filter(c => c.style.display !== 'none' && c.dataset.pacote !== '1')
+    const cards = [...grid.querySelectorAll('.produto-card')].filter(c => c.style.display !== 'none' && c.dataset.pacote !== '1' && c.dataset.tempero !== '1')
         .map((c, i) => ({ c, i, o: Number(c.style.order) || 0 })).sort((a, b) => a.o - b.o || a.i - b.i).map(x => x.c);
     // do último para o primeiro: mover um quadro não mexe na posição dos que vêm antes
     blocos.sort((a, b) => Number(b.dataset.depois) - Number(a.dataset.depois)).forEach(b => {
@@ -857,10 +869,11 @@ const renderLoja = (forcarRebuild = false) => {
         const matchBusca = (card.dataset.nome || '').includes(termo);
         // [PATCH 1] Favoritos: usar card.dataset.id (o data-id existe; produtoId não existia)
         const matchCat = !!termo || (STATE.catAtiva === 'todas') || (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(card.dataset.id)) || (STATE.catAtiva === 'pacotes' && card.dataset.pacote === '1') || (card.dataset.cat === STATE.catAtiva);
-        if(matchBusca && matchCat) { card.style.display = 'flex'; itensVisiveis++; if (card.dataset.pacote !== '1') soltosVisiveis++; } 
+        if(matchBusca && matchCat) { card.style.display = 'flex'; itensVisiveis++; if (card.dataset.pacote !== '1' && card.dataset.tempero !== '1') soltosVisiveis++; } 
         else { card.style.display = 'none'; }
     });
     pintarBlocoPacotes(grid);
+    pintarBlocoTemperos(grid);
     // aviso de "nada aqui": sempre refeito, para o texto acompanhar busca/aba
     document.getElementById('empty-grid-msg')?.remove();
     if (itensVisiveis === 0 && cards.length > 0) {
@@ -883,6 +896,18 @@ const pintarBlocoPacotes = (grid) => {
     const cara = `${v.titulo}|${v.texto}`;
     if (cab && cab.dataset.cara === cara) return;
     const html = `<header class="bloco-pacotes" data-cara="${escapeHTML(cara)}" style="order: 1999"><h2>${ARTE_PACOTE}<span>${escapeHTML(v.titulo)}</span></h2>${v.texto ? `<p>${escapeHTML(v.texto)}</p>` : ''}</header>`;
+    if (cab) cab.outerHTML = html; else grid.insertAdjacentHTML('beforeend', html);
+};
+
+// CANTINHO DOS TEMPEROS: depois dos pacotes (order 3000+, js/ranking-loja.js). Título e frase da loja (Aparência → Vitrine).
+const pintarBlocoTemperos = (grid) => {
+    const cab = grid.querySelector('.bloco-temperos');
+    const algum = [...grid.querySelectorAll('.produto-card[data-tempero="1"]')].some(c => c.style.display !== 'none');
+    if (!algum) { cab?.remove(); return; }
+    const c = cfgTemperos() || {}, titulo = c.titulo || TEMPEROS_PADRAO.titulo, texto = c.titulo || c.texto ? c.texto : TEMPEROS_PADRAO.texto;
+    const cara = `${titulo}|${texto}`;
+    if (cab && cab.dataset.cara === cara) return;
+    const html = `<header class="bloco-temperos" data-cara="${escapeHTML(cara)}" style="order: 2999"><h2>${ARTE_POTE}<span>${escapeHTML(titulo)}</span></h2>${texto ? `<p>${escapeHTML(texto)}</p>` : ''}</header>`;
     if (cab) cab.outerHTML = html; else grid.insertAdjacentHTML('beforeend', html);
 };
 
@@ -977,7 +1002,7 @@ const renderCategorias = () => {
     // se a categoria aberta sumiu (ocultada no painel), volta para "Todos"
     if (!abas.some(a => a.chave === STATE.catAtiva)) STATE.catAtiva = 'todas';
     STATE.abas = abas;
-    const arteDe = (a) => (a.chave === 'pacotes' ? ARTE_PACOTE : ARTE_CATEGORIA[a.chave === 'todas' || a.chave === 'favoritos' ? a.chave : iconeDaCategoria(a.nome || a.chave)] || '');
+    const arteDe = (a) => (a.chave === 'pacotes' ? ARTE_PACOTE : ehTemp({ cat: a.chave }) ? ARTE_POTE : ARTE_CATEGORIA[a.chave === 'todas' || a.chave === 'favoritos' ? a.chave : iconeDaCategoria(a.nome || a.chave)] || '');
     document.getElementById('categorias').innerHTML = abas.map(a => { const arte = arteDe(a); return `<button class="cat-btn${arte ? ' tem-arte' : ''} ${a.chave === STATE.catAtiva ? 'active' : ''}" data-action="cat" data-cat="${escapeHTML(a.chave)}">${arte}<span>${escapeHTML(a.nome)}</span></button>`; }).join('');
 };
 
@@ -1156,7 +1181,7 @@ const injetarModalDetalheSeNecessario = () => {
         const fracionavel = isFracionavel(p.unidade);
 
         if (escreverCampo) $('md-qtd').value = formatarQuantidadeVisual(qtd, modoPeso());
-        $('md-qtd-unid').textContent = modoPeso() ? (p.unidade || 'kg') : ehPacote(p) ? (qtd === 1 ? 'pacote' : 'pacotes') : (qtd === 1 ? 'unidade' : 'unidades');
+        $('md-qtd-unid').textContent = modoPeso() ? (p.unidade || 'kg') : ehPacote(p) ? (qtd === 1 ? 'pacote' : 'pacotes') : ehPote(p) ? (qtd === 1 ? 'potinho' : 'potinhos') : (qtd === 1 ? 'unidade' : 'unidades');
         $('md-menos').disabled = qtd <= passo();
         marcarPresetAtivo();
 
@@ -1189,7 +1214,7 @@ const injetarModalDetalheSeNecessario = () => {
             }
             resumo.className = 'md-resumo md-resumo-exato';
             resumo.innerHTML = `<div class="md-resumo-linha"><span>Total</span><strong>${fmt(total)}</strong></div>${promo ? `<small>Promoção ${escapeHTML(textoPromo(promo))}${misturaPromo(p) ? ', pode misturar com outros pacotes' : ''}</small>` : ''}`;
-            btn.textContent = ehPacote(p) ? `Adicionar ${emPalavras(qtd, NOMES_PACOTE)} • ${fmt(total)}` : `Adicionar • ${fmt(total)}`;
+            btn.textContent = ehPacote(p) ? `Adicionar ${emPalavras(qtd, NOMES_PACOTE)} • ${fmt(total)}` : ehPote(p) ? `Adicionar ${emPalavras(qtd, NOMES_POTE)} • ${fmt(total)}` : `Adicionar • ${fmt(total)}`;
         }
     };
 
@@ -2101,11 +2126,11 @@ const renderComanda = () => {
     };
     const linha = (i) => {
         const p = produtoDoItem(i), n = Math.round(Number(i.qtd) || 0), pr = promoDoItem(i), usou = naPromoDoItem(i) > 0;
-        const pac = itemEhPacote(i), frac = isFracionavel(i.unidade), pm = pesoMedioDe(i);
+        const pac = itemEhPacote(i), pote = !pac && itemEhPote(i), frac = isFracionavel(i.unidade), pm = pesoMedioDe(i);
         const q = frac && i.tipo !== 'un' ? `${formatarQuantidadeVisual(Number(i.qtd) || 0, true)} ${String(i.unidade || 'kg').toLowerCase()}`
-            : emPalavras(n, pac ? NOMES_PACOTE : frac ? nomesDaUnidade(p.nomeUn) : { um: 'unidade', varios: 'unidades' });
+            : emPalavras(n, pac ? NOMES_PACOTE : pote ? NOMES_POTE : frac ? nomesDaUnidade(p.nomeUn) : { um: 'unidade', varios: 'unidades' });
         const sub = [frac && i.tipo === 'un' && pm > 0 ? pesoAproximado(pm * n) : '', pac && pesoDoPacote(p) ? `pacote de ${pesoDoPacote(p)}` : '', usou ? `promoção ${textoPromo(pr)}` : ''].filter(Boolean).join(' · ');
-        return `<li class="cm-linha${pac ? ' cm-linha--pacote' : ''}"><span class="cm-q">${escapeHTML(q)}</span><span class="cm-n">${escapeHTML(i.nome)}${sub ? `<small>${escapeHTML(sub)}</small>` : ''}</span><span class="cm-v">${valor(i)}</span></li>`;
+        return `<li class="cm-linha${pac ? ' cm-linha--pacote' : pote ? ' cm-linha--tempero' : ''}"><span class="cm-q">${escapeHTML(q)}</span><span class="cm-n">${escapeHTML(i.nome)}${sub ? `<small>${escapeHTML(sub)}</small>` : ''}</span><span class="cm-v">${valor(i)}</span></li>`;
     };
     const corpo = grupos.map(g => `${grupos.length > 1 ? `<li class="cm-grupo cm-grupo--${g.id}">${g.ico()}<span>${g.titulo}</span></li>` : ''}${g.itens.map(linha).join('')}`).join('');
     const total = exato + estimado, aproximado = temPesar || semEst;
