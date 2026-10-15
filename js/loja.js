@@ -202,7 +202,8 @@ const pintarAcao = (area, produtoId, animar) => {
     const pac = ehPacote(prod), promo = prod ? promoDe(prod) : null;
     // com pacote ou promoção, o contador diz o valor (a promoção muda a conta) e quanto falta para ela
     const extra = (it) => (pac || promo) && it ? `<small>${fmt(subtotalDoItem(it))}</small>` : '';
-    const dica = (it) => { const f = it ? faltaParaPromo(it.qtd, promo) : 0; return f ? `<p class="promo-falta">Mais ${f} e ${f === 1 ? 'os' : 'os'} ${promo.qtd} saem ${escapeHTML(textoPromo(promo).replace(/^\d+ por /, ''))}</p>` : ''; };
+    // "quanto falta" só antes de completar a 1ª promoção (com 5 de "4 por R$ 10", "mais 3" confundiria)
+    const dica = (it) => { const f = it && promo && Math.round(it.qtd) < promo.qtd ? faltaParaPromo(it.qtd, promo) : 0; return f ? `<p class="promo-falta">Mais ${f} e os ${promo.qtd} saem ${escapeHTML(textoPromo(promo).replace(/^\d+ por /, ''))}</p>` : ''; };
     if (item && seletor) {
         const out = seletor.querySelector('output');
         if (pac || promo) out.innerHTML = `<b>${escapeHTML(textoQtdCard(item))}</b>${extra(item)}`; else out.textContent = textoQtdCard(item);
