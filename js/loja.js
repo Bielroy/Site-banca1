@@ -1685,6 +1685,8 @@ const transicaoFoto = (fotoCard, abrir) => {
         // 'sem-anim' fica até a tela fechar: tirar aqui fazia a animação de abrir tocar de novo por cima.
     };
     t.finished.then(limpar, limpar);
+    // animação interrompida (trocou de app, tela apagou no meio): o navegador cancela e avisa; não é erro do cliente
+    t.ready.catch(() => {}); t.updateCallbackDone.catch(() => {});
 };
 
 // =========================================================

@@ -3,7 +3,7 @@
 //
 //  GET /api/manifest?loja=espetinhos-do-ze            → manifesto (nome, cor, ícone)
 //  GET /api/manifest?loja=espetinhos-do-ze&icone=1    → o ícone, em SVG
-//  ...&painel=1 em qualquer um dos dois               → o aplicativo do PAINEL da loja (abre /admin.html)
+//  ...&painel=1 em qualquer um dos dois               → o aplicativo do PAINEL da loja (abre /admin; o Cloudflare tira o .html, e o escopo /admin vale para /admin e /admin.html)
 //  GET /api/manifest?feira=quarta-jardins (&icone=1)   → o aplicativo da FEIRA (abre /feira/quarta-jardins)
 //
 //  Quem instala a loja na tela inicial do celular vê o NOME e o ÍCONE dela,
@@ -45,7 +45,7 @@ function manifesto(id, ficha, painel = false) {
   const tema = ficha.tema || {}, nome = limpo(ficha.nome, 60) || id, icone = `/api/manifest?loja=${encodeURIComponent(id)}${painel ? '&painel=1' : ''}&icone=1`;
   if (painel) {
     return { id: `/admin.html?loja=${id}`, name: `Painel · ${nome}`.slice(0, 60), short_name: 'Painel', description: `Pedidos, produtos e caixa da ${nome}.`, lang: 'pt-BR',
-      start_url: `/admin.html?loja=${encodeURIComponent(id)}`, scope: '/admin.html', display: 'standalone', orientation: 'portrait', theme_color: cor(tema.primaria, '#1a3a2a'), background_color: '#faf7f2',
+      start_url: `/admin?loja=${encodeURIComponent(id)}`, scope: '/admin', display: 'standalone', orientation: 'portrait', theme_color: cor(tema.primaria, '#1a3a2a'), background_color: '#faf7f2',
       icons: [{ src: icone, sizes: '512x512', type: 'image/svg+xml', purpose: 'any' }, { src: icone, sizes: '192x192', type: 'image/svg+xml', purpose: 'any' }] };
   }
   return {

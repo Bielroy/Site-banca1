@@ -1686,10 +1686,13 @@ teste('app por loja: nome, cor e ícone próprios; a loja original e loja bloque
   assert.strictEqual((await ch({ loja: 'pao-da-lu' }, 'POST')).status, 405);
   // o PAINEL é outro aplicativo: abre o admin, tem outra identidade (não substitui o da loja) e outro ícone
   const mp = JSON.parse((await ch({ loja: 'pao-da-lu', painel: '1' })).corpo);
-  assert.strictEqual(mp.start_url, '/admin.html?loja=pao-da-lu'); assert.strictEqual(mp.scope, '/admin.html'); assert.notStrictEqual(mp.id, m.id); assert.ok(mp.name.startsWith('Painel'));
+  assert.strictEqual(mp.start_url, '/admin?loja=pao-da-lu'); assert.strictEqual(mp.scope, '/admin', 'o Cloudflare troca /admin.html por /admin: o app do painel vale para os dois'); assert.notStrictEqual(mp.id, m.id); assert.ok(mp.name.startsWith('Painel'));
   const svgP = (await ch({ loja: 'pao-da-lu', painel: '1', icone: '1' })).corpo; assert.ok(svgP.includes('fill="#F6F1E4"') && svgP.includes('rx="72" fill="#7a2e12"') && svgP !== svg);
   const fixo = JSON.parse(require('fs').readFileSync(raiz('admin.webmanifest'), 'utf8')), cfgVite = require('fs').readFileSync(raiz('vite.config.js'), 'utf8');
-  assert.strictEqual(fixo.start_url, '/admin.html'); assert.strictEqual(fixo.id, '/admin.html'); assert.strictEqual(fixo.scope, '/admin.html');
+  assert.strictEqual(fixo.start_url, '/admin'); assert.strictEqual(fixo.id, '/admin.html', 'a identidade não muda: o app já instalado só se atualiza'); assert.strictEqual(fixo.scope, '/admin');
+  // o endereço que o Cloudflare entrega (/admin) e o antigo (/admin.html) ficam DENTRO do app do painel, e a loja fica fora dele
+  for (const u of ['/admin', '/admin.html', '/admin?loja=x']) assert.ok(u.startsWith(fixo.scope), u);
+  assert.ok(!'/'.startsWith(fixo.scope) && !'/?loja=x'.startsWith(fixo.scope));
   for (const i of fixo.icons) { assert.ok(require('fs').existsSync(raiz(i.src.slice(1))), i.src); assert.ok(cfgVite.includes(`'${i.src.slice(1)}'`), 'o build copia ' + i.src); }
   assert.ok(cfgVite.includes("'admin.webmanifest'")); assert.ok(require('fs').readFileSync(raiz('admin.html'), 'utf8').includes('href="/admin.webmanifest"'));
 });
