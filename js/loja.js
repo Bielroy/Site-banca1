@@ -6,7 +6,7 @@ import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques, maisPedidos } from './ranking-loja.js';
 import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca } from './vitrine-lib.js';
 import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA } from './vitrine-arte.js';
-import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, faltaParaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO } from './pacote-lib.js';
+import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, chavePromo, contaDaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO } from './pacote-lib.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
 import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras } from './tema.js';
@@ -129,7 +129,31 @@ const valorEstimado = (item) => { const pm = pesoMedioDe(item); return pm > 0 ? 
 // quem cobra de verdade é o servidor, com a mesma conta (lib/pacote.js).
 const produtoDoItem = (item) => (STATE.produtos || []).find(p => p.id === item.id) || item;
 const promoDoItem = (item) => (item.tipo === 'kg' || isFracionavel(item.unidade) ? null : promoDe(produtoDoItem(item), item.preco));
-const subtotalDoItem = (item) => { const pr = promoDoItem(item); return pr ? totalComPromo(item.preco, item.qtd, pr) / 100 : item.preco * item.qtd; };
+// A promoção é da SACOLA, não do item: pacotes com a mesma promoção se juntam (2 de batata + 2 de cenoura = "4 por R$ 10").
+const linhaPromo = (item) => { const pr = promoDoItem(item); return { preco: item.preco, qtd: pr ? item.qtd : 0, promo: pr, chave: pr ? chavePromo(produtoDoItem(item), pr) : '' }; };
+const contaDaSacola = (carrinho = STATE.carrinho) => contaDaPromo(carrinho.map(linhaPromo));
+const contaDoItem = (item) => { const i = STATE.carrinho.indexOf(item); return i < 0 ? null : contaDaSacola().itens[i]; };
+const subtotalDoItem = (item) => {
+    if (!promoDoItem(item)) return item.preco * item.qtd;
+    const r = contaDoItem(item); return r ? r.sub / 100 : totalComPromo(item.preco, item.qtd, promoDoItem(item)) / 100;
+};
+const naPromoDoItem = (item) => { const r = promoDoItem(item) && contaDoItem(item); return r ? r.naPromo : 0; };
+/** Grupo da promoção do produto na sacola agora: { promo, total, completos, falta } ou null. */
+const grupoPromoDe = (p) => { const pr = p && promoDe(p); if (!pr) return null; const ch = chavePromo(p, pr); return contaDaSacola().grupos.get(ch) || { promo: pr, total: 0, completos: 0, falta: pr.qtd }; };
+/** Há outro pacote na loja com a mesma promoção? Então dá para misturar. */
+const misturaPromo = (p) => { const pr = p && ehPacote(p) && promoDe(p); if (!pr) return false; const ch = chavePromo(p, pr); return (STATE.produtos || []).some((x) => x && x.id !== p.id && x.ativo !== false && ehPacote(x) && chavePromo(x, promoDe(x)) === ch); };
+/** Mudou um pacote: os outros da mesma promoção mudam de valor também (cartão e linha da sacola). */
+const repintarGrupoPromo = (id) => {
+    const p = produtoPorId(id), pr = p && promoDe(p); if (!pr || !ehPacote(p)) return;
+    const ch = chavePromo(p, pr);
+    STATE.carrinho.forEach((it) => {
+        if (it.id === id || chavePromo(produtoDoItem(it), promoDoItem(it)) !== ch) return;
+        atualizarBadgesDOM(it.id);
+        const row = document.getElementById(`cart-row-${it.id}`); if (!row) return;
+        const price = row.querySelector('.item-preco'); if (price) price.outerHTML = precoLinhaHtml(it);
+        const pal = row.querySelector('.item-palavras'); if (pal) pal.innerHTML = palavrasHtml(it);
+    });
+};
 const itemEhPacote = (item) => ehPacote(produtoDoItem(item));
 /** Quantidade em palavras, para não haver dúvida do que vai: "2 batatas · ≈ 360 g", "1,5 kg", "4 pacotes de 500 g". */
 const qtdEmPalavras = (item) => {
@@ -203,7 +227,11 @@ const pintarAcao = (area, produtoId, animar) => {
     // com pacote ou promoção, o contador diz o valor (a promoção muda a conta) e quanto falta para ela
     const extra = (it) => (pac || promo) && it ? `<small>${fmt(subtotalDoItem(it))}</small>` : '';
     // "quanto falta" só antes de completar a 1ª promoção (com 5 de "4 por R$ 10", "mais 3" confundiria)
-    const dica = (it) => { const f = it && promo && Math.round(it.qtd) < promo.qtd ? faltaParaPromo(it.qtd, promo) : 0; return f ? `<p class="promo-falta">Mais ${f} e os ${promo.qtd} saem ${escapeHTML(textoPromo(promo).replace(/^\d+ por /, ''))}</p>` : ''; };
+    // pacotes com a mesma promoção contam juntos: o "falta" é do grupo todo na sacola
+    const dica = (it) => {
+        const g = it && promo ? grupoPromoDe(prod) : null, f = g && !g.completos ? g.falta : 0;
+        return f ? `<p class="promo-falta">Mais ${f}${misturaPromo(prod) ? ', de qualquer pacote,' : ''} e os ${promo.qtd} saem ${escapeHTML(textoPromo(promo).replace(/^\d+ por /, ''))}</p>` : '';
+    };
     if (item && seletor) {
         const out = seletor.querySelector('output');
         if (pac || promo) out.innerHTML = `<b>${escapeHTML(textoQtdCard(item))}</b>${extra(item)}`; else out.textContent = textoQtdCard(item);
@@ -423,7 +451,7 @@ const GRUPOS_SACOLA = [
 ];
 const grupoDoItem = (item) => (isFracionavel(item.unidade) ? 'peso' : itemEhPacote(item) ? 'pacote' : 'un');
 const palavrasHtml = (item) => {
-    const pr = promoDoItem(item), usou = pr && Math.round(item.qtd) >= pr.qtd;
+    const pr = promoDoItem(item), usou = naPromoDoItem(item) > 0;
     return `<b>${escapeHTML(qtdEmPalavras(item))}</b>${usou ? `<small>promoção ${escapeHTML(textoPromo(pr))}</small>` : ''}`;
 };
 const renderCarrinhoCompleto = () => {
@@ -549,14 +577,14 @@ const modificarCarrinho = (id, delta, fixo = false, tipoCompraForcado = null) =>
     }
     
     persistirCarrinhoComDebounce(); atualizarBadgesDOM(id, novaQtd, true);
-    atualizarLinhaCarrinhoDOM(id, novaQtd, fmt(p.preco * novaQtd), tipoAtual); atualizarRodapeCarrinhoDOM();
+    atualizarLinhaCarrinhoDOM(id, novaQtd, fmt(p.preco * novaQtd), tipoAtual); repintarGrupoPromo(id); atualizarRodapeCarrinhoDOM();
 };
 
 // Etiqueta de preço do card. A UNIDADE vem em destaque; o quilo fica de referência.
 const NOME_UNIDADE = { un: 'a unidade', 'maço': 'o maço', maco: 'o maço', bdj: 'a bandeja', kit: 'o kit', kg: 'o quilo', kilo: 'o quilo', quilograma: 'o quilo', l: 'o litro', litro: 'o litro', g: 'o grama', grama: 'o grama' };
 const nomeUnidade = (u) => NOME_UNIDADE[String(u || 'un').toLowerCase()] || `por ${escapeHTML(u)}`;
 const etiquetaHtml = (p) => etiquetaDeOferta(p) + etiquetaBase(p) + etiquetaPromo(p);
-const etiquetaPromo = (p) => { const pr = promoDe(p); return pr ? `<span class="etq-promo">${escapeHTML(textoPromo(pr))}</span>` : ''; };
+const etiquetaPromo = (p) => { const pr = promoDe(p); return pr ? `<span class="etq-promo">${escapeHTML(textoPromo(pr))}${misturaPromo(p) ? ' · pode misturar' : ''}</span>` : ''; };
 // preço antigo riscado (o preço que vale continua sendo o de baixo; o servidor só conhece esse)
 // Quando a etiqueta mostra o preço POR UNIDADE (item pesado com peso médio), o preço antigo também vai por unidade:
 // comparar "R$ 14,85 o quilo" com "R$ 4,46 a unidade" faria a oferta parecer maior do que é.
@@ -1152,9 +1180,15 @@ const injetarModalDetalheSeNecessario = () => {
             }
             btn.textContent = `Adicionar ${qtd} ${qtd === 1 ? 'unidade' : 'unidades'}`;
         } else {
-            const promo = fracionavel ? null : promoDe(p), total = promo ? totalComPromo(p.preco, qtd, promo) / 100 : p.preco * qtd;
+            // com a promoção misturada, o total deste produto depende dos outros pacotes que já estão na sacola
+            const promo = fracionavel ? null : promoDe(p);
+            let total = p.preco * qtd;
+            if (promo) {
+                const lista = STATE.carrinho.filter((i) => i.id !== p.id).concat([{ ...p, qtd, tipo: 'un' }]);
+                total = contaDaSacola(lista).itens[lista.length - 1].sub / 100;
+            }
             resumo.className = 'md-resumo md-resumo-exato';
-            resumo.innerHTML = `<div class="md-resumo-linha"><span>Total</span><strong>${fmt(total)}</strong></div>${promo ? `<small>Promoção ${escapeHTML(textoPromo(promo))}</small>` : ''}`;
+            resumo.innerHTML = `<div class="md-resumo-linha"><span>Total</span><strong>${fmt(total)}</strong></div>${promo ? `<small>Promoção ${escapeHTML(textoPromo(promo))}${misturaPromo(p) ? ', pode misturar com outros pacotes' : ''}</small>` : ''}`;
             btn.textContent = ehPacote(p) ? `Adicionar ${emPalavras(qtd, NOMES_PACOTE)} • ${fmt(total)}` : `Adicionar • ${fmt(total)}`;
         }
     };
@@ -2064,7 +2098,7 @@ const renderComanda = () => {
         const v = subtotalDoItem(i); exato += v; if (isFracionavel(i.unidade)) temPesar = true; return fmt(v);
     };
     const linha = (i) => {
-        const p = produtoDoItem(i), n = Math.round(Number(i.qtd) || 0), pr = promoDoItem(i), usou = pr && n >= pr.qtd;
+        const p = produtoDoItem(i), n = Math.round(Number(i.qtd) || 0), pr = promoDoItem(i), usou = naPromoDoItem(i) > 0;
         const pac = itemEhPacote(i), frac = isFracionavel(i.unidade), pm = pesoMedioDe(i);
         const q = frac && i.tipo !== 'un' ? `${formatarQuantidadeVisual(Number(i.qtd) || 0, true)} ${String(i.unidade || 'kg').toLowerCase()}`
             : emPalavras(n, pac ? NOMES_PACOTE : frac ? nomesDaUnidade(p.nomeUn) : { um: 'unidade', varios: 'unidades' });

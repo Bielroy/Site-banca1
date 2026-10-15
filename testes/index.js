@@ -2721,6 +2721,63 @@ teste('checkout: "4 por R$ 10" é calculado no SERVIDOR e o pacote vai escrito p
   assert.strictEqual(r3.corpo.pedido.total, 9);
   assert.strictEqual(db._dados.get(`pedidos/${p3.idempotencyKey}`).itens[0].promo, undefined);
 });
+teste('pacote: "4 por R$ 10" vale MISTURANDO pacotes (2 de batata + 2 de cenoura); produto comum conta sozinho', async () => {
+  const W = await import(raiz('js/pacote-lib.js')), S = require(raiz('lib/pacote'));
+  const pr = { qtd: 4, preco: 10 };
+  const bat = { id: 'b', unidade: 'un', pacote: true }, cen = { id: 'c', unidade: 'un', pacote: true }, alf = { id: 'a', unidade: 'un' }, alf2 = { id: 'a2', unidade: 'un' };
+  for (const L of [W, S]) {
+    assert.strictEqual(L.chavePromo(bat, pr), L.chavePromo(cen, pr), 'pacotes com a mesma promoção: mesmo grupo');
+    assert.notStrictEqual(L.chavePromo(bat, pr), L.chavePromo(bat, { qtd: 4, preco: 11 }), 'promoção diferente: grupo diferente');
+    assert.notStrictEqual(L.chavePromo(alf, pr), L.chavePromo(alf2, pr), 'produto que não é pacote conta sozinho');
+    const linha = (p, preco, qtd) => ({ preco, qtd, promo: pr, chave: L.chavePromo(p, pr) });
+    let r = L.contaDaPromo([linha(bat, 3, 2), linha(cen, 3, 2)]);
+    assert.deepStrictEqual(r.itens, [{ sub: 500, naPromo: 2 }, { sub: 500, naPromo: 2 }], '2 + 2 = R$ 10, metade para cada');
+    r = L.contaDaPromo([linha(bat, 3, 3), linha(cen, 3, 2)]);
+    assert.strictEqual(r.itens[0].sub + r.itens[1].sub, 1300, '5 pacotes misturados = R$ 10 + R$ 3');
+    assert.deepStrictEqual(r.grupos.get(L.chavePromo(bat, pr)), { promo: pr, total: 5, completos: 1, falta: 3 });
+    r = L.contaDaPromo([linha(bat, 3, 1), linha(cen, 3, 2)]);
+    assert.strictEqual(r.itens[0].sub + r.itens[1].sub, 900, '3 pacotes: preço cheio');
+    assert.strictEqual(r.grupos.get(L.chavePromo(bat, pr)).falta, 1);
+    r = L.contaDaPromo([linha(alf, 3, 2), linha(alf2, 3, 2)]);
+    assert.strictEqual(r.itens[0].sub + r.itens[1].sub, 1200, 'alface comum não mistura com outra');
+    // preços diferentes: os mais caros entram na promoção; nenhum centavo some
+    r = L.contaDaPromo([linha(bat, 3, 1), linha(cen, 3.5, 4)]);
+    assert.strictEqual(r.itens[1].naPromo, 4); assert.strictEqual(r.itens[0].naPromo, 0);
+    assert.strictEqual(r.itens[0].sub + r.itens[1].sub, 1300);
+    r = L.contaDaPromo([linha(bat, 2.99, 3), linha(cen, 3.49, 3), { preco: 6.5, qtd: 0.75 }]);
+    assert.strictEqual(r.itens[0].sub + r.itens[1].sub, 1000 + 299 + 299, 'R$ 10 + as 2 mais baratas');
+    assert.strictEqual(r.itens[2].sub, 488, 'linha sem promoção (peso): preço × quantidade');
+    // um produto só: igual à conta antiga
+    for (const q of [0, 1, 3, 4, 5, 8, 9]) assert.strictEqual(L.contaDaPromo([linha(bat, 3, q)]).itens[0].sub, L.totalComPromo(3, q, pr));
+  }
+  // site e servidor dão o mesmo resultado em misturas variadas
+  let n = 0;
+  for (const a of [0, 1, 2, 3, 5]) for (const b of [0, 1, 2, 4, 7]) for (const pc of [2.5, 3, 3.33]) {
+    const ls = (L) => [{ preco: 3, qtd: a, promo: pr, chave: L.chavePromo(bat, pr) }, { preco: pc, qtd: b, promo: pr, chave: L.chavePromo(cen, pr) }, { preco: 4, qtd: a, promo: { qtd: 3, preco: 10 }, chave: L.chavePromo(alf, { qtd: 3, preco: 10 }) }];
+    const w = W.contaDaPromo(ls(W)), s2 = S.contaDaPromo(ls(S));
+    assert.deepStrictEqual(w.itens, s2.itens); n++;
+    const soma = w.itens[0].sub + w.itens[1].sub, cheio = Math.round(300 * a + pc * 100 * b);
+    assert.ok(soma <= cheio, 'promoção nunca cobra mais que o preço cheio');
+  }
+  assert.ok(n === 75);
+});
+teste('checkout: o servidor junta pacotes diferentes na mesma promoção', async () => {
+  const base = semente();
+  base['produtos/batata-baby'] = { nome: 'Batata baby', preco: 3, unidade: 'un', cat: 'legumes', ativo: true, pacote: true, promoQtd: 4, promoPreco: 10 };
+  base['produtos/cenoura-baby'] = { nome: 'Cenoura baby', preco: 3, unidade: 'un', cat: 'legumes', ativo: true, pacote: true, promoQtd: 4, promoPreco: 10 };
+  base['produtos/alface'] = { nome: 'Alface', preco: 3, unidade: 'un', cat: 'folhas', ativo: true, promoQtd: 4, promoPreco: 10 };
+  const db = criarBanco(base); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  const p = pedido({ itens: [{ id: 'batata-baby', qtd: 2, tipo: 'un' }, { id: 'cenoura-baby', qtd: 2, tipo: 'un' }, { id: 'alface', qtd: 2, tipo: 'un' }] });
+  const r = await chamar(api, { headers: ip(), body: p });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(r.corpo.pedido.total, 16, '2 batatas + 2 cenouras = R$ 10; 2 alfaces (não é pacote, não mistura) = R$ 6');
+  const it = db._dados.get(`pedidos/${p.idempotencyKey}`).itens;
+  assert.deepStrictEqual(it.map((i) => i.subtotal), [5, 5, 6]);
+  assert.deepStrictEqual(it[0].promo, { qtd: 4, preco: 10 }); assert.deepStrictEqual(it[1].promo, { qtd: 4, preco: 10 }); assert.strictEqual(it[2].promo, undefined);
+  const msg = decodeURIComponent(r.corpo.pedido.whatsappMsg);
+  assert.ok(msg.includes('2 pacotes de Batata baby — R$ 5,00'), msg);
+  assert.ok(msg.includes('2 pacotes de Cenoura baby — R$ 5,00'), msg);
+});
 teste('pacote: o item do pedido aparece como "4 pacotes" no painel, e não "4x"', async () => {
   const U = await import(raiz('js/utils.js'));
   assert.strictEqual(U.qtdDoItem({ qtd: 4, tipo: 'un', unidade: 'un', pacote: true, pesoPacote: '500 g' }), '4 pacotes de 500 g');

@@ -366,6 +366,7 @@ module.exports = async function handler(req, res) {
 
       // ---- Cálculo (ainda sem escrever) ----
       let totalExatoCentavos = 0;
+      const linhasPromo = [];   // itens com promoção por quantidade; a conta é feita junto, depois do laço
       const itensValidados = [];
       const estoqueUpdates = [];
 
@@ -408,15 +409,15 @@ module.exports = async function handler(req, res) {
           });
         } else {
           // PROMOÇÃO POR QUANTIDADE ("4 por R$ 10"): só no que não vai à balança, com o preço do dia. A conta é daqui, nunca do navegador.
+          // Pacotes com a MESMA promoção se juntam (2 de batata + 2 de cenoura = 4): a conta fecha depois do laço.
           const promo = fracionavel ? null : Pac.promoDe(p, p.preco);
-          const subC = promo ? Pac.totalComPromo(p.preco, qtd, promo) : Math.round(paraCentavos(p.preco) * qtd);
-          totalExatoCentavos += subC;
-          const promoUsada = promo && qtd >= promo.qtd ? { qtd: promo.qtd, preco: promo.preco } : null;
+          const subC = Math.round(paraCentavos(p.preco) * qtd);
+          if (promo) linhasPromo.push({ idx: itensValidados.length, preco: p.preco, qtd, promo, chave: Pac.chavePromo({ ...p, id: item.id }, promo) });
+          else totalExatoCentavos += subC;
           itensValidados.push({
             id: item.id, nome: p.nome, cat: p.cat || '', qtd, tipo, aPesar: false,
             preco: p.preco, precoOriginal: p.preco, unidade: p.unidade || 'un',
             subtotal: paraFlutuante(subC),
-            ...(promoUsada ? { promo: promoUsada } : {}),
             ...(Pac.ehPacote(p) ? { pacote: true, ...(typeof p.pesoPacote === 'string' && p.pesoPacote.trim() ? { pesoPacote: p.pesoPacote.replace(/[<>]/g, '').trim().slice(0, 16) } : {}) } : {}),
           });
           // Baixa de estoque só para itens de valor fechado
@@ -427,6 +428,17 @@ module.exports = async function handler(req, res) {
           }
         }
       });
+
+      // ---- Promoção por quantidade (junta os pacotes com a mesma promoção) ----
+      if (linhasPromo.length) {
+        const conta = Pac.contaDaPromo(linhasPromo);
+        linhasPromo.forEach((l, k) => {
+          const it = itensValidados[l.idx], r = conta.itens[k];
+          it.subtotal = paraFlutuante(r.sub);
+          totalExatoCentavos += r.sub;
+          if (r.naPromo > 0) it.promo = { qtd: l.promo.qtd, preco: l.promo.preco };
+        });
+      }
 
       // ---- Cupom ----
       // CORRIGIDO: antes existia um cupom fixo no código ('IA-DESCONTO-10')

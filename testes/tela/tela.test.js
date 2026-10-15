@@ -263,6 +263,30 @@ teste('pacotes: bloco no fim da vitrine, atalho "Pacotes", "+ 1 pacote", sacola 
   semErros(erros); await fechar();
 });
 
+teste('pacotes: "4 por R$ 10" misturando 2 de batata e 2 de cenoura (cartão, sacola e comanda)', async () => {
+  const cen = cenarioPacotes();
+  Object.assign(cen.lojas.banca.produtos.cb, { promoQtd: 4, promoPreco: 10 });
+  const { pagina, erros, fechar } = await abrir('/', cen);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  const bb = pagina.locator('#lista-produtos .produto-card[data-id="bb"]'), cb = pagina.locator('#lista-produtos .produto-card[data-id="cb"]');
+  assert.ok(/4 por R\$ 10 · pode misturar/.test(await bb.locator('.etq-promo').innerText()), 'a etiqueta avisa que dá para misturar');
+  await bb.scrollIntoViewIfNeeded();
+  await bb.locator('[data-action="add"]').click();
+  await cb.locator('[data-action="add"]').click(); await cb.locator('[data-action="inc"]').click();
+  await pagina.waitForFunction(() => /Mais 1, de qualquer pacote,/.test(document.querySelector('#lista-produtos .produto-card[data-id="cb"] .card-acao')?.innerText || ''), null, { timeout: 3000 });
+  await bb.locator('[data-action="inc"]').click();
+  // 2 + 2 = R$ 10: cada cartão mostra R$ 5 (o da batata muda também quando a cenoura completa)
+  await pagina.waitForFunction(() => ['bb', 'cb'].every((id) => /R\$\s*5,00/.test(document.querySelector(`#lista-produtos .produto-card[data-id="${id}"] .card-qtd`)?.innerText || '')), null, { timeout: 3000 });
+  assert.strictEqual(await pagina.locator('#lista-produtos .promo-falta').count(), 0, 'promoção completa: some o "falta"');
+  await pagina.locator('#btn-carrinho-mobile').click();
+  for (const id of ['bb', 'cb']) assert.ok(/R\$\s5,00/.test(await pagina.locator(`#cart-row-${id} .item-preco`).innerText()), id);
+  await pagina.locator('#btn-abrir-checkout').click();
+  const comanda = await pagina.locator('#comanda').innerText();
+  assert.ok((comanda.match(/promoção 4 por R\$ 10/g) || []).length === 2, comanda);
+  assert.ok(/R\$\s10,00/.test(await pagina.locator('#comanda .cm-total').innerText()), comanda);
+  semErros(erros); await fechar();
+});
+
 teste('pacotes: no painel, peso do pacote em branco é aceito e promoção mais cara é recusada', async () => {
   const cen = cenarioPacotes(); cen.conta = { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } };
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });

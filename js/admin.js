@@ -710,7 +710,7 @@ const pintarPacote = () => {
         const nome = pac ? 'pacote' : 'unidade', q = promo ? promo.qtd : 0;
         previa.classList.toggle('erro', !!erro);
         previa.textContent = erro || (promo
-            ? `Na loja: ${fmt(preco)} ${pac ? 'o pacote' : 'cada'} · ${textoPromo(promo)}. ${[q - 1, q, q + 1].map((n) => `${n} = ${reaisAdm(totalComPromo(preco, n, promo))}`).join(' · ')}`
+            ? `Na loja: ${fmt(preco)} ${pac ? 'o pacote' : 'cada'} · ${textoPromo(promo)}. ${[q - 1, q, q + 1].map((n) => `${n} = ${reaisAdm(totalComPromo(preco, n, promo))}`).join(' · ')}${pac ? '. Vale misturando com outros pacotes da mesma promoção (2 de um + 2 de outro).' : ''}`
             : `Ex.: leve 4 por R$ 10,00. Quem levar 4 paga R$ 10; o que passar volta ao preço normal da ${nome}. Em branco: sem promoção.`);
     }
     const pn = v$('nome-un-previa');
