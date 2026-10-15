@@ -6,7 +6,7 @@ import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques, maisPedidos } from './ranking-loja.js';
 import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca } from './vitrine-lib.js';
 import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_POTE } from './vitrine-arte.js';
-import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, chavePromo, contaDaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO, ehTempero, ehPotinho, NOMES_POTE, TEMPEROS_PADRAO } from './pacote-lib.js';
+import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, chavePromo, contaDaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO, ehTempero, ehPotinho, NOMES_POTE, TEMPEROS_PADRAO, ORDEM_PACOTES, ORDEM_TEMPEROS } from './pacote-lib.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
 import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras } from './tema.js';
@@ -640,7 +640,7 @@ const cardHtml = (p, rapido = false, prioridade = false) => {
         const favActive = STATE.favoritos.includes(p.id) ? 'ativo' : '';
         const pac = ehPacote(p), tmp = !pac && ehTemp(p);
         return `
-        <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : ''} style="display: flex;${pac ? ' order: 2000;' : tmp ? ' order: 3000;' : ''}">
+        <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : ''} style="display: flex;${pac ? ` order: ${ORDEM_PACOTES};` : tmp ? ` order: ${ORDEM_TEMPEROS};` : ''}">
             <div class="produto-img-wrap">
                 ${p.foto ? `<img src="${escapeHTML(fotoPequena(p, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
@@ -895,11 +895,11 @@ const pintarBlocoPacotes = (grid) => {
     const v = vitrineDaLoja().pacotes || PACOTES_PADRAO;
     const cara = `${v.titulo}|${v.texto}`;
     if (cab && cab.dataset.cara === cara) return;
-    const html = `<header class="bloco-pacotes" data-cara="${escapeHTML(cara)}" style="order: 1999"><h2>${ARTE_PACOTE}<span>${escapeHTML(v.titulo)}</span></h2>${v.texto ? `<p>${escapeHTML(v.texto)}</p>` : ''}</header>`;
+    const html = `<header class="bloco-pacotes" data-cara="${escapeHTML(cara)}" style="order: ${ORDEM_PACOTES - 1}"><h2>${ARTE_PACOTE}<span>${escapeHTML(v.titulo)}</span></h2>${v.texto ? `<p>${escapeHTML(v.texto)}</p>` : ''}</header>`;
     if (cab) cab.outerHTML = html; else grid.insertAdjacentHTML('beforeend', html);
 };
 
-// CANTINHO DOS TEMPEROS: depois dos pacotes (order 3000+, js/ranking-loja.js). Título e frase da loja (Aparência → Vitrine).
+// CANTINHO DOS TEMPEROS: depois dos pacotes (order 5000+, ORDEM_TEMPEROS em js/ranking-loja.js). Título e frase da loja (Aparência → Vitrine).
 const pintarBlocoTemperos = (grid) => {
     const cab = grid.querySelector('.bloco-temperos');
     const algum = [...grid.querySelectorAll('.produto-card[data-tempero="1"]')].some(c => c.style.display !== 'none');
@@ -907,7 +907,7 @@ const pintarBlocoTemperos = (grid) => {
     const c = cfgTemperos() || {}, titulo = c.titulo || TEMPEROS_PADRAO.titulo, texto = c.titulo || c.texto ? c.texto : TEMPEROS_PADRAO.texto;
     const cara = `${titulo}|${texto}`;
     if (cab && cab.dataset.cara === cara) return;
-    const html = `<header class="bloco-temperos" data-cara="${escapeHTML(cara)}" style="order: 2999"><h2>${ARTE_POTE}<span>${escapeHTML(titulo)}</span></h2>${texto ? `<p>${escapeHTML(texto)}</p>` : ''}</header>`;
+    const html = `<header class="bloco-temperos" data-cara="${escapeHTML(cara)}" style="order: ${ORDEM_TEMPEROS - 1}"><h2>${ARTE_POTE}<span>${escapeHTML(titulo)}</span></h2>${texto ? `<p>${escapeHTML(texto)}</p>` : ''}</header>`;
     if (cab) cab.outerHTML = html; else grid.insertAdjacentHTML('beforeend', html);
 };
 

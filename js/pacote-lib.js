@@ -40,6 +40,16 @@ export function ehTempero(p, cfg) {
 /** Tempero vendido por potinho (não vai para a balança): botão "+ 1 potinho", "3 potinhos". */
 export const ehPotinho = (p, cfg) => ehTempero(p, cfg) && !fracionavel(p.unidade);
 
+// ORDEM NA VITRINE (CSS "order"): faixas que NUNCA se encostam. A nota da lista inteligente vai de 0 a 1000.
+//   soltos 0–1000 · cabeçalho dos pacotes 1999 · pacotes 2000–3000 · cabeçalho dos temperos 4999 · temperos 5000–6000
+// (antes os temperos começavam em 3000: o pacote menos pedido, com 3000, caía dentro do cantinho dos temperos)
+export const ORDEM_PACOTES = 2000, ORDEM_TEMPEROS = 5000;
+/** `p` = chance de o cliente levar (0 a 1); `tipo` = 'pacote' | 'tempero' | ''. */
+export function ordemNaVitrine(p, tipo = '') {
+    const n = Number(p), nota = Math.min(1000, Math.max(0, Math.round((1 - (Number.isFinite(n) ? n : 0.3)) * 1000)));
+    return nota + (tipo === 'pacote' ? ORDEM_PACOTES : tipo === 'tempero' ? ORDEM_TEMPEROS : 0);
+}
+
 /** É pacote fechado? Só produto que NÃO vai para a balança (pacote "por quilo" não existe). */
 export const ehPacote = (p) => !!p && p.pacote === true && !fracionavel(p.unidade);
 

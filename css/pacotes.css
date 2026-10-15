@@ -137,7 +137,7 @@
 
 /* =====================================================================
    CANTINHO DOS TEMPEROS (potinhos): mesmo jeito do bloco dos pacotes, na cor
-   de colorau, depois dos pacotes (cabeçalho order 2999, cartões 3000+).
+   de colorau, depois dos pacotes (cabeçalho order 4999, cartões 5000+; ver ORDEM_TEMPEROS).
    ===================================================================== */
 :root {
     --colorau: #f6e3d6;          /* faixa do bloco */

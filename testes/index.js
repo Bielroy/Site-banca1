@@ -2781,6 +2781,18 @@ teste('checkout: o servidor junta pacotes diferentes na mesma promoção', async
   assert.ok(msg.includes('2 pacotes de Batata baby — R$ 5,00'), msg);
   assert.ok(msg.includes('2 pacotes de Cenoura baby — R$ 5,00'), msg);
 });
+teste('vitrine: pacotes e temperos nunca se misturam na ordem, nem o pacote menos pedido (nota 0) nem o mais pedido', async () => {
+  const P = await import(raiz('js/pacote-lib.js'));
+  const notas = [1, 0.999, 0.5, 0.3, 0.001, 0, -2, 3, NaN, undefined];
+  const faixa = (tipo) => notas.map((n) => P.ordemNaVitrine(n, tipo));
+  const soltos = faixa(''), pacotes = faixa('pacote'), temperos = faixa('tempero');
+  const cabPac = P.ORDEM_PACOTES - 1, cabTmp = P.ORDEM_TEMPEROS - 1;
+  assert.ok(Math.max(...soltos) < cabPac, 'soltos antes do cabeçalho dos pacotes: ' + soltos);
+  assert.ok(Math.min(...pacotes) > cabPac && Math.max(...pacotes) < cabTmp, 'pacotes entre os dois cabeçalhos: ' + pacotes);
+  assert.ok(Math.min(...temperos) > cabTmp, 'temperos depois do cabeçalho deles: ' + temperos);
+  assert.strictEqual(P.ordemNaVitrine(0, 'pacote'), 3000, 'o caso da foto: pacote pouco pedido');
+  assert.ok(P.ordemNaVitrine(0.9, '') < P.ordemNaVitrine(0.1, ''), 'mais chance de levar = mais acima');
+});
 teste('temperos: o cantinho vale pela categoria (sozinho: "tempero" no nome), pacote fica no bloco dele e "-" desliga', async () => {
   const P = await import(raiz('js/pacote-lib.js')), V = await import(raiz('js/vitrine-lib.js'));
   const col = { cat: 'Temperos', unidade: 'un' };
