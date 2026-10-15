@@ -2642,6 +2642,111 @@ teste('cartaz da feira: leva o link e o nome DESTA feira, texto escapado, sem sc
   assert.strictEqual(C.qrSvg('https://x.com/' + 'a'.repeat(300)), '', 'link longo demais: sem QR (não quebra)');
 });
 
+// ------------------------------------------------------------------ PACOTES e PROMOÇÃO "4 por R$ 10"
+teste('pacote: só o que não vai à balança, peso do pacote opcional e promoção que precisa sair mais barata', async () => {
+  const P = await import(raiz('js/pacote-lib.js'));
+  assert.ok(P.ehPacote({ pacote: true, unidade: 'un' }));
+  assert.ok(!P.ehPacote({ pacote: true, unidade: 'kg' }), 'pacote "por quilo" não existe: continua produto de balança');
+  assert.ok(!P.ehPacote({ unidade: 'un' }));
+  assert.strictEqual(P.pesoDoPacote({ pacote: true, unidade: 'un', pesoPacote: ' 500 g ' }), '500 g');
+  assert.strictEqual(P.pesoDoPacote({ pacote: true, unidade: 'un' }), '', 'sem peso: aparece só "PACOTE"');
+  const pr = P.promoDe({ unidade: 'un', preco: 3, promoQtd: 4, promoPreco: 10 });
+  assert.deepStrictEqual(pr, { qtd: 4, preco: 10 });
+  assert.strictEqual(P.promoDe({ unidade: 'un', preco: 3, promoQtd: 4, promoPreco: 12 }), null, '4 por R$ 12 = preço cheio: não é promoção');
+  assert.strictEqual(P.promoDe({ unidade: 'kg', preco: 3, promoQtd: 4, promoPreco: 10 }), null, 'produto de balança não tem promoção por quantidade');
+  assert.strictEqual(P.promoDe({ unidade: 'un', preco: 3, promoQtd: 1, promoPreco: 2 }), null);
+  assert.strictEqual(P.promoDe({ unidade: 'un', preco: 3, promoQtd: 4, promoPreco: 10 }, 2.4), null, 'no dia em que o preço baixa para R$ 2,40, 4 por R$ 10 deixa de valer');
+  for (const [q, c] of [[1, 300], [3, 900], [4, 1000], [5, 1300], [7, 1900], [8, 2000], [9, 2300], [0, 0]]) assert.strictEqual(P.totalComPromo(3, q, pr), c, `${q} pacotes`);
+  assert.strictEqual(P.totalComPromo(3, 5, null), 1500, 'sem promoção: preço cheio');
+  assert.strictEqual(P.textoPromo(pr), '4 por R$ 10');
+  assert.strictEqual(P.textoPromo({ qtd: 3, preco: 7.5 }), '3 por R$ 7,50');
+  assert.deepStrictEqual([1, 3, 4, 5, 0].map((q) => P.faltaParaPromo(q, pr)), [3, 1, 0, 3, 0]);
+});
+teste('pacote: "como chamar 1 unidade" vira "2 batatas" e o pacote parecido é achado pela primeira palavra', async () => {
+  const P = await import(raiz('js/pacote-lib.js'));
+  assert.deepStrictEqual(P.nomesDaUnidade(''), { um: 'unidade', varios: 'unidades' });
+  assert.deepStrictEqual(P.nomesDaUnidade('Batata'), { um: 'batata', varios: 'batatas' });
+  assert.deepStrictEqual(P.nomesDaUnidade('pão/pães'), { um: 'pão', varios: 'pães' }, 'a loja pode escrever o plural');
+  assert.deepStrictEqual(['pé', 'maço', 'limão', 'flor', 'abacaxi', 'alface'].map(P.plural), ['pés', 'maços', 'limões', 'flores', 'abacaxis', 'alfaces']);
+  assert.strictEqual(P.emPalavras(1, P.NOMES_PACOTE), '1 pacote');
+  assert.strictEqual(P.emPalavras(4, P.NOMES_PACOTE), '4 pacotes');
+  const produtos = [{ id: 'bi', nome: 'Batata inglesa', unidade: 'kg' }, { id: 'bb', nome: 'Batatinha? não', unidade: 'un', pacote: true }, { id: 'bp', nome: 'Batata baby', unidade: 'un', pacote: true }, { id: 'cn', nome: 'Cenoura', unidade: 'kg' }];
+  assert.strictEqual(P.pacoteParecido(produtos[0], produtos).id, 'bp');
+  assert.strictEqual(P.pacoteParecido(produtos[3], produtos), null, 'sem pacote de cenoura');
+  assert.strictEqual(P.pacoteParecido(produtos[2], produtos), null, 'o próprio pacote não sugere pacote');
+});
+teste('pacote: o cadastro aceita peso em branco, nome livre e recusa promoção pela metade ou mais cara', async () => {
+  const P = await import(raiz('js/pacote-lib.js'));
+  let r = P.cadastroPacote({ pacote: true, unidade: 'un', preco: 3, pesoPacote: '' });
+  assert.deepStrictEqual(r, { dados: { pacote: true, pesoPacote: '', promoQtd: null, promoPreco: null, nomeUn: '' }, erro: '' }, 'peso do pacote é opcional');
+  r = P.cadastroPacote({ pacote: true, unidade: 'un', preco: 3, pesoPacote: '500 g', promoQtd: '4', promoPreco: '10,00' });
+  assert.deepStrictEqual(r.dados, { pacote: true, pesoPacote: '500 g', promoQtd: 4, promoPreco: 10, nomeUn: '' });
+  assert.ok(/quantidade E o preço/.test(P.cadastroPacote({ unidade: 'un', preco: 3, promoQtd: '4' }).erro));
+  assert.ok(/não sai mais barato/.test(P.cadastroPacote({ unidade: 'un', preco: 3, promoQtd: '4', promoPreco: '12' }).erro));
+  assert.ok(/de 2 a 50/.test(P.cadastroPacote({ unidade: 'un', preco: 3, promoQtd: '1', promoPreco: '2' }).erro));
+  r = P.cadastroPacote({ pacote: true, unidade: 'kg', preco: 6.5, nomeUn: 'batata', promoQtd: '4', promoPreco: '10' });
+  assert.deepStrictEqual(r, { dados: { pacote: false, pesoPacote: '', promoQtd: null, promoPreco: null, nomeUn: 'batata' }, erro: '' }, 'produto de quilo: nem pacote nem promoção; ganha o nome da unidade');
+  assert.strictEqual(P.cadastroPacote({ unidade: 'un', preco: 3, promoQtd: '4', promoPreco: 'R$ 1.000,00' }).erro !== '', true, 'R$ 1.000 é mais caro: recusa');
+});
+teste('pacote: a conta da promoção é a MESMA no site (js/pacote-lib.js) e no servidor (lib/pacote.js)', async () => {
+  const W = await import(raiz('js/pacote-lib.js')), S = require(raiz('lib/pacote'));
+  let n = 0;
+  for (const preco of [0.5, 1.99, 3, 4.5, 7.9, 12]) for (const promoQtd of [2, 3, 4, 6, 10]) for (const fator of [0.5, 0.8, 0.99, 1, 1.2]) {
+    const p = { unidade: 'un', preco, promoQtd, promoPreco: Math.round(preco * promoQtd * fator * 100) / 100 };
+    assert.deepStrictEqual(S.promoDe(p), W.promoDe(p), JSON.stringify(p));
+    for (const q of [0, 1, 2, 3, 4, 5, 9, 13, 20]) { assert.strictEqual(S.totalComPromo(preco, q, S.promoDe(p)), W.totalComPromo(preco, q, W.promoDe(p))); n++; }
+  }
+  assert.ok(n > 1000);
+});
+teste('checkout: "4 por R$ 10" é calculado no SERVIDOR e o pacote vai escrito por extenso para a banca', async () => {
+  const base = semente();
+  base['produtos/batata-baby'] = { nome: 'Batata baby', preco: 3, unidade: 'un', cat: 'legumes', ativo: true, pacote: true, pesoPacote: '500 g', promoQtd: 4, promoPreco: 10 };
+  base['produtos/cenoura-baby'] = { nome: 'Cenoura baby', preco: 3, unidade: 'un', cat: 'legumes', ativo: true, pacote: true };
+  const db = criarBanco(base); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  const p = pedido({ itens: [{ id: 'batata-baby', qtd: 5, tipo: 'un', precoOriginal: 0.01 }, { id: 'cenoura-baby', qtd: 2, tipo: 'un' }], clientTotal: 1 });
+  const r = await chamar(api, { headers: ip(), body: p });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(r.corpo.pedido.total, 19, '5 pacotes = 4 por R$ 10 + 1 × R$ 3 = R$ 13; + 2 cenouras baby = R$ 6');
+  const salvo = db._dados.get(`pedidos/${p.idempotencyKey}`);
+  const bb = salvo.itens.find((i) => i.id === 'batata-baby'), cb = salvo.itens.find((i) => i.id === 'cenoura-baby');
+  assert.strictEqual(bb.subtotal, 13); assert.deepStrictEqual(bb.promo, { qtd: 4, preco: 10 }); assert.strictEqual(bb.pacote, true); assert.strictEqual(bb.pesoPacote, '500 g');
+  assert.strictEqual(cb.pacote, true); assert.strictEqual(cb.pesoPacote, undefined, 'sem peso cadastrado: não inventa'); assert.strictEqual(cb.promo, undefined);
+  const msg = decodeURIComponent(r.corpo.pedido.whatsappMsg);
+  assert.ok(msg.includes('5 pacotes de 500 g de Batata baby — R$ 13,00'), msg);
+  assert.ok(msg.includes('promoção 4 por R$ 10,00'), 'a banca vê que a promoção entrou');
+  assert.ok(msg.includes('2 pacotes de Cenoura baby'), 'sem peso cadastrado: só "pacotes"');
+  // com 3 pacotes a promoção não entra: preço cheio
+  const p3 = pedido({ itens: [{ id: 'batata-baby', qtd: 3, tipo: 'un' }] });
+  const r3 = await chamar(api, { headers: ip(), body: p3 });
+  assert.strictEqual(r3.corpo.pedido.total, 9);
+  assert.strictEqual(db._dados.get(`pedidos/${p3.idempotencyKey}`).itens[0].promo, undefined);
+});
+teste('pacote: o item do pedido aparece como "4 pacotes" no painel, e não "4x"', async () => {
+  const U = await import(raiz('js/utils.js'));
+  assert.strictEqual(U.qtdDoItem({ qtd: 4, tipo: 'un', unidade: 'un', pacote: true, pesoPacote: '500 g' }), '4 pacotes de 500 g');
+  assert.strictEqual(U.qtdDoItem({ qtd: 1, tipo: 'un', unidade: 'un', pacote: true }), '1 pacote');
+  assert.strictEqual(U.qtdDoItem({ qtd: 2, tipo: 'un', unidade: 'un' }), '2x', 'produto comum continua igual');
+});
+teste('vitrine: texto do bloco dos pacotes e faixas da loja por categoria, dentro do limite de faixas', async () => {
+  const V = await import(raiz('js/vitrine-lib.js'));
+  const v = V.vitrineSegura({ pacotes: { titulo: ' Pacotinhos <b> ', texto: 'fechados' }, faixas: [{ titulo: 'Molhos', cat: 'molhos' }, { titulo: '', cat: 'x' }, { titulo: 'Sem categoria' }, { titulo: 'Doces', cat: 'doces' }, { titulo: 'Pães', cat: 'paes' }, { titulo: 'Quarta', cat: 'q' }] });
+  assert.deepStrictEqual(v.pacotes, { titulo: 'Pacotinhos <b>', texto: 'fechados' }, 'texto puro (a loja escapa ao mostrar)');
+  assert.deepStrictEqual(v.faixas.map((f) => f.titulo), ['Molhos', 'Doces', 'Pães'], 'faixa sem título ou sem categoria some; no máximo 3');
+  const produtos = [{ id: 'm1', cat: 'molhos' }, { id: 'm2', cat: 'Molhos' }, { id: 'd1', cat: 'doces' }, { id: 'd2', cat: 'doces' }, { id: 'e1', estacao: true }, { id: 'e2', estacao: true }];
+  const f = V.faixasDaVitrine(produtos, { proprias: v.faixas, temOfertas: true, temSempre: true });
+  assert.deepStrictEqual(f.map((x) => x.id), ['loja0', 'loja1'], 'as da loja entram antes das automáticas e o total continua 4');
+  assert.deepStrictEqual(f[0].ids, ['m1', 'm2']);
+  const um = V.faixasDaVitrine([{ id: 'm1', cat: 'molhos' }], { proprias: [{ titulo: 'Molhos', cat: 'molhos' }] });
+  assert.deepStrictEqual(um, [], 'faixa com 1 produto só não aparece');
+});
+teste('cartão: "como chamar 1 unidade" muda o botão e o contador ("+ 1 batata", "2 batatas")', async () => {
+  const M = await import(raiz('js/modo-lib.js'));
+  const p = { id: 'b', nome: 'Batata inglesa', unidade: 'kg', preco: 6.5, pesoMedio: 180, nomeUn: 'batata' };
+  assert.strictEqual(M.botoesDoCard(p, {})[0].titulo, '+ 1 batata');
+  assert.strictEqual(M.textoNoPedido(p, { qtd: 2, tipo: 'un' }).titulo, '2 batatas');
+  assert.strictEqual(M.textoNoPedido({ ...p, nomeUn: '' }, { qtd: 1, tipo: 'un' }).titulo, '1 unidade', 'sem nome: como antes');
+});
+
 (async () => {
   let falhas = 0;
   for (const [nome, fn] of testes) {

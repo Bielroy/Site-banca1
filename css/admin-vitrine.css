@@ -52,3 +52,25 @@
 .vt-tabela thead th { font-size: .78rem; color: var(--text-mid); font-weight: 700; }
 .vt-tabela td { font-variant-numeric: tabular-nums; font-weight: 700; }
 .vt-tabela tfoot th, .vt-tabela tfoot td { border-bottom: 0; color: #24603d; }
+
+/* ---------- cadastro: PACOTE FECHADO e promoção por quantidade (js/pacote-lib.js) ---------- */
+.pacote-campos { border: 1.5px solid var(--parchment); border-radius: 14px; padding: 12px 14px; margin: 4px 0 14px; background: #fff; }
+.pacote-campos[hidden] { display: none; }
+.pacote-campos.ligado { border: 2px solid #a87b3f; background: #fffaf0; }
+.pacote-liga { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; min-height: 44px; }
+.pacote-liga input { width: 22px; height: 22px; margin-top: 2px; accent-color: #6b4a1f; flex: none; }
+.pacote-liga-txt { display: grid; grid-template-columns: 28px 1fr; column-gap: 8px; align-items: center; }
+.pacote-liga-txt b { font-size: 1rem; color: #4a3214; }
+.pacote-liga-txt small { grid-column: 1 / -1; color: #6b4a1f; font-size: .8rem; line-height: 1.4; margin-top: 3px; }
+.pacote-ico svg { width: 28px; height: 28px; display: block; }
+#grupo-peso-pacote { margin: 12px 0 0; }
+#grupo-peso-pacote[hidden] { display: none; }
+.promo-grupo { margin: 12px 0 0; }
+.promo-grupo .grid-2 { gap: 10px; }
+#promo-previa.erro { color: var(--danger); font-weight: 700; }
+.vt-sum-pac { display: grid !important; grid-template-columns: 26px 1fr; column-gap: 8px; align-items: center; }
+.vt-sum-pac .arte-cat { width: 26px; height: 26px; grid-row: span 2; }
+.vt-sum-pac small { grid-column: 2; }
+.pacote-campos label.pacote-liga { display: flex; text-transform: none; letter-spacing: 0; font-size: 1rem; font-weight: 400; margin: 0; color: inherit; }
+.pacote-campos label.pacote-liga small { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.pacote-campos label.pacote-liga b { text-transform: none; letter-spacing: 0; }

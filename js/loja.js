@@ -5,7 +5,8 @@ import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, sho
 import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques, maisPedidos } from './ranking-loja.js';
 import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca } from './vitrine-lib.js';
-import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS } from './vitrine-arte.js';
+import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA } from './vitrine-arte.js';
+import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, faltaParaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO } from './pacote-lib.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
 import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras } from './tema.js';
@@ -124,9 +125,24 @@ const getCartQty = (id) => { const item = STATE.carrinho.find(x => x.id === id);
 const ehAPesar = (item) => item.tipo === 'un' && isFracionavel(item.unidade);
 const pesoMedioDe = (item) => Number((STATE.produtos.find(p => p.id === item.id) || item).pesoMedio || 0);
 const valorEstimado = (item) => { const pm = pesoMedioDe(item); return pm > 0 ? (item.preco * pm / 1000) * item.qtd : null; };
+// PACOTE e PROMOÇÃO "4 por R$ 10" (js/pacote-lib.js). O produto vale pelo cadastro AO VIVO (o item da sacola pode ser velho);
+// quem cobra de verdade é o servidor, com a mesma conta (lib/pacote.js).
+const produtoDoItem = (item) => (STATE.produtos || []).find(p => p.id === item.id) || item;
+const promoDoItem = (item) => (item.tipo === 'kg' || isFracionavel(item.unidade) ? null : promoDe(produtoDoItem(item), item.preco));
+const subtotalDoItem = (item) => { const pr = promoDoItem(item); return pr ? totalComPromo(item.preco, item.qtd, pr) / 100 : item.preco * item.qtd; };
+const itemEhPacote = (item) => ehPacote(produtoDoItem(item));
+/** Quantidade em palavras, para não haver dúvida do que vai: "2 batatas · ≈ 360 g", "1,5 kg", "4 pacotes de 500 g". */
+const qtdEmPalavras = (item) => {
+    const p = produtoDoItem(item), n = Number(item.qtd) || 0;
+    if (isFracionavel(item.unidade) && item.tipo !== 'un') return `${formatarQuantidadeVisual(n, true)} ${String(item.unidade || 'kg').toLowerCase()}`;
+    if (itemEhPacote(item)) { const peso = pesoDoPacote(p); return `${emPalavras(Math.round(n), NOMES_PACOTE)}${peso ? ` de ${peso}` : ''}`; }
+    if (isFracionavel(item.unidade)) { const pm = pesoMedioDe(item); return `${emPalavras(Math.round(n), nomesDaUnidade(p.nomeUn))}${pm > 0 ? ` · ${pesoAproximado(pm * n)}` : ''}`; }
+    return emPalavras(Math.round(n), { um: 'unidade', varios: 'unidades' });
+};
 
 const textoQtdCard = (item) => {
     const frac = isFracionavel(item.unidade);
+    if (!frac && itemEhPacote(item)) return emPalavras(Math.round(Number(item.qtd) || 0), NOMES_PACOTE);
     if (frac && item.tipo !== 'un') return `${formatarQuantidadeVisual(item.qtd, true)} ${String(item.unidade || 'kg').toLowerCase()}`;
     return `${item.qtd} ${!frac && item.unidade && item.unidade !== 'un' ? item.unidade : 'un'}`;
 };
@@ -183,7 +199,16 @@ const pintarAcao = (area, produtoId, animar) => {
     if (area.classList.contains('dupla')) { area.classList.remove('dupla'); delete area.dataset.sig; area.textContent = ''; }   // o produto deixou de ser por quilo
 
     const seletor = area.querySelector('.card-qtd');
-    if (item && seletor) { seletor.querySelector('output').textContent = textoQtdCard(item); return; }
+    const pac = ehPacote(prod), promo = prod ? promoDe(prod) : null;
+    // com pacote ou promoção, o contador diz o valor (a promoção muda a conta) e quanto falta para ela
+    const extra = (it) => (pac || promo) && it ? `<small>${fmt(subtotalDoItem(it))}</small>` : '';
+    const dica = (it) => { const f = it ? faltaParaPromo(it.qtd, promo) : 0; return f ? `<p class="promo-falta">Mais ${f} e ${f === 1 ? 'os' : 'os'} ${promo.qtd} saem ${escapeHTML(textoPromo(promo).replace(/^\d+ por /, ''))}</p>` : ''; };
+    if (item && seletor) {
+        const out = seletor.querySelector('output');
+        if (pac || promo) out.innerHTML = `<b>${escapeHTML(textoQtdCard(item))}</b>${extra(item)}`; else out.textContent = textoQtdCard(item);
+        area.querySelector('.promo-falta')?.remove(); if (dica(item)) seletor.insertAdjacentHTML('afterend', dica(item));
+        return;
+    }
     if (!item && area.querySelector('.card-add')) return;
 
     const tinhaFoco = area.contains(document.activeElement);
@@ -192,10 +217,10 @@ const pintarAcao = (area, produtoId, animar) => {
     area.innerHTML = item
         ? `<div class="card-qtd${classe}">
                <button type="button" data-action="dec" data-id="${escapeHTML(produtoId)}" aria-label="Tirar um de ${nome}">−</button>
-               <output aria-live="polite">${escapeHTML(textoQtdCard(item))}</output>
+               <output aria-live="polite">${pac || promo ? `<b>${escapeHTML(textoQtdCard(item))}</b>${extra(item)}` : escapeHTML(textoQtdCard(item))}</output>
                <button type="button" data-action="inc" data-id="${escapeHTML(produtoId)}" aria-label="Colocar mais um de ${nome}">+</button>
-           </div>`
-        : `<button type="button" class="card-add${classe}" data-action="add" data-id="${escapeHTML(produtoId)}" aria-label="Adicionar ${nome}">Adicionar</button>`;
+           </div>${dica(item)}`
+        : `<button type="button" class="card-add${pac ? ' card-add--pacote' : ''}${classe}" data-action="add" data-id="${escapeHTML(produtoId)}" aria-label="${pac ? `Adicionar 1 pacote de ${nome}` : `Adicionar ${nome}`}">${pac ? '+ 1 pacote' : 'Adicionar'}</button>`;
     if (tinhaFoco) area.querySelector('[data-action="inc"], .card-add')?.focus({ preventScroll: true });
 };
 
@@ -226,7 +251,10 @@ const voarParaPedido = (card) => {
 };
 
 const precoLinhaHtml = (item) => {
-    if (!ehAPesar(item)) return `<span class="item-preco">${fmt(item.preco * item.qtd)}</span>`;
+    if (!ehAPesar(item)) {
+        const cheio = item.preco * item.qtd, valor = subtotalDoItem(item);
+        return valor < cheio - 0.004 ? `<span class="item-preco item-preco--promo">${fmt(valor)}<small><s>${fmt(cheio)}</s></small></span>` : `<span class="item-preco">${fmt(valor)}</span>`;
+    }
     const v = valorEstimado(item);
     return v == null
         ? `<span class="item-preco item-preco--pesar">a pesar</span>`
@@ -250,6 +278,7 @@ const atualizarLinhaCarrinhoDOM = (id, novaQtd, subtotalFmt, tipo) => {
             
             const item = STATE.carrinho.find(x => x.id === id);
             if (price && item) price.outerHTML = precoLinhaHtml(item);
+            const pal = row.querySelector('.item-palavras'); if (pal && item) pal.innerHTML = palavrasHtml(item);
         }
     }
 };
@@ -287,7 +316,7 @@ const atualizarRodapeCarrinhoDOM = () => {
             const v = valorEstimado(item);
             if (v == null) semEstimativa = true; else estimado += v;
         } else {
-            totalExato += (item.preco * item.qtd);
+            totalExato += subtotalDoItem(item);
             qtdDistinta += (isFracionavel(item.unidade) ? 1 : item.qtd);
         }
     });
@@ -384,6 +413,18 @@ const renderSkeletons = () => {
     grid.innerHTML = skeletonHtml;
 };
 
+// Sacola em GRUPOS (só quando há mais de um tipo): o que a banca pesa, os pacotes fechados e o resto por unidade.
+// Cada item diz em palavras o que vai ("2 batatas · ≈ 360 g", "4 pacotes de 500 g"): é aqui que a pessoa confere.
+const GRUPOS_SACOLA = [
+    { id: 'peso', titulo: 'Pesados na hora', sub: 'valor final pela balança', ico: () => ARTE_BALANCA },
+    { id: 'pacote', titulo: 'Pacotes prontos', sub: 'preço fechado', ico: () => ARTE_PACOTE },
+    { id: 'un', titulo: 'Por unidade', sub: '', ico: () => '' },
+];
+const grupoDoItem = (item) => (isFracionavel(item.unidade) ? 'peso' : itemEhPacote(item) ? 'pacote' : 'un');
+const palavrasHtml = (item) => {
+    const pr = promoDoItem(item), usou = pr && Math.round(item.qtd) >= pr.qtd;
+    return `<b>${escapeHTML(qtdEmPalavras(item))}</b>${usou ? `<small>promoção ${escapeHTML(textoPromo(pr))}</small>` : ''}`;
+};
 const renderCarrinhoCompleto = () => {
     const cont = document.getElementById('carrinho-itens');
     STATE.produtos.forEach(p => atualizarBadgesDOM(p.id));   // cards acompanham o pedido
@@ -391,29 +432,33 @@ const renderCarrinhoCompleto = () => {
         cont.innerHTML = `<div class="empty-state">${iconeCarrinhoVazio}<p>${SACOLA_VAZIA.titulo}</p><span>${SACOLA_VAZIA.dica}</span></div>`;
         atualizarRodapeCarrinhoDOM(); return;
     }
-    let html = '';
-    STATE.carrinho.forEach(item => {
-        const sub = item.preco * item.qtd; 
+    const linha = (item) => {
         const isPeso = isFracionavel(item.unidade) && item.tipo !== 'un';
-        
-        const precoHtml = precoLinhaHtml(item);
-
-        html += `
-        <article class="carrinho-item" id="cart-row-${escapeHTML(item.id)}">
-            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(fotoPequena(item, 128))}" data-original="${escapeHTML(item.foto)}" alt="${escapeHTML(item.nome)}" loading="lazy" width="48" height="48">` : ''}</div>
+        const prod = produtoDoItem(item);
+        // pediu poucas unidades de algo pesado e existe o pacote "parecido": só informa, sem perguntar nada
+        const parecido = item.tipo === 'un' && isFracionavel(item.unidade) && Math.round(item.qtd) <= 3 ? pacoteParecido(prod, STATE.produtos) : null;
+        return `
+        <article class="carrinho-item${itemEhPacote(item) ? ' carrinho-item--pacote' : ''}" id="cart-row-${escapeHTML(item.id)}">
+            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(fotoPequena(item, 128))}" data-original="${escapeHTML(item.foto)}" alt="${escapeHTML(item.nome)}" loading="lazy" width="48" height="48">` : (itemEhPacote(item) ? ARTE_PACOTE : '')}</div>
             <div class="item-meio">
                 <h3 class="item-nome">${escapeHTML(item.nome)} </h3>
+                <p class="item-palavras">${palavrasHtml(item)}</p>
                 <div class="qtd-ctrl">
                     <button class="btn-qtd" data-action="dec" data-id="${escapeHTML(item.id)}" aria-label="Diminuir ${escapeHTML(item.nome)}">−</button>
                     <input class="qtd-input" type="text" inputmode="decimal" value="${escapeHTML(formatarQuantidadeVisual(Number(item.qtd) || 0, isPeso))}" data-id="${escapeHTML(item.id)}" aria-label="Quantidade de ${escapeHTML(item.nome)}" enterkeyhint="done">
                     <button class="btn-qtd" data-action="inc" data-id="${escapeHTML(item.id)}" aria-label="Aumentar ${escapeHTML(item.nome)}">+</button>
-                    <span class="qtd-unid">${isPeso ? escapeHTML(String(item.unidade || 'kg').toLowerCase()) : 'un'}</span>
+                    <span class="qtd-unid">${isPeso ? escapeHTML(String(item.unidade || 'kg').toLowerCase()) : itemEhPacote(item) ? 'pct' : 'un'}</span>
                 </div>
+                ${parecido ? `<button type="button" class="item-tambem" data-action="ver-pacote" data-id="${escapeHTML(parecido.id)}">Também tem em pacote: <u>${escapeHTML(parecido.nome)}</u></button>` : ''}
             </div>
-            ${precoHtml}
+            ${precoLinhaHtml(item)}
         </article>`;
-    });
-    cont.innerHTML = html; atualizarRodapeCarrinhoDOM();
+    };
+    const grupos = GRUPOS_SACOLA.map(g => ({ ...g, itens: STATE.carrinho.filter(i => grupoDoItem(i) === g.id) })).filter(g => g.itens.length);
+    cont.innerHTML = grupos.length > 1
+        ? grupos.map(g => `<h4 class="sacola-grupo sacola-grupo--${g.id}">${g.ico()}<span>${g.titulo}</span>${g.sub ? `<small>${g.sub}</small>` : ''}</h4>${g.itens.map(linha).join('')}`).join('')
+        : STATE.carrinho.map(linha).join('');
+    atualizarRodapeCarrinhoDOM();
 };
 
 let debounceSalvarCarrinho;
@@ -455,6 +500,20 @@ document.addEventListener('feira-do-cliente', () => { try { atualizarRodapeCarri
 const feiraDoEnderecoSalvo = (e) => { if (e && e.condominio) feiraPeloCondominio(e.condominio, perguntarFeira).then((id) => { if (id) guardarNaConta(); }).catch(() => {}); };
 
 // Modificado para aceitar o "tipo" de compra (Kg ou Un)
+// Na PRIMEIRA vez que um produto entra na sacola: diz em palavras o que entrou. Só informa, não pergunta nada.
+//  - pacote: "1 pacote de Batata baby (500 g) na sacola."
+//  - 1 unidade de algo pesado que também existe em pacote: "1 batata de Batata inglesa (≈ 180 g)... Também tem em pacote: ..."
+const _avisados = new Set();
+const avisarAoAdicionar = (p, tipo) => {
+    if (!p || _avisados.has(p.id)) return;
+    if (ehPacote(p)) { _avisados.add(p.id); const peso = pesoDoPacote(p); showToast(`1 pacote de ${p.nome}${peso ? ` (${peso})` : ''} na sacola.`); return; }
+    if (tipo === 'un' && isFracionavel(p.unidade)) {
+        const par = pacoteParecido(p, STATE.produtos); if (!par) return;
+        _avisados.add(p.id);
+        const pm = Number(p.pesoMedio || 0);
+        showToast(`${p.nome}: 1 ${nomesDaUnidade(p.nomeUn).um}${pm > 0 ? ` (${pesoAproximado(pm)})` : ''} na sacola. Também tem em pacote: ${par.nome}.`);
+    }
+};
 const modificarCarrinho = (id, delta, fixo = false, tipoCompraForcado = null) => {
     const p = STATE.produtos.find(x => x.id === id); if (!p) return;
     
@@ -485,6 +544,7 @@ const modificarCarrinho = (id, delta, fixo = false, tipoCompraForcado = null) =>
         novaQtd = fixFloat(fixo ? valParaAplicar : (isPeso ? 1.0 : 1)); 
         STATE.carrinho.push({...p, qtd: novaQtd, tipo: tipoAtual}); 
         contarFunil('adicionou');
+        avisarAoAdicionar(p, tipoAtual);
     }
     
     persistirCarrinhoComDebounce(); atualizarBadgesDOM(id, novaQtd, true);
@@ -494,7 +554,8 @@ const modificarCarrinho = (id, delta, fixo = false, tipoCompraForcado = null) =>
 // Etiqueta de preço do card. A UNIDADE vem em destaque; o quilo fica de referência.
 const NOME_UNIDADE = { un: 'a unidade', 'maço': 'o maço', maco: 'o maço', bdj: 'a bandeja', kit: 'o kit', kg: 'o quilo', kilo: 'o quilo', quilograma: 'o quilo', l: 'o litro', litro: 'o litro', g: 'o grama', grama: 'o grama' };
 const nomeUnidade = (u) => NOME_UNIDADE[String(u || 'un').toLowerCase()] || `por ${escapeHTML(u)}`;
-const etiquetaHtml = (p) => etiquetaDeOferta(p) + etiquetaBase(p);
+const etiquetaHtml = (p) => etiquetaDeOferta(p) + etiquetaBase(p) + etiquetaPromo(p);
+const etiquetaPromo = (p) => { const pr = promoDe(p); return pr ? `<span class="etq-promo">${escapeHTML(textoPromo(pr))}</span>` : ''; };
 // preço antigo riscado (o preço que vale continua sendo o de baixo; o servidor só conhece esse)
 // Quando a etiqueta mostra o preço POR UNIDADE (item pesado com peso médio), o preço antigo também vai por unidade:
 // comparar "R$ 14,85 o quilo" com "R$ 4,46 a unidade" faria a oferta parecer maior do que é.
@@ -505,6 +566,7 @@ const etiquetaDeOferta = (p) => {
 };
 const etiquetaBase = (p) => {
     const frac = isFracionavel(p.unidade), pm = Number(p.pesoMedio || 0);
+    if (ehPacote(p)) return `<div class="etq-preco">${fmt(p.preco)} <small>o pacote</small></div>`;
     // por quilo com os dois botões: a etiqueta mostra o quilo; o preço da unidade vai escrito no botão dela
     if (temDoisModos(p)) {
         // com peso médio, o tamanho de 1 unidade ajuda a escolher sem fazer conta ("1 un. ≈ 450 g")
@@ -538,10 +600,11 @@ const vitrineDaLoja = () => { if (_vitrineDe !== STATE.config.vitrine) { _vitrin
 const cardHtml = (p, rapido = false, prioridade = false) => {
         const favActive = STATE.favoritos.includes(p.id) ? 'ativo' : '';
         return `
-        <article class="produto-card" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}" style="display: flex;">
+        <article class="produto-card${ehPacote(p) ? ' produto-card--pacote' : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}"${ehPacote(p) ? ' data-pacote="1"' : ''} style="display: flex;${ehPacote(p) ? ' order: 2000;' : ''}">
             <div class="produto-img-wrap">
                 ${p.foto ? `<img src="${escapeHTML(fotoPequena(p, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
+                ${ehPacote(p) ? `<span class="lacre-pacote">${ARTE_PACOTE}Pacote</span>${pesoDoPacote(p) ? `<span class="peso-pacote">${escapeHTML(pesoDoPacote(p))}</span>` : ''}` : ''}
                 <button class="btn-fav ${favActive}" data-action="fav" data-id="${escapeHTML(p.id)}" aria-label="Favoritar ${escapeHTML(p.nome)}" aria-pressed="${favActive ? 'true' : 'false'}">${ICO.coracao}</button>
             </div>
             <div class="produto-info">
@@ -668,6 +731,7 @@ const renderFaixasExtras = (forcar = false) => {
     const faixas = faixasDaVitrine(STATE.produtos, {
         hoje: hojeDaLoja(), maisPedidos: maisPedidos(),
         temOfertas: !document.getElementById('faixa-ofertas')?.hidden, temSempre: !document.getElementById('faixa-sempre')?.hidden,
+        proprias: vitrineDaLoja().faixas || [],
     });
     const porId = new Map(STATE.produtos.map(p => [p.id, p]));
     const cara = faixas.map(f => `${f.id}:${f.ids.map(id => (porId.get(id) || {}).preco).join(',')}:${f.ids.join(',')}`).join('|');
@@ -676,8 +740,8 @@ const renderFaixasExtras = (forcar = false) => {
     _extrasCara = cara;
     const html = (f) => `
         <section class="faixa-sempre faixa-extra faixa--${f.id}" aria-labelledby="fx-${f.id}">
-            <h2 id="fx-${f.id}"><span class="faixa-ico">${ARTE_SELO[ICONE_DA_FAIXA[f.id]] || ''}</span>${escapeHTML(f.titulo)}</h2>
-            <p class="faixa-sub">${escapeHTML(f.sub)}</p>
+            <h2 id="fx-${f.id}">${ICONE_DA_FAIXA[f.id] ? `<span class="faixa-ico">${ARTE_SELO[ICONE_DA_FAIXA[f.id]]}</span>` : ''}${escapeHTML(f.titulo)}</h2>
+            ${f.sub ? `<p class="faixa-sub">${escapeHTML(f.sub)}</p>` : ''}
             <div class="faixa-rolo">${f.ids.map((id, i) => cardHtml(porId.get(id), i < 2)).join('')}</div>
         </section>`;
     topo.innerHTML = faixas.filter(f => f.lugar === 'topo').map(html).join('');
@@ -725,7 +789,7 @@ const renderBlocos = (visiveis) => {
 const posicionarBlocos = () => {
     const grid = document.getElementById('lista-produtos'); if (!grid) return;
     const blocos = [...grid.querySelectorAll('.bloco-vitrine')]; if (!blocos.length) return;
-    const cards = [...grid.querySelectorAll('.produto-card')].filter(c => c.style.display !== 'none')
+    const cards = [...grid.querySelectorAll('.produto-card')].filter(c => c.style.display !== 'none' && c.dataset.pacote !== '1')
         .map((c, i) => ({ c, i, o: Number(c.style.order) || 0 })).sort((a, b) => a.o - b.o || a.i - b.i).map(x => x.c);
     // do último para o primeiro: mover um quadro não mexe na posição dos que vêm antes
     blocos.sort((a, b) => Number(b.dataset.depois) - Number(a.dataset.depois)).forEach(b => {
@@ -758,15 +822,16 @@ const renderLoja = (forcarRebuild = false) => {
     renderFaixaSempre(); renderFaixaOfertas(forcarRebuild); renderFaixasExtras(forcarRebuild); renderAtalhos();
     const termo = semAcento(STATE.busca).trim();
     const cards = grid.querySelectorAll('.produto-card');
-    let itensVisiveis = 0;
+    let itensVisiveis = 0, soltosVisiveis = 0;
 
     cards.forEach(card => {
         const matchBusca = (card.dataset.nome || '').includes(termo);
         // [PATCH 1] Favoritos: usar card.dataset.id (o data-id existe; produtoId não existia)
-        const matchCat = !!termo || (STATE.catAtiva === 'todas') || (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(card.dataset.id)) || (card.dataset.cat === STATE.catAtiva);
-        if(matchBusca && matchCat) { card.style.display = 'flex'; itensVisiveis++; } 
+        const matchCat = !!termo || (STATE.catAtiva === 'todas') || (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(card.dataset.id)) || (STATE.catAtiva === 'pacotes' && card.dataset.pacote === '1') || (card.dataset.cat === STATE.catAtiva);
+        if(matchBusca && matchCat) { card.style.display = 'flex'; itensVisiveis++; if (card.dataset.pacote !== '1') soltosVisiveis++; } 
         else { card.style.display = 'none'; }
     });
+    pintarBlocoPacotes(grid);
     // aviso de "nada aqui": sempre refeito, para o texto acompanhar busca/aba
     document.getElementById('empty-grid-msg')?.remove();
     if (itensVisiveis === 0 && cards.length > 0) {
@@ -776,7 +841,20 @@ const renderLoja = (forcarRebuild = false) => {
     } else if (cards.length === 0) {
         grid.insertAdjacentHTML('beforeend', `<div id="empty-grid-msg" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>A banca está sem produtos no momento</p><span>Volte daqui a pouco.</span></div>`);
     }
-    renderBlocos(!termo && STATE.catAtiva === 'todas' ? itensVisiveis : 0);
+    renderBlocos(!termo && STATE.catAtiva === 'todas' ? soltosVisiveis : 0);
+};
+
+// BLOCO "PACOTES PRONTOS": os pacotes vão para o fim da vitrine (order 2000+, js/ranking-loja.js), depois deste cabeçalho.
+// Título e frase são da loja (Aparência → Vitrine). Some quando nenhum pacote está à vista.
+const pintarBlocoPacotes = (grid) => {
+    const cab = grid.querySelector('.bloco-pacotes');
+    const algum = [...grid.querySelectorAll('.produto-card[data-pacote="1"]')].some(c => c.style.display !== 'none');
+    if (!algum) { cab?.remove(); return; }
+    const v = vitrineDaLoja().pacotes || PACOTES_PADRAO;
+    const cara = `${v.titulo}|${v.texto}`;
+    if (cab && cab.dataset.cara === cara) return;
+    const html = `<header class="bloco-pacotes" data-cara="${escapeHTML(cara)}" style="order: 1999"><h2>${ARTE_PACOTE}<span>${escapeHTML(v.titulo)}</span></h2>${v.texto ? `<p>${escapeHTML(v.texto)}</p>` : ''}</header>`;
+    if (cab) cab.outerHTML = html; else grid.insertAdjacentHTML('beforeend', html);
 };
 
 // Pedido com itens de mais de um atendimento (ex.: banca + artesanais) gera
@@ -865,11 +943,12 @@ const pintarHorariosDeEntrega = () => {
 };
 
 const renderCategorias = () => {
-    const abas = [{ chave: 'todas', nome: 'Todos' }, { chave: 'favoritos', nome: 'Favoritos' }, ...abasDeCategoria(STATE.produtos)];
+    const temPacote = (STATE.produtos || []).some(ehPacote);
+    const abas = [{ chave: 'todas', nome: 'Todos' }, { chave: 'favoritos', nome: 'Favoritos' }, ...(temPacote ? [{ chave: 'pacotes', nome: 'Pacotes' }] : []), ...abasDeCategoria(STATE.produtos)];
     // se a categoria aberta sumiu (ocultada no painel), volta para "Todos"
     if (!abas.some(a => a.chave === STATE.catAtiva)) STATE.catAtiva = 'todas';
     STATE.abas = abas;
-    const arteDe = (a) => ARTE_CATEGORIA[a.chave === 'todas' || a.chave === 'favoritos' ? a.chave : iconeDaCategoria(a.nome || a.chave)] || '';
+    const arteDe = (a) => (a.chave === 'pacotes' ? ARTE_PACOTE : ARTE_CATEGORIA[a.chave === 'todas' || a.chave === 'favoritos' ? a.chave : iconeDaCategoria(a.nome || a.chave)] || '');
     document.getElementById('categorias').innerHTML = abas.map(a => { const arte = arteDe(a); return `<button class="cat-btn${arte ? ' tem-arte' : ''} ${a.chave === STATE.catAtiva ? 'active' : ''}" data-action="cat" data-cat="${escapeHTML(a.chave)}">${arte}<span>${escapeHTML(a.nome)}</span></button>`; }).join('');
 };
 
@@ -1048,7 +1127,7 @@ const injetarModalDetalheSeNecessario = () => {
         const fracionavel = isFracionavel(p.unidade);
 
         if (escreverCampo) $('md-qtd').value = formatarQuantidadeVisual(qtd, modoPeso());
-        $('md-qtd-unid').textContent = modoPeso() ? (p.unidade || 'kg') : (qtd === 1 ? 'unidade' : 'unidades');
+        $('md-qtd-unid').textContent = modoPeso() ? (p.unidade || 'kg') : ehPacote(p) ? (qtd === 1 ? 'pacote' : 'pacotes') : (qtd === 1 ? 'unidade' : 'unidades');
         $('md-menos').disabled = qtd <= passo();
         marcarPresetAtivo();
 
@@ -1072,10 +1151,10 @@ const injetarModalDetalheSeNecessario = () => {
             }
             btn.textContent = `Adicionar ${qtd} ${qtd === 1 ? 'unidade' : 'unidades'}`;
         } else {
-            const total = p.preco * qtd;
+            const promo = fracionavel ? null : promoDe(p), total = promo ? totalComPromo(p.preco, qtd, promo) / 100 : p.preco * qtd;
             resumo.className = 'md-resumo md-resumo-exato';
-            resumo.innerHTML = `<div class="md-resumo-linha"><span>Total</span><strong>${fmt(total)}</strong></div>`;
-            btn.textContent = `Adicionar • ${fmt(total)}`;
+            resumo.innerHTML = `<div class="md-resumo-linha"><span>Total</span><strong>${fmt(total)}</strong></div>${promo ? `<small>Promoção ${escapeHTML(textoPromo(promo))}</small>` : ''}`;
+            btn.textContent = ehPacote(p) ? `Adicionar ${emPalavras(qtd, NOMES_PACOTE)} • ${fmt(total)}` : `Adicionar • ${fmt(total)}`;
         }
     };
 
@@ -1795,6 +1874,17 @@ document.body.addEventListener('click', async (e) => {
             actionTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
             renderLoja();
         }
+        else if (action === 'ver-pacote') {     // "Também tem em pacote" na sacola: fecha a sacola e mostra o pacote na vitrine
+            if (history.state && history.state.cart) history.back();
+            STATE.busca = ''; const bi = document.getElementById('busca-input'); if (bi) bi.value = '';
+            const aba = document.querySelector('#categorias .cat-btn[data-cat="pacotes"]'); if (aba) aba.click(); else renderLoja();
+            setTimeout(() => {
+                const card = document.querySelector(`#lista-produtos .produto-card[data-id="${CSS.escape(id || '')}"]`);
+                if (!card) return;
+                card.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+                card.classList.add('pacote-mostrar'); setTimeout(() => card.classList.remove('pacote-mostrar'), 1800);
+            }, 380);
+        }
         else if (action === 'cat-ir') {     // botão "Ver Frutas" de um quadro da vitrine: abre a aba e sobe até ela
             const aba = document.querySelector(`#categorias .cat-btn[data-cat="${CSS.escape(actionTarget.dataset.cat || '')}"]`);
             if (aba) { aba.click(); document.querySelector('.controles')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); }
@@ -1955,9 +2045,41 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     pintarHorariosDeEntrega();      // garante a lista de horários na hora de abrir (não depende de a configuração ter chegado antes)
     pintarAvisoDeEntrega();
     lerTrocaGuardada();
+    renderComanda();
     openModal('modal-checkout');
     contarFunil('sacola');
 });
+
+// COMANDA: o pedido do jeito que a banca vai receber, no alto da tela de envio. Ninguém pergunta "tem certeza?":
+// a quantidade grande à esquerda ("2 batatas", "1 kg", "4 pacotes") já deixa claro o que vai.
+const renderComanda = () => {
+    const el = document.getElementById('comanda'); if (!el) return;
+    const ent = entregaDaFeira();
+    const quando = ent && !ent.hoje ? `para ${textoDoDia(ent.dia)}` : 'para hoje';
+    const grupos = GRUPOS_SACOLA.map(g => ({ ...g, itens: STATE.carrinho.filter(i => grupoDoItem(i) === g.id) })).filter(g => g.itens.length);
+    let exato = 0, estimado = 0, temPesar = false, semEst = false;
+    const valor = (i) => {
+        if (ehAPesar(i)) { temPesar = true; const v = valorEstimado(i); if (v == null) { semEst = true; return 'a pesar'; } estimado += v; return `≈ ${fmt(v)}`; }
+        const v = subtotalDoItem(i); exato += v; if (isFracionavel(i.unidade)) temPesar = true; return fmt(v);
+    };
+    const linha = (i) => {
+        const p = produtoDoItem(i), n = Math.round(Number(i.qtd) || 0), pr = promoDoItem(i), usou = pr && n >= pr.qtd;
+        const pac = itemEhPacote(i), frac = isFracionavel(i.unidade), pm = pesoMedioDe(i);
+        const q = frac && i.tipo !== 'un' ? `${formatarQuantidadeVisual(Number(i.qtd) || 0, true)} ${String(i.unidade || 'kg').toLowerCase()}`
+            : emPalavras(n, pac ? NOMES_PACOTE : frac ? nomesDaUnidade(p.nomeUn) : { um: 'unidade', varios: 'unidades' });
+        const sub = [frac && i.tipo === 'un' && pm > 0 ? pesoAproximado(pm * n) : '', pac && pesoDoPacote(p) ? `pacote de ${pesoDoPacote(p)}` : '', usou ? `promoção ${textoPromo(pr)}` : ''].filter(Boolean).join(' · ');
+        return `<li class="cm-linha${pac ? ' cm-linha--pacote' : ''}"><span class="cm-q">${escapeHTML(q)}</span><span class="cm-n">${escapeHTML(i.nome)}${sub ? `<small>${escapeHTML(sub)}</small>` : ''}</span><span class="cm-v">${valor(i)}</span></li>`;
+    };
+    const corpo = grupos.map(g => `${grupos.length > 1 ? `<li class="cm-grupo cm-grupo--${g.id}">${g.ico()}<span>${g.titulo}</span></li>` : ''}${g.itens.map(linha).join('')}`).join('');
+    const total = exato + estimado, aproximado = temPesar || semEst;
+    const temPac = STATE.carrinho.some(itemEhPacote);
+    el.innerHTML = `
+        <div class="cm-cab"><b>Seu pedido</b><span>${escapeHTML(quando)}</span></div>
+        <ul class="cm-itens">${corpo}</ul>
+        <div class="cm-total"><b>${aproximado ? 'Total estimado' : 'Total'}</b><span>${aproximado ? '≈ ' : ''}${fmt(total)}${semEst ? ' + itens a pesar' : ''}</span></div>
+        ${aproximado ? `<p class="cm-nota">O que é pesado na hora pode variar um pouco${temPac ? '. Os pacotes têm preço certo.' : '.'}</p>` : ''}
+        <button type="button" class="cm-voltar" data-fechar="modal-checkout">‹ Voltar e mudar algum item</button>`;
+};
 
 // "Se faltar algum item": a escolha vai no fim da observação do pedido e fica lembrada neste aparelho.
 const trocaEscolhida = () => document.querySelector('input[name="cli-troca"]:checked')?.value || '';
@@ -1992,7 +2114,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         const itensFormatados = STATE.carrinho.map(item => {
             // Se for unidade a pesar, envia com preco 0 e tag de pendente
             const isAPesar = item.tipo === 'un' && isFracionavel(item.unidade);
-            if (!isAPesar) totalEstimado += (item.preco * item.qtd);
+            if (!isAPesar) totalEstimado += subtotalDoItem(item);
             return { 
                 id: item.id, 
                 nome: item.nome,
@@ -2093,7 +2215,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             recarregarComPedidoGuardado('A loja foi atualizada. Vou recarregar: seu pedido continua na sacola.');
         }).catch(() => { /* sem sinal: fica o aviso de cima */ });
     } finally {
-        btn.disabled = false; btn.textContent = 'Enviar pedido';
+        btn.disabled = false; btn.textContent = 'Enviar pedido para a banca';
     }
 });
 

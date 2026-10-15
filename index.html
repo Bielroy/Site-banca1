@@ -76,6 +76,7 @@
     <link rel="stylesheet" href="./css/aparencia-loja.css">
     <!-- Vitrine: selos, faixas novas, quadros e ícones das categorias (js/vitrine-lib.js) -->
     <link rel="stylesheet" href="./css/vitrine.css">
+    <link rel="stylesheet" href="./css/pacotes.css">
 
     <link rel="icon" href="./icon-192.png">
     <!-- O <link rel="manifest"> não é escrito aqui. O vite-plugin-pwa
@@ -245,10 +246,13 @@
 <div class="modal-overlay" id="modal-checkout" role="dialog" aria-modal="true" aria-labelledby="checkout-titulo">
     <div class="modal">
         <header class="modal-head">
-            <h2 id="checkout-titulo">Dados da entrega</h2>
+            <h2 id="checkout-titulo">Confira e envie</h2>
             <button class="btn-fechar" data-fechar="modal-checkout" aria-label="Fechar">&times;</button>
         </header>
         <div class="modal-body">
+            <!-- COMANDA: o pedido do jeito que a banca recebe (js/loja.js, renderComanda) -->
+            <section class="comanda" id="comanda" aria-label="Seu pedido"></section>
+            <h3 class="checkout-sub">Dados da entrega</h3>
             <!-- Condomínio + quadra/lote (ou rua/número). Montado por js/endereco.js -->
             <div id="checkout-endereco"></div>
             <div class="form-group"><label for="cli-nome">Como devemos te chamar?</label><input type="text" id="cli-nome" placeholder="Seu nome" autocomplete="name"></div>
@@ -303,7 +307,7 @@
             </div>
         </div>
         <footer class="modal-footer">
-            <button class="btn-finalizar" id="btn-enviar-pedido">Enviar pedido</button>
+            <button class="btn-finalizar" id="btn-enviar-pedido">Enviar pedido para a banca</button>
         </footer>
     </div>
 </div>

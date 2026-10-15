@@ -206,6 +206,104 @@ teste('plataforma: "Cartaz com QR" de cada feira manda para a impressão o carta
   semErros(erros); await fechar();
 });
 
+// ---------------------------------------------------------------- PACOTES
+const cenarioPacotes = () => {
+  const cen = cenarioPadrao();
+  cen.lojas.banca.produtos = {
+    batata: { nome: 'Batata inglesa', preco: 6.5, unidade: 'kg', cat: 'legumes', ativo: true, pesoMedio: 180, nomeUn: 'batata' },
+    alface: { nome: 'Alface crespa', preco: 4.5, unidade: 'un', cat: 'verduras', ativo: true },
+    bb: { nome: 'Batata baby', preco: 3, unidade: 'un', cat: 'legumes', ativo: true, pacote: true, pesoPacote: '500 g', promoQtd: 4, promoPreco: 10 },
+    cb: { nome: 'Cenoura baby', preco: 3, unidade: 'un', cat: 'legumes', ativo: true, pacote: true },
+  };
+  return cen;
+};
+teste('pacotes: bloco no fim da vitrine, atalho "Pacotes", "+ 1 pacote", sacola em palavras e comanda com a promoção', async () => {
+  const { pagina, erros, fechar } = await abrir('/', cenarioPacotes());
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  // o bloco "Pacotes prontos" vem DEPOIS de tudo que é solto (CSS order), com os dois pacotes
+  const ordem = await pagina.evaluate(() => [...document.querySelectorAll('#lista-produtos > .produto-card, #lista-produtos > .bloco-pacotes')]
+    .map((e, i) => ({ o: Number(e.style.order) || 0, i, k: e.classList.contains('bloco-pacotes') ? 'BLOCO' : e.dataset.id })).sort((a, b) => a.o - b.o || a.i - b.i).map((x) => x.k));
+  assert.strictEqual(ordem[ordem.length - 3], 'BLOCO', 'o cabeçalho vem logo antes dos pacotes: ' + ordem.join(','));
+  assert.deepStrictEqual(ordem.slice(-2).sort(), ['bb', 'cb'], 'os pacotes ficam no fim: ' + ordem.join(','));
+  assert.ok(ordem.indexOf('BLOCO') > ordem.indexOf('batata') && ordem.indexOf('BLOCO') > ordem.indexOf('alface'), ordem.join(','));
+  assert.ok(/Pacotes prontos/.test(await pagina.locator('.bloco-pacotes').innerText()));
+  const bb = pagina.locator('#lista-produtos .produto-card[data-id="bb"]'), cb = pagina.locator('#lista-produtos .produto-card[data-id="cb"]');
+  assert.ok(/PACOTE/i.test(await bb.locator('.lacre-pacote').innerText()) && (await bb.locator('.peso-pacote').innerText()) === '500 g');
+  assert.strictEqual(await cb.locator('.peso-pacote').count(), 0, 'sem peso cadastrado: só "PACOTE"');
+  assert.ok(/4 por R\$ 10/.test(await bb.locator('.etq-promo').innerText()));
+  // atalho "Pacotes" mostra só os pacotes
+  await pagina.locator('#categorias .cat-btn[data-cat="pacotes"]').click();
+  await esperarVisiveis(pagina, () => [...document.querySelectorAll('#lista-produtos .produto-card')].filter((c) => c.offsetParent !== null).length === 2);
+  assert.deepStrictEqual((await visiveis(pagina)).sort(), ['Batata baby', 'Cenoura baby']);
+  await pagina.locator('#categorias .cat-btn[data-cat="todas"]').click();
+  // + 1 pacote, 4 vezes: entra a promoção
+  await bb.scrollIntoViewIfNeeded();
+  assert.strictEqual((await bb.locator('[data-action="add"]').innerText()).trim(), '+ 1 pacote');
+  await bb.locator('[data-action="add"]').click();
+  for (let i = 0; i < 3; i++) await bb.locator('[data-action="inc"]').click();
+  await pagina.waitForFunction(() => /4 pacotes/.test(document.querySelector('#lista-produtos .produto-card[data-id="bb"] .card-qtd')?.innerText || ''), null, { timeout: 3000 });
+  { const t = await bb.locator('.card-qtd').innerText(); assert.ok(/R\$\s*10,00/.test(t), 'o contador já mostra o valor com a promoção: ' + JSON.stringify(t)); }
+  // 1 batata inglesa (por unidade): o botão diz "+ 1 batata"
+  const batata = pagina.locator('#lista-produtos .produto-card[data-id="batata"]');
+  await batata.scrollIntoViewIfNeeded();
+  await batata.locator('[data-action="add"][data-modo="un"]').click();
+  // sacola: grupos, palavras e o aviso "também tem em pacote"
+  await pagina.locator('#btn-carrinho-mobile').click();
+  const sacola = await pagina.locator('#carrinho-itens').innerText();
+  assert.ok(/Pesados na hora/i.test(sacola) && /Pacotes prontos/i.test(sacola), sacola);
+  assert.ok(/1 batata · ≈ 180 g/.test(sacola) && /4 pacotes de 500 g/.test(sacola) && /promoção 4 por R\$ 10/.test(sacola), sacola);
+  assert.ok(/Também tem em pacote: Batata baby/.test(sacola), sacola);
+  assert.ok(/R\$\s10,00/.test(await pagina.locator('#cart-row-bb .item-preco').innerText()));
+  // comanda: o pedido como a banca recebe
+  await pagina.locator('#btn-abrir-checkout').click();
+  const comanda = await pagina.locator('#comanda').innerText();
+  assert.ok(/4 pacotes/.test(comanda) && /1 batata/.test(comanda) && /pacote de 500 g/.test(comanda) && /promoção 4 por R\$ 10/.test(comanda), comanda);
+  assert.ok(/≈ R\$\s11,17/.test(comanda), 'total estimado = R$ 10 (pacotes) + ≈ R$ 1,17 (1 batata)\n' + comanda);
+  assert.ok(!/tem certeza/i.test(comanda));
+  semErros(erros); await fechar();
+});
+
+teste('pacotes: no painel, peso do pacote em branco é aceito e promoção mais cara é recusada', async () => {
+  const cen = cenarioPacotes(); cen.conta = { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.locator('[data-action="editar-produto"][data-id="cb"]').first().click({ timeout: 8000 });
+  assert.ok(await pagina.locator('#edit-pacote').isChecked());
+  assert.strictEqual(await pagina.locator('#edit-peso-pacote').inputValue(), '');
+  await pagina.fill('#edit-promo-qtd', '4'); await pagina.fill('#edit-promo-preco', '15');
+  assert.ok(/não sai mais barato/.test(await pagina.locator('#promo-previa').innerText()));
+  await pagina.click('#btn-salvar-produto');
+  await pagina.waitForTimeout(400);
+  assert.ok(!(await pagina.evaluate(() => (window.__gravados || []).some((g) => /produtos\/cb$/.test(g.path)))), 'promoção mais cara não grava');
+  await pagina.fill('#edit-promo-preco', '10');
+  await pagina.click('#btn-salvar-produto');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /produtos\/cb$/.test(g.path)), null, { timeout: 4000 });
+  const g = await pagina.evaluate(() => window.__gravados.filter((x) => /produtos\/cb$/.test(x.path)).pop().dados);
+  assert.strictEqual(g.pacote, true); assert.strictEqual(g.pesoPacote, ''); assert.strictEqual(g.promoQtd, 4); assert.strictEqual(g.promoPreco, 10);
+  assert.strictEqual(g.nome, 'Cenoura baby', 'o nome é o que a loja escreveu');
+  semErros(erros); await fechar();
+});
+
+teste('pacotes: no painel da Vitrine, título do bloco dos pacotes e faixa "Molhos" por categoria são gravados', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/testes/tela/painel-aparencia.html', cen);
+  await pagina.waitForSelector('#vt-gravar', { timeout: 8000 });
+  await pagina.locator('summary:has-text("Bloco dos pacotes")').click();
+  await pagina.fill('#vt-pac-titulo', 'Pacotinhos da banca');
+  await pagina.locator('summary:has-text("Faixas que você cria")').click();
+  await pagina.click('[data-acao-vt="mais-faixa"]');
+  await pagina.fill('[data-fx="0"][data-campo="titulo"]', 'Frutas da semana');
+  await pagina.click('#vt-gravar');
+  await pagina.waitForTimeout(300);
+  assert.ok(!(await pagina.evaluate(() => (window.__gravados || []).some((g) => g.path === 'loja/config'))), 'faixa sem categoria não grava');
+  await pagina.selectOption('select[data-fx="0"]', 'frutas');
+  await pagina.click('#vt-gravar');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config'), null, { timeout: 4000 });
+  const v = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config').dados.vitrine);
+  assert.deepStrictEqual(v.pacotes, { titulo: 'Pacotinhos da banca', texto: '' });
+  assert.deepStrictEqual(v.faixas, [{ titulo: 'Frutas da semana', texto: '', cat: 'frutas' }]);
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- PAINEL
 teste('painel: a aba Aparência abre e a prévia da loja carrega dentro dela', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });

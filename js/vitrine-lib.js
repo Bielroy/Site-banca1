@@ -40,6 +40,7 @@ export function selosDe(p, { hoje = hojeDaLoja(), escolha = ESCOLHA_PADRAO } = {
 // FAIXAS DA VITRINE
 // ---------------------------------------------------------------------
 export const MAX_FAIXAS = 4;          // contando "Ofertas de hoje" e "Seus de sempre", que já existiam
+export const MAX_FAIXAS_LOJA = 3;     // faixas criadas pela loja (por categoria); entram no limite acima
 const MAX_NA_FAIXA = 10;
 const ehKit = (p) => /^(kit|cesta|combo)$/i.test(String(p.unidade || '')) || /^(kit|cesta|combo)s?\b/i.test(String(p.nome || ''));
 
@@ -49,11 +50,17 @@ const ehKit = (p) => /^(kit|cesta|combo)$/i.test(String(p.unidade || '')) || /^(
  *   lugar 'meio' = depois de "Seus de sempre"
  * As faixas que já existem (Ofertas, Seus de sempre) contam no limite total.
  */
-export function faixasDaVitrine(produtos, { hoje = hojeDaLoja(), maisPedidos = [], temOfertas = false, temSempre = false } = {}) {
+export function faixasDaVitrine(produtos, { hoje = hojeDaLoja(), maisPedidos = [], temOfertas = false, temSempre = false, proprias = [] } = {}) {
     const lista = Array.isArray(produtos) ? produtos.filter((p) => p && p.id) : [];
     const porId = new Map(lista.map((p) => [p.id, p]));
+    // faixas que a LOJA criou (Aparência → Vitrine): título e frase dela, produtos de uma categoria
+    const daLoja = (Array.isArray(proprias) ? proprias : []).slice(0, MAX_FAIXAS_LOJA).map((f, i) => ({
+        id: `loja${i}`, lugar: 'meio', titulo: f.titulo, sub: f.texto || '', minimo: 2,
+        ids: lista.filter((p) => f.cat && String(p.cat || '').toLowerCase() === String(f.cat).toLowerCase()).map((p) => p.id),
+    }));
     const candidatas = [
         { id: 'chegou', lugar: 'topo', titulo: 'Chegou hoje', sub: 'Acabou de chegar na banca. Fresquinho.', ids: lista.filter((p) => p.chegouEm === hoje).map((p) => p.id), minimo: 2 },
+        ...daLoja,
         { id: 'estacao', lugar: 'meio', titulo: 'Da estação', sub: 'Na safra: mais sabor e preço melhor.', ids: lista.filter((p) => p.estacao === true).map((p) => p.id), minimo: 2 },
         { id: 'mais', lugar: 'meio', titulo: 'Os mais pedidos', sub: 'O que a vizinhança mais leva.', ids: (Array.isArray(maisPedidos) ? maisPedidos : []).filter((id) => porId.has(id)), minimo: 4 },
         { id: 'kits', lugar: 'meio', titulo: 'Kits prontos', sub: 'Tudo junto, num toque só.', ids: lista.filter(ehKit).map((p) => p.id), minimo: 2 },
@@ -128,6 +135,16 @@ export function vitrineSegura(bruto) {
     const saida = { quadros };
     if (donos.titulo && (donos.img || donos.texto)) saida.donos = donos;
     const escolha = texto(v.escolha, 24); if (escolha) saida.escolha = escolha;
+    // bloco dos pacotes (fim da vitrine): título e frase da loja; vazio = o texto padrão
+    const pc = v.pacotes && typeof v.pacotes === 'object' ? v.pacotes : {};
+    const pacotes = { titulo: texto(pc.titulo, 40), texto: texto(pc.texto, 160) };
+    if (pacotes.titulo) saida.pacotes = pacotes;
+    // faixas da loja por categoria
+    const faixas = (Array.isArray(v.faixas) ? v.faixas : []).slice(0, 20).map((f) => {
+        const x = f && typeof f === 'object' ? f : {};
+        return { titulo: texto(x.titulo, 40), texto: texto(x.texto, 120), cat: texto(x.cat, 60) };
+    }).filter((f) => f.titulo && f.cat).slice(0, MAX_FAIXAS_LOJA);
+    if (faixas.length) saida.faixas = faixas;
     return saida;
 }
 

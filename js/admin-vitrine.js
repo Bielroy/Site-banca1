@@ -15,7 +15,9 @@
 import { getDoc, setDoc } from './firebase.js';
 import { tdoc } from './tenant.js';
 import { escapeHTML, showToast } from './utils.js';
-import { vitrineSegura, MAX_QUADROS, ESCOLHA_PADRAO, resumoFunil, ETAPAS, NOMES_ETAPAS, hojeDaLoja } from './vitrine-lib.js';
+import { vitrineSegura, MAX_QUADROS, MAX_FAIXAS_LOJA, ESCOLHA_PADRAO, resumoFunil, ETAPAS, NOMES_ETAPAS, hojeDaLoja } from './vitrine-lib.js';
+import { PACOTES_PADRAO } from './pacote-lib.js';
+import { ARTE_PACOTE } from './vitrine-arte.js';
 import { validarArquivo } from './fotos-lib.js';
 import { miniatura } from './foto-lib.js';
 
@@ -37,7 +39,11 @@ const campoFoto = (alvo, url, dica, dono) => `
         <small class="dica-campo">${dica}</small>
     </div>`;
 
+// as seções abertas continuam abertas quando a tela é redesenhada (+ Novo quadro, + Nova faixa, foto nova)
+let secAbertas = null;
+const aberta = (sec, padrao) => ((secAbertas ? secAbertas.has(sec) : padrao) ? ' open' : '');
 function render() {
+    if (el().querySelector('details[data-sec]')) secAbertas = new Set([...el().querySelectorAll('details[data-sec][open]')].map((d) => d.dataset.sec));
     const v = estado, cats = categorias.map((c) => `<option value="${escapeHTML(c.chave)}">${escapeHTML(c.nome)}</option>`).join('');
     const quadros = v.quadros.map((q, i) => `
         <fieldset class="vt-quadro" data-i="${i}">
@@ -55,7 +61,7 @@ function render() {
             <p class="config-sub">Imagens e recados no meio dos produtos, e a cara de quem escolhe o pedido. Aparecem na loja (e na prévia acima) quando você tocar em <b>Gravar a vitrine</b>.</p>
         </header>
 
-        <details class="ap-sec vt-sec" open>
+        <details class="ap-sec vt-sec" data-sec="donos"${aberta('donos', true)}>
             <summary><span><b>Quem escolhe seu pedido</b><small>A foto de vocês e uma frase. Gente de verdade passa confiança.</small></span></summary>
             <div class="ap-sec-corpo">
                 ${campoFoto('donos', v.donos.img, 'Sem foto, entra o desenho do caixote. Uma foto de vocês na banca funciona muito bem.', v.donos)}
@@ -65,7 +71,7 @@ function render() {
             </div>
         </details>
 
-        <details class="ap-sec vt-sec" open>
+        <details class="ap-sec vt-sec" data-sec="quadros"${aberta('quadros', true)}>
             <summary><span><b>Quadros no meio da vitrine</b><small>Até ${MAX_QUADROS}. Dica de como escolher, receita, safra.</small></span></summary>
             <div class="ap-sec-corpo">
                 ${quadros || '<p class="config-sub">Nenhum quadro ainda.</p>'}
@@ -74,7 +80,32 @@ function render() {
             </div>
         </details>
 
-        <details class="ap-sec vt-sec">
+        <details class="ap-sec vt-sec" data-sec="pacotes"${aberta('pacotes', false)}>
+            <summary><span class="vt-sum-pac">${ARTE_PACOTE}<b>Bloco dos pacotes</b><small>No fim da loja, separado do que é pesado na hora</small></span></summary>
+            <div class="ap-sec-corpo">
+                <div class="form-group"><label for="vt-pac-titulo">Título</label><input id="vt-pac-titulo" type="text" maxlength="40" data-pac="titulo" value="${escapeHTML(v.pacotes.titulo || '')}" placeholder="${escapeHTML(PACOTES_PADRAO.titulo)}"></div>
+                <div class="form-group"><label for="vt-pac-texto">Frase de apoio (até 160 letras)</label><textarea id="vt-pac-texto" rows="2" maxlength="160" data-pac="texto" placeholder="${escapeHTML(PACOTES_PADRAO.texto)}">${escapeHTML(v.pacotes.texto || '')}</textarea></div>
+                <small class="dica-campo">Entram aqui os produtos marcados como <b>pacote fechado</b> (Produtos → abrir o produto). Em branco, fica o texto de exemplo.</small>
+            </div>
+        </details>
+
+        <details class="ap-sec vt-sec" data-sec="faixas"${aberta('faixas', false)}>
+            <summary><span><b>Faixas que você cria</b><small>Até ${MAX_FAIXAS_LOJA}. Ex.: "Molhos caseiros", com uma categoria</small></span></summary>
+            <div class="ap-sec-corpo">
+                ${v.faixas.map((f, i) => `
+                <fieldset class="vt-quadro vt-faixa">
+                    <legend>Faixa ${i + 1}</legend>
+                    <div class="form-group"><label>Título</label><input type="text" maxlength="40" data-fx="${i}" data-campo="titulo" value="${escapeHTML(f.titulo || '')}" placeholder="Ex.: Molhos caseiros"></div>
+                    <div class="form-group"><label>Frase (opcional)</label><input type="text" maxlength="120" data-fx="${i}" data-campo="texto" value="${escapeHTML(f.texto || '')}" placeholder="Ex.: feitos aqui na banca"></div>
+                    <div class="form-group"><label>Produtos da categoria</label><select data-fx="${i}" data-campo="cat"><option value="">Escolha a categoria</option>${cats}</select></div>
+                    <button type="button" class="vt-remover" data-remover-faixa="${i}">Tirar esta faixa</button>
+                </fieldset>`).join('') || '<p class="config-sub">Nenhuma faixa sua ainda.</p>'}
+                ${v.faixas.length < MAX_FAIXAS_LOJA ? '<button type="button" class="btn-outline vt-mais" data-acao-vt="mais-faixa">+ Nova faixa</button>' : ''}
+                <small class="dica-campo">A faixa aparece com 2 produtos ou mais na categoria. No topo da loja cabem até 4 faixas no total, contando Ofertas e "Seus de sempre". A ordem dos produtos dentro dela é a da lista inteligente de cada cliente.</small>
+            </div>
+        </details>
+
+        <details class="ap-sec vt-sec" data-sec="selo"${aberta('selo', false)}>
             <summary><span><b>Nome do selo de recomendação</b><small>O selo que você marca nos produtos que recomenda</small></span></summary>
             <div class="ap-sec-corpo">
                 <div class="form-group"><label for="vt-escolha">Nome do selo</label><input id="vt-escolha" type="text" maxlength="24" data-escolha value="${escapeHTML(v.escolha || '')}" placeholder="${ESCOLHA_PADRAO}"></div>
@@ -87,6 +118,7 @@ function render() {
         <section class="vt-funil" id="vt-funil" aria-live="polite">${funilHtml || '<p class="config-sub">Carregando os números da vitrine...</p>'}</section>
     </section>`;
     el().querySelectorAll('select[data-q]').forEach((s) => { s.value = (v.quadros[Number(s.dataset.q)] || {}).cat || ''; });
+    el().querySelectorAll('select[data-fx]').forEach((s) => { s.value = (v.faixas[Number(s.dataset.fx)] || {}).cat || ''; });
     pintarEstado();
 }
 
@@ -131,6 +163,8 @@ async function gravar() {
     if (incompleto > -1) return showToast(`O quadro ${incompleto + 1} precisa de uma foto ou de um recado.`, true);
     const semTitulo = estado.quadros.findIndex((q) => !String(q.titulo || '').trim() && (q.img || String(q.texto || '').trim()));
     if (semTitulo > -1) return showToast(`Dê um título ao quadro ${semTitulo + 1} (sem título ele não aparece).`, true);
+    const fxIncompleta = estado.faixas.findIndex((f) => !String(f.titulo || '').trim() || !f.cat);
+    if (fxIncompleta > -1) return showToast(`A faixa ${fxIncompleta + 1} precisa de título e de uma categoria (ou tire a faixa).`, true);
     const limpo = vitrineSegura(estado);
     bt.disabled = true; bt.textContent = 'Gravando...';
     try {
@@ -150,6 +184,8 @@ function ligar() {
         if (t.dataset.q !== undefined) { const q = estado.quadros[Number(t.dataset.q)]; if (q) q[t.dataset.campo] = t.value; }
         else if (t.dataset.donos) estado.donos[t.dataset.donos] = t.value;
         else if (t.hasAttribute('data-escolha')) estado.escolha = t.value;
+        else if (t.dataset.pac) estado.pacotes[t.dataset.pac] = t.value;
+        else if (t.dataset.fx !== undefined && t.tagName !== 'SELECT') { const f = estado.faixas[Number(t.dataset.fx)]; if (f) f[t.dataset.campo] = t.value; }
         pintarEstado();
     });
     // foto recém-enviada ao ImgBB às vezes leva uns segundos para abrir: tenta de novo antes de mostrar quebrada
@@ -163,12 +199,15 @@ function ligar() {
         const t = e.target;
         if (t.dataset.foto && t.files && t.files[0]) { const f = t.files[0]; t.value = ''; enviarFoto(t.dataset.foto, f); }
         else if (t.tagName === 'SELECT' && t.dataset.q !== undefined) { const q = estado.quadros[Number(t.dataset.q)]; if (q) q.cat = t.value; pintarEstado(); }
+        else if (t.tagName === 'SELECT' && t.dataset.fx !== undefined) { const f = estado.faixas[Number(t.dataset.fx)]; if (f) f.cat = t.value; pintarEstado(); }
     });
     raiz.addEventListener('click', (e) => {
         const b = e.target.closest('button'); if (!b) return;
         if (b.id === 'vt-gravar') return gravar();
         if (b.dataset.acaoVt === 'mais' && estado.quadros.length < MAX_QUADROS) { estado.quadros.push({ titulo: '', texto: '', cat: '' }); render(); return; }
         if (b.dataset.remover !== undefined) { estado.quadros.splice(Number(b.dataset.remover), 1); render(); return; }
+        if (b.dataset.acaoVt === 'mais-faixa' && estado.faixas.length < MAX_FAIXAS_LOJA) { estado.faixas.push({ titulo: '', texto: '', cat: '' }); render(); return; }
+        if (b.dataset.removerFaixa !== undefined) { estado.faixas.splice(Number(b.dataset.removerFaixa), 1); render(); return; }
         if (b.dataset.tirarFoto) { const a = b.dataset.tirarFoto; const d = a === 'donos' ? estado.donos : estado.quadros[Number(a.slice(1))]; if (d) { delete d.img; previas.delete(d); } render(); }
     });
 }
@@ -212,7 +251,8 @@ export async function abrirVitrine(cats = []) {
     try { const s = await getDoc(tdoc('loja', 'config')); if (s.exists()) cfg = s.data() || {}; }
     catch (_) { el().innerHTML = '<p class="config-sub">Não consegui ler a vitrine. Confira a internet e abra a aba de novo.</p>'; return; }
     const v = vitrineSegura(cfg.vitrine);
-    estado = { quadros: v.quadros.map((q) => ({ cat: '', ...q })), donos: { titulo: '', texto: '', ...(v.donos || {}) }, escolha: v.escolha || '' };
+    estado = { quadros: v.quadros.map((q) => ({ cat: '', ...q })), donos: { titulo: '', texto: '', ...(v.donos || {}) }, escolha: v.escolha || '',
+        pacotes: { titulo: '', texto: '', ...(v.pacotes || {}) }, faixas: (v.faixas || []).map((f) => ({ texto: '', ...f })) };
     gravado = atual();
     render(); ligar(); pintarFunil();
 }

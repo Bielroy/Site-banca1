@@ -109,6 +109,7 @@ const Entrega = require('../lib/entrega');
 const E = require('../lib/estoque');
 const Conta = require('../lib/conta');
 const Feira = require('../lib/feira');
+const Pac = require('../lib/pacote');   // pacote fechado e promoção "4 por R$ 10" (mesma conta de js/pacote-lib.js)
 
 function montarTextoWhatsApp(pedido, numero) {
   const dividido = pedido.parte && pedido.parte.de > 1;
@@ -134,8 +135,11 @@ function montarTextoWhatsApp(pedido, numero) {
     if (i.aPesar) {
       msg += `• ${i.qtd} un de ${i.nome}  ⚖️ _(a pesar na balança)_\n`;
     } else {
-      const rotulo = isFracionavel(i.unidade) ? `${String(i.qtd).replace('.', ',')} ${i.unidade}` : `${i.qtd}x`;
-      msg += `• ${rotulo} ${i.nome} — ${fmtBRL(i.subtotal)}\n`;
+      // pacote fechado vai escrito por extenso: a banca separa o PACOTE, não a unidade solta
+      const rotulo = isFracionavel(i.unidade) ? `${String(i.qtd).replace('.', ',')} ${i.unidade}`
+        : i.pacote ? `${i.qtd} ${i.qtd === 1 ? 'pacote' : 'pacotes'}${i.pesoPacote ? ` de ${i.pesoPacote}` : ''} de` : `${i.qtd}x`;
+      const promo = i.promo ? ` _(promoção ${i.promo.qtd} por ${fmtBRL(i.promo.preco)})_` : '';
+      msg += `• ${rotulo} ${i.nome} — ${fmtBRL(i.subtotal)}${promo}\n`;
     }
   });
 
@@ -403,12 +407,17 @@ module.exports = async function handler(req, res) {
             precoOriginal: p.preco, unidade: p.unidade || 'un', subtotal: 0,
           });
         } else {
-          const subC = Math.round(paraCentavos(p.preco) * qtd);
+          // PROMOÇÃO POR QUANTIDADE ("4 por R$ 10"): só no que não vai à balança, com o preço do dia. A conta é daqui, nunca do navegador.
+          const promo = fracionavel ? null : Pac.promoDe(p, p.preco);
+          const subC = promo ? Pac.totalComPromo(p.preco, qtd, promo) : Math.round(paraCentavos(p.preco) * qtd);
           totalExatoCentavos += subC;
+          const promoUsada = promo && qtd >= promo.qtd ? { qtd: promo.qtd, preco: promo.preco } : null;
           itensValidados.push({
             id: item.id, nome: p.nome, cat: p.cat || '', qtd, tipo, aPesar: false,
             preco: p.preco, precoOriginal: p.preco, unidade: p.unidade || 'un',
             subtotal: paraFlutuante(subC),
+            ...(promoUsada ? { promo: promoUsada } : {}),
+            ...(Pac.ehPacote(p) ? { pacote: true, ...(typeof p.pesoPacote === 'string' && p.pesoPacote.trim() ? { pesoPacote: p.pesoPacote.replace(/[<>]/g, '').trim().slice(0, 16) } : {}) } : {}),
           });
           // Baixa de estoque só para itens de valor fechado
           if (p.estoqueFisico !== null && p.estoqueFisico !== undefined && p.estoqueFisico !== '') {

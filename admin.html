@@ -454,6 +454,26 @@
                     </div>
                 </div>
 
+                <!-- PACOTE FECHADO e PROMOÇÃO POR QUANTIDADE (js/pacote-lib.js). Só para o que NÃO vai à balança. -->
+                <fieldset class="form-group pacote-campos" id="grupo-pacote">
+                    <legend class="sr-only">Pacote e promoção</legend>
+                    <label class="pacote-liga"><input type="checkbox" id="edit-pacote">
+                        <span class="pacote-liga-txt"><span class="pacote-ico" data-arte="pacote"></span><b>É pacote fechado</b>
+                        <small>Vai para o bloco "Pacotes prontos" da loja, com o cartão de papel pardo e o botão "+ 1 pacote". Não vai para a balança.</small></span></label>
+                    <div class="form-group" id="grupo-peso-pacote" hidden>
+                        <label for="edit-peso-pacote">Peso escrito no pacote (opcional)</label>
+                        <input type="text" id="edit-peso-pacote" maxlength="16" placeholder="Ex.: 500 g · em branco aparece só PACOTE" autocomplete="off">
+                    </div>
+                    <div class="form-group promo-grupo">
+                        <label>Promoção por quantidade (opcional)</label>
+                        <div class="grid-2">
+                            <input type="number" id="edit-promo-qtd" min="2" max="50" step="1" inputmode="numeric" placeholder="Leve quantos? Ex.: 4" aria-label="Leve quantos">
+                            <input type="text" id="edit-promo-preco" inputmode="decimal" placeholder="Por R$ Ex.: 10,00" aria-label="Pelo preço de">
+                        </div>
+                        <small class="dica-campo" id="promo-previa">Ex.: leve 4 por R$ 10,00. Quem levar 4 paga R$ 10; o que passar volta ao preço normal. Em branco: sem promoção.</small>
+                    </div>
+                </fieldset>
+
                 <!-- NOVO: peso médio por unidade. Alimenta a estimativa de preço
                      que o cliente vê ao pedir "5 batatas" na loja. Só aparece
                      quando a métrica de venda é por peso. -->
@@ -464,6 +484,9 @@
                         Preenchendo isto, quem pedir "5 unidades" vê uma <b>estimativa de preço</b> na loja
                         (ex.: 5 batatas ≈ 0,75 kg ≈ R$ 4,50). Em branco, o cliente vê apenas o aviso de pesagem.
                     </small>
+                    <label for="edit-nome-un" style="margin-top:14px;">Como chamar 1 unidade (opcional)</label>
+                    <input type="text" id="edit-nome-un" maxlength="30" placeholder="Ex.: batata · ou pão/pães" autocomplete="off">
+                    <small class="dica-campo" id="nome-un-previa">Na loja e na sacola aparece "2 batatas" em vez de "2 unidades".</small>
                     <div id="grupo-mostrar-primeiro">
                     <label for="edit-mostrar-primeiro" style="margin-top:14px;">Na loja, mostrar primeiro</label>
                     <select id="edit-mostrar-primeiro">

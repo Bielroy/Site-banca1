@@ -38,6 +38,12 @@ export const ARTE_SELO = {
     kits: traco('<path d="M3.5 10h17l-1.8 9a2 2 0 0 1-2 1.6H7.3a2 2 0 0 1-2-1.6z"/><path d="M8 10l3-6M16 10l-3-6M7 14h10"/>', 'selo-ico'),
 };
 
+/** Pacotinho de papel pardo com janela (bloco "Pacotes prontos", atalho, selo do cartão, sacola e painel). */
+export const ARTE_PACOTE = arte(`<path d="M5.2 7.5h13.6l-1.1 13.1a1.5 1.5 0 0 1-1.5 1.4H7.8a1.5 1.5 0 0 1-1.5-1.4z" fill="#d9b27a"/><path d="M5.2 7.5 6.4 3.6c.1-.4.5-.6.9-.6h9.4c.4 0 .8.2.9.6l1.2 3.9z" fill="#b98a4e"/><path d="M5.6 7.6l1.1-.9 1.1.9 1.1-.9 1.1.9 1.1-.9 1.1.9 1.1-.9 1.1.9 1.1-.9 1.1.9 1.1-.9 1.1.9" fill="none" stroke="#8a5f2a" stroke-width=".7" stroke-linejoin="round"/><rect x="7.4" y="9.4" width="9.2" height="7" rx="1.6" fill="#f6efe2"/><ellipse cx="9.9" cy="14.5" rx="1.7" ry="1.35" fill="#c9a06b"/><ellipse cx="13.9" cy="14.6" rx="1.8" ry="1.35" fill="#b98f5a"/><ellipse cx="11.9" cy="12.2" rx="1.6" ry="1.3" fill="#d8b07a"/><rect x="7.4" y="17.6" width="9.2" height="2.3" rx=".5" fill="#f6efe2"/><path d="M8.8 18.75h4.6" stroke="#9c7b4b" stroke-width=".8" stroke-linecap="round"/>`);
+
+/** Balança (grupo "Pesados na hora" da sacola e da comanda), no traço da cor do texto. */
+export const ARTE_BALANCA = traco('<path d="M12 3v18M5 21h14M4 7h16"/><path d="M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z"/>', 'grupo-ico');
+
 /** Desenho para o bloco "Quem escolhe seu pedido" quando o dono ainda não pôs foto. */
 export const ARTE_DONOS = `<svg class="donos-arte" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
     <circle cx="60" cy="60" r="58" fill="${C}"/>

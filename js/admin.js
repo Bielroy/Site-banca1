@@ -8,6 +8,8 @@ import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customCon
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
 import { hojeDaLoja } from './vitrine-lib.js';
+import { cadastroPacote, promoDe, textoPromo, totalComPromo, nomesDaUnidade, emPalavras, ehPacote } from './pacote-lib.js';
+import { ARTE_PACOTE } from './vitrine-arte.js';
 import './admin-instalar.js';
 import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar, bancasDaPessoa, mostrarSuspensa } from './admin-guard.js';
 import { htmlSimples, csvCampo } from './html-lib.js';
@@ -617,7 +619,7 @@ const renderProdutos = () => {
                 <span class="pl-foto">${/^https:\/\//i.test(String(p.fotoMini || p.foto || '')) ? `<img src="${escapeHTML(miniatura(p.fotoMini || p.foto, 128))}" data-original="${escapeHTML(p.fotoMini || p.foto)}" loading="lazy" decoding="async" alt="">` : placeholderSVG}</span>
                 <span class="pl-txt">
                     <b>${escapeHTML(p.nome)}</b>
-                    <span class="pl-sub">${Number(p.preco) > 0 ? `${fmt(p.preco)} / ${escapeHTML(p.unidade || 'un')}` : 'sem preço'}${cat ? ` · ${escapeHTML(cat)}` : ''}${p.ativo ? '' : ' · <em>fora da loja</em>'}</span>
+                    <span class="pl-sub">${Number(p.preco) > 0 ? `${fmt(p.preco)} / ${ehPacote(p) ? 'pacote' : escapeHTML(p.unidade || 'un')}` : 'sem preço'}${promoDe(p) ? ` · ${escapeHTML(textoPromo(promoDe(p)))}` : ''}${cat ? ` · ${escapeHTML(cat)}` : ''}${p.ativo ? '' : ' · <em>fora da loja</em>'}</span>
                     ${avisos.length ? `<span class="pl-avisos">${avisos.join('')}</span>` : ''}
                 </span>
             </button>
@@ -689,6 +691,44 @@ const alternarCampoPesoMedio = () => {
 };
 document.getElementById('edit-unidade')?.addEventListener('change', alternarCampoPesoMedio);
 
+// PACOTE e PROMOÇÃO (js/pacote-lib.js): só aparecem no que NÃO vai à balança; "como chamar 1 unidade", só no que vai.
+const v$ = (id) => document.getElementById(id);
+const reaisAdm = (c) => fmt(c / 100);
+const pintarPacote = () => {
+    const un = v$('edit-unidade')?.value, frac = ehFracionavel(un), g = v$('grupo-pacote');
+    if (!g) return;
+    g.hidden = frac;
+    const ico = g.querySelector('[data-arte="pacote"]'); if (ico && !ico.innerHTML) ico.innerHTML = ARTE_PACOTE;
+    const pac = !!v$('edit-pacote')?.checked;
+    v$('grupo-peso-pacote').hidden = !pac;
+    g.classList.toggle('ligado', pac);
+    const preco = parseFloat(v$('edit-preco')?.value);
+    const { dados, erro } = cadastroPacote({ pacote: pac, unidade: un, preco, promoQtd: v$('edit-promo-qtd')?.value, promoPreco: v$('edit-promo-preco')?.value });
+    const previa = v$('promo-previa');
+    if (previa) {
+        const promo = !erro && dados.promoQtd ? promoDe({ unidade: un, promoQtd: dados.promoQtd, promoPreco: dados.promoPreco }, preco) : null;
+        const nome = pac ? 'pacote' : 'unidade', q = promo ? promo.qtd : 0;
+        previa.classList.toggle('erro', !!erro);
+        previa.textContent = erro || (promo
+            ? `Na loja: ${fmt(preco)} ${pac ? 'o pacote' : 'cada'} · ${textoPromo(promo)}. ${[q - 1, q, q + 1].map((n) => `${n} = ${reaisAdm(totalComPromo(preco, n, promo))}`).join(' · ')}`
+            : `Ex.: leve 4 por R$ 10,00. Quem levar 4 paga R$ 10; o que passar volta ao preço normal da ${nome}. Em branco: sem promoção.`);
+    }
+    const pn = v$('nome-un-previa');
+    if (pn) { const n = nomesDaUnidade(v$('edit-nome-un')?.value); pn.textContent = `Na loja: "+ 1 ${n.um}" e, na sacola, "${emPalavras(2, n)}" em vez de "2 un".`; }
+};
+['edit-unidade', 'edit-pacote', 'edit-promo-qtd', 'edit-promo-preco', 'edit-preco', 'edit-nome-un'].forEach((id) => {
+    v$(id)?.addEventListener('input', pintarPacote); v$(id)?.addEventListener('change', pintarPacote);
+});
+const preencherPacote = (p) => {
+    if (!v$('edit-pacote')) return;
+    v$('edit-pacote').checked = !!(p && p.pacote === true);
+    v$('edit-peso-pacote').value = (p && p.pesoPacote) || '';
+    v$('edit-promo-qtd').value = p && Number(p.promoQtd) >= 2 ? p.promoQtd : '';
+    v$('edit-promo-preco').value = p && Number(p.promoPreco) > 0 ? String(p.promoPreco).replace('.', ',') : '';
+    v$('edit-nome-un').value = (p && p.nomeUn) || '';
+    pintarPacote();
+};
+
 // Formulário de produto EM BRANCO. Usado pelo "novo produto" e pelo kit criado com IA:
 // sem isto o kit herdava estoque, preço de oferta e "só ingrediente" do último produto aberto.
 const limparFormularioProduto = () => {
@@ -703,6 +743,7 @@ const limparFormularioProduto = () => {
     const url = document.getElementById('edit-foto-url'); if (url) { delete url.dataset.bancoUrl; delete url.dataset.bancoMini; }
     definirUnidade('kg');          // produto novo começa sempre em "Quilo" (antes herdava o do último aberto)
     alternarCampoPesoMedio();
+    preencherPacote(null);
     const previa = document.getElementById('preview-foto-wrapper'); if (previa) previa.innerHTML = placeholderSVG;
     document.getElementById('btn-excluir-produto').style.display = 'none';
     { const g = document.getElementById('grupo-rotulo-produto'); if (g) g.hidden = true; }
@@ -743,7 +784,8 @@ const valorDoItem = (item) => {
     if (ehItemDeBalanca(item)) {
         return item.pesoFinal > 0 ? item.pesoFinal * (item.precoOriginal || 0) : 0;
     }
-    return (item.precoOriginal || 0) * (item.qtd || 0);
+    // valor fechado: o que o servidor calculou (com a promoção "4 por R$ 10", quando houver)
+    return Number(item.subtotal) > 0 ? Number(item.subtotal) : (item.precoOriginal || 0) * (item.qtd || 0);
 };
 
 const totalDaEsteira = () => ESTEIRA.itens.reduce((soma, i) => soma + valorDoItem(i), 0);
@@ -905,7 +947,7 @@ const renderItemAtual = () => {
 
     } else {
         // Item de valor fechado (unidade, maço, bandeja): calcula sozinho
-        const total = (item.precoOriginal || 0) * (item.qtd || 0);
+        const total = valorDoItem(item);
         corpo.innerHTML = `
             <span class="pk-contador">Produto ${ESTEIRA.indice + 1} de ${ESTEIRA.itens.length}</span>
             ${blocoFoto}
@@ -1221,6 +1263,7 @@ document.body.addEventListener('click', async (e) => {
             if (document.getElementById('edit-so-insumo')) document.getElementById('edit-so-insumo').checked = p.soInsumo === true;
             { const m = (i, v) => { const c = document.getElementById(i); if (c) c.checked = v; }; m('edit-selo-chegou', p.chegouEm === hojeDaLoja()); m('edit-selo-estacao', p.estacao === true); m('edit-selo-escolha', p.escolha === true); }
             alternarCampoPesoMedio();
+            preencherPacote(p);
 
             const previewContainer = document.getElementById('preview-foto-wrapper');
             if (previewContainer) previewContainer.innerHTML = p.foto ? `<img src="${escapeHTML(p.foto)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" alt="${escapeHTML(p.nome)}">` : placeholderSVG;
@@ -1500,6 +1543,12 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
         };
 
         if (!pData.nome) throw new Error("Preencha o nome do produto.");
+        {   // pacote fechado, peso do pacote (opcional), promoção por quantidade e nome da unidade
+            const cad = cadastroPacote({ pacote: !!v$('edit-pacote')?.checked, pesoPacote: v$('edit-peso-pacote')?.value, promoQtd: v$('edit-promo-qtd')?.value,
+                promoPreco: v$('edit-promo-preco')?.value, nomeUn: v$('edit-nome-un')?.value, unidade: pData.unidade, preco: pData.preco });
+            if (cad.erro) throw new Error(cad.erro);
+            Object.assign(pData, cad.dados);
+        }
         if (!pData.unidade) throw new Error("Escolha a métrica de venda (quilo, unidade...).");
         if (!pData.cat) throw new Error("Escolha a categoria do produto.");
         if (pData.soInsumo && !(pData.preco > 0)) pData.preco = 0;
