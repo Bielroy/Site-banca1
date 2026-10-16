@@ -7,10 +7,14 @@ import { fichaRef, ehLojaOriginal } from './tenant.js';
 import { escapeHTML, showToast, openModal } from './utils.js';
 import { CAMINHOS, suporte, lerConfig, salvarConfig, conectar, conectada, imprimir } from './impressao.js';
 import { cupomDoPedido, etiquetaDeEntrega, etiquetaDeLote, paginaDeTeste, paraTexto, colunasDe } from './impressao-lib.js';
+import { MODOS_AUTO, podeAutomatico } from './impressao-fila-lib.js';
+
+// a impressão automática (js/impressao-auto.js) escuta este aviso e se ajusta na hora
+const avisarMudanca = () => { try { document.dispatchEvent(new CustomEvent('impressao:config')); } catch (_) { /* navegador antigo */ } };
 
 const $ = (id) => document.getElementById(id);
 let nomeLoja = null;
-async function loja() {
+export async function loja() {
     if (nomeLoja !== null) return nomeLoja;
     try { const s = await getDoc(fichaRef()); nomeLoja = (s.exists() && s.data().nome) || ''; } catch (_) { nomeLoja = ''; }
     if (!nomeLoja && ehLojaOriginal) nomeLoja = 'Banca Adair e Pedrina';
@@ -62,6 +66,18 @@ function pintar() {
         </div>
         ${termica ? `<label class="imp-check"><input type="checkbox" id="imp-acentos"${c.acentos ? ' checked' : ''}> <span>Imprimir com acentos<small>Deixe desligado se sair letra estranha no lugar de "ã" e "ç".</small></span></label>` : ''}
         ${c.modo === 'serial' ? `<div class="form-group"><label for="imp-baud">Velocidade da porta</label><select id="imp-baud">${[9600, 19200, 38400, 115200].map((n) => `<option${Number(c.baud) === n ? ' selected' : ''}>${n}</option>`).join('')}</select><small class="dica-campo">Se sair papel em branco ou letras soltas, tente outra velocidade.</small></div>` : ''}
+        <h4 class="cp-sub">Impressão automática</h4>
+        ${podeAutomatico(c.modo) ? `
+        <fieldset class="imp-caminhos imp-auto-modos"><legend class="sr-only">Quando o cupom sai sozinho</legend>
+            ${Object.entries(MODOS_AUTO).map(([k, [rot, dica]]) => `
+            <label class="imp-caminho${c.auto === k ? ' sel' : ''}"><input type="radio" name="imp-auto" value="${k}"${c.auto === k ? ' checked' : ''}><span><b>${rot}</b><small>${dica}</small></span></label>`).join('')}
+        </fieldset>
+        ${c.auto !== 'manual' ? `
+        <label class="imp-check"><input type="checkbox" id="imp-auto-etiqueta"${c.autoEtiqueta ? ' checked' : ''}> <span>Imprimir também a etiqueta da sacola<small>Sai logo depois do cupom, com o nome, o endereço e quanto cobrar.</small></span></label>
+        ${c.auto === 'chegada' ? `<label class="imp-check"><input type="checkbox" id="imp-auto-pesado"${c.autoPesado ? ' checked' : ''}> <span>Imprimir de novo depois da pesagem<small>Pedido com item a pesar sai na chegada com "a pesar"; depois da balança sai o cupom com o valor certo.</small></span></label>` : ''}
+        <label class="imp-check"><input type="checkbox" id="imp-auto-cancelado"${c.autoCancelado !== false ? ' checked' : ''}> <span>Avisar no papel se um pedido impresso for cancelado<small>Sai "PEDIDO CANCELADO" com o nome do cliente, para ninguém separar nem entregar.</small></span></label>
+        <p class="config-sub">Deixe o painel <b>aberto neste aparelho</b>, perto da impressora. A tela fica acesa sozinha enquanto o painel estiver aberto. O que chegar com o painel fechado sai quando ele abrir de novo, e nenhum pedido sai duas vezes.</p>` : ''}`
+        : '<p class="config-sub">Para o cupom sair sozinho, escolha "Bluetooth direto" ou "Cabo USB" lá em cima.</p>'}
         <h4 class="cp-sub">Como o cupom fica</h4>
         <pre class="imp-previa" style="width:${colunasDe(largura === 'a4' ? 80 : largura) + 2}ch" aria-label="Prévia do cupom">${escapeHTML(paraTexto(paginaDeTeste({ loja: nomeLoja || '', largura: largura === 'a4' ? 80 : largura, modo: CAMINHOS[c.modo][0] }).map((l) => ({ ...l, g: false })), colunasDe(largura === 'a4' ? 80 : largura)))}</pre>
         <p class="config-sub">No papel, o nome da loja e o total saem em letra maior.</p>
@@ -82,14 +98,18 @@ function garantirModal() {
         else if (t.id === 'imp-copias') salvarConfig({ copias: Number(t.value) });
         else if (t.id === 'imp-acentos') salvarConfig({ acentos: t.checked });
         else if (t.id === 'imp-baud') salvarConfig({ baud: Number(t.value) });
-        pintar();
+        else if (t.name === 'imp-auto') salvarConfig({ auto: t.value });
+        else if (t.id === 'imp-auto-etiqueta') salvarConfig({ autoEtiqueta: t.checked });
+        else if (t.id === 'imp-auto-pesado') salvarConfig({ autoPesado: t.checked });
+        else if (t.id === 'imp-auto-cancelado') salvarConfig({ autoCancelado: t.checked });
+        pintar(); avisarMudanca();
     });
     $('imp-corpo').addEventListener('click', async (e) => {
         const b = e.target.closest('#imp-conectar'); if (!b) return;
         b.disabled = true;
         try { const nome = await conectar(); showToast(nome ? `Conectada: ${nome}.` : 'Conectada.'); }
         catch (err) { console.error('[impressao]', err); showToast(err && err.amigavel ? err.message : 'Não consegui conectar. Confira se a impressora está ligada e perto.', true); }
-        pintar();
+        pintar(); avisarMudanca();
     });
     $('imp-teste').addEventListener('click', async () => {
         const b = $('imp-teste'); b.disabled = true;

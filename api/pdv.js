@@ -12,6 +12,10 @@
 //      (Antes o painel gravava o total direto: o cupom se perdia e o estoque
 //      dos itens por quilo nunca baixava.)
 //
+//  POST { acao: 'impressao', op, pedidoId, versao, aparelho }
+//      Fila de impressão (lib/impressao.js): reservar → imprimir no aparelho → confirmar
+//      (ou liberar, se não saiu). Um pedido não sai duas vezes, nem com dois aparelhos ligados.
+//
 //  Quem pode: proprietário, administrador, funcionário e caixa DA LOJA.
 // =====================================================================
 const admin = require('firebase-admin');
@@ -21,6 +25,7 @@ const V = require('../lib/venda');
 const Feira = require('../lib/feira');
 const Avisos = require('../lib/avisos');
 const P = require('../lib/prudencia');
+const Imp = require('../lib/impressao');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -173,6 +178,36 @@ async function pesagem(req, res, { tid, dec }) {
   }
 }
 
+// FILA DE IMPRESSÃO (lib/impressao.js): o aparelho com a impressora reserva o pedido, imprime e confirma.
+// POST { acao: 'impressao', op: 'reservar' | 'confirmar' | 'liberar', pedidoId, versao, aparelho }
+async function impressao(req, res, { tid }) {
+  const b = req.body || {}, pedidoId = String(b.pedidoId || ''), op = String(b.op || ''), versao = String(b.versao || 'inicial'), aparelho = b.aparelho;
+  if (!/^[\w-]{6,80}$/.test(pedidoId)) return res.status(400).json({ error: 'Pedido inválido.' });
+  if (!['reservar', 'confirmar', 'liberar'].includes(op) || Imp.nivel(versao) < 0 || !Imp.aparelhoOk(aparelho)) return res.status(400).json({ error: 'Pedido de impressão inválido.' });
+  try {
+    const saida = await db.runTransaction(async (t) => {
+      const ref = T.tdoc(db, tid, 'pedidos', pedidoId), snap = await t.get(ref);
+      if (!snap.exists) return { ok: false, motivo: 'sumiu' };
+      const ped = snap.data(), atual = ped.impressao;
+      if (ped.origem === 'balcao' && op === 'reservar') return { ok: false, motivo: 'ja' };          // venda de balcão: o cupom sai na hora, à mão
+      if (op === 'reservar') {
+        // o aviso de cancelado só existe para pedido cancelado; e pedido cancelado não imprime mais cupom
+        if ((versao === 'cancelado') !== (ped.status === 'cancelado')) return { ok: false, motivo: 'ja' };
+        const d = Imp.decidirReserva(atual, versao, aparelho);
+        if (d.ok) t.update(ref, { impressao: d.novo });
+        return d.ok ? { ok: true } : d;
+      }
+      if (op === 'confirmar') { const novo = Imp.confirmar(atual, versao, aparelho); t.update(ref, { impressao: novo }); return { ok: true, impressao: novo }; }
+      const solto = Imp.liberar(atual, aparelho); if (solto) t.update(ref, { impressao: solto });
+      return { ok: true };
+    });
+    return res.status(200).json({ sucesso: true, ...saida });
+  } catch (e) {
+    if (P.ehFalhaInterna(e)) return res.status(500).json({ error: 'Não consegui falar com a fila de impressão agora.' });
+    return res.status(400).json({ error: e.message || 'Não foi possível.' });
+  }
+}
+
 module.exports = async function handler(req, res) {
   cors(req, res);
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -192,5 +227,6 @@ module.exports = async function handler(req, res) {
   const acao = (req.body || {}).acao;
   if (acao === 'venda') return venda(req, res, { tid, dec });
   if (acao === 'pesagem') return pesagem(req, res, { tid, dec });
+  if (acao === 'impressao') return impressao(req, res, { tid, dec });
   return res.status(400).json({ error: 'Ação desconhecida.' });
 };

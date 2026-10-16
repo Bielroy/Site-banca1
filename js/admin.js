@@ -30,6 +30,7 @@ const TELAS = {
     margens: () => import('./admin-margens.js'), compras: () => import('./admin-compras.js'), pdv: () => import('./admin-pdv.js'),
     crm: () => import('./admin-crm.js'), copiloto: () => import('./admin-copiloto.js'), calendario: () => import('./admin-calendario.js'),
     equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'), avisos: () => import('./admin-avisos.js'),
+    impressaoAuto: () => import('./impressao-auto.js'),
     precosDia: () => import('./admin-precos-dia.js'), vitrine: () => import('./admin-vitrine.js'), rotulos: () => import('./admin-rotulos.js'),
 };
 const comImpressao = async (fn) => { try { await fn(await TELAS.impressao()); } catch (e) { console.error(e); showToast('Não consegui abrir a impressão. Confira a internet e toque de novo.', true); } };
@@ -62,6 +63,8 @@ const carregarChart = async () => {
 let produtosAtuais = [];
 let nomeDaLoja = ehLojaOriginal ? 'Banca Adair e Pedrina' : 'Nossa loja';   // trocado pelo nome da ficha da loja ao entrar
 let pedidosGerais = [];
+let filaRecebida = false;          // a fila já chegou do banco pelo menos uma vez (a impressão automática espera por ela)
+let impAuto = null;                // js/impressao-auto.js, quando carregado
 let unsubscribes = [];
 let adminBuscaTermo = "";
 let pedidoBuscaTermo = "";
@@ -79,6 +82,7 @@ const normalizar = (txt) => String(txt || '').toLowerCase().normalize("NFD").rep
 onAuthStateChanged(auth, async (user) => {
     unsubscribes.forEach(unsub => unsub());
     unsubscribes = [];
+    filaRecebida = false; try { impAuto?.parar(); } catch (_) { /* nada a parar */ }
 
     if (!user) {
         document.getElementById('login-screen').style.display = 'block';
@@ -478,6 +482,18 @@ const iniciarRealTimeSync = () => {
     // Produção e Estoque não têm a fila de pedidos: não gasta leitura com ela.
     if (!podeAbrir(papelAtual, 'relatorios', TODAS_AS_ABAS, modulosDaLoja)) return;
 
+    // IMPRESSÃO AUTOMÁTICA (js/impressao-auto.js): quem atende pedidos pode deixar este aparelho
+    // imprimindo sozinho. Ela recebe a fila (abaixo, em aplicarPedidos) e os cancelados recentes,
+    // para o aviso "PEDIDO CANCELADO" de quem já tinha saído no papel.
+    TELAS.impressaoAuto().then((m) => {
+        impAuto = m; m.iniciar();
+        if (filaRecebida) m.aoMudarPedidos(pedidosGerais);
+        const qCancelados = query(tcol("pedidos"), where("status", "==", "cancelado"), orderBy("data", "desc"), limit(15));
+        unsubscribes.push(onSnapshot(qCancelados, async (snap) => {
+            try { m.aoMudarCancelados(await abrirPedidos(snap.docs.map((d) => ({ ...d.data(), id: d.id })))); } catch (e) { console.warn('[impressao-auto] cancelados', e); }
+        }, (e) => console.warn('[impressao-auto] cancelados sem índice: o aviso de cancelado fica desligado', e)));
+    }).catch((e) => console.error('[impressao-auto]', e));
+
     // ATENÇÃO: esta consulta combina "where in" + "orderBy", o que exige um
     // ÍNDICE COMPOSTO no Firestore. Se aparecer erro no console com um link,
     // clique nele: o Firebase cria o índice sozinho (leva ~1 min).
@@ -502,7 +518,8 @@ const iniciarRealTimeSync = () => {
     };
 
     const aplicarPedidos = (docs) => {
-        pedidosGerais = docs;
+        pedidosGerais = docs; filaRecebida = true;
+        try { impAuto?.aoMudarPedidos(docs); } catch (e) { console.error('[impressao-auto]', e); }   // a impressão nunca atrapalha a fila na tela
         // quantos pedidos esperam alguém: aparece na aba e no botão do menu
         const esperando = docs.filter(p => ['pendente', 'aguardando_pesagem'].includes(p.status)).length;
         const tabPed = document.querySelector('.tab[data-aba="relatorios"]');
@@ -1400,7 +1417,8 @@ document.body.addEventListener('click', async (e) => {
             const pedido = pedidosGerais.find(p => p.id === target.dataset.id);
             if (!pedido) return showToast("Pedido não encontrado", true);
             target.disabled = true;
-            await comImpressao((m) => m.imprimirPedido(pedido, target.dataset.tipo));
+            // cupom impresso à mão entra na fila como impresso: o automático não imprime de novo
+            await comImpressao(async (m) => { const ok = await m.imprimirPedido(pedido, target.dataset.tipo); if (ok && target.dataset.tipo === 'cupom') impAuto?.marcarImpresso(pedido); });
             target.disabled = false;
         }
 
@@ -1703,6 +1721,10 @@ const renderHtmlPedidos = (pedidos) => {
             botao = `<button class="btn-outline flex-1" style="background:${st.cor};color:white;border:none;width:100%;padding:12px;" data-action="avancar-pedido" data-next="${st.proximo}" data-id="${escapeHTML(p.id)}">${st.btn}</button>`;
         }
 
+        // fila de impressão (lib/impressao.js): o que já saiu no papel, e quando
+        const imp = p.impressao || {}, horaImp = imp.saiuEm ? new Date(imp.saiuEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+        const infoImp = imp.saiu ? `<span class="ped-impresso" title="${imp.vezes > 1 ? `Saiu ${Number(imp.vezes)} vezes` : 'Saiu no papel'}"><i class="ic" data-i="impressora"></i> Impresso${horaImp ? ` ${horaImp}` : ''}${imp.saiu === 'pesado' ? ' (pesado)' : ''}</span>`
+            : (imp.estado === 'reservado' && Date.now() - (Date.parse(imp.em) || 0) < 90000 ? '<span class="ped-impresso fila"><i class="ic" data-i="impressora"></i> Imprimindo…</span>' : '');
         const infoPag = p.pagamento?.status === 'PAID'
             ? `<span style="background:var(--success);color:white;padding:3px 8px;border-radius:12px;font-size:0.72rem;font-weight:700;">✓ PAGO</span>` : '';
         const infoEntrega = p.entrega && (p.entrega.horario || p.entrega.horarioACombinar || Number(p.entrega.taxa) > 0)
@@ -1724,6 +1746,7 @@ const renderHtmlPedidos = (pedidos) => {
             <div style="margin-bottom: 10px; font-size: 0.8rem; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                 <span style="background: ${st.cor}; color: white; padding: 3px 8px; border-radius: 12px; font-weight: bold;">${st.tag}</span>
                 ${infoPag}
+                ${infoImp}
                 <span><i class="ic" data-i="calendario"></i> ${dataFmt}</span>
             </div>
             ${infoDia}

@@ -251,3 +251,19 @@ body.so-equipe #aba-relatorios .relatorios-header, body.so-equipe #aba-relatorio
 .mg-sim select { width: 100%; padding: 10px 12px; margin: 6px 0; border-radius: var(--radius-sm); border: 1.5px solid #e0dcd4; font-size: 16px; background: #fff; }
 .mg-sim-melhor { background: rgba(47,122,79,.10); border-radius: 8px; padding-left: 6px !important; padding-right: 6px !important; }
 .mg-sim li small { display: inline; margin-left: 4px; } .mg-sim li span small:last-child { display: block; margin-left: 0; }
+
+/* ---------- impressão automática (js/impressao-auto.js) ---------- */
+.imp-auto { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin: 0 0 14px; padding: 10px 14px; border-radius: 14px; font-size: .92rem; line-height: 1.35; border: 1.5px solid var(--sage); background: var(--foam); color: var(--forest); }
+.imp-auto > .ic, .imp-auto > svg.ic { width: 1.4em; height: 1.4em; flex: none; }
+.imp-auto > span { flex: 1 1 200px; min-width: 0; }
+.imp-auto button { min-height: 44px; padding: 8px 14px; border-radius: 12px; border: 0; background: var(--forest); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.imp-auto button.sec { background: #fff; color: var(--forest); border: 1.5px solid var(--sage); }
+.imp-auto button:disabled { opacity: .6; }
+.imp-auto.alerta { background: var(--warning-light); border-color: #f0c96a; color: #6b4300; }
+.imp-auto.alerta button:not(.sec) { background: #8a5300; }
+.imp-auto.erro { background: var(--danger-light); border-color: #f2b8b5; color: #8f1d17; }
+.imp-auto.erro button { background: #b3261e; }
+.imp-auto[hidden] { display: none; }
+.ped-impresso { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 12px; background: var(--foam); color: var(--forest); font-weight: 700; font-size: .72rem; }
+.ped-impresso.fila { background: var(--warning-light); color: #6b4300; }
+.imp-auto-modos { margin-top: 0; }

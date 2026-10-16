@@ -85,7 +85,8 @@ export const ico = (nome, classe = '') => `<svg class="ic${classe ? ` ${classe}`
 
 /** Troca as marcas <i class="ic" data-i="..."> que estiverem dentro de `raiz` pelos desenhos. */
 export function hidratar(raiz = document) {
-    const marcas = raiz.querySelectorAll ? raiz.querySelectorAll('i.ic[data-i]') : [];
+    // raiz pode ser null: a marca foi trocada de novo antes do vigia chegar nela (tela que se redesenha rápido)
+    const marcas = raiz && raiz.querySelectorAll ? raiz.querySelectorAll('i.ic[data-i]') : [];
     marcas.forEach((m) => {
         if (!desenho(m.dataset.i)) return;
         const molde = document.createElement('template');

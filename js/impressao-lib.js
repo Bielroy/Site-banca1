@@ -31,10 +31,12 @@ export function enderecoTxt(p) {
 }
 
 /** Cupom completo de um pedido (da loja on-line ou do balcão). */
-export function cupomDoPedido(p, { loja = '' } = {}) {
+export function cupomDoPedido(p, { loja = '', aviso = '' } = {}) {
     const L = [], itens = Array.isArray(p.itens) ? p.itens : [];
     if (loja) L.push(txt(loja, { al: 'c', b: true, g: true }));
-    L.push(txt(`${p.origem === 'balcao' ? 'Venda no balcão' : 'Pedido'}${p.id ? ` ${String(p.id).slice(-6).toUpperCase()}` : ''}`, { al: 'c' }), txt(dataHora(p.data), { al: 'c' }), SEP);
+    L.push(txt(`${p.origem === 'balcao' ? 'Venda no balcão' : 'Pedido'}${p.id ? ` ${numeroDoPedido(p)}` : ''}`, { al: 'c' }), txt(dataHora(p.data), { al: 'c' }));
+    if (limpo(aviso)) L.push(txt(aviso, { al: 'c', b: true }));            // ex.: "CUPOM ATUALIZADO (depois da balança)"
+    L.push(SEP);
     if (limpo(p.nome)) L.push(txt(p.nome, { b: true }));
     const end = enderecoTxt(p); if (end) L.push(txt(end));
     if (limpo(p.telefone)) L.push(txt(`Tel: ${limpo(p.telefone, 20)}`));
@@ -61,6 +63,20 @@ export function cupomDoPedido(p, { loja = '' } = {}) {
     return L;
 }
 
+/** Número curto do pedido, o mesmo no cupom, na etiqueta e no aviso de cancelado. */
+export const numeroDoPedido = (p) => String((p && p.id) || '').slice(-6).toUpperCase();
+
+/** Aviso de pedido CANCELADO depois que o cupom já tinha saído: para ninguém separar ou entregar. */
+export function avisoDeCancelamento(p, { loja = '' } = {}) {
+    const L = [];
+    if (loja) L.push(txt(loja, { al: 'c' }));
+    L.push(txt('PEDIDO CANCELADO', { al: 'c', b: true, g: true }), txt(`Pedido ${numeroDoPedido(p)}`, { al: 'c', b: true }), txt(`Cancelado em ${dataHora(p.canceladoEm)}`, { al: 'c' }), SEP);
+    if (limpo(p.nome)) L.push(txt(p.nome, { b: true }));
+    const end = enderecoTxt(p); if (end) L.push(txt(end));
+    L.push(SEP, txt('Não separe nem entregue este pedido. Se já separou, volte os itens para a banca.'), CORTE);
+    return L;
+}
+
 /** Etiqueta para colar na sacola: quem é, onde entrega, quanto cobrar. */
 export function etiquetaDeEntrega(p, { loja = '', volume = 1, volumes = 1 } = {}) {
     const L = [], itens = Array.isArray(p.itens) ? p.itens : [], pago = p.pagamento && p.pagamento.status === 'PAID';
@@ -69,7 +85,7 @@ export function etiquetaDeEntrega(p, { loja = '', volume = 1, volumes = 1 } = {}
     const end = enderecoTxt(p); if (end) L.push(txt(end, { al: 'c', b: true }));
     if (p.feiraId && /^\d{4}-\d{2}-\d{2}$/.test(String(p.entregaDia || '')) && p.paraHoje === false) L.push(txt(`PARA ${String(p.entregaDia).slice(8, 10)}/${String(p.entregaDia).slice(5, 7)}`, { al: 'c', b: true }));   // pedido para a próxima feira
     if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`Entregar: ${limpo(p.entrega.horario, 40)}`, { al: 'c' }));
-    L.push(SEP, { t: 'par', e: `${itens.length} item(ns)`, d: volumes > 1 ? `Volume ${volume}/${volumes}` : '' });
+    L.push(SEP, { t: 'par', e: `${itens.length} item(ns)${p.id ? ` - Pedido ${numeroDoPedido(p)}` : ''}`, d: volumes > 1 ? `Volume ${volume}/${volumes}` : '' });
     L.push(txt(pago ? 'JÁ PAGO' : `Cobrar ${reais(p.total)} - ${limpo(p.pag, 20) || 'a combinar'}`, { b: true }));
     if (!pago && limpo(p.troco)) L.push(txt(`Troco para: ${limpo(p.troco, 30)}`));
     if (limpo(p.obs)) L.push(txt(`Obs: ${limpo(p.obs, 120)}`));

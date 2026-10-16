@@ -2941,6 +2941,94 @@ teste('cartão: "como chamar 1 unidade" muda o botão e o contador ("+ 1 batata"
   assert.strictEqual(M.textoNoPedido({ ...p, nomeUn: '' }, { qtd: 1, tipo: 'un' }).titulo, '1 unidade', 'sem nome: como antes');
 });
 
+// ---------------------------------------------------------------- IMPRESSÃO AUTOMÁTICA
+teste('impressão (regra do servidor): reserva, confirma, não sai duas vezes; outro aparelho espera; reserva largada pode ser tomada', () => {
+  const I = require(raiz('lib/impressao'));
+  const t0 = Date.parse('2026-10-16T10:00:00Z');
+  let r = I.decidirReserva(undefined, 'inicial', 'ap-aaaaaa', t0);
+  assert.ok(r.ok && r.novo.estado === 'reservado' && r.novo.aparelho === 'ap-aaaaaa');
+  assert.deepStrictEqual(I.decidirReserva(r.novo, 'inicial', 'ap-bbbbbb', t0 + 10000), { ok: false, motivo: 'outro' }, 'outro aparelho não imprime junto');
+  assert.ok(I.decidirReserva(r.novo, 'inicial', 'ap-bbbbbb', t0 + I.RESERVA_MS + 1).ok, 'aparelho que caiu no meio: depois de 90 s outro pode imprimir');
+  const feito = I.confirmar(r.novo, 'inicial', 'ap-aaaaaa', t0 + 5000);
+  assert.strictEqual(feito.saiu, 'inicial'); assert.strictEqual(feito.vezes, 1);
+  assert.deepStrictEqual(I.decidirReserva(feito, 'inicial', 'ap-aaaaaa', t0 + 9e6), { ok: false, motivo: 'ja' }, 'já saiu: nunca mais sozinho');
+  assert.ok(I.decidirReserva(feito, 'pesado', 'ap-aaaaaa', t0 + 9e6).ok, 'versão maior (depois da balança) pode sair');
+  const cancel = I.confirmar(I.confirmar(feito, 'cancelado', 'ap-aaaaaa'), 'inicial', 'ap-aaaaaa');
+  assert.strictEqual(cancel.saiu, 'cancelado', 'reimprimir o cupom à mão não apaga que o aviso de cancelado já saiu');
+  const falhou = I.liberar(I.decidirReserva(feito, 'pesado', 'ap-aaaaaa', t0).novo, 'ap-aaaaaa', t0 + 1000);
+  assert.strictEqual(falhou.estado, 'falhou'); assert.strictEqual(falhou.saiu, 'inicial', 'falha não esquece o que já tinha saído');
+  assert.strictEqual(I.liberar(r.novo, 'ap-bbbbbb'), null, 'só quem reservou solta a reserva');
+});
+
+teste('impressão (API): só a equipe usa a fila; venda de balcão e aviso de cancelado em pedido ativo são recusados', async () => {
+  const sem = sementeEstoque();
+  sem['pedidos/ped-0000001'] = { nome: 'Ana', status: 'pendente', total: 10, data: '2026-10-16T10:00:00Z', itens: [] };
+  sem['pedidos/bal-0000001'] = { nome: 'Balcão', status: 'arquivado', origem: 'balcao', total: 5, data: '2026-10-16T10:00:00Z', itens: [] };
+  const db = criarBancoP(sem); const api = carregarApi(raiz('api/pdv.js'), criarAdmin(db, TOKENS_P));
+  const fila = (body, token = 'func-banca') => chamar(api, { headers: { Authorization: `Bearer ${token}` }, body: { acao: 'impressao', pedidoId: 'ped-0000001', versao: 'inicial', aparelho: 'ap-aaaaaa', ...body } });
+  assert.strictEqual((await fila({ op: 'reservar' }, 'cliente')).status, 403, 'cliente não mexe na fila');
+  assert.strictEqual((await fila({ op: 'reservar', aparelho: 'x' })).status, 400, 'aparelho inválido');
+  let r = await fila({ op: 'reservar' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(r.corpo.ok, true);
+  assert.deepStrictEqual([(await fila({ op: 'reservar', aparelho: 'ap-bbbbbb' })).corpo.ok, (await fila({ op: 'reservar', aparelho: 'ap-bbbbbb' })).corpo.motivo], [false, 'outro']);
+  await fila({ op: 'confirmar' });
+  assert.strictEqual(db._dados.get('pedidos/ped-0000001').impressao.saiu, 'inicial');
+  assert.strictEqual(db._dados.get('pedidos/ped-0000001').status, 'pendente', 'a fila não mexe no status do pedido');
+  assert.strictEqual((await fila({ op: 'reservar' })).corpo.motivo, 'ja');
+  assert.strictEqual((await fila({ op: 'reservar', versao: 'cancelado' })).corpo.ok, false, 'pedido ativo não tem aviso de cancelado');
+  assert.strictEqual((await fila({ op: 'reservar', pedidoId: 'bal-0000001' })).corpo.ok, false, 'balcão: o cupom sai à mão, na hora');
+  assert.strictEqual((await fila({ op: 'reservar', pedidoId: 'nao-existe-1' })).corpo.motivo, 'sumiu');
+  db._dados.set('pedidos/ped-0000001', { ...db._dados.get('pedidos/ped-0000001'), status: 'cancelado', canceladoEm: new Date().toISOString() });
+  assert.strictEqual((await fila({ op: 'reservar' , versao: 'pesado' })).corpo.ok, false, 'cancelado não imprime mais cupom');
+  assert.strictEqual((await fila({ op: 'reservar', versao: 'cancelado' })).corpo.ok, true, 'cancelado depois de impresso: sai o aviso');
+});
+
+teste('impressão (regra do painel): "ao chegar" e "ao aceitar"; balcão, cancelado e já impresso ficam de fora', async () => {
+  const F = await import(raiz('js/impressao-fila-lib.js'));
+  const agora = Date.parse('2026-10-16T12:00:00Z');
+  const ped = (o) => ({ id: 'p' + Math.random().toString(36).slice(2, 8), data: '2026-10-16T11:00:00Z', status: 'pendente', itens: [], ...o });
+  const chegada = { auto: 'chegada', aparelho: 'ap-aaaaaa' }, aceite = { auto: 'aceite', aparelho: 'ap-aaaaaa' };
+  const tem = (p, c, o) => !!F.precisaImprimir(p, c, { agora, ...o });
+  assert.ok(tem(ped(), chegada) && !tem(ped(), aceite), 'novo: sai na chegada, não no "ao aceitar"');
+  assert.ok(tem(ped({ status: 'preparando' }), aceite), 'aceito: sai no "ao aceitar"');
+  assert.ok(tem(ped({ status: 'aguardando_pesagem', itens: [{ aPesar: false }] }), aceite), 'já pesado (ainda escrito "a pesar") conta como aceito');
+  assert.ok(!tem(ped({ status: 'aguardando_pagamento' }), chegada), 'esperando PIX: não gasta papel antes de pagar');
+  assert.ok(!tem(ped({ status: 'enviado' }), chegada), 'já saiu para entrega');
+  assert.ok(!tem(ped(), { auto: 'manual' }), 'manual não imprime nada');
+  assert.ok(!tem(ped({ origem: 'balcao', status: 'preparando' }), aceite), 'balcão fica de fora');
+  assert.ok(!tem(ped({ impressao: { saiu: 'inicial' } }), chegada), 'já impresso');
+  const p1 = ped(); assert.ok(!tem(p1, chegada, { ignorados: new Set([`${p1.id}:inicial`]) }), 'pulado por você');
+  assert.ok(!tem(ped({ impressao: { estado: 'reservado', versao: 'inicial', aparelho: 'ap-bbbbbb', em: new Date(agora - 5000).toISOString() } }), chegada), 'outro aparelho imprimindo agora');
+  // depois da balança
+  const pesado = ped({ status: 'preparando', pesadoEm: '2026-10-16T11:30:00Z', impressao: { saiu: 'inicial' } });
+  assert.ok(!tem(pesado, chegada) && tem(pesado, { ...chegada, autoPesado: true }), 'cupom atualizado só com a opção ligada');
+  assert.strictEqual(F.precisaImprimir(pesado, { ...chegada, autoPesado: true }, { agora }).versao, 'pesado');
+  // cancelado
+  const canc = (o) => ped({ status: 'cancelado', canceladoEm: new Date(agora - 3600000).toISOString(), ...o });
+  assert.ok(tem(canc({ impressao: { saiu: 'inicial' } }), aceite), 'cancelado depois de sair no papel: aviso');
+  assert.ok(!tem(canc(), chegada), 'cancelado que nunca saiu no papel: nada');
+  assert.ok(!tem(canc({ impressao: { saiu: 'cancelado' } }), chegada), 'o aviso sai uma vez só');
+  assert.ok(!tem(canc({ impressao: { saiu: 'inicial' } }), { ...chegada, autoCancelado: false }), 'aviso desligado');
+  assert.ok(!tem(canc({ impressao: { saiu: 'inicial' }, canceladoEm: new Date(agora - 2 * 86400000).toISOString() }), chegada), 'cancelado há 2 dias: não imprime');
+  // ordem de chegada
+  const lista = F.trabalhosDe([ped({ id: 'b', data: '2026-10-16T11:10:00Z' }), ped({ id: 'a', data: '2026-10-16T11:05:00Z' })], chegada, { agora });
+  assert.deepStrictEqual(lista.map((t) => t.id), ['a', 'b'], 'o mais antigo sai primeiro');
+  assert.ok(F.podeAutomatico('bluetooth') && F.podeAutomatico('serial') && !F.podeAutomatico('sistema') && !F.podeAutomatico('app'));
+});
+
+teste('impressão (papel): aviso de cancelado, cupom atualizado e número do pedido na etiqueta', async () => {
+  const L = await import(raiz('js/impressao-lib.js'));
+  const p = { id: 'abc123xyz789', nome: 'Maria Souza', quadra: '1', lote: '3', status: 'cancelado', canceladoEm: '2026-10-16T13:20:00Z', total: 14, itens: [{ nome: 'Tomate', qtd: 2, tipo: 'un', unidade: 'un', subtotal: 14 }] };
+  const aviso = L.paraTexto(L.avisoDeCancelamento(p, { loja: 'Banca' }), 48);
+  assert.ok(/PEDIDO CANCELADO/.test(aviso) && /Pedido XYZ789/.test(aviso) && /Maria Souza/.test(aviso) && /Nao separe|Não separe/.test(aviso), aviso);
+  assert.ok(/10:20/.test(aviso), 'hora de Brasília: ' + aviso);
+  const cupom = L.paraTexto(L.cupomDoPedido(p, { aviso: 'CUPOM ATUALIZADO (depois da balança)' }), 48);
+  assert.ok(/CUPOM ATUALIZADO/.test(cupom) && /Pedido XYZ789/.test(cupom), cupom);
+  assert.ok(/Pedido XYZ789/.test(L.paraTexto(L.etiquetaDeEntrega(p), 48)), 'etiqueta da sacola com o mesmo número do cupom');
+  const bytes = L.paraEscPos(L.avisoDeCancelamento(p), { largura: 80, acentos: true });
+  assert.deepStrictEqual([...bytes.slice(0, 5)], [0x1b, 0x40, 0x1b, 0x74, 0x03], 'zera a impressora e usa a tabela 860 (português), que esta impressora tem');
+});
+
 (async () => {
   let falhas = 0;
   for (const [nome, fn] of testes) {

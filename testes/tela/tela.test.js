@@ -550,10 +550,74 @@ teste('painel: fila vinda da cópia do aparelho (sem conexão com o banco) mostr
   semErros(erros); await fechar();
 });
 
+// ---------------------------------------------------------------- IMPRESSÃO AUTOMÁTICA
+// impressora de mentira no "cabo" (porta serial): guarda os bytes em window.__impresso
+const impressoraFalsa = (cfg) => {
+  localStorage.setItem('banca_impressora', JSON.stringify(cfg));
+  window.__impresso = [];
+  const porta = { writable: null, async open() { porta.writable = { getWriter: () => ({ write: async (b) => { window.__impresso.push(...b); }, releaseLock() {} }) }; } };
+  Object.defineProperty(navigator, 'serial', { configurable: true, value: { getPorts: async () => [porta], requestPort: async () => porta } });
+};
+const cenarioImpressao = () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const agora = new Date().toISOString(), base = { total: 14, pag: 'PIX', quadra: '1', lote: '3', data: agora, itens: [{ id: 'ovos', nome: 'Ovos caipira', qtd: 1, tipo: 'un', unidade: 'dz', subtotal: 14 }] };
+  cen.lojas.banca.pedidos = {
+    'ped-novo-0001': { ...base, nome: 'Cliente Novo', status: 'pendente' },
+    'ped-feito-001': { ...base, nome: 'Ja Impresso', status: 'pendente', impressao: { saiu: 'inicial', saiuEm: agora, estado: 'impresso', vezes: 1 } },
+    'ped-aceito-01': { ...base, nome: 'Cliente Aceito', status: 'preparando' },
+  };
+  return cen;
+};
+const textoImpresso = (p) => p.evaluate(() => String.fromCharCode(...(window.__impresso || [])));
+const chamadasDaFila = () => servidor.chamadas.filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'impressao');
+
+teste('impressão automática "ao chegar": pedido novo sai sozinho, reservado e confirmado na fila; já impresso não sai de novo', async () => {
+  const antes = servidor.chamadas.length;
+  // a impressora de mentira é configurada ANTES da página abrir
+  const ctx = await navegador.newContext({ viewport: { width: 1200, height: 900 }, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
+  await ctx.addInitScript((c) => { window.__CENARIO = c; }, cenarioImpressao());
+  await ctx.addInitScript(impressoraFalsa, { modo: 'serial', largura: 80, acentos: true, auto: 'chegada', aparelho: 'ap-teste-01' });
+  await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+  await p.goto(servidor.base + '/admin.html');
+  await p.waitForFunction(() => /Cliente Novo/.test(String.fromCharCode(...(window.__impresso || []))), null, { timeout: 8000 });
+  await p.waitForTimeout(600);
+  const txt = await textoImpresso(p);
+  assert.ok(/Cliente Novo/.test(txt) && /Cliente Aceito/.test(txt), 'novo e aceito (nunca impresso) saem no "ao chegar"');
+  assert.ok(!/Ja Impresso/.test(txt), 'o que já saiu no papel não sai de novo');
+  assert.ok(txt.indexOf('Cliente Novo') > -1 && (txt.match(/Cliente Novo/g) || []).length === 1, 'sai uma vez só');
+  const fila = servidor.chamadas.slice(antes).filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'impressao');
+  const ops = fila.filter((c) => c.corpo.pedidoId === 'ped-novo-0001').map((c) => c.corpo.op);
+  assert.deepStrictEqual(ops.slice(0, 2), ['reservar', 'confirmar'], 'reserva antes de imprimir e confirma depois: ' + ops.join(','));
+  assert.ok(fila.every((c) => c.corpo.aparelho === 'ap-teste-01'));
+  assert.ok(!fila.some((c) => c.corpo.pedidoId === 'ped-feito-001'), 'nem pergunta à fila sobre o já impresso');
+  assert.ok(/Impressão automática ligada/.test(await p.locator('#imp-auto').innerText()), 'faixa no topo diz que está ligada');
+  semErros(errosP);
+  await ctx.close();
+});
+
+teste('impressão automática "ao aceitar": pedido novo espera; o aceito sai; manual não imprime nada', async () => {
+  for (const [auto, espera] of [['aceite', /Cliente Aceito/], ['manual', null]]) {
+    const ctx = await navegador.newContext({ viewport: { width: 1200, height: 900 }, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
+    await ctx.addInitScript((c) => { window.__CENARIO = c; }, cenarioImpressao());
+    await ctx.addInitScript(impressoraFalsa, { modo: 'serial', largura: 80, acentos: true, auto, aparelho: 'ap-teste-02' });
+    await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+    await p.goto(servidor.base + '/admin.html');
+    if (espera) await p.waitForFunction(() => /Cliente Aceito/.test(String.fromCharCode(...(window.__impresso || []))), null, { timeout: 8000 });
+    await p.waitForTimeout(1500);
+    const txt = await textoImpresso(p);
+    if (espera) assert.ok(espera.test(txt) && !/Cliente Novo/.test(txt), `${auto}: só o aceito sai\n${txt}`);
+    else { assert.strictEqual(txt, '', 'manual: nada sai sozinho'); assert.ok(await p.locator('#imp-auto').isHidden(), 'manual: sem faixa'); }
+    assert.deepStrictEqual(errosP, []);
+    await ctx.close();
+  }
+});
+
 (async () => {
   servidor = await subir({
     // pesagem (de mentira): devolve o pedido pesado como o api/pdv.js de verdade
-    '/api/pdv': (c) => (c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
+    '/api/pdv': (c) => (c.acao === 'impressao' ? { sucesso: true, ok: true } : c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
     // ranking (de mentira) da banca, ao contrário da ordem do cadastro, chegando 1,5 s depois
     '/api/analytics': (c) => (c.acao === 'ranking' ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, nivel: 'popular', itens: ['ovos', 'banana', 'alface', 'tomate'].map((id, i) => ({ id, p: 0.9 - i * 0.2 })) }), 1500)) : {}),
     '/api/checkout': (c) => (c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),

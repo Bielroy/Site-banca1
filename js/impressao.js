@@ -28,17 +28,33 @@ export const CAMINHOS = {
     serial:    ['Cabo USB ou Bluetooth do computador', 'Térmica ligada no cabo, ou Bluetooth já pareado no computador.'],
     app:       ['Aplicativo de impressão (Android)', 'Usa um app como o RawBT, que alcança térmicas por Bluetooth, Wi-Fi (IP) ou USB.'],
 };
-const PADRAO = { modo: 'sistema', largura: 58, acentos: false, copias: 1, baud: 9600, btNome: '', btId: '' };
+// auto: impressão automática deste aparelho (js/impressao-fila-lib.js). aparelho: nome sorteado deste aparelho na fila.
+const PADRAO = { modo: 'sistema', largura: 58, acentos: false, copias: 1, baud: 9600, btNome: '', btId: '',
+    auto: 'manual', autoEtiqueta: false, autoPesado: false, autoCancelado: true, aparelho: '' };
 const CHAVE = chave('banca_impressora');
 
 export function lerConfig() {
-    try { const c = JSON.parse(localStorage.getItem(CHAVE) || 'null'); if (c && CAMINHOS[c.modo]) return { ...PADRAO, ...c, copias: Math.min(Math.max(parseInt(c.copias, 10) || 1, 1), 5) }; } catch (_) { /* segue com o padrão */ }
+    try { const c = JSON.parse(localStorage.getItem(CHAVE) || 'null'); if (c && CAMINHOS[c.modo]) return { ...PADRAO, ...c, copias: Math.min(Math.max(parseInt(c.copias, 10) || 1, 1), 5), auto: ['chegada', 'aceite'].includes(c.auto) ? c.auto : 'manual' }; } catch (_) { /* segue com o padrão */ }
     return { ...PADRAO };
 }
 export function salvarConfig(c) { try { localStorage.setItem(CHAVE, JSON.stringify({ ...lerConfig(), ...c })); } catch (_) { /* armazenamento bloqueado */ } return lerConfig(); }
+/** Nome sorteado deste aparelho (a fila de impressão usa para saber quem reservou o pedido). */
+export function aparelhoId() {
+    const c = lerConfig(); if (/^[\w-]{6,40}$/.test(c.aparelho)) return c.aparelho;
+    let id = '';
+    try { id = 'ap-' + [...crypto.getRandomValues(new Uint8Array(9))].map((b) => b.toString(16).padStart(2, '0')).join(''); }
+    catch (_) { id = 'ap-' + Math.random().toString(36).slice(2, 14) + Date.now().toString(36); }
+    salvarConfig({ aparelho: id });
+    return lerConfig().aparelho || id;
+}
 
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 const erro = (msg) => Object.assign(new Error(msg), { amigavel: true });
+
+// Um papel por vez: a impressão automática e um toque em "Cupom" ao mesmo tempo misturariam os bytes na impressora.
+let filaEnvio = Promise.resolve();
+const emFila = (fn) => { const r = filaEnvio.then(fn, fn); filaEnvio = r.catch(() => {}); return r; };
+const enviarTermica = (modo, bytes) => (modo === 'bluetooth' ? enviarBt(bytes) : modo === 'serial' ? enviarSerial(bytes) : modo === 'app' ? enviarApp(bytes) : undefined);
 
 // ---------------------------------------------------------------- Bluetooth (BLE)
 // Serviços usados pelas térmicas mais comuns. O navegador só deixa abrir os que estiverem nesta lista.
@@ -136,9 +152,7 @@ export async function imprimirNaTermica(bytes) {
     const c = lerConfig();
     if (c.modo === 'sistema') throw erro('Para a térmica, escolha o caminho dela em "Impressora" (no topo do painel).');
     const falta = suporte()[c.modo]; if (falta) throw erro(falta);
-    if (c.modo === 'bluetooth') return enviarBt(bytes);
-    if (c.modo === 'serial') return enviarSerial(bytes);
-    if (c.modo === 'app') return enviarApp(bytes);
+    return emFila(() => enviarTermica(c.modo, bytes));
 }
 
 /** Abre a escolha da impressora (precisa vir de um toque). Devolve o nome para mostrar. */
@@ -146,6 +160,18 @@ export async function conectar(modo = lerConfig().modo) {
     if (modo === 'bluetooth') return escolherBt();
     if (modo === 'serial') return escolherSerial();
     return '';
+}
+/**
+ * Tenta voltar a falar com a impressora SEM toque na tela (Bluetooth já escolhido antes, cabo já autorizado).
+ * Devolve true se conseguiu. Nunca abre a lista de impressoras (isso só com um toque, em conectar()).
+ */
+export async function reconectar() {
+    const m = lerConfig().modo;
+    try {
+        if (m === 'bluetooth') { await canalBt(); return true; }
+        if (m === 'serial') { if (!serial.porta && navigator.serial) serial.porta = (await navigator.serial.getPorts())[0] || null; return !!serial.porta; }
+    } catch (_) { /* segue desconectada */ }
+    return false;
 }
 export const conectada = () => { const m = lerConfig().modo; return m === 'bluetooth' ? !!(bt.aparelho && bt.aparelho.gatt.connected) : m === 'serial' ? !!serial.porta : true; };
 
@@ -162,7 +188,5 @@ export async function imprimir(folhas, { copias } = {}) {
     const largura = c.largura === 'a4' ? 80 : c.largura;
     const partes = todas.map((f) => paraEscPos(f, { largura, acentos: c.acentos }));
     const bytes = new Uint8Array(partes.reduce((t, p) => t + p.length, 0)); let pos = 0; partes.forEach((p) => { bytes.set(p, pos); pos += p.length; });
-    if (c.modo === 'bluetooth') return enviarBt(bytes);
-    if (c.modo === 'serial') return enviarSerial(bytes);
-    if (c.modo === 'app') return enviarApp(bytes);
+    return emFila(() => enviarTermica(c.modo, bytes));
 }

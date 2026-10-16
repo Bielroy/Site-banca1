@@ -21,6 +21,8 @@ Regra de sempre: nada vai para a `main` (reserva da Vercel); só a `rota-cloudfl
 
 ## Funcionalidades
 
+- Impressão automática (Golden Sky GS-FJ80M-UB, Bluetooth direto): testar no celular da banca — ao chegar, ao aceitar, depois de fechar e abrir o painel, e com a impressora desligada. Etapa 2 (se precisar imprimir com o celular bloqueado): app Android próprio.
+
 - Kit/cesta como pacote: decisão pendente (minha recomendação: não fazer).
 - Promoção "4 por R$ 10" no balcão (`api/pdv.js`) ainda não considera a mistura de pacotes.
 - Temperos aparecem como "2x" no WhatsApp e no painel; ficaria melhor "2 potinhos".
