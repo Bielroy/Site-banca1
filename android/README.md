@@ -24,3 +24,11 @@ O celular que fica perto da impressora térmica e imprime os pedidos sozinho, **
 - Um alarme leve de 15 em 15 min confere se está tudo vivo. Ao ligar o celular, a ponte volta sozinha.
 
 Sem nenhuma biblioteca de fora: só Android e Kotlin.
+
+## Assinatura
+
+- A chave definitiva fica em `android/assinatura/ponte.jks.enc`, cifrada com uma senha tirada do segredo
+  `PONTE_SENHA` do GitHub. Ela nasce na primeira compilação com o segredo, **na branch `app-impressora`**,
+  e depois vai junto para a `rota-cloudflare`. Nunca compile as duas ao mesmo tempo antes do `.enc` existir.
+- Com a chave definitiva, cada APK novo instala **por cima** do anterior, sem desinstalar e sem perder a ligação com a loja.
+- Se o `PONTE_SENHA` mudar, a chave não abre: o app novo exigiria desinstalar o antigo. Guarde o segredo.
