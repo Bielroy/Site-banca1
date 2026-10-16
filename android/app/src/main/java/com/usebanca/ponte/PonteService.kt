@@ -130,7 +130,7 @@ class PonteService : Service() {
         fio?.interrupt()
         pararDeOuvirRede()
         try { soltador.shutdownNow() } catch (_: Exception) { }
-        try { impressora.fechar() } catch (_: Exception) { }
+        fecharSemTravar()
         soltar()
         if (instancia === this) instancia = null
         estado = if (cfg.pareado) "Desligada" else "Falta ligar à loja"
@@ -308,9 +308,18 @@ class PonteService : Service() {
         msg
     }
 
+    /**
+     * Fecha o Bluetooth fora da tela: se um papel grande (foto, rótulos) estiver saindo, fechar espera ele
+     * terminar, e na linha da tela isso travaria o app ("o app não está respondendo").
+     */
+    private fun fecharSemTravar() {
+        val imp = impressora
+        Thread({ try { imp.fechar() } catch (_: Exception) { } }, "fechar-impressora").apply { isDaemon = true; start() }
+    }
+
     /** A impressora foi trocada no app: fecha a conexão velha. */
     fun impressoraTrocada() {
-        try { impressora.fechar() } catch (_: Exception) { }
+        try { impressora.fechar() } catch (_: Exception) { }      // aqui fecha na hora: o próximo papel não pode ir para a impressora antiga
         erroImpressora = ""
         cutucar()
     }
