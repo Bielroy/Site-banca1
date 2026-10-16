@@ -5,6 +5,8 @@ dist
 testes
 css
 js
+!js/impressao-lib.js
+!js/impressao-fila-lib.js
 scripts
 *.md
 *.html

@@ -11,6 +11,9 @@
 //  Limites (o navegador manda): o painel precisa estar ABERTO neste aparelho, com a tela acesa.
 //  Por isso: a tela fica acesa sozinha (quando o aparelho deixa), uma faixa no topo diz se está
 //  imprimindo ou parado, e o que chegou com o painel fechado sai quando ele abrir de novo.
+//
+//  Caminho "Celular da banca" (app Ponte): quem imprime é o celular, não este painel. Aqui só
+//  aparece a faixa dizendo se o celular e a impressora estão bem (js/impressao-ponte.js).
 // =====================================================================
 import { auth } from './firebase.js';
 import { chave } from './tenant.js';
@@ -20,8 +23,9 @@ import { cupomDoPedido, etiquetaDeEntrega, avisoDeCancelamento } from './impress
 import { MODOS_AUTO, LIMITE_SEM_PERGUNTAR, RESERVA_MS, podeAutomatico, trabalhosDe, versaoDesejada } from './impressao-fila-lib.js';
 import { loja, abrirImpressora } from './admin-impressao.js';
 import { ico } from './icones-admin.js';
+import * as Ponte from './impressao-ponte.js';
 
-const TENTAR_DE_NOVO_MS = 20 * 1000, VIGIA_MS = 60 * 1000, GUARDAR_DIAS = 3;
+const TENTAR_DE_NOVO_MS = 20 * 1000, VIGIA_MS = 60 * 1000, GUARDAR_DIAS = 3, PONTE_OLHAR_MS = 2 * 60 * 1000;
 
 // ---------------------------------------------------------------- memória deste aparelho
 // "feitos": o que ESTE aparelho já imprimiu (não reimprime se o servidor demorar a confirmar).
@@ -148,10 +152,26 @@ function faixa() {
     }
     return f;
 }
+function desenhar(f, tipo, html) {
+    const novo = `${ico('impressora')}${html}`;
+    f.hidden = false; f.className = `imp-auto ${tipo}`;
+    if (f.dataset.html !== novo) { f.innerHTML = novo; f.dataset.html = novo; }   // só redesenha se mudou (não pisca, não perde o toque)
+}
+const esconder = (f) => { f.hidden = true; f.innerHTML = ''; f.dataset.html = ''; };
+/** Faixa do caminho "Celular da banca": só aparece se algo precisa de você (ou se a automática está ligada). */
+function pintarPonte(f) {
+    const s = Ponte.situacao();
+    if (s.tipo === 'carregando' || (s.tipo === 'ok' && s.auto === 'manual')) return esconder(f);
+    if (s.tipo === 'nenhum') return desenhar(f, 'alerta', '<span>Nenhum <b>celular da banca</b> ligado para imprimir.</span><button type="button" data-imp="abrir">Impressora</button>');
+    if (s.tipo === 'fora') return desenhar(f, 'erro', `<span><b>Celular da banca sem contato</b> ${escapeHTML(Ponte.quandoFoi(s.visto))}. Confira se ele está ligado e com internet. Os pedidos ficam guardados e saem quando ele voltar.</span><button type="button" data-imp="abrir">Ver</button>`);
+    if (s.tipo === 'impressora') return desenhar(f, 'erro', `<span><b>Impressora parada no celular da banca.</b> ${escapeHTML(s.msg)}</span><button type="button" data-imp="abrir">Ver</button>`);
+    return desenhar(f, 'ok', `<span><b>Impressão automática ligada</b> · pelo celular da banca · ${escapeHTML((MODOS_AUTO[s.auto] || MODOS_AUTO.manual)[0].toLowerCase())}</span>`);
+}
 function pintar() {
     const f = faixa(); if (!f) return;
     const c = lerConfig();
-    if (c.auto === 'manual') { f.hidden = true; f.innerHTML = ''; f.dataset.html = ''; return; }
+    if (c.modo === 'ponte') return pintarPonte(f);
+    if (c.auto === 'manual') { esconder(f); return; }
     f.hidden = false;
     const rot = (MODOS_AUTO[c.auto] || MODOS_AUTO.manual)[0].toLowerCase(), n = S.esperando;
     let tipo = 'ok', html;
@@ -166,9 +186,7 @@ function pintar() {
     } else {
         html = `<span><b>Impressão automática ligada</b> · ${escapeHTML(rot)}${conectada() ? '' : ' · <em>impressora ainda não conectada</em>'}${navigator.wakeLock ? '' : ' · deixe a tela do aparelho sempre acesa'}</span>${conectada() ? '' : '<button type="button" data-imp="conectar">Conectar</button>'}`;
     }
-    const novo = `${ico('impressora')}${html}`;
-    f.className = `imp-auto ${tipo}`;
-    if (f.dataset.html !== novo) { f.innerHTML = novo; f.dataset.html = novo; }   // só redesenha se mudou (não pisca, não perde o toque)
+    desenhar(f, tipo, html);
 }
 async function aoTocarNaFaixa(e) {
     const b = e.target.closest('[data-imp]'); if (!b) return;
@@ -189,9 +207,12 @@ async function aoTocarNaFaixa(e) {
 export function iniciar() {
     if (S.iniciado) return;
     S.iniciado = true; S.iniciadoAgora = true;
-    document.addEventListener('impressao:config', () => processar());                  // mudou algo em "Impressora"
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { S.tela = null; processar(); } });
-    S.vigia = setInterval(async () => { if (ativo() && !S.rodando) { if (!conectada()) await reconectar(); processar(); } }, VIGIA_MS);
+    document.addEventListener('impressao:config', () => { if (lerConfig().modo === 'ponte') Ponte.atualizar(); processar(); });   // mudou algo em "Impressora"
+    document.addEventListener('ponte:estado', () => pintar());
+    const olharPonte = () => { if (lerConfig().modo === 'ponte' && document.visibilityState === 'visible' && Date.now() - Ponte.estado().em > PONTE_OLHAR_MS - 5000) Ponte.atualizar(); };
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { S.tela = null; olharPonte(); processar(); } });
+    S.vigia = setInterval(async () => { olharPonte(); if (ativo() && !S.rodando) { if (!conectada()) await reconectar(); processar(); } }, VIGIA_MS);
+    if (lerConfig().modo === 'ponte') Ponte.atualizar();
     if (ativo()) reconectar().then(() => pintar());                                     // painel reaberto: tenta voltar à impressora sem toque
     pintar();
 }
@@ -202,6 +223,7 @@ export function aoMudarCancelados(lista) { S.cancelados = new Map((lista || []).
 /** Cupom impresso à mão: entra na fila como impresso, para o automático não imprimir de novo. */
 export function marcarImpresso(p) {
     if (!p || !p.id || p.status === 'cancelado') return;
+    if (lerConfig().modo === 'ponte') return;                                      // o servidor marca quando o celular da banca confirmar que saiu
     const t = { id: p.id, versao: versaoDesejada(p, lerConfig()) };
     marcar(feitos, 'banca_impressos', `${t.id}:${t.versao}`);
     fila('confirmar', t).catch(() => {});

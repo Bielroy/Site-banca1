@@ -10,6 +10,9 @@ COPY api ./api
 COPY lib ./lib
 COPY analytics ./analytics
 COPY server ./server
+# o app ponte (lib/ponte.js) monta o cupom com as MESMAS regras do painel: só estes dois arquivos do site
+COPY js/impressao-lib.js js/impressao-fila-lib.js ./js/
+RUN printf '{"type":"module"}' > ./js/package.json
 USER node
 EXPOSE 8080
 CMD ["node", "server/index.js"]

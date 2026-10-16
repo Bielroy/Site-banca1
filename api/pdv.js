@@ -16,6 +16,11 @@
 //      Fila de impressão (lib/impressao.js): reservar → imprimir no aparelho → confirmar
 //      (ou liberar, se não saiu). Um pedido não sai duas vezes, nem com dois aparelhos ligados.
 //
+//  POST { acao: 'ponte', op: 'codigo' | 'listar' | 'config' | 'remover' | 'imprimir', ... }
+//      O APP PONTE (celular Android com a impressora, lib/ponte.js): gerar o código para ligar um
+//      celular, ver como estão, configurar a impressão automática deles, desligar, e mandar papel.
+//      Ligar e desligar celular: só proprietário e administrador.
+//
 //  Quem pode: proprietário, administrador, funcionário e caixa DA LOJA.
 // =====================================================================
 const admin = require('firebase-admin');
@@ -26,6 +31,7 @@ const Feira = require('../lib/feira');
 const Avisos = require('../lib/avisos');
 const P = require('../lib/prudencia');
 const Imp = require('../lib/impressao');
+const Ponte = require('../lib/ponte');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -208,6 +214,30 @@ async function impressao(req, res, { tid }) {
   }
 }
 
+// APP PONTE (lib/ponte.js): o painel liga, configura e manda papel para o celular da banca.
+async function ponte(req, res, { tid, dec }) {
+  const b = req.body || {}, op = String(b.op || ''), gestor = T.temPapel(dec, tid, T.GESTORES);
+  try {
+    if (op === 'codigo') {
+      if (!gestor) return res.status(403).json({ error: 'Só o dono ou o administrador liga um celular novo.' });
+      if (H.passouNaMemoria(`ponte-codigo:${dec.uid}`, 10, 10 * 60 * 1000)) return res.status(429).json({ error: 'Muitos códigos seguidos. Espere alguns minutos.' });
+      return res.status(200).json({ sucesso: true, ...(await Ponte.criarCodigo(db, tid, { por: dec.email || dec.uid, cfg: b.cfg })) });
+    }
+    if (op === 'listar') return res.status(200).json({ sucesso: true, pontes: await Ponte.listar(db, tid), apk: Ponte.APK_URL });
+    if (op === 'config') return res.status(200).json({ sucesso: true, ...(await Ponte.salvarConfig(db, tid, b.ponteId, b.cfg, { imprimirFila: b.imprimirFila === true })) });
+    if (op === 'remover') {
+      if (!gestor) return res.status(403).json({ error: 'Só o dono ou o administrador desliga um celular.' });
+      await Ponte.remover(db, tid, b.ponteId); return res.status(200).json({ sucesso: true });
+    }
+    if (op === 'imprimir') return res.status(200).json({ sucesso: true, ...(await Ponte.novoTrabalho(db, tid, b, dec.email || dec.uid)) });
+    return res.status(400).json({ error: 'Ação desconhecida.' });
+  } catch (e) {
+    if (e && e.status && e.status < 500) return res.status(e.status).json({ error: e.message });
+    console.error('[pdv] ponte:', e && e.message);
+    return res.status(500).json({ error: 'Não consegui falar com o celular da banca agora. Tente de novo.' });
+  }
+}
+
 module.exports = async function handler(req, res) {
   cors(req, res);
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -228,5 +258,6 @@ module.exports = async function handler(req, res) {
   if (acao === 'venda') return venda(req, res, { tid, dec });
   if (acao === 'pesagem') return pesagem(req, res, { tid, dec });
   if (acao === 'impressao') return impressao(req, res, { tid, dec });
+  if (acao === 'ponte') return ponte(req, res, { tid, dec });
   return res.status(400).json({ error: 'Ação desconhecida.' });
 };

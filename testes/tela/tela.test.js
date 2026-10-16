@@ -614,10 +614,52 @@ teste('impressão automática "ao aceitar": pedido novo espera; o aceito sai; ma
   }
 });
 
+teste('celular da banca (app Ponte): este painel não imprime sozinho, mostra o celular e o "Cupom" vai para a fila dele', async () => {
+  const antes = servidor.chamadas.length;
+  const ctx = await navegador.newContext({ viewport: { width: 1200, height: 900 }, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
+  await ctx.addInitScript((c) => { window.__CENARIO = c; }, cenarioImpressao());
+  await ctx.addInitScript(impressoraFalsa, { modo: 'ponte', largura: 80, acentos: true, auto: 'chegada', aparelho: 'ap-teste-03' });
+  await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+  await p.goto(servidor.base + '/admin.html');
+  await p.waitForFunction(() => /pelo celular da banca/.test(document.getElementById('imp-auto')?.innerText || ''), null, { timeout: 8000 });
+  await p.waitForTimeout(800);
+  assert.strictEqual(await textoImpresso(p), '', 'quem imprime é o celular da banca, não este painel');
+  assert.ok(!servidor.chamadas.slice(antes).some((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'impressao'), 'nem reserva na fila');
+  // a tela "Impressora" mostra o celular
+  await p.click('#btn-mais'); await p.click('#btn-impressora');
+  await p.locator('.imp-ponte-card').waitFor({ timeout: 4000 });
+  const tela = await p.locator('#imp-corpo').innerText();
+  assert.ok(/Moto G/.test(tela) && /Conectado/.test(tela) && /Impressora funcionando/.test(tela), tela);
+  await p.locator('#imp-corpo select[data-campo="copias"]').selectOption('2');
+  await p.waitForTimeout(500);
+  const cfg = servidor.chamadas.slice(antes).filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ponte' && c.corpo.op === 'config').pop();
+  assert.ok(cfg && cfg.corpo.ponteId === 'pt0123456789abcdef' && cfg.corpo.cfg.copias === 2, 'vias do celular salvas no servidor');
+  await p.click('[data-fechar="modal-impressora"]');
+  await p.locator('.tab[data-aba="relatorios"]').click();
+  await p.locator('.card-pedido').first().waitFor({ timeout: 8000 });
+  // "Cupom" num pedido: vai para o servidor (fila do celular), com o pedido e o nome do cliente
+  await cartao(p, 'Cliente Novo').locator('[data-tipo="cupom"]').click();
+  await p.waitForTimeout(600);
+  const env = servidor.chamadas.slice(antes).filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ponte' && c.corpo.op === 'imprimir').pop();
+  assert.ok(env, 'mandou para o celular da banca');
+  assert.strictEqual(env.corpo.pedidoId, 'ped-novo-0001'); assert.strictEqual(env.corpo.tipo, 'cupom');
+  assert.ok(JSON.stringify(env.corpo.folhas).includes('Cliente Novo'));
+  assert.ok(!servidor.chamadas.slice(antes).some((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'impressao' && c.corpo.op === 'confirmar'), 'o servidor marca impresso quando o celular confirmar, não o painel');
+  assert.strictEqual(await textoImpresso(p), '');
+  semErros(errosP);
+  await ctx.close();
+});
+
+// o servidor de mentira do app Ponte: um celular ligado, com a impressora funcionando
+const ponteFalsa = (c) => (c.op === 'listar' ? { sucesso: true, pontes: [{ id: 'pt0123456789abcdef', nome: 'Moto G', criadoEm: new Date().toISOString(), visto: new Date().toISOString(), online: true, impressora: { estado: 'ok', nome: 'GS-FJ80M', msg: '' }, app: { versao: '1.0.1' }, cfg: { auto: 'chegada', largura: 80, acentos: true, copias: 1, autoEtiqueta: false, autoPesado: false, autoCancelado: true } }] }
+  : c.op === 'config' ? { sucesso: true, cfg: { auto: 'chegada', largura: 80, acentos: true, copias: 2, autoEtiqueta: false, autoPesado: false, autoCancelado: true }, pulados: 0 }
+  : c.op === 'imprimir' ? { sucesso: true, id: 'im-teste-1', online: true, visto: new Date().toISOString() } : { sucesso: true });
+
 (async () => {
   servidor = await subir({
     // pesagem (de mentira): devolve o pedido pesado como o api/pdv.js de verdade
-    '/api/pdv': (c) => (c.acao === 'impressao' ? { sucesso: true, ok: true } : c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
+    '/api/pdv': (c) => (c.acao === 'impressao' ? { sucesso: true, ok: true } : c.acao === 'ponte' ? ponteFalsa(c) : c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
     // ranking (de mentira) da banca, ao contrário da ordem do cadastro, chegando 1,5 s depois
     '/api/analytics': (c) => (c.acao === 'ranking' ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, nivel: 'popular', itens: ['ovos', 'banana', 'alface', 'tomate'].map((id, i) => ({ id, p: 0.9 - i * 0.2 })) }), 1500)) : {}),
     '/api/checkout': (c) => (c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),

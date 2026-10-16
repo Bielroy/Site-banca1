@@ -1,0 +1,91 @@
+# Compila o APP PONTE (pasta android/): o celular Android que imprime os pedidos com a tela bloqueada.
+# A cada mudança na pasta android/, gera o APK assinado e publica como "release" do GitHub:
+#   https://github.com/Bielroy/Site-banca1/releases/latest/download/banca-ponte.apk
+# (o painel aponta para esse endereço no botão "Baixar o app").
+# CHAVE DE ASSINATURA: com a mesma chave, cada APK novo instala POR CIMA do antigo, sem perder a impressora
+# nem a ligação com a loja. Na primeira vez este arquivo cria a chave, guarda CIFRADA no repositório
+# (android/assinatura/ponte.jks.enc, AES-256) com uma senha tirada do segredo CRON_SECRET (que já existe
+# para a rotina da noite) e usa a mesma dali em diante. Se o CRON_SECRET mudar, a compilação para com um
+# aviso: apague o .enc para gerar outra chave (aí o app precisa ser desinstalado e instalado de novo).
+name: App ponte (APK)
+
+on:
+  push:
+    branches: [app-impressora, rota-cloudflare]
+    paths: ['android/**', '.github/workflows/app-ponte.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: app-ponte-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Compilar o APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # com credencial: na primeira vez, guarda a chave cifrada no repositório
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Chave de assinatura
+        env:
+          SEGREDO: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ "${#SEGREDO}" -lt 16 ]; then echo "::error::Falta o segredo CRON_SECRET (ou é curto demais): ele protege a chave do app."; exit 1; fi
+          export SENHA="$(printf 'ponte-apk-v1|%s' "$SEGREDO" | sha256sum | cut -d' ' -f1)"
+          echo "::add-mask::$SENHA"
+          ARQ=android/assinatura/ponte.jks.enc
+          if [ ! -f "$ARQ" ]; then
+            mkdir -p android/assinatura
+            keytool -genkeypair -keystore "$RUNNER_TEMP/ponte.jks" -storetype PKCS12 -alias ponte -keyalg RSA -keysize 3072 -validity 18250 \
+              -storepass "$SENHA" -keypass "$SENHA" -dname "CN=Ponte da Banca, O=Banca Adair e Pedrina, C=BR" >/dev/null 2>&1
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$RUNNER_TEMP/ponte.jks" -out "$ARQ" -pass env:SENHA
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add "$ARQ"
+            git commit -m "App ponte: chave de assinatura (cifrada com o CRON_SECRET)"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+            echo "Chave nova criada e guardada cifrada em $ARQ."
+          else
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$ARQ" -out "$RUNNER_TEMP/ponte.jks" -pass env:SENHA \
+              || { echo "::error::Não consegui abrir a chave do app. O segredo CRON_SECRET mudou? (veja o topo deste arquivo)"; exit 1; }
+          fi
+          echo "ASSINATURA_ARQUIVO=$RUNNER_TEMP/ponte.jks" >> "$GITHUB_ENV"
+          echo "ASSINATURA_SENHA=$SENHA" >> "$GITHUB_ENV"
+      - name: Compilar
+        working-directory: android
+        env:
+          VERSAO_NUMERO: ${{ github.run_number }}
+        run: gradle --no-daemon --stacktrace assembleRelease
+      - name: Conferir o APK
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs "$APK" | grep -E "Signer #1 certificate (DN|SHA-256)"
+          "$BT/aapt2" dump badging "$APK" | grep -E "^package:|^uses-permission:|sdkVersion|targetSdkVersion"
+          cp "$APK" banca-ponte.apk
+          ls -l banca-ponte.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: banca-ponte-${{ github.run_number }}
+          path: banca-ponte.apk
+          retention-days: 30
+      - name: Publicar (release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ponte-v1.0.${{ github.run_number }}
+        run: |
+          gh release create "$TAG" banca-ponte.apk --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Ponte da Banca 1.0.${{ github.run_number }}" \
+            --notes "App Ponte da Banca (Android). Instale no celular que fica perto da impressora. Ramo: ${GITHUB_REF_NAME}."

@@ -14,19 +14,26 @@
 //   app        Entrega o cupom para um aplicativo de impressão no Android
 //              (padrão "rawbt:"), que fala com térmica por Bluetooth clássico,
 //              Wi-Fi/IP ou USB.
+//   ponte      O APP PONTE (pasta android/): um celular Android fica perto da
+//              impressora e imprime sozinho, mesmo com a tela bloqueada. Daqui o
+//              papel vai para o servidor e o celular busca (js/impressao-ponte.js).
+//              Funciona de QUALQUER aparelho do painel, até de computador.
 //
 //  A escolha fica guardada NESTE aparelho (cada caixa pode ter a sua impressora).
 //  Para criar um caminho novo: acrescente em CAMINHOS e em enviar().
 // =====================================================================
 import { chave } from './tenant.js';
-import { paraEscPos, paraHtml, fatiar, paraBase64, suporte } from './impressao-lib.js';
-export { suporte };
+import { paraEscPos, paraHtml, fatiar, paraBase64, suporte as suporteBase } from './impressao-lib.js';
+import * as Ponte from './impressao-ponte.js';
+/** O que este navegador consegue usar ('' = pode). O app ponte funciona em qualquer um. */
+export const suporte = (nav) => ({ ...suporteBase(nav), ponte: '' });
 
 export const CAMINHOS = {
     sistema:   ['Impressão do aparelho', 'Qualquer impressora já instalada neste aparelho: Wi-Fi, rede ou cabo. Abre a tela de imprimir.'],
     bluetooth: ['Bluetooth direto', 'Impressora térmica Bluetooth, sem instalar nada. Imprime sem abrir tela nenhuma.'],
     serial:    ['Cabo USB ou Bluetooth do computador', 'Térmica ligada no cabo, ou Bluetooth já pareado no computador.'],
     app:       ['Aplicativo de impressão (Android)', 'Usa um app como o RawBT, que alcança térmicas por Bluetooth, Wi-Fi (IP) ou USB.'],
+    ponte:     ['Celular da banca (app Ponte)', 'Um Android fica perto da impressora com o app Ponte da Banca e imprime sozinho, até com a tela bloqueada. Qualquer aparelho do painel manda imprimir.'],
 };
 // auto: impressão automática deste aparelho (js/impressao-fila-lib.js). aparelho: nome sorteado deste aparelho na fila.
 const PADRAO = { modo: 'sistema', largura: 58, acentos: false, copias: 1, baud: 9600, btNome: '', btId: '',
@@ -150,6 +157,7 @@ function enviarPagina(html) {
 export async function imprimirPagina(html) { const falta = suporte().sistema; if (falta) throw erro(falta); return enviarPagina(html); }
 export async function imprimirNaTermica(bytes) {
     const c = lerConfig();
+    if (c.modo === 'ponte') return Ponte.enviar({ bytes: paraBase64(bytes) });
     if (c.modo === 'sistema') throw erro('Para a térmica, escolha o caminho dela em "Impressora" (no topo do painel).');
     const falta = suporte()[c.modo]; if (falta) throw erro(falta);
     return emFila(() => enviarTermica(c.modo, bytes));
@@ -167,6 +175,7 @@ export async function conectar(modo = lerConfig().modo) {
  */
 export async function reconectar() {
     const m = lerConfig().modo;
+    if (m === 'ponte') return true;                                          // quem cuida da conexão é o celular da banca
     try {
         if (m === 'bluetooth') { await canalBt(); return true; }
         if (m === 'serial') { if (!serial.porta && navigator.serial) serial.porta = (await navigator.serial.getPorts())[0] || null; return !!serial.porta; }
@@ -178,9 +187,16 @@ export const conectada = () => { const m = lerConfig().modo; return m === 'bluet
 /**
  * Imprime. `folhas` = lista de folhas; cada folha é uma lista de linhas (js/impressao-lib.js).
  * Lança erro com .amigavel = true e uma frase pronta para mostrar.
+ * Caminho "ponte": devolve { online, visto } (o papel entra na fila do celular da banca).
+ *   copias vazio = as vias que o celular usa; pedidoId + tipo 'cupom' = conta como impresso quando sair.
  */
-export async function imprimir(folhas, { copias } = {}) {
-    const c = lerConfig(), n = Math.min(Math.max(parseInt(copias, 10) || c.copias || 1, 1), 20);
+export async function imprimir(folhas, { copias, pedidoId, tipo } = {}) {
+    const c = lerConfig();
+    if (c.modo === 'ponte') {
+        if (!folhas || !folhas.length) return undefined;
+        return Ponte.enviar({ folhas, copias: copias ? Math.min(Math.max(parseInt(copias, 10) || 1, 1), 20) : undefined, pedidoId, tipo });
+    }
+    const n = Math.min(Math.max(parseInt(copias, 10) || c.copias || 1, 1), 20);
     const todas = []; for (let i = 0; i < n; i++) todas.push(...folhas);
     if (!todas.length) return;
     const falta = suporte()[c.modo]; if (falta) throw erro(falta);

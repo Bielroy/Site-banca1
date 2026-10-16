@@ -267,3 +267,20 @@ body.so-equipe #aba-relatorios .relatorios-header, body.so-equipe #aba-relatorio
 .ped-impresso { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 12px; background: var(--foam); color: var(--forest); font-weight: 700; font-size: .72rem; }
 .ped-impresso.fila { background: var(--warning-light); color: #6b4300; }
 .imp-auto-modos { margin-top: 0; }
+
+/* ---------- celular da banca, app Ponte (js/admin-impressao.js) ---------- */
+.imp-passos { margin: 0 0 14px; padding-left: 22px; display: grid; gap: 12px; }
+.imp-passos li { line-height: 1.45; }
+.imp-passos li a, .imp-passos li button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; margin-top: 8px; padding: 8px 16px; border-radius: 12px; text-decoration: none; }
+.imp-passos small { display: block; font-size: .82rem; color: var(--text-mid); margin-top: 4px; }
+.imp-codigo { display: grid; justify-items: center; gap: 6px; margin: 0 0 14px; padding: 16px; border-radius: 14px; border: 2px dashed var(--sage); background: var(--foam); text-align: center; }
+.imp-codigo b { font-size: 2rem; letter-spacing: .14em; font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--forest); }
+.imp-codigo small { color: var(--text-mid); }
+.imp-codigo a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 16px; border-radius: 12px; text-decoration: none; }
+.imp-ponte-card { margin: 0 0 14px; padding: 12px 14px; border-radius: 14px; border: 1.5px solid #e0dcd4; background: #fff; }
+.imp-ponte-card header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 6px; }
+.imp-ponte-card fieldset legend { font-weight: 700; font-size: .9rem; margin-bottom: 6px; }
+.imp-ponte-st { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700; background: var(--foam); color: var(--forest); }
+.imp-ponte-st.erro { background: var(--danger-light); color: #8f1d17; }
+.imp-ponte-card .btn-texto-perigo { min-height: 44px; padding: 8px 4px; border: 0; background: transparent; color: #b3261e; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.imp-ponte-card .aviso-limite button { margin-left: 6px; min-height: 40px; }

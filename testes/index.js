@@ -2377,7 +2377,7 @@ teste('cofre: a previsão guarda nomes e endereços cifrados e o painel recebe t
   });
 });
 
-teste('cloud run: o servidor enxerga as 12 funções de api/ e o Dockerfile leva o que elas usam', async () => {
+teste('cloud run: o servidor enxerga todas as funções de api/ e o Dockerfile leva o que elas usam', async () => {
   const { listarFuncoes } = require(raiz('server'));
   const fs = require('fs');
   assert.deepStrictEqual(Object.keys(listarFuncoes()).sort(), fs.readdirSync(raiz('api')).filter((f) => f.endsWith('.js')).map((f) => f.slice(0, -3)).sort());
@@ -3027,6 +3027,188 @@ teste('impressão (papel): aviso de cancelado, cupom atualizado e número do ped
   assert.ok(/Pedido XYZ789/.test(L.paraTexto(L.etiquetaDeEntrega(p), 48)), 'etiqueta da sacola com o mesmo número do cupom');
   const bytes = L.paraEscPos(L.avisoDeCancelamento(p), { largura: 80, acentos: true });
   assert.deepStrictEqual([...bytes.slice(0, 5)], [0x1b, 0x40, 0x1b, 0x74, 0x03], 'zera a impressora e usa a tabela 860 (português), que esta impressora tem');
+});
+
+// ---------------------------------------------------------------- APP PONTE (celular Android com a impressora)
+teste('ponte (regras): token, código, configuração e papel vindo do painel são conferidos', async () => {
+  const P = require(raiz('lib/ponte'));
+  const tk = P.novoToken('banca'), lido = P.lerToken(tk.token);
+  assert.ok(lido && lido.tid === 'banca' && lido.id === tk.id, 'o token diz a loja e o celular');
+  assert.ok(P.segredoConfere(lido.segredo, tk.hash), 'o segredo bate com o hash guardado');
+  assert.ok(!P.segredoConfere(lido.segredo.replace(/.$/, (c) => (c === 'A' ? 'B' : 'A')), tk.hash), 'segredo trocado não entra');
+  assert.ok(!P.segredoConfere(lido.segredo, ''), 'sem hash guardado não entra');
+  for (const ruim of ['', 'pb1.banca', `pb1.Banca.${tk.id}.${lido.segredo}`, `pb2.banca.${tk.id}.${lido.segredo}`, `pb1.banca.${tk.id}.curto`, `${tk.token}x`]) assert.strictEqual(P.lerToken(ruim), null, ruim);
+  const c = P.novoCodigo();
+  assert.ok(/^[2-9A-HJKMNP-Z]{8}$/.test(c), c);
+  assert.strictEqual(P.limparCodigo(`${c.slice(0, 4).toLowerCase()} - ${c.slice(4)}`), c, 'aceita minúscula, espaço e traço');
+  assert.strictEqual(P.limparCodigo('ABCD1234'), null, 'o 1 não existe nos códigos');
+  assert.deepStrictEqual(P.limparCfg({ auto: 'xyz', largura: 99, copias: 9, acentos: 'sim' }), { ...P.CFG_PADRAO, copias: 3 }, 'valor estranho volta ao padrão');
+  assert.strictEqual(P.limparCfg({ largura: 58 }, { auto: 'aceite' }).auto, 'aceite', 'o que não veio continua como estava');
+  const f = P.limparFolhas([[{ t: 'txt', v: 'Oi\x1b@\x1dV', al: 'c', b: 1, x: 'y' }, { t: 'par', e: 'A', d: 'B' }, { t: 'corte' }]]);
+  assert.deepStrictEqual(f[0][0], { t: 'txt', v: 'Oi @ V', al: 'c', b: true }, 'comando ESC/POS escondido no texto vira espaço');
+  assert.strictEqual(P.limparFolhas([[{ t: 'html', v: '<b>' }]]), null, 'tipo de linha desconhecido');
+  assert.strictEqual(P.limparFolhas([]), null);
+  assert.strictEqual(P.limparFolhas(Array.from({ length: 251 }, () => [{ t: 'sep' }])), null, 'no máximo 250 folhas de uma vez');
+  assert.strictEqual(P.limparBytes('não é base64!'), null);
+  assert.ok(P.limparBytes(Buffer.from([0x1b, 0x40]).toString('base64')));
+  assert.strictEqual(P.limparBytes(Buffer.alloc(700 * 1024).toString('base64')), null, 'grande demais');
+});
+
+teste('ponte (fluxo): o painel gera o código, o celular entra, imprime cada pedido uma vez, o painel manda papel e desliga o celular', async () => {
+  delete process.env.DADOS_CHAVE;
+  const agora = Date.now(), h = (min) => new Date(agora - min * 60000).toISOString();
+  const sem = sementeEstoque();
+  sem['pedidos/ped-velho01'] = { nome: 'Já estava', quadra: '1', lote: '2', status: 'pendente', total: 10, data: h(30), itens: [] };
+  const db = criarBancoP(sem);
+  const adm = criarAdmin(db, TOKENS_P), pdv = carregarApi(raiz('api/pdv.js'), adm), app = carregarApi(raiz('api/ponte.js'), adm);
+  require(raiz('lib/http'))._usos.clear();
+  const painel = (body, token = 'dona-banca') => chamar(pdv, { headers: { Authorization: `Bearer ${token}` }, body: { acao: 'ponte', ...body } });
+  let token = '';
+  const celular = (body, tk = token) => chamar(app, { headers: tk ? { Authorization: `Bearer ${tk}` } : {}, body });
+
+  assert.strictEqual((await painel({ op: 'codigo' }, 'func-banca')).status, 403, 'funcionário não liga celular novo');
+  assert.strictEqual((await painel({ op: 'imprimir', folhas: [[{ t: 'txt', v: 'x' }]] })).status, 409, 'sem celular ligado: avisa');
+  const cod = await painel({ op: 'codigo', cfg: { largura: 80, acentos: true, auto: 'chegada' } });
+  assert.strictEqual(cod.status, 200, JSON.stringify(cod.corpo));
+  assert.strictEqual((await celular({ op: 'entrar', codigo: 'ZZZZZZZZ' })).status, 404, 'código que não existe');
+  const ent = await celular({ op: 'entrar', codigo: cod.corpo.codigo.toLowerCase(), app: { modelo: 'Moto G', versao: '1.0.1' } });
+  assert.strictEqual(ent.status, 200, JSON.stringify(ent.corpo));
+  token = ent.corpo.token;
+  assert.strictEqual(ent.corpo.loja, 'Banca Adair e Pedrina');
+  assert.deepStrictEqual(ent.corpo.cfg, { ...P0(), largura: 80, acentos: true });
+  assert.strictEqual((await celular({ op: 'entrar', codigo: cod.corpo.codigo })).status, 404, 'o código vale uma vez só');
+  const ponteId = ent.corpo.ponteId, docPonte = () => db._dados.get(`pontes/${ponteId}`);
+  assert.ok(docPonte().hash && !JSON.stringify(docPonte()).includes(token.split('.').pop()), 'o banco guarda só o hash do segredo');
+  assert.deepStrictEqual(docPonte().ignorar, ['ped-velho01:inicial'], 'o que já estava na fila não sai de uma vez ao ligar');
+
+  // nada novo: volta vazio (espera 0 no teste)
+  let r = await celular({ op: 'aguardar', espera: 0, impressora: { estado: 'ok', nome: 'GS-FJ80M' } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.deepStrictEqual(r.corpo.trabalhos, []);
+  assert.deepStrictEqual(r.corpo.cfg, { auto: 'chegada', largura: 80, acentos: true });
+
+  // pedido novo chega: sai o cupom (com o nome aberto) e fica reservado para este celular
+  db._dados.set('pedidos/ped-novo001', { nome: 'Maria Souza', quadra: '5', lote: '3', status: 'pendente', total: 14, data: h(1), itens: [{ nome: 'Tomate', qtd: 2, tipo: 'un', unidade: 'un', subtotal: 14 }] });
+  db._dados.set('pedidos/bal-0000001', { nome: 'Balcão', status: 'pendente', origem: 'balcao', total: 5, data: h(1), itens: [] });
+  r = await celular({ op: 'aguardar', espera: 0 });
+  assert.strictEqual(r.corpo.trabalhos.length, 1, JSON.stringify(r.corpo));
+  const t = r.corpo.trabalhos[0], papel = Buffer.from(t.bytes, 'base64').toString('latin1');
+  assert.strictEqual(t.chave, 'p:ped-novo001:inicial'); assert.ok(/Maria Souza/.test(papel) && /TOTAL/.test(papel), papel);
+  assert.ok(papel.startsWith('\x1b@\x1bt\x03'), 'tabela 860: acentos ligados nesse celular');
+  assert.strictEqual(db._dados.get('pedidos/ped-novo001').impressao.estado, 'reservado');
+  // a resposta se perdeu: o mesmo celular recebe de novo (o app sabe que já imprimiu e só confirma)
+  assert.strictEqual((await celular({ op: 'aguardar', espera: 0 })).corpo.trabalhos[0].chave, 'p:ped-novo001:inicial');
+  // confirma: nunca mais sai sozinho; confirmação repetida não conta duas vezes
+  r = await celular({ op: 'aguardar', espera: 0, feitos: [{ chave: 'p:ped-novo001:inicial', ok: true }] });
+  assert.deepStrictEqual(r.corpo.trabalhos, []);
+  await celular({ op: 'aguardar', espera: 0, feitos: [{ chave: 'p:ped-novo001:inicial', ok: true }] });
+  assert.strictEqual(db._dados.get('pedidos/ped-novo001').impressao.saiu, 'inicial'); assert.strictEqual(db._dados.get('pedidos/ped-novo001').impressao.vezes, 1);
+
+  // impressora desligada: o celular conta que não saiu, a reserva é solta e o papel volta depois
+  db._dados.set('pedidos/ped-novo002', { nome: 'João', status: 'pendente', total: 9, data: h(1), itens: [] });
+  r = await celular({ op: 'aguardar', espera: 0 });
+  assert.strictEqual(r.corpo.trabalhos[0].chave, 'p:ped-novo002:inicial');
+  r = await celular({ op: 'aguardar', espera: 0, pausa: true, feitos: [{ chave: 'p:ped-novo002:inicial', ok: false }], impressora: { estado: 'erro', msg: 'A impressora não respondeu.' } });
+  assert.deepStrictEqual(r.corpo.trabalhos, [], 'em pausa (esperando a impressora voltar) não entrega papel');
+  assert.strictEqual(db._dados.get('pedidos/ped-novo002').impressao.estado, 'falhou');
+  assert.strictEqual((await celular({ op: 'aguardar', espera: 0 })).corpo.trabalhos[0].chave, 'p:ped-novo002:inicial', 'tenta de novo');
+  await celular({ op: 'aguardar', espera: 0, feitos: [{ chave: 'p:ped-novo002:inicial', ok: true }], impressora: { estado: 'ok' } });
+
+  // o painel vê o celular e a impressora
+  let lista = await painel({ op: 'listar' }, 'func-banca');
+  assert.strictEqual(lista.status, 200);
+  assert.strictEqual(lista.corpo.pontes.length, 1); assert.strictEqual(lista.corpo.pontes[0].online, true); assert.strictEqual(lista.corpo.pontes[0].nome, 'Moto G');
+  assert.ok(!JSON.stringify(lista.corpo).includes(docPonte().hash), 'a lista nunca mostra o hash');
+
+  // "Cupom" no painel: vai para o celular, cifrado se o cofre estiver ligado, e conta como impresso
+  db._dados.set('pedidos/ped-novo003', { nome: 'Lia', status: 'aguardando_pagamento', total: 7, data: h(1), itens: [] });
+  const env = await painel({ op: 'imprimir', tipo: 'cupom', pedidoId: 'ped-novo003', folhas: [[{ t: 'txt', v: 'Cupom da Lia' }, { t: 'corte' }]] }, 'func-banca');
+  assert.strictEqual(env.status, 200, JSON.stringify(env.corpo)); assert.strictEqual(env.corpo.online, true);
+  r = await celular({ op: 'aguardar', espera: 0 });
+  assert.strictEqual(r.corpo.trabalhos.length, 1); assert.strictEqual(r.corpo.trabalhos[0].chave, `m:${env.corpo.id}`);
+  assert.ok(/Cupom da Lia/.test(Buffer.from(r.corpo.trabalhos[0].bytes, 'base64').toString('latin1')));
+  await celular({ op: 'aguardar', espera: 0, feitos: [{ chave: `m:${env.corpo.id}`, ok: true }] });
+  assert.ok(!db._dados.has(`impressoes/${env.corpo.id}`), 'saiu no papel: some do banco');
+  assert.strictEqual(db._dados.get('pedidos/ped-novo003').impressao.saiu, 'inicial', 'cupom à mão conta como impresso');
+
+  // aviso de cancelado do pedido que já tinha saído
+  db._dados.set('pedidos/ped-novo001', { ...db._dados.get('pedidos/ped-novo001'), status: 'cancelado', canceladoEm: h(0) });
+  r = await celular({ op: 'aguardar', espera: 0 });
+  assert.strictEqual(r.corpo.trabalhos[0].chave, 'p:ped-novo001:cancelado');
+  assert.ok(/PEDIDO CANCELADO/.test(Buffer.from(r.corpo.trabalhos[0].bytes, 'base64').toString('latin1')));
+  await celular({ op: 'aguardar', espera: 0, feitos: [{ chave: 'p:ped-novo001:cancelado', ok: true }] });
+
+  // trocar para "ao aceitar": o que já estava separando e nunca saiu não sai de uma vez; o painel pode mandar sair
+  db._dados.set('pedidos/ped-novo004', { nome: 'Rui', status: 'preparando', total: 3, data: h(5), itens: [], impressao: undefined });
+  const cfg = await painel({ op: 'config', ponteId, cfg: { auto: 'manual' } });
+  assert.strictEqual(cfg.status, 200, JSON.stringify(cfg.corpo));
+  assert.deepStrictEqual((await celular({ op: 'aguardar', espera: 0 })).corpo.trabalhos, [], 'manual: nada sai sozinho');
+  const aceite = await painel({ op: 'config', ponteId, cfg: { auto: 'aceite' } });
+  assert.strictEqual(aceite.corpo.pulados, 1, JSON.stringify(aceite.corpo));
+  assert.deepStrictEqual((await celular({ op: 'aguardar', espera: 0 })).corpo.trabalhos, []);
+  await painel({ op: 'config', ponteId, imprimirFila: true });
+  assert.strictEqual((await celular({ op: 'aguardar', espera: 0 })).corpo.trabalhos[0].chave, 'p:ped-novo004:inicial', '"Imprimir esses agora"');
+
+  // token errado, celular desligado no painel
+  assert.strictEqual((await celular({ op: 'aguardar', espera: 0 }, token.slice(0, -1) + (token.endsWith('A') ? 'B' : 'A'))).status, 401);
+  assert.strictEqual((await painel({ op: 'remover', ponteId }, 'func-banca')).status, 403, 'funcionário não desliga celular');
+  assert.strictEqual((await painel({ op: 'remover', ponteId })).status, 200);
+  r = await celular({ op: 'aguardar', espera: 0 });
+  assert.strictEqual(r.status, 401); assert.strictEqual(r.corpo.desligado, true, 'o app sabe que foi desligado e pede um código novo');
+  assert.strictEqual((await painel({ op: 'listar' })).corpo.pontes.length, 0);
+});
+
+teste('ponte (escuta ao vivo): parado, o servidor segura a resposta e acorda o celular na hora em que o pedido chega', async () => {
+  const P = require(raiz('lib/ponte')), base = criarBancoP(sementeEstoque());
+  // banco de mentira com onSnapshot: toda escrita avisa as escutas
+  const ouvintes = new Set(); let leituras = 0;
+  const avisar = () => setTimeout(() => ouvintes.forEach((o) => o()), 5);
+  const ref = (r) => ({ ...r, set: async (...a) => { await r.set(...a); avisar(); }, update: async (...a) => { await r.update(...a); avisar(); }, delete: async () => { await r.delete(); avisar(); } });
+  const consulta = (q) => ({ ...q, where: (...a) => consulta(q.where(...a)), get: async () => { leituras++; return q.get(); },
+    onSnapshot: (ok) => { const o = async () => ok(await q.get()); ouvintes.add(o); o(); return () => ouvintes.delete(o); } });
+  const col = (n) => { const c = base.collection(n); return { ...consulta(c), doc: (id) => ref(c.doc(id)) }; };
+  const db = { ...base, collection: col, doc: (c) => ref(base.doc(c)), runTransaction: async (fn) => { const r = await base.runTransaction(fn); avisar(); return r; }, batch: base.batch };
+  const tk = P.novoToken('banca'), ponte = { id: tk.id, hash: tk.hash, cfg: { auto: 'chegada' }, ignorar: [] };
+  await db.collection('pontes').doc(tk.id).set(ponte);
+  const inicio = Date.now();
+  setTimeout(() => db.collection('pedidos').doc('ped-vivo001').set({ nome: 'Ana', status: 'pendente', total: 5, data: new Date().toISOString(), itens: [] }), 300);
+  const r = await P.aguardar(db, 'banca', ponte, { espera: 20 });
+  const levou = Date.now() - inicio;
+  assert.strictEqual(r.trabalhos.length, 1, JSON.stringify(r)); assert.strictEqual(r.trabalhos[0].chave, 'p:ped-vivo001:inicial');
+  assert.ok(levou < 3000, `acordou em ${levou} ms (não esperou os 20 s)`);
+  // sem nada novo: espera até o fim, sem ficar relendo o banco
+  const antes = leituras, t0 = Date.now();
+  const vazio = await P.aguardar(db, 'banca', ponte, { espera: 1, feitos: [{ chave: 'p:ped-vivo001:inicial', ok: true }] });
+  assert.deepStrictEqual(vazio.trabalhos, []); assert.ok(Date.now() - t0 >= 900, 'segurou a resposta');
+  assert.ok(leituras - antes <= 20, `poucas leituras parado (${leituras - antes})`);
+  P._fontes.get('banca').parar();
+});
+const P0 = () => ({ ...require(raiz('lib/ponte')).CFG_PADRAO });
+
+teste('ponte (cofre): o que o painel manda imprimir fica cifrado no banco e o cupom sai aberto', async () => {
+  process.env.DADOS_CHAVE = require('crypto').randomBytes(32).toString('base64');
+  try {
+    const Cofre = require(raiz('lib/cofre'));
+    const sem = sementeEstoque();
+    sem['pedidos/ped-cifra01'] = Cofre.fecharCampos({ nome: 'Cliente Secreto', quadra: '9', lote: '9', status: 'pendente', total: 5, data: new Date().toISOString(), itens: [] }, 'banca');
+    const db = criarBancoP(sem), adm = criarAdmin(db, TOKENS_P), pdv = carregarApi(raiz('api/pdv.js'), adm), app = carregarApi(raiz('api/ponte.js'), adm);
+    require(raiz('lib/http'))._usos.clear();
+    const cod = await chamar(pdv, { headers: { Authorization: 'Bearer dona-banca' }, body: { acao: 'ponte', op: 'codigo' } });
+    const ent = await chamar(app, { body: { op: 'entrar', codigo: cod.corpo.codigo } });
+    const tk = { Authorization: `Bearer ${ent.corpo.token}` };
+    await chamar(pdv, { headers: { Authorization: 'Bearer dona-banca' }, body: { acao: 'ponte', op: 'config', ponteId: ent.corpo.ponteId, imprimirFila: true } });
+    const env = await chamar(pdv, { headers: { Authorization: 'Bearer dona-banca' }, body: { acao: 'ponte', op: 'imprimir', folhas: [[{ t: 'txt', v: 'Endereço da Dona Rosa' }]] } });
+    assert.ok(!JSON.stringify(db._dados.get(`impressoes/${env.corpo.id}`)).includes('Dona Rosa'), 'no banco, cifrado');
+    const r = await chamar(app, { headers: tk, body: { op: 'aguardar', espera: 0 } });
+    const papel = r.corpo.trabalhos.map((t) => Buffer.from(t.bytes, 'base64').toString('latin1')).join('|');
+    assert.ok(/Dona Rosa/.test(papel) && /Cliente Secreto/.test(papel), 'no papel, aberto');
+  } finally { delete process.env.DADOS_CHAVE; }
+});
+
+teste('ponte: o Dockerfile leva as duas bibliotecas do painel que o servidor usa para montar o cupom', () => {
+  const fs = require('fs'), docker = fs.readFileSync(raiz('Dockerfile'), 'utf8'), ign = fs.readFileSync(raiz('.dockerignore'), 'utf8');
+  assert.ok(/COPY js\/impressao-lib\.js js\/impressao-fila-lib\.js \.\/js\//.test(docker));
+  assert.ok(ign.includes('!js/impressao-lib.js') && ign.includes('!js/impressao-fila-lib.js'));
+  for (const arq of ['js/impressao-lib.js', 'js/impressao-fila-lib.js']) assert.ok(!/^\s*import\s/m.test(fs.readFileSync(raiz(arq), 'utf8')), `${arq} não pode importar outros arquivos do site (não vão para a imagem)`);
 });
 
 (async () => {
