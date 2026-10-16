@@ -20,6 +20,15 @@
 .ipr-status.erro { border-color: #f0c2bd; background: #fffaf9; }
 .ipr-status.alerta { border-color: #f0d49a; background: #fffcf3; }
 .ipr-status .bt-sec { min-height: 44px; }
+/* mais de um celular da banca: cada um com a sua bolinha */
+.ipr-cels { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 0; padding: 10px 0 0; list-style: none; border-top: 1px dashed var(--linha, #e4dfd3); }
+.ipr-cel { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 12px 4px 10px; border-radius: 999px; background: #fff; border: 1.5px solid #e4dfd3; font-size: .88rem; }
+.ipr-cel i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--disabled); }
+.ipr-cel.ok i { background: #2f9e5b; }
+.ipr-cel.alerta i { background: #d98a06; }
+.ipr-cel.erro i { background: #c8352b; }
+.ipr-cel b { font-weight: 700; color: var(--forest); }
+.ipr-cel small { color: var(--text-mid); }
 
 /* ---- as três partes ---- */
 .ipr-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 0 0 18px; padding: 4px; border-radius: 14px; background: var(--parchment); }
@@ -102,6 +111,16 @@
 .ipr-vias span { min-width: 3.6em; text-align: center; font-weight: 700; font-size: .9rem; color: var(--text-dark); }
 .ipr-imprimir.bt { flex: 1; min-height: 52px; font-size: 1.05rem; }
 .ipr-imprimir:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- atalho: rótulos adesivos dos produtos ---- */
+.ipr-mais { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 14px; margin-top: 22px; padding: 14px 16px; border-radius: 16px;
+    background: var(--warm-white, #fffaf2); border: 1.5px dashed #d9d3c6; }
+.ipr-mais[hidden] { display: none; }
+.ipr-mais > .ic { flex: none; width: 2rem; height: 2rem; color: var(--forest); }
+.ipr-mais div { flex: 1 1 220px; min-width: 0; display: grid; gap: 2px; }
+.ipr-mais b { font: 700 1rem/1.25 var(--fonte-titulo); color: var(--forest); }
+.ipr-mais small { color: var(--text-mid); font-size: .86rem; line-height: 1.4; }
+.ipr-mais .bt-sec { min-height: 44px; }
 
 /* ---- computador: a impressora fica do lado, parada enquanto a página rola ---- */
 @media (min-width: 900px) {

@@ -676,8 +676,38 @@ teste('celular da banca (app Ponte): este painel não imprime sozinho, mostra o 
   await ctx.close();
 });
 
+teste('dois celulares da banca: a faixa mostra cada um; atalho dos rótulos abre a tela de rótulos', async () => {
+  doisCelulares = true;
+  try {
+    const ctx = await navegador.newContext({ viewport: { width: 1200, height: 900 }, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
+    await ctx.addInitScript((c) => { window.__CENARIO = c; }, cenarioImpressao());
+    await ctx.addInitScript(impressoraFalsa, { modo: 'ponte', largura: 80, acentos: true, auto: 'chegada', aparelho: 'ap-teste-04' });
+    await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+    await p.goto(servidor.base + '/admin.html');
+    await p.click('#btn-mais'); await p.click('#btn-impressora');
+    await p.locator('#ipr-status .ipr-cel').nth(1).waitFor({ timeout: 4000 });
+    const faixa = await p.locator('#ipr-status').innerText();
+    assert.ok(/Moto G/.test(faixa) && /Samsung da casa/.test(faixa) && /sem contato/.test(faixa), faixa);
+    assert.ok(await p.locator('#ipr-status.ok').count(), 'um com contato: a faixa fica verde');
+    assert.strictEqual(await p.locator('.ipr-cel.ok').count(), 1); assert.strictEqual(await p.locator('.ipr-cel.erro').count(), 1);
+    // o atalho dos rótulos aparece para o dono e abre a tela
+    await p.locator('#ipr-mais:not([hidden])').waitFor({ timeout: 2000 });
+    await p.click('#ipr-mais [data-action="rotulos"]');
+    await p.locator('#modal-rotulos').waitFor({ state: 'visible', timeout: 4000 });
+    await p.keyboard.press('Escape');
+    await p.click('#ipr-tab-ajustes');
+    assert.ok(await p.locator('#ipr-mais').isHidden(), 'nos ajustes o atalho some');
+    semErros(errosP);
+    await ctx.close();
+  } finally { doisCelulares = false; }
+});
+
 // o servidor de mentira do app Ponte: um celular ligado, com a impressora funcionando
-const ponteFalsa = (c) => (c.op === 'listar' ? { sucesso: true, pontes: [{ id: 'pt0123456789abcdef', nome: 'Moto G', criadoEm: new Date().toISOString(), visto: new Date().toISOString(), online: true, impressora: { estado: 'ok', nome: 'GS-FJ80M', msg: '' }, app: { versao: '1.0.1' }, cfg: { auto: 'chegada', largura: 80, acentos: true, copias: 1, autoEtiqueta: false, autoPesado: false, autoCancelado: true } }] }
+// (com doisCelulares, aparece também um segundo, sem contato desde ontem)
+let doisCelulares = false;
+const outroCelular = () => ({ id: 'ptfedcba9876543210', nome: 'Samsung da casa', criadoEm: new Date(Date.now() - 3 * 864e5).toISOString(), visto: new Date(Date.now() - 864e5).toISOString(), online: false, impressora: { estado: 'ok', nome: 'MP-58', msg: '' }, app: { versao: '1.0.9' }, cfg: { auto: 'chegada', largura: 58, acentos: true, copias: 1, autoEtiqueta: false, autoPesado: false, autoCancelado: true } });
+const ponteFalsa = (c) => (c.op === 'listar' ? { sucesso: true, pontes: [{ id: 'pt0123456789abcdef', nome: 'Moto G', criadoEm: new Date().toISOString(), visto: new Date().toISOString(), online: true, impressora: { estado: 'ok', nome: 'GS-FJ80M', msg: '' }, app: { versao: '1.0.1' }, cfg: { auto: 'chegada', largura: 80, acentos: true, copias: 1, autoEtiqueta: false, autoPesado: false, autoCancelado: true } }, ...(doisCelulares ? [outroCelular()] : [])] }
   : c.op === 'config' ? { sucesso: true, cfg: { auto: 'chegada', largura: 80, acentos: true, copias: 2, autoEtiqueta: false, autoPesado: false, autoCancelado: true }, pulados: 0 }
   : c.op === 'imprimir' ? { sucesso: true, id: 'im-teste-1', online: true, visto: new Date().toISOString() } : { sucesso: true });
 

@@ -117,7 +117,7 @@ export function pintar() {
     if (!$('imp-corpo')) return;
     const c = lerConfig(), sup = suporte(), ponte = c.modo === 'ponte', termica = c.modo !== 'sistema', precisaConectar = c.modo === 'bluetooth' || c.modo === 'serial';
     const largura = !termica ? c.largura : (c.largura === 'a4' ? 80 : c.largura);
-    const ponteCfg = ponte ? ((Ponte.estado().pontes || [])[0] || {}).cfg || {} : null;
+    const ponteCfg = ponte ? (ponteAtiva() || {}).cfg || {} : null;
     const larguraPrevia = ponte ? (ponteCfg.largura || 80) : (largura === 'a4' ? 80 : largura);
     $('imp-corpo').innerHTML = `
         <fieldset class="imp-caminhos"><legend>Como este aparelho imprime</legend>
@@ -229,10 +229,15 @@ export function ligarAjustes() {
         return undefined;
     });
 }
+/** O celular da banca que vale agora: o primeiro com contato; se nenhum tiver, o primeiro da lista. */
+export function ponteAtiva() {
+    const ps = Ponte.estado().pontes || [];
+    return ps.find(Ponte.estaOnline) || ps[0] || null;
+}
 /** Largura da bobina que vale agora: a do celular da banca, ou a deste aparelho. */
 export function larguraAtual() {
     const c = lerConfig();
-    if (c.modo === 'ponte') return Number((((Ponte.estado().pontes || [])[0] || {}).cfg || {}).largura) === 58 ? 58 : 80;
+    if (c.modo === 'ponte') return Number(((ponteAtiva() || {}).cfg || {}).largura) === 58 ? 58 : 80;
     return c.largura === 58 ? 58 : 80;
 }
 export async function imprimirTeste() {

@@ -33,13 +33,15 @@ const dadosDoForm = () => Object.fromEntries(CAMPOS.map((k) => [k, ($(`ipr-${k}`
 function estadoDaImpressora() {
     const c = lerConfig();
     if (c.modo === 'ponte') {
-        const f = Ponte.situacao(), E = Ponte.estado(), viva = (E.pontes || []).find(Ponte.estaOnline);
+        const f = Ponte.situacao(), pontes = Ponte.estado().pontes || [], vivos = pontes.filter(Ponte.estaOnline), viva = vivos[0];
+        const celulares = pontes.length > 1 ? pontes : null;      // mais de um celular: cada um aparece com a sua bolinha
         if (f.tipo === 'carregando') return { cor: 'espera', titulo: 'Celular da banca', dica: 'Procurando o celular...' };
         if (f.tipo === 'nenhum') return { cor: 'erro', titulo: 'Nenhum celular da banca ligado', dica: 'Em Ajustes, gere o código e digite no app Ponte da Banca.', acao: ['ajustes', 'Ligar celular'] };
-        if (f.tipo === 'fora') return { cor: 'erro', titulo: 'Celular da banca sem contato', dica: `Visto pela última vez ${Ponte.quandoFoi(f.visto)}. Confira se está ligado e com internet. O que você mandar fica guardado.` };
-        if (f.tipo === 'impressora') return { cor: 'alerta', titulo: 'A impressora não respondeu', dica: f.msg };
+        if (f.tipo === 'fora') return { cor: 'erro', celulares, titulo: celulares ? 'Nenhum celular da banca com contato' : 'Celular da banca sem contato', dica: `Visto pela última vez ${Ponte.quandoFoi(f.visto)}. Confira se está ligado e com internet. O que você mandar fica guardado.` };
+        if (f.tipo === 'impressora') return { cor: 'alerta', celulares, titulo: 'A impressora não respondeu', dica: f.msg };
+        if (vivos.length > 1) return { cor: 'ok', celulares, titulo: `${vivos.length} celulares da banca prontos`, dica: 'O papel sai no primeiro que pegar. Se cada um fica num lugar, deixe ligado só o que está perto da impressora.' };
         const imp = viva && viva.impressora && viva.impressora.nome;
-        return { cor: 'ok', titulo: viva && viva.nome ? viva.nome : 'Celular da banca', dica: imp ? `Pronta para imprimir em ${imp}.` : 'Pronto para imprimir.' };
+        return { cor: 'ok', celulares, titulo: viva && viva.nome ? viva.nome : 'Celular da banca', dica: imp ? `Pronta para imprimir em ${imp}.` : 'Pronto para imprimir.' };
     }
     if (c.modo === 'bluetooth' || c.modo === 'serial') {
         return conectada() ? { cor: 'ok', titulo: CAMINHOS[c.modo][0], dica: c.btNome ? `Pronta: ${c.btNome}.` : 'Pronta para imprimir.' }
@@ -48,6 +50,13 @@ function estadoDaImpressora() {
     if (c.modo === 'app') return { cor: 'ok', titulo: 'Aplicativo de impressão', dica: 'O papel vai para o RawBT deste celular.' };
     return { cor: 'neutro', titulo: 'Impressão do aparelho', dica: 'Abre a tela de imprimir. Para a térmica, escolha o caminho dela em Ajustes.', acao: ['ajustes', 'Escolher'] };
 }
+/** Um celular da banca na faixa de cima: nome e como ele está. */
+function pintarCelular(p) {
+    const on = Ponte.estaOnline(p), imp = p.impressora || {};
+    const cor = !on ? 'erro' : imp.estado === 'erro' ? 'alerta' : 'ok';
+    const txt = !on ? `sem contato ${Ponte.quandoFoi(p.visto)}` : imp.estado === 'erro' ? 'impressora parada' : 'pronto';
+    return `<li class="ipr-cel ${cor}"><i aria-hidden="true"></i><b>${escapeHTML(p.nome || 'Celular da banca')}</b><small>${escapeHTML(txt)}</small></li>`;
+}
 function pintarStatus() {
     const el = $('ipr-status'); if (!el) return;
     const e = estadoDaImpressora();
@@ -55,7 +64,14 @@ function pintarStatus() {
     el.innerHTML = `<span class="ipr-led" aria-hidden="true"></span>
         <div class="ipr-status-txt"><b>${escapeHTML(e.titulo)}</b><small>${escapeHTML(e.dica || '')}</small></div>
         ${e.acao ? `<button type="button" class="bt-sec" data-ipr-acao="${e.acao[0]}">${escapeHTML(e.acao[1])}</button>` : ''}
-        <button type="button" class="bt-sec" id="imp-teste">Imprimir teste</button>`;
+        <button type="button" class="bt-sec" id="imp-teste">Imprimir teste</button>
+        ${e.celulares ? `<ul class="ipr-cels" aria-label="Celulares da banca">${e.celulares.map(pintarCelular).join('')}</ul>` : ''}`;
+}
+/** O atalho dos rótulos só aparece para quem cuida dos produtos (o rótulo fica guardado no produto). */
+function pintarMais() {
+    const el = $('ipr-mais'); if (!el) return;
+    const tab = document.querySelector('.tab[data-aba="produtos"]');
+    el.hidden = !tab || tab.hidden || S.secao === 'ajustes';
 }
 
 // ---------------------------------------------------------------- o papel ao lado
@@ -248,6 +264,11 @@ function montar() {
                 </div>
             </aside>
         </div>
+        <aside class="ipr-mais" id="ipr-mais" hidden>
+            <i class="ic" data-i="etiqueta" aria-hidden="true"></i>
+            <div><b>Rótulo adesivo dos produtos</b><small>Monte uma vez, com a foto, o nome e o preço, e imprima quantos precisar no dia.</small></div>
+            <button type="button" class="bt-sec" data-action="rotulos">Abrir rótulos</button>
+        </aside>
     </div>`;
     ligar();
     S.montada = true;
@@ -261,6 +282,7 @@ function irPara(secao) {
     document.querySelector('.ipr').dataset.secao = S.secao;
     if (S.secao === 'ajustes') { ligarAjustes(); pintarAjustes(); if (lerConfig().modo === 'ponte') Ponte.atualizar(); }
     else pintarPapel();
+    pintarMais();
 }
 
 function ligar() {
