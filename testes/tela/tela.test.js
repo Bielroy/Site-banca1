@@ -703,6 +703,42 @@ teste('dois celulares da banca: a faixa mostra cada um; atalho dos rótulos abre
   } finally { doisCelulares = false; }
 });
 
+teste('produtos no painel: botões de categoria filtram a lista e "Selecionar vários" marca "chegou hoje" de uma vez', async () => {
+  const cen = cenarioImpressao();
+  Object.assign(cen.lojas.banca.produtos, {
+    oregano: { nome: 'Orégano', preco: 3, unidade: 'un', cat: 'temperos', ativo: false },
+    colorau: { nome: 'Colorau', preco: 3, unidade: 'un', cat: 'temperos', ativo: true },
+  });
+  const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 }, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
+  await ctx.addInitScript((c) => { window.__CENARIO = c; }, cen);
+  await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+  await p.goto(servidor.base + '/admin.html');
+  await p.locator('#pl-cats [data-pl-cat="temperos"]').waitFor({ timeout: 8000 });
+  assert.ok(/Temperos\s*2/.test(await p.locator('#pl-cats [data-pl-cat="temperos"]').innerText()), 'temperos com 2 produtos');
+  await p.click('#pl-cats [data-pl-cat="temperos"]');
+  const nomes = await p.locator('#lista-produtos .pl-txt b').allInnerTexts();
+  assert.deepStrictEqual(nomes, ['Colorau', 'Orégano'], 'só os temperos');
+  assert.ok(/Temperos/.test(await p.locator('#pl-cabeca').innerText()));
+  // comprei tempero hoje: marca os dois e "Chegou hoje" põe na loja com o selo
+  await p.click('[data-pl-sel="ligar"]');
+  assert.ok(await p.locator('#pl-lote').isVisible(), 'barra dos marcados aparece');
+  await p.click('[data-pl-sel="todos"]');
+  assert.ok(/2 marcados/.test(await p.locator('#pl-lote').innerText()));
+  await p.click('[data-pl-lote="chegou"]');
+  await p.waitForFunction(() => (window.__gravados || []).filter((g) => g.lote).length === 2, null, { timeout: 4000 });
+  const g = await p.evaluate(() => window.__gravados.filter((x) => x.lote));
+  assert.deepStrictEqual(g.map((x) => x.path.split('/').pop()).sort(), ['colorau', 'oregano']);
+  assert.ok(g.every((x) => x.dados.ativo === true && typeof x.dados.chegouEm === 'string' && x.dados.chegouEm.length === 10), JSON.stringify(g));
+  assert.ok(await p.locator('#pl-lote').isHidden(), 'depois de salvar, sai da seleção');
+  // tocar na linha volta a abrir o produto
+  assert.ok(await p.locator('#lista-produtos [data-action="editar-produto"]').count() === 2);
+  await p.click('#pl-cats [data-pl-cat="__todas__"]');
+  assert.ok((await p.locator('#lista-produtos .pl-item').count()) >= 6, 'todos de novo');
+  semErros(errosP);
+  await ctx.close();
+});
+
 // o servidor de mentira do app Ponte: um celular ligado, com a impressora funcionando
 // (com doisCelulares, aparece também um segundo, sem contato desde ontem)
 let doisCelulares = false;

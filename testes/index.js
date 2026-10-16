@@ -3243,6 +3243,19 @@ teste('impressora: foto vira preto e branco na largura da bobina, sem a sombra d
   const Ponte = require(raiz('lib/ponte.js'));
   assert.ok(Ponte.limparBytes(Buffer.from(bytes).toString('base64')), `${bytes.length} bytes passam no servidor`);
 });
+teste('produtos no painel: botões de categoria na ordem da aba Categorias e ações em lote', async () => {
+  const L = await import(raiz('js/produtos-lista-lib.js'));
+  const ps = [{ id: 'a', cat: 'temperos' }, { id: 'b', cat: 'Verduras', ativo: true }, { id: 'c', cat: '' }, { id: 'd', cat: 'Temperos', ativo: true, chegouEm: '2026-10-16' }, { id: 'e', cat: 'abobrinhas', soInsumo: true }];
+  const cats = L.categoriasDaLista(ps, ['verduras', 'temperos'], (c) => ({ verduras: 'Verduras e folhas' }[c.toLowerCase()] || c));
+  assert.deepStrictEqual(cats.map((c) => [c.chave, c.nome, c.n]), [['verduras', 'Verduras e folhas', 1], ['temperos', 'Temperos', 2], ['abobrinhas', 'Abobrinhas', 1], [L.SEM_CATEGORIA, 'Sem categoria', 1]]);
+  assert.ok(L.passaNaCategoria(ps[3], 'temperos') && !L.passaNaCategoria(ps[1], 'temperos') && L.passaNaCategoria(ps[1], L.TODAS) && L.passaNaCategoria(ps[2], L.SEM_CATEGORIA));
+  const chegou = L.mudancasEmLote(ps, 'chegou', '2026-10-16', 5);
+  assert.deepStrictEqual(chegou.map((m) => m.id), ['a', 'b', 'c'], 'o que já chegou hoje e o "só ingrediente" ficam de fora');
+  assert.deepStrictEqual(chegou[0].dados, { ativo: true, chegouEm: '2026-10-16', ultimaModificacao: 5 });
+  assert.deepStrictEqual(L.mudancasEmLote(ps, 'fora', 'x', 5).map((m) => m.id), ['b', 'd']);
+  assert.deepStrictEqual(L.mudancasEmLote(ps, 'loja', 'x', 5).map((m) => m.id), ['a', 'c']);
+});
+
 teste('impressora: aba própria no Menu, liberada para a equipe que imprime', async () => {
   const fs = require('fs'), html = fs.readFileSync(raiz('admin.html'), 'utf8'), P = await import(raiz('js/papeis-lib.js'));
   assert.ok(html.includes('data-aba="impressora"') && html.includes('id="aba-impressora"') && html.includes('css/admin-impressora.css'));

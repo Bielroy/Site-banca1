@@ -7,9 +7,10 @@ import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
 import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm } from './utils.js';
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
-import { hojeDaLoja } from './vitrine-lib.js';
+import { hojeDaLoja, iconeDaCategoria } from './vitrine-lib.js';
+import { TODAS, categoriasDaLista, passaNaCategoria, mudancasEmLote } from './produtos-lista-lib.js';
 import { cadastroPacote, promoDe, textoPromo, totalComPromo, nomesDaUnidade, emPalavras, ehPacote } from './pacote-lib.js';
-import { ARTE_PACOTE } from './vitrine-arte.js';
+import { ARTE_PACOTE, ARTE_CATEGORIA } from './vitrine-arte.js';
 import './admin-instalar.js';
 import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar, bancasDaPessoa, mostrarSuspensa } from './admin-guard.js';
 import { htmlSimples, csvCampo } from './html-lib.js';
@@ -48,7 +49,7 @@ const abrirTela = async (nome) => {
     try { ABRIR[nome](await TELAS[nome]()); }
     catch (e) { console.error(e); showToast('Não consegui abrir esta tela. Confira a internet e toque de novo.', true); }
 };
-import { iniciarCategoriasAdmin, abrirCategorias, chaveDaCategoria, nomeDaCategoria, normalizarWpp } from './admin-categorias.js';
+import { iniciarCategoriasAdmin, abrirCategorias, chaveDaCategoria, nomeDaCategoria, normalizarWpp, ordemDasCategorias } from './admin-categorias.js';
 // Miniatura do redutor falhou? Volta para a foto original (mesmo cuidado da loja).
 document.addEventListener('error', (e) => { const img = e.target; if (!(img instanceof HTMLImageElement) || !img.dataset.original) return; const o = img.dataset.original; delete img.dataset.original; if (img.getAttribute('src') !== o) img.src = o; }, true);
 
@@ -634,15 +635,43 @@ const FILTROS_PRODUTO = [
     ['selo', 'Com selo', (p) => p.chegouEm === hojeDaLoja() || p.estacao === true || p.escolha === true],
     ['insumo', 'Só ingrediente', (p) => p.soInsumo === true],
 ];
+// Botões de categoria (Temperos, Verduras...) em cima dos filtros: a escolha fica guardada neste aparelho até fechar.
+const PL_CAT = chave('banca_produtos_categoria');
+let adminCategoria = (() => { try { return sessionStorage.getItem(PL_CAT) || TODAS; } catch (_) { return TODAS; } })();
+// "Selecionar vários": tocar na linha marca o produto; a barra de baixo põe na loja, tira ou marca "chegou hoje" de uma vez
+const plSel = { ligado: false, ids: new Set() };
+const arteDaCategoria = (nome) => ARTE_CATEGORIA[iconeDaCategoria(nome)] || ARTE_CATEGORIA.cesta;
 const renderProdutos = () => {
     const daBusca = produtosAtuais.filter(p => !adminBuscaTermo || normalizar(p.nome).includes(adminBuscaTermo) || normalizar(nomeDaCategoria(p.cat)).includes(adminBuscaTermo) || normalizar(p.cat).includes(adminBuscaTermo));
+    const cats = categoriasDaLista(daBusca, ordemDasCategorias(), nomeDaCategoria);
+    if (adminCategoria !== TODAS && !cats.some((c) => c.chave === adminCategoria)) adminCategoria = TODAS;
+    const caixaCats = document.getElementById('pl-cats');
+    if (caixaCats) {
+        caixaCats.hidden = cats.length < 2;
+        caixaCats.innerHTML = [{ chave: TODAS, nome: 'Todas', n: daBusca.length }, ...cats].map((c) => `
+            <button type="button" class="pl-cat${adminCategoria === c.chave ? ' on' : ''}" data-pl-cat="${escapeHTML(c.chave)}" aria-pressed="${adminCategoria === c.chave}">
+                <span class="pl-cat-ico">${c.chave === TODAS ? ARTE_CATEGORIA.todas : arteDaCategoria(c.nome)}</span><span class="pl-cat-nome">${escapeHTML(c.nome)}</span><i>${c.n}</i>
+            </button>`).join('');
+    }
+    const daCategoria = daBusca.filter((p) => passaNaCategoria(p, adminCategoria));
     const filtros = document.getElementById('pl-filtros');
     if (filtros) {
-        if (!FILTROS_PRODUTO.some(([k, , f]) => k === adminFiltro && daBusca.some(f))) adminFiltro = 'todos';
-        filtros.innerHTML = FILTROS_PRODUTO.map(([k, rot, f]) => { const n = daBusca.filter(f).length; return n || k === 'todos' ? `<button type="button" class="pl-filtro${adminFiltro === k ? ' on' : ''}" data-pl-filtro="${k}" aria-pressed="${adminFiltro === k}">${rot} <i>${n}</i></button>` : ''; }).join('');
+        if (!FILTROS_PRODUTO.some(([k, , f]) => k === adminFiltro && daCategoria.some(f))) adminFiltro = 'todos';
+        filtros.innerHTML = FILTROS_PRODUTO.map(([k, rot, f]) => { const n = daCategoria.filter(f).length; return n || k === 'todos' ? `<button type="button" class="pl-filtro${adminFiltro === k ? ' on' : ''}" data-pl-filtro="${k}" aria-pressed="${adminFiltro === k}">${rot} <i>${n}</i></button>` : ''; }).join('');
     }
     const passa = (FILTROS_PRODUTO.find(([k]) => k === adminFiltro) || FILTROS_PRODUTO[0])[2];
-    const lista = daBusca.filter(passa).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+    const lista = daCategoria.filter(passa).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+    // escolhidos que sumiram (apagados, ou fora da busca) saem da seleção
+    const naTela = new Set(lista.map((p) => p.id)); for (const id of [...plSel.ids]) if (!naTela.has(id)) plSel.ids.delete(id);
+
+    const cabeca = document.getElementById('pl-cabeca');
+    if (cabeca) {
+        const titulo = adminCategoria === TODAS ? 'Todos os produtos' : (cats.find((c) => c.chave === adminCategoria) || {}).nome || '';
+        const todosMarcados = lista.length > 0 && lista.every((p) => plSel.ids.has(p.id));
+        cabeca.innerHTML = lista.length ? `<b>${escapeHTML(titulo)}</b><span>${lista.length === 1 ? '1 produto' : `${lista.length} produtos`}</span>
+            ${plSel.ligado ? `<button type="button" class="pl-cabeca-bt" data-pl-sel="todos">${todosMarcados ? 'Desmarcar todos' : 'Marcar todos'}</button>`
+                : `<button type="button" class="pl-cabeca-bt" data-pl-sel="ligar"><i class="ic" data-i="certo"></i> Selecionar vários</button>`}` : '';
+    }
 
     const html = lista.map(p => {
         const avisos = [];
@@ -657,9 +686,11 @@ const renderProdutos = () => {
         // sem o peso médio, o cliente não vê estimativa de preço ao pedir "5 unidades" de um produto vendido a peso
         if (ehFracionavel(p.unidade) && !p.pesoMedio && !p.soInsumo) avisos.push('<span class="pl-selo atencao">sem peso médio</span>');
         const cat = nomeDaCategoria(p.cat);
+        const marcado = plSel.ids.has(p.id);
         return `
-        <article class="pl-item${p.ativo ? '' : ' fora'}">
-            <button type="button" class="pl-abrir" data-action="editar-produto" data-id="${escapeHTML(p.id)}">
+        <article class="pl-item${p.ativo ? '' : ' fora'}${plSel.ligado ? ' marcando' : ''}${marcado ? ' marcado' : ''}">
+            <button type="button" class="pl-abrir" ${plSel.ligado ? `data-pl-marcar="${escapeHTML(p.id)}" role="checkbox" aria-checked="${marcado}"` : `data-action="editar-produto" data-id="${escapeHTML(p.id)}"`}>
+                ${plSel.ligado ? '<span class="pl-marca" aria-hidden="true"></span>' : ''}
                 <span class="pl-foto">${/^https:\/\//i.test(String(p.fotoMini || p.foto || '')) ? `<img src="${escapeHTML(miniatura(p.fotoMini || p.foto, 128))}" data-original="${escapeHTML(p.fotoMini || p.foto)}" loading="lazy" decoding="async" alt="">` : placeholderSVG}</span>
                 <span class="pl-txt">
                     <b>${escapeHTML(p.nome)}</b>
@@ -667,14 +698,75 @@ const renderProdutos = () => {
                     ${avisos.length ? `<span class="pl-avisos">${avisos.join('')}</span>` : ''}
                 </span>
             </button>
-            ${p.soInsumo || !p.ativo ? '' : `<button type="button" class="pl-chegou${p.chegouEm === hojeDaLoja() ? ' on' : ''}" data-action="chegou-hoje" data-id="${escapeHTML(p.id)}" aria-pressed="${p.chegouEm === hojeDaLoja()}" aria-label="Chegou hoje: ${escapeHTML(p.nome)}" title="Marcar que chegou hoje (some sozinho amanhã)">${ico('broto')}<span>hoje</span></button>`}
-            ${p.soInsumo ? '' : `<button type="button" class="pl-chave" role="switch" aria-checked="${p.ativo ? 'true' : 'false'}" aria-label="${p.ativo ? 'À venda' : 'Fora da loja'}: ${escapeHTML(p.nome)}" data-action="toggle-estoque" data-id="${escapeHTML(p.id)}" data-status="${p.ativo ? 'false' : 'true'}"><i></i></button>`}
+            ${plSel.ligado || p.soInsumo || !p.ativo ? '' : `<button type="button" class="pl-chegou${p.chegouEm === hojeDaLoja() ? ' on' : ''}" data-action="chegou-hoje" data-id="${escapeHTML(p.id)}" aria-pressed="${p.chegouEm === hojeDaLoja()}" aria-label="Chegou hoje: ${escapeHTML(p.nome)}" title="Marcar que chegou hoje (some sozinho amanhã)">${ico('broto')}<span>hoje</span></button>`}
+            ${plSel.ligado || p.soInsumo ? '' : `<button type="button" class="pl-chave" role="switch" aria-checked="${p.ativo ? 'true' : 'false'}" aria-label="${p.ativo ? 'À venda' : 'Fora da loja'}: ${escapeHTML(p.nome)}" data-action="toggle-estoque" data-id="${escapeHTML(p.id)}" data-status="${p.ativo ? 'false' : 'true'}"><i></i></button>`}
         </article>`;
     }).join('');
 
-    document.getElementById('lista-produtos').innerHTML = html || `<p class="pl-vazio">${produtosAtuais.length ? 'Nenhum produto com essa busca.' : 'Nenhum produto cadastrado ainda. Toque em "Novo produto".'}</p>`;
+    document.getElementById('lista-produtos').innerHTML = html || `<p class="pl-vazio">${produtosAtuais.length ? 'Nenhum produto aqui. Toque em "Todos" para ver a lista inteira.' : 'Nenhum produto cadastrado ainda. Toque em "Novo produto".'}</p>`;
+    pintarLote();
 };
 document.getElementById('pl-filtros')?.addEventListener('click', (e) => { const b = e.target.closest('[data-pl-filtro]'); if (!b) return; adminFiltro = b.dataset.plFiltro; renderProdutos(); });
+document.getElementById('pl-cats')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pl-cat]'); if (!b) return;
+    adminCategoria = b.dataset.plCat;
+    try { sessionStorage.setItem(PL_CAT, adminCategoria); } catch (_) { /* armazenamento bloqueado: só não lembra */ }
+    renderProdutos();
+    b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+});
+document.addEventListener('categorias:mudou', () => renderProdutos());
+
+// ---- vários produtos de uma vez ----
+const sairDaSelecao = () => { plSel.ligado = false; plSel.ids.clear(); renderProdutos(); };
+function pintarLote() {
+    const barra = document.getElementById('pl-lote'); if (!barra) return;
+    barra.hidden = !plSel.ligado;
+    document.getElementById('aba-produtos')?.classList.toggle('pl-com-lote', plSel.ligado);
+    if (!plSel.ligado) return;
+    const n = plSel.ids.size;
+    barra.innerHTML = `<div class="pl-lote-topo"><b>${n === 0 ? 'Toque nos produtos para marcar' : n === 1 ? '1 marcado' : `${n} marcados`}</b>
+            <button type="button" class="pl-lote-sair" data-pl-sel="sair">Cancelar</button></div>
+        <div class="pl-lote-acoes">
+            <button type="button" class="bt bt-pri" data-pl-lote="chegou"${n ? '' : ' disabled'}>${ico('broto')} Chegou hoje</button>
+            <button type="button" class="bt bt-sec" data-pl-lote="loja"${n ? '' : ' disabled'}>Pôr na loja</button>
+            <button type="button" class="bt bt-sec" data-pl-lote="fora"${n ? '' : ' disabled'}>Tirar da loja</button>
+        </div>`;
+}
+async function aplicarLote(acao, bt) {
+    const escolhidos = produtosAtuais.filter((p) => plSel.ids.has(p.id));
+    const mud = mudancasEmLote(escolhidos, acao, hojeDaLoja());
+    if (!mud.length) { showToast(acao === 'fora' ? 'Os marcados já estão fora da loja.' : 'Os marcados já estão assim.'); return; }
+    if (acao === 'fora' && !(await customConfirm(`Tirar ${mud.length === 1 ? '1 produto' : `${mud.length} produtos`} da loja?`, 'Os clientes não vão ver até você pôr de volta.', { ok: 'Tirar da loja', nao: 'Voltar' }))) return;
+    bt.disabled = true;
+    try {
+        for (let i = 0; i < mud.length; i += 400) {            // o banco aceita até 500 por vez
+            const lote = writeBatch(db);
+            mud.slice(i, i + 400).forEach(({ id, dados }) => lote.set(tdoc('produtos', id), dados, { merge: true }));
+            await lote.commit();
+        }
+        const q = mud.length === 1 ? '1 produto' : `${mud.length} produtos`;
+        showToast(acao === 'chegou' ? `${q} na loja com "Chegou hoje" até o fim do dia.` : acao === 'loja' ? `${q} de volta na loja.` : `${q} fora da loja.`);
+        sairDaSelecao();
+    } catch (e) { console.error('[lote]', e); showToast('Não consegui salvar. Confira a internet e tente de novo.', true); bt.disabled = false; }
+}
+document.getElementById('aba-produtos')?.addEventListener('click', (e) => {
+    const m = e.target.closest('[data-pl-marcar]');
+    if (m) { const id = m.dataset.plMarcar; if (plSel.ids.has(id)) plSel.ids.delete(id); else plSel.ids.add(id); renderProdutos(); return; }
+    const s = e.target.closest('[data-pl-sel]');
+    if (s) {
+        const a = s.dataset.plSel;
+        if (a === 'ligar') { plSel.ligado = true; plSel.ids.clear(); renderProdutos(); }
+        else if (a === 'sair') sairDaSelecao();
+        else if (a === 'todos') {
+            const visiveis = [...document.querySelectorAll('#lista-produtos [data-pl-marcar]')].map((b) => b.dataset.plMarcar);
+            const todos = visiveis.every((id) => plSel.ids.has(id));
+            visiveis.forEach((id) => (todos ? plSel.ids.delete(id) : plSel.ids.add(id)));
+            renderProdutos();
+        }
+        return;
+    }
+    const l = e.target.closest('[data-pl-lote]'); if (l && !l.disabled) aplicarLote(l.dataset.plLote, l);
+});
 
 // Banco de fotos: escolhe uma foto já enviada, sem galeria nem link.
 document.getElementById('btn-banco-fotos')?.addEventListener('click', async () => {
