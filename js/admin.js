@@ -29,17 +29,17 @@ const TELAS = {
     aparencia: () => import('./admin-aparencia.js'), estoque: () => import('./admin-estoque.js'), fotos: () => import('./admin-fotos.js'),
     margens: () => import('./admin-margens.js'), compras: () => import('./admin-compras.js'), pdv: () => import('./admin-pdv.js'),
     crm: () => import('./admin-crm.js'), copiloto: () => import('./admin-copiloto.js'), calendario: () => import('./admin-calendario.js'),
-    equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'), avisos: () => import('./admin-avisos.js'),
+    equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'), impressora: () => import('./admin-impressora.js'), avisos: () => import('./admin-avisos.js'),
     impressaoAuto: () => import('./impressao-auto.js'),
     precosDia: () => import('./admin-precos-dia.js'), vitrine: () => import('./admin-vitrine.js'), rotulos: () => import('./admin-rotulos.js'),
 };
 const comImpressao = async (fn) => { try { await fn(await TELAS.impressao()); } catch (e) { console.error(e); showToast('Não consegui abrir a impressão. Confira a internet e toque de novo.', true); } };
-document.getElementById('btn-impressora')?.addEventListener('click', () => comImpressao((m) => m.abrirImpressora()));
+document.getElementById('btn-impressora')?.addEventListener('click', () => comImpressao((m) => m.abrirImpressora('whats')));
 document.getElementById('btn-avisos')?.addEventListener('click', async () => { try { (await TELAS.avisos()).abrirAvisos(); } catch (e) { console.error(e); showToast('Não consegui abrir os avisos. Confira a internet e toque de novo.', true); } });
 let condominiosAtuais = [];
 const ABRIR = {
     aparencia: (m) => { m.abrirAparencia(); TELAS.vitrine().then((v) => v.abrirVitrine(categoriasComProduto())).catch((e) => console.error(e)); }, estoque: (m) => m.abrirEstoque(produtosAtuais), compras: (m) => m.abrirCompras(produtosAtuais),
-    pdv: (m) => { m.definirCondominiosPdv(condominiosAtuais); m.abrirPdv(produtosAtuais); }, crm: (m) => m.abrirCrm(produtosAtuais), copiloto: (m) => m.abrirCopiloto(), calendario: (m) => m.abrirCalendario({ podeEditar: ehGestor(papelAtual) }), equipe: (m) => m.abrirEquipe(),
+    pdv: (m) => { m.definirCondominiosPdv(condominiosAtuais); m.abrirPdv(produtosAtuais); }, crm: (m) => m.abrirCrm(produtosAtuais), copiloto: (m) => m.abrirCopiloto(), calendario: (m) => m.abrirCalendario({ podeEditar: ehGestor(papelAtual) }), equipe: (m) => m.abrirEquipe(), impressora: (m) => m.abrirAbaImpressora(),
 };
 // categorias que têm produto à venda (para o botão "Ver Frutas" dos quadros da vitrine)
 const categoriasComProduto = () => [...new Set(produtosAtuais.filter((p) => p.ativo && !p.soInsumo && p.cat).map((p) => p.cat))]

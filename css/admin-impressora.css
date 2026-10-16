@@ -1,0 +1,130 @@
+/* =====================================================================
+   css/admin-impressora.css — tela "Impressora" do Menu (js/admin-impressora.js).
+   A peça que dá a cara da tela é a impressora ao lado: a boca escura e o papel
+   térmico saindo dela, com o corte serrilhado embaixo, mostrando como vai sair.
+   ===================================================================== */
+.ipr { --papel: #fffef8; --tinta: #1d1d1b; --boca: var(--forest); max-width: 1080px; }
+
+/* ---- faixa de cima: a impressora está pronta? ---- */
+.ipr-status { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin: 0 0 14px; padding: 14px 16px;
+    border-radius: 16px; background: var(--superficie, #fff); border: 1.5px solid var(--linha, #e4dfd3); }
+.ipr-led { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--disabled); box-shadow: 0 0 0 4px rgba(148, 163, 184, .18); }
+.ipr-status.ok .ipr-led { background: #2f9e5b; box-shadow: 0 0 0 4px rgba(47, 158, 91, .18), 0 0 12px rgba(47, 158, 91, .55); }
+.ipr-status.alerta .ipr-led { background: #d98a06; box-shadow: 0 0 0 4px rgba(217, 138, 6, .2); }
+.ipr-status.erro .ipr-led { background: #c8352b; box-shadow: 0 0 0 4px rgba(200, 53, 43, .18); }
+.ipr-status.espera .ipr-led { animation: ipr-pisca 1.2s ease-in-out infinite; }
+@keyframes ipr-pisca { 50% { opacity: .35; } }
+.ipr-status-txt { flex: 1 1 220px; min-width: 0; display: grid; gap: 2px; }
+.ipr-status-txt b { font: 700 1.08rem/1.25 var(--fonte-titulo); color: var(--forest); }
+.ipr-status-txt small { color: var(--text-mid); font-size: .88rem; line-height: 1.4; }
+.ipr-status.erro { border-color: #f0c2bd; background: #fffaf9; }
+.ipr-status.alerta { border-color: #f0d49a; background: #fffcf3; }
+.ipr-status .bt-sec { min-height: 44px; }
+
+/* ---- as três partes ---- */
+.ipr-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 0 0 18px; padding: 4px; border-radius: 14px; background: var(--parchment); }
+.ipr-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 6px 8px; border: 0; border-radius: 11px;
+    background: transparent; color: var(--text-mid); font: 700 .95rem/1.15 var(--fonte-texto); cursor: pointer; transition: background .15s, color .15s; }
+.ipr-seg button .ic { width: 1.3rem; height: 1.3rem; flex: none; }
+.ipr-seg button[aria-selected="true"] { background: #fff; color: var(--forest); box-shadow: 0 1px 2px rgba(26, 58, 42, .12), 0 2px 8px rgba(26, 58, 42, .06); }
+.ipr-seg button:focus-visible { outline: 3px solid var(--manga); outline-offset: 1px; }
+
+.ipr-palco { display: grid; gap: 20px; align-items: start; }
+.ipr-painel[hidden], .ipr-saida[hidden] { display: none; }
+.ipr-lead { margin: 0 0 14px; color: var(--text-mid); line-height: 1.5; max-width: 62ch; }
+
+/* ---- pedido do WhatsApp ---- */
+.ipr-rotulo { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.ipr-rotulo label { margin: 0; }
+.ipr-colar { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--sage);
+    background: var(--foam); color: var(--forest); font: 700 .88rem var(--fonte-texto); cursor: pointer; }
+.ipr-colar .ic { width: 1.05rem; height: 1.05rem; }
+.ipr-itens textarea { width: 100%; min-height: 168px; resize: vertical; font: 1rem/1.5 var(--fonte-texto); }
+.ipr-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.ipr-grade .ipr-largo { grid-column: 1 / -1; }
+.ipr-nota { margin: 4px 0 0; font-size: .86rem; color: var(--text-mid); line-height: 1.5; }
+.ipr-link { padding: 0; border: 0; background: none; color: var(--forest); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.ipr-limpar { display: inline-flex; align-items: center; min-height: 44px; margin-top: 6px; }
+.ipr-limpar[hidden] { display: none; }
+
+/* ---- foto ---- */
+.ipr-foto-escolher { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ipr-foto-escolher[hidden], .ipr-foto-ajustes[hidden] { display: none; }
+.ipr-alvo { position: relative; display: grid; justify-items: center; align-content: center; gap: 6px; min-height: 170px; padding: 18px 14px; text-align: center;
+    border: 2px dashed #cfc7b6; border-radius: 16px; background: #fffdf8; cursor: pointer; transition: border-color .15s, background .15s; }
+.ipr-alvo:hover, .ipr-alvo:focus-within { border-color: var(--leaf); background: var(--foam); }
+.ipr-alvo input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.ipr-alvo .ic { width: 2.2rem; height: 2.2rem; color: var(--forest); }
+.ipr-alvo b { font: 700 1.02rem var(--fonte-texto); color: var(--forest); }
+.ipr-alvo small { color: var(--text-mid); font-size: .84rem; line-height: 1.35; }
+.ipr-foto-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.ipr-foto-topo span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--text-mid); }
+.ipr-foto-topo .ipr-link { min-height: 44px; flex: none; }
+.ipr-jeito { border: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 14px; }
+.ipr-jeito legend { font-weight: 700; color: var(--forest); margin-bottom: 8px; }
+.ipr-jeito label { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1.5px solid #e0dcd4; border-radius: 12px; background: #fff; cursor: pointer; }
+.ipr-jeito label.sel { border-color: var(--forest); background: var(--warm-white); }
+.ipr-jeito input { width: 20px; height: 20px; margin-top: 2px; flex: none; accent-color: var(--forest); }
+.ipr-jeito small { display: block; margin-top: 2px; font-size: .82rem; color: var(--text-mid); line-height: 1.35; }
+.ipr-faixa { display: flex; align-items: center; gap: 10px; }
+.ipr-faixa span { flex: none; font-size: .8rem; color: var(--text-mid); }
+.ipr-faixa input { flex: 1; min-width: 0; height: 44px; accent-color: var(--forest); }
+#ipr-girar { margin-bottom: 10px; }
+
+/* ---- a impressora ao lado: boca + papel ---- */
+.ipr-saida { display: grid; justify-items: center; }
+.ipr-boca { position: relative; z-index: 1; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px 20px;
+    border-radius: 16px 16px 10px 10px; background: var(--boca); color: #e9f2ec; }
+.ipr-boca span { font: 600 .95rem var(--fonte-titulo); }
+.ipr-boca small { font-size: .78rem; opacity: .8; }
+/* a fenda por onde o papel sai */
+.ipr-boca::after { content: ""; position: absolute; left: 10%; right: 10%; bottom: 8px; height: 5px; border-radius: 3px; background: #0b1f15; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .6); }
+.ipr-papel { --col: 48; position: relative; width: min(100% - 28px, calc(var(--col) * 1ch + 3ch)); min-height: 220px; margin-top: -12px; padding: 22px 1.5ch 26px;
+    background: var(--papel); color: var(--tinta); font: 12px/1.38 ui-monospace, 'Cascadia Mono', 'Roboto Mono', Menlo, monospace;
+    box-shadow: 0 10px 24px rgba(26, 58, 42, .12);
+    /* corte serrilhado embaixo, como papel rasgado na serra da impressora */
+    -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 12px 100%;
+    mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 12px 100%; }
+/* sombra da fenda em cima do papel */
+.ipr-papel::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 16px; background: linear-gradient(rgba(0, 0, 0, .14), transparent); pointer-events: none; }
+.ipr-papel.com-foto { padding-left: 10px; padding-right: 10px; }
+.ipr-previa { white-space: pre; overflow: hidden; }
+.ipr-previa span { display: block; min-height: 1.38em; }
+.ipr-previa .b { font-weight: 800; }
+.ipr-previa .g { font-size: 2em; line-height: 1.12; }
+.ipr-canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.ipr-vazio { margin: 40px 6px; text-align: center; color: #9a948a; font: 500 .9rem/1.5 var(--fonte-texto); }
+.ipr-vazio[hidden], .ipr-previa[hidden], .ipr-canvas[hidden] { display: none; }
+
+.ipr-acao { width: 100%; display: flex; align-items: stretch; gap: 10px; margin-top: 16px; }
+.ipr-vias { flex: none; display: flex; align-items: center; border: 1.5px solid #d9d3c6; border-radius: 12px; background: #fff; }
+.ipr-vias button { width: 44px; min-height: 52px; border: 0; background: none; color: var(--forest); font: 700 1.3rem var(--fonte-texto); cursor: pointer; }
+.ipr-vias span { min-width: 3.6em; text-align: center; font-weight: 700; font-size: .9rem; color: var(--text-dark); }
+.ipr-imprimir.bt { flex: 1; min-height: 52px; font-size: 1.05rem; }
+.ipr-imprimir:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- computador: a impressora fica do lado, parada enquanto a página rola ---- */
+@media (min-width: 900px) {
+    .ipr-palco { grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); }
+    .ipr-painel { grid-column: 1; }
+    .ipr-saida { grid-column: 2; grid-row: 1 / span 3; position: sticky; top: 16px; }
+    .ipr[data-secao="ajustes"] .ipr-palco { grid-template-columns: minmax(0, 720px); }
+}
+
+/* ---- celular ---- */
+@media (max-width: 899px) {
+    .ipr-acao { position: sticky; bottom: calc(var(--barra-h, 0px) + 10px); z-index: 5; padding: 8px; margin-top: 14px; border-radius: 16px;
+        background: rgba(250, 247, 242, .94); box-shadow: 0 6px 20px rgba(26, 58, 42, .14); backdrop-filter: blur(6px); }
+}
+@media (max-width: 560px) {
+    .ipr-status { padding: 12px; }
+    .ipr-status .bt-sec { flex: 1 1 auto; }
+    .ipr-seg button { flex-direction: column; gap: 3px; min-height: 58px; font-size: .82rem; }
+    .ipr-grade, .ipr-jeito { grid-template-columns: minmax(0, 1fr); }
+    .ipr-foto-escolher { grid-template-columns: minmax(0, 1fr); }
+    .ipr-alvo { min-height: 120px; }
+    .ipr-papel { font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .ipr-status.espera .ipr-led { animation: none; } .ipr-seg button { transition: none; } }
+/* nesta tela a faixa de cima já diz como a impressora está: a faixa geral da impressão automática sai */
+#dashboard:has(#aba-impressora.active) #imp-auto { display: none; }

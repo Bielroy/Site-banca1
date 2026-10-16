@@ -105,6 +105,41 @@ export function etiquetaDeLote(r, { loja = '' } = {}) {
     return L;
 }
 
+// ---------------------------------------------------------------- pedido que chegou por mensagem (WhatsApp)
+// Emoji e figurinha não existem na térmica (sairiam como "?"): saem do texto antes de imprimir.
+const semEmoji = (s) => String(s == null ? '' : s).replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}\u{FE0E}\u{FE0F}\u{200D}\u{20E3}]/gu, '');
+/**
+ * Texto colado do WhatsApp → linhas limpas de itens.
+ * Tira o carimbo "[12:30, 16/10/2026] Maria: " que o WhatsApp põe ao copiar, os emojis,
+ * marcadores ("- ", "• ", "* ") e linhas vazias. No máximo 80 itens de 120 letras.
+ */
+export function linhasDoWhats(texto) {
+    return String(texto == null ? '' : texto).split(/\r?\n/)
+        .map((l) => semEmoji(l).replace(/^\s*\[[^\]]{3,40}\]\s*[^:]{1,40}:\s*/, '').replace(/^\s*(?:[-•*·–]|\d{1,2}[.)](?=\s))\s*/, ''))
+        .map((l) => limpo(l, 120)).filter(Boolean).slice(0, 80);
+}
+/**
+ * Papel de um pedido que chegou por mensagem e não está no sistema.
+ * d = { nome, telefone, endereco, itens (texto colado), obs, pagamento, entrega }. Sai com "Pedido do WhatsApp" e a hora.
+ */
+export function pedidoAvulso(d = {}, { loja = '', agora = Date.now() } = {}) {
+    const L = [], itens = linhasDoWhats(d.itens), c = (v, n) => limpo(semEmoji(v), n);
+    if (loja) L.push(txt(loja, { al: 'c', b: true, g: true }));
+    L.push(txt('Pedido do WhatsApp', { al: 'c' }), txt(dataHora(new Date(agora).toISOString()), { al: 'c' }), SEP);
+    if (c(d.nome, 80)) L.push(txt(c(d.nome, 80), { b: true, g: true }));
+    if (c(d.endereco, 160)) L.push(txt(c(d.endereco, 160), { b: true }));
+    if (c(d.telefone, 20)) L.push(txt(`Tel: ${c(d.telefone, 20)}`));
+    if (c(d.nome, 80) || c(d.endereco, 160) || c(d.telefone, 20)) L.push(SEP);
+    if (itens.length) { itens.forEach((i) => L.push(txt(i))); L.push(SEP, txt(`${itens.length} ${itens.length === 1 ? 'item' : 'itens'}`)); }
+    if (c(d.entrega, 60)) L.push(txt(`Entregar: ${c(d.entrega, 60)}`, { b: true }));
+    if (c(d.pagamento, 60)) L.push(txt(`Pagamento: ${c(d.pagamento, 60)}`, { b: true }));
+    if (c(d.obs, 300)) L.push(SEP, txt(`Obs: ${c(d.obs, 300)}`));
+    L.push(CORTE);
+    return L;
+}
+/** Tem alguma coisa para imprimir? (nome, endereço ou pelo menos um item) */
+export const avulsoTemConteudo = (d = {}) => !!(linhasDoWhats(d.itens).length || limpo(semEmoji(d.nome)) || limpo(semEmoji(d.endereco)));
+
 export function paginaDeTeste({ loja = '', largura = 58, modo = '' } = {}) {
     return [txt(loja || 'Teste de impressão', { al: 'c', b: true, g: true }), txt('Teste de impressão', { al: 'c' }), SEP,
         txt(`Papel de ${largura} mm - ${colunasDe(largura)} letras por linha`), txt(modo ? `Caminho: ${modo}` : ''), txt('Acentos: ação, pão, maçã, feijão, você'),

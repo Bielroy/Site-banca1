@@ -1,11 +1,12 @@
 // =====================================================================
-//  js/admin-impressao.js — botão "Impressora" do painel e os atalhos de imprimir.
+//  js/admin-impressao.js — os AJUSTES da impressora e os atalhos de imprimir.
+//  A tela "Impressora" do Menu (pedido do WhatsApp, foto, ajustes): js/admin-impressora.js.
 //  O QUE sai no papel: js/impressao-lib.js.   COMO sai: js/impressao.js.
 //  Celular da banca (app Ponte): js/impressao-ponte.js.
 // =====================================================================
 import { getDoc } from './firebase.js';
 import { fichaRef, ehLojaOriginal } from './tenant.js';
-import { escapeHTML, showToast, openModal, customConfirm } from './utils.js';
+import { escapeHTML, showToast, customConfirm } from './utils.js';
 import { CAMINHOS, suporte, lerConfig, salvarConfig, conectar, conectada, imprimir } from './impressao.js';
 import { cupomDoPedido, etiquetaDeEntrega, etiquetaDeLote, paginaDeTeste, paraTexto, colunasDe } from './impressao-lib.js';
 import { MODOS_AUTO, podeAutomatico } from './impressao-fila-lib.js';
@@ -24,7 +25,7 @@ export async function loja() {
     return nomeLoja;
 }
 
-async function mandar(folhas, opcoes, feito) {
+export async function mandar(folhas, opcoes, feito) {
     try {
         const r = await imprimir(folhas, opcoes);
         const m = lerConfig().modo;
@@ -37,7 +38,7 @@ async function mandar(folhas, opcoes, feito) {
         return true;
     } catch (e) {
         console.error('[impressao]', e);
-        showToast(e && e.amigavel ? e.message : 'Não consegui imprimir. Confira a impressora em "Impressora", no topo do painel.', true);
+        showToast(e && e.amigavel ? e.message : 'Não consegui imprimir. Confira a impressora em Menu → Impressora → Ajustes.', true);
         return false;
     }
 }
@@ -111,8 +112,9 @@ function pintarPonte() {
 // só o dono e o administrador ligam ou desligam celular (o servidor confere de novo)
 const podeLigar = () => ['proprietario', 'administrador', 'plataforma'].includes(papelAtual);
 
-// ---------------------------------------------------------------- tela "Impressora"
-function pintar() {
+// ---------------------------------------------------------------- ajustes (aba "Ajustes" da tela Impressora)
+export function pintar() {
+    if (!$('imp-corpo')) return;
     const c = lerConfig(), sup = suporte(), ponte = c.modo === 'ponte', termica = c.modo !== 'sistema', precisaConectar = c.modo === 'bluetooth' || c.modo === 'serial';
     const largura = !termica ? c.largura : (c.largura === 'a4' ? 80 : c.largura);
     const ponteCfg = ponte ? ((Ponte.estado().pontes || [])[0] || {}).cfg || {} : null;
@@ -153,9 +155,10 @@ function pintar() {
         <p class="config-sub">No papel, o nome da loja e o total saem em letra maior.</p>
         <p class="config-sub">${ponte ? 'O caminho vale só para este aparelho. Papel, vias e impressão automática são do celular da banca e valem para todos.' : 'Esta escolha vale só para este aparelho. Cada celular ou computador do painel guarda a sua.'}</p>`;
 }
-/** O estado do celular chegou: redesenha a tela, se estiver aberta (sem atrapalhar quem está escolhendo numa lista). */
+const ajustesNaTela = () => { const c = $('imp-corpo'); return !!(c && c.offsetParent); };
+/** O estado do celular chegou: redesenha os ajustes, se estiverem na tela (sem atrapalhar quem está escolhendo numa lista). */
 function repintarSeAberto() {
-    const m = $('modal-impressora'); if (!m || !m.classList.contains('aberto') || lerConfig().modo !== 'ponte') return;
+    if (!ajustesNaTela() || lerConfig().modo !== 'ponte') return;
     const foco = document.activeElement; if (foco && foco.tagName === 'SELECT' && $('imp-corpo').contains(foco)) return;
     pintar();
 }
@@ -180,7 +183,7 @@ async function acaoPonte(b) {
             const vigia = setInterval(async () => {
                 const antes = (Ponte.estado().pontes || []).length; await Ponte.atualizar();
                 if ((Ponte.estado().pontes || []).length > antes) { Ponte.estado().codigo = null; showToast('Celular da banca ligado!'); clearInterval(vigia); repintarSeAberto(); }
-                if (!Ponte.codigoValido() || !$('modal-impressora')?.classList.contains('aberto')) clearInterval(vigia);
+                if (!Ponte.codigoValido() || !$('imp-corpo')?.isConnected) clearInterval(vigia);
             }, 5000);
         } else if (a === 'fila') {
             await Ponte.salvar(id, null, true); showToast('Certo: os pedidos que estavam na fila vão sair no celular da banca.');
@@ -192,16 +195,12 @@ async function acaoPonte(b) {
     b.disabled = false; pintar();
 }
 
-function garantirModal() {
-    if ($('modal-impressora')) return;
-    document.body.insertAdjacentHTML('beforeend', `
-    <div class="modal-overlay" id="modal-impressora" role="dialog" aria-modal="true" aria-labelledby="imp-titulo">
-        <div class="modal"><header class="modal-head"><h2 id="imp-titulo">Impressora</h2><button class="btn-fechar" data-fechar="modal-impressora" aria-label="Fechar">&times;</button></header>
-        <div class="modal-body" id="imp-corpo"></div>
-        <footer class="modal-footer"><button class="btn-salvar-config" id="imp-teste">Imprimir teste</button></footer></div>
-    </div>`);
-    document.addEventListener('ponte:estado', repintarSeAberto);
-    $('imp-corpo').addEventListener('change', (e) => {
+/** Liga os ajustes no #imp-corpo (criado pela tela Impressora). Uma vez por elemento. */
+export function ligarAjustes() {
+    const corpo = $('imp-corpo'); if (!corpo || corpo.dataset.ligado) return;
+    corpo.dataset.ligado = '1';
+    if (!window.__ponteOuvida) { window.__ponteOuvida = true; document.addEventListener('ponte:estado', repintarSeAberto); }
+    corpo.addEventListener('change', (e) => {
         const t = e.target;
         if (t.dataset && t.dataset.ponte && t.dataset.campo) return salvarPonte(t);
         if (t.name === 'imp-modo') {
@@ -216,10 +215,11 @@ function garantirModal() {
         else if (t.id === 'imp-auto-etiqueta') salvarConfig({ autoEtiqueta: t.checked });
         else if (t.id === 'imp-auto-pesado') salvarConfig({ autoPesado: t.checked });
         else if (t.id === 'imp-auto-cancelado') salvarConfig({ autoCancelado: t.checked });
+        else return undefined;
         pintar(); avisarMudanca();
         return undefined;
     });
-    $('imp-corpo').addEventListener('click', async (e) => {
+    corpo.addEventListener('click', async (e) => {
         const p = e.target.closest('[data-ponte-acao]'); if (p) return acaoPonte(p);
         const b = e.target.closest('#imp-conectar'); if (!b) return undefined;
         b.disabled = true;
@@ -228,15 +228,19 @@ function garantirModal() {
         pintar(); avisarMudanca();
         return undefined;
     });
-    $('imp-teste').addEventListener('click', async () => {
-        const b = $('imp-teste'); b.disabled = true;
-        const c = lerConfig(), ponteCfg = ((Ponte.estado().pontes || [])[0] || {}).cfg || {};
-        const largura = c.modo === 'ponte' ? (ponteCfg.largura || 80) : (c.largura === 'a4' ? 80 : c.largura);
-        await mandar([paginaDeTeste({ loja: await loja(), largura, modo: CAMINHOS[c.modo][0] })], { copias: 1 }, 'Teste enviado para a impressora.');
-        b.disabled = false; pintar();
-    });
 }
-export async function abrirImpressora() {
-    garantirModal(); await loja(); pintar(); openModal('modal-impressora');
-    if (lerConfig().modo === 'ponte') Ponte.atualizar();
+/** Largura da bobina que vale agora: a do celular da banca, ou a deste aparelho. */
+export function larguraAtual() {
+    const c = lerConfig();
+    if (c.modo === 'ponte') return Number((((Ponte.estado().pontes || [])[0] || {}).cfg || {}).largura) === 58 ? 58 : 80;
+    return c.largura === 58 ? 58 : 80;
+}
+export async function imprimirTeste() {
+    const c = lerConfig();
+    return mandar([paginaDeTeste({ loja: await loja(), largura: larguraAtual(), modo: CAMINHOS[c.modo][0] })], { copias: 1 }, 'Teste enviado para a impressora.');
+}
+/** Abre a tela Impressora do Menu. secao: 'whats' | 'foto' | 'ajustes'. */
+export async function abrirImpressora(secao = 'ajustes') {
+    const m = await import('./admin-impressora.js');
+    return m.irParaImpressora(secao);
 }

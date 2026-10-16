@@ -2003,7 +2003,7 @@ teste('ícones: todo ícone pedido no painel existe, e nenhuma tela do painel vo
   });
   assert.ok(usados > 60, `ícones em uso: ${usados}`);
   const abas = [...fs.readFileSync(raiz('admin.html'), 'utf8').matchAll(/class="tab[^"]*" data-aba="([a-z]+)"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="([a-z]+)">/g)];
-  assert.strictEqual(abas.length, 17); abas.forEach((m) => assert.strictEqual(m[1] === 'relatorios' ? 'pedidos' : m[1], m[2], 'cada aba usa o ícone com o próprio nome (a de pedidos usa o de pedidos)'));
+  assert.strictEqual(abas.length, 18); abas.forEach((m) => assert.strictEqual(m[1] === 'relatorios' ? 'pedidos' : m[1], m[2], 'cada aba usa o ícone com o próprio nome (a de pedidos usa o de pedidos)'));
   for (const [nome, d] of Object.entries(I.ICONES)) { assert.ok(!/<script|on\w+=|href/i.test(d), nome); assert.ok((d.match(/class="s"/g) || []).length <= 3, `${nome}: semente demais`); }
 });
 
@@ -3202,6 +3202,54 @@ teste('ponte (cofre): o que o painel manda imprimir fica cifrado no banco e o cu
     const papel = r.corpo.trabalhos.map((t) => Buffer.from(t.bytes, 'base64').toString('latin1')).join('|');
     assert.ok(/Dona Rosa/.test(papel) && /Cliente Secreto/.test(papel), 'no papel, aberto');
   } finally { delete process.env.DADOS_CHAVE; }
+});
+
+teste('impressora: pedido do WhatsApp sai limpo (sem carimbo, sem emoji), cabe no papel e não vira comando', async () => {
+  const I = await import(raiz('js/impressao-lib.js'));
+  const colado = '[09:12, 16/10/2026] Dona Rosa: 2 kg de tomate 🍅\n- 1 alface crespa\n\n• 6 ovos caipira 🥚\n3) pão de queijo\n[09:13, 16/10/2026] Dona Rosa: 👍';
+  assert.deepStrictEqual(I.linhasDoWhats(colado), ['2 kg de tomate', '1 alface crespa', '6 ovos caipira', 'pão de queijo']);
+  assert.deepStrictEqual(I.linhasDoWhats('10 laranjas\n1.5 kg uva'), ['10 laranjas', '1.5 kg uva'], 'número no começo do item fica');
+  const d = { nome: 'Dona Rosa 🌹', endereco: 'Jardins Munique, Qd 3 Lt 12', telefone: '61 99999-0000', itens: colado, pagamento: 'PIX', entrega: 'Hoje até 11h', obs: 'Tomate bem maduro' };
+  const L = I.pedidoAvulso(d, { loja: 'Banca Adair e Pedrina', agora: Date.parse('2026-10-16T12:30:00Z') });
+  const t = I.paraTexto(L, 48);
+  for (const pedaco of ['Pedido do WhatsApp', '16/10/2026 09:30', 'Dona Rosa', 'Qd 3 Lt 12', 'Tel: 61 99999-0000', '2 kg de tomate', '4 itens', 'Entregar: Hoje até 11h', 'Pagamento: PIX', 'Obs: Tomate bem maduro']) assert.ok(t.includes(pedaco), `falta "${pedaco}" em:\n${t}`);
+  assert.ok(!/09:12|🍅|🌹|👍/.test(t), t);
+  for (const largura of [58, 80]) { const n = I.colunasDe(largura); I.compor(L, n).forEach((l) => { if (!l.corte) assert.ok(l.s.length <= (l.g ? Math.floor(n / 2) : n), `${largura} mm: "${l.s}"`); }); }
+  const sujo = I.paraEscPos(I.pedidoAvulso({ itens: 'A\u001b@\u001dV\u0000B' }), {});
+  assert.strictEqual([...sujo].filter((x, i) => x === 0x1b && sujo[i + 1] === 0x40).length, 1, 'só o ESC @ do começo');
+  assert.strictEqual(I.avulsoTemConteudo({ itens: '  \n 👍 ' }), false, 'só emoji não é pedido');
+  assert.strictEqual(I.avulsoTemConteudo({ nome: 'Rosa' }), true);
+  assert.strictEqual(I.linhasDoWhats(Array.from({ length: 200 }, (_, i) => `item ${i}`).join('\n')).length, 80, 'no máximo 80 itens');
+});
+teste('impressora: foto vira preto e branco na largura da bobina, sem a sombra do papel, e o comando de imagem cabe na fila', async () => {
+  const F = await import(raiz('js/foto-termica-lib.js')), R = await import(raiz('js/rotulo-lib.js'));
+  assert.deepStrictEqual(F.tamanhoNoPapel(1200, 1600, 80), { w: 576, h: 768 });
+  assert.deepStrictEqual(F.tamanhoNoPapel(1200, 1600, 58), { w: 384, h: 512 });
+  const longa = F.tamanhoNoPapel(500, 10000, 80); assert.strictEqual(longa.h, F.ALTURA_MAX); assert.ok(longa.w < 576);
+  // papel com sombra (fundo vai de 230 a 120 da esquerda para a direita) e uma linha de tinta no meio
+  const w = 120, h = 60, cinza = new Uint8ClampedArray(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const fundo = 230 - x * (110 / w); cinza[y * w + x] = y >= 28 && y < 32 && x > 10 && x < 110 ? fundo * 0.45 : fundo; }
+  const pts = F.prepararFoto(cinza, w, h, { modo: 'texto', clareza: 50 });
+  let tintaNaLinha = 0, tintaFora = 0;
+  for (let y = 0; y < h; y++) for (let x = 12; x < 108; x++) { if (y >= 28 && y < 32) tintaNaLinha += pts[y * w + x]; else tintaFora += pts[y * w + x]; }
+  assert.ok(tintaNaLinha > 0.9 * 4 * 96, `a escrita sai preta (${tintaNaLinha})`);
+  assert.strictEqual(tintaFora, 0, 'a sombra do papel não vira mancha');
+  assert.ok(F.tintaUsada(F.prepararFoto(cinza, w, h, { clareza: 0 })) >= F.tintaUsada(F.prepararFoto(cinza, w, h, { clareza: 100 })), 'clareza clareia');
+  const foto = F.prepararFoto(cinza, w, h, { modo: 'foto' }); assert.strictEqual(foto.length, w * h);
+  assert.ok(F.tintaUsada(foto) > 0.05 && F.tintaUsada(foto) < 0.95, 'foto com tons vira pontilhado');
+  assert.strictEqual(F.prepararFoto(null, 0, 0).length, 0);
+  // a maior foto possível, 3 vias, ainda cabe no limite de bytes da fila do celular (lib/ponte.js)
+  const maxPts = new Uint8Array(576 * F.ALTURA_MAX), bytes = R.rasterEscPos(maxPts, 576, F.ALTURA_MAX, { copias: 3 });
+  const Ponte = require(raiz('lib/ponte.js'));
+  assert.ok(Ponte.limparBytes(Buffer.from(bytes).toString('base64')), `${bytes.length} bytes passam no servidor`);
+});
+teste('impressora: aba própria no Menu, liberada para a equipe que imprime', async () => {
+  const fs = require('fs'), html = fs.readFileSync(raiz('admin.html'), 'utf8'), P = await import(raiz('js/papeis-lib.js'));
+  assert.ok(html.includes('data-aba="impressora"') && html.includes('id="aba-impressora"') && html.includes('css/admin-impressora.css'));
+  const todas = [...html.matchAll(/class="tab[^"]*" data-aba="([a-z]+)"/g)].map((m) => m[1]);
+  for (const papel of ['proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque']) assert.ok(P.podeAbrir(papel, 'impressora', todas), papel);
+  const admin = fs.readFileSync(raiz('js/admin.js'), 'utf8');
+  assert.ok(/impressora: \(\) => import\('\.\/admin-impressora\.js'\)/.test(admin) && /impressora: \(m\) => m\.abrirAbaImpressora\(\)/.test(admin));
 });
 
 teste('ponte: o Dockerfile leva as duas bibliotecas do painel que o servidor usa para montar o cupom', () => {

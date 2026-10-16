@@ -628,6 +628,9 @@ teste('celular da banca (app Ponte): este painel não imprime sozinho, mostra o 
   assert.ok(!servidor.chamadas.slice(antes).some((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'impressao'), 'nem reserva na fila');
   // a tela "Impressora" mostra o celular
   await p.click('#btn-mais'); await p.click('#btn-impressora');
+  await p.locator('#ipr-status.ok').waitFor({ timeout: 4000 });
+  assert.ok(/Moto G/.test(await p.locator('#ipr-status').innerText()), 'a faixa mostra o celular da banca');
+  await p.click('#ipr-tab-ajustes');
   await p.locator('.imp-ponte-card').waitFor({ timeout: 4000 });
   const tela = await p.locator('#imp-corpo').innerText();
   assert.ok(/Moto G/.test(tela) && /Conectado/.test(tela) && /Impressora funcionando/.test(tela), tela);
@@ -635,7 +638,29 @@ teste('celular da banca (app Ponte): este painel não imprime sozinho, mostra o 
   await p.waitForTimeout(500);
   const cfg = servidor.chamadas.slice(antes).filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ponte' && c.corpo.op === 'config').pop();
   assert.ok(cfg && cfg.corpo.ponteId === 'pt0123456789abcdef' && cfg.corpo.cfg.copias === 2, 'vias do celular salvas no servidor');
-  await p.click('[data-fechar="modal-impressora"]');
+  // pedido que chegou pelo WhatsApp: colado, sai no celular da banca sem o carimbo do WhatsApp nem emoji
+  await p.click('#ipr-tab-whats');
+  await p.fill('#ipr-itens', '[09:12, 16/10/2026] Dona Rosa: 2 kg de tomate 🍅\n- 1 alface crespa');
+  await p.fill('#ipr-nome', 'Dona Rosa');
+  assert.ok(/Dona Rosa/.test(await p.locator('#ipr-previa').innerText()) && /1 alface crespa/.test(await p.locator('#ipr-previa').innerText()), 'o papel ao lado mostra o pedido');
+  await p.click('[data-vias="1"]');
+  await p.click('#ipr-imprimir');
+  await p.waitForTimeout(500);
+  const avulso = servidor.chamadas.slice(antes).filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ponte' && c.corpo.op === 'imprimir').pop();
+  assert.ok(avulso, 'pedido do WhatsApp foi para o celular da banca');
+  const papelAvulso = JSON.stringify(avulso.corpo.folhas);
+  assert.ok(/Pedido do WhatsApp/.test(papelAvulso) && /2 kg de tomate/.test(papelAvulso) && !/09:12/.test(papelAvulso) && !/🍅/.test(papelAvulso), papelAvulso);
+  assert.strictEqual(avulso.corpo.copias, 2, 'duas vias');
+  assert.ok(!avulso.corpo.pedidoId, 'não conta como pedido do sistema');
+  // foto: vira imagem em preto e branco e vai como bytes para o celular
+  await p.click('#ipr-tab-foto');
+  await p.setInputFiles('#ipr-galeria', { name: 'lista.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAAAAAB7tgMBAAAAIUlEQVR4nGN4TSRgGFVIRYVy+AEtFVLfM8NK4WjMDGGFAEcNuMzg6iY5AAAAAElFTkSuQmCC', 'base64') });
+  await p.locator('#ipr-canvas:not([hidden])').waitFor({ timeout: 4000 });
+  await p.click('#ipr-imprimir');
+  await p.waitForTimeout(500);
+  const foto = servidor.chamadas.slice(antes).filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ponte' && c.corpo.op === 'imprimir').pop();
+  assert.ok(foto && typeof foto.corpo.bytes === 'string' && foto.corpo.bytes.length > 100 && !foto.corpo.folhas, 'foto foi como imagem');
+  assert.ok(Buffer.from(foto.corpo.bytes, 'base64').includes(Buffer.from([0x1d, 0x76, 0x30, 0x00])), 'comando de imagem da térmica');
   await p.locator('.tab[data-aba="relatorios"]').click();
   await p.locator('.card-pedido').first().waitFor({ timeout: 8000 });
   // "Cupom" num pedido: vai para o servidor (fila do celular), com o pedido e o nome do cliente
