@@ -77,16 +77,26 @@ jobs:
         working-directory: android
         env:
           VERSAO_NUMERO: ${{ github.run_number }}
-        run: gradle --no-daemon --stacktrace assembleRelease
+        run: |
+          set -o pipefail
+          if ! gradle --no-daemon assembleRelease 2>&1 | tee "$RUNNER_TEMP/gradle.log"; then
+            # os erros viram avisos na página do GitHub (dá para ler sem abrir o registro inteiro)
+            grep -E "^e: |error:|What went wrong|Could not|> " "$RUNNER_TEMP/gradle.log" | head -40 | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error::$l"; done
+            exit 1
+          fi
       - name: Conferir o APK
         run: |
-          APK=android/app/build/outputs/apk/release/app-release.apk
-          test -s "$APK"
-          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          "$BT/apksigner" verify --print-certs "$APK" | grep -E "Signer #1 certificate (DN|SHA-256)"
-          "$BT/aapt2" dump badging "$APK" | grep -E "^package:|^uses-permission:|sdkVersion|targetSdkVersion"
+          APK=$(ls android/app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
+          [ -n "$APK" ] && [ -s "$APK" ] || { echo "::error::Não achei o APK: $(find android/app/build/outputs -name '*.apk' | tr '\n' ' ')"; exit 1; }
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          BT=$(ls -d "$SDK"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify "$APK" || { echo "::error::O APK não tem assinatura válida."; exit 1; }
+          CERT=$("$BT/apksigner" verify --print-certs "$APK" 2>&1 | grep -m1 "SHA-256" || true)
+          PKG=$("$BT/aapt2" dump badging "$APK" 2>&1 | grep -E "^package:|^targetSdkVersion|^sdkVersion" | tr '\n' ' ' || true)
+          PERM=$("$BT/aapt2" dump permissions "$APK" 2>&1 | grep -o "name='[^']*'" | sed "s/name='android.permission.//;s/'//" | tr '\n' ' ' || true)
+          echo "::notice::APK $(stat -c%s "$APK") bytes | $PKG | $CERT"
+          echo "::notice::Permissões: $PERM"
           cp "$APK" banca-ponte.apk
-          ls -l banca-ponte.apk
       - uses: actions/upload-artifact@v4
         with:
           name: banca-ponte-${{ github.run_number }}
