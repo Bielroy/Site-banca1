@@ -21,7 +21,11 @@ Regra de sempre: nada vai para a `main` (reserva da Vercel); só a `rota-cloudfl
 
 ## Funcionalidades
 
-- Impressão automática (Golden Sky GS-FJ80M-UB, Bluetooth direto): testar no celular da banca — ao chegar, ao aceitar, depois de fechar e abrir o painel, e com a impressora desligada. Etapa 2 (se precisar imprimir com o celular bloqueado): app Android próprio.
+- Impressão automática (Golden Sky GS-FJ80M-UB, Bluetooth direto): testar no celular da banca — ao chegar, ao aceitar, depois de fechar e abrir o painel, e com a impressora desligada.
+- **App Ponte da Banca (etapa 2, imprime com a tela bloqueada)** — ramo `app-impressora`, ainda NÃO juntado ao `rota-cloudflare`.
+  1. Criar o segredo `PONTE_SENHA` no GitHub (Settings → Secrets and variables → Actions → New repository secret; valor: uma frase longa qualquer). Sem ele o APK sai com chave de TESTE e o definitivo pede desinstalar o de teste.
+  2. Testar o APK no celular da banca: escolher a impressora, imprimir teste, ligar à loja com o código do painel, pedido de teste com a tela bloqueada, impressora desligada e ligada de novo, celular reiniciado.
+  3. Depois do teste: juntar `app-impressora` ao `rota-cloudflare` (só com ok) e atualizar o servidor (`bash ~/loja/scripts/atualizar-servidor.sh`): a rota `/api/ponte` mora lá.
 
 - Kit/cesta como pacote: decisão pendente (minha recomendação: não fazer).
 - Promoção "4 por R$ 10" no balcão (`api/pdv.js`) ainda não considera a mistura de pacotes.

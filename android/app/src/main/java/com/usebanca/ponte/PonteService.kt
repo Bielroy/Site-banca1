@@ -134,7 +134,9 @@ class PonteService : Service() {
     }
 
     private fun entrarEmPrimeiroPlano(): Boolean = try {
-        val n = aviso("Ligando…")
+        val texto = if (rodando && textoAviso.isNotEmpty()) textoAviso else "Ligando…"
+        textoAviso = texto
+        val n = aviso(texto)
         if (Build.VERSION.SDK_INT >= 29) startForeground(ID_STATUS, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         else startForeground(ID_STATUS, n)
         true
