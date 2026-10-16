@@ -120,7 +120,7 @@ function render() {
                 <span class="es-sit">${CHIP[sit][0]}</span>
             </div>
             ${sit === 'sem-controle'
-                ? `<p class="es-nota">Este produto não tem estoque controlado. Faça uma contagem para começar.</p>`
+                ? `<p class="es-nota">Ainda sem contagem. Toque em <b>Contar</b> para começar.</p>`
                 : `<p class="es-qtd">${fmtQtd(p.estoqueFisico, p.unidade)}</p>
                    <p class="es-nota">${[temControle(p.estoqueMin) && `mínimo ${fmtQtd(p.estoqueMin, p.unidade)}`, temControle(p.estoqueIdeal) && `ideal ${fmtQtd(p.estoqueIdeal, p.unidade)}`, pv && `previsão de 7 dias: ${fmtQtd(pv.vende, p.unidade)}`].filter(Boolean).join(' · ') || 'Sem mínimo e ideal definidos'}</p>`}
             ${perda ? `<p class="es-nota es-perda">${perda.taxa !== null ? `Perde ${pctBonito(perda.taxa)} do que entra` : `Perdeu ${fmtQtd(perda.perdeu, p.unidade)}`}${perda.valor ? ` (${fmt(perda.valor)} nos últimos 2 meses)` : ''}</p>` : ''}
@@ -128,7 +128,7 @@ function render() {
             ${sug.comprar > 0 ? `<p class="es-comprar">${p.ficha ? 'Produzir' : 'Comprar'} ${fmtQtd(sug.comprar, p.unidade)} <small>${sug.motivo}</small></p>` : ''}
             <div class="es-acoes">
                 ${sit === 'sem-controle' ? '' : `<button data-es-acao="compra" data-id="${escapeHTML(p.id)}">Entrada</button><button data-es-acao="perda" data-id="${escapeHTML(p.id)}">Perda</button>`}
-                <button data-es-acao="ajuste" data-id="${escapeHTML(p.id)}">Contar</button>
+                <button${sit === 'sem-controle' ? ' class="es-forte"' : ''} data-es-acao="ajuste" data-id="${escapeHTML(p.id)}">Contar</button>
                 <button data-es-acao="limites" data-id="${escapeHTML(p.id)}">Limites</button>
                 <button data-es-acao="ficha" data-id="${escapeHTML(p.id)}">Ficha</button>
                 ${ficha && ficha.valida ? `<button class="es-forte" data-es-acao="produzir" data-id="${escapeHTML(p.id)}">Produzir</button>` : ''}

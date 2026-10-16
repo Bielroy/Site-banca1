@@ -285,3 +285,6 @@ body.so-equipe #ped-mais { display: none; }
 .eq-assin b { font-size: 1.15rem; color: var(--forest); }
 .eq-assin small { color: var(--text-mid); }
 .pd-campo input.invalido { border-color: #c0392b; background: #fdecea; }
+
+/* o topo já mostra o nome da tela: o mesmo título dentro dela sai (js/admin.js, marcarTituloRepetido) */
+#dashboard .titulo-repete { display: none; }

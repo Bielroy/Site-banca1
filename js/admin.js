@@ -215,6 +215,16 @@ const mostrarAbaAtual = (tab) => {
     document.querySelectorAll('#barra [data-ir-aba]').forEach((b) => { const on = b.dataset.irAba === tab.dataset.aba; b.classList.toggle('on', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     const bm = document.getElementById('barra-menu'); if (bm) bm.classList.toggle('on', !document.querySelector(`#barra [data-ir-aba="${tab.dataset.aba}"]`));   // tela que só existe no Menu
 };
+// O topo já diz em que tela a pessoa está: o título igual logo no começo da tela sai, fica só a explicação.
+// ("Fechamento da Feira" na tela Fechamento sai; "Comprar hoje" na tela Compras fica, porque diz mais.)
+let quadroTitulo = 0;
+const marcarTituloRepetido = () => {
+    const sec = document.querySelector('.aba-content.active'), nome = normalizar(document.getElementById('topo-secao')?.textContent || '');
+    if (!sec || !nome) return;
+    const h = sec.querySelector('h2, h3');
+    if (h && !h.classList.contains('titulo-repete') && !h.closest('.modal, dialog, details') && normalizar(h.textContent).startsWith(nome)) h.classList.add('titulo-repete');
+};
+if (document.getElementById('dashboard')) new MutationObserver(() => { cancelAnimationFrame(quadroTitulo); quadroTitulo = requestAnimationFrame(marcarTituloRepetido); }).observe(document.getElementById('dashboard'), { childList: true, subtree: true });
 const recolherMenu = (sim) => {
     document.querySelector('.tabs').classList.toggle('recolhido', sim);
     document.getElementById('tabs-atual').setAttribute('aria-expanded', String(!sim));
@@ -2291,10 +2301,13 @@ const renderComunicados = () => {
 
     const blocosDias = DIAS_NOMES.map((nome, i) => {
         const d = comunicadosAtuais.dias?.[i] || { ativo: false, texto: '' };
+        // dia sem aviso fica numa linha só; "Escrever" abre a caixa (menos rolagem nos 7 dias)
+        const vazio = !d.ativo && !String(d.texto || '').trim();
         return `
-        <div class="com-dia">
+        <div class="com-dia${vazio ? ' fechado' : ''}">
             <div class="com-dia-topo">
-                <span class="com-dia-nome">${nome} ${i === hoje ? '<span class="com-hoje-tag">HOJE</span>' : ''} ${jaVenceu(d) ? SELO_VENCIDO : ''}</span>
+                <span class="com-dia-nome">${nome} ${i === hoje ? '<span class="com-hoje-tag">HOJE</span>' : ''} ${jaVenceu(d) ? SELO_VENCIDO : ''}${vazio ? '<small class="com-sem">sem aviso</small>' : ''}</span>
+                ${vazio ? '<button type="button" class="com-escrever" data-com-abrir>Escrever</button>' : ''}
                 <label class="com-switch">
                     <input type="checkbox" class="com-dia-ativo" data-dia="${i}" ${d.ativo ? 'checked' : ''}> mostrar
                 </label>
@@ -2309,6 +2322,12 @@ const renderComunicados = () => {
 
     cont.innerHTML = blocoFixo + blocosDias;
 };
+{
+    const abrirDia = (dia, focar) => { if (!dia || !dia.classList.contains('fechado')) return; dia.classList.remove('fechado'); dia.querySelector('.com-escrever')?.remove(); dia.querySelector('.com-sem')?.remove(); if (focar) dia.querySelector('textarea')?.focus(); };
+    const cont = document.getElementById('lista-comunicados');
+    cont?.addEventListener('click', (e) => { const b = e.target.closest('[data-com-abrir]'); if (b) abrirDia(b.closest('.com-dia'), true); });
+    cont?.addEventListener('change', (e) => { if (e.target.classList.contains('com-dia-ativo') && e.target.checked) abrirDia(e.target.closest('.com-dia'), true); });
+}
 
 document.getElementById('btn-salvar-cupom')?.addEventListener('click', salvarCupom);
 

@@ -207,9 +207,9 @@ const linhaCategoria = (c, i, total, qtd) => `
             <label class="cg-chave"><input type="checkbox" data-cg="visivel" ${c.visivel === false ? '' : 'checked'}> <span>${c.visivel === false ? 'Oculta na loja' : 'Visível na loja'}</span></label>
             <span class="cg-qtd">${qtd} produto${qtd === 1 ? '' : 's'}</span>
         </div>
-        <label class="cg-wpp"><i class="ic" data-i="enviar"></i> Pedidos desta categoria vão para
+        ${S.numeros.length ? `<label class="cg-wpp"><i class="ic" data-i="enviar"></i> Pedidos desta categoria vão para
             <select data-cg="wpp">${opcoesNumero(c.wppId)}</select>
-        </label>
+        </label>` : ''}
     </article>`;
 
 function render(forcar = false) {

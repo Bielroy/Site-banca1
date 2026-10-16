@@ -12,8 +12,13 @@ import { criarCamposEndereco } from './endereco.js';
 import { precoDoDia } from './oferta-lib.js';
 import { lerPainel } from './painel-cache.js';
 import { sugestoesJuntos } from './alertas-lib.js';
+import { miniatura } from './foto-lib.js';
+import { iconeDaCategoria } from './vitrine-lib.js';
+import { ARTE_CATEGORIA } from './vitrine-arte.js';
+import { TODAS, categoriasDaLista, passaNaCategoria } from './produtos-lista-lib.js';
+import { nomeDaCategoria, ordemDasCategorias } from './admin-categorias.js';
 
-const S = { produtos: [], itens: new Map(), busca: '', pag: 'PIX', condominios: [], ligado: false, enviando: false, chave: null, ultima: null, endereco: null, juntos: null };
+const S = { produtos: [], itens: new Map(), busca: '', cat: TODAS, pag: 'PIX', condominios: [], ligado: false, enviando: false, chave: null, ultima: null, endereco: null, juntos: null };
 const el = () => document.getElementById('pdv-conteudo');
 const $ = (id) => document.getElementById(id);
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -28,7 +33,9 @@ const totalC = () => [...S.itens].reduce((s, [id, q]) => { const p = S.produtos.
 
 function linhaHtml(p) {
     const q = S.itens.get(p.id) || 0, peso = ehPeso(p.unidade);
+    const foto = String(p.fotoMini || p.foto || '');
     return `<div class="pv2-linha${q ? ' on' : ''}" data-id="${escapeHTML(p.id)}">
+        <span class="pv2-foto" aria-hidden="true">${/^https:\/\//i.test(foto) ? `<img src="${escapeHTML(miniatura(foto, 96))}" loading="lazy" decoding="async" alt="">` : ''}</span>
         <div class="pv2-info"><strong>${escapeHTML(p.nome)}</strong><small>${fmt(p.preco)} / ${escapeHTML(p.unidade || 'un')}${p.estoqueFisico != null && p.estoqueFisico !== '' ? ` · tem ${txtQtd(Number(p.estoqueFisico))}` : ''}</small></div>
         <div class="pv2-qtd">
             <button type="button" data-pv2="menos" aria-label="Tirar ${escapeHTML(p.nome)}"${q ? '' : ' disabled'}>−</button>
@@ -38,11 +45,24 @@ function linhaHtml(p) {
     </div>`;
 }
 
+// botões de categoria (Temperos, Verduras...), iguais aos da aba Produtos: menos rolagem para achar o produto
+function pintarCategorias(daBusca) {
+    const caixa = $('pv2-cats'); if (!caixa) return;
+    const cats = categoriasDaLista(daBusca, ordemDasCategorias(), nomeDaCategoria);
+    if (S.cat !== TODAS && !cats.some((c) => c.chave === S.cat)) S.cat = TODAS;
+    caixa.hidden = cats.length < 2;
+    caixa.innerHTML = [{ chave: TODAS, nome: 'Todas', n: daBusca.length }, ...cats].map((c) => `
+        <button type="button" class="pl-cat${S.cat === c.chave ? ' on' : ''}" data-pv2-cat="${escapeHTML(c.chave)}" aria-pressed="${S.cat === c.chave}">
+            <span class="pl-cat-ico">${c.chave === TODAS ? ARTE_CATEGORIA.todas : ARTE_CATEGORIA[iconeDaCategoria(c.nome)] || ARTE_CATEGORIA.cesta}</span><span class="pl-cat-nome">${escapeHTML(c.nome)}</span><i>${c.n}</i>
+        </button>`).join('');
+}
 function pintarLista() {
-    const termo = norm(S.busca), lista = vendaveis().filter((p) => !termo || norm(p.nome).includes(termo));
+    const termo = norm(S.busca), daBusca = vendaveis().filter((p) => !termo || norm(p.nome).includes(termo));
+    pintarCategorias(daBusca);
+    const lista = daBusca.filter((p) => passaNaCategoria(p, S.cat) || S.itens.has(p.id));
     // o que já está na venda vem primeiro
     lista.sort((a, b) => (S.itens.has(b.id) ? 1 : 0) - (S.itens.has(a.id) ? 1 : 0));
-    $('pv2-lista').innerHTML = lista.length ? lista.map(linhaHtml).join('') : '<p class="config-sub">Nenhum produto com esse nome.</p>';
+    $('pv2-lista').innerHTML = lista.length ? lista.map(linhaHtml).join('') : '<p class="config-sub">Nenhum produto aqui. Toque em "Todas" ou mude a busca.</p>';
 }
 function pintarRodape() {
     const t = totalC() / 100, n = S.itens.size, rec = Number(String($('pv2-recebido')?.value || '').replace(',', '.'));
@@ -73,6 +93,7 @@ function montar() {
     <div class="es-topo"><div><h3>Balcão</h3><p class="config-sub">Venda presencial. Entra no estoque, no faturamento e na previsão.</p></div></div>
     <div id="pv2-ultima" class="pv2-ultima" hidden aria-live="polite"></div>
     <input type="search" id="pv2-busca" class="es-busca" placeholder="Buscar produto..." aria-label="Buscar produto">
+    <div id="pv2-cats" class="pl-cats" role="group" aria-label="Categoria" hidden></div>
     <div id="pv2-juntos" class="pv2-juntos" hidden aria-live="polite"></div>
     <div id="pv2-lista" class="pv2-lista"></div>
     <div class="pv2-barra">
@@ -169,6 +190,7 @@ function ligar() {
         }
         const jt = e.target.closest('[data-pv2-junto]');
         if (jt) { const p = S.produtos.find((x) => x.id === jt.dataset.pv2Junto); if (p) { definir(p.id, (S.itens.get(p.id) || 0) + (ehPeso(p.unidade) ? 0.1 : 1)); pintarLista(); pintarRodape(); } return; }
+        const ct = e.target.closest('[data-pv2-cat]'); if (ct) { S.cat = ct.dataset.pv2Cat; pintarLista(); ct.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); return; }
         const pg = e.target.closest('[data-pv2-pag]'); if (pg) { S.pag = pg.dataset.pv2Pag; pintarRodape(); if (S.pag === 'Dinheiro') $('pv2-recebido').focus(); return; }
         if (e.target.closest('#pv2-cobrar')) { pintarRodape(); return openModal('modal-pdv'); }
         if (e.target.closest('#pv2-registrar')) return registrar();

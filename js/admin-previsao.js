@@ -210,7 +210,7 @@ const render = () => {
     const rs = (x) => (x ? `${fmt(x.faturamentoPrevisto)}` : '–');
     alvo.innerHTML = `
     <div class="pv-head">
-        <div><h3><i class="ic" data-i="previsao"></i> Quanto deve vender</h3><small>Atualizado ${quando(m.geradoEm)} · ${m.diasHistorico} dia(s) de histórico · ${m.nPedidos} pedido(s) · ${m.nClientes} cliente(s)</small></div>
+        <div><h3><i class="ic" data-i="previsao"></i> Quanto deve vender</h3><small>${[m.geradoEm ? `Atualizado ${quando(m.geradoEm)}` : 'Ainda não calculado', Number.isFinite(m.diasHistorico) && `${m.diasHistorico} dia(s) de histórico`, Number.isFinite(m.nPedidos) && `${m.nPedidos} pedido(s)`, Number.isFinite(m.nClientes) && `${m.nClientes} cliente(s)`].filter(Boolean).join(' · ')}</small></div>
         <button class="bt bt-sec" id="pv-recalc"><i class="ic" data-i="repetir"></i> Recalcular</button>
     </div>
     ${avisos}
