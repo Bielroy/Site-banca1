@@ -20,6 +20,9 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 /**
  * O coração do app: um serviço com aviso fixo na barra (o Android não desliga serviço assim
@@ -41,6 +44,7 @@ class PonteService : Service() {
         private const val ID_STATUS = 1
         private const val ID_ALERTA = 2
         private const val ESPERA_S = 45
+        private const val SOLTAR_MS = 5_000L
         private const val ALERTAR_DEPOIS_MS = 3L * 60 * 1000
 
         @Volatile var instancia: PonteService? = null
@@ -125,6 +129,7 @@ class PonteService : Service() {
         servidor.cancelar()
         fio?.interrupt()
         pararDeOuvirRede()
+        try { soltador.shutdownNow() } catch (_: Exception) { }
         try { impressora.fechar() } catch (_: Exception) { }
         soltar()
         if (instancia === this) instancia = null
@@ -173,6 +178,18 @@ class PonteService : Service() {
         rede = null
     }
 
+    // A impressora Bluetooth só aceita UM celular por vez. Este celular solta a impressora
+    // 5 s depois do último papel (antes ficava presa até a próxima conversa com a loja, ~45 s,
+    // ou para sempre se a internet caísse), para outro celular da banca conseguir imprimir.
+    private val soltador = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "soltar-impressora").apply { isDaemon = true } }
+    @Volatile private var soltarAgendado: ScheduledFuture<*>? = null
+    private fun soltarImpressoraLogo() {
+        try {
+            soltarAgendado?.cancel(false)
+            soltarAgendado = soltador.schedule({ try { impressora.fecharSeParada(SOLTAR_MS - 500) } catch (_: Exception) { } }, SOLTAR_MS, TimeUnit.MILLISECONDS)
+        } catch (_: Exception) { }
+    }
+
     @Synchronized
     private fun novoLaco() {
         val minha = ++geracao
@@ -217,7 +234,9 @@ class PonteService : Service() {
                     continue
                 }
                 segurar(3L * 60 * 1000)
-                if (imprimirTudo(trabalhos)) {
+                val falhou = imprimirTudo(trabalhos)
+                soltarImpressoraLogo()
+                if (falhou) {
                     falhasImpressora++
                     pausaAte = SystemClock.elapsedRealtime() + atrasoImpressora(falhasImpressora)
                 } else {
@@ -227,6 +246,7 @@ class PonteService : Service() {
             } catch (e: Servidor.Erro) {
                 if (e.desligado) { desligadoPeloPainel(); return }
                 falhasRede++
+                soltarImpressoraLogo()
                 problema("A loja não respondeu direito (${e.message}). Tento de novo sozinha.")
                 dormir(atrasoRede(falhasRede, e.codigo == 429))
             } catch (_: InterruptedException) {
@@ -235,6 +255,7 @@ class PonteService : Service() {
                 if (!rodando || minha != geracao) break
                 if (tentarJa) { tentarJa = false; continue }
                 falhasRede++
+                soltarImpressoraLogo()
                 problema(if (temInternet()) "Sem resposta da loja. Tento de novo sozinha." else "Sem internet. Volto sozinha quando a internet voltar.")
                 dormir(atrasoRede(falhasRede, false))
             }
@@ -279,6 +300,7 @@ class PonteService : Service() {
         impressora.imprimir(Impressora.paginaDeTeste(cfg.impressoraNome.ifEmpty { "impressora" }, cfg.largura))
         erroImpressora = ""
         impressoraTestada = true
+        soltarImpressoraLogo()
         null
     } catch (e: Exception) {
         val msg = (e as? Impressora.Falha)?.message ?: "A impressora não respondeu."
@@ -327,13 +349,15 @@ class PonteService : Service() {
     private fun atrasoRede(n: Int, freio: Boolean): Long =
         if (freio) 30_000L else minOf(60_000L, 3_000L shl minOf(n - 1, 5))
 
-    /** Impressora desligada: 15 s, 30 s, 1 min, 2 min, e depois de 5 em 5 min (a noite toda sem gastar bateria). */
+    /**
+     * Impressora não respondeu (desligada, sem papel ou ocupada com outro celular da banca):
+     * 15 s, 30 s e depois de minuto em minuto. Antes ia até 5 min, e o segundo celular demorava
+     * para assumir quando o primeiro saía. Só tenta de novo se tiver papel na fila, então gasta pouco.
+     */
     private fun atrasoImpressora(n: Int): Long = when (n) {
         1 -> 15_000L
         2 -> 30_000L
-        3 -> 60_000L
-        4 -> 120_000L
-        else -> 300_000L
+        else -> 60_000L
     }
 
     private fun temInternet(): Boolean = try {
