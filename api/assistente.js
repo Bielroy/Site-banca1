@@ -512,7 +512,11 @@ module.exports = async function handler(req, res) {
       }
     } catch (e) {
       if (e.status) return semChat(e.status, e.message);       // loja inexistente ou bloqueada
-      console.warn('[assistente] sem controle de uso:', e && e.message);   // falha do contador não derruba o chat
+      // o contador do banco falhou: o chat continua, mas o teto do dia passa a ser contado na memória
+      // (antes ficava sem teto nenhum, e o chat é aberto ao público)
+      console.warn('[assistente] contador do banco falhou, teto contado na memória:', e && e.message);
+      const teto = Number(process.env.CHAT_LIMITE_DIA) || 1500;
+      if (!P.dentroDoLimite(`ia-dia-chat|${tidChat}`, teto, 24 * 3600)) return semChat(429, 'O ajudante atingiu o limite de hoje. Chame a loja pelo WhatsApp.');
     }
     // Entradas com tamanho limitado: texto de até 600 letras e foto de até ~1,5 MB em formato comum.
     const img = corpoReq.imagem && typeof corpoReq.imagem === 'object' ? corpoReq.imagem : null;
@@ -599,7 +603,7 @@ module.exports = async function handler(req, res) {
     try {
       if (!iniciarFirebase()) throw new Error('config');
       const cab = String((req.headers && req.headers.authorization) || '');
-      dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '');
+      dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '', true);   // true = recusa login encerrado (pessoa tirada da equipe)
     } catch (e) { return res.status(401).json({ sucesso: false, error: 'Entre no painel de novo para usar o copiloto.' }); }
     const banco = admin.firestore();
     try { ({ tid, ficha } = await T.resolverLoja(banco, req)); }
@@ -651,7 +655,7 @@ module.exports = async function handler(req, res) {
   let decAdm, tidAdm;
   try {
     if (!iniciarFirebase()) throw new Error('config');
-    decAdm = await admin.auth().verifyIdToken(H.tokenDe(req));
+    decAdm = await admin.auth().verifyIdToken(H.tokenDe(req), true);   // true = recusa login encerrado
   } catch (e) {
     return res.status(401).json({ sucesso: false, error: 'Entre no painel de novo para usar a IA.' });
   }
@@ -673,7 +677,12 @@ module.exports = async function handler(req, res) {
       t.set(usoRef, { painel: n + 1, dia }, { merge: true }); return true;
     });
     if (!ok) return res.status(429).json({ sucesso: false, error: 'O limite de hoje para textos da IA foi atingido. Volta amanhã.' });
-  } catch (e) { console.warn('[assistente] sem controle de uso:', e && e.message); }
+  } catch (e) {
+    // contador do banco falhou: o teto do dia passa a ser contado na memória (antes ficava sem teto)
+    console.warn('[assistente] contador do banco falhou, teto contado na memória:', e && e.message);
+    const teto = Number(process.env.IA_PAINEL_LIMITE_DIA) || 300;
+    if (!P.dentroDoLimite(`ia-dia-painel|${tidAdm}`, teto, 24 * 3600)) return res.status(429).json({ sucesso: false, error: 'O limite de hoje para textos da IA foi atingido. Volta amanhã.' });
+  }
 
   try {
     const info = corpoReq.produtoInfo && typeof corpoReq.produtoInfo === 'object' ? corpoReq.produtoInfo : {};

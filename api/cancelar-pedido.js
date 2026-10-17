@@ -141,7 +141,9 @@ module.exports = async function handler(req, res) {
 
   let uidVerificado, daEquipe = false, quem = '';
   try {
-    const decodificado = await admin.auth().verifyIdToken(token);
+    let decodificado = await admin.auth().verifyIdToken(token);
+    // quem é da equipe: confere também se o login foi encerrado (pessoa tirada da equipe perde o acesso na hora)
+    if (H.temPapelDeEquipe(decodificado)) decodificado = await admin.auth().verifyIdToken(token, true);
     uidVerificado = decodificado.uid;
     // Quem trabalha na loja cancela pelo painel, a qualquer momento (o cliente, só nos primeiros minutos).
     daEquipe = T.temPapel(decodificado, tid, PODEM_CANCELAR_NO_PAINEL);

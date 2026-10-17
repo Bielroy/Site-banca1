@@ -124,7 +124,10 @@ module.exports = async function handler(req, res) {
     let dec;
     try {
       const cab = String((req.headers && req.headers.authorization) || '');
-      dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '');
+      const tk = cab.startsWith('Bearer ') ? cab.slice(7).trim() : '';
+      dec = await admin.auth().verifyIdToken(tk);
+      // quem é da equipe: confere também se o login foi encerrado (pessoa tirada da equipe perde o acesso na hora)
+      if (H.temPapelDeEquipe(dec)) dec = await admin.auth().verifyIdToken(tk, true);
     } catch (e) { return res.status(401).json({ error: 'Sessão não identificada. Recarregue a página e tente de novo.' }); }
 
     // Desligado até a loja ter a conta do PagBank configurada E ligar a opção no painel.
