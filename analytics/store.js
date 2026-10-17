@@ -52,6 +52,10 @@ async function lerLoteadoEscrita(db, ops) {   // ops: [{tipo:'set'|'update'|'del
 // ---------------------------------------------------------------------
 const { paraMotor } = require('../lib/calendario');
 const Clima = require('../lib/clima');
+const Cofre = require('../lib/cofre');
+// Dados de cliente ficam CIFRADOS no banco (lib/cofre.js): o motor abre ao ler os pedidos e fecha de novo
+// tudo o que grava com nome, telefone ou endereço (lista de clientes, previsão por cliente, explicações).
+const tidDe = (db) => db._tenant || 'banca';
 async function carregarEntradas(db, { janelaDias } = {}) {
   const [cfgP, evP, cfgLoja, calSnap] = await Promise.all([db.doc('analytics_config/params').get(), db.doc('analytics_config/eventos').get(), db.doc('loja/config').get(),
     db.collection('calendario').get().catch(() => ({ docs: [] }))]);          // calendário operacional (aba Calendário do painel)
@@ -90,7 +94,7 @@ async function carregarEntradas(db, { janelaDias } = {}) {
   } catch (_) { feiras = []; }
   const brt = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? isoDeDia(diaDeTs(t)) : null; };
   return {
-    pedidos: pedSnap.docs.map((d) => ({ ...d.data(), id: d.id })),
+    pedidos: pedSnap.docs.map((d) => ({ ...Cofre.abrirCampos(d.data(), tidDe(db)), id: d.id })),
     catalogo: prodSnap.docs.map((d) => ({ ...d.data(), id: d.id })),     // o id do registro sempre vale (produto antigo trazia um campo "id" velho dentro)
     agregados: aggSnap.docs.map((d) => ({ ...d.data(), dia: d.id })),
     snapshots: snapSnap.docs.map((d) => ({ ...d.data(), id: d.id })),
@@ -120,21 +124,21 @@ function fatiar(obj, limite) {
 }
 
 async function persistir(db, r, opcoes = {}) {
-  const ops = [], ts = new Date().toISOString();
+  const ops = [], ts = new Date().toISOString(), tid = tidDe(db);
   const set = (path, dados, merge) => ops.push({ tipo: 'set', ref: db.doc(path), dados: limpo(dados), merge });
 
   set('analytics_global/atual', { meta: r.meta, global: r.global, catalogo: r.catalogo });
-  set('analytics_previsoes/painel', { meta: r.meta, dashboard: r.dashboard, esperados: r.esperados, categorias: r.categorias, loja: r.loja, indiceClientes: r.indiceClientes });
+  set('analytics_previsoes/painel', { meta: r.meta, dashboard: r.dashboard, esperados: Cofre.fecharJSON(r.esperados, tid, 'esperados'), categorias: r.categorias, loja: r.loja, indiceClientes: Cofre.fecharJSON(r.indiceClientes, tid, 'indiceClientes') });
 
   // 250 KB por documento: fatias maiores chegavam perto do limite de 40 mil
   // campos indexados por documento do Firestore com ~100 produtos previstos.
   const chunks = fatiar(r.previsoes, 250000);
-  chunks.forEach((c, i) => set(`analytics_previsoes_chunks/c${i}`, { n: i, produtos: c, geradoEm: ts }));
+  chunks.forEach((c, i) => set(`analytics_previsoes_chunks/c${i}`, { n: i, produtos: Cofre.fecharJSON(c, tid, 'previsoes'), geradoEm: ts }));
   const antigos = await db.collection('analytics_previsoes_chunks').get();
   antigos.docs.forEach((d) => { if (Number(d.id.slice(1)) >= chunks.length) ops.push({ tipo: 'delete', ref: d.ref }); });
 
   r.clientes.forEach((m) => {
-    set(`analytics_clientes/${m.id}`, { ...m, geradoEm: ts });
+    set(`analytics_clientes/${m.id}`, { ...Cofre.fecharCampos(m, tid), geradoEm: ts });
     (m.uids || []).forEach((u) => set(`analytics_uid/${u}`, { clienteId: m.id, atualizadoEm: ts }));
   });
   // só os campos de venda são trocados: o retrato de preços do mesmo dia (abaixo) não pode ser apagado junto
@@ -196,7 +200,7 @@ async function lerClientePorUid(db, uid) {
   const m = await db.doc(`analytics_uid/${uid}`).get();
   if (!m.exists) return null;
   const c = await db.doc(`analytics_clientes/${m.data().clienteId}`).get();
-  return c.exists ? c.data() : null;
+  return c.exists ? Cofre.abrirCampos(c.data(), tidDe(db)) : null;
 }
 async function lerPainel(db) {
   const [p, ch, av] = await Promise.all([
@@ -205,8 +209,10 @@ async function lerPainel(db) {
     db.collection('analytics_avaliacao').orderBy('diaAlvoIso', 'desc').limit(30).get(),
   ]);
   if (!p.exists) return null;
-  const produtos = {}; ch.docs.forEach((d) => Object.assign(produtos, d.data().produtos || {}));
-  return { ...p.data(), produtos, avaliacoes: av.docs.map((d) => d.data()) };
+  const tid = tidDe(db);
+  const produtos = {}; ch.docs.forEach((d) => Object.assign(produtos, Cofre.abrirJSON(d.data().produtos, tid, 'previsoes', {}) || {}));
+  const dados = p.data();
+  return { ...dados, esperados: Cofre.abrirJSON(dados.esperados, tid, 'esperados', {}), indiceClientes: Cofre.abrirJSON(dados.indiceClientes, tid, 'indiceClientes', []), produtos, avaliacoes: av.docs.map((d) => d.data()) };
 }
 // Chegou pedido depois do último cálculo? (uma leitura só: o pedido mais recente).
 // Sem cálculo nenhum ainda, qualquer pedido conta como novo.
@@ -219,7 +225,7 @@ async function temPedidoNovo(db, geradoEm) {
 }
 async function lerClientePorId(db, id) {
   const c = await db.doc(`analytics_clientes/${String(id).replace(/[^\w]/g, '')}`).get();
-  return c.exists ? c.data() : null;
+  return c.exists ? Cofre.abrirCampos(c.data(), tidDe(db)) : null;
 }
 
 module.exports = { obterDb, carregarEntradas, persistir, recalcular, lerGlobal, lerClientePorUid, lerPainel, lerClientePorId, temPedidoNovo, fatiar, limpo };

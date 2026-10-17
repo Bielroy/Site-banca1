@@ -16,6 +16,7 @@
 // =====================================================================
 import { auth } from './firebase.js';
 import { chave } from './tenant.js';
+import { ordemNaVitrine } from './pacote-lib.js';
 
 const TTL_MS = 10 * 60 * 1000;           // ranking com menos de 10 min: nem pede de novo
 const VALE_MS = 7 * 24 * 3600 * 1000;    // ranking de até 7 dias: já ordena a vitrine na abertura (sem esperar o servidor)
@@ -49,7 +50,11 @@ const guardar = (dados) => {
     nivel = dados.nivel || 'sem_dados';
     const ps = (dados.itens || []).map((i) => i.p).sort((a, b) => a - b);
     mediana = ps.length ? ps[Math.floor(ps.length / 2)] : 0.3;
+    maisPedidosIds = (Array.isArray(dados.maisPedidos) ? dados.maisPedidos : []).filter((id) => typeof id === 'string' && id.length < 80).slice(0, 8);
 };
+// "Os mais pedidos" da loja toda (só ids; o servidor só manda com movimento suficiente). Faixa na vitrine.
+let maisPedidosIds = [];
+export const maisPedidos = () => maisPedidosIds;
 
 export async function iniciarRanking() {
     if (iniciado) return;
@@ -93,7 +98,8 @@ export function aplicarOrdem() {
         const e = escores.get(card.dataset.id);
         // maior probabilidade → menor `order`. Produto sem pontuação (novo) entra na mediana,
         // em vez de ser enterrado no fim — senão nunca teria chance de ser descoberto.
-        card.style.order = String(Math.round((1 - (e ? e.p : mediana)) * 1000));
+        // pacotes e temperos ficam nos blocos do fim, cada um na sua faixa de "order" (ordemNaVitrine, js/pacote-lib.js)
+        card.style.order = String(ordemNaVitrine(e ? e.p : mediana, card.dataset.pacote === '1' ? 'pacote' : card.dataset.tempero === '1' ? 'tempero' : ''));
 
         card.querySelector('.rec-tag')?.remove();
         if (e && e.motivo && nivel !== 'sem_historico') {

@@ -44,7 +44,7 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
   const pedidoDe = (extra = {}) => ({ nome: 'Ana', quadra: '5', lote: '3', pag: 'Dinheiro', idempotencyKey: chavePedido(), itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], ...extra });
   const soDe = (db, prefixo) => JSON.stringify([...db._dados.entries()].filter(([k]) => k.startsWith(prefixo)).sort());
   const comFetch = async (falso, fn) => { const real = global.fetch; global.fetch = falso; try { return await fn(); } finally { global.fetch = real; } };
-  const zerarFreios = () => require(raiz('lib/http'))._usos.clear();
+  const zerarFreios = () => { require(raiz('lib/http'))._usos.clear(); require(raiz('lib/prudencia'))._reserva.clear(); };
   const ler = (arq) => fs.readFileSync(raiz(arq), 'utf8');
 
   // ================================================================== ISOLAMENTO ENTRE LOJAS
@@ -566,6 +566,66 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
       const r = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer plataforma', 'X-Loja': 'loja-a' }, body: { acao: 'listar' } });
       assert.strictEqual(conferiu, true, `${arq} precisa conferir se o login foi encerrado`); assert.strictEqual(r.status, 401, arq);
     }
+  });
+
+  teste('SEGURANÇA · login encerrado também é recusado ao cancelar pedido, gerar PIX e usar a IA do painel; o cliente não paga consulta a mais', async () => {
+    const casos = [
+      ['api/cancelar-pedido.js', 'a-caixa', 'loja-a', { pedidoId: 'pedido123', acao: 'cancelar' }],
+      ['api/pagamento-pix.js', 'plataforma', null, { pedidoId: 'pedido123' }],
+      ['api/assistente.js', 'a-proprietario', 'loja-a', { action: 'gerar_descricao', produtoInfo: { nome: 'Alface' } }],
+      ['api/assistente.js', 'a-proprietario', 'loja-a', { action: 'copiloto', pergunta: 'quanto vendi hoje?' }],
+    ];
+    for (const [arq, quem, loja, corpo] of casos) {
+      const db = criarBanco(base()); const adm = criarAdmin(db, TOK, []); const real = adm.auth;
+      let conferiu = null;
+      adm.auth = () => ({ ...real(), verifyIdToken: async (t, conferirEncerrado) => { if (conferirEncerrado) { conferiu = true; throw Object.assign(new Error('revogado'), { code: 'auth/id-token-revoked' }); } return TOK[t]; } });
+      const api = carregarApi(raiz(arq), adm); zerarFreios();
+      const r = await chamar(api, { headers: { ...ip(), Authorization: `Bearer ${quem}`, ...(loja ? { 'X-Loja': loja } : {}) }, body: corpo });
+      assert.strictEqual(conferiu, true, `${arq} (${corpo.action || corpo.acao || 'pix'}) precisa conferir se o login foi encerrado`);
+      assert.strictEqual(r.status, 401, `${arq}: login encerrado tem de dar 401 (deu ${r.status})`);
+    }
+    // cliente da loja (login anônimo, sem papel): NÃO faz a consulta extra
+    for (const arq of ['api/cancelar-pedido.js', 'api/pagamento-pix.js']) {
+      const db = criarBanco(base()); const adm = criarAdmin(db, TOK, []); const real = adm.auth;
+      let conferiu = false;
+      adm.auth = () => ({ ...real(), verifyIdToken: async (t, conferirEncerrado) => { if (conferirEncerrado) conferiu = true; if (!TOK[t]) throw new Error('token inválido'); return TOK[t]; } });
+      const api = carregarApi(raiz(arq), adm); zerarFreios();
+      await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: { pedidoId: 'pedido123', acao: 'cancelar' } });
+      assert.strictEqual(conferiu, false, `${arq}: cliente não precisa da consulta de login encerrado`);
+    }
+    const H = require(raiz('lib/http'));
+    assert.strictEqual(H.temPapelDeEquipe({ uid: 'x' }), false);
+    assert.strictEqual(H.temPapelDeEquipe({ uid: 'x', tenants: {} }), false);
+    assert.strictEqual(H.temPapelDeEquipe({ uid: 'x', tenants: { 'loja-a': '' } }), false);
+    assert.strictEqual(H.temPapelDeEquipe({ uid: 'x', tenants: { 'loja-a': 'caixa' } }), true);
+    assert.strictEqual(H.temPapelDeEquipe({ uid: 'x', admin: true }), true);
+  });
+
+  teste('SEGURANÇA · freios: se o banco falhar, o limite continua valendo (conta na memória), sem barrar quem está dentro do limite', async () => {
+    const P = require(raiz('lib/prudencia')); zerarFreios();
+    const quebrado = { collection: () => ({ doc: () => ({}) }), runTransaction: async () => { throw Object.assign(new Error('ABORTED: muita disputa'), { code: 10 }); } };
+    const agora = 1_000_000;
+    assert.strictEqual(await P.limitar(quebrado, 'teste', '1.2.3.4', 2, 60, agora), true);
+    assert.strictEqual(await P.limitar(quebrado, 'teste', '1.2.3.4', 2, 60, agora + 1), true);
+    assert.strictEqual(await P.limitar(quebrado, 'teste', '1.2.3.4', 2, 60, agora + 2), false, 'antes deixava passar sem limite quando o banco falhava');
+    assert.strictEqual(await P.limitar(quebrado, 'teste', '5.6.7.8', 2, 60, agora + 3), true, 'outra pessoa não é afetada');
+    assert.strictEqual(await P.limitar(quebrado, 'teste', '1.2.3.4', 2, 60, agora + 61000), true, 'depois da janela volta a passar');
+    // com o banco funcionando, nada muda: conta no banco
+    const db = criarBanco({});
+    for (let i = 0; i < 3; i++) assert.strictEqual(await P.limitar(db, 'teste', 'x', 3, 60), true);
+    assert.strictEqual(await P.limitar(db, 'teste', 'x', 3, 60), false);
+
+    // teto diário da IA do painel: com o contador do banco quebrado, o teto passa a valer na memória
+    process.env.IA_PAINEL_LIMITE_DIA = '2'; delete process.env.GEMINI_API_KEY;
+    const dbIA = criarBanco(base()); const adm = criarAdmin(dbIA, TOK, []);
+    const fs0 = adm.firestore; let chamadas = 0;
+    adm.firestore = Object.assign(() => { const f = fs0(); return new Proxy(f, { get: (o, k) => (k === 'runTransaction' ? async (fn) => { chamadas++; if (chamadas % 2 === 0) throw new Error('banco fora'); return o.runTransaction(fn); } : o[k]) }); }, fs0);
+    const api = carregarApi(raiz('api/assistente.js'), adm); zerarFreios();
+    const pedir = () => chamar(api, { headers: { ...ip(), Authorization: 'Bearer a-proprietario', 'X-Loja': 'loja-a' }, body: { action: 'gerar_descricao', produtoInfo: { nome: 'Alface' } } });
+    const st = [];
+    for (let i = 0; i < 3; i++) st.push((await pedir()).status);
+    delete process.env.IA_PAINEL_LIMITE_DIA;
+    assert.strictEqual(st[2], 429, `o 3º pedido passa do teto de 2 mesmo com o contador quebrado (deu ${st.join(',')})`);
   });
 
   teste('SEGURANÇA · trilha de auditoria: registra as ações críticas e NUNCA guarda chave, token ou senha', async () => {

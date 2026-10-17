@@ -39,6 +39,8 @@ export const nomeDaCategoria = (chave) => {
     const c = S.cats.find((x) => norm(x.chave) === norm(chave));
     return c ? (c.nome || c.chave) : String(chave || '');
 };
+/** Chaves das categorias na ordem da aba Categorias (os botões da lista de produtos seguem esta ordem). */
+export const ordemDasCategorias = () => S.cats.map((c) => c.chave || c.nome || c.id);
 const fmtTel = (d) => { const t = soDigitos(d); return t.length >= 12 ? `+${t.slice(0, 2)} (${t.slice(2, 4)}) ${t.slice(4, -4)}-${t.slice(-4)}` : t; };
 
 const contarProdutos = () => {
@@ -205,9 +207,9 @@ const linhaCategoria = (c, i, total, qtd) => `
             <label class="cg-chave"><input type="checkbox" data-cg="visivel" ${c.visivel === false ? '' : 'checked'}> <span>${c.visivel === false ? 'Oculta na loja' : 'Visível na loja'}</span></label>
             <span class="cg-qtd">${qtd} produto${qtd === 1 ? '' : 's'}</span>
         </div>
-        <label class="cg-wpp"><i class="ic" data-i="enviar"></i> Pedidos desta categoria vão para
+        ${S.numeros.length ? `<label class="cg-wpp"><i class="ic" data-i="enviar"></i> Pedidos desta categoria vão para
             <select data-cg="wpp">${opcoesNumero(c.wppId)}</select>
-        </label>
+        </label>` : ''}
     </article>`;
 
 function render(forcar = false) {
@@ -308,6 +310,7 @@ export const iniciarCategoriasAdmin = (getProdutos) => {
             .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
         S.erro = '';
         render();
+        try { document.dispatchEvent(new CustomEvent('categorias:mudou')); } catch (_) { /* navegador antigo */ }
     }, (e) => { console.error('categorias:', e); S.erro = (e && e.code) || 'erro'; render(true); });
     const u2 = onSnapshot(tdoc('loja', 'config'), (snap) => {
         const d = snap.exists() ? snap.data() : {};

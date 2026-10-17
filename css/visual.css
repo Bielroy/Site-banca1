@@ -425,3 +425,12 @@ button, a, input, select, textarea, label, summary, [data-action], .produto-card
 .precisa-toque .btn-wpp { min-height: 56px; font-size: 1.05rem; animation: chamaToque 1.4s ease-in-out 3; }
 @keyframes chamaToque { 50% { transform: scale(1.04); box-shadow: 0 0 0 6px color-mix(in srgb, #25d366 30%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .precisa-toque .btn-wpp { animation: none; } }
+
+/* selo da feira no cabeçalho ("Feira do Madri"), só para quem entrou pelo link da feira (js/tema.js) */
+.selo-feira {
+    display: inline-flex; align-items: center; gap: 5px; margin: 0 0 8px; padding: 4px 11px 4px 8px; border-radius: 999px;
+    background: color-mix(in srgb, var(--sobre-primaria, #f6f1e4) 14%, transparent); border: 1px solid color-mix(in srgb, var(--sobre-primaria, #f6f1e4) 35%, transparent);
+    color: var(--sobre-primaria, #f6f1e4); font-family: var(--fonte-texto); font-size: .82rem; font-weight: 700; line-height: 1.2; max-width: 100%;
+}
+.selo-feira svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.selo-feira span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -70,6 +70,7 @@ const T = require('../lib/tenant');
 const P = require('../lib/prudencia');
 const PagBank = require('../lib/pagbank');
 const Avisos = require('../lib/avisos');
+const Cofre = require('../lib/cofre');
 // Quem da equipe gera PIX de um pedido: quem atende pedidos (não o estoque nem a produção).
 const EQUIPE_DO_PIX = ['proprietario', 'administrador', 'funcionario', 'caixa'];
 const emailValido = (e) => typeof e === 'string' && e.length <= 120 && /^[^\s@<>"']{1,64}@[^\s@<>"']{1,100}\.[a-z]{2,}$/i.test(e);
@@ -123,7 +124,10 @@ module.exports = async function handler(req, res) {
     let dec;
     try {
       const cab = String((req.headers && req.headers.authorization) || '');
-      dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '');
+      const tk = cab.startsWith('Bearer ') ? cab.slice(7).trim() : '';
+      dec = await admin.auth().verifyIdToken(tk);
+      // quem é da equipe: confere também se o login foi encerrado (pessoa tirada da equipe perde o acesso na hora)
+      if (H.temPapelDeEquipe(dec)) dec = await admin.auth().verifyIdToken(tk, true);
     } catch (e) { return res.status(401).json({ error: 'Sessão não identificada. Recarregue a página e tente de novo.' }); }
 
     // Desligado até a loja ter a conta do PagBank configurada E ligar a opção no painel.
@@ -180,7 +184,7 @@ module.exports = async function handler(req, res) {
     const expiracao = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min
 
     const customer = {
-      name: pedido.nome || 'Cliente Banca',
+      name: Cofre.abrir(pedido.nome, tid, 'nome') || 'Cliente Banca',
       email: emailValido(email) ? email.trim().toLowerCase() : `${pedidoId}@cliente.banca`,
     };
     // CPF é frequentemente exigido pelo PagBank para orders. Só inclui

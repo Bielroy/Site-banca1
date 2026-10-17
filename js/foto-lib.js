@@ -14,7 +14,7 @@
 // =====================================================================
 
 /** Larguras aceitas — têm de ser as MESMAS de vercel.json ("images.sizes"). */
-export const LARGURAS = [128, 384];
+export const LARGURAS = [128, 384, 828];   // 828: foto do quadro na largura toda do celular
 
 const LOCAL = /^(localhost|127\.|192\.168\.|10\.|\[::1\])/;
 

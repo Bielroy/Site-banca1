@@ -44,12 +44,15 @@ async function dormirComJitter(tentativa) {
   await new Promise(r => setTimeout(r, jitterMs));
 }
 
-// Se o modelo escolhido sumir, tenta estes na ordem.
+// Se o modelo escolhido sumir ou estiver sobrecarregado, tenta estes na ordem.
+// Os "-latest" apontam para o modelo mais novo, que é também o mais disputado: em horário de pico
+// o Google responde 503 ("high demand") ou nem responde. Por isso a fila mistura nomes fixos.
 const ALTERNATIVAS = [
   'gemini-flash-latest',
+  'gemini-2.5-flash',
   'gemini-3.5-flash',
-  'gemini-3.1-flash',
   'gemini-flash-lite-latest',
+  'gemini-2.5-flash-lite',
   'gemini-3.1-flash-lite'
 ];
 
@@ -276,13 +279,34 @@ async function chamar(modelo, corpo, streaming) {
   // Retry automático para 429 (sobrecarregado) e 500 (erro temporário)
   for (let tent = 0; tent < 3; tent++) {
     const metodo = streaming ? 'streamGenerateContent?alt=sse' : 'generateContent';
-    // A chave vai no CABEÇALHO, não no endereço: endereço aparece em registro de erro e de rede.
-    const resp = await fetch(`${BASE}/models/${encodeURIComponent(modelo)}:${metodo}`.replace(/[?&]$/, ''), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
-      body: JSON.stringify(corpo),
-      signal: AbortSignal.timeout(streaming ? 55000 : 25000)          // prazo: a IA lenta não prende a função
-    });
+    // PRAZOS. Antes era um prazo só (55 s) para tudo: um modelo travado segurava o cliente quase um
+    // minuto e ainda não passava para o próximo da fila (o erro de tempo não tinha código). Agora:
+    //   - o modelo tem 15 s (chat) ou 25 s (painel) para COMEÇAR a responder; se não começar, vale como
+    //     "sobrecarregado" (504) e a fila tenta o próximo;
+    //   - depois que o texto começa a chegar, o chat tem até 90 s no total.
+    const ctrl = new AbortController();
+    const tempoEsgotado = () => Object.assign(new Error('A IA demorou para responder.'), { status: 504 });
+    const prazoInicio = setTimeout(() => ctrl.abort(), streaming ? 15000 : 25000);
+    let resp;
+    try {
+      // A chave vai no CABEÇALHO, não no endereço: endereço aparece em registro de erro e de rede.
+      resp = await fetch(`${BASE}/models/${encodeURIComponent(modelo)}:${metodo}`.replace(/[?&]$/, ''), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
+        body: JSON.stringify(corpo),
+        signal: ctrl.signal
+      });
+    } catch (e) {
+      if (ctrl.signal.aborted) throw tempoEsgotado();
+      // falha de rede (DNS, conexão recusada): passageira, a fila tenta de novo
+      throw Object.assign(new Error('Sem conexão com a IA.'), { status: 503 });
+    } finally {
+      clearTimeout(prazoInicio);
+    }
+    if (resp.ok && streaming) {
+      const teto = setTimeout(() => ctrl.abort(), 90000);       // resposta longa demais é cortada (o ia.js mostra "a conexão caiu")
+      if (teto.unref) teto.unref();
+    }
 
     if (resp.ok) return resp;
 
@@ -333,6 +357,8 @@ async function comFallback(corpo, streaming) {
 
         if (MODELO_RUIM.indexOf(e.status) !== -1) break;      // troca de modelo
         if (TRANSITORIO.indexOf(e.status) === -1) throw e;    // erro de verdade
+        // 503/504 = este modelo está lotado ou travado agora: insistir nele só faz o cliente esperar.
+        if (e.status === 503 || e.status === 504) break;
 
         // Sobrecarga: espera um pouco e tenta de novo (0,4s -> 1,2s)
         const espera = 400 * Math.pow(3, tentativa);
@@ -486,7 +512,11 @@ module.exports = async function handler(req, res) {
       }
     } catch (e) {
       if (e.status) return semChat(e.status, e.message);       // loja inexistente ou bloqueada
-      console.warn('[assistente] sem controle de uso:', e && e.message);   // falha do contador não derruba o chat
+      // o contador do banco falhou: o chat continua, mas o teto do dia passa a ser contado na memória
+      // (antes ficava sem teto nenhum, e o chat é aberto ao público)
+      console.warn('[assistente] contador do banco falhou, teto contado na memória:', e && e.message);
+      const teto = Number(process.env.CHAT_LIMITE_DIA) || 1500;
+      if (!P.dentroDoLimite(`ia-dia-chat|${tidChat}`, teto, 24 * 3600)) return semChat(429, 'O ajudante atingiu o limite de hoje. Chame a loja pelo WhatsApp.');
     }
     // Entradas com tamanho limitado: texto de até 600 letras e foto de até ~1,5 MB em formato comum.
     const img = corpoReq.imagem && typeof corpoReq.imagem === 'object' ? corpoReq.imagem : null;
@@ -573,7 +603,7 @@ module.exports = async function handler(req, res) {
     try {
       if (!iniciarFirebase()) throw new Error('config');
       const cab = String((req.headers && req.headers.authorization) || '');
-      dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '');
+      dec = await admin.auth().verifyIdToken(cab.startsWith('Bearer ') ? cab.slice(7).trim() : '', true);   // true = recusa login encerrado (pessoa tirada da equipe)
     } catch (e) { return res.status(401).json({ sucesso: false, error: 'Entre no painel de novo para usar o copiloto.' }); }
     const banco = admin.firestore();
     try { ({ tid, ficha } = await T.resolverLoja(banco, req)); }
@@ -625,7 +655,7 @@ module.exports = async function handler(req, res) {
   let decAdm, tidAdm;
   try {
     if (!iniciarFirebase()) throw new Error('config');
-    decAdm = await admin.auth().verifyIdToken(H.tokenDe(req));
+    decAdm = await admin.auth().verifyIdToken(H.tokenDe(req), true);   // true = recusa login encerrado
   } catch (e) {
     return res.status(401).json({ sucesso: false, error: 'Entre no painel de novo para usar a IA.' });
   }
@@ -647,7 +677,12 @@ module.exports = async function handler(req, res) {
       t.set(usoRef, { painel: n + 1, dia }, { merge: true }); return true;
     });
     if (!ok) return res.status(429).json({ sucesso: false, error: 'O limite de hoje para textos da IA foi atingido. Volta amanhã.' });
-  } catch (e) { console.warn('[assistente] sem controle de uso:', e && e.message); }
+  } catch (e) {
+    // contador do banco falhou: o teto do dia passa a ser contado na memória (antes ficava sem teto)
+    console.warn('[assistente] contador do banco falhou, teto contado na memória:', e && e.message);
+    const teto = Number(process.env.IA_PAINEL_LIMITE_DIA) || 300;
+    if (!P.dentroDoLimite(`ia-dia-painel|${tidAdm}`, teto, 24 * 3600)) return res.status(429).json({ sucesso: false, error: 'O limite de hoje para textos da IA foi atingido. Volta amanhã.' });
+  }
 
   try {
     const info = corpoReq.produtoInfo && typeof corpoReq.produtoInfo === 'object' ? corpoReq.produtoInfo : {};

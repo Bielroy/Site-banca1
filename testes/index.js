@@ -529,6 +529,12 @@ teste('motor: dia em que a loja não funcionou sai da conta, e venda de balcão 
   // estoque que zerou numa venda conta como dia de falta
   const r2 = executarMotor({ pedidos, catalogo, agregados: [], parametros: {}, eventos: [], snapshots: [], faltasEstoque: [{ produtoId: 'tomate', dia: '2026-09-08' }, { produtoId: 'tomate', dia: '2026-09-09' }], agora: Date.UTC(2026, 7, 41, 15) });
   assert.strictEqual(r2.meta.diasComFalta, 2);
+  assert.strictEqual(r2.meta.custoFalta.valor, 0, 'marcou falta mas vendeu o normal: não inventa perda');
+  // no dia 8/9 só o balcão comprou (3 kg em vez de 13): a falta custou uns 10 kg × R$ 7,50
+  const r3 = executarMotor({ pedidos: pedidos.filter((p) => !(p.data === dia(39) && p.id.startsWith('p'))), catalogo, agregados: [], parametros: {}, eventos: [], snapshots: [], faltasEstoque: [{ produtoId: 'tomate', dia: '2026-09-08' }], agora: Date.UTC(2026, 7, 41, 15) });
+  assert.strictEqual(r3.meta.custoFalta.itens[0].id, 'tomate'); assert.strictEqual(r3.meta.custoFalta.itens[0].dias, 1);
+  assert.ok(Math.abs(r3.meta.custoFalta.valor - 75) < 0.01, 'custo ' + r3.meta.custoFalta.valor);
+  assert.deepStrictEqual(r3.meta.juntos, {}, 'um produto só não tem par');
 });
 
 teste('clima: lê a resposta do serviço, guarda por loja e segue com o guardado quando a internet falha', async () => {
@@ -1308,6 +1314,35 @@ teste('chat público: loja sem o módulo de IA não gasta a cota; entradas grand
     assert.strictEqual(db._dados.get([...db._dados.keys()].find((k) => k.startsWith('tenants/comia/uso_ia/'))).chat, 1, 'uso contado por loja');
   } finally { global.fetch = fetchReal; }
 });
+teste('chat: modelo lotado (503) ou sem rede passa direto para o próximo da fila, sem fazer o cliente esperar', async () => {
+  const db = criarBancoP(semente());
+  process.env.GEMINI_API_KEY = 'chave-de-teste';
+  const modeloAntes = process.env.GEMINI_MODEL; process.env.GEMINI_MODEL = 'modelo-lotado';
+  const pedidos = []; const fetchReal = global.fetch;
+  global.fetch = async (url) => {
+    const m = /models\/([^:]+):/.exec(String(url)); const modelo = m ? decodeURIComponent(m[1]) : '?';
+    pedidos.push(modelo);
+    if (modelo === 'modelo-lotado') return { ok: false, status: 503, json: async () => ({ error: { message: 'This model is currently experiencing high demand.' } }) };
+    if (pedidos.length === 2) throw new TypeError('fetch failed');          // o segundo da fila: rede caiu
+    return new Response('data: {"candidates":[{"content":{"parts":[{"text":"oi"}]}}]}\n\n', { status: 200 });
+  };
+  try {
+    const api = carregarApi(raiz('api/assistente.js'), criarAdmin(db, TOKENS));
+    const inicio = Date.now(); let escrito = '';
+    const r = await new Promise((resolve, reject) => {
+      const res = { _status: 200, setHeader() {}, status(c) { this._status = c; return this; }, json(j) { resolve({ status: this._status, corpo: j }); return this; }, writeHead(c) { this._status = c; }, write(t) { escrito += t; }, end() { resolve({ status: this._status }); } };
+      Promise.resolve(api({ method: 'POST', headers: { 'x-forwarded-for': '9.9.9.' + Math.floor(Math.random() * 250) }, body: { action: 'chat_stream', mensagemCliente: 'oi' }, query: {}, socket: {} }, res)).catch(reject);
+    });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.corpo || ''));
+    assert.ok(escrito.includes('"oi"'), 'a resposta do terceiro modelo chegou ao cliente');
+    assert.strictEqual(pedidos.filter((x) => x === 'modelo-lotado').length, 1, 'não insiste no modelo lotado');
+    assert.deepStrictEqual(pedidos.slice(0, 3), ['modelo-lotado', 'gemini-flash-latest', 'gemini-2.5-flash']);
+    assert.ok(Date.now() - inicio < 5000, 'sem espera longa');
+  } finally {
+    global.fetch = fetchReal;
+    if (modeloAntes === undefined) delete process.env.GEMINI_MODEL; else process.env.GEMINI_MODEL = modeloAntes;
+  }
+});
 teste('textos do cadastro não viram HTML (unidade com marcação é limpa)', async () => {
   const L = await import(raiz('js/estoque-lib.js'));
   const sujo = L.fmtQtd(2, '<img src=x onerror=alert(1)>'); assert.ok(!/[<>"'&]/.test(sujo), sujo); assert.strictEqual(sujo, '2 img src=x on'); assert.strictEqual(L.fmtQtd(1.5, 'kg'), '1,5 kg');
@@ -1651,10 +1686,13 @@ teste('app por loja: nome, cor e ícone próprios; a loja original e loja bloque
   assert.strictEqual((await ch({ loja: 'pao-da-lu' }, 'POST')).status, 405);
   // o PAINEL é outro aplicativo: abre o admin, tem outra identidade (não substitui o da loja) e outro ícone
   const mp = JSON.parse((await ch({ loja: 'pao-da-lu', painel: '1' })).corpo);
-  assert.strictEqual(mp.start_url, '/admin.html?loja=pao-da-lu'); assert.strictEqual(mp.scope, '/admin.html'); assert.notStrictEqual(mp.id, m.id); assert.ok(mp.name.startsWith('Painel'));
+  assert.strictEqual(mp.start_url, '/admin?loja=pao-da-lu'); assert.strictEqual(mp.scope, '/admin', 'o Cloudflare troca /admin.html por /admin: o app do painel vale para os dois'); assert.notStrictEqual(mp.id, m.id); assert.ok(mp.name.startsWith('Painel'));
   const svgP = (await ch({ loja: 'pao-da-lu', painel: '1', icone: '1' })).corpo; assert.ok(svgP.includes('fill="#F6F1E4"') && svgP.includes('rx="72" fill="#7a2e12"') && svgP !== svg);
   const fixo = JSON.parse(require('fs').readFileSync(raiz('admin.webmanifest'), 'utf8')), cfgVite = require('fs').readFileSync(raiz('vite.config.js'), 'utf8');
-  assert.strictEqual(fixo.start_url, '/admin.html'); assert.strictEqual(fixo.id, '/admin.html'); assert.strictEqual(fixo.scope, '/admin.html');
+  assert.strictEqual(fixo.start_url, '/admin'); assert.strictEqual(fixo.id, '/admin.html', 'a identidade não muda: o app já instalado só se atualiza'); assert.strictEqual(fixo.scope, '/admin');
+  // o endereço que o Cloudflare entrega (/admin) e o antigo (/admin.html) ficam DENTRO do app do painel, e a loja fica fora dele
+  for (const u of ['/admin', '/admin.html', '/admin?loja=x']) assert.ok(u.startsWith(fixo.scope), u);
+  assert.ok(!'/'.startsWith(fixo.scope) && !'/?loja=x'.startsWith(fixo.scope));
   for (const i of fixo.icons) { assert.ok(require('fs').existsSync(raiz(i.src.slice(1))), i.src); assert.ok(cfgVite.includes(`'${i.src.slice(1)}'`), 'o build copia ' + i.src); }
   assert.ok(cfgVite.includes("'admin.webmanifest'")); assert.ok(require('fs').readFileSync(raiz('admin.html'), 'utf8').includes('href="/admin.webmanifest"'));
 });
@@ -1965,7 +2003,7 @@ teste('ícones: todo ícone pedido no painel existe, e nenhuma tela do painel vo
   });
   assert.ok(usados > 60, `ícones em uso: ${usados}`);
   const abas = [...fs.readFileSync(raiz('admin.html'), 'utf8').matchAll(/class="tab[^"]*" data-aba="([a-z]+)"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="([a-z]+)">/g)];
-  assert.strictEqual(abas.length, 17); abas.forEach((m) => assert.strictEqual(m[1] === 'relatorios' ? 'pedidos' : m[1], m[2], 'cada aba usa o ícone com o próprio nome (a de pedidos usa o de pedidos)'));
+  assert.strictEqual(abas.length, 18); abas.forEach((m) => assert.strictEqual(m[1] === 'relatorios' ? 'pedidos' : m[1], m[2], 'cada aba usa o ícone com o próprio nome (a de pedidos usa o de pedidos)'));
   for (const [nome, d] of Object.entries(I.ICONES)) { assert.ok(!/<script|on\w+=|href/i.test(d), nome); assert.ok((d.match(/class="s"/g) || []).length <= 3, `${nome}: semente demais`); }
 });
 
@@ -2156,8 +2194,1083 @@ teste('painel: item pedido por UNIDADE de produto de quilo mostra "un", não "kg
   assert.ok(!/formatarQtdRelatorio\(i(tem)?\.qtd, i(tem)?\.unidade\)/.test(admin), 'admin.js ainda usa a unidade do produto para a quantidade do pedido');
 });
 
+// ------------------------------------------------------------------ Rota A: servidor do Cloud Run + Cloudflare Pages
+teste('cloud run: o servidor entrega body/query/status/json como a Vercel e confia no IP só com o segredo', async () => {
+  const { criarServidor } = require(raiz('server'));
+  const eco = async (req, res) => res.status(201).json({ metodo: req.method, body: req.body, query: req.query, ip: req.headers['x-real-ip'], host: req.headers['x-forwarded-host'] || null, vazou: ['x-proxy-segredo', 'x-cliente-ip', 'x-host-original'].filter((k) => k in req.headers) });
+  const cru = async (req, res) => { let t = ''; for await (const c of req) t += c; res.status(200).json({ cru: t, body: req.body === undefined }); };
+  cru.config = { api: { bodyParser: false } };
+  const quebra = async () => { throw new Error('SEGREDO-INTERNO senha=123'); };
+  const srv = criarServidor({ funcoes: { eco, cru, quebra }, segredo: 'segredo-do-proxy' });
+  await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const j = async (u, o) => { const r = await fetch(base + u, o); return { status: r.status, corpo: await r.json().catch(() => null) }; };
+  try {
+    assert.deepStrictEqual((await j('/saude')).corpo, { ok: true });
+    assert.strictEqual((await j('/api/nao-existe')).status, 404);
+    assert.strictEqual((await j('/api/..%2Fserver')).status, 404, 'só nomes simples de api/');
+    // corpo JSON e parâmetros do endereço, status e json
+    let r = await j('/api/eco?a=1&b=2&b=3', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'x' }) });
+    assert.strictEqual(r.status, 201); assert.deepStrictEqual(r.corpo.body, { acao: 'x' }); assert.deepStrictEqual(r.corpo.query, { a: '1', b: ['2', '3'] });
+    assert.strictEqual((await j('/api/eco', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{quebrado' })).status, 400);
+    assert.strictEqual((await j('/api/eco', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ x: 'a'.repeat(6.5 * 1024 * 1024) }) })).status, 413, 'corpo grande demais');
+    // corpo cru (aviso de pagamento): o servidor não lê antes da função
+    r = await j('/api/cru', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"a": 1}' });
+    assert.deepStrictEqual(r.corpo, { cru: '{"a": 1}', body: true });
+    // erro de dentro da função: 500 sem vazar a mensagem
+    r = await j('/api/quebra'); assert.strictEqual(r.status, 500); assert.ok(!JSON.stringify(r.corpo).includes('SEGREDO'));
+    // IP: direto no servidor, o que vale é o ÚLTIMO do X-Forwarded-For (os da frente o visitante escreve); x-real-ip do visitante é jogado fora
+    r = await j('/api/eco', { headers: { 'X-Forwarded-For': '6.6.6.6, 203.0.113.9', 'X-Real-IP': '7.7.7.7', 'X-Forwarded-Host': 'loja-falsa.exemplo.com', 'X-Cliente-IP': '8.8.8.8' } });
+    assert.strictEqual(r.corpo.ip, '203.0.113.9'); assert.strictEqual(r.corpo.host, null); assert.deepStrictEqual(r.corpo.vazou, []);
+    // com o segredo certo (vindo do Cloudflare): vale o IP e o endereço que ele mandou
+    const doProxy = { 'X-Proxy-Segredo': 'segredo-do-proxy', 'X-Cliente-IP': '198.51.100.7', 'X-Host-Original': 'Loja-Do-Ze.exemplo.com', 'X-Forwarded-For': '1.1.1.1, 104.16.0.1' };
+    r = await j('/api/eco', { headers: doProxy });
+    assert.strictEqual(r.corpo.ip, '198.51.100.7'); assert.strictEqual(r.corpo.host, 'loja-do-ze.exemplo.com'); assert.deepStrictEqual(r.corpo.vazou, [], 'os cabeçalhos de confiança não chegam à função');
+    r = await j('/api/eco', { headers: { ...doProxy, 'X-Proxy-Segredo': 'errado' } });
+    assert.strictEqual(r.corpo.ip, '104.16.0.1', 'segredo errado: ignora o que o "proxy" disse'); assert.strictEqual(r.corpo.host, null);
+    r = await j('/api/eco', { headers: { ...doProxy, 'X-Cliente-IP': 'nao-e-ip; drop table' } });
+    assert.strictEqual(r.corpo.ip, '104.16.0.1', 'IP inválido do proxy não vale');
+    // /api/saude (aberto pelo site): diz se o segredo da ponte confere, sem mostrar segredo nenhum
+    assert.deepStrictEqual((await j('/api/saude', { headers: doProxy })).corpo, { ok: true, ponte: true });
+    assert.deepStrictEqual((await j('/api/saude', { headers: { ...doProxy, 'X-Proxy-Segredo': 'errado' } })).corpo, { ok: true, ponte: false });
+    assert.deepStrictEqual((await j('/api/saude')).corpo, { ok: true, ponte: false });
+  } finally { srv.close(); }
+  // sem segredo configurado, nada é confiado (ninguém "acerta" um segredo vazio)
+  const sem = criarServidor({ funcoes: { eco: async (req, res) => res.json({ ip: req.headers['x-real-ip'] }) }, segredo: '' });
+  await new Promise((ok) => sem.listen(0, '127.0.0.1', ok));
+  try { const r = await fetch(`http://127.0.0.1:${sem.address().port}/api/eco`, { headers: { 'X-Proxy-Segredo': '', 'X-Cliente-IP': '8.8.8.8' } }); assert.notStrictEqual((await r.json()).ip, '8.8.8.8'); } finally { sem.close(); }
+});
+
+teste('servidor: com EXIGIR_PROXY só atende o Cloudflare (e a rotina da noite) e freia quem chama demais', async () => {
+  const { criarServidor } = require(raiz('server'));
+  let chamou = 0;
+  const eco = async (req, res) => { chamou++; res.json({ ok: true }); };
+  const srv = criarServidor({ funcoes: { eco }, segredo: 'segredo-do-proxy', exigirProxy: true, segredoCron: 'cron-123', limitePorMinuto: 5 });
+  await new Promise((ok) => srv.listen(0, '127.0.0.1', ok));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const st = async (u, h = {}) => (await fetch(base + u, { headers: h })).status;
+  try {
+    // direto, sem segredo: 403 e a função nem roda
+    assert.strictEqual(await st('/api/eco'), 403); assert.strictEqual(chamou, 0);
+    assert.strictEqual(await st('/api/eco', { 'X-Proxy-Segredo': 'chute' }), 403);
+    assert.strictEqual(await st('/api/eco', { Authorization: 'Bearer errado' }), 403);
+    // a saúde continua aberta (o script de atualização e o teste da ponte usam)
+    assert.strictEqual(await st('/saude'), 200); assert.strictEqual(await st('/api/saude'), 200);
+    // rotina da noite com o CRON_SECRET passa
+    assert.strictEqual(await st('/api/eco', { Authorization: 'Bearer cron-123' }), 200);
+    // pelo Cloudflare: passa até o limite POR CLIENTE; o 6º do mesmo IP leva 429, outro IP segue normal
+    const de = (ip) => ({ 'X-Proxy-Segredo': 'segredo-do-proxy', 'X-Cliente-IP': ip });
+    for (let i = 0; i < 5; i++) assert.strictEqual(await st('/api/eco', de('198.51.100.1')), 200);
+    const r = await fetch(base + '/api/eco', { headers: de('198.51.100.1') });
+    assert.strictEqual(r.status, 429); assert.strictEqual(r.headers.get('retry-after'), '60');
+    assert.strictEqual(await st('/api/eco', de('198.51.100.2')), 200, 'um cliente abusando não trava os outros');
+  } finally { srv.close(); }
+  // sem EXIGIR_PROXY (como está hoje), chamada direta continua funcionando
+  const livre = criarServidor({ funcoes: { eco }, segredo: 'segredo-do-proxy', exigirProxy: false, limitePorMinuto: 600 });
+  await new Promise((ok) => livre.listen(0, '127.0.0.1', ok));
+  try { assert.strictEqual((await fetch(`http://127.0.0.1:${livre.address().port}/api/eco`)).status, 200); } finally { livre.close(); }
+});
+
+// ------------------------------------------------------------------ cofre: dados do cliente cifrados no banco
+const comChaveDoCofre = async (fn) => {
+  const antes = process.env.DADOS_CHAVE; process.env.DADOS_CHAVE = Buffer.alloc(32, 7).toString('base64');
+  try { return await fn(); } finally { if (antes === undefined) delete process.env.DADOS_CHAVE; else process.env.DADOS_CHAVE = antes; }
+};
+teste('cofre: cifra e abre; sem chave nada muda; cada loja tem a sua chave; dado trocado ou mexido não abre', async () => {
+  const Cofre = require(raiz('lib/cofre'));
+  const antes = process.env.DADOS_CHAVE; delete process.env.DADOS_CHAVE;
+  try {
+    assert.strictEqual(Cofre.ligado(), false);
+    assert.strictEqual(Cofre.fechar('Ana', 'banca', 'nome'), 'Ana', 'sem chave, grava como antes');
+    let guardado;
+    await comChaveDoCofre(async () => {
+      assert.strictEqual(Cofre.ligado(), true);
+      const c = Cofre.fechar('Ana Souza', 'banca', 'nome'); guardado = c;
+      assert.ok(c.startsWith('c1:') && !c.includes('Ana'));
+      assert.notStrictEqual(c, Cofre.fechar('Ana Souza', 'banca', 'nome'), 'cada cifra sai diferente');
+      assert.strictEqual(Cofre.abrir(c, 'banca', 'nome'), 'Ana Souza');
+      assert.strictEqual(Cofre.abrir(c, 'espetinhos', 'nome'), Cofre.PROTEGIDO, 'a chave de outra loja não abre');
+      assert.strictEqual(Cofre.abrir(c, 'banca', 'telefone'), Cofre.PROTEGIDO, 'colado no lugar de outro campo não abre');
+      const meio = Math.floor(c.length / 2), mexido = c.slice(0, meio) + (c[meio] === 'A' ? 'B' : 'A') + c.slice(meio + 1);
+      assert.strictEqual(Cofre.abrir(mexido, 'banca', 'nome'), Cofre.PROTEGIDO, 'cifra adulterada não abre');
+      assert.strictEqual(Cofre.abrir('Ana antiga', 'banca', 'nome'), 'Ana antiga', 'dado antigo, sem cifra, segue legível');
+      assert.strictEqual(Cofre.fechar(c, 'banca', 'nome'), c, 'não cifra duas vezes');
+      const j = Cofre.fecharJSON([{ nome: 'Ana' }], 'banca', 'indiceClientes');
+      assert.ok(typeof j === 'string' && !j.includes('Ana'));
+      assert.deepStrictEqual(Cofre.abrirJSON(j, 'banca', 'indiceClientes', []), [{ nome: 'Ana' }]);
+      assert.deepStrictEqual(Cofre.abrirJSON([{ nome: 'x' }], 'banca', 'indiceClientes', []), [{ nome: 'x' }], 'lista antiga, sem cifra');
+      const aberto = { nome: 'Ana', telefone: '62999990000', quadra: '5', lote: '3', obs: '', total: 10 };
+      const f = Cofre.fecharCampos(aberto, 'banca');
+      assert.strictEqual(f.total, 10); assert.strictEqual(f.obs, ''); assert.ok(Cofre.cifrado(f.telefone) && Cofre.cifrado(f.quadra));
+      assert.deepStrictEqual(Cofre.abrirCampos(f, 'banca'), aberto);
+      // o painel (WebCrypto do navegador) abre o que o servidor fechou
+      const L = await import(raiz('js/cofre-lib.js'));
+      L.carregarChave(() => Cofre.chaveParaPainel('banca'));
+      assert.deepStrictEqual(await L.abrirPedido(f), aberto);
+      L.carregarChave(() => Cofre.chaveParaPainel('espetinhos'));
+      assert.strictEqual((await L.abrirPedido(f)).nome, L.PROTEGIDO, 'chave de outra loja no painel');
+      L.esquecerChave();
+      assert.strictEqual((await L.abrirPedido(f)).nome, L.PROTEGIDO, 'painel sem chave');
+      assert.deepStrictEqual(await L.abrirPedido(aberto), aberto, 'pedido antigo aparece normal');
+    });
+    assert.strictEqual(Cofre.abrir(guardado, 'banca', 'nome'), Cofre.PROTEGIDO, 'servidor sem a chave: protegido, sem quebrar');
+  } finally { if (antes !== undefined) process.env.DADOS_CHAVE = antes; }
+});
+teste('cofre: pedido e conta vão cifrados ao banco; a mensagem do cliente sai aberta; só quem atende recebe a chave', async () => {
+  await comChaveDoCofre(async () => {
+    const Cofre = require(raiz('lib/cofre'));
+    const tokens = { ...TOKENS, 'producao-espetinhos': { uid: 'u7', tenants: { espetinhos: 'producao' } } };
+    const db = criarBanco(semente()); const adm = criarAdmin(db, tokens);
+    const checkout = carregarApi(raiz('api/checkout.js'), adm);
+    const p = pedido({ nome: 'Helena Prado', telefone: '62988887777', obs: 'portão azul', itens: [{ id: 'tomate', qtd: 1, tipo: 'un' }] });
+    const enviar = () => chamar(checkout, { headers: { ...ip(), 'X-Loja': 'espetinhos', Authorization: 'Bearer cliente' }, body: p });
+    const r = await enviar();
+    assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+    const salvo = db._dados.get(`tenants/espetinhos/pedidos/${p.idempotencyKey}`);
+    for (const s of ['Helena', '62988887777', 'portão azul']) assert.ok(!JSON.stringify(salvo).includes(s), `"${s}" aberto no pedido do banco`);
+    assert.strictEqual(Cofre.abrir(salvo.nome, 'espetinhos', 'nome'), 'Helena Prado');
+    assert.strictEqual(salvo.total > 0, true, 'valores e itens seguem normais');
+    const contas = [...db._dados.entries()].filter(([k]) => k.startsWith('tenants/espetinhos/contas/'));
+    assert.ok(contas.length, 'a conta do cliente foi criada');
+    assert.ok(!JSON.stringify(contas).includes('Helena') && !JSON.stringify(contas).includes('62988887777'), 'conta cifrada no banco');
+    assert.ok(decodeURIComponent(r.corpo.pedido.whatsappMsg).includes('Helena'), 'a mensagem do WhatsApp (do próprio cliente) sai com o nome');
+    const r2 = await enviar();
+    assert.strictEqual(r2.status, 200); assert.ok(decodeURIComponent(r2.corpo.pedido.whatsappMsg).includes('Helena'), 'reenvio: abre o pedido guardado');
+    // a chave: só quem atende esta loja
+    const eq = carregarApi(raiz('api/equipe.js'), adm);
+    const chave = (tok) => chamar(eq, { headers: { 'X-Loja': 'espetinhos', Authorization: `Bearer ${tok}` }, body: { acao: 'chave-dados' } });
+    const k = await chave('caixa-espetinhos');
+    assert.strictEqual(k.status, 200); assert.strictEqual(k.corpo.chave, Cofre.chaveParaPainel('espetinhos'));
+    assert.strictEqual((await chave('dono-espetinhos')).status, 200);
+    assert.strictEqual((await chave('producao-espetinhos')).status, 403, 'produção não vê dado de cliente');
+    assert.strictEqual((await chave('cliente')).status, 403);
+    assert.strictEqual((await chave('dona-banca')).status, 403, 'dona de outra loja');
+    assert.notStrictEqual(Cofre.chaveParaPainel('espetinhos'), Cofre.chaveParaPainel('banca'));
+    const L = await import(raiz('js/cofre-lib.js'));
+    L.carregarChave(() => k.corpo.chave);
+    const aberto = await L.abrirPedido(salvo);
+    assert.strictEqual(aberto.nome, 'Helena Prado'); assert.strictEqual(aberto.obs, 'portão azul'); assert.strictEqual(aberto.telefone, '62988887777');
+    L.esquecerChave();
+  });
+});
+teste('cofre: a previsão guarda nomes e endereços cifrados e o painel recebe tudo aberto', async () => {
+  await comChaveDoCofre(async () => {
+    const db = criarBanco({});
+    const Store = carregarApi(raiz('analytics/store.js'), criarAdmin(db, TOKENS));   // troca o firebase-admin pelo falso
+    const { executarMotor, aplicarParametros } = require(raiz('analytics/engine')); aplicarParametros({});
+    const NOMES = ['Helena Prado', 'Otávio Reis', 'Marina Lobo', 'Rui Antunes'];
+    const dia = (n) => new Date(Date.UTC(2026, 7, n, 15)).toISOString();
+    const pedidos = []; let k = 0;
+    for (let n = 1; n <= 40; n++) for (let c = 1; c <= 4; c++) pedidos.push({ id: 'p' + (++k), data: dia(n), nome: NOMES[c - 1], telefone: '6299990000' + c, aceitaOfertas: true, quadra: '7', lote: String(c), condominio: 'Jardins', total: 20, itens: [{ id: 'tomate', nome: 'Tomate', qtd: 2, tipo: 'kg', unidade: 'kg', preco: 8.9 }] });
+    const catalogo = [{ id: 'tomate', nome: 'Tomate', unidade: 'kg', preco: 8.9, cat: 'legumes', ativo: true }];
+    const r = executarMotor({ pedidos, catalogo, agregados: [], parametros: {}, eventos: [], snapshots: [], feiras: [], agora: Date.UTC(2026, 8, 10, 15) });
+    assert.ok(r.indiceClientes.some((c) => c.nome === 'Helena Prado'), 'o motor viu os nomes');
+    await Store.persistir(db, r, {});
+    const tudo = JSON.stringify([...db._dados.values()]);
+    for (const s of [...NOMES.map((x) => x.split(' ')[0]), '62999900001']) assert.ok(!tudo.includes(s), `"${s}" aberto no que o motor gravou`);
+    const lido = await Store.lerPainel(db);
+    assert.ok(lido.indiceClientes.some((c) => c.nome === 'Helena Prado' && c.lote === '1'));
+    assert.ok(lido.produtos.tomate && lido.produtos.tomate.horizontes, 'a previsão por produto volta aberta');
+    const um = lido.indiceClientes.find((c) => c.nome === 'Helena Prado');
+    const m = await Store.lerClientePorId(db, um.id);
+    assert.strictEqual(m.nome, 'Helena Prado'); assert.strictEqual(m.quadra, '7');
+  });
+});
+
+teste('cloud run: o servidor enxerga todas as funções de api/ e o Dockerfile leva o que elas usam', async () => {
+  const { listarFuncoes } = require(raiz('server'));
+  const fs = require('fs');
+  assert.deepStrictEqual(Object.keys(listarFuncoes()).sort(), fs.readdirSync(raiz('api')).filter((f) => f.endsWith('.js')).map((f) => f.slice(0, -3)).sort());
+  const docker = fs.readFileSync(raiz('Dockerfile'), 'utf8');
+  for (const pasta of ['api', 'lib', 'analytics', 'server']) assert.ok(new RegExp(`COPY ${pasta} \\./${pasta}`).test(docker), `o Dockerfile precisa copiar ${pasta}/`);
+  const ignorado = fs.readFileSync(raiz('.dockerignore'), 'utf8').split('\n').map((l) => l.trim().replace(/\/$/, ''));
+  for (const pasta of ['api', 'lib', 'analytics', 'server', 'package.json', 'package-lock.json']) assert.ok(!ignorado.includes(pasta), `.dockerignore esconde ${pasta}, que o Dockerfile precisa copiar`);
+  // tudo que api/ e lib/ importam de ../ existe nas pastas copiadas
+  for (const arq of [...fs.readdirSync(raiz('api')).map((f) => 'api/' + f), ...fs.readdirSync(raiz('lib')).map((f) => 'lib/' + f)].filter((f) => f.endsWith('.js'))) {
+    for (const m of fs.readFileSync(raiz(arq), 'utf8').matchAll(/require\('(\.{1,2}\/[^']+)'\)/g)) {
+      const alvo = require('path').resolve(require('path').dirname(raiz(arq)), m[1]);
+      assert.ok(/[/\\](api|lib|analytics|server)[/\\]/.test(alvo + '/'), `${arq} importa ${m[1]}, que não vai para a imagem`);
+    }
+  }
+});
+
+teste('cloudflare: _headers não soma cabeçalhos em nenhum endereço, /previa tem os dele e /api bate com o vercel.json', async () => {
+  const C = require(raiz('lib/cloudflare-arquivos')), vercel = require(raiz('vercel.json'));
+  const texto = C.gerarHeaders(vercel), trechos = texto.split('\n\n').slice(1).map((t) => { const [fim, ...hs] = t.split('\n'); return { padrao: fim.trim(), hs: Object.fromEntries(hs.map((l) => { const i = l.indexOf(':'); return [l.slice(2, i), l.slice(i + 2)]; })) }; });
+  assert.ok(trechos.length < 100, 'o Cloudflare aceita até 100 trechos'); assert.ok(texto.split('\n').every((l) => l.length < 2000), 'linha de até 2000 letras');
+  const caminhos = ['/', '/admin', '/admin.html', '/plataforma', '/feira', '/privacidade', '/assets/index-ab12.js', '/assets/x.css', '/sw.js', '/workbox-1a2b.js', '/registerSW.js', '/push-sw.js', '/manifest.webmanifest', '/admin.webmanifest', '/icon-192.png', '/icon-painel-512.png', '/og-image.png', '/robots.txt', '/sitemap.xml', '/previa'];
+  for (const c of caminhos) {
+    const vistos = {};
+    for (const t of trechos.filter((x) => C.casa(x.padrao, c))) for (const k of Object.keys(t.hs)) vistos[k] = (vistos[k] || 0) + 1;
+    assert.ok(Object.keys(vistos).length > 0, `${c} ficou sem cabeçalho de segurança`);
+    for (const [k, n] of Object.entries(vistos)) assert.strictEqual(n, 1, `${c}: o cabeçalho ${k} cairia em ${n} trechos e seria somado`);
+  }
+  const de = (c) => Object.assign({}, ...trechos.filter((x) => C.casa(x.padrao, c)).map((x) => x.hs));
+  assert.strictEqual(de('/previa')['X-Frame-Options'], 'SAMEORIGIN'); assert.ok(/frame-ancestors 'self'/.test(de('/previa')['Content-Security-Policy']));
+  assert.strictEqual(de('/')['X-Frame-Options'], 'DENY'); assert.ok(/frame-ancestors 'none'/.test(de('/')['Content-Security-Policy']));
+  assert.ok(/noindex/.test(de('/admin')['X-Robots-Tag']) && /noindex/.test(de('/plataforma')['X-Robots-Tag']) && !de('/')['X-Robots-Tag']);
+  assert.deepStrictEqual(C.gerarRedirects(vercel).split('\n').slice(1).filter(Boolean), ['/feira/:id /?feira=:id&entrar=1 302'], '/previa não é reescrita (os cabeçalhos do /index.html vinham junto)');
+  assert.deepStrictEqual(C.copiasDePagina(vercel), [{ de: 'index.html', para: 'previa.html' }], '/previa vira um arquivo próprio');
+  assert.ok(!C.ENDERECOS_DO_SITE.some((e) => C.casa(e, '/previa') || C.casa(e, '/previa.html')), 'nenhum trecho "de todas as páginas" vale para a prévia');
+  // um bloco novo no vercel.json que o tradutor não conhece derruba o teste (em vez de ficar sem cabeçalho no Cloudflare)
+  assert.throws(() => C.gerarHeaders({ ...vercel, headers: [...vercel.headers, { source: '/novo', headers: [{ key: 'X', value: 'y' }] }] }), /ensine/);
+  // /api: as respostas da função têm os mesmos cabeçalhos que o vercel.json põe
+  const F = await import(raiz('functions/api/[[caminho]].js')), bloco = Object.fromEntries(vercel.headers.find((b) => b.source === '/api/(.*)').headers.map((h) => [h.key, h.value]));
+  const todas = Object.fromEntries(vercel.headers.find((b) => b.source === '/((?!previa).*)').headers.map((h) => [h.key, h.value]));
+  for (const [k, v] of Object.entries(F.CABECALHOS_DA_API)) assert.strictEqual(v, bloco[k] || todas[k], `/api: ${k} difere do vercel.json`);
+  assert.ok(F.CABECALHOS_DA_API['Cache-Control'] === 'no-store');
+});
+
+teste('cloudflare: /api/* é repassado ao servidor só com o necessário, com o segredo, o IP e o endereço do Cloudflare', async () => {
+  const F = await import(raiz('functions/api/[[caminho]].js'));
+  const antes = globalThis.fetch; let visto = null;
+  globalThis.fetch = async (url, o) => { visto = { url, ...o, cab: Object.fromEntries(o.headers) }; const h = new Headers({ 'Content-Type': 'application/json', 'X-Vazou': 'sim' }); h.append('Set-Cookie', 'conta=1; HttpOnly; Secure'); h.append('Set-Cookie', 'outro=2'); return new Response('{"ok":true}', { status: 201, headers: h }); };
+  const env = { API_ORIGEM: 'https://banca-api-abc.a.run.app/', PROXY_SEGREDO: 'seg' };
+  try {
+    const req = new Request('https://loja.exemplo.com/api/checkout?x=1&y=a b', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer t', 'X-Loja': 'paes', 'X-Proxy-Segredo': 'falso', 'X-Cliente-IP': '6.6.6.6', 'X-Forwarded-For': '6.6.6.6', 'CF-Connecting-IP': '198.51.100.7', Cookie: 'conta=abc', Origin: 'https://loja.exemplo.com', 'X-Authenticity-Token': 'assinatura-pagbank', 'X-Real-IP': '9.9.9.9' }, body: '{"a":1}' });
+    const r = await F.onRequest({ request: req, env, params: { caminho: ['checkout'] } });
+    assert.strictEqual(visto.url, 'https://banca-api-abc.a.run.app/api/checkout?x=1&y=a%20b'); assert.strictEqual(visto.method, 'POST');
+    assert.strictEqual(visto.cab['x-proxy-segredo'], 'seg'); assert.strictEqual(visto.cab['x-cliente-ip'], '198.51.100.7'); assert.strictEqual(visto.cab['x-host-original'], 'loja.exemplo.com');
+    assert.strictEqual(visto.cab['authorization'], 'Bearer t'); assert.strictEqual(visto.cab['x-loja'], 'paes');
+    assert.strictEqual(visto.cab['cookie'], 'conta=abc', 'a conta do cliente (cookie) segue'); assert.strictEqual(visto.cab['origin'], 'https://loja.exemplo.com');
+    assert.strictEqual(visto.cab['x-authenticity-token'], 'assinatura-pagbank', 'sem a assinatura do PagBank nenhum PIX seria confirmado');
+    assert.ok(!('x-forwarded-for' in visto.cab) && !('x-real-ip' in visto.cab), 'IP escrito pelo visitante não segue');
+    assert.strictEqual(visto.redirect, 'manual');
+    assert.strictEqual(r.status, 201); assert.strictEqual(r.headers.get('cache-control'), 'no-store', '/api sem Cache-Control próprio nunca fica guardada'); assert.ok(!r.headers.get('x-vazou'));
+    assert.deepStrictEqual(r.headers.getSetCookie(), ['conta=1; HttpOnly; Secure', 'outro=2'], 'os cookies da conta voltam todos');
+    assert.deepStrictEqual(await r.json(), { ok: true });
+    // GET sem corpo
+    await F.onRequest({ request: new Request('https://loja.exemplo.com/api/manifest?loja=x'), env, params: { caminho: ['manifest'] } });
+    assert.strictEqual(visto.body, undefined);
+    // sem configuração: 503 claro, sem tentar chamar nada
+    visto = null; const sem = await F.onRequest({ request: new Request('https://loja.exemplo.com/api/pdv', { method: 'POST', body: '{}' }), env: {}, params: { caminho: ['pdv'] } });
+    assert.strictEqual(sem.status, 503); assert.strictEqual(visto, null);
+    const http = await F.onRequest({ request: new Request('https://l/api/x'), env: { API_ORIGEM: 'http://inseguro.exemplo.com', PROXY_SEGREDO: 's' }, params: { caminho: ['x'] } });
+    assert.strictEqual(http.status, 503, 'só https');
+    // servidor fora do ar: 502 com mensagem em português
+    globalThis.fetch = async () => { throw new Error('connect ECONNREFUSED 10.0.0.1'); };
+    const caiu = await F.onRequest({ request: new Request('https://l/api/x'), env, params: { caminho: ['x'] } });
+    assert.strictEqual(caiu.status, 502); assert.ok(!JSON.stringify(await caiu.json()).includes('10.0.0.1'));
+  } finally { globalThis.fetch = antes; }
+});
+
+teste('cloudflare: o redutor de fotos só aceita os sites e as larguras do vercel.json e nunca vira abridor de site', async () => {
+  const I = await import(raiz('functions/_vercel/image.js')), vercel = require(raiz('vercel.json'));
+  assert.deepStrictEqual(I.LARGURAS, vercel.images.sizes);
+  const dosSites = I.SITES_DE_FOTO.map((s) => s.host || '**' + s.sufixo).sort(), doVercel = vercel.images.remotePatterns.map((p) => p.hostname).filter((h, i, a) => a.indexOf(h) === i).sort();
+  assert.deepStrictEqual(dosSites, doVercel, 'mesma lista de sites do vercel.json (images.remotePatterns)');
+  for (const bom of ['https://i.ibb.co/abc/foto.jpg', 'https://a.b.ibb.co/x.png', 'https://firebasestorage.googleapis.com/v0/b/x/o/y?alt=media', 'https://loja.firebasestorage.app/x', 'https://storage.googleapis.com/b/o']) assert.ok(I.siteDeFotoValido(bom), bom);
+  for (const ruim of ['http://i.ibb.co/x.jpg', 'https://evil-ibb.co/x.jpg', 'https://ibb.co.evil.com/x.jpg', 'https://i.ibb.co@evil.com/x.jpg', 'https://user:pw@i.ibb.co/x.jpg', 'https://i.ibb.co:8443/x.jpg', 'https://.firebasestorage.app/x', 'https://exemplo.com/x.jpg', 'javascript:alert(1)', '', 'https://169.254.169.254/latest']) assert.strictEqual(I.siteDeFotoValido(ruim), null, ruim);
+  const antes = globalThis.fetch; let chamadas = 0;
+  const pedir = (u, w) => I.onRequestGet({ request: new Request(`https://loja.exemplo.com/_vercel/image?url=${encodeURIComponent(u)}&w=${w}&q=75`) });
+  try {
+    globalThis.fetch = async (u, o) => { chamadas++; return new Response('IMG', { status: 200, headers: { 'Content-Type': 'image/webp', 'Content-Length': '3' } }); };
+    const ok = await pedir('https://i.ibb.co/abc/foto.jpg', 128);
+    assert.strictEqual(ok.status, 200); assert.strictEqual(ok.headers.get('content-type'), 'image/webp'); assert.ok(/max-age=2678400/.test(ok.headers.get('cache-control')));
+    assert.strictEqual((await pedir('https://exemplo.com/x.jpg', 128)).status, 400); assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 999)).status, 400);
+    assert.strictEqual(chamadas, 1, 'pedido recusado não busca nada');
+    globalThis.fetch = async () => new Response('<html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+    assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 128)).status, 415, 'só devolve imagem');
+    globalThis.fetch = async () => new Response('x', { status: 404 });
+    assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 128)).status, 502);
+  } finally { globalThis.fetch = antes; }
+});
+
 // ------------------------------------------------------------------ testes de segurança (arquivo próprio)
 require('./seguranca')({ teste, raiz, criarBanco, criarAdmin, chamar, carregarApi });
+
+
+teste('motor: salário a partir do 5º dia útil (pula fim de semana e feriado) e vale no dia 20 ou no dia útil seguinte', () => {
+  const EF = require(raiz('analytics/externalFactors.js')), N = require(raiz('analytics/normalize.js'));
+  const marcados = (de, ate, f) => { const o = []; for (let d = N.diaDeIso(de); d <= N.diaDeIso(ate); d++) if (f(d)) o.push(N.isoDeDia(d)); return o; };
+  // outubro/2026: 1 (qui), 2 (sex), 5, 6, 7 → 5º dia útil = dia 7; a janela tem 6 dias
+  assert.deepStrictEqual(marcados('2026-10-01', '2026-10-31', EF.ehPagamento), ['2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11', '2026-10-12']);
+  // novembro/2026: dia 2 é Finados (feriado), então o 5º dia útil é o dia 9
+  assert.strictEqual(marcados('2026-11-01', '2026-11-30', EF.ehPagamento)[0], '2026-11-09');
+  // dia 20/11/2026 é feriado (sexta) → vale na segunda, 23
+  assert.deepStrictEqual(marcados('2026-11-01', '2026-11-30', EF.ehVale), ['2026-11-23', '2026-11-24', '2026-11-25']);
+  const st = EF.estadoDoDia(N.diaDeIso('2026-10-21'), {});
+  assert.strictEqual(st.vale, true); assert.strictEqual(st.pag, false);
+});
+
+teste('compras: aviso de clima explica o efeito aprendido e avisa quando ainda está aprendendo', async () => {
+  const D = await import(raiz('js/dicas-compra-lib.js'));
+  const a = D.avisosDoClima([
+    { dia: '2026-10-15', chuva: 12.4, tmax: 24, efeitos: [{ tipo: 'chuva', fator: 0.82, n: 9 }] },
+    { dia: '2026-10-16', chuva: 0, tmax: 36, efeitos: [{ tipo: 'calor', fator: null, n: 2 }] },
+    { dia: '2026-10-17', efeitos: [] }, null, { dia: 'ontem', efeitos: [{ tipo: 'chuva', fator: 1 }] },
+  ]);
+  assert.strictEqual(a.length, 2);
+  assert.match(a[0].texto, /^qui, 15\/10: previsão de chuva \(12 mm\)\. Nos dias de chuva, a loja vende uns 18% a menos\.$/);
+  assert.strictEqual(a[0].aprendido, true);
+  assert.match(a[1].texto, /calor acima do normal.*ainda está aprendendo/);
+  assert.strictEqual(a[1].aprendido, false);
+  assert.deepStrictEqual(D.avisosDoClima(undefined), []);
+});
+
+teste('compras: dica de etileno só aparece com os dois grupos e não confunde doce de banana nem macarrão', async () => {
+  const D = await import(raiz('js/dicas-compra-lib.js'));
+  const r = D.dicasEtileno([
+    { nome: 'Banana prata' }, { nome: 'Maçã gala' }, { nome: 'Alface crespa' }, { nome: 'Couve-flor' },
+    { nome: 'Doce de banana' }, { nome: 'Macarrão caseiro' }, { nome: 'Rúcula', ativo: false }, { nome: 'Tomates' },
+  ]);
+  assert.deepStrictEqual(r.emissores, ['Banana prata', 'Maçã gala', 'Tomates']);
+  assert.deepStrictEqual(r.sensiveis, ['Alface crespa', 'Couve-flor']);
+  assert.strictEqual(D.dicasEtileno([{ nome: 'Banana' }, { nome: 'Maçã' }]), null);
+  assert.strictEqual(D.dicasEtileno([]), null);
+});
+
+
+teste('estoque: alerta de sobra só para perecível com estoque acima do que aguenta', async () => {
+  const A = await import(raiz('js/alertas-lib.js'));
+  const produtos = [
+    { id: 'alface', nome: 'Alface crespa', cat: 'folhas', estoqueFisico: 30, preco: 3, unidade: 'un' },     // vende 5/dia → 6 dias; folha aguenta 2
+    { id: 'tomate', nome: 'Tomate', cat: 'legumes', estoqueFisico: 20, preco: 9, unidade: 'kg' },          // vende 4/dia → 5 dias; aguenta 4 → folga normal
+    { id: 'mel', nome: 'Mel', cat: 'mercearia', estoqueFisico: 50, preco: 30 },                          // não é perecível
+    { id: 'bolo', nome: 'Bolo caseiro', cat: 'padaria', estoqueFisico: 10, preco: 25 },                  // perecível porque já teve perda
+    { id: 'rucula', nome: 'Rúcula', estoqueFisico: '', preco: 4 },                                       // sem estoque contado
+  ];
+  const r = A.sobrasPereciveis({ produtos, previsto: { alface: { vende: 35 }, tomate: { vende: 28 }, mel: { vende: 7 }, bolo: { vende: 7 }, rucula: { vende: 70 } }, perdas: { bolo: { taxa: 0.1 } } });
+  assert.deepStrictEqual(r.map((x) => x.id), ['bolo', 'alface']);
+  assert.deepStrictEqual(r.find((x) => x.id === 'alface'), { id: 'alface', nome: 'Alface crespa', unidade: 'un', sobra: 20, dias: 6, aguenta: 2, valor: 60 });
+});
+
+teste('balanço: curva ABC de hoje usa o preço do dia e deixa de fora quem não tem custo', async () => {
+  const A = await import(raiz('js/alertas-lib.js'));
+  const produtos = [
+    { id: 'a', nome: 'A', preco: 10, custo: 4 }, { id: 'b', nome: 'B', preco: 5, custo: 4 }, { id: 'c', nome: 'C', preco: 20, custo: 0 },
+    { id: 'd', nome: 'D', preco: 8, custo: 2, ativo: false }, { id: 'e', nome: 'E', preco: 6, custo: 5 },
+  ];
+  const r = A.lucroDeHoje({ produtos, previsaoHoje: { a: 10, b: 10, c: 5, d: 9, e: 1 }, precoDe: (p) => (p.id === 'a' ? 12 : p.preco) });
+  assert.deepStrictEqual(r.linhas.map((l) => [l.id, l.lucro, l.classe]), [['a', 80, 'A'], ['b', 10, 'B'], ['e', 1, 'C']]);
+  assert.strictEqual(r.total, 91); assert.strictEqual(r.semCusto, 1);
+});
+
+teste('balcão: venda cruzada sugere o que vai junto, sem repetir o que já está na venda', async () => {
+  const A = await import(raiz('js/alertas-lib.js'));
+  const juntos = { alface: ['tomate', 'cebola', 'pepino'], tomate: ['cebola', 'alface'], pao: ['manteiga'] };
+  assert.deepStrictEqual(A.sugestoesJuntos(juntos, ['alface', 'tomate']), ['cebola', 'pepino']);
+  assert.deepStrictEqual(A.sugestoesJuntos(juntos, ['queijo']), []);
+  assert.deepStrictEqual(A.sugestoesJuntos(null, ['alface']), []);
+});
+
+
+teste('compras: produto com dias para ficar pronto avisa a data e não produz mais do que vende antes de vencer', async () => {
+  const C = await import(raiz('js/compras-lib.js'));
+  const produtos = [
+    { id: 'pepino', nome: 'Pepino', unidade: 'kg', estoqueFisico: 50, custo: 3 },
+    { id: 'picles', nome: 'Picles', unidade: 'un', estoqueFisico: 0, estoqueMin: 5, estoqueIdeal: 40, prazoDias: 3, ficha: { rende: 10, validadeDias: 10, itens: [{ id: 'pepino', qtd: 2 }] } },
+  ];
+  const L = C.listaDeCompras({ produtos, previsto: { picles: { alvo: 40, vende: 14 } }, hoje: '2026-10-13' });
+  const pr = L.produzir.find((x) => x.id === 'picles');
+  assert.match(pr.motivo, /leva 3 dias para ficar pronto \(começando hoje, fica pronto em 16\/10\)/);
+  // vende 2 por dia e vale 10 dias: no máximo 20 unidades, mesmo que o ideal peça mais
+  assert.strictEqual(pr.qtd, 20); assert.match(pr.motivo, /limitado ao que vende em 10 dias de validade/);
+  const sem = C.listaDeCompras({ produtos: [produtos[0], { ...produtos[1], prazoDias: null, ficha: { ...produtos[1].ficha, validadeDias: null } }], previsto: { picles: { alvo: 40, vende: 14 } } });
+  assert.doesNotMatch(sem.produzir[0].motivo, /pronto|validade/);
+});
+
+teste('balanço: kit comparado com os itens soltos, e simulador de preço acha o preço de maior lucro', async () => {
+  const A = await import(raiz('js/alertas-lib.js'));
+  const produtos = [
+    { id: 'couve', nome: 'Couve', preco: 4, custo: 2 }, { id: 'limao', nome: 'Limão', preco: 2, custo: 1 }, { id: 'gengibre', nome: 'Gengibre', preco: 3, custo: 1 },
+    { id: 'kit', nome: 'Kit Suco Verde', unidade: 'kit', preco: 8, ficha: { rende: 1, itens: [{ id: 'couve', qtd: 1 }, { id: 'limao', qtd: 1 }, { id: 'gengibre', qtd: 1 }] } },
+    { id: 'conserva', nome: 'Conserva de limão', unidade: 'un', preco: 15, ficha: { rende: 1, itens: [{ id: 'limao', qtd: 3 }] } },   // não é kit
+  ];
+  const ks = A.analisarKits(produtos);
+  assert.strictEqual(ks.length, 1);
+  // soltos: R$ 9 (lucro 5); kit: R$ 8 com custo 4 (lucro 4) → precisa vender 25% a mais para empatar
+  assert.deepStrictEqual(ks[0], { id: 'kit', nome: 'Kit Suco Verde', preco: 8, separado: 9, desconto: 1, lucroKit: 4, lucroSolto: 5, empate: 0.25 });
+  const sim = A.simularPreco({ preco: 10, custo: 6, vendeSemana: 100, elasticidade: 1 });
+  assert.strictEqual(sim.length, 7);
+  assert.deepStrictEqual(sim.find((l) => l.variacao === 0), { variacao: 0, preco: 10, vende: 100, lucro: 400, melhor: false });
+  // com elasticidade 1 a receita fica igual, então subir o preço sempre dá mais lucro: o melhor é +20%
+  assert.strictEqual(sim.find((l) => l.melhor).variacao, 0.2);
+  assert.deepStrictEqual(A.simularPreco({ preco: 10, custo: 6, vendeSemana: 0 }), []);
+});
+
+teste('vitrine: selos só verdadeiros, "Chegou hoje" some no dia seguinte e o texto da escolha é da loja', async () => {
+  const V = await import(raiz('js/vitrine-lib.js'));
+  assert.strictEqual(V.hojeDaLoja(Date.parse('2026-10-15T02:30:00Z')), '2026-10-14', 'antes das 3h UTC ainda é o dia anterior no Brasil');
+  const p = { id: 'a', chegouEm: '2026-10-14', estacao: true, escolha: true };
+  assert.deepStrictEqual(V.selosDe(p, { hoje: '2026-10-14', escolha: 'Escolha da Pedrina' }).map((s) => s.texto), ['Chegou hoje', 'Escolha da Pedrina', 'Da estação']);
+  assert.deepStrictEqual(V.selosDe(p, { hoje: '2026-10-15' }).map((s) => s.tipo), ['escolha', 'estacao'], 'amanhã o "chegou hoje" não vale mais');
+  assert.deepStrictEqual(V.selosDe({ id: 'b', estacao: 'sim', escolha: 1 }), [], 'só true conta');
+  assert.strictEqual(V.selosDe(p, { hoje: '2026-10-14', escolha: '   ' })[1].texto, 'Escolha da casa');
+});
+
+teste('vitrine: faixas novas respeitam o mínimo de produtos e o limite de 4 faixas no total', async () => {
+  const V = await import(raiz('js/vitrine-lib.js'));
+  const hoje = '2026-10-14';
+  const ps = [
+    { id: 'm', nome: 'Manga', chegouEm: hoje, estacao: true }, { id: 'u', nome: 'Uva', chegouEm: hoje },
+    { id: 'c', nome: 'Caqui', estacao: true }, { id: 'k1', nome: 'Kit sopa', unidade: 'kit' }, { id: 'k2', nome: 'Cesta da semana', unidade: 'cesta' },
+    { id: 't', nome: 'Tomate' }, { id: 'b', nome: 'Batata' },
+  ];
+  let f = V.faixasDaVitrine(ps, { hoje, maisPedidos: ['t', 'b', 'm', 'u', 'sumiu'] });
+  assert.deepStrictEqual(f.map((x) => [x.id, x.lugar]), [['chegou', 'topo'], ['estacao', 'meio'], ['mais', 'meio'], ['kits', 'meio']]);
+  assert.deepStrictEqual(f[2].ids, ['t', 'b', 'm', 'u'], 'produto que saiu da loja não entra');
+  f = V.faixasDaVitrine(ps, { hoje, maisPedidos: ['t', 'b', 'm', 'u'], temOfertas: true, temSempre: true });
+  assert.deepStrictEqual(f.map((x) => x.id), ['chegou', 'estacao'], 'com Ofertas e Seus de sempre, sobram 2 vagas');
+  f = V.faixasDaVitrine(ps, { hoje: '2026-10-15', maisPedidos: ['t', 'b', 'm'] });
+  assert.deepStrictEqual(f.map((x) => x.id), ['estacao', 'kits'], 'sem "chegou" de hoje; "mais pedidos" precisa de 4');
+  assert.deepStrictEqual(V.faixasDaVitrine(null), []);
+});
+
+teste('vitrine: peso aproximado, ícone da categoria, quadros conferidos e lugar dos blocos', async () => {
+  const V = await import(raiz('js/vitrine-lib.js'));
+  assert.strictEqual(V.pesoAproximado(196), '≈ 200 g');
+  assert.strictEqual(V.pesoAproximado(45), '≈ 45 g');
+  assert.strictEqual(V.pesoAproximado(1240), '≈ 1,2 kg');
+  assert.strictEqual(V.pesoAproximado(''), '');
+  assert.strictEqual(V.iconeDaCategoria('Verduras e folhas'), 'folha');
+  assert.strictEqual(V.iconeDaCategoria('FRUTAS'), 'fruta');
+  assert.strictEqual(V.iconeDaCategoria('Raízes'), 'raiz');
+  assert.strictEqual(V.iconeDaCategoria('Temperos'), 'tempero');
+  assert.strictEqual(V.iconeDaCategoria('Pães'), '');
+  const v = V.vitrineSegura({
+    quadros: [
+      { img: 'https://i.ibb.co/x/a.webp', titulo: 'Como escolher manga', texto: 'Aperte de leve...', cat: 'frutas' },
+      { img: 'javascript:alert(1)', titulo: 'Sem foto', texto: '' },                       // foto ruim e sem texto: sai
+      { img: 'https://i.ibb.co/x/"onerror=1', titulo: 'Aspas', texto: 'ok' },               // aspas: a foto sai, o texto fica
+      { titulo: '', texto: 'sem título' },
+      { titulo: 'quinto', texto: 'x' }, { titulo: 'sexto', texto: 'x' },
+    ],
+    donos: { img: 'https://i.ibb.co/x/d.webp', titulo: 'Adair e Pedrina', texto: 'Escolhemos cada pedido.' },
+    escolha: 'Escolha da Pedrina, a melhor de todas',
+  });
+  assert.deepStrictEqual(v.quadros.map((q) => q.titulo), ['Como escolher manga', 'Aspas'], 'no máximo 4 lidos; os inválidos saem');
+  assert.strictEqual(v.quadros[1].img, undefined);
+  assert.strictEqual(v.escolha.length, 24);
+  const b = V.blocosDaVitrine(v, 30);
+  assert.deepStrictEqual(b.map((x) => [x.tipo, x.depoisDe]), [['quadro', 6], ['donos', 14], ['quadro', 22]]);
+  assert.deepStrictEqual(V.blocosDaVitrine(v, 10).map((x) => x.tipo), ['quadro'], 'vitrine curta: só o que cabe');
+});
+
+teste('vitrine: escolha de troca vai no fim da observação e o funil compara as duas últimas semanas', async () => {
+  const V = await import(raiz('js/vitrine-lib.js'));
+  assert.strictEqual(V.obsComTroca('deixar na portaria', 'trocar'), 'deixar na portaria | Se faltar algum item: pode trocar por um parecido');
+  assert.strictEqual(V.obsComTroca('', 'nao'), 'Se faltar algum item: não trocar, só tirar');
+  assert.strictEqual(V.obsComTroca('x', 'qualquer'), 'x');
+  const longa = V.obsComTroca('a'.repeat(300), 'trocar');
+  assert.ok(longa.length <= 300 && longa.endsWith('por um parecido'), 'nunca passa do limite do servidor e a troca não se perde');
+  const dias = { '2026-10-14': { visita: 40, adicionou: 20, sacola: 10, pedido: 8 }, '2026-10-08': { visita: 10, adicionou: 3, sacola: 2, pedido: 1 }, '2026-10-07': { visita: 50, adicionou: 10, sacola: 5, pedido: 4 }, '2026-09-01': { visita: 999 } };
+  const r = V.resumoFunil(dias, '2026-10-14');
+  assert.deepStrictEqual([r.semana.visita, r.semana.pedido, r.semana.txPedido], [50, 9, 18]);
+  assert.deepStrictEqual([r.anterior.visita, r.anterior.txSacola], [50, 20]);
+  assert.strictEqual(r.poucos, false);
+  assert.strictEqual(V.resumoFunil({}, '2026-10-14').semana.txPedido, null);
+});
+
+teste('funil da vitrine: conta uma vez por aparelho e etapa, só na loja certa, e "mais pedidos" esconde produto de pouca venda', async () => {
+  const db = criarBanco(semente()); const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));
+  const contar = (token, etapa, loja) => chamar(api, { headers: { Authorization: `Bearer ${token}`, ...(loja ? { 'X-Loja': loja } : {}) }, body: { acao: 'funil', etapa } });
+  assert.strictEqual((await contar('cliente', 'visita')).corpo.contado, true);
+  assert.strictEqual((await contar('cliente', 'visita')).corpo.contado, false, 'o mesmo aparelho não conta duas vezes');
+  assert.strictEqual((await contar('cliente', 'adicionou')).corpo.contado, true);
+  assert.strictEqual((await contar('cliente', 'visita', 'espetinhos')).corpo.contado, true, 'outra loja conta à parte');
+  assert.strictEqual((await contar('cliente', 'apagar-tudo')).status, 400);
+  assert.strictEqual((await chamar(api, { body: { acao: 'funil', etapa: 'visita' } })).status, 401, 'sem login não conta');
+  const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+  const banca = (await db.doc(`analytics/funil-${hoje.slice(0, 7)}`).get()).data();
+  assert.deepStrictEqual(banca.dias[hoje.slice(8)], { visita: 1, adicionou: 1 });
+  const esp = (await db.doc(`tenants/espetinhos/analytics/funil-${hoje.slice(0, 7)}`).get()).data();
+  assert.deepStrictEqual(esp.dias[hoje.slice(8)], { visita: 1 });
+  const { maisPedidosDe } = require(raiz('analytics/publicApi.js'));
+  const pop = { a: { p: 0.9, n: 30 }, b: { p: 0.5, n: 12 }, c: { p: 0.4, n: 9 }, d: { p: 0.3, n: 3 }, e: { p: 0.95, n: 2 }, f: { p: 0.2, n: 40 } };
+  assert.deepStrictEqual(maisPedidosDe({ pop }, new Set(['a', 'b', 'c', 'd', 'e', 'f'])), ['a', 'b', 'c', 'd', 'f'], 'comprado só 2 vezes não aparece');
+  assert.deepStrictEqual(maisPedidosDe({ pop }, new Set(['a', 'b', 'e'])), [], 'menos de 4: sem faixa');
+});
+
+teste('rótulos: rótulo conferido, texto com preço e validade, cópias limitadas e folha A4 com etiquetas já usadas', async () => {
+  const R = await import(raiz('js/rotulo-lib.js'));
+  const r = R.rotuloSeguro({ titulo: '  Tomatinhos  ', sub: 'Tomate seco · 200 g', img: 'https://i.ibb.co/x/t.png', preco: true, validadeDias: 15, borda: 'qualquer', extra: 'some', loja: false });
+  assert.deepStrictEqual(r, { titulo: 'Tomatinhos', sub: 'Tomate seco · 200 g', preco: true, loja: false, validadeDias: 15, borda: 'feira', img: 'https://i.ibb.co/x/t.png' });
+  assert.strictEqual(R.rotuloSeguro({ img: 'javascript:alert(1)' }).img, undefined);
+  assert.strictEqual(R.rotuloSeguro({ validadeDias: -3 }).validadeDias, null);
+  const c = R.conteudoDoRotulo(r, { nome: 'Tomate seco', preco: 18, unidade: 'un' }, { agora: Date.parse('2026-10-14T15:00:00Z'), loja: 'Banca Adair e Pedrina' });
+  assert.deepStrictEqual(c.linhas, ['R$ 18,00 a unidade', 'Fab. 14/10/2026 · Val. 29/10/2026']);
+  assert.strictEqual(c.loja, '', 'loja desligada no rótulo');
+  assert.strictEqual(R.conteudoDoRotulo({}, { nome: 'Milho verde' }).titulo, 'Milho verde', 'sem nome próprio: usa o do produto');
+  assert.deepStrictEqual([R.copiasValidas('15'), R.copiasValidas(0), R.copiasValidas(9999), R.copiasValidas('x')], [15, 1, 200, 1]);
+  assert.deepStrictEqual(R.pixelsDo('rolo58'), { w: 384, h: 256, pmm: 8 }, 'térmica 58: 384 pontos de largura');
+  assert.strictEqual(R.folhasNecessarias('a4-21', 15), 1);
+  assert.strictEqual(R.folhasNecessarias('a4-21', 15, 10), 2, '10 já usadas: 15 não cabem nas 11 que sobram');
+  const png = 'data:image/png;base64,iVBORw0KGgo=';
+  const pag = R.paginaDeRotulos(png, 'a4-21', 15, { pular: 2 });
+  assert.strictEqual((pag.match(/<img /g) || []).length, 15);
+  assert.strictEqual((pag.match(/class="r"/g) || []).length, 17, '2 posições vazias no começo da folha');
+  assert.ok(pag.includes('left:7.20mm;top:15.10mm'), 'primeira etiqueta na posição certa da folha');
+  const rolo = R.paginaDeRotulos(png, '50x30', 3);
+  assert.ok(rolo.includes('size: 50mm 30mm') && (rolo.match(/<img /g) || []).length === 3);
+  assert.throws(() => R.paginaDeRotulos('javascript:x', 'a4-21', 1));
+  assert.throws(() => R.paginaDeRotulos('" onerror="x', 'a4-21', 1));
+});
+
+teste('rótulos: térmica recebe a imagem em pontos pretos (GS v 0), em faixas, com corte entre as cópias', async () => {
+  const R = await import(raiz('js/rotulo-lib.js'));
+  const w = 16, h = 3, cinza = new Uint8ClampedArray(w * h).fill(255);
+  cinza[0] = 0; cinza[15] = 0; cinza[w * 2 + 8] = 0;                    // três pontos pretos
+  const p = R.pontilhar(cinza, w, h);
+  assert.deepStrictEqual([p[0], p[15], p[w * 2 + 8], p[1]], [1, 1, 1, 0]);
+  const b = R.rasterEscPos(p, w, h, { copias: 2 });
+  const cab = [0x1b, 0x40, 0x1b, 0x61, 0x01, 0x1d, 0x76, 0x30, 0x00, 2, 0, 3, 0];
+  assert.deepStrictEqual([...b.slice(0, 13)], cab);
+  assert.deepStrictEqual([...b.slice(13, 19)], [0x80, 0x01, 0, 0, 0, 0x80], 'linha 1: ponto no 1º e no 16º; linha 3: no 9º');
+  assert.strictEqual(b.length, 2 * (13 + 6 + 3 + 4), 'duas cópias, cada uma com imagem, avanço e corte');
+  const cinza2 = R.paraCinza(new Uint8ClampedArray([0, 0, 0, 0, 255, 255, 255, 255]), 2, 1);
+  assert.deepStrictEqual([...cinza2], [255, 255], 'transparente vira branco');
+  const alta = R.rasterEscPos(new Uint8Array(8 * 300), 8, 300);
+  assert.strictEqual(alta.filter((x, i) => x === 0x1d && alta[i + 1] === 0x76).length, 3, 'imagem de 300 linhas vai em 3 faixas');
+});
+
+teste('QR Code: a grade de dois links conhecidos não mudou (ambas foram lidas por um leitor de QR de verdade) e link longo demais é recusado', async () => {
+  const Q = await import(raiz('js/qr-lib.js')), crypto = require('crypto');
+  const hash = (t) => crypto.createHash('sha1').update(Q.qrDe(t).map((l) => l.map((v) => (v ? 1 : 0)).join('')).join('\n')).digest('hex');
+  assert.strictEqual(hash('https://usebanca.com'), 'bb903b63ac736fbbda243ff697a2c9764c2b2756', 'versão 2');
+  assert.strictEqual(hash('https://usebanca.com/feira/feira-do-bairro-sao-jose'), 'f4e65f66cb4331e7227f1fe33851a857ee48d41a', 'versão 4');
+  const g = Q.qrDe('https://usebanca.com');
+  assert.strictEqual(g.length, 25, 'versão 2 = 25 quadradinhos de lado');
+  for (const [x, y] of [[0, 0], [18, 0], [0, 18]]) assert.ok(g[y][x] && g[y + 6][x + 6] && !g[y + 1][x + 1], 'marca de busca nos 3 cantos');
+  assert.ok(Q.qrDe('z'.repeat(Q.MAX_BYTES)), 'cabe o máximo');
+  assert.strictEqual(Q.qrDe('z'.repeat(Q.MAX_BYTES + 1)), null, 'passou do máximo: sem QR');
+  assert.ok(/^M\d+ \d+h\d+v1h-\d+z/.test(Q.qrCaminho(g)));
+});
+
+teste('cartaz da feira: leva o link e o nome DESTA feira, texto escapado, sem script e com o círculo da fitinha NFC', async () => {
+  const C = await import(raiz('js/cartaz-lib.js'));
+  const html = C.cartazHtml({ feira: { nome: 'Feira <b>do</b> Bairro' }, link: 'https://usebanca.com/feira/feira-do-bairro' });
+  assert.ok(html.includes('usebanca.com/feira/feira-do-bairro'), 'link escrito embaixo do QR');
+  assert.ok(html.includes('Feira &lt;b&gt;do&lt;/b&gt; Bairro') && !html.includes('<b>do</b>'), 'nome escapado');
+  assert.ok(!/<script/i.test(html) && !/https?:\/\/(?!usebanca\.com)/.test(html.replace(/xmlns="[^"]*"/g, '')), 'sem script e sem arquivo de fora');
+  assert.ok(/Agora temos <span>aplicativo!<\/span>/.test(html) && /Encoste o celular aqui/.test(html) && /<svg[^>]+aria-label="QR Code/.test(html));
+  assert.ok(html.includes('@page { size: A4; margin: 0; }'));
+  const outra = C.cartazHtml({ feira: { nome: 'Outra' }, link: 'https://usebanca.com/feira/outra' });
+  assert.notStrictEqual(C.qrSvg('https://usebanca.com/feira/outra'), C.qrSvg('https://usebanca.com/feira/feira-do-bairro'), 'cada feira tem o seu QR');
+  assert.ok(outra.includes(C.qrSvg('https://usebanca.com/feira/outra').replace('<svg ', '<svg class="codigo" ')), 'o QR da feira entra no cartaz');
+  assert.strictEqual(C.qrSvg('https://x.com/' + 'a'.repeat(300)), '', 'link longo demais: sem QR (não quebra)');
+});
+
+// ------------------------------------------------------------------ PACOTES e PROMOÇÃO "4 por R$ 10"
+teste('pacote: só o que não vai à balança, peso do pacote opcional e promoção que precisa sair mais barata', async () => {
+  const P = await import(raiz('js/pacote-lib.js'));
+  assert.ok(P.ehPacote({ pacote: true, unidade: 'un' }));
+  assert.ok(!P.ehPacote({ pacote: true, unidade: 'kg' }), 'pacote "por quilo" não existe: continua produto de balança');
+  assert.ok(!P.ehPacote({ unidade: 'un' }));
+  assert.strictEqual(P.pesoDoPacote({ pacote: true, unidade: 'un', pesoPacote: ' 500 g ' }), '500 g');
+  assert.strictEqual(P.pesoDoPacote({ pacote: true, unidade: 'un' }), '', 'sem peso: aparece só "PACOTE"');
+  const pr = P.promoDe({ unidade: 'un', preco: 3, promoQtd: 4, promoPreco: 10 });
+  assert.deepStrictEqual(pr, { qtd: 4, preco: 10 });
+  assert.strictEqual(P.promoDe({ unidade: 'un', preco: 3, promoQtd: 4, promoPreco: 12 }), null, '4 por R$ 12 = preço cheio: não é promoção');
+  assert.strictEqual(P.promoDe({ unidade: 'kg', preco: 3, promoQtd: 4, promoPreco: 10 }), null, 'produto de balança não tem promoção por quantidade');
+  assert.strictEqual(P.promoDe({ unidade: 'un', preco: 3, promoQtd: 1, promoPreco: 2 }), null);
+  assert.strictEqual(P.promoDe({ unidade: 'un', preco: 3, promoQtd: 4, promoPreco: 10 }, 2.4), null, 'no dia em que o preço baixa para R$ 2,40, 4 por R$ 10 deixa de valer');
+  for (const [q, c] of [[1, 300], [3, 900], [4, 1000], [5, 1300], [7, 1900], [8, 2000], [9, 2300], [0, 0]]) assert.strictEqual(P.totalComPromo(3, q, pr), c, `${q} pacotes`);
+  assert.strictEqual(P.totalComPromo(3, 5, null), 1500, 'sem promoção: preço cheio');
+  assert.strictEqual(P.textoPromo(pr), '4 por R$ 10');
+  assert.strictEqual(P.textoPromo({ qtd: 3, preco: 7.5 }), '3 por R$ 7,50');
+  assert.deepStrictEqual([1, 3, 4, 5, 0].map((q) => P.faltaParaPromo(q, pr)), [3, 1, 0, 3, 0]);
+});
+teste('pacote: "como chamar 1 unidade" vira "2 batatas" e o pacote parecido é achado pela primeira palavra', async () => {
+  const P = await import(raiz('js/pacote-lib.js'));
+  assert.deepStrictEqual(P.nomesDaUnidade(''), { um: 'unidade', varios: 'unidades' });
+  assert.deepStrictEqual(P.nomesDaUnidade('Batata'), { um: 'batata', varios: 'batatas' });
+  assert.deepStrictEqual(P.nomesDaUnidade('pão/pães'), { um: 'pão', varios: 'pães' }, 'a loja pode escrever o plural');
+  assert.deepStrictEqual(['pé', 'maço', 'limão', 'flor', 'abacaxi', 'alface'].map(P.plural), ['pés', 'maços', 'limões', 'flores', 'abacaxis', 'alfaces']);
+  assert.strictEqual(P.emPalavras(1, P.NOMES_PACOTE), '1 pacote');
+  assert.strictEqual(P.emPalavras(4, P.NOMES_PACOTE), '4 pacotes');
+  const produtos = [{ id: 'bi', nome: 'Batata inglesa', unidade: 'kg' }, { id: 'bb', nome: 'Batatinha? não', unidade: 'un', pacote: true }, { id: 'bp', nome: 'Batata baby', unidade: 'un', pacote: true }, { id: 'cn', nome: 'Cenoura', unidade: 'kg' }];
+  assert.strictEqual(P.pacoteParecido(produtos[0], produtos).id, 'bp');
+  assert.strictEqual(P.pacoteParecido(produtos[3], produtos), null, 'sem pacote de cenoura');
+  assert.strictEqual(P.pacoteParecido(produtos[2], produtos), null, 'o próprio pacote não sugere pacote');
+});
+teste('pacote: o cadastro aceita peso em branco, nome livre e recusa promoção pela metade ou mais cara', async () => {
+  const P = await import(raiz('js/pacote-lib.js'));
+  let r = P.cadastroPacote({ pacote: true, unidade: 'un', preco: 3, pesoPacote: '' });
+  assert.deepStrictEqual(r, { dados: { pacote: true, pesoPacote: '', promoQtd: null, promoPreco: null, nomeUn: '' }, erro: '' }, 'peso do pacote é opcional');
+  r = P.cadastroPacote({ pacote: true, unidade: 'un', preco: 3, pesoPacote: '500 g', promoQtd: '4', promoPreco: '10,00' });
+  assert.deepStrictEqual(r.dados, { pacote: true, pesoPacote: '500 g', promoQtd: 4, promoPreco: 10, nomeUn: '' });
+  assert.ok(/quantidade E o preço/.test(P.cadastroPacote({ unidade: 'un', preco: 3, promoQtd: '4' }).erro));
+  assert.ok(/não sai mais barato/.test(P.cadastroPacote({ unidade: 'un', preco: 3, promoQtd: '4', promoPreco: '12' }).erro));
+  assert.ok(/de 2 a 50/.test(P.cadastroPacote({ unidade: 'un', preco: 3, promoQtd: '1', promoPreco: '2' }).erro));
+  r = P.cadastroPacote({ pacote: true, unidade: 'kg', preco: 6.5, nomeUn: 'batata', promoQtd: '4', promoPreco: '10' });
+  assert.deepStrictEqual(r, { dados: { pacote: false, pesoPacote: '', promoQtd: null, promoPreco: null, nomeUn: 'batata' }, erro: '' }, 'produto de quilo: nem pacote nem promoção; ganha o nome da unidade');
+  assert.strictEqual(P.cadastroPacote({ unidade: 'un', preco: 3, promoQtd: '4', promoPreco: 'R$ 1.000,00' }).erro !== '', true, 'R$ 1.000 é mais caro: recusa');
+});
+teste('pacote: a conta da promoção é a MESMA no site (js/pacote-lib.js) e no servidor (lib/pacote.js)', async () => {
+  const W = await import(raiz('js/pacote-lib.js')), S = require(raiz('lib/pacote'));
+  let n = 0;
+  for (const preco of [0.5, 1.99, 3, 4.5, 7.9, 12]) for (const promoQtd of [2, 3, 4, 6, 10]) for (const fator of [0.5, 0.8, 0.99, 1, 1.2]) {
+    const p = { unidade: 'un', preco, promoQtd, promoPreco: Math.round(preco * promoQtd * fator * 100) / 100 };
+    assert.deepStrictEqual(S.promoDe(p), W.promoDe(p), JSON.stringify(p));
+    for (const q of [0, 1, 2, 3, 4, 5, 9, 13, 20]) { assert.strictEqual(S.totalComPromo(preco, q, S.promoDe(p)), W.totalComPromo(preco, q, W.promoDe(p))); n++; }
+  }
+  assert.ok(n > 1000);
+});
+teste('checkout: "4 por R$ 10" é calculado no SERVIDOR e o pacote vai escrito por extenso para a banca', async () => {
+  const base = semente();
+  base['produtos/batata-baby'] = { nome: 'Batata baby', preco: 3, unidade: 'un', cat: 'legumes', ativo: true, pacote: true, pesoPacote: '500 g', promoQtd: 4, promoPreco: 10 };
+  base['produtos/cenoura-baby'] = { nome: 'Cenoura baby', preco: 3, unidade: 'un', cat: 'legumes', ativo: true, pacote: true };
+  const db = criarBanco(base); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  const p = pedido({ itens: [{ id: 'batata-baby', qtd: 5, tipo: 'un', precoOriginal: 0.01 }, { id: 'cenoura-baby', qtd: 2, tipo: 'un' }], clientTotal: 1 });
+  const r = await chamar(api, { headers: ip(), body: p });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(r.corpo.pedido.total, 19, '5 pacotes = 4 por R$ 10 + 1 × R$ 3 = R$ 13; + 2 cenouras baby = R$ 6');
+  const salvo = db._dados.get(`pedidos/${p.idempotencyKey}`);
+  const bb = salvo.itens.find((i) => i.id === 'batata-baby'), cb = salvo.itens.find((i) => i.id === 'cenoura-baby');
+  assert.strictEqual(bb.subtotal, 13); assert.deepStrictEqual(bb.promo, { qtd: 4, preco: 10 }); assert.strictEqual(bb.pacote, true); assert.strictEqual(bb.pesoPacote, '500 g');
+  assert.strictEqual(cb.pacote, true); assert.strictEqual(cb.pesoPacote, undefined, 'sem peso cadastrado: não inventa'); assert.strictEqual(cb.promo, undefined);
+  const msg = decodeURIComponent(r.corpo.pedido.whatsappMsg);
+  assert.ok(msg.includes('5 pacotes de 500 g de Batata baby — R$ 13,00'), msg);
+  assert.ok(msg.includes('promoção 4 por R$ 10,00'), 'a banca vê que a promoção entrou');
+  assert.ok(msg.includes('2 pacotes de Cenoura baby'), 'sem peso cadastrado: só "pacotes"');
+  // com 3 pacotes a promoção não entra: preço cheio
+  const p3 = pedido({ itens: [{ id: 'batata-baby', qtd: 3, tipo: 'un' }] });
+  const r3 = await chamar(api, { headers: ip(), body: p3 });
+  assert.strictEqual(r3.corpo.pedido.total, 9);
+  assert.strictEqual(db._dados.get(`pedidos/${p3.idempotencyKey}`).itens[0].promo, undefined);
+});
+teste('pacote: "4 por R$ 10" vale MISTURANDO pacotes (2 de batata + 2 de cenoura); produto comum conta sozinho', async () => {
+  const W = await import(raiz('js/pacote-lib.js')), S = require(raiz('lib/pacote'));
+  const pr = { qtd: 4, preco: 10 };
+  const bat = { id: 'b', unidade: 'un', pacote: true }, cen = { id: 'c', unidade: 'un', pacote: true }, alf = { id: 'a', unidade: 'un' }, alf2 = { id: 'a2', unidade: 'un' };
+  for (const L of [W, S]) {
+    assert.strictEqual(L.chavePromo(bat, pr), L.chavePromo(cen, pr), 'pacotes com a mesma promoção: mesmo grupo');
+    assert.notStrictEqual(L.chavePromo(bat, pr), L.chavePromo(bat, { qtd: 4, preco: 11 }), 'promoção diferente: grupo diferente');
+    assert.notStrictEqual(L.chavePromo(alf, pr), L.chavePromo(alf2, pr), 'produto que não é pacote conta sozinho');
+    const linha = (p, preco, qtd) => ({ preco, qtd, promo: pr, chave: L.chavePromo(p, pr) });
+    let r = L.contaDaPromo([linha(bat, 3, 2), linha(cen, 3, 2)]);
+    assert.deepStrictEqual(r.itens, [{ sub: 500, naPromo: 2 }, { sub: 500, naPromo: 2 }], '2 + 2 = R$ 10, metade para cada');
+    r = L.contaDaPromo([linha(bat, 3, 3), linha(cen, 3, 2)]);
+    assert.strictEqual(r.itens[0].sub + r.itens[1].sub, 1300, '5 pacotes misturados = R$ 10 + R$ 3');
+    assert.deepStrictEqual(r.grupos.get(L.chavePromo(bat, pr)), { promo: pr, total: 5, completos: 1, falta: 3 });
+    r = L.contaDaPromo([linha(bat, 3, 1), linha(cen, 3, 2)]);
+    assert.strictEqual(r.itens[0].sub + r.itens[1].sub, 900, '3 pacotes: preço cheio');
+    assert.strictEqual(r.grupos.get(L.chavePromo(bat, pr)).falta, 1);
+    r = L.contaDaPromo([linha(alf, 3, 2), linha(alf2, 3, 2)]);
+    assert.strictEqual(r.itens[0].sub + r.itens[1].sub, 1200, 'alface comum não mistura com outra');
+    // preços diferentes: os mais caros entram na promoção; nenhum centavo some
+    r = L.contaDaPromo([linha(bat, 3, 1), linha(cen, 3.5, 4)]);
+    assert.strictEqual(r.itens[1].naPromo, 4); assert.strictEqual(r.itens[0].naPromo, 0);
+    assert.strictEqual(r.itens[0].sub + r.itens[1].sub, 1300);
+    r = L.contaDaPromo([linha(bat, 2.99, 3), linha(cen, 3.49, 3), { preco: 6.5, qtd: 0.75 }]);
+    assert.strictEqual(r.itens[0].sub + r.itens[1].sub, 1000 + 299 + 299, 'R$ 10 + as 2 mais baratas');
+    assert.strictEqual(r.itens[2].sub, 488, 'linha sem promoção (peso): preço × quantidade');
+    // um produto só: igual à conta antiga
+    for (const q of [0, 1, 3, 4, 5, 8, 9]) assert.strictEqual(L.contaDaPromo([linha(bat, 3, q)]).itens[0].sub, L.totalComPromo(3, q, pr));
+  }
+  // site e servidor dão o mesmo resultado em misturas variadas
+  let n = 0;
+  for (const a of [0, 1, 2, 3, 5]) for (const b of [0, 1, 2, 4, 7]) for (const pc of [2.5, 3, 3.33]) {
+    const ls = (L) => [{ preco: 3, qtd: a, promo: pr, chave: L.chavePromo(bat, pr) }, { preco: pc, qtd: b, promo: pr, chave: L.chavePromo(cen, pr) }, { preco: 4, qtd: a, promo: { qtd: 3, preco: 10 }, chave: L.chavePromo(alf, { qtd: 3, preco: 10 }) }];
+    const w = W.contaDaPromo(ls(W)), s2 = S.contaDaPromo(ls(S));
+    assert.deepStrictEqual(w.itens, s2.itens); n++;
+    const soma = w.itens[0].sub + w.itens[1].sub, cheio = Math.round(300 * a + pc * 100 * b);
+    assert.ok(soma <= cheio, 'promoção nunca cobra mais que o preço cheio');
+  }
+  assert.ok(n === 75);
+});
+teste('checkout: o servidor junta pacotes diferentes na mesma promoção', async () => {
+  const base = semente();
+  base['produtos/batata-baby'] = { nome: 'Batata baby', preco: 3, unidade: 'un', cat: 'legumes', ativo: true, pacote: true, promoQtd: 4, promoPreco: 10 };
+  base['produtos/cenoura-baby'] = { nome: 'Cenoura baby', preco: 3, unidade: 'un', cat: 'legumes', ativo: true, pacote: true, promoQtd: 4, promoPreco: 10 };
+  base['produtos/alface'] = { nome: 'Alface', preco: 3, unidade: 'un', cat: 'folhas', ativo: true, promoQtd: 4, promoPreco: 10 };
+  const db = criarBanco(base); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  const p = pedido({ itens: [{ id: 'batata-baby', qtd: 2, tipo: 'un' }, { id: 'cenoura-baby', qtd: 2, tipo: 'un' }, { id: 'alface', qtd: 2, tipo: 'un' }] });
+  const r = await chamar(api, { headers: ip(), body: p });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(r.corpo.pedido.total, 16, '2 batatas + 2 cenouras = R$ 10; 2 alfaces (não é pacote, não mistura) = R$ 6');
+  const it = db._dados.get(`pedidos/${p.idempotencyKey}`).itens;
+  assert.deepStrictEqual(it.map((i) => i.subtotal), [5, 5, 6]);
+  assert.deepStrictEqual(it[0].promo, { qtd: 4, preco: 10 }); assert.deepStrictEqual(it[1].promo, { qtd: 4, preco: 10 }); assert.strictEqual(it[2].promo, undefined);
+  const msg = decodeURIComponent(r.corpo.pedido.whatsappMsg);
+  assert.ok(msg.includes('2 pacotes de Batata baby — R$ 5,00'), msg);
+  assert.ok(msg.includes('2 pacotes de Cenoura baby — R$ 5,00'), msg);
+});
+teste('vitrine: pacotes e temperos nunca se misturam na ordem, nem o pacote menos pedido (nota 0) nem o mais pedido', async () => {
+  const P = await import(raiz('js/pacote-lib.js'));
+  const notas = [1, 0.999, 0.5, 0.3, 0.001, 0, -2, 3, NaN, undefined];
+  const faixa = (tipo) => notas.map((n) => P.ordemNaVitrine(n, tipo));
+  const soltos = faixa(''), pacotes = faixa('pacote'), temperos = faixa('tempero');
+  const cabPac = P.ORDEM_PACOTES - 1, cabTmp = P.ORDEM_TEMPEROS - 1;
+  assert.ok(Math.max(...soltos) < cabPac, 'soltos antes do cabeçalho dos pacotes: ' + soltos);
+  assert.ok(Math.min(...pacotes) > cabPac && Math.max(...pacotes) < cabTmp, 'pacotes entre os dois cabeçalhos: ' + pacotes);
+  assert.ok(Math.min(...temperos) > cabTmp, 'temperos depois do cabeçalho deles: ' + temperos);
+  assert.strictEqual(P.ordemNaVitrine(0, 'pacote'), 3000, 'o caso da foto: pacote pouco pedido');
+  assert.ok(P.ordemNaVitrine(0.9, '') < P.ordemNaVitrine(0.1, ''), 'mais chance de levar = mais acima');
+});
+teste('temperos: o cantinho vale pela categoria (sozinho: "tempero" no nome), pacote fica no bloco dele e "-" desliga', async () => {
+  const P = await import(raiz('js/pacote-lib.js')), V = await import(raiz('js/vitrine-lib.js'));
+  const col = { cat: 'Temperos', unidade: 'un' };
+  assert.strictEqual(P.ehTempero(col), true, 'sem escolha: categoria com "tempero" no nome');
+  assert.strictEqual(P.ehTempero({ cat: 'temperos-secos', unidade: 'un' }), true);
+  assert.strictEqual(P.ehTempero({ cat: 'Molhos', unidade: 'un' }), false);
+  assert.strictEqual(P.ehTempero({ cat: 'Molhos', unidade: 'un' }, { cat: 'molhos' }), true, 'a loja escolheu outra categoria');
+  assert.strictEqual(P.ehTempero(col, { cat: 'molhos' }), false, 'com categoria escolhida, só ela entra');
+  assert.strictEqual(P.ehTempero(col, { cat: P.SEM_TEMPEROS }), false, '"Não separar os temperos"');
+  assert.strictEqual(P.ehTempero({ ...col, pacote: true }), false, 'pacote fechado fica no bloco dos pacotes');
+  assert.strictEqual(P.ehTempero({ unidade: 'un' }), false, 'sem categoria');
+  assert.strictEqual(P.ehPotinho(col), true); assert.strictEqual(P.ehPotinho({ cat: 'temperos', unidade: 'kg' }), false, 'tempero pesado não vira "potinho"');
+  assert.strictEqual(P.emPalavras(3, P.NOMES_POTE), '3 potinhos'); assert.strictEqual(P.emPalavras(1, P.NOMES_POTE), '1 potinho');
+  assert.deepStrictEqual(V.vitrineSegura({ temperos: { titulo: ' Temperinhos <i> ', cat: 'molhos', lixo: 1 } }).temperos, { titulo: 'Temperinhos <i>', texto: '', cat: 'molhos' });
+  assert.strictEqual(V.vitrineSegura({ temperos: { titulo: '', texto: '', cat: '' } }).temperos, undefined, 'tudo em branco: o padrão');
+});
+teste('pacote: o item do pedido aparece como "4 pacotes" no painel, e não "4x"', async () => {
+  const U = await import(raiz('js/utils.js'));
+  assert.strictEqual(U.qtdDoItem({ qtd: 4, tipo: 'un', unidade: 'un', pacote: true, pesoPacote: '500 g' }), '4 pacotes de 500 g');
+  assert.strictEqual(U.qtdDoItem({ qtd: 1, tipo: 'un', unidade: 'un', pacote: true }), '1 pacote');
+  assert.strictEqual(U.qtdDoItem({ qtd: 2, tipo: 'un', unidade: 'un' }), '2x', 'produto comum continua igual');
+});
+teste('vitrine: texto do bloco dos pacotes e faixas da loja por categoria, dentro do limite de faixas', async () => {
+  const V = await import(raiz('js/vitrine-lib.js'));
+  const v = V.vitrineSegura({ pacotes: { titulo: ' Pacotinhos <b> ', texto: 'fechados' }, faixas: [{ titulo: 'Molhos', cat: 'molhos' }, { titulo: '', cat: 'x' }, { titulo: 'Sem categoria' }, { titulo: 'Doces', cat: 'doces' }, { titulo: 'Pães', cat: 'paes' }, { titulo: 'Quarta', cat: 'q' }] });
+  assert.deepStrictEqual(v.pacotes, { titulo: 'Pacotinhos <b>', texto: 'fechados' }, 'texto puro (a loja escapa ao mostrar)');
+  assert.deepStrictEqual(v.faixas.map((f) => f.titulo), ['Molhos', 'Doces', 'Pães'], 'faixa sem título ou sem categoria some; no máximo 3');
+  const produtos = [{ id: 'm1', cat: 'molhos' }, { id: 'm2', cat: 'Molhos' }, { id: 'd1', cat: 'doces' }, { id: 'd2', cat: 'doces' }, { id: 'e1', estacao: true }, { id: 'e2', estacao: true }];
+  const f = V.faixasDaVitrine(produtos, { proprias: v.faixas, temOfertas: true, temSempre: true });
+  assert.deepStrictEqual(f.map((x) => x.id), ['loja0', 'loja1'], 'as da loja entram antes das automáticas e o total continua 4');
+  assert.deepStrictEqual(f[0].ids, ['m1', 'm2']);
+  const um = V.faixasDaVitrine([{ id: 'm1', cat: 'molhos' }], { proprias: [{ titulo: 'Molhos', cat: 'molhos' }] });
+  assert.deepStrictEqual(um, [], 'faixa com 1 produto só não aparece');
+});
+teste('cartão: "como chamar 1 unidade" muda o botão e o contador ("+ 1 batata", "2 batatas")', async () => {
+  const M = await import(raiz('js/modo-lib.js'));
+  const p = { id: 'b', nome: 'Batata inglesa', unidade: 'kg', preco: 6.5, pesoMedio: 180, nomeUn: 'batata' };
+  assert.strictEqual(M.botoesDoCard(p, {})[0].titulo, '+ 1 batata');
+  assert.strictEqual(M.textoNoPedido(p, { qtd: 2, tipo: 'un' }).titulo, '2 batatas');
+  assert.strictEqual(M.textoNoPedido({ ...p, nomeUn: '' }, { qtd: 1, tipo: 'un' }).titulo, '1 unidade', 'sem nome: como antes');
+});
+
+// ---------------------------------------------------------------- IMPRESSÃO AUTOMÁTICA
+teste('impressão (regra do servidor): reserva, confirma, não sai duas vezes; outro aparelho espera; reserva largada pode ser tomada', () => {
+  const I = require(raiz('lib/impressao'));
+  const t0 = Date.parse('2026-10-16T10:00:00Z');
+  let r = I.decidirReserva(undefined, 'inicial', 'ap-aaaaaa', t0);
+  assert.ok(r.ok && r.novo.estado === 'reservado' && r.novo.aparelho === 'ap-aaaaaa');
+  assert.deepStrictEqual(I.decidirReserva(r.novo, 'inicial', 'ap-bbbbbb', t0 + 10000), { ok: false, motivo: 'outro' }, 'outro aparelho não imprime junto');
+  assert.ok(I.decidirReserva(r.novo, 'inicial', 'ap-bbbbbb', t0 + I.RESERVA_MS + 1).ok, 'aparelho que caiu no meio: depois de 90 s outro pode imprimir');
+  const feito = I.confirmar(r.novo, 'inicial', 'ap-aaaaaa', t0 + 5000);
+  assert.strictEqual(feito.saiu, 'inicial'); assert.strictEqual(feito.vezes, 1);
+  assert.deepStrictEqual(I.decidirReserva(feito, 'inicial', 'ap-aaaaaa', t0 + 9e6), { ok: false, motivo: 'ja' }, 'já saiu: nunca mais sozinho');
+  assert.ok(I.decidirReserva(feito, 'pesado', 'ap-aaaaaa', t0 + 9e6).ok, 'versão maior (depois da balança) pode sair');
+  const cancel = I.confirmar(I.confirmar(feito, 'cancelado', 'ap-aaaaaa'), 'inicial', 'ap-aaaaaa');
+  assert.strictEqual(cancel.saiu, 'cancelado', 'reimprimir o cupom à mão não apaga que o aviso de cancelado já saiu');
+  const falhou = I.liberar(I.decidirReserva(feito, 'pesado', 'ap-aaaaaa', t0).novo, 'ap-aaaaaa', t0 + 1000);
+  assert.strictEqual(falhou.estado, 'falhou'); assert.strictEqual(falhou.saiu, 'inicial', 'falha não esquece o que já tinha saído');
+  assert.strictEqual(I.liberar(r.novo, 'ap-bbbbbb'), null, 'só quem reservou solta a reserva');
+});
+
+teste('impressão (API): só a equipe usa a fila; venda de balcão e aviso de cancelado em pedido ativo são recusados', async () => {
+  const sem = sementeEstoque();
+  sem['pedidos/ped-0000001'] = { nome: 'Ana', status: 'pendente', total: 10, data: '2026-10-16T10:00:00Z', itens: [] };
+  sem['pedidos/bal-0000001'] = { nome: 'Balcão', status: 'arquivado', origem: 'balcao', total: 5, data: '2026-10-16T10:00:00Z', itens: [] };
+  const db = criarBancoP(sem); const api = carregarApi(raiz('api/pdv.js'), criarAdmin(db, TOKENS_P));
+  const fila = (body, token = 'func-banca') => chamar(api, { headers: { Authorization: `Bearer ${token}` }, body: { acao: 'impressao', pedidoId: 'ped-0000001', versao: 'inicial', aparelho: 'ap-aaaaaa', ...body } });
+  assert.strictEqual((await fila({ op: 'reservar' }, 'cliente')).status, 403, 'cliente não mexe na fila');
+  assert.strictEqual((await fila({ op: 'reservar', aparelho: 'x' })).status, 400, 'aparelho inválido');
+  let r = await fila({ op: 'reservar' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(r.corpo.ok, true);
+  assert.deepStrictEqual([(await fila({ op: 'reservar', aparelho: 'ap-bbbbbb' })).corpo.ok, (await fila({ op: 'reservar', aparelho: 'ap-bbbbbb' })).corpo.motivo], [false, 'outro']);
+  await fila({ op: 'confirmar' });
+  assert.strictEqual(db._dados.get('pedidos/ped-0000001').impressao.saiu, 'inicial');
+  assert.strictEqual(db._dados.get('pedidos/ped-0000001').status, 'pendente', 'a fila não mexe no status do pedido');
+  assert.strictEqual((await fila({ op: 'reservar' })).corpo.motivo, 'ja');
+  assert.strictEqual((await fila({ op: 'reservar', versao: 'cancelado' })).corpo.ok, false, 'pedido ativo não tem aviso de cancelado');
+  assert.strictEqual((await fila({ op: 'reservar', pedidoId: 'bal-0000001' })).corpo.ok, false, 'balcão: o cupom sai à mão, na hora');
+  assert.strictEqual((await fila({ op: 'reservar', pedidoId: 'nao-existe-1' })).corpo.motivo, 'sumiu');
+  db._dados.set('pedidos/ped-0000001', { ...db._dados.get('pedidos/ped-0000001'), status: 'cancelado', canceladoEm: new Date().toISOString() });
+  assert.strictEqual((await fila({ op: 'reservar' , versao: 'pesado' })).corpo.ok, false, 'cancelado não imprime mais cupom');
+  assert.strictEqual((await fila({ op: 'reservar', versao: 'cancelado' })).corpo.ok, true, 'cancelado depois de impresso: sai o aviso');
+});
+
+teste('impressão (regra do painel): "ao chegar" e "ao aceitar"; balcão, cancelado e já impresso ficam de fora', async () => {
+  const F = await import(raiz('js/impressao-fila-lib.js'));
+  const agora = Date.parse('2026-10-16T12:00:00Z');
+  const ped = (o) => ({ id: 'p' + Math.random().toString(36).slice(2, 8), data: '2026-10-16T11:00:00Z', status: 'pendente', itens: [], ...o });
+  const chegada = { auto: 'chegada', aparelho: 'ap-aaaaaa' }, aceite = { auto: 'aceite', aparelho: 'ap-aaaaaa' };
+  const tem = (p, c, o) => !!F.precisaImprimir(p, c, { agora, ...o });
+  assert.ok(tem(ped(), chegada) && !tem(ped(), aceite), 'novo: sai na chegada, não no "ao aceitar"');
+  assert.ok(tem(ped({ status: 'preparando' }), aceite), 'aceito: sai no "ao aceitar"');
+  assert.ok(tem(ped({ status: 'aguardando_pesagem', itens: [{ aPesar: false }] }), aceite), 'já pesado (ainda escrito "a pesar") conta como aceito');
+  assert.ok(!tem(ped({ status: 'aguardando_pagamento' }), chegada), 'esperando PIX: não gasta papel antes de pagar');
+  assert.ok(!tem(ped({ status: 'enviado' }), chegada), 'já saiu para entrega');
+  assert.ok(!tem(ped(), { auto: 'manual' }), 'manual não imprime nada');
+  assert.ok(!tem(ped({ origem: 'balcao', status: 'preparando' }), aceite), 'balcão fica de fora');
+  assert.ok(!tem(ped({ impressao: { saiu: 'inicial' } }), chegada), 'já impresso');
+  const p1 = ped(); assert.ok(!tem(p1, chegada, { ignorados: new Set([`${p1.id}:inicial`]) }), 'pulado por você');
+  assert.ok(!tem(ped({ impressao: { estado: 'reservado', versao: 'inicial', aparelho: 'ap-bbbbbb', em: new Date(agora - 5000).toISOString() } }), chegada), 'outro aparelho imprimindo agora');
+  // depois da balança
+  const pesado = ped({ status: 'preparando', pesadoEm: '2026-10-16T11:30:00Z', impressao: { saiu: 'inicial' } });
+  assert.ok(!tem(pesado, chegada) && tem(pesado, { ...chegada, autoPesado: true }), 'cupom atualizado só com a opção ligada');
+  assert.strictEqual(F.precisaImprimir(pesado, { ...chegada, autoPesado: true }, { agora }).versao, 'pesado');
+  // cancelado
+  const canc = (o) => ped({ status: 'cancelado', canceladoEm: new Date(agora - 3600000).toISOString(), ...o });
+  assert.ok(tem(canc({ impressao: { saiu: 'inicial' } }), aceite), 'cancelado depois de sair no papel: aviso');
+  assert.ok(!tem(canc(), chegada), 'cancelado que nunca saiu no papel: nada');
+  assert.ok(!tem(canc({ impressao: { saiu: 'cancelado' } }), chegada), 'o aviso sai uma vez só');
+  assert.ok(!tem(canc({ impressao: { saiu: 'inicial' } }), { ...chegada, autoCancelado: false }), 'aviso desligado');
+  assert.ok(!tem(canc({ impressao: { saiu: 'inicial' }, canceladoEm: new Date(agora - 2 * 86400000).toISOString() }), chegada), 'cancelado há 2 dias: não imprime');
+  // ordem de chegada
+  const lista = F.trabalhosDe([ped({ id: 'b', data: '2026-10-16T11:10:00Z' }), ped({ id: 'a', data: '2026-10-16T11:05:00Z' })], chegada, { agora });
+  assert.deepStrictEqual(lista.map((t) => t.id), ['a', 'b'], 'o mais antigo sai primeiro');
+  assert.ok(F.podeAutomatico('bluetooth') && F.podeAutomatico('serial') && !F.podeAutomatico('sistema') && !F.podeAutomatico('app'));
+});
+
+teste('impressão (papel): aviso de cancelado, cupom atualizado e número do pedido na etiqueta', async () => {
+  const L = await import(raiz('js/impressao-lib.js'));
+  const p = { id: 'abc123xyz789', nome: 'Maria Souza', quadra: '1', lote: '3', status: 'cancelado', canceladoEm: '2026-10-16T13:20:00Z', total: 14, itens: [{ nome: 'Tomate', qtd: 2, tipo: 'un', unidade: 'un', subtotal: 14 }] };
+  const aviso = L.paraTexto(L.avisoDeCancelamento(p, { loja: 'Banca' }), 48);
+  assert.ok(/PEDIDO CANCELADO/.test(aviso) && /Pedido XYZ789/.test(aviso) && /Maria Souza/.test(aviso) && /Nao separe|Não separe/.test(aviso), aviso);
+  assert.ok(/10:20/.test(aviso), 'hora de Brasília: ' + aviso);
+  const cupom = L.paraTexto(L.cupomDoPedido(p, { aviso: 'CUPOM ATUALIZADO (depois da balança)' }), 48);
+  assert.ok(/CUPOM ATUALIZADO/.test(cupom) && /Pedido XYZ789/.test(cupom), cupom);
+  assert.ok(/Pedido XYZ789/.test(L.paraTexto(L.etiquetaDeEntrega(p), 48)), 'etiqueta da sacola com o mesmo número do cupom');
+  const bytes = L.paraEscPos(L.avisoDeCancelamento(p), { largura: 80, acentos: true });
+  assert.deepStrictEqual([...bytes.slice(0, 5)], [0x1b, 0x40, 0x1b, 0x74, 0x03], 'zera a impressora e usa a tabela 860 (português), que esta impressora tem');
+});
+
+// ---------------------------------------------------------------- APP PONTE (celular Android com a impressora)
+teste('ponte (regras): token, código, configuração e papel vindo do painel são conferidos', async () => {
+  const P = require(raiz('lib/ponte'));
+  const tk = P.novoToken('banca'), lido = P.lerToken(tk.token);
+  assert.ok(lido && lido.tid === 'banca' && lido.id === tk.id, 'o token diz a loja e o celular');
+  assert.ok(P.segredoConfere(lido.segredo, tk.hash), 'o segredo bate com o hash guardado');
+  assert.ok(!P.segredoConfere(lido.segredo.replace(/.$/, (c) => (c === 'A' ? 'B' : 'A')), tk.hash), 'segredo trocado não entra');
+  assert.ok(!P.segredoConfere(lido.segredo, ''), 'sem hash guardado não entra');
+  for (const ruim of ['', 'pb1.banca', `pb1.Banca.${tk.id}.${lido.segredo}`, `pb2.banca.${tk.id}.${lido.segredo}`, `pb1.banca.${tk.id}.curto`, `${tk.token}x`]) assert.strictEqual(P.lerToken(ruim), null, ruim);
+  const c = P.novoCodigo();
+  assert.ok(/^[2-9A-HJKMNP-Z]{8}$/.test(c), c);
+  assert.strictEqual(P.limparCodigo(`${c.slice(0, 4).toLowerCase()} - ${c.slice(4)}`), c, 'aceita minúscula, espaço e traço');
+  assert.strictEqual(P.limparCodigo('ABCD1234'), null, 'o 1 não existe nos códigos');
+  assert.deepStrictEqual(P.limparCfg({ auto: 'xyz', largura: 99, copias: 9, acentos: 'sim' }), { ...P.CFG_PADRAO, copias: 3 }, 'valor estranho volta ao padrão');
+  assert.strictEqual(P.limparCfg({ largura: 58 }, { auto: 'aceite' }).auto, 'aceite', 'o que não veio continua como estava');
+  const f = P.limparFolhas([[{ t: 'txt', v: 'Oi\x1b@\x1dV', al: 'c', b: 1, x: 'y' }, { t: 'par', e: 'A', d: 'B' }, { t: 'corte' }]]);
+  assert.deepStrictEqual(f[0][0], { t: 'txt', v: 'Oi @ V', al: 'c', b: true }, 'comando ESC/POS escondido no texto vira espaço');
+  assert.strictEqual(P.limparFolhas([[{ t: 'html', v: '<b>' }]]), null, 'tipo de linha desconhecido');
+  assert.strictEqual(P.limparFolhas([]), null);
+  assert.strictEqual(P.limparFolhas(Array.from({ length: 251 }, () => [{ t: 'sep' }])), null, 'no máximo 250 folhas de uma vez');
+  assert.strictEqual(P.limparBytes('não é base64!'), null);
+  assert.ok(P.limparBytes(Buffer.from([0x1b, 0x40]).toString('base64')));
+  assert.strictEqual(P.limparBytes(Buffer.alloc(700 * 1024).toString('base64')), null, 'grande demais');
+});
+
+teste('ponte (fluxo): o painel gera o código, o celular entra, imprime cada pedido uma vez, o painel manda papel e desliga o celular', async () => {
+  delete process.env.DADOS_CHAVE;
+  const agora = Date.now(), h = (min) => new Date(agora - min * 60000).toISOString();
+  const sem = sementeEstoque();
+  sem['pedidos/ped-velho01'] = { nome: 'Já estava', quadra: '1', lote: '2', status: 'pendente', total: 10, data: h(30), itens: [] };
+  const db = criarBancoP(sem);
+  const adm = criarAdmin(db, TOKENS_P), pdv = carregarApi(raiz('api/pdv.js'), adm), app = carregarApi(raiz('api/ponte.js'), adm);
+  require(raiz('lib/http'))._usos.clear();
+  const painel = (body, token = 'dona-banca') => chamar(pdv, { headers: { Authorization: `Bearer ${token}` }, body: { acao: 'ponte', ...body } });
+  let token = '';
+  const celular = (body, tk = token) => chamar(app, { headers: tk ? { Authorization: `Bearer ${tk}` } : {}, body });
+
+  assert.strictEqual((await painel({ op: 'codigo' }, 'func-banca')).status, 403, 'funcionário não liga celular novo');
+  assert.strictEqual((await painel({ op: 'imprimir', folhas: [[{ t: 'txt', v: 'x' }]] })).status, 409, 'sem celular ligado: avisa');
+  const cod = await painel({ op: 'codigo', cfg: { largura: 80, acentos: true, auto: 'chegada' } });
+  assert.strictEqual(cod.status, 200, JSON.stringify(cod.corpo));
+  assert.strictEqual((await celular({ op: 'entrar', codigo: 'ZZZZZZZZ' })).status, 404, 'código que não existe');
+  const ent = await celular({ op: 'entrar', codigo: cod.corpo.codigo.toLowerCase(), app: { modelo: 'Moto G', versao: '1.0.1' } });
+  assert.strictEqual(ent.status, 200, JSON.stringify(ent.corpo));
+  token = ent.corpo.token;
+  assert.strictEqual(ent.corpo.loja, 'Banca Adair e Pedrina');
+  assert.deepStrictEqual(ent.corpo.cfg, { ...P0(), largura: 80, acentos: true });
+  assert.strictEqual((await celular({ op: 'entrar', codigo: cod.corpo.codigo })).status, 404, 'o código vale uma vez só');
+  const ponteId = ent.corpo.ponteId, docPonte = () => db._dados.get(`pontes/${ponteId}`);
+  assert.ok(docPonte().hash && !JSON.stringify(docPonte()).includes(token.split('.').pop()), 'o banco guarda só o hash do segredo');
+  assert.deepStrictEqual(docPonte().ignorar, ['ped-velho01:inicial'], 'o que já estava na fila não sai de uma vez ao ligar');
+
+  // nada novo: volta vazio (espera 0 no teste)
+  let r = await celular({ op: 'aguardar', espera: 0, impressora: { estado: 'ok', nome: 'GS-FJ80M' } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.deepStrictEqual(r.corpo.trabalhos, []);
+  assert.deepStrictEqual(r.corpo.cfg, { auto: 'chegada', largura: 80, acentos: true });
+
+  // pedido novo chega: sai o cupom (com o nome aberto) e fica reservado para este celular
+  db._dados.set('pedidos/ped-novo001', { nome: 'Maria Souza', quadra: '5', lote: '3', status: 'pendente', total: 14, data: h(1), itens: [{ nome: 'Tomate', qtd: 2, tipo: 'un', unidade: 'un', subtotal: 14 }] });
+  db._dados.set('pedidos/bal-0000001', { nome: 'Balcão', status: 'pendente', origem: 'balcao', total: 5, data: h(1), itens: [] });
+  r = await celular({ op: 'aguardar', espera: 0 });
+  assert.strictEqual(r.corpo.trabalhos.length, 1, JSON.stringify(r.corpo));
+  const t = r.corpo.trabalhos[0], papel = Buffer.from(t.bytes, 'base64').toString('latin1');
+  assert.strictEqual(t.chave, 'p:ped-novo001:inicial'); assert.ok(/Maria Souza/.test(papel) && /TOTAL/.test(papel), papel);
+  assert.ok(papel.startsWith('\x1b@\x1bt\x03'), 'tabela 860: acentos ligados nesse celular');
+  assert.strictEqual(db._dados.get('pedidos/ped-novo001').impressao.estado, 'reservado');
+  // a resposta se perdeu: o mesmo celular recebe de novo (o app sabe que já imprimiu e só confirma)
+  assert.strictEqual((await celular({ op: 'aguardar', espera: 0 })).corpo.trabalhos[0].chave, 'p:ped-novo001:inicial');
+  // confirma: nunca mais sai sozinho; confirmação repetida não conta duas vezes
+  r = await celular({ op: 'aguardar', espera: 0, feitos: [{ chave: 'p:ped-novo001:inicial', ok: true }] });
+  assert.deepStrictEqual(r.corpo.trabalhos, []);
+  await celular({ op: 'aguardar', espera: 0, feitos: [{ chave: 'p:ped-novo001:inicial', ok: true }] });
+  assert.strictEqual(db._dados.get('pedidos/ped-novo001').impressao.saiu, 'inicial'); assert.strictEqual(db._dados.get('pedidos/ped-novo001').impressao.vezes, 1);
+
+  // impressora desligada: o celular conta que não saiu, a reserva é solta e o papel volta depois
+  db._dados.set('pedidos/ped-novo002', { nome: 'João', status: 'pendente', total: 9, data: h(1), itens: [] });
+  r = await celular({ op: 'aguardar', espera: 0 });
+  assert.strictEqual(r.corpo.trabalhos[0].chave, 'p:ped-novo002:inicial');
+  r = await celular({ op: 'aguardar', espera: 0, pausa: true, feitos: [{ chave: 'p:ped-novo002:inicial', ok: false }], impressora: { estado: 'erro', msg: 'A impressora não respondeu.' } });
+  assert.deepStrictEqual(r.corpo.trabalhos, [], 'em pausa (esperando a impressora voltar) não entrega papel');
+  assert.strictEqual(db._dados.get('pedidos/ped-novo002').impressao.estado, 'falhou');
+  assert.strictEqual((await celular({ op: 'aguardar', espera: 0 })).corpo.trabalhos[0].chave, 'p:ped-novo002:inicial', 'tenta de novo');
+  await celular({ op: 'aguardar', espera: 0, feitos: [{ chave: 'p:ped-novo002:inicial', ok: true }], impressora: { estado: 'ok' } });
+
+  // o painel vê o celular e a impressora
+  let lista = await painel({ op: 'listar' }, 'func-banca');
+  assert.strictEqual(lista.status, 200);
+  assert.strictEqual(lista.corpo.pontes.length, 1); assert.strictEqual(lista.corpo.pontes[0].online, true); assert.strictEqual(lista.corpo.pontes[0].nome, 'Moto G');
+  assert.ok(!JSON.stringify(lista.corpo).includes(docPonte().hash), 'a lista nunca mostra o hash');
+
+  // "Cupom" no painel: vai para o celular, cifrado se o cofre estiver ligado, e conta como impresso
+  db._dados.set('pedidos/ped-novo003', { nome: 'Lia', status: 'aguardando_pagamento', total: 7, data: h(1), itens: [] });
+  const env = await painel({ op: 'imprimir', tipo: 'cupom', pedidoId: 'ped-novo003', folhas: [[{ t: 'txt', v: 'Cupom da Lia' }, { t: 'corte' }]] }, 'func-banca');
+  assert.strictEqual(env.status, 200, JSON.stringify(env.corpo)); assert.strictEqual(env.corpo.online, true);
+  r = await celular({ op: 'aguardar', espera: 0 });
+  assert.strictEqual(r.corpo.trabalhos.length, 1); assert.strictEqual(r.corpo.trabalhos[0].chave, `m:${env.corpo.id}`);
+  assert.ok(/Cupom da Lia/.test(Buffer.from(r.corpo.trabalhos[0].bytes, 'base64').toString('latin1')));
+  await celular({ op: 'aguardar', espera: 0, feitos: [{ chave: `m:${env.corpo.id}`, ok: true }] });
+  assert.ok(!db._dados.has(`impressoes/${env.corpo.id}`), 'saiu no papel: some do banco');
+  assert.strictEqual(db._dados.get('pedidos/ped-novo003').impressao.saiu, 'inicial', 'cupom à mão conta como impresso');
+
+  // aviso de cancelado do pedido que já tinha saído
+  db._dados.set('pedidos/ped-novo001', { ...db._dados.get('pedidos/ped-novo001'), status: 'cancelado', canceladoEm: h(0) });
+  r = await celular({ op: 'aguardar', espera: 0 });
+  assert.strictEqual(r.corpo.trabalhos[0].chave, 'p:ped-novo001:cancelado');
+  assert.ok(/PEDIDO CANCELADO/.test(Buffer.from(r.corpo.trabalhos[0].bytes, 'base64').toString('latin1')));
+  await celular({ op: 'aguardar', espera: 0, feitos: [{ chave: 'p:ped-novo001:cancelado', ok: true }] });
+
+  // trocar para "ao aceitar": o que já estava separando e nunca saiu não sai de uma vez; o painel pode mandar sair
+  db._dados.set('pedidos/ped-novo004', { nome: 'Rui', status: 'preparando', total: 3, data: h(5), itens: [], impressao: undefined });
+  const cfg = await painel({ op: 'config', ponteId, cfg: { auto: 'manual' } });
+  assert.strictEqual(cfg.status, 200, JSON.stringify(cfg.corpo));
+  assert.deepStrictEqual((await celular({ op: 'aguardar', espera: 0 })).corpo.trabalhos, [], 'manual: nada sai sozinho');
+  const aceite = await painel({ op: 'config', ponteId, cfg: { auto: 'aceite' } });
+  assert.strictEqual(aceite.corpo.pulados, 1, JSON.stringify(aceite.corpo));
+  assert.deepStrictEqual((await celular({ op: 'aguardar', espera: 0 })).corpo.trabalhos, []);
+  await painel({ op: 'config', ponteId, imprimirFila: true });
+  assert.strictEqual((await celular({ op: 'aguardar', espera: 0 })).corpo.trabalhos[0].chave, 'p:ped-novo004:inicial', '"Imprimir esses agora"');
+
+  // token errado, celular desligado no painel
+  assert.strictEqual((await celular({ op: 'aguardar', espera: 0 }, token.slice(0, -1) + (token.endsWith('A') ? 'B' : 'A'))).status, 401);
+  assert.strictEqual((await painel({ op: 'remover', ponteId }, 'func-banca')).status, 403, 'funcionário não desliga celular');
+  assert.strictEqual((await painel({ op: 'remover', ponteId })).status, 200);
+  r = await celular({ op: 'aguardar', espera: 0 });
+  assert.strictEqual(r.status, 401); assert.strictEqual(r.corpo.desligado, true, 'o app sabe que foi desligado e pede um código novo');
+  assert.strictEqual((await painel({ op: 'listar' })).corpo.pontes.length, 0);
+});
+
+teste('ponte (escuta ao vivo): parado, o servidor segura a resposta e acorda o celular na hora em que o pedido chega', async () => {
+  const P = require(raiz('lib/ponte')), base = criarBancoP(sementeEstoque());
+  // banco de mentira com onSnapshot: toda escrita avisa as escutas
+  const ouvintes = new Set(); let leituras = 0;
+  const avisar = () => setTimeout(() => ouvintes.forEach((o) => o()), 5);
+  const ref = (r) => ({ ...r, set: async (...a) => { await r.set(...a); avisar(); }, update: async (...a) => { await r.update(...a); avisar(); }, delete: async () => { await r.delete(); avisar(); } });
+  const consulta = (q) => ({ ...q, where: (...a) => consulta(q.where(...a)), get: async () => { leituras++; return q.get(); },
+    onSnapshot: (ok) => { const o = async () => ok(await q.get()); ouvintes.add(o); o(); return () => ouvintes.delete(o); } });
+  const col = (n) => { const c = base.collection(n); return { ...consulta(c), doc: (id) => ref(c.doc(id)) }; };
+  const db = { ...base, collection: col, doc: (c) => ref(base.doc(c)), runTransaction: async (fn) => { const r = await base.runTransaction(fn); avisar(); return r; }, batch: base.batch };
+  const tk = P.novoToken('banca'), ponte = { id: tk.id, hash: tk.hash, cfg: { auto: 'chegada' }, ignorar: [] };
+  await db.collection('pontes').doc(tk.id).set(ponte);
+  const inicio = Date.now();
+  setTimeout(() => db.collection('pedidos').doc('ped-vivo001').set({ nome: 'Ana', status: 'pendente', total: 5, data: new Date().toISOString(), itens: [] }), 300);
+  const r = await P.aguardar(db, 'banca', ponte, { espera: 20 });
+  const levou = Date.now() - inicio;
+  assert.strictEqual(r.trabalhos.length, 1, JSON.stringify(r)); assert.strictEqual(r.trabalhos[0].chave, 'p:ped-vivo001:inicial');
+  assert.ok(levou < 3000, `acordou em ${levou} ms (não esperou os 20 s)`);
+  // sem nada novo: espera até o fim, sem ficar relendo o banco
+  const antes = leituras, t0 = Date.now();
+  const vazio = await P.aguardar(db, 'banca', ponte, { espera: 1, feitos: [{ chave: 'p:ped-vivo001:inicial', ok: true }] });
+  assert.deepStrictEqual(vazio.trabalhos, []); assert.ok(Date.now() - t0 >= 900, 'segurou a resposta');
+  assert.ok(leituras - antes <= 20, `poucas leituras parado (${leituras - antes})`);
+  P._fontes.get('banca').parar();
+});
+const P0 = () => ({ ...require(raiz('lib/ponte')).CFG_PADRAO });
+
+teste('ponte (cofre): o que o painel manda imprimir fica cifrado no banco e o cupom sai aberto', async () => {
+  process.env.DADOS_CHAVE = require('crypto').randomBytes(32).toString('base64');
+  try {
+    const Cofre = require(raiz('lib/cofre'));
+    const sem = sementeEstoque();
+    sem['pedidos/ped-cifra01'] = Cofre.fecharCampos({ nome: 'Cliente Secreto', quadra: '9', lote: '9', status: 'pendente', total: 5, data: new Date().toISOString(), itens: [] }, 'banca');
+    const db = criarBancoP(sem), adm = criarAdmin(db, TOKENS_P), pdv = carregarApi(raiz('api/pdv.js'), adm), app = carregarApi(raiz('api/ponte.js'), adm);
+    require(raiz('lib/http'))._usos.clear();
+    const cod = await chamar(pdv, { headers: { Authorization: 'Bearer dona-banca' }, body: { acao: 'ponte', op: 'codigo' } });
+    const ent = await chamar(app, { body: { op: 'entrar', codigo: cod.corpo.codigo } });
+    const tk = { Authorization: `Bearer ${ent.corpo.token}` };
+    await chamar(pdv, { headers: { Authorization: 'Bearer dona-banca' }, body: { acao: 'ponte', op: 'config', ponteId: ent.corpo.ponteId, imprimirFila: true } });
+    const env = await chamar(pdv, { headers: { Authorization: 'Bearer dona-banca' }, body: { acao: 'ponte', op: 'imprimir', folhas: [[{ t: 'txt', v: 'Endereço da Dona Rosa' }]] } });
+    assert.ok(!JSON.stringify(db._dados.get(`impressoes/${env.corpo.id}`)).includes('Dona Rosa'), 'no banco, cifrado');
+    const r = await chamar(app, { headers: tk, body: { op: 'aguardar', espera: 0 } });
+    const papel = r.corpo.trabalhos.map((t) => Buffer.from(t.bytes, 'base64').toString('latin1')).join('|');
+    assert.ok(/Dona Rosa/.test(papel) && /Cliente Secreto/.test(papel), 'no papel, aberto');
+  } finally { delete process.env.DADOS_CHAVE; }
+});
+
+teste('impressora: pedido do WhatsApp sai limpo (sem carimbo, sem emoji), cabe no papel e não vira comando', async () => {
+  const I = await import(raiz('js/impressao-lib.js'));
+  const colado = '[09:12, 16/10/2026] Dona Rosa: 2 kg de tomate 🍅\n- 1 alface crespa\n\n• 6 ovos caipira 🥚\n3) pão de queijo\n[09:13, 16/10/2026] Dona Rosa: 👍';
+  assert.deepStrictEqual(I.linhasDoWhats(colado), ['2 kg de tomate', '1 alface crespa', '6 ovos caipira', 'pão de queijo']);
+  assert.deepStrictEqual(I.linhasDoWhats('10 laranjas\n1.5 kg uva'), ['10 laranjas', '1.5 kg uva'], 'número no começo do item fica');
+  const d = { nome: 'Dona Rosa 🌹', endereco: 'Jardins Munique, Qd 3 Lt 12', telefone: '61 99999-0000', itens: colado, pagamento: 'PIX', entrega: 'Hoje até 11h', obs: 'Tomate bem maduro' };
+  const L = I.pedidoAvulso(d, { loja: 'Banca Adair e Pedrina', agora: Date.parse('2026-10-16T12:30:00Z') });
+  const t = I.paraTexto(L, 48);
+  for (const pedaco of ['Pedido do WhatsApp', '16/10/2026 09:30', 'Dona Rosa', 'Qd 3 Lt 12', 'Tel: 61 99999-0000', '2 kg de tomate', '4 itens', 'Entregar: Hoje até 11h', 'Pagamento: PIX', 'Obs: Tomate bem maduro']) assert.ok(t.includes(pedaco), `falta "${pedaco}" em:\n${t}`);
+  assert.ok(!/09:12|🍅|🌹|👍/.test(t), t);
+  for (const largura of [58, 80]) { const n = I.colunasDe(largura); I.compor(L, n).forEach((l) => { if (!l.corte) assert.ok(l.s.length <= (l.g ? Math.floor(n / 2) : n), `${largura} mm: "${l.s}"`); }); }
+  const sujo = I.paraEscPos(I.pedidoAvulso({ itens: 'A\u001b@\u001dV\u0000B' }), {});
+  assert.strictEqual([...sujo].filter((x, i) => x === 0x1b && sujo[i + 1] === 0x40).length, 1, 'só o ESC @ do começo');
+  assert.strictEqual(I.avulsoTemConteudo({ itens: '  \n 👍 ' }), false, 'só emoji não é pedido');
+  assert.strictEqual(I.avulsoTemConteudo({ nome: 'Rosa' }), true);
+  assert.strictEqual(I.linhasDoWhats(Array.from({ length: 200 }, (_, i) => `item ${i}`).join('\n')).length, 80, 'no máximo 80 itens');
+});
+teste('impressora: foto vira preto e branco na largura da bobina, sem a sombra do papel, e o comando de imagem cabe na fila', async () => {
+  const F = await import(raiz('js/foto-termica-lib.js')), R = await import(raiz('js/rotulo-lib.js'));
+  assert.deepStrictEqual(F.tamanhoNoPapel(1200, 1600, 80), { w: 576, h: 768 });
+  assert.deepStrictEqual(F.tamanhoNoPapel(1200, 1600, 58), { w: 384, h: 512 });
+  const longa = F.tamanhoNoPapel(500, 10000, 80); assert.strictEqual(longa.h, F.ALTURA_MAX); assert.ok(longa.w < 576);
+  // papel com sombra (fundo vai de 230 a 120 da esquerda para a direita) e uma linha de tinta no meio
+  const w = 120, h = 60, cinza = new Uint8ClampedArray(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const fundo = 230 - x * (110 / w); cinza[y * w + x] = y >= 28 && y < 32 && x > 10 && x < 110 ? fundo * 0.45 : fundo; }
+  const pts = F.prepararFoto(cinza, w, h, { modo: 'texto', clareza: 50 });
+  let tintaNaLinha = 0, tintaFora = 0;
+  for (let y = 0; y < h; y++) for (let x = 12; x < 108; x++) { if (y >= 28 && y < 32) tintaNaLinha += pts[y * w + x]; else tintaFora += pts[y * w + x]; }
+  assert.ok(tintaNaLinha > 0.9 * 4 * 96, `a escrita sai preta (${tintaNaLinha})`);
+  assert.strictEqual(tintaFora, 0, 'a sombra do papel não vira mancha');
+  assert.ok(F.tintaUsada(F.prepararFoto(cinza, w, h, { clareza: 0 })) >= F.tintaUsada(F.prepararFoto(cinza, w, h, { clareza: 100 })), 'clareza clareia');
+  const foto = F.prepararFoto(cinza, w, h, { modo: 'foto' }); assert.strictEqual(foto.length, w * h);
+  assert.ok(F.tintaUsada(foto) > 0.05 && F.tintaUsada(foto) < 0.95, 'foto com tons vira pontilhado');
+  assert.strictEqual(F.prepararFoto(null, 0, 0).length, 0);
+  // a maior foto possível, 3 vias, ainda cabe no limite de bytes da fila do celular (lib/ponte.js)
+  const maxPts = new Uint8Array(576 * F.ALTURA_MAX), bytes = R.rasterEscPos(maxPts, 576, F.ALTURA_MAX, { copias: 3 });
+  const Ponte = require(raiz('lib/ponte.js'));
+  assert.ok(Ponte.limparBytes(Buffer.from(bytes).toString('base64')), `${bytes.length} bytes passam no servidor`);
+});
+teste('produtos no painel: botões de categoria na ordem da aba Categorias e ações em lote', async () => {
+  const L = await import(raiz('js/produtos-lista-lib.js'));
+  const ps = [{ id: 'a', cat: 'temperos' }, { id: 'b', cat: 'Verduras', ativo: true }, { id: 'c', cat: '' }, { id: 'd', cat: 'Temperos', ativo: true, chegouEm: '2026-10-16' }, { id: 'e', cat: 'abobrinhas', soInsumo: true }];
+  const cats = L.categoriasDaLista(ps, ['verduras', 'temperos'], (c) => ({ verduras: 'Verduras e folhas' }[c.toLowerCase()] || c));
+  assert.deepStrictEqual(cats.map((c) => [c.chave, c.nome, c.n]), [['verduras', 'Verduras e folhas', 1], ['temperos', 'Temperos', 2], ['abobrinhas', 'Abobrinhas', 1], [L.SEM_CATEGORIA, 'Sem categoria', 1]]);
+  assert.ok(L.passaNaCategoria(ps[3], 'temperos') && !L.passaNaCategoria(ps[1], 'temperos') && L.passaNaCategoria(ps[1], L.TODAS) && L.passaNaCategoria(ps[2], L.SEM_CATEGORIA));
+  const chegou = L.mudancasEmLote(ps, 'chegou', '2026-10-16', 5);
+  assert.deepStrictEqual(chegou.map((m) => m.id), ['a', 'b', 'c'], 'o que já chegou hoje e o "só ingrediente" ficam de fora');
+  assert.deepStrictEqual(chegou[0].dados, { ativo: true, chegouEm: '2026-10-16', ultimaModificacao: 5 });
+  assert.deepStrictEqual(L.mudancasEmLote(ps, 'fora', 'x', 5).map((m) => m.id), ['b', 'd']);
+  assert.deepStrictEqual(L.mudancasEmLote(ps, 'loja', 'x', 5).map((m) => m.id), ['a', 'c']);
+});
+
+teste('impressora: aba própria no Menu, liberada para a equipe que imprime', async () => {
+  const fs = require('fs'), html = fs.readFileSync(raiz('admin.html'), 'utf8'), P = await import(raiz('js/papeis-lib.js'));
+  assert.ok(html.includes('data-aba="impressora"') && html.includes('id="aba-impressora"') && html.includes('css/admin-impressora.css'));
+  const todas = [...html.matchAll(/class="tab[^"]*" data-aba="([a-z]+)"/g)].map((m) => m[1]);
+  for (const papel of ['proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque']) assert.ok(P.podeAbrir(papel, 'impressora', todas), papel);
+  const admin = fs.readFileSync(raiz('js/admin.js'), 'utf8');
+  assert.ok(/impressora: \(\) => import\('\.\/admin-impressora\.js'\)/.test(admin) && /impressora: \(m\) => m\.abrirAbaImpressora\(\)/.test(admin));
+});
+
+teste('ponte: o Dockerfile leva as duas bibliotecas do painel que o servidor usa para montar o cupom', () => {
+  const fs = require('fs'), docker = fs.readFileSync(raiz('Dockerfile'), 'utf8'), ign = fs.readFileSync(raiz('.dockerignore'), 'utf8');
+  assert.ok(/COPY js\/impressao-lib\.js js\/impressao-fila-lib\.js \.\/js\//.test(docker));
+  assert.ok(ign.includes('!js/impressao-lib.js') && ign.includes('!js/impressao-fila-lib.js'));
+  for (const arq of ['js/impressao-lib.js', 'js/impressao-fila-lib.js']) assert.ok(!/^\s*import\s/m.test(fs.readFileSync(raiz(arq), 'utf8')), `${arq} não pode importar outros arquivos do site (não vão para a imagem)`);
+});
 
 (async () => {
   let falhas = 0;

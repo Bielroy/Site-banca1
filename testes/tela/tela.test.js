@@ -157,10 +157,23 @@ teste('link da feira abre direto na banca, com a faixa das bancas no topo, e lem
   assert.ok(!pagina.url().includes('entrar='), 'o "entrar" sai do endereço');
   const nomes = await pagina.locator('#feira-lojas a').allInnerTexts();
   assert.deepStrictEqual(nomes.map((n) => n.trim()), ['Banca Adair e Pedrina', 'Pães da Lúcia']);
+  // selo discreto no cabeçalho: o cliente vê de qual feira entrou
+  await pagina.waitForSelector('#selo-feira', { timeout: 4000 });
+  assert.strictEqual((await pagina.locator('#selo-feira').innerText()).trim(), 'Feira Florença');
+  assert.ok(await pagina.evaluate(() => document.getElementById('selo-feira').nextElementSibling.id === 'header-nome'), 'fica logo acima do nome da banca');
   await pagina.click('#feira-lojas a:not(.atual)');
   await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 6000 });
+  // a loja grava "a última banca desta feira" depois de abrir: espera essa gravação antes de voltar ao link
+  await pagina.waitForFunction(() => /paes-da-lucia/.test(localStorage.getItem('banca_feira_ultima') || ''), null, { timeout: 6000 });
   await pagina.goto(servidor.base + '/feira/florenca');
   await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 6000 });
+  semErros(erros); await fechar();
+});
+teste('loja aberta pelo endereço normal (sem link de feira) não mostra selo de feira', async () => {
+  const { pagina, erros, fechar } = await abrir('/');
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForTimeout(400);
+  assert.strictEqual(await pagina.locator('#selo-feira').count(), 0);
   semErros(erros); await fechar();
 });
 
@@ -190,6 +203,186 @@ teste('plataforma: a aba Erros mostra os erros agrupados', async () => {
   semErros(erros); await fechar();
 });
 
+teste('plataforma: "Cartaz com QR" de cada feira manda para a impressão o cartaz com o link DAQUELA feira', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
+  const { pagina, erros, fechar } = await abrir('/plataforma.html', cen, { antes: () => { try { localStorage.setItem('pf_aba', 'feiras'); } catch (_) { /* segue */ } } });
+  await pagina.waitForSelector('[data-pf="cartaz-feira"]', { timeout: 8000 });
+  assert.strictEqual(await pagina.locator('[data-pf="cartaz-feira"]').count(), 2, 'um botão por feira');
+  await pagina.evaluate(() => { window.print = () => {}; new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.tagName === 'IFRAME' && n.srcdoc) window.__cartaz = n.srcdoc; }))).observe(document.body, { childList: true }); });
+  await pagina.click('[data-pf="cartaz-feira"][data-feira="feira-do-lago"]');
+  await pagina.waitForFunction(() => !!window.__cartaz, null, { timeout: 5000 });
+  const html = await pagina.evaluate(() => window.__cartaz);
+  assert.ok(html.includes('Feira do Lago') && html.includes('/feira/feira-do-lago') && !html.includes('feira-do-bairro'), 'cartaz da feira clicada');
+  assert.ok(/aria-label="QR Code: [^"]*\/feira\/feira-do-lago"/.test(html) && /<path fill="#1a3a2a" d="M/.test(html), 'QR desenhado');
+  semErros(erros); await fechar();
+});
+
+// ---------------------------------------------------------------- PACOTES
+const cenarioPacotes = () => {
+  const cen = cenarioPadrao();
+  cen.lojas.banca.produtos = {
+    batata: { nome: 'Batata inglesa', preco: 6.5, unidade: 'kg', cat: 'legumes', ativo: true, pesoMedio: 180, nomeUn: 'batata' },
+    alface: { nome: 'Alface crespa', preco: 4.5, unidade: 'un', cat: 'verduras', ativo: true },
+    bb: { nome: 'Batata baby', preco: 3, unidade: 'un', cat: 'legumes', ativo: true, pacote: true, pesoPacote: '500 g', promoQtd: 4, promoPreco: 10 },
+    cb: { nome: 'Cenoura baby', preco: 3, unidade: 'un', cat: 'legumes', ativo: true, pacote: true },
+  };
+  return cen;
+};
+teste('pacotes: bloco no fim da vitrine, atalho "Pacotes", "+ 1 pacote", sacola em palavras e comanda com a promoção', async () => {
+  const { pagina, erros, fechar } = await abrir('/', cenarioPacotes());
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  // o bloco "Pacotes prontos" vem DEPOIS de tudo que é solto (CSS order), com os dois pacotes
+  const ordem = await pagina.evaluate(() => [...document.querySelectorAll('#lista-produtos > .produto-card, #lista-produtos > .bloco-pacotes')]
+    .map((e, i) => ({ o: Number(e.style.order) || 0, i, k: e.classList.contains('bloco-pacotes') ? 'BLOCO' : e.dataset.id })).sort((a, b) => a.o - b.o || a.i - b.i).map((x) => x.k));
+  assert.strictEqual(ordem[ordem.length - 3], 'BLOCO', 'o cabeçalho vem logo antes dos pacotes: ' + ordem.join(','));
+  assert.deepStrictEqual(ordem.slice(-2).sort(), ['bb', 'cb'], 'os pacotes ficam no fim: ' + ordem.join(','));
+  assert.ok(ordem.indexOf('BLOCO') > ordem.indexOf('batata') && ordem.indexOf('BLOCO') > ordem.indexOf('alface'), ordem.join(','));
+  assert.ok(/Pacotes prontos/.test(await pagina.locator('.bloco-pacotes').innerText()));
+  const bb = pagina.locator('#lista-produtos .produto-card[data-id="bb"]'), cb = pagina.locator('#lista-produtos .produto-card[data-id="cb"]');
+  assert.ok(/PACOTE/i.test(await bb.locator('.lacre-pacote').innerText()) && (await bb.locator('.peso-pacote').innerText()) === '500 g');
+  assert.strictEqual(await cb.locator('.peso-pacote').count(), 0, 'sem peso cadastrado: só "PACOTE"');
+  assert.ok(/4 por R\$ 10/.test(await bb.locator('.etq-promo').innerText()));
+  // atalho "Pacotes" mostra só os pacotes
+  await pagina.locator('#categorias .cat-btn[data-cat="pacotes"]').click();
+  await esperarVisiveis(pagina, () => [...document.querySelectorAll('#lista-produtos .produto-card')].filter((c) => c.offsetParent !== null).length === 2);
+  assert.deepStrictEqual((await visiveis(pagina)).sort(), ['Batata baby', 'Cenoura baby']);
+  await pagina.locator('#categorias .cat-btn[data-cat="todas"]').click();
+  // + 1 pacote, 4 vezes: entra a promoção
+  await bb.scrollIntoViewIfNeeded();
+  assert.strictEqual((await bb.locator('[data-action="add"]').innerText()).trim(), '+ 1 pacote');
+  await bb.locator('[data-action="add"]').click();
+  for (let i = 0; i < 3; i++) await bb.locator('[data-action="inc"]').click();
+  await pagina.waitForFunction(() => /4 pacotes/.test(document.querySelector('#lista-produtos .produto-card[data-id="bb"] .card-qtd')?.innerText || ''), null, { timeout: 3000 });
+  { const t = await bb.locator('.card-qtd').innerText(); assert.ok(/R\$\s*10,00/.test(t), 'o contador já mostra o valor com a promoção: ' + JSON.stringify(t)); }
+  // 1 batata inglesa (por unidade): o botão diz "+ 1 batata"
+  const batata = pagina.locator('#lista-produtos .produto-card[data-id="batata"]');
+  await batata.scrollIntoViewIfNeeded();
+  await batata.locator('[data-action="add"][data-modo="un"]').click();
+  // sacola: grupos, palavras e o aviso "também tem em pacote"
+  await pagina.locator('#btn-carrinho-mobile').click();
+  const sacola = await pagina.locator('#carrinho-itens').innerText();
+  assert.ok(/Pesados na hora/i.test(sacola) && /Pacotes prontos/i.test(sacola), sacola);
+  assert.ok(/1 batata · ≈ 180 g/.test(sacola) && /4 pacotes de 500 g/.test(sacola) && /promoção 4 por R\$ 10/.test(sacola), sacola);
+  assert.ok(/Também tem em pacote: Batata baby/.test(sacola), sacola);
+  assert.ok(/R\$\s10,00/.test(await pagina.locator('#cart-row-bb .item-preco').innerText()));
+  // comanda: o pedido como a banca recebe
+  await pagina.locator('#btn-abrir-checkout').click();
+  const comanda = await pagina.locator('#comanda').innerText();
+  assert.ok(/4 pacotes/.test(comanda) && /1 batata/.test(comanda) && /pacote de 500 g/.test(comanda) && /promoção 4 por R\$ 10/.test(comanda), comanda);
+  assert.ok(/≈ R\$\s11,17/.test(comanda), 'total estimado = R$ 10 (pacotes) + ≈ R$ 1,17 (1 batata)\n' + comanda);
+  assert.ok(!/tem certeza/i.test(comanda));
+  semErros(erros); await fechar();
+});
+
+teste('pacotes: "4 por R$ 10" misturando 2 de batata e 2 de cenoura (cartão, sacola e comanda)', async () => {
+  const cen = cenarioPacotes();
+  Object.assign(cen.lojas.banca.produtos.cb, { promoQtd: 4, promoPreco: 10 });
+  const { pagina, erros, fechar } = await abrir('/', cen);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  const bb = pagina.locator('#lista-produtos .produto-card[data-id="bb"]'), cb = pagina.locator('#lista-produtos .produto-card[data-id="cb"]');
+  assert.ok(/4 por R\$ 10/.test(await bb.locator('.etq-promo').innerText()) && /pode misturar pacotes/.test(await bb.locator('.etq-mistura').innerText()), 'a etiqueta avisa que dá para misturar');
+  // nada passa da borda da etiqueta (no celular o selo saía para fora)
+  const fora = await pagina.evaluate(() => [...document.querySelectorAll('#lista-produtos .etiqueta')].some((e) => { const r = e.getBoundingClientRect(); return [...e.querySelectorAll('*')].some((f) => f.getBoundingClientRect().right > r.right + 1); }));
+  assert.ok(!fora, 'selo da promoção cabe dentro da etiqueta');
+  await bb.scrollIntoViewIfNeeded();
+  await bb.locator('[data-action="add"]').click();
+  await cb.locator('[data-action="add"]').click(); await cb.locator('[data-action="inc"]').click();
+  await pagina.waitForFunction(() => /Mais 1, de qualquer pacote,/.test(document.querySelector('#lista-produtos .produto-card[data-id="cb"] .card-acao')?.innerText || ''), null, { timeout: 3000 });
+  await bb.locator('[data-action="inc"]').click();
+  // 2 + 2 = R$ 10: cada cartão mostra R$ 5 (o da batata muda também quando a cenoura completa)
+  await pagina.waitForFunction(() => ['bb', 'cb'].every((id) => /R\$\s*5,00/.test(document.querySelector(`#lista-produtos .produto-card[data-id="${id}"] .card-qtd`)?.innerText || '')), null, { timeout: 3000 });
+  assert.strictEqual(await pagina.locator('#lista-produtos .promo-falta').count(), 0, 'promoção completa: some o "falta"');
+  await pagina.locator('#btn-carrinho-mobile').click();
+  for (const id of ['bb', 'cb']) assert.ok(/R\$\s5,00/.test(await pagina.locator(`#cart-row-${id} .item-preco`).innerText()), id);
+  await pagina.locator('#btn-abrir-checkout').click();
+  const comanda = await pagina.locator('#comanda').innerText();
+  assert.ok((comanda.match(/promoção 4 por R\$ 10/g) || []).length === 2, comanda);
+  assert.ok(/R\$\s10,00/.test(await pagina.locator('#comanda .cm-total').innerText()), comanda);
+  semErros(erros); await fechar();
+});
+
+teste('temperos: cantinho no fim (depois dos pacotes), "+ 1 potinho", sacola com o grupo Temperos e comanda em potinhos', async () => {
+  const cen = cenarioPacotes();
+  Object.assign(cen.lojas.banca.produtos, {
+    colorau: { nome: 'Colorau', preco: 4, unidade: 'un', cat: 'temperos', ativo: true },
+    cominho: { nome: 'Cominho', preco: 4.5, unidade: 'un', cat: 'temperos', ativo: true },
+  });
+  const { pagina, erros, fechar } = await abrir('/', cen);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  const ordem = await pagina.evaluate(() => [...document.querySelectorAll('#lista-produtos > .produto-card, #lista-produtos > .bloco-pacotes, #lista-produtos > .bloco-temperos')]
+    .map((e, i) => ({ o: Number(e.style.order) || 0, i, k: e.classList.contains('bloco-pacotes') ? 'PACOTES' : e.classList.contains('bloco-temperos') ? 'TEMPEROS' : e.dataset.id })).sort((a, b) => a.o - b.o || a.i - b.i).map((x) => x.k));
+  assert.strictEqual(ordem[ordem.length - 3], 'TEMPEROS', ordem.join(','));
+  assert.deepStrictEqual(ordem.slice(-2).sort(), ['colorau', 'cominho'], 'os temperos ficam no fim, depois dos pacotes: ' + ordem.join(','));
+  assert.ok(ordem.indexOf('PACOTES') < ordem.indexOf('TEMPEROS'), ordem.join(','));
+  assert.ok(/Cantinho dos temperos/.test(await pagina.locator('.bloco-temperos').innerText()));
+  const col = pagina.locator('#lista-produtos .produto-card[data-id="colorau"]');
+  assert.ok(/TEMPERO/i.test(await col.locator('.lacre-tempero').innerText()));
+  assert.ok(/o potinho/.test(await col.locator('.etiqueta').innerText()));
+  await col.scrollIntoViewIfNeeded();
+  assert.strictEqual((await col.locator('[data-action="add"]').innerText()).trim(), '+ 1 potinho');
+  await col.locator('[data-action="add"]').click(); await col.locator('[data-action="inc"]').click();
+  await pagina.waitForFunction(() => /2 potinhos/.test(document.querySelector('#lista-produtos .produto-card[data-id="colorau"] .card-qtd')?.innerText || ''), null, { timeout: 3000 });
+  // a aba da categoria mostra só os temperos, com o cabeçalho do cantinho
+  await pagina.locator('#categorias .cat-btn[data-cat="temperos"]').click();
+  await esperarVisiveis(pagina, () => [...document.querySelectorAll('#lista-produtos .produto-card')].filter((c) => c.offsetParent !== null).length === 2);
+  assert.ok(await pagina.locator('.bloco-temperos').isVisible());
+  await pagina.locator('#categorias .cat-btn[data-cat="todas"]').click();
+  const bb = pagina.locator('#lista-produtos .produto-card[data-id="bb"]');
+  await bb.scrollIntoViewIfNeeded(); await bb.locator('[data-action="add"]').click();
+  await pagina.locator('#btn-carrinho-mobile').click();
+  const sacola = await pagina.locator('#carrinho-itens').innerText();
+  assert.ok(/Temperos/i.test(sacola) && /2 potinhos/.test(sacola) && /Pacotes prontos/i.test(sacola), sacola);
+  await pagina.locator('#btn-abrir-checkout').click();
+  const comanda = await pagina.locator('#comanda').innerText();
+  assert.ok(/2 potinhos/.test(comanda) && /Colorau/.test(comanda) && /R\$\s8,00/.test(comanda), comanda);
+  semErros(erros); await fechar();
+});
+
+teste('pacotes: no painel, peso do pacote em branco é aceito e promoção mais cara é recusada', async () => {
+  const cen = cenarioPacotes(); cen.conta = { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.locator('[data-action="editar-produto"][data-id="cb"]').first().click({ timeout: 8000 });
+  assert.ok(await pagina.locator('#edit-pacote').isChecked());
+  assert.strictEqual(await pagina.locator('#edit-peso-pacote').inputValue(), '');
+  await pagina.fill('#edit-promo-qtd', '4'); await pagina.fill('#edit-promo-preco', '15');
+  assert.ok(/não sai mais barato/.test(await pagina.locator('#promo-previa').innerText()));
+  await pagina.click('#btn-salvar-produto');
+  await pagina.waitForTimeout(400);
+  assert.ok(!(await pagina.evaluate(() => (window.__gravados || []).some((g) => /produtos\/cb$/.test(g.path)))), 'promoção mais cara não grava');
+  await pagina.fill('#edit-promo-preco', '10');
+  await pagina.click('#btn-salvar-produto');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /produtos\/cb$/.test(g.path)), null, { timeout: 4000 });
+  const g = await pagina.evaluate(() => window.__gravados.filter((x) => /produtos\/cb$/.test(x.path)).pop().dados);
+  assert.strictEqual(g.pacote, true); assert.strictEqual(g.pesoPacote, ''); assert.strictEqual(g.promoQtd, 4); assert.strictEqual(g.promoPreco, 10);
+  assert.strictEqual(g.nome, 'Cenoura baby', 'o nome é o que a loja escreveu');
+  semErros(erros); await fechar();
+});
+
+teste('pacotes: no painel da Vitrine, título do bloco dos pacotes e faixa "Molhos" por categoria são gravados', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/testes/tela/painel-aparencia.html', cen);
+  await pagina.waitForSelector('#vt-gravar', { timeout: 8000 });
+  await pagina.locator('summary:has-text("Bloco dos pacotes")').click();
+  await pagina.fill('#vt-pac-titulo', 'Pacotinhos da banca');
+  await pagina.locator('summary:has-text("Cantinho dos temperos")').click();
+  await pagina.fill('#vt-tmp-titulo', 'Temperos da Pedrina');
+  await pagina.locator('#vt-tmp-cat').selectOption({ index: 1 });
+  await pagina.locator('summary:has-text("Faixas que você cria")').click();
+  await pagina.click('[data-acao-vt="mais-faixa"]');
+  await pagina.fill('[data-fx="0"][data-campo="titulo"]', 'Frutas da semana');
+  await pagina.click('#vt-gravar');
+  await pagina.waitForTimeout(300);
+  assert.ok(!(await pagina.evaluate(() => (window.__gravados || []).some((g) => g.path === 'loja/config'))), 'faixa sem categoria não grava');
+  await pagina.selectOption('select[data-fx="0"]', 'frutas');
+  await pagina.click('#vt-gravar');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config'), null, { timeout: 4000 });
+  const v = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config').dados.vitrine);
+  assert.deepStrictEqual(v.pacotes, { titulo: 'Pacotinhos da banca', texto: '' });
+  assert.strictEqual(v.temperos.titulo, 'Temperos da Pedrina'); assert.ok(v.temperos.cat && v.temperos.cat !== '-', 'a categoria escolhida é gravada: ' + JSON.stringify(v.temperos));
+  assert.deepStrictEqual(v.faixas, [{ titulo: 'Frutas da semana', texto: '', cat: 'frutas' }]);
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- PAINEL
 teste('painel: a aba Aparência abre e a prévia da loja carrega dentro dela', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
@@ -198,6 +391,111 @@ teste('painel: a aba Aparência abre e a prévia da loja carrega dentro dela', a
   const quadro = pagina.frameLocator('#aparencia-conteudo iframe');
   await quadro.locator('#lista-produtos .produto-card').first().waitFor({ timeout: 10000 });
   assert.ok(await pagina.locator('#ap-previa-falhou').isHidden().catch(() => true), 'sem o aviso de prévia que não abriu');
+  semErros(erros); await fechar();
+});
+
+teste('painel: Vitrine (na aba Aparência) cria um quadro com botão de categoria e grava em loja/config', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/testes/tela/painel-aparencia.html', cen);
+  await pagina.waitForSelector('#vt-gravar', { timeout: 8000 });
+  // sem mudança o botão continua tocável (apagado parecia quebrado): só avisa e não grava nada
+  assert.ok(await pagina.locator('#vt-gravar').isEnabled(), 'Gravar sempre tocável fora do envio de foto');
+  await pagina.click('#vt-gravar');
+  await pagina.waitForTimeout(300);
+  assert.ok(!(await pagina.evaluate(() => (window.__gravados || []).some((g) => g.path === 'loja/config'))), 'sem mudança: não grava');
+  await pagina.click('[data-acao-vt="mais"]');
+  await pagina.fill('[data-q="0"][data-campo="titulo"]', 'Manga no ponto');
+  await pagina.fill('[data-q="0"][data-campo="texto"]', 'Aperte de leve.');
+  await pagina.selectOption('select[data-q="0"]', 'frutas');
+  await pagina.fill('#vt-donos-titulo', 'Adair e Pedrina');
+  await pagina.fill('#vt-donos-texto', 'Escolhemos cada pedido.');
+  await pagina.click('#vt-gravar');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config'), null, { timeout: 4000 });
+  const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config').dados);
+  assert.deepStrictEqual(g, { vitrine: { quadros: [{ titulo: 'Manga no ponto', texto: 'Aperte de leve.', cat: 'frutas' }], donos: { titulo: 'Adair e Pedrina', texto: 'Escolhemos cada pedido.' } } });
+  assert.ok(await pagina.locator('#vt-funil table').isVisible(), 'quadro de visitas aparece (zerado)');
+  semErros(erros); await fechar();
+});
+
+teste('loja: quadro e "quem escolhe" entram no meio da vitrine, selos aparecem e o botão do quadro abre a categoria', async () => {
+  const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+  const cen = cenarioPadrao();
+  const b = cen.lojas.banca;
+  for (let i = 0; i < 12; i++) b.produtos['extra' + i] = { nome: 'Fruta ' + i, preco: 5, unidade: 'un', cat: 'frutas', ativo: true };
+  b.produtos.banana = { ...b.produtos.banana, chegouEm: hoje, estacao: true };
+  b.produtos.alface = { ...b.produtos.alface, chegouEm: hoje };
+  b.config = { ...b.config, vitrine: { escolha: 'Escolha da Pedrina', quadros: [{ titulo: 'Manga no ponto', texto: 'Aperte de leve.', cat: 'verduras' }], donos: { titulo: 'Adair e Pedrina', texto: 'Escolhemos cada pedido.' } } };
+  b.produtos.ovos = { ...b.produtos.ovos, escolha: true };
+  const { pagina, erros, fechar } = await abrir('/', cen);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForSelector('.bloco-quadro', { timeout: 4000 });
+  assert.strictEqual(await pagina.locator('#faixas-topo .faixa--chegou .produto-card').count(), 2, 'faixa "Chegou hoje" com os 2 marcados hoje');
+  assert.strictEqual(await pagina.locator('#lista-produtos .produto-card[data-id="ovos"] .selo--escolha').innerText(), 'Escolha da Pedrina');
+  const ordem = await pagina.evaluate(() => [...document.querySelectorAll('#lista-produtos > *')].filter((e) => e.offsetParent).map((e) => (e.classList.contains('bloco-quadro') ? 'Q' : e.classList.contains('bloco-donos') ? 'D' : 'p')).join(''));
+  assert.strictEqual(ordem.indexOf('Q'), 6, 'quadro depois do 6º produto: ' + ordem);
+  assert.strictEqual(ordem.replace('Q', '').indexOf('D'), 14, '"quem escolhe" depois do 14º: ' + ordem);
+  await pagina.fill('#busca-input', 'banana');
+  await pagina.waitForFunction(() => !document.querySelector('.bloco-quadro') || document.querySelector('.bloco-quadro').offsetParent === null, null, { timeout: 4000 });
+  await pagina.fill('#busca-input', '');
+  await pagina.waitForFunction(() => document.querySelector('.bloco-quadro')?.offsetParent, null, { timeout: 4000 });
+  // como uma pessoa: rola até o quadro, espera parar e toca (a rolagem da loja é suave)
+  await pagina.locator('.bloco-quadro').evaluate((e) => e.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await pagina.waitForTimeout(600);
+  await pagina.click('.bloco-quadro .bloco-bt');
+  await esperarVisiveis(pagina, () => [...document.querySelectorAll('#lista-produtos .produto-card')].filter((c) => c.offsetParent !== null).length === 1);
+  assert.deepStrictEqual(await visiveis(pagina), ['Alface crespa'], 'o botão "Ver Verduras" abriu a categoria');
+  const largura = await pagina.evaluate(() => document.documentElement.scrollWidth);
+  assert.ok(largura <= 392, `a página ficou mais larga que o celular (${largura}px)`);
+  semErros(erros); await fechar();
+});
+
+teste('lista da semana: cartão na sacola guarda a lista, "Só guardar" esvazia a sacola e a lista vai para o topo', async () => {
+  const { pagina, erros, fechar } = await abrir('/');
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  assert.ok(await pagina.locator('#lista-semana-card').isHidden(), 'sacola vazia: sem cartão');
+  await pagina.locator('#lista-produtos .produto-card[data-id="alface"] .card-add').click();
+  await pagina.locator('#lista-produtos .produto-card[data-id="ovos"] .card-add').click();
+  await pagina.locator('#btn-carrinho-mobile').click();
+  await pagina.waitForSelector('#lista-semana-card:not([hidden])', { timeout: 3000 });
+  assert.strictEqual(await pagina.locator('#btn-guardar-lista').innerText(), 'Guardar lista');
+  await pagina.click('#btn-guardar-lista');
+  await pagina.getByRole('button', { name: 'Só guardar' }).click();
+  await pagina.waitForFunction(() => document.getElementById('qtd-badge')?.textContent.trim() === '0', null, { timeout: 3000 });
+  await pagina.waitForSelector('#atalhos [data-action="por-lista"]', { timeout: 3000 });
+  assert.match(await pagina.locator('#atalhos [data-action="por-lista"]').innerText(), /Minha lista da semana[\s\S]*2 itens/);
+  await pagina.click('#atalhos [data-action="por-lista"]');
+  await pagina.waitForFunction(() => document.getElementById('qtd-badge')?.textContent.trim() === '2', null, { timeout: 3000 });
+  assert.strictEqual(await pagina.locator('#lista-semana-titulo').innerText(), 'Esta é a sua lista da semana');
+  semErros(erros); await fechar();
+});
+
+teste('painel: rótulo adesivo do milho é montado, salvo no produto e 15 cópias vão para a impressão', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/testes/tela/painel-rotulos.html?p=milho', cen);
+  await pagina.waitForSelector('#modal-rotulos.aberto', { timeout: 8000 });
+  assert.strictEqual(await pagina.locator('#rt-produto').inputValue(), 'milho');
+  assert.ok(await pagina.locator('#rt-montar').evaluate((d) => d.open), 'produto sem rótulo: já abre para montar');
+  await pagina.fill('#rt-nome', 'Milho da roça');
+  await pagina.fill('#rt-sub', 'Colhido hoje');
+  await pagina.selectOption('#rt-validade', '5');
+  await pagina.click('#rt-salvar');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'produtos/milho'), null, { timeout: 4000 });
+  const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'produtos/milho').dados.rotulo);
+  assert.deepStrictEqual(g, { titulo: 'Milho da roça', sub: 'Colhido hoje', preco: false, loja: true, validadeDias: 5, borda: 'feira' });
+  // a prévia desenhou alguma coisa (não ficou branca)
+  const tinta = await pagina.evaluate(() => { const c = document.getElementById('rt-canvas'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 128) n++; return { n, w: c.width }; });
+  assert.ok(tinta.n > 500 && tinta.w === 762, 'rótulo desenhado no tamanho da folha A4 de 21: ' + JSON.stringify(tinta));
+  await pagina.fill('#rt-qtd', '15');
+  assert.match(await pagina.locator('#rt-resumo').innerText(), /15 rótulos .* 1 folha A4/);
+  await pagina.evaluate(() => { window.print = () => {}; HTMLIFrameElement.prototype.__x = 1; });
+  await pagina.click('#rt-imprimir');
+  await pagina.waitForFunction(() => [...document.querySelectorAll('iframe')].some((f) => /Rótulos/.test(f.srcdoc || '')), null, { timeout: 6000 });
+  const n = await pagina.evaluate(() => ([...document.querySelectorAll('iframe')].find((f) => /Rótulos/.test(f.srcdoc)).srcdoc.match(/<img /g) || []).length);
+  assert.strictEqual(n, 15, '15 rótulos na página de impressão');
+  // produto com rótulo salvo: abre fechado, pronto para imprimir
+  await pagina.selectOption('#rt-produto', 'tomatinho');
+  assert.ok(!(await pagina.locator('#rt-montar').evaluate((d) => d.open)), 'com rótulo salvo: só dizer quantos e imprimir');
+  assert.strictEqual(await pagina.locator('#rt-nome').inputValue(), 'Tomatinhos');
   semErros(erros); await fechar();
 });
 
@@ -252,16 +550,213 @@ teste('painel: fila vinda da cópia do aparelho (sem conexão com o banco) mostr
   semErros(erros); await fechar();
 });
 
+// ---------------------------------------------------------------- IMPRESSÃO AUTOMÁTICA
+// impressora de mentira no "cabo" (porta serial): guarda os bytes em window.__impresso
+const impressoraFalsa = (cfg) => {
+  localStorage.setItem('banca_impressora', JSON.stringify(cfg));
+  window.__impresso = [];
+  const porta = { writable: null, async open() { porta.writable = { getWriter: () => ({ write: async (b) => { window.__impresso.push(...b); }, releaseLock() {} }) }; } };
+  Object.defineProperty(navigator, 'serial', { configurable: true, value: { getPorts: async () => [porta], requestPort: async () => porta } });
+};
+const cenarioImpressao = () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const agora = new Date().toISOString(), base = { total: 14, pag: 'PIX', quadra: '1', lote: '3', data: agora, itens: [{ id: 'ovos', nome: 'Ovos caipira', qtd: 1, tipo: 'un', unidade: 'dz', subtotal: 14 }] };
+  cen.lojas.banca.pedidos = {
+    'ped-novo-0001': { ...base, nome: 'Cliente Novo', status: 'pendente' },
+    'ped-feito-001': { ...base, nome: 'Ja Impresso', status: 'pendente', impressao: { saiu: 'inicial', saiuEm: agora, estado: 'impresso', vezes: 1 } },
+    'ped-aceito-01': { ...base, nome: 'Cliente Aceito', status: 'preparando' },
+  };
+  return cen;
+};
+const textoImpresso = (p) => p.evaluate(() => String.fromCharCode(...(window.__impresso || [])));
+const chamadasDaFila = () => servidor.chamadas.filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'impressao');
+
+teste('impressão automática "ao chegar": pedido novo sai sozinho, reservado e confirmado na fila; já impresso não sai de novo', async () => {
+  const antes = servidor.chamadas.length;
+  // a impressora de mentira é configurada ANTES da página abrir
+  const ctx = await navegador.newContext({ viewport: { width: 1200, height: 900 }, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
+  await ctx.addInitScript((c) => { window.__CENARIO = c; }, cenarioImpressao());
+  await ctx.addInitScript(impressoraFalsa, { modo: 'serial', largura: 80, acentos: true, auto: 'chegada', aparelho: 'ap-teste-01' });
+  await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+  await p.goto(servidor.base + '/admin.html');
+  await p.waitForFunction(() => /Cliente Novo/.test(String.fromCharCode(...(window.__impresso || []))), null, { timeout: 8000 });
+  await p.waitForTimeout(600);
+  const txt = await textoImpresso(p);
+  assert.ok(/Cliente Novo/.test(txt) && /Cliente Aceito/.test(txt), 'novo e aceito (nunca impresso) saem no "ao chegar"');
+  assert.ok(!/Ja Impresso/.test(txt), 'o que já saiu no papel não sai de novo');
+  assert.ok(txt.indexOf('Cliente Novo') > -1 && (txt.match(/Cliente Novo/g) || []).length === 1, 'sai uma vez só');
+  const fila = servidor.chamadas.slice(antes).filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'impressao');
+  const ops = fila.filter((c) => c.corpo.pedidoId === 'ped-novo-0001').map((c) => c.corpo.op);
+  assert.deepStrictEqual(ops.slice(0, 2), ['reservar', 'confirmar'], 'reserva antes de imprimir e confirma depois: ' + ops.join(','));
+  assert.ok(fila.every((c) => c.corpo.aparelho === 'ap-teste-01'));
+  assert.ok(!fila.some((c) => c.corpo.pedidoId === 'ped-feito-001'), 'nem pergunta à fila sobre o já impresso');
+  assert.ok(/Impressão automática ligada/.test(await p.locator('#imp-auto').innerText()), 'faixa no topo diz que está ligada');
+  semErros(errosP);
+  await ctx.close();
+});
+
+teste('impressão automática "ao aceitar": pedido novo espera; o aceito sai; manual não imprime nada', async () => {
+  for (const [auto, espera] of [['aceite', /Cliente Aceito/], ['manual', null]]) {
+    const ctx = await navegador.newContext({ viewport: { width: 1200, height: 900 }, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
+    await ctx.addInitScript((c) => { window.__CENARIO = c; }, cenarioImpressao());
+    await ctx.addInitScript(impressoraFalsa, { modo: 'serial', largura: 80, acentos: true, auto, aparelho: 'ap-teste-02' });
+    await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+    await p.goto(servidor.base + '/admin.html');
+    if (espera) await p.waitForFunction(() => /Cliente Aceito/.test(String.fromCharCode(...(window.__impresso || []))), null, { timeout: 8000 });
+    await p.waitForTimeout(1500);
+    const txt = await textoImpresso(p);
+    if (espera) assert.ok(espera.test(txt) && !/Cliente Novo/.test(txt), `${auto}: só o aceito sai\n${txt}`);
+    else { assert.strictEqual(txt, '', 'manual: nada sai sozinho'); assert.ok(await p.locator('#imp-auto').isHidden(), 'manual: sem faixa'); }
+    assert.deepStrictEqual(errosP, []);
+    await ctx.close();
+  }
+});
+
+teste('celular da banca (app Ponte): este painel não imprime sozinho, mostra o celular e o "Cupom" vai para a fila dele', async () => {
+  const antes = servidor.chamadas.length;
+  const ctx = await navegador.newContext({ viewport: { width: 1200, height: 900 }, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
+  await ctx.addInitScript((c) => { window.__CENARIO = c; }, cenarioImpressao());
+  await ctx.addInitScript(impressoraFalsa, { modo: 'ponte', largura: 80, acentos: true, auto: 'chegada', aparelho: 'ap-teste-03' });
+  await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+  await p.goto(servidor.base + '/admin.html');
+  await p.waitForFunction(() => /pelo celular da banca/.test(document.getElementById('imp-auto')?.innerText || ''), null, { timeout: 8000 });
+  await p.waitForTimeout(800);
+  assert.strictEqual(await textoImpresso(p), '', 'quem imprime é o celular da banca, não este painel');
+  assert.ok(!servidor.chamadas.slice(antes).some((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'impressao'), 'nem reserva na fila');
+  // a tela "Impressora" mostra o celular
+  await p.click('#btn-mais'); await p.click('#btn-impressora');
+  await p.locator('#ipr-status.ok').waitFor({ timeout: 4000 });
+  assert.ok(/Moto G/.test(await p.locator('#ipr-status').innerText()), 'a faixa mostra o celular da banca');
+  await p.click('#ipr-tab-ajustes');
+  await p.locator('.imp-ponte-card').waitFor({ timeout: 4000 });
+  const tela = await p.locator('#imp-corpo').innerText();
+  assert.ok(/Moto G/.test(tela) && /Conectado/.test(tela) && /Impressora funcionando/.test(tela), tela);
+  await p.locator('#imp-corpo select[data-campo="copias"]').selectOption('2');
+  await p.waitForTimeout(500);
+  const cfg = servidor.chamadas.slice(antes).filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ponte' && c.corpo.op === 'config').pop();
+  assert.ok(cfg && cfg.corpo.ponteId === 'pt0123456789abcdef' && cfg.corpo.cfg.copias === 2, 'vias do celular salvas no servidor');
+  // pedido que chegou pelo WhatsApp: colado, sai no celular da banca sem o carimbo do WhatsApp nem emoji
+  await p.click('#ipr-tab-whats');
+  await p.fill('#ipr-itens', '[09:12, 16/10/2026] Dona Rosa: 2 kg de tomate 🍅\n- 1 alface crespa');
+  await p.fill('#ipr-nome', 'Dona Rosa');
+  assert.ok(/Dona Rosa/.test(await p.locator('#ipr-previa').innerText()) && /1 alface crespa/.test(await p.locator('#ipr-previa').innerText()), 'o papel ao lado mostra o pedido');
+  await p.click('[data-vias="1"]');
+  await p.click('#ipr-imprimir');
+  await p.waitForTimeout(500);
+  const avulso = servidor.chamadas.slice(antes).filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ponte' && c.corpo.op === 'imprimir').pop();
+  assert.ok(avulso, 'pedido do WhatsApp foi para o celular da banca');
+  const papelAvulso = JSON.stringify(avulso.corpo.folhas);
+  assert.ok(/Pedido do WhatsApp/.test(papelAvulso) && /2 kg de tomate/.test(papelAvulso) && !/09:12/.test(papelAvulso) && !/🍅/.test(papelAvulso), papelAvulso);
+  assert.strictEqual(avulso.corpo.copias, 2, 'duas vias');
+  assert.ok(!avulso.corpo.pedidoId, 'não conta como pedido do sistema');
+  // foto: vira imagem em preto e branco e vai como bytes para o celular
+  await p.click('#ipr-tab-foto');
+  await p.setInputFiles('#ipr-galeria', { name: 'lista.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAAAAAB7tgMBAAAAIUlEQVR4nGN4TSRgGFVIRYVy+AEtFVLfM8NK4WjMDGGFAEcNuMzg6iY5AAAAAElFTkSuQmCC', 'base64') });
+  await p.locator('#ipr-canvas:not([hidden])').waitFor({ timeout: 4000 });
+  await p.click('#ipr-imprimir');
+  await p.waitForTimeout(500);
+  const foto = servidor.chamadas.slice(antes).filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ponte' && c.corpo.op === 'imprimir').pop();
+  assert.ok(foto && typeof foto.corpo.bytes === 'string' && foto.corpo.bytes.length > 100 && !foto.corpo.folhas, 'foto foi como imagem');
+  assert.ok(Buffer.from(foto.corpo.bytes, 'base64').includes(Buffer.from([0x1d, 0x76, 0x30, 0x00])), 'comando de imagem da térmica');
+  await p.locator('.tab[data-aba="relatorios"]').click();
+  await p.locator('.card-pedido').first().waitFor({ timeout: 8000 });
+  // "Cupom" num pedido: vai para o servidor (fila do celular), com o pedido e o nome do cliente
+  await cartao(p, 'Cliente Novo').locator('[data-tipo="cupom"]').click();
+  await p.waitForTimeout(600);
+  const env = servidor.chamadas.slice(antes).filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ponte' && c.corpo.op === 'imprimir').pop();
+  assert.ok(env, 'mandou para o celular da banca');
+  assert.strictEqual(env.corpo.pedidoId, 'ped-novo-0001'); assert.strictEqual(env.corpo.tipo, 'cupom');
+  assert.ok(JSON.stringify(env.corpo.folhas).includes('Cliente Novo'));
+  assert.ok(!servidor.chamadas.slice(antes).some((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'impressao' && c.corpo.op === 'confirmar'), 'o servidor marca impresso quando o celular confirmar, não o painel');
+  assert.strictEqual(await textoImpresso(p), '');
+  semErros(errosP);
+  await ctx.close();
+});
+
+teste('dois celulares da banca: a faixa mostra cada um; atalho dos rótulos abre a tela de rótulos', async () => {
+  doisCelulares = true;
+  try {
+    const ctx = await navegador.newContext({ viewport: { width: 1200, height: 900 }, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
+    await ctx.addInitScript((c) => { window.__CENARIO = c; }, cenarioImpressao());
+    await ctx.addInitScript(impressoraFalsa, { modo: 'ponte', largura: 80, acentos: true, auto: 'chegada', aparelho: 'ap-teste-04' });
+    await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+    await p.goto(servidor.base + '/admin.html');
+    await p.click('#btn-mais'); await p.click('#btn-impressora');
+    await p.locator('#ipr-status .ipr-cel').nth(1).waitFor({ timeout: 4000 });
+    const faixa = await p.locator('#ipr-status').innerText();
+    assert.ok(/Moto G/.test(faixa) && /Samsung da casa/.test(faixa) && /sem contato/.test(faixa), faixa);
+    assert.ok(await p.locator('#ipr-status.ok').count(), 'um com contato: a faixa fica verde');
+    assert.strictEqual(await p.locator('.ipr-cel.ok').count(), 1); assert.strictEqual(await p.locator('.ipr-cel.erro').count(), 1);
+    // o atalho dos rótulos aparece para o dono e abre a tela
+    await p.locator('#ipr-mais:not([hidden])').waitFor({ timeout: 2000 });
+    await p.click('#ipr-mais [data-action="rotulos"]');
+    await p.locator('#modal-rotulos').waitFor({ state: 'visible', timeout: 4000 });
+    await p.keyboard.press('Escape');
+    await p.click('#ipr-tab-ajustes');
+    assert.ok(await p.locator('#ipr-mais').isHidden(), 'nos ajustes o atalho some');
+    semErros(errosP);
+    await ctx.close();
+  } finally { doisCelulares = false; }
+});
+
+teste('produtos no painel: botões de categoria filtram a lista e "Selecionar vários" marca "chegou hoje" de uma vez', async () => {
+  const cen = cenarioImpressao();
+  Object.assign(cen.lojas.banca.produtos, {
+    oregano: { nome: 'Orégano', preco: 3, unidade: 'un', cat: 'temperos', ativo: false },
+    colorau: { nome: 'Colorau', preco: 3, unidade: 'un', cat: 'temperos', ativo: true },
+  });
+  const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 }, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
+  await ctx.addInitScript((c) => { window.__CENARIO = c; }, cen);
+  await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+  await p.goto(servidor.base + '/admin.html');
+  await p.locator('#pl-cats [data-pl-cat="temperos"]').waitFor({ timeout: 8000 });
+  assert.ok(/Temperos\s*2/.test(await p.locator('#pl-cats [data-pl-cat="temperos"]').innerText()), 'temperos com 2 produtos');
+  await p.click('#pl-cats [data-pl-cat="temperos"]');
+  const nomes = await p.locator('#lista-produtos .pl-txt b').allInnerTexts();
+  assert.deepStrictEqual(nomes, ['Colorau', 'Orégano'], 'só os temperos');
+  assert.ok(/Temperos/.test(await p.locator('#pl-cabeca').innerText()));
+  // comprei tempero hoje: marca os dois e "Chegou hoje" põe na loja com o selo
+  await p.click('[data-pl-sel="ligar"]');
+  assert.ok(await p.locator('#pl-lote').isVisible(), 'barra dos marcados aparece');
+  await p.click('[data-pl-sel="todos"]');
+  assert.ok(/2 marcados/.test(await p.locator('#pl-lote').innerText()));
+  await p.click('[data-pl-lote="chegou"]');
+  await p.waitForFunction(() => (window.__gravados || []).filter((g) => g.lote).length === 2, null, { timeout: 4000 });
+  const g = await p.evaluate(() => window.__gravados.filter((x) => x.lote));
+  assert.deepStrictEqual(g.map((x) => x.path.split('/').pop()).sort(), ['colorau', 'oregano']);
+  assert.ok(g.every((x) => x.dados.ativo === true && typeof x.dados.chegouEm === 'string' && x.dados.chegouEm.length === 10), JSON.stringify(g));
+  assert.ok(await p.locator('#pl-lote').isHidden(), 'depois de salvar, sai da seleção');
+  // tocar na linha volta a abrir o produto
+  assert.ok(await p.locator('#lista-produtos [data-action="editar-produto"]').count() === 2);
+  await p.click('#pl-cats [data-pl-cat="__todas__"]');
+  assert.ok((await p.locator('#lista-produtos .pl-item').count()) >= 6, 'todos de novo');
+  semErros(errosP);
+  await ctx.close();
+});
+
+// o servidor de mentira do app Ponte: um celular ligado, com a impressora funcionando
+// (com doisCelulares, aparece também um segundo, sem contato desde ontem)
+let doisCelulares = false;
+const outroCelular = () => ({ id: 'ptfedcba9876543210', nome: 'Samsung da casa', criadoEm: new Date(Date.now() - 3 * 864e5).toISOString(), visto: new Date(Date.now() - 864e5).toISOString(), online: false, impressora: { estado: 'ok', nome: 'MP-58', msg: '' }, app: { versao: '1.0.9' }, cfg: { auto: 'chegada', largura: 58, acentos: true, copias: 1, autoEtiqueta: false, autoPesado: false, autoCancelado: true } });
+const ponteFalsa = (c) => (c.op === 'listar' ? { sucesso: true, pontes: [{ id: 'pt0123456789abcdef', nome: 'Moto G', criadoEm: new Date().toISOString(), visto: new Date().toISOString(), online: true, impressora: { estado: 'ok', nome: 'GS-FJ80M', msg: '' }, app: { versao: '1.0.1' }, cfg: { auto: 'chegada', largura: 80, acentos: true, copias: 1, autoEtiqueta: false, autoPesado: false, autoCancelado: true } }, ...(doisCelulares ? [outroCelular()] : [])] }
+  : c.op === 'config' ? { sucesso: true, cfg: { auto: 'chegada', largura: 80, acentos: true, copias: 2, autoEtiqueta: false, autoPesado: false, autoCancelado: true }, pulados: 0 }
+  : c.op === 'imprimir' ? { sucesso: true, id: 'im-teste-1', online: true, visto: new Date().toISOString() } : { sucesso: true });
+
 (async () => {
   servidor = await subir({
     // pesagem (de mentira): devolve o pedido pesado como o api/pdv.js de verdade
-    '/api/pdv': (c) => (c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
+    '/api/pdv': (c) => (c.acao === 'impressao' ? { sucesso: true, ok: true } : c.acao === 'ponte' ? ponteFalsa(c) : c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
     // ranking (de mentira) da banca, ao contrário da ordem do cadastro, chegando 1,5 s depois
     '/api/analytics': (c) => (c.acao === 'ranking' ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, nivel: 'popular', itens: ['ovos', 'banana', 'alface', 'tomate'].map((id, i) => ({ id, p: 0.9 - i * 0.2 })) }), 1500)) : {}),
     '/api/checkout': (c) => (c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),
     '/api/plataforma': (c) => (c.acao === 'situacao' ? { sucesso: true, temDono: true, souEu: true }
       : c.acao === 'erros' ? { sucesso: true, erros: [{ id: 'e1', msg: "Cannot read properties of undefined (reading 'preco')", vezes: 3, ultimo: new Date().toISOString(), onde: '/assets/main-X.js:10:5', paginas: ['/'], navegadores: ['Android · Chrome 129'], lojas: ['banca'], pilha: 'at x' }] }
-      : c.acao === 'lojas' ? { sucesso: true, lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', ativo: true, original: true, donos: ['dona@teste.com'], cor: '#1a3a2a', mes: { receita: 0, pedidos: 0 } }], feiras: [], condominios: [], pix: false, fotos: false } : {}),
+      : c.acao === 'lojas' ? { sucesso: true, lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', ativo: true, original: true, donos: ['dona@teste.com'], cor: '#1a3a2a', mes: { receita: 0, pedidos: 0 } }], feiras: [{ id: 'feira-do-bairro', nome: 'Feira do Bairro', dias: [2], lojas: ['banca'], condominiosIds: [] }, { id: 'feira-do-lago', nome: 'Feira do Lago', dias: [4], lojas: ['banca'], condominiosIds: [] }], condominios: [], pix: false, fotos: false } : {}),
   });
   navegador = await chromium.launch();
   let falhas = 0;

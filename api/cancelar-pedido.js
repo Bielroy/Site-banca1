@@ -68,6 +68,7 @@ const E = require('../lib/estoque');
 const Avisos = require('../lib/avisos');
 const P = require('../lib/prudencia');
 const Conta = require('../lib/conta');
+const Cofre = require('../lib/cofre');
 
 // ---------------------------------------------------------------------
 // AVALIAÇÃO: "chegou tudo fresquinho?"  POST { acao: 'avaliar', pedidoId, nota: 1..5, texto? }
@@ -93,7 +94,7 @@ async function avaliar(req, res, { tid, uid, pedidoId, peloCracha }) {
       const r = rs.exists ? rs.data() : {}, soma = Number(r.soma || 0) + nota, n = Number(r.n || 0) + 1;
       t.set(pedidoRef, { avaliacao: { nota, texto, em: new Date().toISOString() } }, { merge: true });
       t.set(resumoRef, { soma, n, media: Math.round((soma / n) * 10) / 10, em: new Date().toISOString() }, { merge: true });
-      return { nome: pedido.nome || 'Cliente' };
+      return { nome: Cofre.abrir(pedido.nome, tid, 'nome') || 'Cliente' };
     });
     if (nota <= 3) await Avisos.avisarLoja(db, tid, { titulo: `Avaliação ${nota} de 5`, corpo: `${saida.nome}${texto ? ': ' + texto.slice(0, 90) : ' não ficou satisfeita com o pedido.'}`, url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `avaliacao-${pedidoId}` });
     return res.status(200).json({ sucesso: true });
@@ -140,7 +141,9 @@ module.exports = async function handler(req, res) {
 
   let uidVerificado, daEquipe = false, quem = '';
   try {
-    const decodificado = await admin.auth().verifyIdToken(token);
+    let decodificado = await admin.auth().verifyIdToken(token);
+    // quem é da equipe: confere também se o login foi encerrado (pessoa tirada da equipe perde o acesso na hora)
+    if (H.temPapelDeEquipe(decodificado)) decodificado = await admin.auth().verifyIdToken(token, true);
     uidVerificado = decodificado.uid;
     // Quem trabalha na loja cancela pelo painel, a qualquer momento (o cliente, só nos primeiros minutos).
     daEquipe = T.temPapel(decodificado, tid, PODEM_CANCELAR_NO_PAINEL);

@@ -1,0 +1,76 @@
+/* =====================================================================
+   css/admin-vitrine.css — selos no cadastro e na lista de produtos, guia de
+   foto, e o bloco "Vitrine" da aba Aparência (js/admin-vitrine.js).
+   ===================================================================== */
+
+/* ---------- lista de produtos: selo bom e botão "hoje" ---------- */
+.pl-selo.bom { background: #dcefe3; color: #24603d; }
+.pl-chegou {
+    flex: none; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
+    min-width: 48px; min-height: 44px; padding: 2px 6px; border-radius: 12px; cursor: pointer;
+    border: 1.5px dashed #c9d8cd; background: none; color: #6b7a70; font: inherit; font-size: .68rem; font-weight: 700;
+}
+.pl-chegou .ic { width: 20px; height: 20px; }
+.pl-chegou.on { border-style: solid; border-color: #3e7d5a; background: #e3f2e8; color: #24603d; }
+.pl-chegou:active { transform: scale(.95); }
+
+/* ---------- cadastro: selos e guia de foto ---------- */
+.selos-produto { border: 1.5px solid var(--parchment); border-radius: 12px; padding: 12px 14px; }
+.selos-produto legend { font-weight: 700; padding: 0 4px; }
+.selos-produto .chk-linha { display: flex; align-items: flex-start; gap: 10px; min-height: 40px; padding: 4px 0; }
+.selos-produto .chk-linha span { display: flex; flex-direction: column; line-height: 1.3; }
+.selos-produto .chk-linha small { color: var(--text-mid); font-size: .78rem; }
+.guia-foto { margin-top: 10px; border-radius: 12px; background: #f4f8f3; padding: 0 14px; }
+.guia-foto summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 700; color: #24603d; }
+.guia-foto ol { margin: 0 0 8px; padding-left: 20px; display: grid; gap: 6px; font-size: .88rem; line-height: 1.45; }
+.guia-foto small { display: block; padding-bottom: 12px; color: var(--text-mid); font-size: .8rem; line-height: 1.45; }
+
+/* ---------- bloco Vitrine (aba Aparência) ---------- */
+#vitrine-conteudo:empty { display: none; }
+.vt { margin-top: 28px; padding-top: 22px; border-top: 2px dashed var(--parchment); display: flex; flex-direction: column; gap: 12px; }
+.vt-cab .config-sub { margin-top: 4px; }
+.vt-foto { display: grid; grid-template-columns: 96px 1fr; gap: 6px 12px; align-items: center; margin-bottom: 12px; }
+.vt-foto-mini { grid-row: span 2; width: 96px; height: 72px; border-radius: 10px; overflow: hidden; background: var(--parchment); display: grid; place-items: center; font-size: .72rem; color: var(--text-mid); }
+.vt-foto-mini img { width: 100%; height: 100%; object-fit: cover; }
+.vt-foto-bts { display: flex; gap: 8px; flex-wrap: wrap; }
+.vt-enviar { cursor: pointer; min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 999px; }
+.vt-tirar, .vt-remover { min-height: 44px; padding: 0 14px; border: 0; background: none; color: var(--danger); font: inherit; font-weight: 700; cursor: pointer; }
+.vt-quadro { border: 1.5px solid var(--parchment); border-radius: 14px; padding: 12px 14px 6px; margin: 0 0 12px; min-width: 0; }
+.vt-quadro legend { font-weight: 800; padding: 0 4px; }
+.vt-quadro legend small { font-weight: 600; color: var(--text-mid); margin-left: 6px; }
+.vt-mais { min-height: 44px; }
+.vt-gravar { position: sticky; bottom: 8px; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 10px 12px; border-radius: 14px; background: #fffdf8; box-shadow: 0 4px 18px rgba(0, 0, 0, .12); }
+.vt-gravar span { font-size: .85rem; color: var(--text-mid); }
+.vt-gravar button[disabled] { opacity: .55; cursor: default; }
+
+.vt-funil { margin-top: 8px; padding: 16px; border-radius: 14px; background: #f4f8f3; }
+.vt-funil h4 { margin: 0 0 4px; font-size: 1.05rem; }
+.vt-tabela { width: 100%; border-collapse: collapse; margin: 10px 0 8px; font-size: .9rem; }
+.vt-tabela th, .vt-tabela td { padding: 8px 6px; border-bottom: 1px solid #dfe9e1; text-align: right; }
+.vt-tabela th[scope="row"], .vt-tabela thead th:first-child { text-align: left; font-weight: 600; }
+.vt-tabela thead th { font-size: .78rem; color: var(--text-mid); font-weight: 700; }
+.vt-tabela td { font-variant-numeric: tabular-nums; font-weight: 700; }
+.vt-tabela tfoot th, .vt-tabela tfoot td { border-bottom: 0; color: #24603d; }
+
+/* ---------- cadastro: PACOTE FECHADO e promoção por quantidade (js/pacote-lib.js) ---------- */
+.pacote-campos { border: 1.5px solid var(--parchment); border-radius: 14px; padding: 12px 14px; margin: 4px 0 14px; background: #fff; }
+.pacote-campos[hidden] { display: none; }
+.pacote-campos.ligado { border: 2px solid #a87b3f; background: #fffaf0; }
+.pacote-liga { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; min-height: 44px; }
+.pacote-liga input { width: 22px; height: 22px; margin-top: 2px; accent-color: #6b4a1f; flex: none; }
+.pacote-liga-txt { display: grid; grid-template-columns: 28px 1fr; column-gap: 8px; align-items: center; }
+.pacote-liga-txt b { font-size: 1rem; color: #4a3214; }
+.pacote-liga-txt small { grid-column: 1 / -1; color: #6b4a1f; font-size: .8rem; line-height: 1.4; margin-top: 3px; }
+.pacote-ico svg { width: 28px; height: 28px; display: block; }
+#grupo-peso-pacote { margin: 12px 0 0; }
+#grupo-peso-pacote[hidden] { display: none; }
+.promo-grupo { margin: 12px 0 0; }
+.promo-grupo .grid-2 { gap: 10px; }
+#promo-previa.erro { color: var(--danger); font-weight: 700; }
+.vt-sum-pac { display: grid !important; grid-template-columns: 26px 1fr; column-gap: 8px; align-items: center; }
+.vt-sum-pac .arte-cat { width: 26px; height: 26px; grid-row: span 2; }
+.vt-sum-pac small { grid-column: 2; }
+.pacote-campos label.pacote-liga { display: flex; text-transform: none; letter-spacing: 0; font-size: 1rem; font-weight: 400; margin: 0; color: inherit; }
+.pacote-campos label.pacote-liga small { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.pacote-campos label.pacote-liga b { text-transform: none; letter-spacing: 0; }

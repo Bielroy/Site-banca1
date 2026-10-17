@@ -32,6 +32,9 @@
     <link rel="stylesheet" href="./css/admin-estoque.css">
     <link rel="stylesheet" href="./css/admin-icones.css">
     <link rel="stylesheet" href="./css/admin-casca.css">
+    <link rel="stylesheet" href="./css/admin-vitrine.css">
+    <link rel="stylesheet" href="./css/admin-rotulos.css">
+    <link rel="stylesheet" href="./css/admin-impressora.css">
 </head>
 <body>
 
@@ -80,6 +83,7 @@
                 <button class="tab" data-aba="pdv"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="pdv"></i></span><span class="tab-txt">Balcão</span></button>
                 <button class="tab" data-aba="fechamento"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="fechamento"></i></span><span class="tab-txt">Fechamento</span></button>
                 <button class="tab" data-aba="calendario"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="calendario"></i></span><span class="tab-txt">Calendário</span></button>
+                <button class="tab" data-aba="impressora"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="impressora"></i></span><span class="tab-txt">Impressora</span></button>
                 <span class="tabs-grupo">Produtos</span>
                 <button class="tab active" data-aba="produtos"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="produtos"></i></span><span class="tab-txt">Produtos</span></button>
                 <button class="tab" data-aba="categorias"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="categorias"></i></span><span class="tab-txt">Categorias</span></button>
@@ -105,10 +109,14 @@
         <section id="aba-produtos" class="aba-content active">
             <div class="pl-topo">
                 <input type="search" id="admin-busca-input" placeholder="Buscar produto..." aria-label="Buscar produto ou categoria">
+                <button class="bt bt-sec pl-rotulos" data-action="rotulos" title="Imprimir rótulos adesivos com a imagem que você quiser"><i class="ic" data-i="etiqueta"></i> Rótulos</button>
                 <button class="bt bt-pri" data-action="novo-produto">+ Novo produto</button>
             </div>
+            <div class="pl-cats" id="pl-cats" role="group" aria-label="Categoria" hidden></div>
             <div class="pl-filtros" id="pl-filtros" role="group" aria-label="Mostrar"></div>
+            <div class="pl-cabeca" id="pl-cabeca"></div>
             <div id="lista-produtos" class="pl-lista">Carregando os produtos...</div>
+            <div class="pl-lote" id="pl-lote" role="region" aria-label="Produtos marcados" hidden></div>
             <div class="pl-extras">
                 <button class="bt bt-sec" id="btn-varias-fotos">Enviar várias fotos</button>
                 <button class="bt bt-sec" id="btn-precos-dia">Preço por dia da semana</button>
@@ -138,6 +146,10 @@
 
         <section id="aba-calendario" class="aba-content">
             <div id="calendario-conteudo"></div>
+        </section>
+
+        <section id="aba-impressora" class="aba-content">
+            <div id="impressora-conteudo"></div>
         </section>
 
         <section id="aba-estoque" class="aba-content">
@@ -258,6 +270,8 @@
 
         <section id="aba-aparencia" class="aba-content">
             <div id="aparencia-conteudo"></div>
+            <!-- Vitrine: quadros, "quem escolhe seu pedido", nome do selo e números (js/admin-vitrine.js) -->
+            <div id="vitrine-conteudo"></div>
         </section>
 
         <section id="aba-config" class="aba-content">
@@ -417,6 +431,17 @@
                     <p class="ou-divisor">OU</p>
                     <input type="url" id="edit-foto-url" placeholder="Ou cole aqui o link de uma foto">
                     <button type="button" class="btn-outline btn-banco-fotos" id="btn-banco-fotos">Escolher do banco de fotos</button>
+                    <details class="guia-foto">
+                        <summary>Como tirar uma foto que dá vontade de comprar</summary>
+                        <ol>
+                            <li><b>Luz de janela</b>, de lado. Sem flash e sem sol direto.</li>
+                            <li><b>Sempre o mesmo fundo</b>: uma tábua clara, um pano creme ou o próprio caixote.</li>
+                            <li><b>Sempre o mesmo jeito</b>: celular inclinado (meio de lado) ou bem de cima, foto quadrada, o produto ocupando quase tudo.</li>
+                            <li><b>Mostre como vai ser entregue</b>: o maço, a bandeja, 1 unidade ao lado da mão para dar ideia do tamanho.</li>
+                            <li>Tire 3 e fique com a mais nítida. Pode clarear no próprio celular, mas <b>não mude a cor nem esconda defeito</b>: a foto é uma promessa.</li>
+                        </ol>
+                        <small>Foto do produto de verdade vende mais que foto da internet ou feita por IA, e evita reclamação de "veio diferente".</small>
+                    </details>
                 </div>
                 <div class="form-group"><label for="edit-nome">Nome do produto</label><input type="text" id="edit-nome"></div>
                 <div class="form-group">
@@ -438,6 +463,26 @@
                     </div>
                 </div>
 
+                <!-- PACOTE FECHADO e PROMOÇÃO POR QUANTIDADE (js/pacote-lib.js). Só para o que NÃO vai à balança. -->
+                <fieldset class="form-group pacote-campos" id="grupo-pacote">
+                    <legend class="sr-only">Pacote e promoção</legend>
+                    <label class="pacote-liga"><input type="checkbox" id="edit-pacote">
+                        <span class="pacote-liga-txt"><span class="pacote-ico" data-arte="pacote"></span><b>É pacote fechado</b>
+                        <small>Vai para o bloco "Pacotes prontos" da loja, com o cartão de papel pardo e o botão "+ 1 pacote". Não vai para a balança.</small></span></label>
+                    <div class="form-group" id="grupo-peso-pacote" hidden>
+                        <label for="edit-peso-pacote">Peso escrito no pacote (opcional)</label>
+                        <input type="text" id="edit-peso-pacote" maxlength="16" placeholder="Ex.: 500 g · em branco aparece só PACOTE" autocomplete="off">
+                    </div>
+                    <div class="form-group promo-grupo">
+                        <label>Promoção por quantidade (opcional)</label>
+                        <div class="grid-2">
+                            <input type="number" id="edit-promo-qtd" min="2" max="50" step="1" inputmode="numeric" placeholder="Leve quantos? Ex.: 4" aria-label="Leve quantos">
+                            <input type="text" id="edit-promo-preco" inputmode="decimal" placeholder="Por R$ Ex.: 10,00" aria-label="Pelo preço de">
+                        </div>
+                        <small class="dica-campo" id="promo-previa">Ex.: leve 4 por R$ 10,00. Quem levar 4 paga R$ 10; o que passar volta ao preço normal. Em branco: sem promoção.</small>
+                    </div>
+                </fieldset>
+
                 <!-- NOVO: peso médio por unidade. Alimenta a estimativa de preço
                      que o cliente vê ao pedir "5 batatas" na loja. Só aparece
                      quando a métrica de venda é por peso. -->
@@ -448,6 +493,9 @@
                         Preenchendo isto, quem pedir "5 unidades" vê uma <b>estimativa de preço</b> na loja
                         (ex.: 5 batatas ≈ 0,75 kg ≈ R$ 4,50). Em branco, o cliente vê apenas o aviso de pesagem.
                     </small>
+                    <label for="edit-nome-un" style="margin-top:14px;">Como chamar 1 unidade (opcional)</label>
+                    <input type="text" id="edit-nome-un" maxlength="30" placeholder="Ex.: batata · ou pão/pães" autocomplete="off">
+                    <small class="dica-campo" id="nome-un-previa">Na loja e na sacola aparece "2 batatas" em vez de "2 unidades".</small>
                     <div id="grupo-mostrar-primeiro">
                     <label for="edit-mostrar-primeiro" style="margin-top:14px;">Na loja, mostrar primeiro</label>
                     <select id="edit-mostrar-primeiro">
@@ -460,6 +508,21 @@
                     </small>
                     </div>
                 </div>
+
+                <!-- Rótulo adesivo personalizado deste produto (js/admin-rotulos.js). Só com o produto já salvo. -->
+                <div class="form-group" id="grupo-rotulo-produto" hidden>
+                    <button type="button" class="btn-outline btn-rotulo-produto" data-action="rotulo-do-produto"><i class="ic" data-i="etiqueta"></i> Rótulo adesivo deste produto</button>
+                    <small class="dica-campo">Monte o adesivo com a imagem que quiser (foto, desenho, logo) e imprima quantos precisar.</small>
+                </div>
+
+                <!-- Selos na loja (js/vitrine-lib.js). Só o que for verdade: o selo é uma promessa para o cliente. -->
+                <fieldset class="form-group selos-produto">
+                    <legend>Selos na loja (opcional)</legend>
+                    <label class="chk-linha"><input type="checkbox" id="edit-selo-chegou"> <span><b>Chegou hoje</b> <small>vale só hoje; amanhã some sozinho</small></span></label>
+                    <label class="chk-linha"><input type="checkbox" id="edit-selo-estacao"> <span><b>Da estação</b> <small>está na safra</small></span></label>
+                    <label class="chk-linha"><input type="checkbox" id="edit-selo-escolha"> <span><b>Escolha da casa</b> <small>o que vocês recomendam (o nome do selo muda em Aparência → Vitrine)</small></span></label>
+                    <small class="dica-campo">Cada selo coloca o produto numa faixa no topo da loja ("Chegou hoje", "Da estação"). No dia a dia, o botão <b>hoje</b> na lista de produtos marca o "Chegou hoje" num toque.</small>
+                </fieldset>
 
                 <div class="form-group">
                     <label class="chk-linha"><input type="checkbox" id="edit-so-insumo"> Só ingrediente (não aparece na loja)</label>

@@ -60,6 +60,8 @@ const ponto = (cor) => `<i class="pf-ponto" style="background:${corOk(cor)}" ari
 
 // ---------------------------------------------------------------- abas
 function render() {
+    // a aba pode ser tocada antes de a lista da plataforma chegar (ou se ela falhar): mostra "carregando", não quebra
+    if (!S.dados) { el().innerHTML = '<p class="pf-vazio">Carregando a plataforma...</p>'; return; }
     const d = S.dados, t = totais(d.lojas), mensal = d.lojas.reduce((s, l) => s + (l.assinatura ? l.assinatura.valor : 0), 0);
     $('pf-resumo').textContent = `${t.ativas} de ${t.lojas} lojas ativas, ${fmt(t.receita)} vendidos e ${t.pedidos} pedidos neste mês${mensal ? `, ${fmt(mensal)} em mensalidades` : ''}.`;
     const abas = $('pf-abas'); abas.hidden = false;
@@ -82,7 +84,7 @@ function abaFeiras() {
             <p class="pf-feira-bancas">${bancas.map((l) => `<span>${ponto(l.cor)}${escapeHTML(l.nome)}</span>`).join('')}</p>
             <p class="pf-feira-conds">${conds ? `${conds} condomínio${conds > 1 ? 's' : ''}: ${escapeHTML(d.condominios.filter((c) => f.condominiosIds.includes(c.id)).map((c) => c.nome).join(', '))}` : 'Nenhum condomínio.'}</p>
             ${alertas.length ? `<ul class="pf-alertas">${alertas.map((a) => `<li>${escapeHTML(a)}</li>`).join('')}</ul>` : ''}
-            <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="copiar-link" data-feira="${escapeHTML(f.id)}">Copiar link</button><button type="button" class="pf-bt pri" data-pf="editar-feira" data-feira="${escapeHTML(f.id)}">Editar</button></div>
+            <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="copiar-link" data-feira="${escapeHTML(f.id)}">Copiar link</button><button type="button" class="pf-bt" data-pf="cartaz-feira" data-feira="${escapeHTML(f.id)}">Cartaz com QR</button><button type="button" class="pf-bt pri" data-pf="editar-feira" data-feira="${escapeHTML(f.id)}">Editar</button></div>
         </article>`;
     }).join('');
     return `<div class="pf-topo-aba"><p>Cada feira tem os seus dias, as suas bancas e os condomínios que atende. Quem abre o link da feira vê só as bancas dela.</p><button type="button" class="pf-bt pri" data-pf="nova-feira">Nova feira</button></div>
@@ -274,6 +276,15 @@ async function agir(b) {
         case 'editar-feira': return abrirFolha('feira', b.dataset.feira);
         case 'nova-loja': return abrirFolha('nova-loja');
         case 'abrir-loja': return abrirFolha('loja', b.dataset.loja);
+        case 'cartaz-feira': {       // cartaz A4 "Agora temos aplicativo" com o QR DESTA feira (js/cartaz-lib.js)
+            const f = S.dados.feiras.find((x) => x.id === b.dataset.feira); if (!f) return;
+            try {
+                const [{ cartazHtml }, { imprimirPagina }] = await Promise.all([import('./cartaz-lib.js'), import('./impressao.js')]);
+                await imprimirPagina(cartazHtml({ feira: f, link: linkDaFeira(f.id) }));
+                showToast('Cartaz pronto. Para guardar, escolha "Salvar como PDF".');
+            } catch (e) { showToast((e && e.message) || 'Não consegui montar o cartaz.', true); }
+            return;
+        }
         case 'copiar-link': {
             try { await navigator.clipboard.writeText(linkDaFeira(b.dataset.feira)); showToast('Link da feira copiado.'); }
             catch (_) { showToast('Não consegui copiar. Segure o dedo no link para copiar.', true); }

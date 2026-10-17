@@ -60,7 +60,7 @@ export const getDocs = async (ref) => snapLista(lista((ref && ref.path) || ''));
 export const setDoc = async (ref, dados) => { (window.__gravados = window.__gravados || []).push({ path: ref.path, dados }); };
 export const deleteDoc = async () => {}, addDoc = async () => ({ id: 'novo' }), updateDoc = async () => {};
 export const query = (r) => r, orderBy = nada, limit = nada, where = nada, startAfter = nada;
-export const writeBatch = () => ({ set: nada, update: nada, delete: nada, commit: async () => {} });
+export const writeBatch = () => ({ set: (ref, dados) => { (window.__gravados = window.__gravados || []).push({ path: ref.path, dados, lote: true }); }, update: nada, delete: nada, commit: async () => {} });
 export const sendSignInLinkToEmail = async () => {}, isSignInWithEmailLink = () => false, signInWithEmailLink = async () => {}, signOut = async () => {}, deleteField = () => null, serverTimestamp = () => new Date().toISOString(), increment = (n) => n;
 export const ref = nada, uploadBytes = nada, getDownloadURL = async () => '', terminate = async () => {}, clearIndexedDbPersistence = async () => {};
 `;
