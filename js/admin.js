@@ -467,6 +467,11 @@ const iniciarRealTimeSync = () => {
             if (document.activeElement?.id !== 'config-taxa') document.getElementById('config-taxa').value = Number(ent.taxa) > 0 ? ent.taxa : '';
             if (document.activeElement?.id !== 'config-gratis') document.getElementById('config-gratis').value = Number(ent.gratisAcima) > 0 ? ent.gratisAcima : '';
             if (campoHor && document.activeElement !== campoHor) campoHor.value = (Array.isArray(ent.horarios) ? ent.horarios : []).join('\n');
+            const ret = ent.retirada && typeof ent.retirada === 'object' ? ent.retirada : {};
+            const retAtiva = document.getElementById('config-retirada-ativa'), retHor = document.getElementById('config-retirada-horarios'), retLocal = document.getElementById('config-retirada-local');
+            if (retAtiva && document.activeElement !== retAtiva) retAtiva.checked = ret.ativa === true;
+            if (retHor && document.activeElement !== retHor) retHor.value = (Array.isArray(ret.horarios) ? ret.horarios : []).join('\n');
+            if (retLocal && document.activeElement !== retLocal) retLocal.value = ret.local || '';
             const chkPix = document.getElementById('config-pix'); if (chkPix) chkPix.checked = data.pixAutomatico === true;
             const px = data.pix || {}; [['config-pix-tipo', px.tipo || 'celular'], ['config-pix-chave', px.chave || ''], ['config-pix-nome', px.nome || ''], ['config-pix-cidade', px.cidade || '']].forEach(([id, v]) => { const el = document.getElementById(id); if (el) el.value = v; });
             const cid = document.getElementById('config-cidade'); if (cid && document.activeElement !== cid) cid.value = data.cidade || '';
@@ -1295,8 +1300,9 @@ const montarMensagemCliente = () => {
     L.push(risco);
     if (ESTEIRA.desconto > 0) L.push(`🎁 Desconto do cupom: -${fmt(ESTEIRA.desconto)}`);
     if (ESTEIRA.entrega > 0) L.push(`🛵 Entrega: ${fmt(ESTEIRA.entrega)}`);
-    if (p.entrega?.horario) L.push(`🕒 Entrega: ${p.entrega.horario}`);
-    else if (p.entrega?.horarioACombinar) L.push('🕒 Entrega: horário a combinar');
+    const rotuloHora = p.modo === 'retirada' ? 'Retirada' : 'Entrega';
+    if (p.entrega?.horario) L.push(`🕒 ${rotuloHora}: ${p.entrega.horario}`);
+    else if (p.entrega?.horarioACombinar) L.push(`🕒 ${rotuloHora}: horário a combinar`);
     L.push(`💰 *Total: ${fmt(ESTEIRA.totalFechado ?? contaDaEsteira().total)}*`);
     L.push('');
     L.push(`💳 Pagamento: ${p.pag || 'a combinar'}`);
@@ -1306,8 +1312,8 @@ const montarMensagemCliente = () => {
     }
 
     L.push('');
-    L.push('📍 *Endereço de entrega:*');
-    L.push(linhaEndereco(p));
+    if (p.modo === 'retirada') L.push('📍 *Retirada na banca* (o cliente busca)');
+    else { L.push('📍 *Endereço de entrega:*'); L.push(linhaEndereco(p)); }
 
     if (p.obs) {
         L.push('');
@@ -1829,8 +1835,9 @@ const renderHtmlPedidos = (pedidos) => {
             : (imp.estado === 'reservado' && Date.now() - (Date.parse(imp.em) || 0) < 90000 ? '<span class="ped-impresso fila"><i class="ic" data-i="impressora"></i> Imprimindo…</span>' : '');
         const infoPag = p.pagamento?.status === 'PAID'
             ? `<span style="background:var(--success);color:white;padding:3px 8px;border-radius:12px;font-size:0.72rem;font-weight:700;">✓ PAGO</span>` : '';
-        const infoEntrega = p.entrega && (p.entrega.horario || p.entrega.horarioACombinar || Number(p.entrega.taxa) > 0)
-            ? `<div style="font-size:0.82rem;color:var(--forest);margin-top:4px;font-weight:600;"><i class="ic" data-i="entrega"></i> ${escapeHTML([p.entrega.horario || (p.entrega.horarioACombinar ? 'horário a combinar' : ''), Number(p.entrega.taxa) > 0 ? `entrega ${fmt(p.entrega.taxa)}` : ''].filter(Boolean).join(' · '))}</div>` : '';
+        const retirada = p.modo === 'retirada';
+        const infoEntrega = retirada || (p.entrega && (p.entrega.horario || p.entrega.horarioACombinar || Number(p.entrega.taxa) > 0))
+            ? `<div style="font-size:0.82rem;color:var(--forest);margin-top:4px;font-weight:600;"><i class="ic" data-i="${retirada ? 'caixa' : 'entrega'}"></i> ${escapeHTML([retirada ? 'RETIRADA NA BANCA' : '', p.entrega?.horario || (p.entrega?.horarioACombinar ? 'horário a combinar' : ''), Number(p.entrega?.taxa) > 0 ? `entrega ${fmt(p.entrega.taxa)}` : ''].filter(Boolean).join(' · '))}</div>` : '';
         const infoTroco = p.troco ? `<div style="font-size:0.82rem;color:var(--earth);margin-top:4px;"><i class="ic" data-i="dinheiro"></i> Troco para: ${escapeHTML(p.troco)}</div>` : '';
         // pedido para outro dia (cliente da feira pediu fora do dia da feira) e feira cancelada nesse dia
         const ehFuturo = p.entregaDia && p.entregaDia !== diaBR(p.data);
@@ -2627,7 +2634,12 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         const pixAutomatico = ehLojaOriginal && document.getElementById('config-pix')?.checked === true;
         const taxa = Math.max(0, parseFloat(document.getElementById('config-taxa').value) || 0), gratisAcima = Math.max(0, parseFloat(document.getElementById('config-gratis').value) || 0);
         if (taxa > 500) throw new Error("Confira a taxa de entrega: o máximo é R$ 500.");
-        const entrega = { taxa, gratisAcima, horarios: horariosDoTexto(document.getElementById('config-horarios').value) };
+        const retirada = {
+            ativa: document.getElementById('config-retirada-ativa')?.checked === true,
+            horarios: horariosDoTexto(document.getElementById('config-retirada-horarios')?.value || ''),
+            local: (document.getElementById('config-retirada-local')?.value || '').replace(/[<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
+        };
+        const entrega = { taxa, gratisAcima, horarios: horariosDoTexto(document.getElementById('config-horarios').value), retirada };
         // Chave PIX da loja (copia e cola). Vazia = desligado. Preenchida, tem de ser válida para o tipo escolhido.
         const pixTipo = document.getElementById('config-pix-tipo').value, pixBruta = document.getElementById('config-pix-chave').value.trim();
         const pixNome = document.getElementById('config-pix-nome').value.trim(), pixCidade = document.getElementById('config-pix-cidade').value.trim();

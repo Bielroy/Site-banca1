@@ -132,6 +132,81 @@ teste('pedido de ponta a ponta: põe na sacola, preenche a entrega, envia e vê 
   semErros(erros); await fechar();
 });
 
+const abrirCheckoutComOvos = async (pagina) => {
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await cards(pagina).filter({ hasText: 'Ovos' }).locator('[data-action="add"]').first().click();
+  await pagina.waitForFunction(() => Number((document.getElementById('qtd-flutuante') || {}).textContent || 0) >= 1, null, { timeout: 4000 });
+  await pagina.click('#btn-carrinho-mobile');
+  await pagina.click('#btn-abrir-checkout');
+  await pagina.waitForSelector('#modal-checkout.active, #modal-checkout.aberto, #modal-checkout[aria-hidden="false"]', { timeout: 4000 });
+};
+const opcoesDe = (pagina, sel) => pagina.$$eval(`${sel} option`, (os) => os.map((o) => o.textContent.trim()));
+
+teste('retirada na banca: sem a loja ligar, a escolha nem aparece; ligada, esconde o endereço, troca os horários e envia sem endereço', async () => {
+  // loja que NÃO ligou a retirada: tudo como sempre foi
+  let { pagina, erros, fechar } = await abrir('/');
+  await abrirCheckoutComOvos(pagina);
+  assert.strictEqual(await pagina.locator('#grupo-modo').isVisible(), false, 'sem retirada ligada, o cliente só vê entrega');
+  assert.strictEqual(await pagina.locator('#checkout-endereco').isVisible(), true);
+  semErros(erros); await fechar();
+
+  // loja com retirada ligada, horários de entrega e de retirada diferentes
+  const c = cenarioPadrao();
+  c.lojas.banca.config = { ...c.lojas.banca.config, entrega: { taxa: 5, horarios: ['Manhã', 'Tarde'], retirada: { ativa: true, horarios: ['Das 7h às 11h'], local: 'Na banca, ao lado da portaria' } } };
+  ({ pagina, erros, fechar } = await abrir('/', c));
+  await abrirCheckoutComOvos(pagina);
+  assert.strictEqual(await pagina.locator('#grupo-modo').isVisible(), true, 'a escolha aparece');
+  assert.strictEqual(await pagina.locator('input[name="cli-modo"][value="entrega"]').isChecked(), true, 'começa na entrega');
+  assert.strictEqual(await pagina.locator('#checkout-endereco').isVisible(), true);
+  assert.deepStrictEqual(await opcoesDe(pagina, '#cli-horario'), ['Tanto faz (a combinar)', 'Manhã', 'Tarde']);
+  // trocou para retirada: some o endereço, mudam os textos e os horários, aparece o local
+  await pagina.locator('input[name="cli-modo"][value="retirada"]').check();
+  assert.strictEqual(await pagina.locator('#checkout-endereco').isVisible(), false, 'quem busca não diz onde mora');
+  assert.strictEqual((await pagina.locator('#checkout-sub-titulo').textContent()).trim(), 'Seus dados');   // (a tela escreve em maiúsculas, o texto é este)
+  assert.strictEqual((await pagina.locator('#cli-horario-rotulo').innerText()).trim(), 'Quando vai retirar? (opcional)');
+  assert.deepStrictEqual(await opcoesDe(pagina, '#cli-horario'), ['Tanto faz (a combinar)', 'Das 7h às 11h']);
+  assert.ok((await pagina.locator('#retirada-local').innerText()).includes('Na banca, ao lado da portaria'));
+  // voltou para entrega: o endereço volta e, sem ele, o site NÃO envia
+  await pagina.locator('input[name="cli-modo"][value="entrega"]').check();
+  assert.strictEqual(await pagina.locator('#checkout-endereco').isVisible(), true); assert.strictEqual(await pagina.locator('#retirada-local').isVisible(), false);
+  await pagina.fill('#cli-nome', 'Cliente Retirada');
+  const antes = pedidosEnviados().length;
+  await pagina.click('#btn-enviar-pedido'); await pagina.waitForTimeout(300);
+  assert.strictEqual(pedidosEnviados().length, antes, 'entrega sem endereço continua barrada');
+  // retirada de novo, com horário: envia sem nenhum endereço
+  await pagina.locator('input[name="cli-modo"][value="retirada"]').check();
+  await pagina.selectOption('#cli-horario', 'Das 7h às 11h');
+  await pagina.fill('#cli-telefone', '62999998888');
+  await pagina.click('#btn-enviar-pedido');
+  await pagina.waitForSelector('#sucesso-whatsapps .btn-wpp', { timeout: 6000 });
+  const corpo = pedidosEnviados().pop().corpo;
+  assert.strictEqual(corpo.modo, 'retirada'); assert.strictEqual(corpo.horarioEntrega, 'Das 7h às 11h'); assert.strictEqual(corpo.feira, '');
+  assert.deepStrictEqual([corpo.condominio, corpo.quadra, corpo.lote], ['', '', ''], 'nenhum endereço vai junto');
+  assert.ok((await pagina.locator('#sucesso-entrega').innerText()).includes('Retirada na banca: Das 7h às 11h'));
+  assert.strictEqual(await pagina.evaluate(() => localStorage.getItem('banca_endereco')), null, 'a retirada não grava endereço vazio no aparelho');
+  semErros(erros); await fechar();
+});
+
+teste('painel: Configurações guarda a retirada na banca (ligada, horários e local) dentro de "entrega" e mostra de volta', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  cen.lojas.banca.config = { ...cen.lojas.banca.config, entrega: { taxa: 5, horarios: ['Manhã'], retirada: { ativa: false, horarios: ['Das 7h às 11h'], local: 'Na banca' } } };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.locator('.tab[data-aba="config"]').click();
+  await pagina.evaluate(() => document.querySelectorAll('#aba-config details').forEach((d) => { d.open = true; }));
+  await pagina.waitForSelector('#config-retirada-ativa', { state: 'visible', timeout: 8000 });
+  // o que a loja já tinha aparece de volta
+  assert.strictEqual(await pagina.locator('#config-retirada-ativa').isChecked(), false);
+  assert.strictEqual(await pagina.inputValue('#config-retirada-horarios'), 'Das 7h às 11h'); assert.strictEqual(await pagina.inputValue('#config-retirada-local'), 'Na banca');
+  await pagina.check('#config-retirada-ativa');
+  await pagina.fill('#config-retirada-horarios', 'Das 7h às 11h\nDas 15h às 18h');
+  await pagina.fill('#config-retirada-local', 'Na banca, no portão 2');
+  await pagina.click('#btn-salvar-config');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config' && g.dados && g.dados.entrega), null, { timeout: 4000 });
+  const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config' && x.dados.entrega).dados);
+  assert.deepStrictEqual(g.entrega, { taxa: 5, gratisAcima: 0, horarios: ['Manhã'], retirada: { ativa: true, horarios: ['Das 7h às 11h', 'Das 15h às 18h'], local: 'Na banca, no portão 2' } });
+  semErros(erros); await fechar();
+});
+
 teste('outra loja abre com o nome, as cores e os produtos dela', async () => {
   const { pagina, erros, fechar } = await abrir('/?loja=paes-da-lucia');
   await cards(pagina).first().waitFor({ timeout: 8000 });

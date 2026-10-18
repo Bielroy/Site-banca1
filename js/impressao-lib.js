@@ -25,6 +25,7 @@ const txt = (v, o = {}) => ({ t: 'txt', v: limpo(v), ...o });
 const SEP = { t: 'sep' }, CORTE = { t: 'corte' };
 
 export function enderecoTxt(p) {
+    if (p && p.modo === 'retirada') return 'RETIRADA NA BANCA';
     const a = limpo(p.quadra, 60), b = limpo(p.lote, 30), f = p.formatoEndereco || 'ql';
     const resto = f === 'rua' ? [a, b && `nº ${b}`] : f === 'livre' ? [a, b] : [a && `Quadra ${a}`, b && `Lote ${b}`];
     return [limpo(p.condominio, 60), resto.filter(Boolean).join(f === 'ql' ? ' · ' : ', ')].filter(Boolean).join(' - ');
@@ -57,7 +58,7 @@ export function cupomDoPedido(p, { loja = '', aviso = '' } = {}) {
     const pago = p.pagamento && p.pagamento.status === 'PAID';
     if (limpo(p.pag)) L.push(txt(`Pagamento: ${limpo(p.pag, 30)}${pago ? ' (PAGO)' : ''}`));
     if (limpo(p.troco)) L.push(txt(`Troco para: ${limpo(p.troco, 30)}`, { b: true }));
-    if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`Entregar: ${limpo(p.entrega.horario, 40)}`, { b: true }));
+    if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`${p.modo === 'retirada' ? 'Retirar' : 'Entregar'}: ${limpo(p.entrega.horario, 40)}`, { b: true }));
     if (limpo(p.obs)) L.push(SEP, txt(`Obs: ${limpo(p.obs, 300)}`));
     L.push(SEP, txt('Obrigado pela preferência!', { al: 'c' }), CORTE);
     return L;
@@ -84,7 +85,7 @@ export function etiquetaDeEntrega(p, { loja = '', volume = 1, volumes = 1 } = {}
     L.push(txt(p.nome || 'Cliente', { al: 'c', b: true, g: true }));
     const end = enderecoTxt(p); if (end) L.push(txt(end, { al: 'c', b: true }));
     if (p.feiraId && /^\d{4}-\d{2}-\d{2}$/.test(String(p.entregaDia || '')) && p.paraHoje === false) L.push(txt(`PARA ${String(p.entregaDia).slice(8, 10)}/${String(p.entregaDia).slice(5, 7)}`, { al: 'c', b: true }));   // pedido para a próxima feira
-    if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`Entregar: ${limpo(p.entrega.horario, 40)}`, { al: 'c' }));
+    if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`${p.modo === 'retirada' ? 'Retirar' : 'Entregar'}: ${limpo(p.entrega.horario, 40)}`, { al: 'c' }));
     L.push(SEP, { t: 'par', e: `${itens.length} item(ns)${p.id ? ` - Pedido ${numeroDoPedido(p)}` : ''}`, d: volumes > 1 ? `Volume ${volume}/${volumes}` : '' });
     L.push(txt(pago ? 'JÁ PAGO' : `Cobrar ${reais(p.total)} - ${limpo(p.pag, 20) || 'a combinar'}`, { b: true }));
     if (!pago && limpo(p.troco)) L.push(txt(`Troco para: ${limpo(p.troco, 30)}`));

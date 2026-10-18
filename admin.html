@@ -319,7 +319,7 @@
                     </div>
                 </details>
                 <details class="op-secao">
-                    <summary><span><b>Entrega</b><small>Taxa, entrega grátis e horários</small></span></summary>
+                    <summary><span><b>Entrega e retirada</b><small>Taxa, entrega grátis, horários e retirada na banca</small></span></summary>
                     <div class="op-corpo">
                 <div class="grid-2" style="width: 100%;">
                     <div class="form-group"><label for="config-taxa"><i class="ic" data-i="entrega"></i> Taxa de entrega (R$)</label><input type="number" id="config-taxa" min="0" step="0.5" inputmode="decimal" placeholder="0"><small class="dica-campo">Zero = não cobra entrega.</small></div>
@@ -329,6 +329,17 @@
                     <label for="config-horarios"><i class="ic" data-i="espera"></i> Horários de entrega</label>
                     <textarea id="config-horarios" rows="3" placeholder="Manhã (8h às 12h)&#10;Tarde (14h às 18h)"></textarea>
                     <small class="dica-campo">Um por linha, até 8. O cliente escolhe um ao fechar o pedido. Em branco = a loja não pergunta.</small>
+                </div>
+                <div class="form-group" style="width: 100%;">
+                    <label class="chk-linha" for="config-retirada-ativa"><input type="checkbox" id="config-retirada-ativa"> <i class="ic" data-i="caixa"></i> Aceitar retirada na banca</label>
+                    <small class="dica-campo" style="display:block;">Liga a opção "Retirar na banca" na hora do pedido. Quem retira não informa endereço e não paga taxa de entrega. Desligada, o cliente só vê entrega em casa. (Clientes de feira continuam só com a entrega da feira.)</small>
+                </div>
+                <div class="form-group" style="width: 100%;" id="grupo-retirada">
+                    <label for="config-retirada-horarios"><i class="ic" data-i="espera"></i> Horários de retirada</label>
+                    <textarea id="config-retirada-horarios" rows="3" placeholder="Das 7h às 11h&#10;Das 15h às 18h"></textarea>
+                    <small class="dica-campo">Um por linha, até 8. O cliente escolhe um ao fechar o pedido. Em branco = a loja não pergunta (retirada a combinar).</small>
+                    <label for="config-retirada-local" style="margin-top:10px;display:block;">Onde retirar (opcional)</label>
+                    <input type="text" id="config-retirada-local" maxlength="80" placeholder="Ex.: na banca, ao lado da portaria">
                 </div>
 
                     </div>

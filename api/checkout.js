@@ -121,11 +121,12 @@ function montarTextoWhatsApp(pedido, numero) {
 
   let msg = dividido ? `*NOVO PEDIDO — parte ${pedido.parte.n} de ${pedido.parte.de}*\n` : `*NOVO PEDIDO*\n`;
   msg += `👤 ${pedido.nome}\n`;
-  msg += `📍 ${linhaEndereco(pedido)}\n`;
+  msg += `📍 ${linhaEndereco(pedido)}${pedido.modo === 'retirada' && pedido.retiradaLocal ? ` (${pedido.retiradaLocal})` : ''}\n`;
   // pedido feito fora do dia da feira: vai para o próximo dia de feira
   if (pedido.feiraId && pedido.entregaDia && pedido.paraHoje === false) msg += `📅 Para: *${Feira.textoDoDia(pedido.entregaDia)}*\n`;
-  if (pedido.entrega && pedido.entrega.horario) msg += `🕒 Entrega: ${pedido.entrega.horario}\n`;
-  else if (pedido.entrega && pedido.entrega.horarioACombinar) msg += `🕒 Entrega: horário a combinar\n`;
+  const rotuloHora = pedido.modo === 'retirada' ? 'Retirada' : 'Entrega';
+  if (pedido.entrega && pedido.entrega.horario) msg += `🕒 ${rotuloHora}: ${pedido.entrega.horario}\n`;
+  else if (pedido.entrega && pedido.entrega.horarioACombinar) msg += `🕒 ${rotuloHora}: horário a combinar\n`;
   msg += `💳 Pagamento: ${pedido.pag || 'A combinar'}\n`;
   // Pedido dividido: troco e cupom aparecem UMA vez (na 1ª parte), para dois
   // atendimentos não darem o mesmo troco nem o mesmo desconto.
@@ -262,7 +263,9 @@ module.exports = async function handler(req, res) {
   // Validação de entrada
   // Nota: userId NÃO é lido do corpo de propósito — ver donoVerificado acima.
   let { nome, quadra, lote, telefone, pag, troco, obs, cupom, itens, idempotencyKey, condominio, condominioId, formatoEndereco, aceitaOfertas } = req.body || {};
-  if (!idempotencyKey || !nome || !quadra || !lote || !Array.isArray(itens) || itens.length === 0) {
+  // RETIRADA NA BANCA: o cliente busca, então não tem condomínio, quadra nem lote. Só o nome é exigido.
+  const querRetirada = !!req.body && req.body.modo === 'retirada';
+  if (!idempotencyKey || !nome || (!querRetirada && (!quadra || !lote)) || !Array.isArray(itens) || itens.length === 0) {
     return res.status(400).json({ error: 'Dados do pedido incompletos.' });
   }
   if (itens.length > 100) return res.status(400).json({ error: 'Pedido excede o limite de itens.' });
@@ -297,13 +300,15 @@ module.exports = async function handler(req, res) {
   pag    = sanitizeString(pag, 30);
   troco  = sanitizeString(troco, 40);
   obs    = sanitizeString(obs, 300);
+  if (querRetirada) { quadra = ''; lote = ''; condominio = ''; condominioId = ''; formatoEndereco = 'ql'; }   // nada de endereço de um pedido que será buscado
 
   // CONTA DO CLIENTE: de onde pode vir a conta deste pedido (crachá ou login deste aparelho). Ver lib/conta.js.
   const achado = await Conta.localizar(db, tid, req, donoVerificado);
   let codigoConta = '';
   // FEIRA do cliente (link da feira ou condomínio). Só vale se ESTA loja estiver nela; senão o pedido segue como sempre.
   // Ela decide PARA QUANDO é o pedido (hoje, ou o próximo dia de feira).
-  const feiraDoPedido = await Feira.daLoja(db, tid, req.body && req.body.feira);
+  // Retirada na banca não segue feira: o pedido é para hoje, na banca.
+  const feiraDoPedido = querRetirada ? null : await Feira.daLoja(db, tid, req.body && req.body.feira);
 
   try {
     const resultado = await db.runTransaction(async (t) => {
@@ -327,6 +332,12 @@ module.exports = async function handler(req, res) {
         return { id: pedidoRef.id, total: d.total, temItensAPesar: !!d.temItensAPesar, entregaDia: d.entregaDia, paraHoje: d.paraHoje !== false,
                  whatsappMsg: links[0].url, whatsapps: links };
       }
+
+      // Entrega ou retirada. Retirada pedida com a loja sem retirada ligada é recusada (não vira entrega em silêncio).
+      const cfgEntrega = Entrega.lerConfig(configCfg);
+      const modoPedido = Entrega.modoDoPedido(cfgEntrega, req.body && req.body.modo);
+      if (!modoPedido) throw new Error('A retirada na banca não está disponível agora. Escolha a entrega ou chame a banca pelo WhatsApp.');
+      const retirada = modoPedido === 'retirada';
 
       // Loja fechada? (defesa extra além do front)
       // Cliente de feira: fora do dia da feira o pedido é aceito para o próximo dia de feira (o "fechar a loja" continua valendo).
@@ -492,11 +503,10 @@ module.exports = async function handler(req, res) {
       // ---- Entrega: taxa (grátis acima de um valor) e horário escolhido ----
       // A taxa é calculada aqui, com a configuração da loja: o navegador só mostra a prévia.
       // Com item a pesar, o valor ainda sobe na balança: a pesagem reavalia a entrega grátis.
-      const cfgEntrega = Entrega.lerConfig(configCfg);
-      const horarioEntrega = Entrega.horarioValido(cfgEntrega, req.body && req.body.horarioEntrega);
+      const horarioEntrega = Entrega.horarioValido(cfgEntrega, req.body && req.body.horarioEntrega, modoPedido);
       // cupom de 100% (família, cortesia): o pedido sai de graça, entrega incluída
       const cortesia = !!cupomAplicado && cupomAplicado.percentual >= 100;
-      const taxaEntregaC = cortesia ? 0 : Entrega.taxaC(cfgEntrega, totalExatoCentavos);
+      const taxaEntregaC = cortesia || retirada ? 0 : Entrega.taxaC(cfgEntrega, totalExatoCentavos);   // retirada: sem taxa
       totalExatoCentavos += taxaEntregaC;
 
       const totalExato = paraFlutuante(totalExatoCentavos);
@@ -520,7 +530,9 @@ module.exports = async function handler(req, res) {
         ...(cupomAplicado && cupomAplicado.especial ? { foraDaPrevisao: true } : {}),   // cupom especial (família, cortesia): o motor de previsão ignora este pedido
         cupom: cupomAplicado ? { codigo: cupomAplicado.codigo, desconto: cupomAplicado.desconto, ...(cupomAplicado.percentual ? { percentual: cupomAplicado.percentual } : {}) } : null,
         // taxa cobrada agora + a regra do dia do pedido (a pesagem usa para reavaliar a entrega grátis)
-        entrega: { taxa: paraFlutuante(taxaEntregaC), taxaCheia: paraFlutuante(cfgEntrega.taxaC), gratisAcima: paraFlutuante(cfgEntrega.gratisAcimaC), horario: horarioEntrega, ...(Entrega.horarioACombinar(cfgEntrega, horarioEntrega) ? { horarioACombinar: true } : {}) },
+        // (retirada: taxa e regra zeradas, para a pesagem não cobrar entrega de quem busca na banca)
+        entrega: { taxa: paraFlutuante(taxaEntregaC), taxaCheia: retirada ? 0 : paraFlutuante(cfgEntrega.taxaC), gratisAcima: retirada ? 0 : paraFlutuante(cfgEntrega.gratisAcimaC), horario: horarioEntrega, ...(Entrega.horarioACombinar(cfgEntrega, horarioEntrega, modoPedido) ? { horarioACombinar: true } : {}) },
+        ...(retirada ? { modo: 'retirada', retiradaLocal: cfgEntrega.retirada.local } : {}),
         status: temItensAPesar ? 'aguardando_pesagem' : 'pendente',
         data: new Date().toISOString(),
         // PARA QUANDO é o pedido. Caixa do dia, fechamento e previsão contam por esta data.

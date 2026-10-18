@@ -252,7 +252,16 @@
         <div class="modal-body">
             <!-- COMANDA: o pedido do jeito que a banca recebe (js/loja.js, renderComanda) -->
             <section class="comanda" id="comanda" aria-label="Seu pedido"></section>
-            <h3 class="checkout-sub">Dados da entrega</h3>
+            <!-- Entrega em casa ou retirada na banca. Só aparece se a loja ligou a retirada (js/loja.js, pintarModo) -->
+            <fieldset class="form-group troca-grupo modo-grupo" id="grupo-modo" hidden>
+                <legend>Como prefere receber?</legend>
+                <div class="troca-ops">
+                    <label class="troca-op"><input type="radio" name="cli-modo" value="entrega" checked><span>Entrega em casa</span></label>
+                    <label class="troca-op"><input type="radio" name="cli-modo" value="retirada"><span>Retirar na banca</span></label>
+                </div>
+                <p class="checkout-entrega" id="retirada-local" hidden></p>
+            </fieldset>
+            <h3 class="checkout-sub" id="checkout-sub-titulo">Dados da entrega</h3>
             <!-- Condomínio + quadra/lote (ou rua/número). Montado por js/endereco.js -->
             <div id="checkout-endereco"></div>
             <div class="form-group"><label for="cli-nome">Como devemos te chamar?</label><input type="text" id="cli-nome" placeholder="Seu nome" autocomplete="name"></div>
@@ -263,7 +272,7 @@
             <label class="chk-oferta"><input type="checkbox" id="cli-ofertas"> Quero receber ofertas e novidades da loja no WhatsApp</label>
             <p class="checkout-entrega" id="checkout-entrega" hidden></p>
             <div class="form-group" id="grupo-horario" hidden>
-                <label for="cli-horario">Quando prefere receber? (opcional)</label>
+                <label for="cli-horario" id="cli-horario-rotulo">Quando prefere receber? (opcional)</label>
                 <select id="cli-horario"></select>
             </div>
             <div class="form-group">

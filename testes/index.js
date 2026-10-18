@@ -1170,7 +1170,7 @@ teste('versão: percebe que a página no ar mudou, ignora resposta estranha e n�
 teste('entrega: taxa calculada no servidor, grátis acima de um valor, horário conferido e pesagem reavalia', async () => {
   const Ent = require(raiz('lib/entrega')), L = await import(raiz('js/entrega-lib.js'));
   const cfg = Ent.lerConfig({ entrega: { taxa: 5, gratisAcima: 20, horarios: [' Manhã (8h às 12h) ', 'Tarde', 'Tarde', '<b>x</b>', ''] } });
-  assert.deepStrictEqual(cfg, { taxaC: 500, gratisAcimaC: 2000, horarios: ['Manhã (8h às 12h)', 'Tarde', 'b x /b'] });
+  assert.deepStrictEqual(cfg, { taxaC: 500, gratisAcimaC: 2000, horarios: ['Manhã (8h às 12h)', 'Tarde', 'b x /b'], retirada: { ativa: false, horarios: [], local: '' } });
   assert.strictEqual(Ent.taxaC(cfg, 1999), 500); assert.strictEqual(Ent.taxaC(cfg, 2000), 0); assert.strictEqual(Ent.taxaC(Ent.lerConfig({}), 100), 0);
   assert.strictEqual(Ent.taxaC(Ent.lerConfig({ entrega: { taxa: -3 } }), 100), 0); assert.strictEqual(Ent.taxaC(Ent.lerConfig({ entrega: { taxa: 'abc' } }), 100), 0);
   // horário fora da lista (ou em branco) NUNCA barra o pedido: vira "a combinar". Cliente com tela antiga ficava preso sem ter o que escolher.
@@ -1193,7 +1193,7 @@ teste('entrega: taxa calculada no servidor, grátis acima de um valor, horário 
     assert.strictEqual(rr.status, 200, `${caso}: ${JSON.stringify(rr.corpo)}`); assert.strictEqual(gravado.entrega.horario, '', caso); assert.strictEqual(gravado.entrega.horarioACombinar, true, caso);
     assert.ok(decodeURIComponent(rr.corpo.pedido.whatsappMsg).includes('Entrega: horário a combinar'), 'a loja fica sabendo pelo WhatsApp');
   }
-  assert.ok(require('fs').readFileSync(raiz('js/loja.js'), 'utf8').includes("pintarHorariosDeEntrega();      // garante a lista"), 'a lista de horários é montada ao abrir a tela de entrega');
+  assert.ok(require('fs').readFileSync(raiz('js/loja.js'), 'utf8').includes("pintarModo();                   // garante o modo"), 'o modo e a lista de horários são montados ao abrir a tela de entrega');
   // ovos 14: abaixo de 20 → paga 5. O navegador mandar "total" ou "taxa" não muda nada.
   let p = pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: 'Tarde', taxaEntrega: 0, entrega: { taxa: 0 } });
   let r = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: p });
@@ -2128,6 +2128,93 @@ teste('conta do cliente (loja): junta o que voltou do servidor com o que já est
   assert.ok(/if \(STATE\.carrinho\.length\) return;\s+\/\/ a pessoa já começou outro pedido/.test(loja), 'a sacola guardada nunca passa por cima de um pedido em montagem');
   assert.ok(/data-action="esquecer-dados"/.test(html) && /id="sucesso-dica-acesso"[^>]*hidden/.test(html));
   assert.ok(/acao: 'conta-link'/.test(crm) && /customConfirm\('Gerar um link novo\?'/.test(crm) && !/window\.open\([^)]*j\.link/.test(crm), 'painel: confirma antes e o envio é um link tocado pela pessoa');
+});
+
+// ------------------------------------------------------------------ retirada na banca
+teste('retirada na banca: sem endereço e sem taxa, horários próprios, só com a loja ligada; entrega segue igual', async () => {
+  const Ent = require(raiz('lib/entrega')), L = await import(raiz('js/entrega-lib.js')), I = await import(raiz('js/impressao-lib.js'));
+  // configuração: ligada só com `true`; lixo vira "sem retirada"
+  const cfg = Ent.lerConfig({ entrega: { taxa: 5, gratisAcima: 20, horarios: ['Manhã', 'Tarde'], retirada: { ativa: true, horarios: [' Das 7h às 11h ', 'Das 7h às 11h', '<i>x</i>'], local: '  Na   banca <b>' } } });
+  assert.deepStrictEqual(cfg.retirada, { ativa: true, horarios: ['Das 7h às 11h', 'i x /i'], local: 'Na banca b' });
+  for (const lixo of [undefined, null, 'sim', 1, { ativa: 'true' }, { ativa: 1 }]) assert.strictEqual(Ent.lerConfig({ entrega: { retirada: lixo } }).retirada.ativa, false, JSON.stringify(lixo));
+  assert.strictEqual(Ent.modoDoPedido(cfg, 'retirada'), 'retirada'); assert.strictEqual(Ent.modoDoPedido(cfg, undefined), 'entrega'); assert.strictEqual(Ent.modoDoPedido(cfg, 'qualquer'), 'entrega');
+  assert.strictEqual(Ent.modoDoPedido(Ent.lerConfig({}), 'retirada'), null, 'retirada com a loja desligada não vira entrega em silêncio');
+  // cada modo tem a sua lista de horários
+  assert.strictEqual(Ent.horarioValido(cfg, 'Das 7h às 11h', 'retirada'), 'Das 7h às 11h'); assert.strictEqual(Ent.horarioValido(cfg, 'Manhã', 'retirada'), '');
+  assert.strictEqual(Ent.horarioValido(cfg, 'Manhã'), 'Manhã'); assert.strictEqual(Ent.horarioValido(cfg, 'Das 7h às 11h'), '');
+  assert.strictEqual(Ent.horarioACombinar(cfg, '', 'retirada'), true); assert.strictEqual(Ent.horarioACombinar(Ent.lerConfig({ entrega: { retirada: { ativa: true } } }), '', 'retirada'), false, 'sem lista de retirada a loja não pergunta');
+  // o navegador lê a mesma configuração
+  const c2 = L.lerEntrega({ entrega: { horarios: ['Manhã'], retirada: { ativa: true, horarios: ['Das 7h às 11h'], local: 'Na banca' } } });
+  assert.deepStrictEqual(c2.retirada, { ativa: true, horarios: ['Das 7h às 11h'], local: 'Na banca' }); assert.deepStrictEqual(L.horariosDoModo(c2, 'retirada'), ['Das 7h às 11h']); assert.deepStrictEqual(L.horariosDoModo(c2, 'entrega'), ['Manhã']);
+  assert.strictEqual(L.lerEntrega({}).retirada.ativa, false);
+
+  const base = sementeEstoque();
+  const db = criarBancoP({ ...base, 'loja/config': { ...(base['loja/config'] || {}), entrega: { taxa: 5, gratisAcima: 20, horarios: ['Manhã', 'Tarde'], retirada: { ativa: true, horarios: ['Das 7h às 11h', 'Das 15h às 18h'], local: 'Na banca' } } } });
+  const adm = criarAdmin(db, TOKENS_P), checkout = carregarApi(raiz('api/checkout.js'), adm);
+  const enviar = (p) => chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: p });
+  const msg = (r) => decodeURIComponent(r.corpo.pedido.whatsappMsg);
+  // RETIRADA: sem condomínio, quadra nem lote; ovos 14 (< 20) NÃO paga taxa; horário da lista de retirada
+  let p = pedido({ modo: 'retirada', quadra: '', lote: '', condominio: '', itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: 'Das 7h às 11h' });
+  let r = await enviar(p); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(r.corpo.pedido.total, 14, 'retirada não paga entrega');
+  let g = db._dados.get(`pedidos/${p.idempotencyKey}`);
+  assert.strictEqual(g.modo, 'retirada'); assert.strictEqual(g.retiradaLocal, 'Na banca'); assert.strictEqual(g.paraHoje, undefined, 'retirada não é de feira');
+  assert.deepStrictEqual(g.entrega, { taxa: 0, taxaCheia: 0, gratisAcima: 0, horario: 'Das 7h às 11h' });
+  assert.ok(msg(r).includes('Retirada na banca (Na banca)') && msg(r).includes('Retirada: Das 7h às 11h') && !msg(r).includes('Entrega'), msg(r));
+  // horário da ENTREGA não vale para a retirada (e vice-versa): vira "a combinar", sem barrar o pedido
+  p = pedido({ modo: 'retirada', quadra: '', lote: '', condominio: '', itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: 'Manhã' });
+  r = await enviar(p); assert.strictEqual(r.status, 200); g = db._dados.get(`pedidos/${p.idempotencyKey}`);
+  assert.strictEqual(g.entrega.horario, ''); assert.strictEqual(g.entrega.horarioACombinar, true); assert.ok(msg(r).includes('Retirada: horário a combinar'));
+  p = pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: 'Das 7h às 11h' });
+  r = await enviar(p); g = db._dados.get(`pedidos/${p.idempotencyKey}`); assert.strictEqual(g.entrega.horario, ''); assert.strictEqual(g.modo, undefined, 'entrega não ganha campo novo');
+  // quem manda endereço junto com a retirada não deixa endereço gravado
+  p = pedido({ modo: 'retirada', quadra: '9', lote: '9', condominio: 'Jardins Munique', itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }] });
+  r = await enviar(p); assert.strictEqual(r.status, 200); g = require(raiz('lib/cofre')).abrirCampos(db._dados.get(`pedidos/${p.idempotencyKey}`), require(raiz('lib/tenant')).TENANT_PADRAO);
+  assert.ok(!g.quadra && !g.lote && !g.condominio, 'retirada não guarda endereço');
+  // ENTREGA continua igual: sem endereço ainda é recusada, e com endereço paga a taxa
+  r = await enviar(pedido({ quadra: '', lote: '', itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }] })); assert.strictEqual(r.status, 400);
+  r = await enviar(pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }] })); assert.strictEqual(r.corpo.pedido.total, 19, 'entrega: 14 + 5');
+  // retirada com item a pesar: a balança não cobra entrega
+  p = pedido({ modo: 'retirada', quadra: '', lote: '', condominio: '', itens: [{ id: 'tomate', qtd: 4, tipo: 'un' }, { id: 'ovos', qtd: 1, tipo: 'un' }] });
+  r = await enviar(p); assert.strictEqual(r.corpo.pedido.total, 14);
+  const pdv = carregarApi(raiz('api/pdv.js'), adm);
+  r = await chamar(pdv, { headers: { Authorization: 'Bearer func-banca' }, body: { acao: 'pesagem', pedidoId: p.idempotencyKey, pesos: [{ i: 0, peso: 0.5 }] } });
+  assert.strictEqual(r.corpo.total, 18.45, '0,5 × 8,90 = 4,45 + 14 = 18,45 e nada de taxa (entrega seria 23,45)'); assert.strictEqual(r.corpo.entrega, 0);
+  assert.strictEqual(db._dados.get(`pedidos/${p.idempotencyKey}`).modo, 'retirada', 'a pesagem não perde o modo');
+  // loja com a retirada DESLIGADA: recusa com o motivo (não cobra taxa de um pedido sem endereço)
+  const db2 = criarBancoP({ ...base, 'loja/config': { ...(base['loja/config'] || {}), entrega: { taxa: 5, horarios: ['Manhã'] } } }), checkout2 = carregarApi(raiz('api/checkout.js'), criarAdmin(db2, TOKENS_P));
+  r = await chamar(checkout2, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedido({ modo: 'retirada', quadra: '', lote: '', condominio: '', itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }] }) });
+  assert.strictEqual(r.status, 400); assert.ok(/retirada na banca não está disponível/.test(r.corpo.error), r.corpo.error);
+  assert.ok(![...db2._dados.keys()].some((k) => k.startsWith('pedidos/')), 'nada foi gravado');
+
+  // papel, etiqueta e linha de endereço
+  const ped = { nome: 'Ana', modo: 'retirada', itens: [{ nome: 'Ovos', qtd: 1, unidade: 'un', tipo: 'un', subtotal: 14 }], total: 14, entrega: { taxa: 0, horario: 'Das 7h às 11h' } };
+  const cupom = I.paraTexto(I.cupomDoPedido(ped), 32), etiqueta = I.paraTexto(I.etiquetaDeEntrega(ped), 32);
+  assert.ok(cupom.includes('RETIRADA NA BANCA') && cupom.includes('Retirar: Das 7h às 11h') && !cupom.includes('Entregar'), cupom);
+  assert.ok(etiqueta.includes('RETIRADA NA BANCA') && etiqueta.includes('Retirar: Das 7h às 11h'), etiqueta);
+  const entregaTxt = I.paraTexto(I.cupomDoPedido({ ...ped, modo: undefined, quadra: '5', lote: '3', condominio: 'Jardins' }), 32); assert.ok(entregaTxt.includes('Entregar: Das 7h às 11h') && entregaTxt.includes('Quadra 5'), entregaTxt);
+  // (js/endereco.js puxa o Firebase do navegador, que não existe aqui: confere o texto do arquivo)
+  assert.ok(/if \(p\.modo === 'retirada'\) return curto \? 'Retirada' : 'Retirada na banca'/.test(require('fs').readFileSync(raiz('js/endereco.js'), 'utf8')), 'painel e loja mostram "Retirada" no lugar do endereço');
+  const LE = require(raiz('lib/endereco')); assert.strictEqual(LE.linhaEndereco(ped), 'Retirada na banca'); assert.strictEqual(LE.linhaEndereco({ quadra: '5', lote: '3', condominio: 'Jardins' }), 'Jardins — Quadra 5 • Lote 3', 'entrega não mudou');
+});
+
+teste('retirada na banca: a conta do cliente não perde o endereço de entrega, e o painel e a tela têm os campos', async () => {
+  const Conta = require(raiz('lib/conta')), Cofre = require(raiz('lib/cofre')), T = require(raiz('lib/tenant')), tid = T.TENANT_PADRAO;
+  const existente = { id: 'c0123456789abcde', nome: 'Ana', quadra: '5', lote: '3', condominio: 'Jardins Munique', condominioId: 'jm', formatoEndereco: 'ql', telefone: '62999990000', uids: ['u1'], chaves: [], pedidos: [], crm: 'c_abc123' };
+  const achado = { cracha: null, cidDoUid: existente.id, anteriores: [] }, snap = { exists: true, data: () => existente };
+  const gravar = (pedidoNovo) => { let dados = null; Conta.decidir(criarBancoP({}), tid, achado, snap, 'u1').escrever({ set: (ref, d) => { dados = d; } }, pedidoNovo); return Cofre.abrirCampos(dados, tid); };
+  const retirada = gravar({ id: 'ped1', nome: 'Ana', modo: 'retirada', quadra: '', lote: '', condominio: '', telefone: '' });
+  assert.strictEqual(retirada.quadra, '5'); assert.strictEqual(retirada.lote, '3'); assert.strictEqual(retirada.condominio, 'Jardins Munique'); assert.strictEqual(retirada.telefone, '62999990000'); assert.strictEqual(retirada.crm, 'c_abc123', 'continua sendo o mesmo cliente na aba Clientes');
+  assert.ok(retirada.pedidos.includes('ped1'), 'o pedido de retirada entra no histórico da conta');
+  const entrega = gravar({ id: 'ped2', nome: 'Ana', quadra: '8', lote: '1', condominio: 'Outro', telefone: '' });   // entrega em casa nova: grava o endereço novo, como sempre
+  assert.strictEqual(entrega.quadra, '8'); assert.strictEqual(entrega.condominio, 'Outro');
+  // painel (campos de retirada, salvos dentro de "entrega") e site (escolha só aparece com a retirada ligada)
+  const fs = require('fs'), admin = fs.readFileSync(raiz('js/admin.js'), 'utf8'), adminHtml = fs.readFileSync(raiz('admin.html'), 'utf8'), loja = fs.readFileSync(raiz('js/loja.js'), 'utf8'), html = fs.readFileSync(raiz('index.html'), 'utf8');
+  for (const id of ['config-retirada-ativa', 'config-retirada-horarios', 'config-retirada-local']) { assert.ok(adminHtml.includes(`id="${id}"`), id); assert.ok(admin.includes(`'${id}'`), `${id} é lido e salvo`); }
+  assert.ok(/entrega = \{ taxa, gratisAcima, horarios: [^\n]*, retirada \}/.test(admin), 'a retirada é gravada dentro de "entrega"');
+  assert.ok(/id="grupo-modo"[^>]*hidden/.test(html) && /name="cli-modo" value="retirada"/.test(html), 'a escolha nasce escondida');
+  assert.ok(/retiradaDisponivel = \(\) => lerEntrega\(STATE\.config\)\.retirada\.ativa && !feiraDoClienteAqui\(\)/.test(loja), 'só com a loja ligada e fora de feira');
+  assert.ok(/const faltaEndereco = retirada \? '' : endCheckout\.validar\(\)/.test(loja) && /feira: retirada \? '' : lerFeiraCliente\(\)/.test(loja) && /modo: retirada \? 'retirada' : 'entrega'/.test(loja));
+  assert.ok(/if \(!retirada\) \{ salvarEndereco\(endereco\)/.test(loja), 'retirada não grava endereço vazio por cima do endereço salvo no aparelho');
 });
 
 teste('horário de entrega é opcional na tela: sem escolha, o pedido segue como "a combinar"', () => {

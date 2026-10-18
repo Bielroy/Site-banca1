@@ -5,11 +5,20 @@
 // =====================================================================
 const num = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0; };
 
+const limpaHorarios = (lista) => [...new Set((Array.isArray(lista) ? lista : []).map((h) => String(h || '').trim().slice(0, 40)).filter(Boolean))].slice(0, 8);
+
 export function lerEntrega(config) {
     const e = (config && config.entrega) || {};
-    const horarios = (Array.isArray(e.horarios) ? e.horarios : []).map((h) => String(h || '').trim().slice(0, 40)).filter(Boolean).slice(0, 8);
-    return { taxa: Math.min(num(e.taxa), 500), gratisAcima: num(e.gratisAcima), horarios: [...new Set(horarios)] };
+    const r = e.retirada && typeof e.retirada === 'object' ? e.retirada : {};
+    return {
+        taxa: Math.min(num(e.taxa), 500), gratisAcima: num(e.gratisAcima), horarios: limpaHorarios(e.horarios),
+        // RETIRADA NA BANCA: o cliente busca. Só aparece para ele se a loja ligou (ativa === true).
+        retirada: { ativa: r.ativa === true, horarios: limpaHorarios(r.horarios), local: String(r.local || '').replace(/[<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) },
+    };
 }
+
+/** Os horários que valem para o modo escolhido ('entrega' ou 'retirada'). */
+export const horariosDoModo = (cfg, modo) => (modo === 'retirada' ? cfg.retirada.horarios : cfg.horarios);
 
 /**
  * O que mostrar no carrinho.  itens = valor dos itens (sem a taxa)

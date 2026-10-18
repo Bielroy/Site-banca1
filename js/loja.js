@@ -14,7 +14,7 @@ import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
 import { podePagarPix } from './pix-lib.js';
-import { lerEntrega, previaDaEntrega } from './entrega-lib.js';
+import { lerEntrega, previaDaEntrega, horariosDoModo } from './entrega-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
 import { miniatura } from './foto-lib.js';
 // Foto pequena SEMPRE pelo redutor do próprio site (mesmo endereço da loja). Antes, a foto com miniatura do ImgBB
@@ -998,10 +998,28 @@ const copiarPix = async (botao) => {
     else showToast('Não consegui copiar sozinho. Use a chave que aparece acima do botão.', true);
 };
 
-// Horário de entrega: o campo só aparece se a loja cadastrou horários no painel.
+// ENTREGA EM CASA OU RETIRADA NA BANCA. A retirada só aparece se a loja ligou no painel e se o cliente não é de uma
+// feira (cliente de feira recebe no dia da feira; a retirada é para hoje, na banca). Qualquer dúvida = entrega, como sempre foi.
+const retiradaDisponivel = () => lerEntrega(STATE.config).retirada.ativa && !feiraDoClienteAqui();
+const modoEscolhido = () => (retiradaDisponivel() && document.querySelector('input[name="cli-modo"]:checked')?.value === 'retirada' ? 'retirada' : 'entrega');
+const pintarModo = () => {
+    const grupo = document.getElementById('grupo-modo'); if (!grupo) return;
+    const cfg = lerEntrega(STATE.config), retirada = modoEscolhido() === 'retirada';
+    grupo.hidden = !retiradaDisponivel();
+    const local = document.getElementById('retirada-local');
+    if (local) { local.textContent = cfg.retirada.local ? `📍 ${cfg.retirada.local}` : ''; local.hidden = !(retirada && cfg.retirada.local); }
+    const end = document.getElementById('checkout-endereco'), sub = document.getElementById('checkout-sub-titulo'), rotulo = document.getElementById('cli-horario-rotulo');
+    if (end) end.hidden = retirada;                                             // quem busca não precisa dizer onde mora
+    if (sub) sub.textContent = retirada ? 'Seus dados' : 'Dados da entrega';
+    if (rotulo) rotulo.textContent = retirada ? 'Quando vai retirar? (opcional)' : 'Quando prefere receber? (opcional)';
+    pintarHorariosDeEntrega();
+};
+document.addEventListener('change', (e) => { if (e.target && e.target.name === 'cli-modo') pintarModo(); });
+
+// Horário de entrega (ou de retirada): o campo só aparece se a loja cadastrou horários no painel para o modo escolhido.
 const pintarHorariosDeEntrega = () => {
     const grupo = document.getElementById('grupo-horario'), campo = document.getElementById('cli-horario'); if (!grupo || !campo) return;
-    const { horarios } = lerEntrega(STATE.config), atual = campo.value;
+    const horarios = horariosDoModo(lerEntrega(STATE.config), modoEscolhido()), atual = campo.value;
     grupo.hidden = !horarios.length;
     campo.innerHTML = horarios.length ? '<option value="">Tanto faz (a combinar)</option>' + horarios.map((h) => `<option value="${escapeHTML(h)}">${escapeHTML(h)}</option>`).join('') : '';
     if (horarios.includes(atual)) campo.value = atual;
@@ -1029,7 +1047,7 @@ const iniciarRealTimeSync = () => {
         if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()}; atualizarRodapeCarrinhoDOM();
         if (STATE.lojaRenderizada && JSON.stringify(vitrineDaLoja()) !== vitrineAntes) renderLoja(true);   // o dono mudou os quadros ou o texto da escolha
         pintarListaDeCondominios();
-        pintarHorariosDeEntrega();
+        pintarModo();
     }, (e) => console.warn('[loja] config:', e?.code || e));
     unsubscribes.push(unsubConfig);
 
@@ -2116,7 +2134,7 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     // cair no meio e a pessoa abrir de novo e reenviar, o servidor reconhece e não cria um segundo pedido.
     const cara = assinaturaDoCarrinho();
     if (!STATE.checkoutSessionId || STATE.checkoutCara !== cara) { STATE.checkoutSessionId = novoId(); STATE.checkoutCara = cara; }
-    pintarHorariosDeEntrega();      // garante a lista de horários na hora de abrir (não depende de a configuração ter chegado antes)
+    pintarModo();                   // garante o modo (entrega/retirada) e a lista de horários na hora de abrir (não depende de a configuração ter chegado antes)
     pintarAvisoDeEntrega();
     lerTrocaGuardada();
     renderComanda();
@@ -2169,7 +2187,9 @@ document.addEventListener('change', (e) => {
 document.getElementById('btn-enviar-pedido').addEventListener('click', async (e) => {
     const btn = e.currentTarget; if (btn.disabled) return;
     const nome = document.getElementById('cli-nome').value.trim();
-    const endereco = endCheckout.ler();
+    const retirada = modoEscolhido() === 'retirada';
+    // retirada na banca: sem endereço (condomínio, quadra e lote vão vazios)
+    const endereco = retirada ? { condominioId: '', condominio: '', formatoEndereco: 'ql', quadra: '', lote: '' } : endCheckout.ler();
     const { quadra, lote } = endereco;
     const telefone = (document.getElementById('cli-telefone')?.value || '').replace(/\D/g, '');
     const pag = document.getElementById('cli-pagamento').value;
@@ -2177,9 +2197,9 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     const obs = obsComTroca(document.getElementById('cli-obs').value.trim(), trocaEscolhida());
     const cupom = (document.getElementById('cli-cupom')?.value || '').trim().toUpperCase();
     
-    const faltaEndereco = endCheckout.validar();
+    const faltaEndereco = retirada ? '' : endCheckout.validar();
     if (faltaEndereco) return showToast(faltaEndereco, true);
-    if (!nome) return showToast("Escreva o seu nome para a entrega.", true);
+    if (!nome) return showToast(retirada ? "Escreva o seu nome para a retirada." : "Escreva o seu nome para a entrega.", true);
     // Horário de entrega: escolher é OPCIONAL. Sem escolha, o pedido chega à loja como "horário a combinar".
     btn.disabled = true; btn.textContent = 'Enviando pedido...';
 
@@ -2211,7 +2231,8 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         }
         const ent = entregaDaFeira();
         const payload = {
-            feira: lerFeiraCliente(),
+            feira: retirada ? '' : lerFeiraCliente(),
+            modo: retirada ? 'retirada' : 'entrega',
             diaPreco: STATE.diaDoPreco, ...(ent ? { entregaDia: ent.dia } : {}),   // o dia que a loja mostrou: o servidor confere
             nome, quadra, lote, telefone, pag, troco: trocoRaw, obs, cupom,
             condominio: endereco.condominio, condominioId: endereco.condominioId, formatoEndereco: endereco.formatoEndereco,
@@ -2236,12 +2257,14 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             const clientes = lerLista('banca_clientes');
             const idx = clientes.findIndex(c => String(c && c.nome || '').toLowerCase() === nome.toLowerCase());
             // o cliente deste pedido vai para a frente da lista (é ele que preenche o próximo pedido)
-            const este = { nome, quadra, lote, ...(telefone ? { tel: telefone } : {}) };
+            // retirada não tem endereço: o "cliente lembrado" neste aparelho mantém a quadra e o lote que já tinha
+            const ql = retirada ? (lerEnderecoSalvo() || {}) : { quadra, lote };
+            const este = { nome, quadra: ql.quadra || '', lote: ql.lote || '', ...(telefone ? { tel: telefone } : {}) };
             if (idx >= 0) clientes.splice(idx, 1);
             clientes.unshift(este);
             localStorage.setItem(chave('banca_clientes'), JSON.stringify(clientes.slice(0, 5)));
             if (data.temConta) marcarConta(true);
-            salvarEndereco(endereco); pintarResumoEndereco(); feiraDoEnderecoSalvo(endereco);
+            if (!retirada) { salvarEndereco(endereco); pintarResumoEndereco(); feiraDoEnderecoSalvo(endereco); }
 
             const meusPedidos = lerLista('banca_meus_pedidos');
             meusPedidos.unshift({
@@ -2256,7 +2279,12 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         mostrarLinksWhatsApp(data.pedido);
         const dicaAcesso = document.getElementById('sucesso-dica-acesso'); if (dicaAcesso) dicaAcesso.hidden = !data.temConta;
         const sucEnt = document.getElementById('sucesso-entrega');
-        if (sucEnt) { const futuro = data.pedido && data.pedido.paraHoje === false && data.pedido.entregaDia; sucEnt.textContent = futuro ? `📅 Seu pedido é para ${textoDoDia(data.pedido.entregaDia)}.` : ''; sucEnt.hidden = !futuro; }
+        if (sucEnt) {
+            const futuro = data.pedido && data.pedido.paraHoje === false && data.pedido.entregaDia;
+            const horaRet = document.getElementById('cli-horario')?.value || '';
+            const textoSuc = retirada ? `🛍️ Retirada na banca${horaRet ? `: ${horaRet}` : ''}.` : futuro ? `📅 Seu pedido é para ${textoDoDia(data.pedido.entregaDia)}.` : '';
+            sucEnt.textContent = textoSuc; sucEnt.hidden = !textoSuc;
+        }
         oferecerPixNoSucesso({ id: data.pedido.id, total: data.pedido.total, pag, status: 'pendente', temItensAPesar: itensFormatados.some(i => i.aPesar) });
         closeModal('modal-checkout');
         oferecerListaNoSucesso(listaDoCarrinho(STATE.carrinho));
@@ -2285,6 +2313,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         // (sem "await": o botão volta a funcionar na hora; a conferência corre por fora)
         if (navigator.onLine) conferirVersaoAgora().then((velha) => {
             if (!velha) return;
+            if (retirada) { recarregarComPedidoGuardado('A loja foi atualizada. Vou recarregar: seu pedido continua na sacola.'); return; }
             try { salvarEndereco(endereco); const cl = lerLista('banca_clientes').filter(c => String(c && c.nome || '').toLowerCase() !== nome.toLowerCase()); cl.unshift({ nome, quadra, lote }); localStorage.setItem(chave('banca_clientes'), JSON.stringify(cl.slice(0, 5))); } catch (_) { /* segue */ }
             recarregarComPedidoGuardado('A loja foi atualizada. Vou recarregar: seu pedido continua na sacola.');
         }).catch(() => { /* sem sinal: fica o aviso de cima */ });
