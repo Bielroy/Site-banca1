@@ -204,8 +204,10 @@ export function ligarAjustes() {
         const t = e.target;
         if (t.dataset && t.dataset.ponte && t.dataset.campo) return salvarPonte(t);
         if (t.name === 'imp-modo') {
-            const c = salvarConfig({ modo: t.value }); if (t.value !== 'sistema' && c.largura === 'a4') salvarConfig({ largura: 80 });
+            const c = salvarConfig({ modo: t.value, modoEscolhido: true }); if (t.value !== 'sistema' && c.largura === 'a4') salvarConfig({ largura: 80 });
             if (t.value === 'ponte') Ponte.atualizar();
+            // a térmica Bluetooth aceita um aparelho por vez: Bluetooth direto aqui tira a impressora do celular da banca
+            if (t.value === 'bluetooth' && (Ponte.estado().pontes || []).length) showToast('Atenção: com o celular da banca ligado, use "Celular da banca". A impressora aceita um aparelho por vez pelo Bluetooth.', true);
         }
         else if (t.id === 'imp-largura') salvarConfig({ largura: t.value === 'a4' ? 'a4' : Number(t.value) });
         else if (t.id === 'imp-copias') salvarConfig({ copias: Number(t.value) });

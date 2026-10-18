@@ -739,6 +739,22 @@ teste('produtos no painel: botões de categoria filtram a lista e "Selecionar v�
   await ctx.close();
 });
 
+teste('aparelho novo da equipe (nunca escolheu como imprimir) passa a mandar para o celular da banca; quem escolheu fica', async () => {
+  for (const [inicial, espera] of [[null, 'ponte'], [{ modo: 'sistema', modoEscolhido: true }, 'sistema'], [{ modo: 'bluetooth' }, 'bluetooth']]) {
+    const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 }, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
+    await ctx.addInitScript((c) => { window.__CENARIO = c; }, cenarioImpressao());
+    if (inicial) await ctx.addInitScript((c) => localStorage.setItem('banca_impressora', JSON.stringify(c)), inicial);
+    await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+    await p.goto(servidor.base + '/admin.html');
+    await p.waitForTimeout(2500);
+    const modo = await p.evaluate(() => (JSON.parse(localStorage.getItem('banca_impressora') || '{}').modo || 'sistema'));
+    assert.strictEqual(modo, espera, JSON.stringify(inicial));
+    semErros(errosP);
+    await ctx.close();
+  }
+});
+
 // o servidor de mentira do app Ponte: um celular ligado, com a impressora funcionando
 // (com doisCelulares, aparece também um segundo, sem contato desde ontem)
 let doisCelulares = false;

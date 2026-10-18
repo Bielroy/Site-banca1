@@ -224,7 +224,11 @@ async function imprimirAgora() {
         if (t.termica && I.lerConfig().modo !== 'sistema') {
             await desenhar(cv, { mono: true });
             const pontos = termicaNaTela(cv);
-            await I.imprimirNaTermica(rasterEscPos(pontos, cv.width, cv.height, { copias: n }));
+            if (I.lerConfig().modo === 'ponte') {
+                // a fila do celular da banca aceita até 600 KB por papel: 200 rótulos de 80 mm passam disso, então vão em partes
+                const um = rasterEscPos(pontos, cv.width, cv.height, { copias: 1 }).length, porVez = Math.max(1, Math.floor((400 * 1024) / um));
+                for (let feitos = 0; feitos < n; feitos += porVez) await I.imprimirNaTermica(rasterEscPos(pontos, cv.width, cv.height, { copias: Math.min(porVez, n - feitos) }));
+            } else await I.imprimirNaTermica(rasterEscPos(pontos, cv.width, cv.height, { copias: n }));
             showToast(`${n} ${n === 1 ? 'rótulo enviado' : 'rótulos enviados'} para a térmica.`);
         } else {
             await desenhar(cv);

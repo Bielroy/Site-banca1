@@ -18,7 +18,7 @@
 import { auth } from './firebase.js';
 import { chave } from './tenant.js';
 import { escapeHTML, showToast } from './utils.js';
-import { lerConfig, imprimir, reconectar, conectar, conectada, aparelhoId } from './impressao.js';
+import { lerConfig, salvarConfig, imprimir, reconectar, conectar, conectada, aparelhoId } from './impressao.js';
 import { cupomDoPedido, etiquetaDeEntrega, avisoDeCancelamento } from './impressao-lib.js';
 import { MODOS_AUTO, LIMITE_SEM_PERGUNTAR, RESERVA_MS, podeAutomatico, trabalhosDe, versaoDesejada } from './impressao-fila-lib.js';
 import { loja, abrirImpressora } from './admin-impressao.js';
@@ -213,8 +213,25 @@ export function iniciar() {
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { S.tela = null; olharPonte(); processar(); } });
     S.vigia = setInterval(async () => { olharPonte(); if (ativo() && !S.rodando) { if (!conectada()) await reconectar(); processar(); } }, VIGIA_MS);
     if (lerConfig().modo === 'ponte') Ponte.atualizar();
+    else usarCelularDaBancaSeNovo();
     if (ativo()) reconectar().then(() => pintar());                                     // painel reaberto: tenta voltar à impressora sem toque
     pintar();
+}
+/**
+ * Aparelho que nunca escolheu como imprimir (o celular do pai, da mãe, de quem entrou pela Equipe) começa
+ * em "Impressão do aparelho", que abre a tela de imprimir do Android em vez de mandar para a térmica.
+ * Se a loja já tem celular da banca ligado, este aparelho passa a mandar o papel para ele.
+ * Quem já escolheu um caminho em Impressora → Ajustes fica como escolheu.
+ */
+function usarCelularDaBancaSeNovo() {
+    const c = lerConfig();
+    if (c.modoEscolhido || c.modo !== 'sistema') return;
+    Ponte.atualizar().then(() => {
+        const agora = lerConfig();
+        if (agora.modoEscolhido || agora.modo !== 'sistema' || !(Ponte.estado().pontes || []).length) return;
+        salvarConfig({ modo: 'ponte' });
+        try { document.dispatchEvent(new CustomEvent('impressao:config')); } catch (_) { /* navegador antigo */ }
+    });
 }
 /** A fila de pedidos mudou (já com os dados do cliente abertos). */
 export function aoMudarPedidos(lista) { S.pedidos = new Map((lista || []).map((p) => [p.id, p])); S.recebeu = true; processar(); }
