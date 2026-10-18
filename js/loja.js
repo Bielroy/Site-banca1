@@ -14,7 +14,7 @@ import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
 import { podePagarPix } from './pix-lib.js';
-import { lerEntrega, previaDaEntrega, horariosDoModo, retiradaNoDia } from './entrega-lib.js';
+import { lerEntrega, previaDaEntrega, horariosDoModo, opcoesDoDia } from './entrega-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
 import { miniatura } from './foto-lib.js';
 // Foto pequena SEMPRE pelo redutor do próprio site (mesmo endereço da loja). Antes, a foto com miniatura do ImgBB
@@ -998,16 +998,27 @@ const copiarPix = async (botao) => {
     else showToast('Não consegui copiar sozinho. Use a chave que aparece acima do botão.', true);
 };
 
-// ENTREGA EM CASA OU RETIRADA NA BANCA. A retirada só aparece se a loja ligou no painel e se o cliente não é de uma
-// feira (cliente de feira recebe no dia da feira; a retirada é para hoje, na banca). Qualquer dúvida = entrega, como sempre foi.
-const retiradaDisponivel = () => { const c = lerEntrega(STATE.config); return c.retirada.ativa && !feiraDoClienteAqui() && retiradaNoDia(c, new Date(agoraLoja() - 3 * 3600000).getUTCDay()); };
-const modoEscolhido = () => (retiradaDisponivel() && document.querySelector('input[name="cli-modo"]:checked')?.value === 'retirada' ? 'retirada' : 'entrega');
+// ENTREGA OU RETIRADA. O que vale no dia do pedido vem da AGENDA desta banca (cliente da feira: o dia da feira dele)
+// ou da regra geral (cliente sem feira). Mesma conta do servidor: js/entrega-lib.js e lib/entrega.js (opcoesDoDia).
+// Qualquer dúvida = entrega, como sempre foi.
+const feiraAqui = () => { const f = feiraDoClienteAqui(); return f && f.id ? String(f.id) : ''; };
+const opcoesDeHoje = () => opcoesDoDia(lerEntrega(STATE.config), feiraAqui(), diaDoPreco());
+const modoEscolhido = () => {
+    const o = opcoesDeHoje();
+    if (!o.retirada) return 'entrega';
+    if (!o.entrega) return 'retirada';                                       // dia só de retirada
+    return document.querySelector('input[name="cli-modo"]:checked')?.value === 'retirada' ? 'retirada' : 'entrega';
+};
 const pintarModo = () => {
     const grupo = document.getElementById('grupo-modo'); if (!grupo) return;
-    const cfg = lerEntrega(STATE.config), retirada = modoEscolhido() === 'retirada';
-    grupo.hidden = !retiradaDisponivel();
+    const o = opcoesDeHoje(), retirada = modoEscolhido() === 'retirada', daFeira = !!feiraAqui();
+    grupo.hidden = !o.retirada;                                               // só entrega: não há o que escolher
+    const rotEnt = document.getElementById('rot-modo-entrega'), rotRet = document.getElementById('rot-modo-retirada');
+    if (rotEnt) rotEnt.closest('label').style.display = o.entrega ? '' : 'none';   // dia só de retirada: some a entrega
+    if (rotRet) rotRet.textContent = daFeira ? 'Retirar na feira' : 'Retirar na banca';
+    const marcar = document.querySelector(`input[name="cli-modo"][value="${retirada ? 'retirada' : 'entrega'}"]`); if (marcar && !marcar.checked) marcar.checked = true;
     const local = document.getElementById('retirada-local');
-    if (local) { local.textContent = cfg.retirada.local ? `📍 ${cfg.retirada.local}` : ''; local.hidden = !(retirada && cfg.retirada.local); }
+    if (local) { local.textContent = o.local ? `📍 ${o.local}` : ''; local.hidden = !(retirada && o.local); }
     const end = document.getElementById('checkout-endereco'), sub = document.getElementById('checkout-sub-titulo'), rotulo = document.getElementById('cli-horario-rotulo');
     if (end) end.hidden = retirada;                                             // quem busca não precisa dizer onde mora
     if (sub) sub.textContent = retirada ? 'Seus dados' : 'Dados da entrega';
@@ -1016,11 +1027,10 @@ const pintarModo = () => {
 };
 document.addEventListener('change', (e) => { if (e.target && e.target.name === 'cli-modo') pintarModo(); });
 
-// Horário de entrega (ou de retirada): o campo só aparece se a loja cadastrou horários no painel para o modo escolhido.
+// Horário de entrega (ou de retirada): o campo só aparece se a loja cadastrou horários para o modo e o dia do pedido.
 const pintarHorariosDeEntrega = () => {
     const grupo = document.getElementById('grupo-horario'), campo = document.getElementById('cli-horario'); if (!grupo || !campo) return;
-    // entrega: os horários dependem da feira do cliente (condomínio) e do dia da entrega; retirada: a lista dela
-    const horarios = horariosDoModo(lerEntrega(STATE.config), modoEscolhido(), { feira: lerFeiraCliente(), dow: diaDoPreco() }), atual = campo.value;
+    const horarios = horariosDoModo(lerEntrega(STATE.config), modoEscolhido(), { feira: feiraAqui(), dow: diaDoPreco() }), atual = campo.value;
     grupo.hidden = !horarios.length;
     campo.innerHTML = horarios.length ? '<option value="">Tanto faz (a combinar)</option>' + horarios.map((h) => `<option value="${escapeHTML(h)}">${escapeHTML(h)}</option>`).join('') : '';
     if (horarios.includes(atual)) campo.value = atual;
@@ -2232,7 +2242,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         }
         const ent = entregaDaFeira();
         const payload = {
-            feira: retirada ? '' : lerFeiraCliente(),
+            feira: lerFeiraCliente(),                       // a feira vale também para a retirada (o servidor confere a agenda do dia)
             modo: retirada ? 'retirada' : 'entrega',
             diaPreco: STATE.diaDoPreco, ...(ent ? { entregaDia: ent.dia } : {}),   // o dia que a loja mostrou: o servidor confere
             nome, quadra, lote, telefone, pag, troco: trocoRaw, obs, cupom,
@@ -2283,7 +2293,8 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         if (sucEnt) {
             const futuro = data.pedido && data.pedido.paraHoje === false && data.pedido.entregaDia;
             const horaRet = document.getElementById('cli-horario')?.value || '';
-            const textoSuc = retirada ? `🛍️ Retirada na banca${horaRet ? `: ${horaRet}` : ''}.` : futuro ? `📅 Seu pedido é para ${textoDoDia(data.pedido.entregaDia)}.` : '';
+            const ondeRet = feiraAqui() ? 'na feira' : 'na banca';
+            const textoSuc = retirada ? `🛍️ Retirada ${ondeRet}${futuro ? ` em ${textoDoDia(data.pedido.entregaDia)}` : ''}${horaRet ? `: ${horaRet}` : ''}.` : futuro ? `📅 Seu pedido é para ${textoDoDia(data.pedido.entregaDia)}.` : '';
             sucEnt.textContent = textoSuc; sucEnt.hidden = !textoSuc;
         }
         oferecerPixNoSucesso({ id: data.pedido.id, total: data.pedido.total, pag, status: 'pendente', temItensAPesar: itensFormatados.some(i => i.aPesar) });

@@ -1170,7 +1170,7 @@ teste('versão: percebe que a página no ar mudou, ignora resposta estranha e n�
 teste('entrega: taxa calculada no servidor, grátis acima de um valor, horário conferido e pesagem reavalia', async () => {
   const Ent = require(raiz('lib/entrega')), L = await import(raiz('js/entrega-lib.js'));
   const cfg = Ent.lerConfig({ entrega: { taxa: 5, gratisAcima: 20, horarios: [' Manhã (8h às 12h) ', 'Tarde', 'Tarde', '<b>x</b>', ''] } });
-  assert.deepStrictEqual(cfg, { taxaC: 500, gratisAcimaC: 2000, horarios: ['Manhã (8h às 12h)', 'Tarde', 'b x /b'], regras: [], retirada: { ativa: false, dias: [], horarios: [], local: '' } });
+  assert.deepStrictEqual(cfg, { taxaC: 500, gratisAcimaC: 2000, horarios: ['Manhã (8h às 12h)', 'Tarde', 'b x /b'], retirada: { ativa: false, dias: [], horarios: [], local: '' }, agenda: [] });
   assert.strictEqual(Ent.taxaC(cfg, 1999), 500); assert.strictEqual(Ent.taxaC(cfg, 2000), 0); assert.strictEqual(Ent.taxaC(Ent.lerConfig({}), 100), 0);
   assert.strictEqual(Ent.taxaC(Ent.lerConfig({ entrega: { taxa: -3 } }), 100), 0); assert.strictEqual(Ent.taxaC(Ent.lerConfig({ entrega: { taxa: 'abc' } }), 100), 0);
   // horário fora da lista (ou em branco) NUNCA barra o pedido: vira "a combinar". Cliente com tela antiga ficava preso sem ter o que escolher.
@@ -2137,8 +2137,8 @@ teste('retirada na banca: sem endereço e sem taxa, horários próprios, só com
   const cfg = Ent.lerConfig({ entrega: { taxa: 5, gratisAcima: 20, horarios: ['Manhã', 'Tarde'], retirada: { ativa: true, horarios: [' Das 7h às 11h ', 'Das 7h às 11h', '<i>x</i>'], local: '  Na   banca <b>' } } });
   assert.deepStrictEqual(cfg.retirada, { ativa: true, dias: [], horarios: ['Das 7h às 11h', 'i x /i'], local: 'Na banca b' });
   for (const lixo of [undefined, null, 'sim', 1, { ativa: 'true' }, { ativa: 1 }]) assert.strictEqual(Ent.lerConfig({ entrega: { retirada: lixo } }).retirada.ativa, false, JSON.stringify(lixo));
-  assert.strictEqual(Ent.modoDoPedido(cfg, 'retirada'), 'retirada'); assert.strictEqual(Ent.modoDoPedido(cfg, undefined), 'entrega'); assert.strictEqual(Ent.modoDoPedido(cfg, 'qualquer'), 'entrega');
-  assert.strictEqual(Ent.modoDoPedido(Ent.lerConfig({}), 'retirada'), null, 'retirada com a loja desligada não vira entrega em silêncio');
+  assert.deepStrictEqual(Ent.modoDoPedido(cfg, 'retirada'), { modo: 'retirada', local: 'Na banca b' }); assert.strictEqual(Ent.modoDoPedido(cfg, undefined).modo, 'entrega'); assert.strictEqual(Ent.modoDoPedido(cfg, 'qualquer').modo, 'entrega');
+  assert.ok(/não está disponível/.test(Ent.modoDoPedido(Ent.lerConfig({}), 'retirada').erro), 'retirada com a loja desligada não vira entrega em silêncio');
   // cada modo tem a sua lista de horários
   assert.strictEqual(Ent.horarioValido(cfg, 'Das 7h às 11h', 'retirada'), 'Das 7h às 11h'); assert.strictEqual(Ent.horarioValido(cfg, 'Manhã', 'retirada'), '');
   assert.strictEqual(Ent.horarioValido(cfg, 'Manhã'), 'Manhã'); assert.strictEqual(Ent.horarioValido(cfg, 'Das 7h às 11h'), '');
@@ -2193,65 +2193,108 @@ teste('retirada na banca: sem endereço e sem taxa, horários próprios, só com
   assert.ok(etiqueta.includes('RETIRADA NA BANCA') && etiqueta.includes('Retirar: Das 7h às 11h'), etiqueta);
   const entregaTxt = I.paraTexto(I.cupomDoPedido({ ...ped, modo: undefined, quadra: '5', lote: '3', condominio: 'Jardins' }), 32); assert.ok(entregaTxt.includes('Entregar: Das 7h às 11h') && entregaTxt.includes('Quadra 5'), entregaTxt);
   // (js/endereco.js puxa o Firebase do navegador, que não existe aqui: confere o texto do arquivo)
-  assert.ok(/if \(p\.modo === 'retirada'\) return curto \? 'Retirada' : 'Retirada na banca'/.test(require('fs').readFileSync(raiz('js/endereco.js'), 'utf8')), 'painel e loja mostram "Retirada" no lugar do endereço');
-  const LE = require(raiz('lib/endereco')); assert.strictEqual(LE.linhaEndereco(ped), 'Retirada na banca'); assert.strictEqual(LE.linhaEndereco({ quadra: '5', lote: '3', condominio: 'Jardins' }), 'Jardins — Quadra 5 • Lote 3', 'entrega não mudou');
+  assert.ok(/if \(p\.modo === 'retirada'\) return curto \? 'Retirada' : \(p\.feiraId \? 'Retirada na feira' : 'Retirada na banca'\)/.test(require('fs').readFileSync(raiz('js/endereco.js'), 'utf8')), 'painel e loja mostram "Retirada" no lugar do endereço');
+  const LE = require(raiz('lib/endereco')); assert.strictEqual(LE.linhaEndereco(ped), 'Retirada na banca'); assert.strictEqual(LE.linhaEndereco({ ...ped, feiraId: 'madri' }), 'Retirada na feira');
+  const papelFeira = I.paraTexto(I.cupomDoPedido({ ...ped, feiraId: 'madri', retiradaLocal: 'Na feira do Madri' }), 32); assert.ok(papelFeira.includes('RETIRADA NA FEIRA') && papelFeira.replace(/\s+/g, ' ').includes('Na feira do Madri'), papelFeira);   // (a linha quebra no papel) assert.strictEqual(LE.linhaEndereco({ quadra: '5', lote: '3', condominio: 'Jardins' }), 'Jardins — Quadra 5 • Lote 3', 'entrega não mudou');
 });
 
-teste('horários da entrega por condomínio (feira) e dia, e dias da retirada: vence a regra mais específica, no servidor e na loja', async () => {
+teste('agenda das feiras: cada dia de cada feira tem entrega e/ou retirada, horários e local; cliente sem feira segue a regra geral', async () => {
   const Ent = require(raiz('lib/entrega')), L = await import(raiz('js/entrega-lib.js'));
-  const entrega = { taxa: 5, horarios: ['Geral'], regras: [
-    { feira: 'atenas', dias: [3], horarios: ['Atenas quarta'] }, { feira: 'madri', horarios: ['Madri manhã'] },
-    { feira: '', dias: [3], horarios: ['Quarta de manhã'] }, { feira: 'mônaco!', dias: [9, 'x'], horarios: ['  lixo  ', ''] }, 'lixo', null,
-  ], retirada: { ativa: true, dias: [1, 2, 4, 5, 6, 6, 9, 'x'], horarios: ['Das 7h às 11h'] } };
+  const entrega = { taxa: 5, horarios: ['Geral'], retirada: { ativa: true, dias: [1, 2, 4, 5, 6, 6, 9, 'x'], horarios: ['Na banca 7h'], local: 'Banca do centro' }, agenda: [
+    { feira: 'florenca', dia: 2, entrega: true, horariosEntrega: ['Tarde'], retirada: true, horariosRetirada: ['Das 7h às 11h'], local: '  Feira do Florença <b> ' },
+    { feira: 'madri', dia: 3, entrega: true, horariosEntrega: ['Manhã (8h às 11h)'], retirada: false, horariosRetirada: ['ignorado'], local: 'ignorado' },
+    { feira: 'madri', dia: 5, entrega: true, horariosEntrega: [], retirada: true, horariosRetirada: ['Das 16h às 20h'], local: 'Feira do Madri' },
+    { feira: 'monaco', dia: 3, entrega: false, retirada: true, horariosRetirada: [], local: 'Portaria do Mônaco' },
+    { feira: 'madri', dia: 3, entrega: false, retirada: true },                    // repetida: vale a primeira
+    { feira: 'sem-nada', dia: 1, entrega: false, retirada: false },               // nem entrega nem retirada: descartada
+    { feira: 'Errada!', dia: 1, entrega: true }, { feira: 'x1', dia: 9, entrega: true }, { feira: 'x2', dia: '3', entrega: true }, 'lixo', null,
+  ] };
   const cfg = Ent.lerConfig({ entrega }), cl = L.lerEntrega({ entrega });
-  assert.deepStrictEqual(cfg.regras.map((r) => [r.feira, r.dias, r.horarios]), [['atenas', [3], ['Atenas quarta']], ['madri', [], ['Madri manhã']], ['', [3], ['Quarta de manhã']], ['', [], ['lixo']]], 'lixo é descartado, regra sem feira válida vira "qualquer"');
-  assert.deepStrictEqual(cl.regras, cfg.regras, 'a loja lê as regras como o servidor');
-  assert.deepStrictEqual(cfg.retirada.dias, [1, 2, 4, 5, 6]); assert.deepStrictEqual(cl.retirada.dias, [1, 2, 4, 5, 6]);
-  // quem vence: feira + dia · feira · dia · lista geral (o servidor e a loja dão sempre a mesma resposta)
-  const base = { ...cfg, regras: cfg.regras.slice(0, 3) };
-  for (const [feira, dow, esperado] of [['atenas', 3, ['Atenas quarta']], ['atenas', 5, ['Geral']], ['madri', 3, ['Madri manhã']], ['madri', 5, ['Madri manhã']], ['outra', 3, ['Quarta de manhã']], ['', 5, ['Geral']], ['', -1, ['Geral']]]) {
-    assert.deepStrictEqual(Ent.horariosDaEntrega(base, feira, dow), esperado, `servidor ${feira}/${dow}`);
-    assert.deepStrictEqual(L.horariosDoModo({ ...cl, regras: base.regras }, 'entrega', { feira, dow }), esperado, `loja ${feira}/${dow}`);
+  assert.deepStrictEqual(cfg.agenda.map((r) => `${r.feira}|${r.dia}`), ['florenca|2', 'madri|3', 'madri|5', 'monaco|3'], 'só linhas válidas, sem repetir feira + dia');
+  assert.deepStrictEqual(cl.agenda, cfg.agenda, 'a loja lê a agenda igual ao servidor');
+  assert.deepStrictEqual(cfg.agenda[1], { feira: 'madri', dia: 3, entrega: true, horariosEntrega: ['Manhã (8h às 11h)'], retirada: false, horariosRetirada: [], local: '' }, 'sem retirada: horário e local dela não ficam');
+  assert.strictEqual(cfg.agenda[0].local, 'Feira do Florença b');
+  assert.deepStrictEqual(cfg.retirada.dias, [1, 2, 4, 5, 6]);
+  // o que cada cliente vê (servidor e loja dão sempre a mesma resposta)
+  const casos = [
+    ['florenca', 2, { entrega: true, retirada: true, horariosEntrega: ['Tarde'], horariosRetirada: ['Das 7h às 11h'], local: 'Feira do Florença b', daAgenda: true }],
+    ['madri', 3, { entrega: true, retirada: false, horariosEntrega: ['Manhã (8h às 11h)'], horariosRetirada: [], local: '', daAgenda: true }],
+    ['madri', 5, { entrega: true, retirada: true, horariosEntrega: [], horariosRetirada: ['Das 16h às 20h'], local: 'Feira do Madri', daAgenda: true }],
+    ['monaco', 3, { entrega: false, retirada: true, horariosEntrega: [], horariosRetirada: [], local: 'Portaria do Mônaco', daAgenda: true }],
+    ['florenca', 3, { entrega: true, retirada: false, horariosEntrega: ['Geral'], horariosRetirada: [], local: '', daAgenda: false }],     // dia sem linha: só entrega, lista geral
+    ['outra', 2, { entrega: true, retirada: false, horariosEntrega: ['Geral'], horariosRetirada: [], local: '', daAgenda: false }],          // a retirada GERAL não vale para cliente de feira
+    ['', 2, { entrega: true, retirada: true, horariosEntrega: ['Geral'], horariosRetirada: ['Na banca 7h'], local: 'Banca do centro', daAgenda: false }],
+    ['', 3, { entrega: true, retirada: false, horariosEntrega: ['Geral'], horariosRetirada: ['Na banca 7h'], local: 'Banca do centro', daAgenda: false }],
+  ];
+  for (const [feira, dow, esperado] of casos) {
+    assert.deepStrictEqual(Ent.opcoesDoDia(cfg, feira, dow), esperado, `servidor ${feira || 'sem feira'}/${dow}`);
+    assert.deepStrictEqual(L.opcoesDoDia(cl, feira, dow), esperado, `loja ${feira || 'sem feira'}/${dow}`);
   }
-  assert.deepStrictEqual(L.horariosDoModo(cl, 'retirada', { feira: 'atenas', dow: 3 }), ['Das 7h às 11h'], 'a retirada tem a lista dela');
-  // regra com lista vazia = "neste caso a loja não pergunta o horário"
-  assert.deepStrictEqual(Ent.horariosDaEntrega(Ent.lerConfig({ entrega: { horarios: ['Geral'], regras: [{ feira: 'atenas', dias: [3], horarios: [] }] } }), 'atenas', 3), []);
-  // o horário só vale se for da lista DAQUELE caso
-  assert.strictEqual(Ent.horarioValido(base, 'Atenas quarta', 'entrega', { feira: 'atenas', dow: 3 }), 'Atenas quarta');
-  assert.strictEqual(Ent.horarioValido(base, 'Atenas quarta', 'entrega', { feira: 'madri', dow: 3 }), '', 'o horário do Atenas não vale no Madri');
-  assert.strictEqual(Ent.horarioValido(base, 'Geral', 'entrega', { feira: 'atenas', dow: 3 }), '', 'a lista geral não vale onde há regra');
-  assert.strictEqual(Ent.horarioValido(base, 'Geral'), 'Geral', 'sem contexto (tela antiga) vale a lista geral');
-  // dias da retirada
-  for (const d of [1, 2, 4, 5, 6]) assert.strictEqual(Ent.modoDoPedido(cfg, 'retirada', d), 'retirada', `dia ${d}`);
-  for (const d of [0, 3]) assert.strictEqual(Ent.modoDoPedido(cfg, 'retirada', d), null, `dia ${d}: sem retirada`);
-  assert.strictEqual(Ent.modoDoPedido(cfg, 'entrega', 3), 'entrega'); assert.strictEqual(Ent.modoDoPedido(cfg, undefined, 3), 'entrega', 'a entrega nunca depende disso');
-  assert.strictEqual(Ent.modoDoPedido(Ent.lerConfig({ entrega: { retirada: { ativa: true } } }), 'retirada', 3), 'retirada', 'sem dias gravados = todos os dias');
-  assert.strictEqual(L.retiradaNoDia(cl, 3), false); assert.strictEqual(L.retiradaNoDia(cl, 4), true); assert.strictEqual(L.retiradaNoDia(L.lerEntrega({ entrega: { retirada: { ativa: true } } }), 3), true);
+  // horários conferidos para o modo, a feira e o dia
+  assert.strictEqual(Ent.horarioValido(cfg, 'Manhã (8h às 11h)', 'entrega', { feira: 'madri', dow: 3 }), 'Manhã (8h às 11h)');
+  assert.strictEqual(Ent.horarioValido(cfg, 'Manhã (8h às 11h)', 'entrega', { feira: 'madri', dow: 5 }), '', 'o horário da quarta não vale na sexta');
+  assert.strictEqual(Ent.horarioValido(cfg, 'Tarde', 'entrega', { feira: 'madri', dow: 3 }), '', 'o horário do Florença não vale no Madri');
+  assert.strictEqual(Ent.horarioValido(cfg, 'Geral', 'entrega', { feira: 'madri', dow: 3 }), '', 'a lista geral não vale num dia com linha');
+  assert.strictEqual(Ent.horarioValido(cfg, 'Das 16h às 20h', 'retirada', { feira: 'madri', dow: 5 }), 'Das 16h às 20h');
+  assert.strictEqual(Ent.horarioACombinar(cfg, '', 'entrega', { feira: 'madri', dow: 5 }), false, 'sexta sem horários de entrega: não pergunta');
+  assert.deepStrictEqual(L.horariosDoModo(cl, 'retirada', { feira: 'madri', dow: 5 }), ['Das 16h às 20h']);
+  // o modo tem de existir no dia: nunca troca em silêncio
+  assert.deepStrictEqual(Ent.modoDoPedido(cfg, 'retirada', { feira: 'madri', dow: 5 }), { modo: 'retirada', local: 'Feira do Madri' });
+  assert.ok(/não tem retirada/.test(Ent.modoDoPedido(cfg, 'retirada', { feira: 'madri', dow: 3 }).erro), 'Madri na quarta: só entrega');
+  assert.ok(/só retirada/.test(Ent.modoDoPedido(cfg, 'entrega', { feira: 'monaco', dow: 3 }).erro), 'Mônaco na quarta: só retirada');
+  assert.ok(/não tem retirada/.test(Ent.modoDoPedido(cfg, 'retirada', { feira: 'outra', dow: 2 }).erro), 'cliente de feira não usa a retirada geral');
+  assert.strictEqual(Ent.modoDoPedido(cfg, 'retirada', { dow: 2 }).modo, 'retirada');
+  assert.ok(/Hoje não tem retirada/.test(Ent.modoDoPedido(cfg, 'retirada', { dow: 3 }).erro), 'sem feira: retirada geral só nos dias dela');
+  assert.strictEqual(Ent.modoDoPedido(Ent.lerConfig({ entrega: { retirada: { ativa: true } } }), 'retirada', { dow: 3 }).modo, 'retirada', 'sem dias gravados = todos os dias');
+  assert.strictEqual(L.retiradaNoDia(cl, 3), false); assert.strictEqual(L.retiradaNoDia(cl, 4), true);
 
-  // pelo servidor de verdade (checkout): hoje é um dia de retirada? depende do que a loja marcou
-  const hoje = new Date(Date.now() - 3 * 3600000).getUTCDay(), outros = [0, 1, 2, 3, 4, 5, 6].filter((d) => d !== hoje), base0 = sementeEstoque();
-  const montar = (e) => { const db = criarBancoP({ ...base0, 'loja/config': { ...(base0['loja/config'] || {}), entrega: e } }); return { db, checkout: carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS_P)) }; };
-  const enviar = (c, p) => chamar(c.checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: p });
-  const ret = (extra = {}) => pedido({ modo: 'retirada', quadra: '', lote: '', condominio: '', itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], ...extra });
-  let c = montar({ taxa: 5, retirada: { ativa: true, dias: outros } });
-  let r = await enviar(c, ret()); assert.strictEqual(r.status, 400); assert.ok(/Hoje não tem retirada na banca/.test(r.corpo.error), r.corpo.error); assert.ok(![...c.db._dados.keys()].some((k) => k.startsWith('pedidos/')), 'nada gravado');
-  r = await enviar(c, pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }] })); assert.strictEqual(r.status, 200, 'a entrega segue normal no dia sem retirada');
-  c = montar({ taxa: 5, retirada: { ativa: true, dias: [hoje] } }); r = await enviar(c, ret()); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
-  // horário da entrega pela regra do dia de hoje (loja que não é de feira)
-  c = montar({ taxa: 5, horarios: ['Geral'], regras: [{ feira: '', dias: [hoje], horarios: ['Só hoje'] }] });
-  let p = pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: 'Só hoje' }); r = await enviar(c, p); assert.strictEqual(c.db._dados.get(`pedidos/${p.idempotencyKey}`).entrega.horario, 'Só hoje');
-  p = pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: 'Geral' }); r = await enviar(c, p); const g = c.db._dados.get(`pedidos/${p.idempotencyKey}`);
-  assert.strictEqual(r.status, 200); assert.strictEqual(g.entrega.horario, '', 'a lista geral não vale em dia com regra'); assert.strictEqual(g.entrega.horarioACombinar, true);
-  c = montar({ taxa: 5, horarios: ['Geral'], regras: [{ feira: '', dias: outros, horarios: ['Outro dia'] }] });
-  p = pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: 'Geral' }); await enviar(c, p); assert.strictEqual(c.db._dados.get(`pedidos/${p.idempotencyKey}`).entrega.horario, 'Geral', 'regra de outros dias não mexe em hoje');
+  // PELO SERVIDOR DE VERDADE: a feira de HOJE da banca com a agenda, e uma OUTRA banca na mesma feira com a agenda dela
+  const hoje = new Date(Date.now() - 3 * 3600000).getUTCDay(), base0 = sementeEstoque();
+  const linhaHoje = { feira: 'feira-hoje', dia: hoje, entrega: false, retirada: true, horariosRetirada: ['Das 7h às 11h'], local: 'Na feira, banca verde' };
+  const db = criarBancoP({ ...base0,
+    'feiras/feira-hoje': { nome: 'Feira de hoje', dias: [hoje], lojas: [{ id: 'banca' }, { id: 'vizinha' }] },
+    'loja/config': { ...(base0['loja/config'] || {}), entrega: { taxa: 5, horarios: ['Geral'], agenda: [linhaHoje] } },
+    'tenants/vizinha': { nome: 'Banca vizinha', ativo: true },
+    'tenants/vizinha/loja/config': { ...(base0['loja/config'] || {}), entrega: { taxa: 3, horarios: ['Vizinha manhã'], agenda: [{ feira: 'feira-hoje', dia: hoje, entrega: true, horariosEntrega: ['Vizinha manhã'], retirada: false }] } },
+    'tenants/vizinha/produtos/ovos': { ...(base0['produtos/ovos'] || {}) },
+  });
+  const checkout = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS_P));
+  const enviar = (p, loja) => chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente', ...(loja ? { 'x-loja': loja } : {}) }, body: p });
+  const ped = (extra) => pedido({ feira: 'feira-hoje', itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], ...extra });
+  // banca: hoje a feira é SÓ retirada → retirada entra, com o local e o horário da linha, sem taxa e sem endereço
+  let p = ped({ modo: 'retirada', quadra: '', lote: '', condominio: '', horarioEntrega: 'Das 7h às 11h' });
+  let r = await enviar(p); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  let g = db._dados.get(`pedidos/${p.idempotencyKey}`);
+  assert.strictEqual(g.modo, 'retirada'); assert.strictEqual(g.retiradaLocal, 'Na feira, banca verde'); assert.strictEqual(g.feiraId, 'feira-hoje'); assert.strictEqual(g.paraHoje, true);
+  assert.deepStrictEqual(g.entrega, { taxa: 0, taxaCheia: 0, gratisAcima: 0, horario: 'Das 7h às 11h' }); assert.strictEqual(r.corpo.pedido.total, 14);
+  assert.ok(decodeURIComponent(r.corpo.pedido.whatsappMsg).includes('Retirada na feira (Na feira, banca verde)'), 'pedido de feira diz "na feira" e onde');
+  // banca: entrega hoje é recusada (com o motivo) e nada é gravado
+  p = ped({}); r = await enviar(p); assert.strictEqual(r.status, 400); assert.ok(/só retirada/.test(r.corpo.error), r.corpo.error); assert.ok(!db._dados.has(`pedidos/${p.idempotencyKey}`));
+  // a OUTRA banca da mesma feira segue a agenda DELA: hoje é só entrega, com a taxa e o horário dela
+  p = ped({ horarioEntrega: 'Vizinha manhã' }); r = await enviar(p, 'vizinha'); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  g = db._dados.get(`tenants/vizinha/pedidos/${p.idempotencyKey}`);
+  assert.ok(g, 'o pedido da vizinha vai para a vizinha'); assert.ok(!db._dados.has(`pedidos/${p.idempotencyKey}`), 'e não aparece na banca');
+  assert.strictEqual(g.entrega.horario, 'Vizinha manhã'); assert.strictEqual(g.entrega.taxa, 3); assert.strictEqual(g.modo, undefined);
+  p = ped({ modo: 'retirada', quadra: '', lote: '', condominio: '' }); r = await enviar(p, 'vizinha');
+  assert.strictEqual(r.status, 400, 'a retirada da banca não vale na vizinha'); assert.ok(/não tem retirada/.test(r.corpo.error));
+  // cliente SEM feira na banca: a agenda não vale para ele (a retirada geral está desligada)
+  p = pedido({ modo: 'retirada', quadra: '', lote: '', condominio: '', itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }] }); r = await enviar(p);
+  assert.strictEqual(r.status, 400); assert.ok(/não está disponível/.test(r.corpo.error));
+  p = pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: 'Geral' }); r = await enviar(p);
+  assert.strictEqual(r.status, 200); assert.strictEqual(db._dados.get(`pedidos/${p.idempotencyKey}`).entrega.horario, 'Geral');
+  // retirada geral por dia (cliente sem feira)
+  const outros = [0, 1, 2, 3, 4, 5, 6].filter((d) => d !== hoje);
+  db._dados.set('loja/config', { ...db._dados.get('loja/config'), entrega: { taxa: 5, retirada: { ativa: true, dias: outros } } });
+  p = pedido({ modo: 'retirada', quadra: '', lote: '', condominio: '', itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }] }); r = await enviar(p);
+  assert.strictEqual(r.status, 400); assert.ok(/Hoje não tem retirada na banca/.test(r.corpo.error));
 
   // painel e loja
   const fs = require('fs'), admin = fs.readFileSync(raiz('js/admin.js'), 'utf8'), adminHtml = fs.readFileSync(raiz('admin.html'), 'utf8'), loja = fs.readFileSync(raiz('js/loja.js'), 'utf8');
-  for (const id of ['regras-entrega', 'btn-add-regra', 'retirada-dias']) assert.ok(adminHtml.includes(`id="${id}"`), id);
-  assert.strictEqual((adminHtml.match(/class="chk-ret-dia"/g) || []).length, 7, 'sete dias da retirada');
-  assert.ok(/regras: lerRegrasEntrega\(\)\.slice\(0, 20\), retirada/.test(admin) && /dias: diasRet\.length === 7 \? \[\] : diasRet/.test(admin), 'o painel grava as regras e os dias da retirada dentro de "entrega"');
-  assert.ok(/horariosDoModo\(lerEntrega\(STATE\.config\), modoEscolhido\(\), \{ feira: lerFeiraCliente\(\), dow: diaDoPreco\(\) \}\)/.test(loja), 'a loja escolhe a lista pela feira e pelo dia da entrega');
-  assert.ok(/'feira-do-cliente', \(\) => \{[^\n]*pintarModo\(\)/.test(loja), 'trocar de condomínio refaz a lista de horários');
+  for (const id of ['agenda-entrega', 'btn-add-agenda', 'retirada-dias']) assert.ok(adminHtml.includes(`id="${id}"`), id);
+  assert.strictEqual((adminHtml.match(/class="chk-ret-dia"/g) || []).length, 7, 'sete dias da retirada geral');
+  assert.ok(/const linhasAgenda = lerAgenda\(\), erroAgenda = conferirAgenda\(linhasAgenda\)/.test(admin) && /dias: diasRet\.length === 7 \? \[\] : diasRet/.test(admin), 'o painel confere a agenda antes de gravar');
+  assert.ok(/horariosDoModo\(lerEntrega\(STATE\.config\), modoEscolhido\(\), \{ feira: feiraAqui\(\), dow: diaDoPreco\(\) \}\)/.test(loja), 'a loja escolhe a lista pela feira e pelo dia do pedido');
+  assert.ok(/'feira-do-cliente', \(\) => \{[^\n]*pintarModo\(\)/.test(loja), 'trocar de feira refaz as opções');
 });
 
 teste('retirada na banca: a conta do cliente não perde o endereço de entrega, e o painel e a tela têm os campos', async () => {
@@ -2267,10 +2310,10 @@ teste('retirada na banca: a conta do cliente não perde o endereço de entrega, 
   // painel (campos de retirada, salvos dentro de "entrega") e site (escolha só aparece com a retirada ligada)
   const fs = require('fs'), admin = fs.readFileSync(raiz('js/admin.js'), 'utf8'), adminHtml = fs.readFileSync(raiz('admin.html'), 'utf8'), loja = fs.readFileSync(raiz('js/loja.js'), 'utf8'), html = fs.readFileSync(raiz('index.html'), 'utf8');
   for (const id of ['config-retirada-ativa', 'config-retirada-horarios', 'config-retirada-local']) { assert.ok(adminHtml.includes(`id="${id}"`), id); assert.ok(admin.includes(`'${id}'`), `${id} é lido e salvo`); }
-  assert.ok(/entrega = \{ taxa, gratisAcima, horarios: [^\n]*, retirada \}/.test(admin), 'a retirada é gravada dentro de "entrega"');
+  assert.ok(/entrega = \{ taxa, gratisAcima, horarios: [^\n]*, retirada,\n\s+agenda: linhasAgenda\.map/.test(admin), 'a retirada e a agenda são gravadas dentro de "entrega"');
   assert.ok(/id="grupo-modo"[^>]*hidden/.test(html) && /name="cli-modo" value="retirada"/.test(html), 'a escolha nasce escondida');
-  assert.ok(/retiradaDisponivel = \(\) => \{ const c = lerEntrega\(STATE\.config\); return c\.retirada\.ativa && !feiraDoClienteAqui\(\) && retiradaNoDia\(c,/.test(loja), 'só com a loja ligada, fora de feira e num dia de retirada');
-  assert.ok(/const faltaEndereco = retirada \? '' : endCheckout\.validar\(\)/.test(loja) && /feira: retirada \? '' : lerFeiraCliente\(\)/.test(loja) && /modo: retirada \? 'retirada' : 'entrega'/.test(loja));
+  assert.ok(/const opcoesDeHoje = \(\) => opcoesDoDia\(lerEntrega\(STATE\.config\), feiraAqui\(\), diaDoPreco\(\)\)/.test(loja), 'a escolha vem da agenda da feira do cliente (ou da regra geral) para o dia do pedido');
+  assert.ok(/const faltaEndereco = retirada \? '' : endCheckout\.validar\(\)/.test(loja) && /feira: lerFeiraCliente\(\),/.test(loja) && /modo: retirada \? 'retirada' : 'entrega'/.test(loja));
   assert.ok(/if \(!retirada\) \{ salvarEndereco\(endereco\)/.test(loja), 'retirada não grava endereço vazio por cima do endereço salvo no aparelho');
 });
 
@@ -2529,7 +2572,8 @@ teste('cofre: a previsão guarda nomes e endereços cifrados e o painel recebe t
     assert.ok(r.indiceClientes.some((c) => c.nome === 'Helena Prado'), 'o motor viu os nomes');
     await Store.persistir(db, r, {});
     const tudo = JSON.stringify([...db._dados.values()]);
-    for (const s of [...NOMES.map((x) => x.split(' ')[0]), '62999900001']) assert.ok(!tudo.includes(s), `"${s}" aberto no que o motor gravou`);
+    // nome inteiro (um primeiro nome de 3 letras, como "Rui", às vezes aparece por acaso no meio do texto cifrado e o teste falhava sem motivo)
+    for (const s of [...NOMES, '62999900001']) assert.ok(!tudo.includes(s), `"${s}" aberto no que o motor gravou`);
     const lido = await Store.lerPainel(db);
     assert.ok(lido.indiceClientes.some((c) => c.nome === 'Helena Prado' && c.lote === '1'));
     assert.ok(lido.produtos.tomate && lido.produtos.tomate.horizontes, 'a previsão por produto volta aberta');

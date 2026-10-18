@@ -258,12 +258,12 @@ document.getElementById('tabs-fundo')?.addEventListener('click', () => recolherM
 
 // DIAS SEM FEIRA (chuva, feriado), marcados na Plataforma: o pedido já feito para um desses dias ganha um aviso.
 const SEM_FEIRA = new Map();
-const FEIRAS_DA_LOJA = new Map();   // id → nome das feiras em que esta banca está (usado nas regras de horário da entrega)
+const FEIRAS_DA_LOJA = new Map();   // id → { nome, dias } das feiras em que esta banca está (usado na agenda das feiras)
 function lerDiasSemFeira(ficha) {
     feirasDaFicha(ficha).forEach((fid) => getDoc(doc(db, 'feiras', fid)).then((s) => {
         if (!s.exists()) return;
         SEM_FEIRA.set(fid, new Set(Array.isArray(s.data().semFeira) ? s.data().semFeira : []));
-        FEIRAS_DA_LOJA.set(fid, String(s.data().nome || fid)); pintarRegrasEntrega({ manter: true });   // o nome entra na lista de condomínios das regras de horário
+        FEIRAS_DA_LOJA.set(fid, { nome: String(s.data().nome || fid), dias: (Array.isArray(s.data().dias) ? s.data().dias : []).filter(Number.isInteger) }); pintarAgenda({ manter: true });   // a feira entra na lista da agenda
         const listDiv = document.getElementById('lista-historico');
         if (listDiv && pedidosGerais.length) listDiv.innerHTML = renderHtmlPedidos(pedidosGerais);
     }).catch(() => {}));
@@ -469,11 +469,13 @@ const iniciarRealTimeSync = () => {
             if (document.activeElement?.id !== 'config-taxa') document.getElementById('config-taxa').value = Number(ent.taxa) > 0 ? ent.taxa : '';
             if (document.activeElement?.id !== 'config-gratis') document.getElementById('config-gratis').value = Number(ent.gratisAcima) > 0 ? ent.gratisAcima : '';
             if (campoHor && document.activeElement !== campoHor) campoHor.value = (Array.isArray(ent.horarios) ? ent.horarios : []).join('\n');
-            // regras de horário por condomínio e dia (não redesenha enquanto a pessoa mexe nelas, para não apagar o que ela digitou)
-            if (!regrasMexidas) {
-                regrasEntrega = (Array.isArray(ent.regras) ? ent.regras : []).slice(0, 20).filter((r) => r && typeof r === 'object')
-                    .map((r) => ({ feira: String(r.feira || ''), dias: (Array.isArray(r.dias) ? r.dias : []).filter(Number.isInteger), horarios: (Array.isArray(r.horarios) ? r.horarios : []).map(String) }));
-                pintarRegrasEntrega();
+            // agenda das feiras (não redesenha enquanto a pessoa mexe nela, para não apagar o que ela digitou)
+            if (!agendaMexida) {
+                agenda = (Array.isArray(ent.agenda) ? ent.agenda : []).slice(0, 40).filter((r) => r && typeof r === 'object').map((r) => ({
+                    feira: String(r.feira || ''), dia: Number.isInteger(r.dia) ? r.dia : -1, entrega: r.entrega === true, retirada: r.retirada === true,
+                    horariosEntrega: (Array.isArray(r.horariosEntrega) ? r.horariosEntrega : []).map(String), horariosRetirada: (Array.isArray(r.horariosRetirada) ? r.horariosRetirada : []).map(String), local: String(r.local || ''),
+                }));
+                pintarAgenda();
             }
             const ret = ent.retirada && typeof ent.retirada === 'object' ? ent.retirada : {};
             const diasRet = (Array.isArray(ret.dias) ? ret.dias : []).filter(Number.isInteger);
@@ -1322,7 +1324,7 @@ const montarMensagemCliente = () => {
     }
 
     L.push('');
-    if (p.modo === 'retirada') L.push('📍 *Retirada na banca* (o cliente busca)');
+    if (p.modo === 'retirada') L.push(`📍 *${p.feiraId ? 'Retirada na feira' : 'Retirada na banca'}* (o cliente busca)${p.retiradaLocal ? `: ${p.retiradaLocal}` : ''}`);
     else { L.push('📍 *Endereço de entrega:*'); L.push(linhaEndereco(p)); }
 
     if (p.obs) {
@@ -1847,7 +1849,7 @@ const renderHtmlPedidos = (pedidos) => {
             ? `<span style="background:var(--success);color:white;padding:3px 8px;border-radius:12px;font-size:0.72rem;font-weight:700;">✓ PAGO</span>` : '';
         const retirada = p.modo === 'retirada';
         const infoEntrega = retirada || (p.entrega && (p.entrega.horario || p.entrega.horarioACombinar || Number(p.entrega.taxa) > 0))
-            ? `<div style="font-size:0.82rem;color:var(--forest);margin-top:4px;font-weight:600;"><i class="ic" data-i="${retirada ? 'caixa' : 'entrega'}"></i> ${escapeHTML([retirada ? 'RETIRADA NA BANCA' : '', p.entrega?.horario || (p.entrega?.horarioACombinar ? 'horário a combinar' : ''), Number(p.entrega?.taxa) > 0 ? `entrega ${fmt(p.entrega.taxa)}` : ''].filter(Boolean).join(' · '))}</div>` : '';
+            ? `<div style="font-size:0.82rem;color:var(--forest);margin-top:4px;font-weight:600;"><i class="ic" data-i="${retirada ? 'caixa' : 'entrega'}"></i> ${escapeHTML([retirada ? `${p.feiraId ? 'RETIRADA NA FEIRA' : 'RETIRADA NA BANCA'}${p.retiradaLocal ? ` (${p.retiradaLocal})` : ''}` : '', p.entrega?.horario || (p.entrega?.horarioACombinar ? 'horário a combinar' : ''), Number(p.entrega?.taxa) > 0 ? `entrega ${fmt(p.entrega.taxa)}` : ''].filter(Boolean).join(' · '))}</div>` : '';
         const infoTroco = p.troco ? `<div style="font-size:0.82rem;color:var(--earth);margin-top:4px;"><i class="ic" data-i="dinheiro"></i> Troco para: ${escapeHTML(p.troco)}</div>` : '';
         // pedido para outro dia (cliente da feira pediu fora do dia da feira) e feira cancelada nesse dia
         const ehFuturo = p.entregaDia && p.entregaDia !== diaBR(p.data);
@@ -2627,39 +2629,72 @@ document.getElementById('lista-condominios')?.addEventListener('click', (e) => {
     e.target.closest('.cond-remover')?.closest('.cond-linha').remove();
 });
 
-// HORÁRIOS DE ENTREGA POR CONDOMÍNIO (FEIRA) E DIA DA SEMANA. Cada regra: feira (ou "qualquer"), dias (ou "todos") e a lista de horários.
-let regrasEntrega = [], regrasMexidas = false;
+// AGENDA DAS FEIRAS: para cada dia de cada feira desta banca, se tem entrega, se tem retirada na feira, os horários de cada uma e o local.
+// Fica em loja/config.entrega.agenda DESTA banca (as outras bancas da mesma feira têm a delas). Quem lê: lib/entrega.js (opcoesDoDia).
+let agenda = [], agendaMexida = false;
 const NOMES_DIAS_CURTOS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-const lerRegrasEntrega = () => [...document.querySelectorAll('#regras-entrega .regra-entrega')].map((el) => ({
-    feira: el.querySelector('[data-r="feira"]').value,
-    dias: [...el.querySelectorAll('[data-r="dia"]:checked')].map((c) => Number(c.value)),
-    horarios: horariosDoTexto(el.querySelector('[data-r="horarios"]').value),
+const lerAgenda = () => [...document.querySelectorAll('#agenda-entrega .agenda-linha')].map((el) => ({
+    feira: el.querySelector('[data-r="feira"]').value, dia: Number(el.querySelector('[data-r="dia"]').value),
+    entrega: el.querySelector('[data-r="entrega"]').checked, horariosEntrega: horariosDoTexto(el.querySelector('[data-r="horariosEntrega"]').value),
+    retirada: el.querySelector('[data-r="retirada"]').checked, horariosRetirada: horariosDoTexto(el.querySelector('[data-r="horariosRetirada"]').value),
+    local: el.querySelector('[data-r="local"]').value.replace(/[<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
 }));
-function pintarRegrasEntrega({ manter = false } = {}) {
-    const el = document.getElementById('regras-entrega'); if (!el) return;
-    if (manter && el.children.length) regrasEntrega = lerRegrasEntrega();   // não perde o que a pessoa está digitando
-    const opcoes = (sel) => {
-        const ids = new Map(FEIRAS_DA_LOJA); if (sel && !ids.has(sel)) ids.set(sel, sel);
-        return '<option value="">Qualquer condomínio</option>' + [...ids].map(([id, nome]) => `<option value="${escapeHTML(id)}"${id === sel ? ' selected' : ''}>${escapeHTML(nome)}</option>`).join('');
+/** O que a agenda tem de errado ('' = pode gravar). */
+function conferirAgenda(linhas) {
+    const vistos = new Set();
+    for (const [i, r] of linhas.entries()) {
+        const n = `Linha ${i + 1} da agenda`, f = FEIRAS_DA_LOJA.get(r.feira);
+        if (!r.feira) return `${n}: escolha a feira.`;
+        if (!(r.dia >= 0 && r.dia <= 6)) return `${n}: escolha o dia.`;
+        if (!r.entrega && !r.retirada) return `${n}: marque entrega, retirada ou as duas (ou apague a linha).`;
+        if (f && f.dias.length && !f.dias.includes(r.dia)) return `${n}: a feira ${f.nome} não acontece ${['no domingo', 'na segunda', 'na terça', 'na quarta', 'na quinta', 'na sexta', 'no sábado'][r.dia]}.`;
+        if (vistos.has(`${r.feira}|${r.dia}`)) return `${n}: essa feira já tem uma linha para esse dia.`;
+        vistos.add(`${r.feira}|${r.dia}`);
+    }
+    return '';
+}
+function pintarAgenda({ manter = false } = {}) {
+    const el = document.getElementById('agenda-entrega'); if (!el) return;
+    if (manter && el.children.length) agenda = lerAgenda();   // não perde o que a pessoa está digitando
+    const opFeira = (sel) => {
+        const ids = new Map([...FEIRAS_DA_LOJA].map(([id, f]) => [id, f.nome])); if (sel && !ids.has(sel)) ids.set(sel, sel);
+        return '<option value="">Escolha a feira</option>' + [...ids].map(([id, nome]) => `<option value="${escapeHTML(id)}"${id === sel ? ' selected' : ''}>${escapeHTML(nome)}</option>`).join('');
     };
-    el.innerHTML = regrasEntrega.map((r, i) => `
-        <div class="regra-entrega" data-i="${i}">
-            <div class="regra-topo"><select data-r="feira" aria-label="Condomínio da regra ${i + 1}">${opcoes(r.feira)}</select><button type="button" class="btn-texto" data-r="remover" aria-label="Remover a regra ${i + 1}">Remover</button></div>
-            <div class="dias-semana">${NOMES_DIAS_CURTOS.map((n, d) => `<label class="dia-label"><input type="checkbox" data-r="dia" value="${d}"${(r.dias || []).includes(d) ? ' checked' : ''}> ${n}</label>`).join('')}</div>
-            <textarea data-r="horarios" rows="2" aria-label="Horários da regra ${i + 1}" placeholder="Manhã (8h às 11h)">${escapeHTML((r.horarios || []).join('\n'))}</textarea>
+    const opDia = (feira, sel) => {
+        const dias = (FEIRAS_DA_LOJA.get(feira) || {}).dias || [];
+        return '<option value="-1">Dia</option>' + NOMES_DIAS_CURTOS.map((n, d) => `<option value="${d}"${d === sel ? ' selected' : ''}>${n}${dias.includes(d) ? ' (dia da feira)' : ''}</option>`).join('');
+    };
+    el.innerHTML = agenda.map((r, i) => `
+        <div class="regra-entrega agenda-linha" data-i="${i}">
+            <div class="regra-topo"><select data-r="feira" aria-label="Feira da linha ${i + 1}">${opFeira(r.feira)}</select><select data-r="dia" aria-label="Dia da linha ${i + 1}">${opDia(r.feira, r.dia)}</select><button type="button" class="btn-texto" data-r="remover" aria-label="Apagar a linha ${i + 1}">Apagar</button></div>
+            <label class="chk-linha"><input type="checkbox" data-r="entrega"${r.entrega ? ' checked' : ''}> Entrega neste dia</label>
+            <textarea data-r="horariosEntrega" rows="2" aria-label="Horários de entrega da linha ${i + 1}" placeholder="Horários da entrega, um por linha (em branco = não pergunta)">${escapeHTML((r.horariosEntrega || []).join('\n'))}</textarea>
+            <label class="chk-linha"><input type="checkbox" data-r="retirada"${r.retirada ? ' checked' : ''}> Retirada na feira neste dia</label>
+            <textarea data-r="horariosRetirada" rows="2" aria-label="Horários de retirada da linha ${i + 1}" placeholder="Horários da retirada, um por linha (em branco = não pergunta)">${escapeHTML((r.horariosRetirada || []).join('\n'))}</textarea>
+            <input type="text" data-r="local" maxlength="80" aria-label="Onde retirar, linha ${i + 1}" placeholder="Onde retirar (ex.: na feira do Madri, banca da esquina)" value="${escapeHTML(r.local || '')}">
         </div>`).join('');
 }
 (() => {
-    const caixa = document.getElementById('regras-entrega'), novo = document.getElementById('btn-add-regra'); if (!caixa || !novo) return;
-    caixa.addEventListener('input', () => { regrasMexidas = true; });
-    caixa.addEventListener('change', () => { regrasMexidas = true; });
+    const caixa = document.getElementById('agenda-entrega'), novo = document.getElementById('btn-add-agenda'); if (!caixa || !novo) return;
+    caixa.addEventListener('input', () => { agendaMexida = true; });
+    caixa.addEventListener('change', (e) => {
+        agendaMexida = true;
+        // trocou a feira: o dia vira o primeiro dia dela (e a lista de dias mostra quais são os dela)
+        if (e.target && e.target.dataset.r === 'feira') {
+            const linhas = lerAgenda(), i = Number(e.target.closest('.agenda-linha').dataset.i), f = FEIRAS_DA_LOJA.get(linhas[i].feira);
+            if (f && f.dias.length && !f.dias.includes(linhas[i].dia)) linhas[i].dia = f.dias[0];
+            agenda = linhas; pintarAgenda();
+        }
+    });
     caixa.addEventListener('click', (e) => {
         const b = e.target.closest('[data-r="remover"]'); if (!b) return;
-        regrasEntrega = lerRegrasEntrega().filter((_, k) => k !== Number(b.closest('.regra-entrega').dataset.i)); regrasMexidas = true; pintarRegrasEntrega();
+        agenda = lerAgenda().filter((_, k) => k !== Number(b.closest('.agenda-linha').dataset.i)); agendaMexida = true; pintarAgenda();
     });
     novo.addEventListener('click', () => {
-        const atuais = lerRegrasEntrega(); if (atuais.length >= 20) return showToast('No máximo 20 regras de horário.', true);
-        regrasEntrega = [...atuais, { feira: '', dias: [], horarios: [] }]; regrasMexidas = true; pintarRegrasEntrega();
+        const atuais = lerAgenda(); if (atuais.length >= 40) return showToast('No máximo 40 linhas na agenda.', true);
+        const so = FEIRAS_DA_LOJA.size === 1 ? [...FEIRAS_DA_LOJA][0] : null;     // banca de uma feira só: já vem escolhida
+        agenda = [...atuais, { feira: so ? so[0] : '', dia: so && so[1].dias.length ? so[1].dias[0] : -1, entrega: true, horariosEntrega: [], retirada: false, horariosRetirada: [], local: '' }];
+        agendaMexida = true; pintarAgenda();
     });
 })();
 
@@ -2689,7 +2724,10 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
             horarios: horariosDoTexto(document.getElementById('config-retirada-horarios')?.value || ''),
             local: (document.getElementById('config-retirada-local')?.value || '').replace(/[<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
         };
-        const entrega = { taxa, gratisAcima, horarios: horariosDoTexto(document.getElementById('config-horarios').value), regras: lerRegrasEntrega().slice(0, 20), retirada };
+        const linhasAgenda = lerAgenda(), erroAgenda = conferirAgenda(linhasAgenda);
+        if (erroAgenda) throw new Error(erroAgenda);
+        const entrega = { taxa, gratisAcima, horarios: horariosDoTexto(document.getElementById('config-horarios').value), retirada,
+            agenda: linhasAgenda.map((r) => ({ feira: r.feira, dia: r.dia, entrega: r.entrega, horariosEntrega: r.entrega ? r.horariosEntrega : [], retirada: r.retirada, horariosRetirada: r.retirada ? r.horariosRetirada : [], local: r.retirada ? r.local : '' })) };
         // Chave PIX da loja (copia e cola). Vazia = desligado. Preenchida, tem de ser válida para o tipo escolhido.
         const pixTipo = document.getElementById('config-pix-tipo').value, pixBruta = document.getElementById('config-pix-chave').value.trim();
         const pixNome = document.getElementById('config-pix-nome').value.trim(), pixCidade = document.getElementById('config-pix-cidade').value.trim();
@@ -2702,7 +2740,7 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         }
         const cidade = (document.getElementById('config-cidade')?.value || '').trim().slice(0, 60);   // usada pelo motor de previsão para o clima
         await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios, pixAutomatico, entrega, pix, cidade }, { merge: true });
-        regrasMexidas = false;
+        agendaMexida = false;
         showToast("Configurações atualizadas!");
     } catch (err) {
         showToast(err.message, true);

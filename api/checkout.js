@@ -307,8 +307,8 @@ module.exports = async function handler(req, res) {
   let codigoConta = '';
   // FEIRA do cliente (link da feira ou condomínio). Só vale se ESTA loja estiver nela; senão o pedido segue como sempre.
   // Ela decide PARA QUANDO é o pedido (hoje, ou o próximo dia de feira).
-  // Retirada na banca não segue feira: o pedido é para hoje, na banca.
-  const feiraDoPedido = querRetirada ? null : await Feira.daLoja(db, tid, req.body && req.body.feira);
+  // A feira vale para entrega E para retirada: a agenda da banca diz o que cada dia de cada feira tem.
+  const feiraDoPedido = await Feira.daLoja(db, tid, req.body && req.body.feira);
 
   try {
     const resultado = await db.runTransaction(async (t) => {
@@ -333,12 +333,6 @@ module.exports = async function handler(req, res) {
                  whatsappMsg: links[0].url, whatsapps: links };
       }
 
-      // Entrega ou retirada. Retirada pedida com a loja sem retirada ligada é recusada (não vira entrega em silêncio).
-      const cfgEntrega = Entrega.lerConfig(configCfg);
-      const modoPedido = Entrega.modoDoPedido(cfgEntrega, req.body && req.body.modo, agoraBrasilia().getUTCDay());
-      if (!modoPedido) throw new Error(cfgEntrega.retirada.ativa ? 'Hoje não tem retirada na banca. Escolha a entrega ou chame a banca pelo WhatsApp.' : 'A retirada na banca não está disponível agora. Escolha a entrega ou chame a banca pelo WhatsApp.');
-      const retirada = modoPedido === 'retirada';
-
       // Loja fechada? (defesa extra além do front)
       // Cliente de feira: fora do dia da feira o pedido é aceito para o próximo dia de feira (o "fechar a loja" continua valendo).
       let entrega = null;
@@ -361,6 +355,15 @@ module.exports = async function handler(req, res) {
         throw Object.assign(new Error(entrega && !entrega.hoje ? `Seu pedido agora é para ${Feira.textoDoDia(entrega.dia)}. Os preços foram atualizados: confira e envie de novo.` : 'Os preços mudaram com a virada do dia. Confira e envie de novo.'),
           { codigo: 'dia-mudou', status: 409, entregaDia: entrega ? entrega.dia : Feira.hojeBR(), diaPreco: diaDoPreco });
       }
+
+      // ENTREGA OU RETIRADA, conforme a agenda DESTA banca para a feira do cliente no dia do pedido (ou a regra geral, sem feira).
+      // O modo pedido tem de existir naquele dia: nunca vira o outro em silêncio.
+      const cfgEntrega = Entrega.lerConfig(configCfg);
+      const ctxHorario = { feira: feiraDoPedido ? feiraDoPedido.id : '', dow: diaDoPreco };
+      const escolha = Entrega.modoDoPedido(cfgEntrega, req.body && req.body.modo, ctxHorario);
+      if (escolha.erro) throw new Error(escolha.erro);
+      const modoPedido = escolha.modo, retirada = modoPedido === 'retirada';
+      if (!retirada && (!quadra || !lote)) throw new Error('Preencha o endereço da entrega.');
 
       // O mesmo produto duas vezes no pedido baixaria o estoque só pela última linha
       const idsVistos = new Set();
@@ -503,8 +506,7 @@ module.exports = async function handler(req, res) {
       // ---- Entrega: taxa (grátis acima de um valor) e horário escolhido ----
       // A taxa é calculada aqui, com a configuração da loja: o navegador só mostra a prévia.
       // Com item a pesar, o valor ainda sobe na balança: a pesagem reavalia a entrega grátis.
-      // horários da entrega variam com a feira (condomínio) e o dia da entrega; a retirada tem a lista dela
-      const ctxHorario = { feira: feiraDoPedido ? feiraDoPedido.id : '', dow: diaDoPreco };
+      // horários: os do modo, da feira do cliente e do dia do pedido
       const horarioEntrega = Entrega.horarioValido(cfgEntrega, req.body && req.body.horarioEntrega, modoPedido, ctxHorario);
       // cupom de 100% (família, cortesia): o pedido sai de graça, entrega incluída
       const cortesia = !!cupomAplicado && cupomAplicado.percentual >= 100;
@@ -534,7 +536,7 @@ module.exports = async function handler(req, res) {
         // taxa cobrada agora + a regra do dia do pedido (a pesagem usa para reavaliar a entrega grátis)
         // (retirada: taxa e regra zeradas, para a pesagem não cobrar entrega de quem busca na banca)
         entrega: { taxa: paraFlutuante(taxaEntregaC), taxaCheia: retirada ? 0 : paraFlutuante(cfgEntrega.taxaC), gratisAcima: retirada ? 0 : paraFlutuante(cfgEntrega.gratisAcimaC), horario: horarioEntrega, ...(Entrega.horarioACombinar(cfgEntrega, horarioEntrega, modoPedido, ctxHorario) ? { horarioACombinar: true } : {}) },
-        ...(retirada ? { modo: 'retirada', retiradaLocal: cfgEntrega.retirada.local } : {}),
+        ...(retirada ? { modo: 'retirada', retiradaLocal: escolha.local || '' } : {}),
         status: temItensAPesar ? 'aguardando_pesagem' : 'pendente',
         data: new Date().toISOString(),
         // PARA QUANDO é o pedido. Caixa do dia, fechamento e previsão contam por esta data.

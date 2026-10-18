@@ -27,7 +27,7 @@ const CHAVE = chave('banca_endereco');
 /** Endereço em uma linha. curto = versão para a pílula do topo e cartões. */
 export const linhaEndereco = (p, { curto = false } = {}) => {
     if (!p) return '';
-    if (p.modo === 'retirada') return curto ? 'Retirada' : 'Retirada na banca';   // o cliente busca: não tem endereço
+    if (p.modo === 'retirada') return curto ? 'Retirada' : (p.feiraId ? 'Retirada na feira' : 'Retirada na banca');   // o cliente busca: não tem endereço
     const a = String(p.quadra || '').trim(), b = String(p.lote || '').trim();
     const f = p.formatoEndereco || p.formato || 'ql';
     let resto;

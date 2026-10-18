@@ -25,7 +25,7 @@ const txt = (v, o = {}) => ({ t: 'txt', v: limpo(v), ...o });
 const SEP = { t: 'sep' }, CORTE = { t: 'corte' };
 
 export function enderecoTxt(p) {
-    if (p && p.modo === 'retirada') return 'RETIRADA NA BANCA';
+    if (p && p.modo === 'retirada') return [p.feiraId ? 'RETIRADA NA FEIRA' : 'RETIRADA NA BANCA', limpo(p.retiradaLocal, 60)].filter(Boolean).join(' - ');   // e onde (cada feira num lugar)
     const a = limpo(p.quadra, 60), b = limpo(p.lote, 30), f = p.formatoEndereco || 'ql';
     const resto = f === 'rua' ? [a, b && `nº ${b}`] : f === 'livre' ? [a, b] : [a && `Quadra ${a}`, b && `Lote ${b}`];
     return [limpo(p.condominio, 60), resto.filter(Boolean).join(f === 'ql' ? ' · ' : ', ')].filter(Boolean).join(' - ');
