@@ -61,6 +61,9 @@ class PonteService : Service() {
         @Volatile var erroImpressora: String = ""
             private set
         @Volatile var impressoraTestada: Boolean = false
+        /** Parou porque passou da hora de desligar (escolhida no painel). */
+        @Volatile var pausadaPeloHorario: Boolean = false
+            private set
         private var diaContado = ""
 
         /** Liga o serviço. Devolve false se o Android não deixou (app em segundo plano sem liberação de bateria). */
@@ -114,6 +117,8 @@ class PonteService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (!Horario.podeRodar(cfg)) { foraDoHorario(); return START_NOT_STICKY }
+        pausadaPeloHorario = false
         if (!rodando) {
             rodando = true
             ouvirRede()
@@ -133,7 +138,11 @@ class PonteService : Service() {
         fecharSemTravar()
         soltar()
         if (instancia === this) instancia = null
-        estado = if (cfg.pareado) "Desligada" else "Falta ligar à loja"
+        estado = when {
+            !cfg.pareado -> "Falta ligar à loja"
+            pausadaPeloHorario -> listOf("Desligada pelo horário", Horario.textoLiga(cfg)).filter { it.isNotEmpty() }.joinToString(" · ")
+            else -> "Desligada"
+        }
         estadoOk = false
         super.onDestroy()
     }
@@ -230,6 +239,8 @@ class PonteService : Service() {
                 lerResposta(r)
                 val trabalhos = r.optJSONArray("trabalhos") ?: JSONArray()
                 if (trabalhos.length() == 0) {
+                    // passou da hora de desligar: só para depois de contar à loja tudo o que saiu
+                    if (!pausa && cfg.feitos().length() == 0 && !Horario.podeRodar(cfg)) { foraDoHorario(); return }
                     if (!pausa) { impressora.fecharSeParada(15_000); pronto() }
                     continue
                 }
@@ -330,6 +341,9 @@ class PonteService : Service() {
             val l = c.optInt("largura", cfg.largura)
             if (l == 58 || l == 80) cfg.largura = l
             cfg.acentos = c.optBoolean("acentos", cfg.acentos)
+            // horário de ligar/desligar (vazio = sempre ligada); valor estranho é ignorado
+            if (c.has("ligarAs")) c.optString("ligarAs").let { if (it.isEmpty() || Horario.minutos(it) != null) cfg.ligarAs = it }
+            if (c.has("desligarAs")) c.optString("desligarAs").let { if (it.isEmpty() || Horario.minutos(it) != null) cfg.desligarAs = it }
         }
     }
 
@@ -374,6 +388,20 @@ class PonteService : Service() {
         cm.activeNetwork != null
     } catch (_: Exception) {
         true
+    }
+
+    /**
+     * Passou da hora de desligar: para o serviço (o aviso da barra some) e deixa o alarme da hora de
+     * ligar marcado. A ponte continua "ligada" no app; só está descansando até o horário.
+     */
+    private fun foraDoHorario() {
+        pausadaPeloHorario = true
+        rodando = false
+        geracao++
+        Horario.agendarLigar(this, cfg)
+        Vigia.agendar(this)
+        soltarImpressoraLogo()
+        stopSelf()
     }
 
     private fun desligadoPeloPainel() {

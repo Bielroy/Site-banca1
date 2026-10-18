@@ -91,7 +91,7 @@ class MainActivity : Activity() {
         super.onResume()
         principal.removeCallbacks(atualizador)
         principal.post(atualizador)
-        if (cfg.pareado && cfg.ligada && PonteService.instancia == null) PonteService.iniciar(this)
+        if (cfg.pareado && cfg.ligada && PonteService.instancia == null && Horario.podeRodar(cfg)) PonteService.iniciar(this)
     }
 
     override fun onPause() {
@@ -218,6 +218,7 @@ class MainActivity : Activity() {
         val (titulo, cor) = when {
             !cfg.pareado -> "Falta ligar à loja" to ALERTA
             !cfg.ligada -> "Ponte desligada" to ALERTA
+            s == null && !Horario.podeRodar(cfg) -> listOf("Desligada pelo horário", Horario.textoLiga(cfg)).filter { it.isNotEmpty() }.joinToString(" · ") to ALERTA
             s == null -> "Ponte parada. Toque em Ligar a ponte." to ERRO
             else -> PonteService.estado to (if (PonteService.estadoOk) VERDE else ERRO)
         }
@@ -226,6 +227,11 @@ class MainActivity : Activity() {
         val partes = mutableListOf<String>()
         if (!cfg.pareado && cfg.avisoDesligado.isNotEmpty()) partes.add(cfg.avisoDesligado)
         if (cfg.pareado && cfg.loja.isNotEmpty()) partes.add("Loja: ${cfg.loja}")
+        if (cfg.pareado && Horario.temHorario(cfg.ligarAs, cfg.desligarAs)) {
+            partes.add(if (System.currentTimeMillis() < cfg.forcarAte)
+                "Ligada à mão até ${SimpleDateFormat("HH:mm", Locale("pt", "BR")).format(Date(cfg.forcarAte))} (horário da loja: ${cfg.ligarAs} às ${cfg.desligarAs})"
+            else "Horário: liga às ${cfg.ligarAs} e desliga às ${cfg.desligarAs}")
+        }
         if (PonteService.ultimaImpressao > 0) {
             val hora = SimpleDateFormat("HH:mm", Locale("pt", "BR")).format(Date(PonteService.ultimaImpressao))
             partes.add("Última impressão às $hora · ${PonteService.impressasHoje} hoje")
@@ -298,10 +304,15 @@ class MainActivity : Activity() {
         if (cfg.ligada && PonteService.instancia != null) {
             AlertDialog.Builder(this).setTitle("Desligar a ponte?")
                 .setMessage("Enquanto estiver desligada, este celular não imprime. Os pedidos ficam guardados na loja.")
-                .setPositiveButton("Desligar") { _, _ -> cfg.ligada = false; Vigia.cancelar(this); PonteService.parar(this); atualizar() }
+                .setPositiveButton("Desligar") { _, _ -> cfg.ligada = false; cfg.forcarAte = 0L; Vigia.cancelar(this); Horario.cancelar(this); PonteService.parar(this); atualizar() }
                 .setNegativeButton("Voltar", null).show()
         } else {
             cfg.ligada = true
+            // fora do horário da loja: ligar à mão vale por 3 horas (feira que passou da hora)
+            if (!Horario.podeRodar(cfg)) {
+                cfg.forcarAte = System.currentTimeMillis() + Horario.MAO_MS
+                aviso("Fora do horário da loja: fica ligada por 3 horas. Para mudar o horário, vá em Impressora no painel.")
+            }
             if (!PonteService.iniciar(this)) aviso("O Android não deixou ligar agora. Abra o app de novo.")
             Vigia.agendar(this)
             atualizar()

@@ -55,6 +55,20 @@ class Config(contexto: Context) {
         get() = p.getBoolean("acentos", false)
         set(v) = p.edit().putBoolean("acentos", v).apply()
 
+    /** Horário de ligar e de desligar ("HH:MM", vêm do painel). Vazios = sempre ligada. */
+    var ligarAs: String
+        get() = texto("ligarAs")
+        set(v) = gravar("ligarAs", v)
+
+    var desligarAs: String
+        get() = texto("desligarAs")
+        set(v) = gravar("desligarAs", v)
+
+    /** Ligada à mão fora do horário: vale até esta hora (ms do relógio). */
+    var forcarAte: Long
+        get() = p.getLong("forcarAte", 0L)
+        set(v) = p.edit().putLong("forcarAte", v).apply()
+
     /** Mensagem para mostrar quando o painel desligou este celular. */
     var avisoDesligado: String
         get() = texto("avisoDesligado")

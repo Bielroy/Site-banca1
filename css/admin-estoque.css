@@ -283,6 +283,11 @@ body.so-equipe #aba-relatorios .relatorios-header, body.so-equipe #aba-relatorio
 .imp-ponte-card fieldset legend { font-weight: 700; font-size: .9rem; margin-bottom: 6px; }
 .imp-ponte-st { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700; background: var(--foam); color: var(--forest); }
 .imp-ponte-st.erro { background: var(--danger-light); color: #8f1d17; }
+.imp-horario { border: 1px solid var(--linha, rgba(0,0,0,.1)); border-radius: 12px; padding: 10px 12px 12px; margin: 12px 0; }
+.imp-horario legend { padding: 0 6px; font-weight: 700; font-size: .9rem; }
+.imp-horario input[type="time"] { width: 100%; min-height: 44px; }
+.imp-horario > small { display: block; line-height: 1.45; }
+.imp-ponte-card .btn-texto { min-height: 44px; padding: 8px 4px; border: 0; background: transparent; color: var(--forest); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .imp-ponte-card .btn-texto-perigo { min-height: 44px; padding: 8px 4px; border: 0; background: transparent; color: #b3261e; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .imp-ponte-card .aviso-limite button { margin-left: 6px; min-height: 40px; }
 

@@ -163,6 +163,7 @@ function pintarPonte(f) {
     const s = Ponte.situacao();
     if (s.tipo === 'carregando' || (s.tipo === 'ok' && s.auto === 'manual')) return esconder(f);
     if (s.tipo === 'nenhum') return desenhar(f, 'alerta', '<span>Nenhum <b>celular da banca</b> ligado para imprimir.</span><button type="button" data-imp="abrir">Impressora</button>');
+    if (s.tipo === 'horario') return desenhar(f, 'ok', `<span><b>Celular da banca desligado pelo horário</b>${s.ligarAs ? ` · liga sozinho às ${escapeHTML(s.ligarAs)}` : ''}. Os pedidos ficam guardados e saem quando ele ligar.</span><button type="button" data-imp="abrir">Ver</button>`);
     if (s.tipo === 'fora') return desenhar(f, 'erro', `<span><b>Celular da banca sem contato</b> ${escapeHTML(Ponte.quandoFoi(s.visto))}. Confira se ele está ligado e com internet. Os pedidos ficam guardados e saem quando ele voltar.</span><button type="button" data-imp="abrir">Ver</button>`);
     if (s.tipo === 'impressora') return desenhar(f, 'erro', `<span><b>Impressora parada no celular da banca.</b> ${escapeHTML(s.msg)}</span><button type="button" data-imp="abrir">Ver</button>`);
     return desenhar(f, 'ok', `<span><b>Impressão automática ligada</b> · pelo celular da banca · ${escapeHTML((MODOS_AUTO[s.auto] || MODOS_AUTO.manual)[0].toLowerCase())}</span>`);

@@ -30,7 +30,8 @@ export async function mandar(folhas, opcoes, feito) {
         const r = await imprimir(folhas, opcoes);
         const m = lerConfig().modo;
         if (m === 'ponte') {
-            if (r && r.online === false) showToast(`Na fila do celular da banca, mas ele está sem contato ${Ponte.quandoFoi(r.visto)}. Confira se ele está ligado e com internet.`, true);
+            if (r && r.foraDoHorario) showToast('Na fila do celular da banca. Ele está desligado pelo horário: para sair agora, toque em "Ligar a ponte" no app.');
+            else if (r && r.online === false) showToast(`Na fila do celular da banca, mas ele está sem contato ${Ponte.quandoFoi(r.visto)}. Confira se ele está ligado e com internet.`, true);
             else showToast('Enviado para o celular da banca.');
             return true;
         }
@@ -67,14 +68,17 @@ function pintarCodigo() {
 }
 function pintarCelular(p, gestor) {
     const c = p.cfg || {}, on = Ponte.estaOnline(p), imp = p.impressora || {}, pul = Ponte.estado().pulados[p.id] || 0, d = `data-ponte="${escapeHTML(p.id)}"`;
-    const status = on ? '<span class="imp-ponte-st ok">Conectado</span>' : `<span class="imp-ponte-st erro">Sem contato ${escapeHTML(Ponte.quandoFoi(p.visto))}</span>`;
+    const horario = !on && p.foraDoHorario;
+    const status = on ? '<span class="imp-ponte-st ok">Conectado</span>'
+        : horario ? `<span class="imp-ponte-st">Desligado pelo horário${c.ligarAs ? ` · liga às ${escapeHTML(c.ligarAs)}` : ''}</span>`
+        : `<span class="imp-ponte-st erro">Sem contato ${escapeHTML(Ponte.quandoFoi(p.visto))}</span>`;
     const impTxt = imp.estado === 'ok' ? `Impressora funcionando${imp.nome ? `: <b>${escapeHTML(imp.nome)}</b>` : ''}.`
         : imp.estado === 'erro' ? `<span class="imp-ponte-st erro">Impressora parada</span> ${escapeHTML(imp.msg || '')}`
         : imp.estado === 'nenhuma' ? 'Nenhuma impressora escolhida no app.' : 'Ainda não imprimiu nada.';
     return `<section class="imp-ponte-card" ${d}>
         <header><b>${escapeHTML(p.nome || 'Celular da banca')}</b>${status}</header>
         <p class="config-sub">${impTxt}</p>
-        ${on ? '' : '<p class="config-sub">Confira se o celular está ligado, com internet e se o app <b>Ponte da Banca</b> mostra "Pronta". O que chegar enquanto isso fica guardado e sai quando ele voltar.</p>'}
+        ${on || horario ? '' : '<p class="config-sub">Confira se o celular está ligado, com internet e se o app <b>Ponte da Banca</b> mostra "Pronta". O que chegar enquanto isso fica guardado e sai quando ele voltar.</p>'}
         <div class="grid-2">
             <div class="form-group"><label>Papel</label><select ${d} data-campo="largura"><option value="58"${marca(58, c.largura)}>58 mm</option><option value="80"${marca(80, c.largura)}>80 mm</option></select></div>
             <div class="form-group"><label>Vias do cupom</label><select ${d} data-campo="copias">${[1, 2, 3].map((n) => `<option${marca(n, c.copias)}>${n}</option>`).join('')}</select></div>
@@ -88,6 +92,16 @@ function pintarCelular(p, gestor) {
         <label class="imp-check"><input type="checkbox" ${d} data-campo="autoEtiqueta"${c.autoEtiqueta ? ' checked' : ''}> <span>Imprimir também a etiqueta da sacola<small>Sai logo depois do cupom, com o nome, o endereço e quanto cobrar.</small></span></label>
         ${c.auto === 'chegada' ? `<label class="imp-check"><input type="checkbox" ${d} data-campo="autoPesado"${c.autoPesado ? ' checked' : ''}> <span>Imprimir de novo depois da pesagem<small>Pedido com item a pesar sai na chegada com "a pesar"; depois da balança sai o cupom com o valor certo.</small></span></label>` : ''}
         <label class="imp-check"><input type="checkbox" ${d} data-campo="autoCancelado"${c.autoCancelado !== false ? ' checked' : ''}> <span>Avisar no papel se um pedido impresso for cancelado<small>Sai "PEDIDO CANCELADO" com o nome do cliente, para ninguém separar nem entregar.</small></span></label>` : ''}
+        <fieldset class="imp-horario"><legend>Horário do celular</legend>
+            <div class="grid-2">
+                <div class="form-group"><label for="ph-l-${escapeHTML(p.id)}">Liga às</label><input type="time" id="ph-l-${escapeHTML(p.id)}" ${d} data-campo="ligarAs" value="${escapeHTML(c.ligarAs || '')}"></div>
+                <div class="form-group"><label for="ph-d-${escapeHTML(p.id)}">Desliga às</label><input type="time" id="ph-d-${escapeHTML(p.id)}" ${d} data-campo="desligarAs" value="${escapeHTML(c.desligarAs || '')}"></div>
+            </div>
+            <small class="config-sub">${c.ligarAs && c.desligarAs && c.ligarAs !== c.desligarAs
+                ? `Fora desse horário o app descansa e o aviso some da barra do celular. O que chegar fica guardado e sai quando ele ligar. Feira passou da hora? Toque em "Ligar a ponte" no app (vale 3 horas). <button type="button" class="btn-texto" ${d} data-ponte-acao="sem-horario">Deixar sempre ligado</button>`
+                : 'Sem horário: fica sempre ligado. Preencha os dois para ele desligar sozinho depois da feira e ligar antes da próxima.'}
+                A mudança chega ao celular na próxima vez que ele estiver ligado.</small>
+        </fieldset>
         ${pul ? `<p class="aviso-limite">${pul} pedido(s) que já estavam na fila não vão sair sozinhos. <button type="button" class="btn-outline" ${d} data-ponte-acao="fila">Imprimir esses agora</button></p>` : ''}
         ${gestor ? `<button type="button" class="btn-texto-perigo" ${d} data-ponte-acao="remover">Desligar este celular</button>` : ''}
     </section>`;
@@ -185,6 +199,8 @@ async function acaoPonte(b) {
                 if ((Ponte.estado().pontes || []).length > antes) { Ponte.estado().codigo = null; showToast('Celular da banca ligado!'); clearInterval(vigia); repintarSeAberto(); }
                 if (!Ponte.codigoValido() || !$('imp-corpo')?.isConnected) clearInterval(vigia);
             }, 5000);
+        } else if (a === 'sem-horario') {
+            await Ponte.salvar(id, { ligarAs: '', desligarAs: '' }); showToast('Pronto: o celular fica sempre ligado.');
         } else if (a === 'fila') {
             await Ponte.salvar(id, null, true); showToast('Certo: os pedidos que estavam na fila vão sair no celular da banca.');
         } else if (a === 'remover') {

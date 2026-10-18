@@ -70,12 +70,14 @@ const online = (p) => !!p && !!p.visto && Date.now() - Date.parse(p.visto) < SEM
 
 /**
  * Resumo para a faixa do topo:
- *  'carregando' | 'nenhum' (nenhum celular ligado) | 'fora' (sem contato) | 'impressora' (impressora com problema) | 'ok'
+ *  'carregando' | 'nenhum' (nenhum celular ligado) | 'horario' (desligados pelo horário) | 'fora' (sem contato) | 'impressora' (impressora com problema) | 'ok'
  */
 export function situacao() {
     if (E.pontes === null) return { tipo: 'carregando' };
     if (!E.pontes.length) return { tipo: 'nenhum' };
     const vivos = E.pontes.filter(online);
+    // nenhum com contato porque todos estão desligados pelo horário escolhido (não é problema)
+    if (!vivos.length && E.pontes.every((p) => p.foraDoHorario)) return { tipo: 'horario', ligarAs: E.pontes.map((p) => p.cfg && p.cfg.ligarAs).filter(Boolean).sort()[0] || '' };
     if (!vivos.length) { const ultimo = E.pontes.map((p) => p.visto).filter(Boolean).sort().pop(); return { tipo: 'fora', visto: ultimo || '' }; }
     const comProblema = vivos.find((p) => p.impressora && p.impressora.estado === 'erro');
     if (comProblema && vivos.every((p) => p.impressora && p.impressora.estado === 'erro')) return { tipo: 'impressora', msg: comProblema.impressora.msg || 'A impressora não respondeu.' };

@@ -3123,7 +3123,7 @@ teste('ponte (fluxo): o painel gera o código, o celular entra, imprime cada ped
   // nada novo: volta vazio (espera 0 no teste)
   let r = await celular({ op: 'aguardar', espera: 0, impressora: { estado: 'ok', nome: 'GS-FJ80M' } });
   assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.deepStrictEqual(r.corpo.trabalhos, []);
-  assert.deepStrictEqual(r.corpo.cfg, { auto: 'chegada', largura: 80, acentos: true });
+  assert.deepStrictEqual(r.corpo.cfg, { auto: 'chegada', largura: 80, acentos: true, ligarAs: '', desligarAs: '' });
 
   // pedido novo chega: sai o cupom (com o nome aberto) e fica reservado para este celular
   db._dados.set('pedidos/ped-novo001', { nome: 'Maria Souza', quadra: '5', lote: '3', status: 'pendente', total: 14, data: h(1), itens: [{ nome: 'Tomate', qtd: 2, tipo: 'un', unidade: 'un', subtotal: 14 }] });
@@ -3194,6 +3194,45 @@ teste('ponte (fluxo): o painel gera o código, o celular entra, imprime cada ped
   r = await celular({ op: 'aguardar', espera: 0 });
   assert.strictEqual(r.status, 401); assert.strictEqual(r.corpo.desligado, true, 'o app sabe que foi desligado e pede um código novo');
   assert.strictEqual((await painel({ op: 'listar' })).corpo.pontes.length, 0);
+});
+
+teste('ponte (horário): liga e desliga sozinho no horário escolhido; fora dele o painel diz "desligado pelo horário", não "sem contato"', async () => {
+  const P = require(raiz('lib/ponte'));
+  const brt = (h, m) => Date.UTC(2026, 9, 18, h + 3, m);     // hora de Brasília → ms
+  // regra: dentro / fora, inclusive passando da meia-noite; sem horário = sempre ligado
+  const c = { ligarAs: '06:00', desligarAs: '13:30' };
+  assert.strictEqual(P.dentroDoHorario(c, brt(5, 59)), false);
+  assert.strictEqual(P.dentroDoHorario(c, brt(6, 0)), true);
+  assert.strictEqual(P.dentroDoHorario(c, brt(13, 29)), true);
+  assert.strictEqual(P.dentroDoHorario(c, brt(13, 30)), false);
+  const noite = { ligarAs: '22:00', desligarAs: '02:00' };
+  assert.strictEqual(P.dentroDoHorario(noite, brt(23, 0)), true);
+  assert.strictEqual(P.dentroDoHorario(noite, brt(1, 0)), true);
+  assert.strictEqual(P.dentroDoHorario(noite, brt(12, 0)), false);
+  for (const sem of [{}, { ligarAs: '06:00' }, { ligarAs: '06:00', desligarAs: '06:00' }, { ligarAs: 'x', desligarAs: 'y' }]) assert.strictEqual(P.dentroDoHorario(sem, brt(3, 0)), true, JSON.stringify(sem));
+  // limpeza: '' apaga, valor fora do formato não entra (fica o que estava)
+  assert.deepStrictEqual([P.limparCfg({ ligarAs: '25:00' }, { ligarAs: '06:00' }).ligarAs, P.limparCfg({ ligarAs: '' }, { ligarAs: '06:00' }).ligarAs, P.limparCfg({ desligarAs: '13:30' }).desligarAs], ['06:00', '', '13:30']);
+  assert.strictEqual(P.limparCfg({ ligarAs: '<b>' }).ligarAs, '');
+  // listar e mandar imprimir: celular sem contato porque está fora do horário
+  const visto = new Date(brt(13, 31)).toISOString();
+  const db = criarBanco({ 'pontes/pt0123456789abcdef': { nome: 'Celular da banca', criadoEm: visto, visto, cfg: { ...c } } });
+  const lista = await P.listar(db, 'banca', brt(20, 0));
+  assert.strictEqual(lista[0].online, false); assert.strictEqual(lista[0].foraDoHorario, true);
+  assert.strictEqual(lista[0].cfg.ligarAs, '06:00');
+  assert.strictEqual((await P.listar(db, 'banca', brt(9, 0)))[0].foraDoHorario, false, 'dentro do horário: sem contato é problema de verdade');
+  // o app recebe o horário junto com o resto da configuração
+  const src = require('fs').readFileSync(raiz('lib/ponte.js'), 'utf8');
+  assert.ok(/cfgParaApp[^\n]*ligarAs: x\.ligarAs, desligarAs: x\.desligarAs/.test(src));
+  // o app tem a mesma regra (passa da meia-noite, vazio = sempre) e não levanta o serviço fora do horário
+  const kt = (f) => require('fs').readFileSync(raiz(`android/app/src/main/java/com/usebanca/ponte/${f}`), 'utf8');
+  assert.ok(kt('Horario.kt').includes('agoraMin >= l || agoraMin < d') && kt('Horario.kt').includes('if (!temHorario(ligar, desligar)) return true'));
+  assert.ok(kt('Vigia.kt').includes('if (!Horario.podeRodar(cfg)) { Horario.agendarLigar(ctx, cfg); return }'), 'o vigia não liga fora do horário');
+  assert.ok(kt('PonteService.kt').includes('cfg.feitos().length() == 0 && !Horario.podeRodar(cfg)'), 'só para depois de contar o que saiu');
+  // o painel mostra os dois campos e o aviso certo
+  const imp = require('fs').readFileSync(raiz('js/admin-impressao.js'), 'utf8');
+  assert.ok(imp.includes('data-campo="ligarAs"') && imp.includes('data-campo="desligarAs"') && imp.includes('data-ponte-acao="sem-horario"'));
+  const Pt = await import(raiz('js/impressao-ponte.js')).catch(() => null);
+  if (Pt && Pt.situacao) assert.ok(String(Pt.situacao).includes("'horario'"));
 });
 
 teste('ponte (escuta ao vivo): parado, o servidor segura a resposta e acorda o celular na hora em que o pedido chega', async () => {

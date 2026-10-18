@@ -72,6 +72,7 @@ teste('busca e categoria filtram a vitrine', async () => {
 
 teste('trocar de categoria com a página rolada para baixo leva ao primeiro produto, não ao fim da lista', async () => {
   const c = cenarioPadrao();
+  c.lojas.banca.produtos = { ...c.lojas.banca.produtos };     // cópia: a lista do cenário é usada pelos outros testes
   for (let i = 1; i <= 30; i++) c.lojas.banca.produtos[`fruta${i}`] = { nome: `Fruta ${i}`, preco: 5 + i, unidade: 'kg', cat: 'frutas', ativo: true };
   const { pagina, erros, fechar } = await abrir('/', c);
   await cards(pagina).first().waitFor({ timeout: 8000 });
@@ -786,10 +787,43 @@ teste('aparelho novo da equipe (nunca escolheu como imprimir) passa a mandar par
 });
 
 // o servidor de mentira do app Ponte: um celular ligado, com a impressora funcionando
+teste('celular da banca com horário: fora dele aparece "desligado pelo horário" (não erro) e o horário muda pelo painel', async () => {
+  celularDescansando = true;
+  try {
+    const ctx = await navegador.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
+    await ctx.addInitScript((c) => { window.__CENARIO = c; }, cenarioImpressao());
+    await ctx.addInitScript(impressoraFalsa, { modo: 'ponte', largura: 80, acentos: true, auto: 'chegada', aparelho: 'ap-teste-05' });
+    await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+    await p.goto(servidor.base + '/admin.html');
+    await p.click('#btn-mais'); await p.click('#btn-impressora');
+    await p.waitForFunction(() => /desligado pelo horário/i.test((document.getElementById('ipr-status') || {}).innerText || ''), null, { timeout: 5000 });
+    const faixa = await p.locator('#ipr-status').innerText();
+    assert.ok(/06:00/.test(faixa) && !/sem contato/i.test(faixa), faixa);
+    assert.strictEqual(await p.locator('#ipr-status.erro').count(), 0, 'desligado de propósito não fica vermelho');
+    await p.click('#ipr-tab-ajustes');
+    const desl = p.locator('input[data-campo="desligarAs"]');
+    await desl.waitFor({ timeout: 4000 });
+    assert.strictEqual(await p.locator('input[data-campo="ligarAs"]').inputValue(), '06:00');
+    assert.strictEqual(await desl.inputValue(), '13:30');
+    assert.ok(/Desligado pelo horário · liga às 06:00/.test(await p.locator('.imp-ponte-card').innerText()));
+    const antes = servidor.chamadas.length;
+    await desl.fill('15:00'); await desl.dispatchEvent('change');
+    await p.waitForFunction(() => true, null, { timeout: 500 }).catch(() => {});
+    await p.waitForTimeout(400);
+    const env = servidor.chamadas.slice(antes).find((c) => c.caminho === '/api/pdv' && c.corpo.op === 'config');
+    assert.ok(env && env.corpo.cfg && env.corpo.cfg.desligarAs === '15:00', 'o horário novo vai para o servidor: ' + JSON.stringify(env && env.corpo));
+    semErros(errosP); await ctx.close();
+  } finally { celularDescansando = false; }
+});
+
 // (com doisCelulares, aparece também um segundo, sem contato desde ontem)
 let doisCelulares = false;
 const outroCelular = () => ({ id: 'ptfedcba9876543210', nome: 'Samsung da casa', criadoEm: new Date(Date.now() - 3 * 864e5).toISOString(), visto: new Date(Date.now() - 864e5).toISOString(), online: false, impressora: { estado: 'ok', nome: 'MP-58', msg: '' }, app: { versao: '1.0.9' }, cfg: { auto: 'chegada', largura: 58, acentos: true, copias: 1, autoEtiqueta: false, autoPesado: false, autoCancelado: true } });
-const ponteFalsa = (c) => (c.op === 'listar' ? { sucesso: true, pontes: [{ id: 'pt0123456789abcdef', nome: 'Moto G', criadoEm: new Date().toISOString(), visto: new Date().toISOString(), online: true, impressora: { estado: 'ok', nome: 'GS-FJ80M', msg: '' }, app: { versao: '1.0.1' }, cfg: { auto: 'chegada', largura: 80, acentos: true, copias: 1, autoEtiqueta: false, autoPesado: false, autoCancelado: true } }, ...(doisCelulares ? [outroCelular()] : [])] }
+// (com celularDescansando, só existe um celular, desligado pelo horário 06:00–13:30)
+let celularDescansando = false;
+const descansando = () => ({ id: 'pt0123456789abcdef', nome: 'Moto G', criadoEm: new Date(Date.now() - 864e5).toISOString(), visto: new Date(Date.now() - 2 * 3600e3).toISOString(), online: false, foraDoHorario: true, impressora: { estado: 'ok', nome: 'GS-FJ80M', msg: '' }, app: { versao: '1.0.12' }, cfg: { auto: 'chegada', largura: 80, acentos: true, copias: 1, autoEtiqueta: false, autoPesado: false, autoCancelado: true, ligarAs: '06:00', desligarAs: '13:30' } });
+const ponteFalsa = (c) => (c.op === 'listar' && celularDescansando ? { sucesso: true, pontes: [descansando()] } : c.op === 'listar' ? { sucesso: true, pontes: [{ id: 'pt0123456789abcdef', nome: 'Moto G', criadoEm: new Date().toISOString(), visto: new Date().toISOString(), online: true, impressora: { estado: 'ok', nome: 'GS-FJ80M', msg: '' }, app: { versao: '1.0.1' }, cfg: { auto: 'chegada', largura: 80, acentos: true, copias: 1, autoEtiqueta: false, autoPesado: false, autoCancelado: true } }, ...(doisCelulares ? [outroCelular()] : [])] }
   : c.op === 'config' ? { sucesso: true, cfg: { auto: 'chegada', largura: 80, acentos: true, copias: 2, autoEtiqueta: false, autoPesado: false, autoCancelado: true }, pulados: 0 }
   : c.op === 'imprimir' ? { sucesso: true, id: 'im-teste-1', online: true, visto: new Date().toISOString() } : { sucesso: true });
 
@@ -806,8 +840,8 @@ const ponteFalsa = (c) => (c.op === 'listar' ? { sucesso: true, pontes: [{ id: '
   });
   navegador = await chromium.launch();
   let falhas = 0;
-  // SO_TESTE="parte do nome" roda só os testes que têm esse texto no nome (para conferir um de cada vez)
-  for (const [nome, fn] of testes.filter(([n]) => !process.env.SO_TESTE || n.includes(process.env.SO_TESTE))) {
+  // SO_TESTE="trecho|outro trecho" roda só os testes cujo nome combina (para conferir um de cada vez)
+  for (const [nome, fn] of testes.filter(([n]) => !process.env.SO_TESTE || new RegExp(process.env.SO_TESTE).test(n))) {
     try { await fn(); console.log('  ok    ' + nome); }
     catch (e) { falhas++; console.log('  FALHOU ' + nome + '\n         ' + String((e && e.stack) || e).split('\n').slice(0, 6).join('\n         ')); }
   }

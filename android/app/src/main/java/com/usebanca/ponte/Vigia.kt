@@ -32,7 +32,9 @@ object Vigia {
 class VigiaReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         val cfg = Config(ctx)
-        if (!cfg.pareado || !cfg.ligada) { Vigia.cancelar(ctx); return }
+        if (!cfg.pareado || !cfg.ligada) { Vigia.cancelar(ctx); Horario.cancelar(ctx); return }
+        // fora do horário: não levanta o serviço (o aviso da barra ficaria piscando); só garante o alarme de ligar
+        if (!Horario.podeRodar(cfg)) { Horario.agendarLigar(ctx, cfg); return }
         val s = PonteService.instancia
         if (s != null) s.vigiar() else PonteService.iniciar(ctx)
     }
@@ -45,7 +47,7 @@ class InicioReceiver : BroadcastReceiver() {
         if (a != Intent.ACTION_BOOT_COMPLETED && a != Intent.ACTION_MY_PACKAGE_REPLACED && a != "android.intent.action.QUICKBOOT_POWERON") return
         val cfg = Config(ctx)
         if (cfg.pareado && cfg.ligada) {
-            PonteService.iniciar(ctx)
+            if (Horario.podeRodar(cfg)) PonteService.iniciar(ctx) else Horario.agendarLigar(ctx, cfg)
             Vigia.agendar(ctx)
         }
     }

@@ -37,6 +37,7 @@ function estadoDaImpressora() {
         const celulares = pontes.length > 1 ? pontes : null;      // mais de um celular: cada um aparece com a sua bolinha
         if (f.tipo === 'carregando') return { cor: 'espera', titulo: 'Celular da banca', dica: 'Procurando o celular...' };
         if (f.tipo === 'nenhum') return { cor: 'erro', titulo: 'Nenhum celular da banca ligado', dica: 'Em Ajustes, gere o código e digite no app Ponte da Banca.', acao: ['ajustes', 'Ligar celular'] };
+        if (f.tipo === 'horario') return { cor: 'neutro', celulares, titulo: 'Celular da banca desligado pelo horário', dica: `${f.ligarAs ? `Liga sozinho às ${f.ligarAs}. ` : ''}O que chegar fica guardado e sai quando ele ligar.` };
         if (f.tipo === 'fora') return { cor: 'erro', celulares, titulo: celulares ? 'Nenhum celular da banca com contato' : 'Celular da banca sem contato', dica: `Visto pela última vez ${Ponte.quandoFoi(f.visto)}. Confira se está ligado e com internet. O que você mandar fica guardado.` };
         if (f.tipo === 'impressora') return { cor: 'alerta', celulares, titulo: 'A impressora não respondeu', dica: f.msg };
         if (vivos.length > 1) return { cor: 'ok', celulares, titulo: `${vivos.length} celulares da banca prontos`, dica: 'O papel sai no primeiro que pegar. Se cada um fica num lugar, deixe ligado só o que está perto da impressora.' };
@@ -53,8 +54,9 @@ function estadoDaImpressora() {
 /** Um celular da banca na faixa de cima: nome e como ele está. */
 function pintarCelular(p) {
     const on = Ponte.estaOnline(p), imp = p.impressora || {};
-    const cor = !on ? 'erro' : imp.estado === 'erro' ? 'alerta' : 'ok';
-    const txt = !on ? `sem contato ${Ponte.quandoFoi(p.visto)}` : imp.estado === 'erro' ? 'impressora parada' : 'pronto';
+    const horario = !on && p.foraDoHorario, liga = p.cfg && p.cfg.ligarAs;
+    const cor = horario ? 'alerta' : !on ? 'erro' : imp.estado === 'erro' ? 'alerta' : 'ok';
+    const txt = horario ? (liga ? `desligado até ${liga}` : 'desligado pelo horário') : !on ? `sem contato ${Ponte.quandoFoi(p.visto)}` : imp.estado === 'erro' ? 'impressora parada' : 'pronto';
     return `<li class="ipr-cel ${cor}"><i aria-hidden="true"></i><b>${escapeHTML(p.nome || 'Celular da banca')}</b><small>${escapeHTML(txt)}</small></li>`;
 }
 function pintarStatus() {
@@ -155,7 +157,8 @@ function pintarFoto() {
 // ---------------------------------------------------------------- imprimir
 const avisoDoCelular = (r) => {
     if (lerConfig().modo !== 'ponte') return;
-    if (r && r.online === false) showToast(`Na fila do celular da banca, mas ele está sem contato ${Ponte.quandoFoi(r.visto)}.`, true);
+    if (r && r.foraDoHorario) showToast('Na fila do celular da banca. Ele está desligado pelo horário: para sair agora, toque em "Ligar a ponte" no app.');
+    else if (r && r.online === false) showToast(`Na fila do celular da banca, mas ele está sem contato ${Ponte.quandoFoi(r.visto)}.`, true);
     else showToast('Enviado para o celular da banca.');
 };
 async function imprimirAgora() {
