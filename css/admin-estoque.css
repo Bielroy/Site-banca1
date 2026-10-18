@@ -304,8 +304,18 @@ body.so-equipe #aba-relatorios .relatorios-header, body.so-equipe #aba-relatorio
 .es-acoes button { flex: 1 1 0; min-width: 64px; min-height: 40px; padding: 6px 6px; font-size: .82rem; }
 
 /* Regras de horário da entrega por condomínio e dia (Configurações > Entrega e retirada) */
-.regra-entrega { margin-top: 10px; padding: 12px; border: 1px solid #e0dcd4; border-radius: 12px; background: var(--parchment, #faf7f0); display: grid; gap: 10px; }
+/* Caixa de texto do painel só estica para baixo: puxar a alça para o lado alargava o cartão inteiro no celular. */
+textarea { resize: vertical; max-width: 100%; }
+/* O cartão nunca passa da largura da tela: a coluna do grid pode encolher (minmax(0,1fr)) e nenhum campo impõe a largura dele. */
+.regra-entrega { margin-top: 10px; padding: 12px; border: 1px solid #e0dcd4; border-radius: 12px; background: var(--parchment, #faf7f0); display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; }
+.regra-entrega > * { min-width: 0; max-width: 100%; }
 .regra-entrega .regra-topo { display: flex; align-items: center; gap: 8px; }
-.regra-entrega .regra-topo select { flex: 1; min-width: 0; min-height: 44px; }
-.regra-entrega .btn-texto { min-height: 44px; padding: 8px 6px; border: 0; background: transparent; color: #b3261e; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
-.regra-entrega textarea { width: 100%; box-sizing: border-box; }
+.regra-entrega .regra-topo select { flex: 1 1 0; width: 0; min-width: 0; min-height: 44px; }
+.regra-entrega .btn-texto { flex: none; min-height: 44px; padding: 8px 6px; border: 0; background: transparent; color: #b3261e; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.regra-entrega textarea, .regra-entrega input[type="text"] { display: block; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.regra-entrega textarea { min-height: 76px; resize: vertical; }
+.regra-entrega .chk-linha { min-width: 0; }
+.regra-entrega .agenda-dica { margin: 0; font-size: .85rem; line-height: 1.35; color: #6b6558; overflow-wrap: anywhere; }
+.regra-entrega.com-erro { border-color: #b3261e; box-shadow: 0 0 0 2px rgba(179, 38, 30, .18); }
+.regra-entrega.com-erro .agenda-dica { color: #b3261e; font-weight: 700; }
+#agenda-entrega { min-width: 0; max-width: 100%; }

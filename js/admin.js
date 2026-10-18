@@ -2639,19 +2639,32 @@ const lerAgenda = () => [...document.querySelectorAll('#agenda-entrega .agenda-l
     retirada: el.querySelector('[data-r="retirada"]').checked, horariosRetirada: horariosDoTexto(el.querySelector('[data-r="horariosRetirada"]').value),
     local: el.querySelector('[data-r="local"]').value.replace(/[<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
 }));
-/** O que a agenda tem de errado ('' = pode gravar). */
+const DIA_COM_ARTIGO = ['no domingo', 'na segunda', 'na terça', 'na quarta', 'na quinta', 'na sexta', 'no sábado'];
+/** Frase curta sob cada linha: os dias da feira (feitos na Plataforma) e, se o dia escolhido não é um deles, o que fazer. */
+function dicaDaLinha(feira, dia) {
+    const f = FEIRAS_DA_LOJA.get(feira); if (!f) return { texto: '', erro: false };
+    if (!f.dias.length) return { texto: `${f.nome} vale todos os dias.`, erro: false };
+    if (dia >= 0 && dia <= 6 && !f.dias.includes(dia)) return { texto: `${f.nome} não tem entrega ${DIA_COM_ARTIGO[dia]} (dias dela: ${f.dias.map((d) => NOMES_DIAS_CURTOS[d]).join(', ')}). Para usar este dia, marque-o nessa feira em Plataforma → Feiras. Enquanto isso, escolha outro dia ou apague a linha.`, erro: true };
+    return { texto: `Dias de ${f.nome}: ${f.dias.map((d) => NOMES_DIAS_CURTOS[d]).join(', ')}.`, erro: false };
+}
+/** O que a agenda tem de errado (null = pode gravar). `i` é a linha com o problema, para destacá-la na tela. */
 function conferirAgenda(linhas) {
     const vistos = new Set();
     for (const [i, r] of linhas.entries()) {
-        const n = `Linha ${i + 1} da agenda`, f = FEIRAS_DA_LOJA.get(r.feira);
-        if (!r.feira) return `${n}: escolha a feira.`;
-        if (!(r.dia >= 0 && r.dia <= 6)) return `${n}: escolha o dia.`;
-        if (!r.entrega && !r.retirada) return `${n}: marque entrega, retirada ou as duas (ou apague a linha).`;
-        if (f && f.dias.length && !f.dias.includes(r.dia)) return `${n}: a feira ${f.nome} não acontece ${['no domingo', 'na segunda', 'na terça', 'na quarta', 'na quinta', 'na sexta', 'no sábado'][r.dia]}.`;
-        if (vistos.has(`${r.feira}|${r.dia}`)) return `${n}: essa feira já tem uma linha para esse dia.`;
+        const n = `Linha ${i + 1} da agenda`;
+        if (!r.feira) return { i, msg: `${n}: escolha a feira.` };
+        if (!(r.dia >= 0 && r.dia <= 6)) return { i, msg: `${n}: escolha o dia.` };
+        if (!r.entrega && !r.retirada) return { i, msg: `${n}: marque entrega, retirada ou as duas (ou apague a linha).` };
+        if (dicaDaLinha(r.feira, r.dia).erro) return { i, msg: `${n}: ${FEIRAS_DA_LOJA.get(r.feira).nome} não tem ${DIA_COM_ARTIGO[r.dia].replace(/^(no|na) /, '')} cadastrada. Marque esse dia na feira em Plataforma → Feiras, ou escolha outro dia.` };
+        if (vistos.has(`${r.feira}|${r.dia}`)) return { i, msg: `${n}: essa feira já tem uma linha para esse dia.` };
         vistos.add(`${r.feira}|${r.dia}`);
     }
-    return '';
+    return null;
+}
+/** Destaca a linha do problema (borda vermelha) e leva a tela até ela; sem `i` só limpa. */
+function destacarLinhaDaAgenda(i) {
+    document.querySelectorAll('#agenda-entrega .agenda-linha').forEach((el, k) => el.classList.toggle('com-erro', k === i));
+    if (i >= 0) document.querySelectorAll('#agenda-entrega .agenda-linha')[i]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 function pintarAgenda({ manter = false } = {}) {
     const el = document.getElementById('agenda-entrega'); if (!el) return;
@@ -2664,15 +2677,16 @@ function pintarAgenda({ manter = false } = {}) {
         const dias = (FEIRAS_DA_LOJA.get(feira) || {}).dias || [];
         return '<option value="-1">Dia</option>' + NOMES_DIAS_CURTOS.map((n, d) => `<option value="${d}"${d === sel ? ' selected' : ''}>${n}${dias.includes(d) ? ' (dia da feira)' : ''}</option>`).join('');
     };
-    el.innerHTML = agenda.map((r, i) => `
-        <div class="regra-entrega agenda-linha" data-i="${i}">
+    el.innerHTML = agenda.map((r, i) => { const dica = dicaDaLinha(r.feira, r.dia); return `
+        <div class="regra-entrega agenda-linha${dica.erro ? ' com-erro' : ''}" data-i="${i}">
             <div class="regra-topo"><select data-r="feira" aria-label="Feira da linha ${i + 1}">${opFeira(r.feira)}</select><select data-r="dia" aria-label="Dia da linha ${i + 1}">${opDia(r.feira, r.dia)}</select><button type="button" class="btn-texto" data-r="remover" aria-label="Apagar a linha ${i + 1}">Apagar</button></div>
+            <p class="agenda-dica" data-r="dica"${dica.texto ? '' : ' hidden'}>${escapeHTML(dica.texto)}</p>
             <label class="chk-linha"><input type="checkbox" data-r="entrega"${r.entrega ? ' checked' : ''}> Entrega neste dia</label>
             <textarea data-r="horariosEntrega" rows="2" aria-label="Horários de entrega da linha ${i + 1}" placeholder="Horários da entrega, um por linha (em branco = não pergunta)">${escapeHTML((r.horariosEntrega || []).join('\n'))}</textarea>
             <label class="chk-linha"><input type="checkbox" data-r="retirada"${r.retirada ? ' checked' : ''}> Retirada na feira neste dia</label>
             <textarea data-r="horariosRetirada" rows="2" aria-label="Horários de retirada da linha ${i + 1}" placeholder="Horários da retirada, um por linha (em branco = não pergunta)">${escapeHTML((r.horariosRetirada || []).join('\n'))}</textarea>
             <input type="text" data-r="local" maxlength="80" aria-label="Onde retirar, linha ${i + 1}" placeholder="Onde retirar (ex.: na feira do Madri, banca da esquina)" value="${escapeHTML(r.local || '')}">
-        </div>`).join('');
+        </div>`; }).join('');
 }
 (() => {
     const caixa = document.getElementById('agenda-entrega'), novo = document.getElementById('btn-add-agenda'); if (!caixa || !novo) return;
@@ -2684,6 +2698,9 @@ function pintarAgenda({ manter = false } = {}) {
             const linhas = lerAgenda(), i = Number(e.target.closest('.agenda-linha').dataset.i), f = FEIRAS_DA_LOJA.get(linhas[i].feira);
             if (f && f.dias.length && !f.dias.includes(linhas[i].dia)) linhas[i].dia = f.dias[0];
             agenda = linhas; pintarAgenda();
+        } else if (e.target && e.target.dataset.r === 'dia') {                // trocou o dia: a frase da linha acompanha (sem redesenhar, para não apagar o que foi digitado)
+            const el = e.target.closest('.agenda-linha'), l = lerAgenda()[Number(el.dataset.i)], dica = dicaDaLinha(l.feira, l.dia), p = el.querySelector('[data-r="dica"]');
+            p.textContent = dica.texto; p.hidden = !dica.texto; el.classList.toggle('com-erro', dica.erro);
         }
     });
     caixa.addEventListener('click', (e) => {
@@ -2725,7 +2742,8 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
             local: (document.getElementById('config-retirada-local')?.value || '').replace(/[<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
         };
         const linhasAgenda = lerAgenda(), erroAgenda = conferirAgenda(linhasAgenda);
-        if (erroAgenda) throw new Error(erroAgenda);
+        destacarLinhaDaAgenda(erroAgenda ? erroAgenda.i : -1);
+        if (erroAgenda) throw new Error(erroAgenda.msg);
         const entrega = { taxa, gratisAcima, horarios: horariosDoTexto(document.getElementById('config-horarios').value), retirada,
             agenda: linhasAgenda.map((r) => ({ feira: r.feira, dia: r.dia, entrega: r.entrega, horariosEntrega: r.entrega ? r.horariosEntrega : [], retirada: r.retirada, horariosRetirada: r.retirada ? r.horariosRetirada : [], local: r.retirada ? r.local : '' })) };
         // Chave PIX da loja (copia e cola). Vazia = desligado. Preenchida, tem de ser válida para o tipo escolhido.

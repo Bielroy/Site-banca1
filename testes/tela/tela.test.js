@@ -311,6 +311,71 @@ teste('painel: agenda das feiras (entrega e retirada por dia de cada feira) e di
   semErros(erros); await fechar();
 });
 
+teste('painel no celular: a agenda das feiras cabe na tela e a linha com dia que a feira não tem fica vermelha e explica o que fazer', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  cen.feiras = { ...(cen.feiras || {}), atenas: { nome: 'Feira Atenas', dias: [3], lojas: [{ id: 'banca' }] }, madri: { nome: 'Feira Madri', dias: [5], lojas: [{ id: 'banca' }] } };
+  cen.lojas.banca.ficha = { ...cen.lojas.banca.ficha, feiras: ['atenas', 'madri'] };
+  const longo = 'Banca do Adair, próximo da entrada principal da feira, ao lado do quiosque de caldo de cana';
+  cen.lojas.banca.config = { ...cen.lojas.banca.config, entrega: { horarios: ['Geral'], agenda: [
+    { feira: 'atenas', dia: 3, entrega: true, horariosEntrega: ['Das 18h às 22h'], retirada: true, horariosRetirada: ['Das 17h às 22h'], local: longo },
+    { feira: 'madri', dia: 5, entrega: true, horariosEntrega: [], retirada: true, horariosRetirada: ['Das 17h às 22h'], local: '' },
+  ] } };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen);
+  await pagina.waitForSelector('.tab[data-aba="config"]', { state: 'attached', timeout: 8000 });
+  await pagina.evaluate(() => document.querySelector('.tab[data-aba="config"]').click());        // no celular o menu fica recolhido: abre a aba direto
+  await pagina.evaluate(() => document.querySelectorAll('#aba-config details').forEach((d) => { d.open = true; }));
+  await pagina.waitForSelector('#agenda-entrega .agenda-linha', { state: 'visible', timeout: 8000 });
+  const sobra = () => pagina.evaluate(() => {
+    const folga = document.documentElement.scrollWidth - document.documentElement.clientWidth;
+    const fora = [...document.querySelectorAll('#agenda-entrega .agenda-linha')].flatMap((cartao) => { const lim = cartao.getBoundingClientRect().right + 0.5; return [...cartao.querySelectorAll('select, textarea, input, button')].filter((e) => e.getBoundingClientRect().right > lim).map((e) => e.dataset.r); });
+    return { folga, fora };
+  });
+  const r0 = await sobra();
+  assert.deepStrictEqual(r0.fora, [], 'nenhum campo da agenda passa da borda do cartão');
+  assert.ok(r0.folga <= 0, 'a página não ganha rolagem para o lado');
+  // a alça da caixa de texto só estica para baixo (puxar para o lado alargava o cartão e empurrava o "Apagar" para fora da tela)
+  assert.ok(await pagina.locator('#agenda-entrega textarea').evaluateAll((l) => l.every((t) => getComputedStyle(t).resize === 'vertical')), 'a caixa de texto não estica para o lado');
+  // mesmo que um navegador deixe esticar (largura fixa de 700px), o cartão não cresce junto
+  await pagina.locator('#agenda-entrega textarea').first().evaluate((t) => { t.style.width = '700px'; });
+  const r1 = await sobra();
+  assert.deepStrictEqual(r1.fora, [], 'caixa esticada: nenhum campo passa da borda do cartão');
+  assert.ok(r1.folga <= 0, 'caixa esticada: a página não ganha rolagem para o lado');
+  await pagina.locator('#agenda-entrega textarea').first().evaluate((t) => { t.style.width = ''; });
+  // a feira Madri só acontece na sexta: trocar a linha para a quarta avisa na própria linha
+  await pagina.locator('#agenda-entrega .agenda-linha').nth(1).locator('[data-r="dia"]').selectOption('3');
+  assert.strictEqual(await pagina.locator('#agenda-entrega .agenda-linha').nth(1).evaluate((e) => e.classList.contains('com-erro')), true);
+  const dica = await pagina.locator('#agenda-entrega .agenda-linha').nth(1).locator('[data-r="dica"]').innerText();
+  assert.ok(dica.includes('Feira Madri') && dica.includes('quarta') && dica.includes('Plataforma'), dica);
+  const antes = await pagina.evaluate(() => (window.__gravados || []).length);
+  await pagina.click('#btn-salvar-config'); await pagina.waitForTimeout(300);
+  assert.strictEqual(await pagina.evaluate(() => (window.__gravados || []).length), antes, 'não grava com dia que a feira não tem');
+  assert.ok((await pagina.locator('#toast, .toast').first().innerText()).includes('Plataforma'), 'o aviso diz o que fazer');
+  assert.deepStrictEqual((await sobra()).fora, []);
+  // volta para a sexta: a linha fica normal e grava
+  await pagina.locator('#agenda-entrega .agenda-linha').nth(1).locator('[data-r="dia"]').selectOption('5');
+  assert.strictEqual(await pagina.locator('#agenda-entrega .agenda-linha').nth(1).evaluate((e) => e.classList.contains('com-erro')), false);
+  await pagina.click('#btn-salvar-config');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config' && g.dados && g.dados.entrega), null, { timeout: 4000 });
+  semErros(erros); await fechar();
+});
+
+teste('cliente da feira num dia futuro (hoje não tem feira): a agenda daquele dia mostra entrega e retirada', async () => {
+  const dow = new Date(Date.now() - 3 * 3600000).getUTCDay(), futuro = (dow + 2) % 7;
+  const k = cenarioPadrao();
+  k.feiras = { ...k.feiras, florenca: { ...k.feiras.florenca, dias: [futuro] } };
+  k.lojas.banca.config = { ...k.lojas.banca.config, entrega: { horarios: ['Geral'], agenda: [{ feira: 'florenca', dia: futuro, entrega: true, horariosEntrega: ['Das 18h às 22h'], retirada: true, horariosRetirada: ['Das 17h às 22h'], local: 'Banca do Adair' }] } };
+  const { pagina, erros, fechar } = await abrir('/feira/florenca', k);
+  await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
+  await abrirCheckoutComOvos(pagina);
+  assert.strictEqual(await pagina.locator('#grupo-modo').isVisible(), true, 'o dia da feira é daqui a 2 dias e tem retirada: o cliente escolhe');
+  assert.strictEqual(await pagina.locator('#rot-modo-entrega').isVisible(), true);
+  assert.deepStrictEqual(await opcoesDe(pagina, '#cli-horario'), ['Tanto faz (a combinar)', 'Das 18h às 22h']);
+  await pagina.locator('input[name="cli-modo"][value="retirada"]').check();
+  assert.deepStrictEqual(await opcoesDe(pagina, '#cli-horario'), ['Tanto faz (a combinar)', 'Das 17h às 22h']);
+  assert.ok((await pagina.locator('#retirada-local').innerText()).includes('Banca do Adair'));
+  semErros(erros); await fechar();
+});
+
 teste('outra loja abre com o nome, as cores e os produtos dela', async () => {
   const { pagina, erros, fechar } = await abrir('/?loja=paes-da-lucia');
   await cards(pagina).first().waitFor({ timeout: 8000 });
