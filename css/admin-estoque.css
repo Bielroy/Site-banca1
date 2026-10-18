@@ -302,3 +302,10 @@ body.so-equipe #aba-relatorios .relatorios-header, body.so-equipe #aba-relatorio
 .es-item { padding: 12px 12px 12px 14px; }
 .es-acoes { gap: 6px; margin-top: 8px; }
 .es-acoes button { flex: 1 1 0; min-width: 64px; min-height: 40px; padding: 6px 6px; font-size: .82rem; }
+
+/* Regras de horário da entrega por condomínio e dia (Configurações > Entrega e retirada) */
+.regra-entrega { margin-top: 10px; padding: 12px; border: 1px solid #e0dcd4; border-radius: 12px; background: var(--parchment, #faf7f0); display: grid; gap: 10px; }
+.regra-entrega .regra-topo { display: flex; align-items: center; gap: 8px; }
+.regra-entrega .regra-topo select { flex: 1; min-width: 0; min-height: 44px; }
+.regra-entrega .btn-texto { min-height: 44px; padding: 8px 6px; border: 0; background: transparent; color: #b3261e; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.regra-entrega textarea { width: 100%; box-sizing: border-box; }

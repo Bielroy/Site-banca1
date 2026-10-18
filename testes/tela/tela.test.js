@@ -203,7 +203,72 @@ teste('painel: Configurações guarda a retirada na banca (ligada, horários e l
   await pagina.click('#btn-salvar-config');
   await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config' && g.dados && g.dados.entrega), null, { timeout: 4000 });
   const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config' && x.dados.entrega).dados);
-  assert.deepStrictEqual(g.entrega, { taxa: 5, gratisAcima: 0, horarios: ['Manhã'], retirada: { ativa: true, horarios: ['Das 7h às 11h', 'Das 15h às 18h'], local: 'Na banca, no portão 2' } });
+  assert.deepStrictEqual(g.entrega, { taxa: 5, gratisAcima: 0, horarios: ['Manhã'], regras: [], retirada: { ativa: true, dias: [], horarios: ['Das 7h às 11h', 'Das 15h às 18h'], local: 'Na banca, no portão 2' } });
+  semErros(erros); await fechar();
+});
+
+teste('retirada por dia e horários de entrega por dia: no dia sem retirada a escolha some; a regra do dia troca a lista de horários', async () => {
+  const hoje = new Date(Date.now() - 3 * 3600000).getUTCDay(), outros = [0, 1, 2, 3, 4, 5, 6].filter((d) => d !== hoje);
+  // hoje NÃO é dia de retirada: o cliente só vê a entrega
+  let c = cenarioPadrao();
+  c.lojas.banca.config = { ...c.lojas.banca.config, entrega: { horarios: ['Geral'], retirada: { ativa: true, dias: outros, horarios: ['Das 7h às 11h'] } } };
+  let { pagina, erros, fechar } = await abrir('/', c);
+  await abrirCheckoutComOvos(pagina);
+  assert.strictEqual(await pagina.locator('#grupo-modo').isVisible(), false, 'hoje não tem retirada');
+  assert.deepStrictEqual(await opcoesDe(pagina, '#cli-horario'), ['Tanto faz (a combinar)', 'Geral']);
+  semErros(erros); await fechar();
+  // hoje é dia de retirada, e hoje tem horários próprios de entrega
+  c = cenarioPadrao();
+  c.lojas.banca.config = { ...c.lojas.banca.config, entrega: { horarios: ['Geral'], regras: [{ feira: '', dias: [hoje], horarios: ['Manhã (8h às 11h)'] }, { feira: '', dias: outros, horarios: ['Outro dia'] }], retirada: { ativa: true, dias: [hoje], horarios: ['Das 7h às 11h'] } } };
+  ({ pagina, erros, fechar } = await abrir('/', c));
+  await abrirCheckoutComOvos(pagina);
+  assert.strictEqual(await pagina.locator('#grupo-modo').isVisible(), true, 'hoje tem retirada');
+  assert.deepStrictEqual(await opcoesDe(pagina, '#cli-horario'), ['Tanto faz (a combinar)', 'Manhã (8h às 11h)'], 'a regra de hoje vale; a lista geral e a regra dos outros dias não');
+  await pagina.locator('input[name="cli-modo"][value="retirada"]').check();
+  assert.deepStrictEqual(await opcoesDe(pagina, '#cli-horario'), ['Tanto faz (a combinar)', 'Das 7h às 11h']);
+  semErros(erros); await fechar();
+});
+
+teste('painel: regras de horário por condomínio e dia, e dias da retirada, são criados, gravados e voltam na tela', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  cen.feiras = { ...(cen.feiras || {}), atenas: { nome: 'Atenas', dias: [3], lojas: [{ id: 'banca' }] }, madri: { nome: 'Madri', dias: [3], lojas: [{ id: 'banca' }] } };
+  cen.lojas.banca.ficha = { ...cen.lojas.banca.ficha, feiras: ['atenas', 'madri'] };
+  cen.lojas.banca.config = { ...cen.lojas.banca.config, entrega: { horarios: ['Geral'], retirada: { ativa: true, horarios: ['Das 7h às 11h'] } } };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.locator('.tab[data-aba="config"]').click();
+  await pagina.evaluate(() => document.querySelectorAll('#aba-config details').forEach((d) => { d.open = true; }));
+  await pagina.waitForSelector('#btn-add-regra', { state: 'visible', timeout: 8000 });
+  // sem dias gravados na retirada = todos os dias marcados
+  assert.strictEqual(await pagina.locator('.chk-ret-dia:checked').count(), 7);
+  await pagina.locator('#retirada-dias .dia-label', { hasText: 'Qua' }).click();      // quarta sem retirada
+  assert.strictEqual(await pagina.locator('.chk-ret-dia:checked').count(), 6);
+  // regra: quarta, Atenas
+  await pagina.click('#btn-add-regra');
+  await pagina.waitForSelector('#regras-entrega .regra-entrega');
+  assert.deepStrictEqual(await pagina.$$eval('#regras-entrega .regra-entrega select option', (os) => os.map((o) => o.textContent.trim())), ['Qualquer condomínio', 'Atenas', 'Madri']);
+  await pagina.selectOption('#regras-entrega select', 'atenas');
+  await pagina.locator('#regras-entrega .dia-label', { hasText: 'Qua' }).click();
+  await pagina.fill('#regras-entrega textarea', 'Tarde (14h às 17h)');
+  // segunda regra: Madri em qualquer dia; depois apaga a primeira e coloca de volta
+  await pagina.click('#btn-add-regra');
+  await pagina.locator('#regras-entrega .regra-entrega').nth(1).locator('select').selectOption('madri');
+  await pagina.locator('#regras-entrega .regra-entrega').nth(1).locator('textarea').fill('Manhã (8h às 11h)\nManhã (8h às 11h)');
+  assert.strictEqual(await pagina.locator('#regras-entrega .regra-entrega').count(), 2);
+  assert.strictEqual(await pagina.locator('#regras-entrega .regra-entrega').first().locator('textarea').inputValue(), 'Tarde (14h às 17h)', 'adicionar outra regra não apaga o que foi digitado');
+  await pagina.click('#btn-salvar-config');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config' && g.dados && g.dados.entrega), null, { timeout: 4000 });
+  const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config' && x.dados.entrega).dados);
+  assert.deepStrictEqual(g.entrega.regras, [{ feira: 'atenas', dias: [3], horarios: ['Tarde (14h às 17h)'] }, { feira: 'madri', dias: [], horarios: ['Manhã (8h às 11h)'] }]);
+  assert.deepStrictEqual(g.entrega.retirada.dias, [0, 1, 2, 4, 5, 6], 'a retirada não funciona na quarta');
+  // remover regra
+  await pagina.locator('#regras-entrega .regra-entrega').first().locator('[data-r="remover"]').click();
+  assert.strictEqual(await pagina.locator('#regras-entrega .regra-entrega').count(), 1);
+  assert.strictEqual(await pagina.locator('#regras-entrega select').inputValue(), 'madri');
+  // retirada ligada e nenhum dia marcado: o painel não deixa salvar
+  await pagina.evaluate(() => document.querySelectorAll('.chk-ret-dia').forEach((c) => { c.checked = false; }));
+  const antes = await pagina.evaluate(() => window.__gravados.length);
+  await pagina.click('#btn-salvar-config'); await pagina.waitForTimeout(300);
+  assert.strictEqual(await pagina.evaluate(() => window.__gravados.length), antes, 'sem nenhum dia de retirada não grava');
   semErros(erros); await fechar();
 });
 

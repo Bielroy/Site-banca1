@@ -330,12 +330,21 @@
                     <textarea id="config-horarios" rows="3" placeholder="Manhã (8h às 12h)&#10;Tarde (14h às 18h)"></textarea>
                     <small class="dica-campo">Um por linha, até 8. O cliente escolhe um ao fechar o pedido. Em branco = a loja não pergunta.</small>
                 </div>
+                <div class="form-group" style="width: 100%;" id="grupo-regras-entrega">
+                    <label><i class="ic" data-i="calendario"></i> Horários diferentes por condomínio e dia</label>
+                    <small class="dica-campo" style="display:block;">Use quando o horário muda: ex. na quarta de manhã no Madri e no Mônaco, e outro horário no Atenas. Escolha o condomínio (as feiras que você já tem) e/ou os dias; sem escolher nenhum dia vale para todos. Vale a regra mais específica; onde nenhuma serve, vale a lista de cima.</small>
+                    <div id="regras-entrega"></div>
+                    <button type="button" class="btn-outline" id="btn-add-regra" style="margin-top:8px;">+ Adicionar regra de horário</button>
+                </div>
                 <div class="form-group" style="width: 100%;">
                     <label class="chk-linha" for="config-retirada-ativa"><input type="checkbox" id="config-retirada-ativa"> <i class="ic" data-i="caixa"></i> Aceitar retirada na banca</label>
                     <small class="dica-campo" style="display:block;">Liga a opção "Retirar na banca" na hora do pedido. Quem retira não informa endereço e não paga taxa de entrega. Desligada, o cliente só vê entrega em casa. (Clientes de feira continuam só com a entrega da feira.)</small>
                 </div>
                 <div class="form-group" style="width: 100%;" id="grupo-retirada">
-                    <label for="config-retirada-horarios"><i class="ic" data-i="espera"></i> Horários de retirada</label>
+                    <label><i class="ic" data-i="calendario"></i> Dias em que a retirada funciona</label>
+                    <div class="dias-semana" id="retirada-dias"><label class="dia-label"><input type="checkbox" value="0" class="chk-ret-dia"> Dom</label><label class="dia-label"><input type="checkbox" value="1" class="chk-ret-dia"> Seg</label><label class="dia-label"><input type="checkbox" value="2" class="chk-ret-dia"> Ter</label><label class="dia-label"><input type="checkbox" value="3" class="chk-ret-dia"> Qua</label><label class="dia-label"><input type="checkbox" value="4" class="chk-ret-dia"> Qui</label><label class="dia-label"><input type="checkbox" value="5" class="chk-ret-dia"> Sex</label><label class="dia-label"><input type="checkbox" value="6" class="chk-ret-dia"> Sáb</label></div>
+                    <small class="dica-campo">Desmarque os dias em que ninguém está na banca (ex.: dia de feira fora). Nesses dias o cliente só vê entrega.</small>
+                    <label for="config-retirada-horarios" style="margin-top:12px;display:block;"><i class="ic" data-i="espera"></i> Horários de retirada</label>
                     <textarea id="config-retirada-horarios" rows="3" placeholder="Das 7h às 11h&#10;Das 15h às 18h"></textarea>
                     <small class="dica-campo">Um por linha, até 8. O cliente escolhe um ao fechar o pedido. Em branco = a loja não pergunta (retirada a combinar).</small>
                     <label for="config-retirada-local" style="margin-top:10px;display:block;">Onde retirar (opcional)</label>

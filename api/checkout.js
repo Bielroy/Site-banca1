@@ -335,8 +335,8 @@ module.exports = async function handler(req, res) {
 
       // Entrega ou retirada. Retirada pedida com a loja sem retirada ligada é recusada (não vira entrega em silêncio).
       const cfgEntrega = Entrega.lerConfig(configCfg);
-      const modoPedido = Entrega.modoDoPedido(cfgEntrega, req.body && req.body.modo);
-      if (!modoPedido) throw new Error('A retirada na banca não está disponível agora. Escolha a entrega ou chame a banca pelo WhatsApp.');
+      const modoPedido = Entrega.modoDoPedido(cfgEntrega, req.body && req.body.modo, agoraBrasilia().getUTCDay());
+      if (!modoPedido) throw new Error(cfgEntrega.retirada.ativa ? 'Hoje não tem retirada na banca. Escolha a entrega ou chame a banca pelo WhatsApp.' : 'A retirada na banca não está disponível agora. Escolha a entrega ou chame a banca pelo WhatsApp.');
       const retirada = modoPedido === 'retirada';
 
       // Loja fechada? (defesa extra além do front)
@@ -503,7 +503,9 @@ module.exports = async function handler(req, res) {
       // ---- Entrega: taxa (grátis acima de um valor) e horário escolhido ----
       // A taxa é calculada aqui, com a configuração da loja: o navegador só mostra a prévia.
       // Com item a pesar, o valor ainda sobe na balança: a pesagem reavalia a entrega grátis.
-      const horarioEntrega = Entrega.horarioValido(cfgEntrega, req.body && req.body.horarioEntrega, modoPedido);
+      // horários da entrega variam com a feira (condomínio) e o dia da entrega; a retirada tem a lista dela
+      const ctxHorario = { feira: feiraDoPedido ? feiraDoPedido.id : '', dow: diaDoPreco };
+      const horarioEntrega = Entrega.horarioValido(cfgEntrega, req.body && req.body.horarioEntrega, modoPedido, ctxHorario);
       // cupom de 100% (família, cortesia): o pedido sai de graça, entrega incluída
       const cortesia = !!cupomAplicado && cupomAplicado.percentual >= 100;
       const taxaEntregaC = cortesia || retirada ? 0 : Entrega.taxaC(cfgEntrega, totalExatoCentavos);   // retirada: sem taxa
@@ -531,7 +533,7 @@ module.exports = async function handler(req, res) {
         cupom: cupomAplicado ? { codigo: cupomAplicado.codigo, desconto: cupomAplicado.desconto, ...(cupomAplicado.percentual ? { percentual: cupomAplicado.percentual } : {}) } : null,
         // taxa cobrada agora + a regra do dia do pedido (a pesagem usa para reavaliar a entrega grátis)
         // (retirada: taxa e regra zeradas, para a pesagem não cobrar entrega de quem busca na banca)
-        entrega: { taxa: paraFlutuante(taxaEntregaC), taxaCheia: retirada ? 0 : paraFlutuante(cfgEntrega.taxaC), gratisAcima: retirada ? 0 : paraFlutuante(cfgEntrega.gratisAcimaC), horario: horarioEntrega, ...(Entrega.horarioACombinar(cfgEntrega, horarioEntrega, modoPedido) ? { horarioACombinar: true } : {}) },
+        entrega: { taxa: paraFlutuante(taxaEntregaC), taxaCheia: retirada ? 0 : paraFlutuante(cfgEntrega.taxaC), gratisAcima: retirada ? 0 : paraFlutuante(cfgEntrega.gratisAcimaC), horario: horarioEntrega, ...(Entrega.horarioACombinar(cfgEntrega, horarioEntrega, modoPedido, ctxHorario) ? { horarioACombinar: true } : {}) },
         ...(retirada ? { modo: 'retirada', retiradaLocal: cfgEntrega.retirada.local } : {}),
         status: temItensAPesar ? 'aguardando_pesagem' : 'pendente',
         data: new Date().toISOString(),

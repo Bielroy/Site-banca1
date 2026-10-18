@@ -14,7 +14,7 @@ import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
 import { podePagarPix } from './pix-lib.js';
-import { lerEntrega, previaDaEntrega, horariosDoModo } from './entrega-lib.js';
+import { lerEntrega, previaDaEntrega, horariosDoModo, retiradaNoDia } from './entrega-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
 import { miniatura } from './foto-lib.js';
 // Foto pequena SEMPRE pelo redutor do próprio site (mesmo endereço da loja). Antes, a foto com miniatura do ImgBB
@@ -533,7 +533,7 @@ const pintarAvisoDeEntrega = () => {
     const ent = entregaDaFeira(), aviso = document.getElementById('checkout-entrega'); if (!aviso) return;
     aviso.textContent = ent ? (ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.`) : ''; aviso.hidden = !ent;
 };
-document.addEventListener('feira-do-cliente', () => { try { atualizarRodapeCarrinhoDOM(); } catch (_) { /* carrinho ainda não montado */ } });
+document.addEventListener('feira-do-cliente', () => { try { atualizarRodapeCarrinhoDOM(); } catch (_) { /* carrinho ainda não montado */ } try { pintarModo(); } catch (_) { /* tela de envio ainda não montada */ } });
 const feiraDoEnderecoSalvo = (e) => { if (e && e.condominio) feiraPeloCondominio(e.condominio, perguntarFeira).then((id) => { if (id) guardarNaConta(); }).catch(() => {}); };
 
 // Modificado para aceitar o "tipo" de compra (Kg ou Un)
@@ -1000,7 +1000,7 @@ const copiarPix = async (botao) => {
 
 // ENTREGA EM CASA OU RETIRADA NA BANCA. A retirada só aparece se a loja ligou no painel e se o cliente não é de uma
 // feira (cliente de feira recebe no dia da feira; a retirada é para hoje, na banca). Qualquer dúvida = entrega, como sempre foi.
-const retiradaDisponivel = () => lerEntrega(STATE.config).retirada.ativa && !feiraDoClienteAqui();
+const retiradaDisponivel = () => { const c = lerEntrega(STATE.config); return c.retirada.ativa && !feiraDoClienteAqui() && retiradaNoDia(c, new Date(agoraLoja() - 3 * 3600000).getUTCDay()); };
 const modoEscolhido = () => (retiradaDisponivel() && document.querySelector('input[name="cli-modo"]:checked')?.value === 'retirada' ? 'retirada' : 'entrega');
 const pintarModo = () => {
     const grupo = document.getElementById('grupo-modo'); if (!grupo) return;
@@ -1019,7 +1019,8 @@ document.addEventListener('change', (e) => { if (e.target && e.target.name === '
 // Horário de entrega (ou de retirada): o campo só aparece se a loja cadastrou horários no painel para o modo escolhido.
 const pintarHorariosDeEntrega = () => {
     const grupo = document.getElementById('grupo-horario'), campo = document.getElementById('cli-horario'); if (!grupo || !campo) return;
-    const horarios = horariosDoModo(lerEntrega(STATE.config), modoEscolhido()), atual = campo.value;
+    // entrega: os horários dependem da feira do cliente (condomínio) e do dia da entrega; retirada: a lista dela
+    const horarios = horariosDoModo(lerEntrega(STATE.config), modoEscolhido(), { feira: lerFeiraCliente(), dow: diaDoPreco() }), atual = campo.value;
     grupo.hidden = !horarios.length;
     campo.innerHTML = horarios.length ? '<option value="">Tanto faz (a combinar)</option>' + horarios.map((h) => `<option value="${escapeHTML(h)}">${escapeHTML(h)}</option>`).join('') : '';
     if (horarios.includes(atual)) campo.value = atual;
