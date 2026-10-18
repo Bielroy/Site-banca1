@@ -445,6 +445,24 @@ teste('aba Clientes: pedido novo aparece na hora (recalcula só quando há pedid
   r = await ver({ atualizar: true }); assert.strictEqual(r.corpo.atualizou, false);
   assert.strictEqual((await chamar(api, { headers: { Authorization: 'Bearer caixa-espetinhos', 'X-Loja': 'espetinhos' }, body: { acao: 'painel', atualizar: true } })).status, 403, 'caixa não dispara cálculo');
 });
+teste('aba Clientes: cálculo deixado pela reserva sem cofre (cada pedido virou um "cliente" com c1:) é refeito sozinho pelo servidor certo', async () => {
+  await comChaveDoCofre(async () => {
+    const Cofre = require(raiz('lib/cofre'));
+    const pedido = (n) => Cofre.fecharCampos({ nome: 'Ana Teste', telefone: '62999990001', quadra: '7', lote: '2', condominio: 'Jardins', total: 12, data: new Date(Date.now() - n * 86400000).toISOString(), itens: [{ id: 'tomate', nome: 'Tomate', qtd: 1, tipo: 'kg', unidade: 'kg', preco: 8.9 }] }, 'banca');
+    const p1 = pedido(3), p2 = pedido(1);
+    // o que a reserva gravou: dois "clientes" (um por pedido), com o nome cifrado
+    const db = criarBanco({ ...semente(), 'pedidos/n1': p1, 'pedidos/n2': p2,
+      'analytics_previsoes/painel': { meta: { geradoEm: new Date().toISOString() }, indiceClientes: [{ id: 'a', nome: p1.nome, quadra: p1.quadra, lote: p1.lote, ped: 1 }, { id: 'b', nome: p2.nome, quadra: p2.quadra, lote: p2.lote, ped: 1 }] } });
+    const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));
+    const r = await chamar(api, { headers: { Authorization: 'Bearer dona-banca' }, body: { acao: 'painel', atualizar: true } });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+    assert.strictEqual(r.corpo.atualizou, true, 'mesmo sem pedido novo, recalcula');
+    const anas = (r.corpo.indiceClientes || []).filter((c) => c.nome === 'Ana Teste');
+    assert.strictEqual(anas.length, 1, 'os dois pedidos da mesma cliente viram UMA cliente');
+    assert.ok(!JSON.stringify(r.corpo.indiceClientes).includes('c1:'));
+    assert.strictEqual(r.corpo.calculoSemCofre, false);
+  });
+});
 teste('rotina diária recalcula cada loja no lugar certo e exige o segredo', async () => {
   const db = criarBanco(semente()); const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));
   assert.strictEqual((await chamar(api, { method: 'GET', headers: {} })).status, 401);
@@ -2374,6 +2392,27 @@ teste('cofre: a previsão guarda nomes e endereços cifrados e o painel recebe t
     const um = lido.indiceClientes.find((c) => c.nome === 'Helena Prado');
     const m = await Store.lerClientePorId(db, um.id);
     assert.strictEqual(m.nome, 'Helena Prado'); assert.strictEqual(m.quadra, '7');
+  });
+});
+
+teste('cofre: previsão gravada por um servidor SEM cofre (reserva antiga) chega aberta à aba Clientes e é marcada para recalcular', async () => {
+  await comChaveDoCofre(async () => {
+    const Cofre = require(raiz('lib/cofre'));
+    const c1 = (v, campo) => Cofre.fechar(v, 'banca', campo);
+    // o que a reserva antiga grava: índice SEM a cifra de fora, com os campos do cliente ainda cifrados (como vieram do pedido)
+    const db = criarBanco({ 'analytics_previsoes/painel': {
+      meta: { geradoEm: '2026-10-07T08:00:00Z' },
+      indiceClientes: [{ id: 'x1', nome: c1('Helena Prado', 'nome'), condominio: 'Jardins Atenas', quadra: c1('7', 'quadra'), lote: c1('12', 'lote'), ped: 1 }],
+      esperados: { hoje: { dia: '2026-10-07', clientes: [{ id: 'x1', nome: c1('Helena Prado', 'nome'), quadra: c1('7', 'quadra'), lote: c1('12', 'lote'), itens: [] }] }, amanha: { fechado: true } },
+    } });
+    const Store = carregarApi(raiz('analytics/store.js'), criarAdmin(db, TOKENS));
+    const lido = await Store.lerPainel(db);
+    assert.deepStrictEqual([lido.indiceClientes[0].nome, lido.indiceClientes[0].quadra, lido.indiceClientes[0].lote], ['Helena Prado', '7', '12']);
+    assert.strictEqual(lido.indiceClientes[0].condominio, 'Jardins Atenas');
+    assert.strictEqual(lido.esperados.hoje.clientes[0].nome, 'Helena Prado');
+    assert.deepStrictEqual(lido.esperados.amanha, { fechado: true });
+    assert.strictEqual(lido.calculoSemCofre, true, 'o painel fica sabendo que o cálculo veio sem cofre');
+    assert.ok(!JSON.stringify(lido.indiceClientes).includes('c1:'));
   });
 });
 

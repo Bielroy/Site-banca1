@@ -147,9 +147,12 @@ module.exports = async function handler(req, res) {
       let p = await Store.lerPainel(db), atualizou = false;
       // aba Clientes: se chegou pedido depois do último cálculo, recalcula antes de responder.
       // Vale o mesmo limite do botão "recalcular"; passou do limite, devolve o cálculo que já existe.
-      if (corpo.atualizar === true && await Store.temPedidoNovo(db, p && p.meta && p.meta.geradoEm)
+      // Também recalcula quando o cálculo guardado veio de um servidor SEM o cofre (a reserva antiga da Vercel):
+      // ele conta cada pedido como um cliente diferente. Aqui o servidor certo refaz com os pedidos abertos.
+      const semCofre = !!(p && p.calculoSemCofre);
+      if (corpo.atualizar === true && (semCofre || await Store.temPedidoNovo(db, p && p.meta && p.meta.geradoEm))
           && limitar('recalc:' + tid, 8000) && await P.limitar(banco, 'recalcular', tid, 20, 3600)) {
-        const r = await Store.recalcular(db, {});
+        const r = await Store.recalcular(db, semCofre ? { forcar: true } : {});
         if (!r.pulado) { p = await Store.lerPainel(db); atualizou = true; }
       }
       return res.status(200).json({ sucesso: true, vazio: !p, atualizou, ...(p || {}) });

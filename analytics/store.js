@@ -212,7 +212,22 @@ async function lerPainel(db) {
   const tid = tidDe(db);
   const produtos = {}; ch.docs.forEach((d) => Object.assign(produtos, Cofre.abrirJSON(d.data().produtos, tid, 'previsoes', {}) || {}));
   const dados = p.data();
-  return { ...dados, esperados: Cofre.abrirJSON(dados.esperados, tid, 'esperados', {}), indiceClientes: Cofre.abrirJSON(dados.indiceClientes, tid, 'indiceClientes', []), produtos, avaliacoes: av.docs.map((d) => d.data()) };
+  const esperados = Cofre.abrirJSON(dados.esperados, tid, 'esperados', {}) || {};
+  const indice = Cofre.abrirJSON(dados.indiceClientes, tid, 'indiceClientes', []);
+  // Abre também campo por campo: um cálculo feito por um servidor SEM o cofre (a reserva antiga da Vercel,
+  // com a rotina das 5h) grava o índice sem a cifra de fora, mas com nome/quadra/lote ainda cifrados
+  // ("c1:..."), e a aba Clientes mostrava esses textos. Aqui eles chegam abertos ao painel.
+  const abrirCli = (c) => (c && typeof c === 'object' ? Cofre.abrirCampos(c, tid) : c);
+  for (const k of Object.keys(esperados)) {
+    const e = esperados[k];
+    if (e && Array.isArray(e.clientes)) esperados[k] = { ...e, clientes: e.clientes.map(abrirCli) };
+  }
+  return { ...dados, esperados, indiceClientes: Array.isArray(indice) ? indice.map(abrirCli) : [], produtos, avaliacoes: av.docs.map((d) => d.data()), calculoSemCofre: calculoSemCofre(indice) };
+}
+
+/** O índice veio de um cálculo que não abriu os pedidos (servidor sem o cofre)? Cada pedido cifrado vira um "cliente". */
+function calculoSemCofre(indice) {
+  return Array.isArray(indice) && indice.some((c) => c && Cofre.cifrado(c.nome));
 }
 // Chegou pedido depois do último cálculo? (uma leitura só: o pedido mais recente).
 // Sem cálculo nenhum ainda, qualquer pedido conta como novo.
