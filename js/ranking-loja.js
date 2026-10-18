@@ -99,7 +99,7 @@ export function aplicarOrdem() {
         // maior probabilidade → menor `order`. Produto sem pontuação (novo) entra na mediana,
         // em vez de ser enterrado no fim — senão nunca teria chance de ser descoberto.
         // pacotes e temperos ficam nos blocos do fim, cada um na sua faixa de "order" (ordemNaVitrine, js/pacote-lib.js)
-        card.style.order = String(ordemNaVitrine(e ? e.p : mediana, card.dataset.pacote === '1' ? 'pacote' : card.dataset.tempero === '1' ? 'tempero' : ''));
+        card.style.order = String(ordemNaVitrine(e ? e.p : mediana, card.dataset.pacote === '1' ? 'pacote' : card.dataset.tempero === '1' ? 'tempero' : card.dataset.secao !== undefined ? 'secao' : '', Number(card.dataset.secao)));
 
         card.querySelector('.rec-tag')?.remove();
         if (e && e.motivo && nivel !== 'sem_historico') {

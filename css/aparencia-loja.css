@@ -21,6 +21,7 @@
 .header-capa { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; pointer-events: none; }
 .ap-cabecalho-capa #header-principal::before { z-index: 1; background-image: none;
     background: linear-gradient(180deg, color-mix(in srgb, var(--forest) 45%, transparent) 0%, color-mix(in srgb, var(--forest) 82%, transparent) 100%); }
+.ap-cabecalho-capa.ap-pelicula-nao #header-principal::before { background: none; }   /* capa desenhada: sem véu, as cores aparecem como são */
 .ap-cabecalho-capa .header-capa ~ .header-arte { z-index: 1; }
 .ap-cabecalho-capa #header-principal h1, .ap-cabecalho-capa .header-subtitle { text-shadow: 0 1px 12px rgba(0, 0, 0, .35); }
 

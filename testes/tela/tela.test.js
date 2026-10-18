@@ -669,6 +669,44 @@ teste('painel: a aba Aparência abre e a prévia da loja carrega dentro dela', a
   semErros(erros); await fechar();
 });
 
+teste('loja: seções coloridas por categoria (pastéis dourado, açaí roxo) vêm antes dos soltos, cada uma com seu cabeçalho; capa sem película tira o véu', async () => {
+  const c = cenarioPadrao();
+  const prod = (nome, cat, preco = 9) => ({ nome, preco, unidade: 'un', cat, ativo: true });
+  c.lojas.bie = { ficha: { nome: 'Pastel & Açaí do Bié', ativo: true, tipo: 'Pastel e açaí', tema: { primaria: '#4a1650', secundaria: '#8e3a8f', destaque: '#f0b94a', fundo: '#fff6e4', superficie: '#ffffff', texto: '#2a1230', sobrePrimaria: '#ffffff', botao: '#7b2d8b', cabecalho: 'capa', pelicula: 'nao', capa: 'https://capa.exemplo.com/capa.png' } },
+    produtos: { p1: prod('Pastel de carne', 'pasteis'), p2: prod('Pastel de queijo', 'pasteis'), a1: prod('Açaí 300 ml', 'acai', 16), a2: prod('Açaí 500 ml', 'acai', 22), c1: prod('Caldo de cana', 'bebidas', 7) },
+    categorias: [{ chave: 'pasteis', nome: 'Pastéis', ordem: 1 }, { chave: 'acai', nome: 'Açaí', ordem: 2 }, { chave: 'bebidas', nome: 'Bebidas', ordem: 3 }],
+    config: { lojaAberta: true, diasAbertos: [0, 1, 2, 3, 4, 5, 6], minimo: 0, wpp: '5562999990000', vitrine: { secoes: [
+      { cat: 'pasteis', titulo: 'Pastéis', texto: 'Crocantes, na hora.', cor: '#efb94a', icone: 'pastel' },
+      { cat: 'acai', titulo: 'Açaí', texto: 'Cremoso e gelado.', cor: '#5a1f6b', icone: 'tigela' }] } } };
+  const { pagina, erros, fechar } = await abrir('/?loja=bie', c);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  const ordem = await pagina.evaluate(() => [...document.querySelectorAll('#lista-produtos > .produto-card, #lista-produtos > .bloco-secao')]
+    .map((e, i) => ({ o: Number(e.style.order) || 0, i, k: e.classList.contains('bloco-secao') ? 'SEC' + e.dataset.i : e.dataset.id })).sort((a, b) => a.o - b.o || a.i - b.i).map((x) => x.k));
+  assert.strictEqual(ordem[0], 'SEC0', 'o cabeçalho dos pastéis abre a vitrine: ' + ordem.join(','));
+  assert.deepStrictEqual(ordem.slice(1, 3).sort(), ['p1', 'p2'], ordem.join(','));
+  assert.strictEqual(ordem[3], 'SEC1', 'depois dos pastéis vem o cabeçalho do açaí: ' + ordem.join(','));
+  assert.deepStrictEqual(ordem.slice(4, 6).sort(), ['a1', 'a2'], ordem.join(','));
+  assert.strictEqual(ordem[6], 'c1', 'o que não tem seção vem depois: ' + ordem.join(','));
+  const sec0 = pagina.locator('.bloco-secao[data-i="0"]'), sec1 = pagina.locator('.bloco-secao[data-i="1"]');
+  assert.ok(/Pastéis/.test(await sec0.innerText()) && /Crocantes/.test(await sec0.innerText()));
+  assert.strictEqual(await sec0.locator('svg.arte-cat').count(), 1, 'o desenho da seção aparece');
+  assert.strictEqual(await sec0.evaluate((e) => getComputedStyle(e).backgroundColor), 'rgb(239, 185, 74)', 'faixa dourada');
+  assert.strictEqual(await sec0.evaluate((e) => getComputedStyle(e).color), 'rgb(42, 26, 12)', 'tinta escura sobre o dourado');
+  assert.strictEqual(await sec1.evaluate((e) => getComputedStyle(e).backgroundColor), 'rgb(90, 31, 107)', 'faixa roxa');
+  assert.strictEqual(await sec1.evaluate((e) => getComputedStyle(e).color), 'rgb(255, 255, 255)', 'tinta branca sobre o roxo');
+  assert.ok(await pagina.locator('.produto-card[data-id="a1"]').evaluate((e) => e.classList.contains('produto-card--secao')));
+  assert.strictEqual(await pagina.locator('.produto-card[data-id="c1"]').evaluate((e) => e.classList.contains('produto-card--secao')), false);
+  // capa sem película: o véu da cor principal some
+  assert.ok(await pagina.evaluate(() => document.documentElement.classList.contains('ap-pelicula-nao') && document.documentElement.classList.contains('ap-cabecalho-capa')));
+  assert.strictEqual(await pagina.evaluate(() => getComputedStyle(document.getElementById('header-principal'), '::before').backgroundImage), 'none', 'sem película');
+  // com busca ou categoria escolhida, as faixas somem (só vale na vitrine inteira)
+  await pagina.locator('#categorias .cat-btn[data-cat="acai"]').click();
+  await pagina.waitForFunction(() => !document.querySelector('.bloco-secao'), null, { timeout: 3000 });
+  await pagina.locator('#categorias .cat-btn[data-cat="todas"]').click();
+  await pagina.waitForSelector('.bloco-secao[data-i="1"]', { timeout: 3000 });
+  assert.deepStrictEqual(erros, [], 'sem erro de código: ' + erros.join(' | '));
+  await fechar();
+});
 teste('painel: Aparência aceita o código da cor digitado (#rrggbb), mostra o que vale e o modelo "Pastel e açaí" preenche tudo', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
   const { pagina, erros, fechar } = await abrir('/testes/tela/painel-aparencia.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
@@ -691,10 +729,11 @@ teste('painel: Aparência aceita o código da cor digitado (#rrggbb), mostra o q
   assert.strictEqual(await cor('destaque').inputValue(), '#ffaa00');
   // o modelo "Pastel e açaí" traz as cores certas e o campo mostra os códigos
   await pagina.locator('[data-modelo="pastelacai"]').click();
-  for (const [k, v] of Object.entries({ primaria: '#4a1650', secundaria: '#8e3a8f', destaque: '#f0b94a', fundo: '#fbf3dc', superficie: '#ffffff', texto: '#2a1230', sobrePrimaria: '#ffffff' })) assert.strictEqual(await hex(k).inputValue(), v, k);
+  for (const [k, v] of Object.entries({ primaria: '#4a1650', secundaria: '#8e3a8f', destaque: '#f0b94a', fundo: '#fff6e4', superficie: '#ffffff', texto: '#2a1230', sobrePrimaria: '#ffffff', botao: '#7b2d8b' })) assert.strictEqual(await hex(k).inputValue(), v, k);
   assert.ok(await pagina.locator('[data-modelo="pastelacai"]').evaluate((b) => b.classList.contains('ativo')), 'o modelo aparece marcado');
-  // cor dos botões: só dá para digitar quando não é "igual à cor principal"
-  assert.strictEqual(await hex('botao').isDisabled(), true);
+  // o modelo já traz os botões roxos (ponte para o açaí); marcar "igual à cor principal" trava o campo, e desmarcar libera
+  assert.strictEqual(await hex('botao').inputValue(), '#7b2d8b');
+  await pagina.check('#ap-botao-igual'); assert.strictEqual(await hex('botao').isDisabled(), true, 'igual à principal: o campo trava');
   await pagina.uncheck('#ap-botao-igual'); await hex('botao').fill('#f0b94a');
   assert.strictEqual(await cor('botao').inputValue(), '#f0b94a');
   await pagina.click('#ap-gravar');
@@ -724,6 +763,29 @@ teste('painel: Vitrine (na aba Aparência) cria um quadro com botão de categori
   const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config').dados);
   assert.deepStrictEqual(g, { vitrine: { quadros: [{ titulo: 'Manga no ponto', texto: 'Aperte de leve.', cat: 'frutas' }], donos: { titulo: 'Adair e Pedrina', texto: 'Escolhemos cada pedido.' } } });
   assert.ok(await pagina.locator('#vt-funil table').isVisible(), 'quadro de visitas aparece (zerado)');
+  semErros(erros); await fechar();
+});
+
+teste('painel: Vitrine monta uma seção colorida (categoria, cor pelo código, desenho) e grava em loja/config', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/testes/tela/painel-aparencia.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForSelector('#vt-gravar', { timeout: 8000 });
+  await pagina.click('[data-acao-vt="mais-secao"]');
+  await pagina.selectOption('select[data-sc="0"][data-campo="cat"]', 'frutas');
+  assert.strictEqual(await pagina.inputValue('input[data-sc="0"][data-campo="titulo"]'), 'Frutas', 'escolher a categoria já preenche o título');
+  await pagina.fill('input[data-sc="0"][data-campo="corhex"]', '#5a1f6b');
+  assert.strictEqual(await pagina.inputValue('input[type="color"][data-sc="0"]'), '#5a1f6b', 'o seletor acompanha o código digitado');
+  await pagina.selectOption('select[data-sc="0"][data-campo="icone"]', 'tigela');
+  // seção sem título não grava
+  await pagina.fill('input[data-sc="0"][data-campo="titulo"]', '');
+  await pagina.click('#vt-gravar');
+  await pagina.waitForTimeout(300);
+  assert.ok(!(await pagina.evaluate(() => (window.__gravados || []).some((g) => g.path === 'loja/config'))), 'seção incompleta: não grava');
+  await pagina.fill('input[data-sc="0"][data-campo="titulo"]', 'Frutas do dia');
+  await pagina.click('#vt-gravar');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config'), null, { timeout: 4000 });
+  const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config').dados);
+  assert.deepStrictEqual(g.vitrine.secoes, [{ cat: 'frutas', titulo: 'Frutas do dia', texto: '', cor: '#5a1f6b', icone: 'tigela' }]);
   semErros(erros); await fechar();
 });
 

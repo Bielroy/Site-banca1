@@ -74,7 +74,7 @@ service cloud.firestore {
         && corOk(t, 'superficie') && corOk(t, 'texto') && corOk(t, 'sobrePrimaria') && corOk(t, 'botao')
         && textoAte(t, 'fonteTitulo', 40) && textoAte(t, 'fonteTexto', 40) && textoAte(t, 'etiqueta', 20)
         && textoAte(t, 'fotoFormato', 20) && textoAte(t, 'fotoEncaixe', 20)
-        && textoAte(t, 'cabecalho', 20) && textoAte(t, 'borda', 20) && textoAte(t, 'arte', 20) && textoAte(t, 'alinhamento', 20)
+        && textoAte(t, 'cabecalho', 20) && textoAte(t, 'pelicula', 20) && textoAte(t, 'borda', 20) && textoAte(t, 'arte', 20) && textoAte(t, 'alinhamento', 20)
         && textoAte(t, 'logoFormato', 20) && textoAte(t, 'botaoFormato', 20) && textoAte(t, 'card', 20)
         && textoAte(t, 'fundoEstilo', 20) && textoAte(t, 'letra', 20)
         && urlOk(t, 'logo') && urlOk(t, 'capa')

@@ -4,9 +4,10 @@ import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaL
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage, haVersaoNova, conferirVersaoAgora, recarregarFresco } from './utils.js';
 import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques, maisPedidos } from './ranking-loja.js';
-import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca } from './vitrine-lib.js';
+import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca, tintaSobre } from './vitrine-lib.js';
+import { ARTES } from './arte-lib.js';
 import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_POTE } from './vitrine-arte.js';
-import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, chavePromo, contaDaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO, ehTempero, ehPotinho, NOMES_POTE, TEMPEROS_PADRAO, ORDEM_PACOTES, ORDEM_TEMPEROS } from './pacote-lib.js';
+import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, chavePromo, contaDaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO, ehTempero, ehPotinho, NOMES_POTE, TEMPEROS_PADRAO, ORDEM_PACOTES, ORDEM_TEMPEROS, ordemDaSecao } from './pacote-lib.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
 import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras } from './tema.js';
@@ -634,13 +635,16 @@ const selosHtml = (p, todos = false) => {
 let _vitrineCache = null, _vitrineDe = Symbol('ainda-não-leu');   // símbolo: na 1ª chamada sempre confere (config ainda sem 'vitrine')
 const vitrineDaLoja = () => { if (_vitrineDe !== STATE.config.vitrine) { _vitrineDe = STATE.config.vitrine; _vitrineCache = vitrineSegura(STATE.config.vitrine); } return _vitrineCache; };
 
+// SEÇÕES COLORIDAS (Aparência → Vitrine): a posição da seção a que o produto pertence (-1 = nenhuma). Pacote e tempero têm bloco próprio.
+const secaoDoProduto = (p) => { const l = vitrineDaLoja().secoes || [], c = String(p.cat || '').toLowerCase(); return c ? l.findIndex((x) => x.cat.toLowerCase() === c) : -1; };
+
 // Um card de produto. `rapido` = foto carregada já (os primeiros da tela); `prioridade` = a foto passa na frente
 // do resto (só as primeiras da vitrine, que são o "maior elemento" que o celular espera para mostrar a loja).
 const cardHtml = (p, rapido = false, prioridade = false) => {
         const favActive = STATE.favoritos.includes(p.id) ? 'ativo' : '';
-        const pac = ehPacote(p), tmp = !pac && ehTemp(p);
+        const pac = ehPacote(p), tmp = !pac && ehTemp(p), sec = pac || tmp ? -1 : secaoDoProduto(p), secCor = sec > -1 ? vitrineDaLoja().secoes[sec].cor : '';
         return `
-        <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : ''} style="display: flex;${pac ? ` order: ${ORDEM_PACOTES};` : tmp ? ` order: ${ORDEM_TEMPEROS};` : ''}">
+        <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : sec > -1 ? ' produto-card--secao' : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : sec > -1 ? ` data-secao="${sec}"` : ''} style="display: flex;${pac ? ` order: ${ORDEM_PACOTES};` : tmp ? ` order: ${ORDEM_TEMPEROS};` : sec > -1 ? ` order: ${ordemDaSecao(sec) + 500}; --sec-cor: ${secCor};` : ''}">
             <div class="produto-img-wrap">
                 ${p.foto ? `<img src="${escapeHTML(fotoPequena(p, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
@@ -883,6 +887,7 @@ const renderLoja = (forcarRebuild = false) => {
         if(matchBusca && matchCat) { card.style.display = 'flex'; itensVisiveis++; if (card.dataset.pacote !== '1' && card.dataset.tempero !== '1') soltosVisiveis++; } 
         else { card.style.display = 'none'; }
     });
+    pintarBlocosSecoes(grid, !termo && STATE.catAtiva === 'todas');
     pintarBlocoPacotes(grid);
     pintarBlocoTemperos(grid);
     // aviso de "nada aqui": sempre refeito, para o texto acompanhar busca/aba
@@ -895,6 +900,24 @@ const renderLoja = (forcarRebuild = false) => {
         grid.insertAdjacentHTML('beforeend', `<div id="empty-grid-msg" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>A banca está sem produtos no momento</p><span>Volte daqui a pouco.</span></div>`);
     }
     renderBlocos(!termo && STATE.catAtiva === 'todas' ? soltosVisiveis : 0);
+};
+
+// SEÇÕES COLORIDAS: antes dos produtos soltos, cada categoria escolhida na Aparência → Vitrine ganha uma faixa de cor com desenho,
+// título e frase (ex.: Pastéis em dourado, Açaí em roxo). Só na vitrine inteira: com busca ou categoria escolhida, não faz sentido.
+const pintarBlocosSecoes = (grid, mostrar) => {
+    const lista = vitrineDaLoja().secoes || [];
+    grid.querySelectorAll('.bloco-secao').forEach((c) => { if (!mostrar || !lista[Number(c.dataset.i)]) c.remove(); });
+    if (!mostrar) return;
+    lista.forEach((sec, i) => {
+        const cab = grid.querySelector(`.bloco-secao[data-i="${i}"]`);
+        const algum = [...grid.querySelectorAll(`.produto-card[data-secao="${i}"]`)].some((c) => c.style.display !== 'none');
+        if (!algum) { cab?.remove(); return; }
+        const cara = `${sec.titulo}|${sec.texto}|${sec.cor}|${sec.icone}`;
+        if (cab && cab.dataset.cara === cara) return;
+        const ico = sec.icone && ARTES[sec.icone] ? `<svg class="arte-cat" viewBox="0 0 120 120" aria-hidden="true" focusable="false">${ARTES[sec.icone]}</svg>` : '';
+        const html = `<header class="bloco-secao" data-i="${i}" data-cara="${escapeHTML(cara)}" style="order: ${ordemDaSecao(i) - 1}; --sec-cor: ${sec.cor}; --sec-tinta: ${tintaSobre(sec.cor)}"><h2>${ico}<span>${escapeHTML(sec.titulo)}</span></h2>${sec.texto ? `<p>${escapeHTML(sec.texto)}</p>` : ''}</header>`;
+        if (cab) cab.outerHTML = html; else grid.insertAdjacentHTML('beforeend', html);
+    });
 };
 
 // BLOCO "PACOTES PRONTOS": os pacotes vão para o fim da vitrine (order 2000+, js/ranking-loja.js), depois deste cabeçalho.

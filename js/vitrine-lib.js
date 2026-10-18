@@ -10,6 +10,7 @@
 //   - contagem simples de visitas → sacola → pedido para ver o antes e depois.
 //  Sem navegador e sem banco: só entra dado e sai dado.
 // =====================================================================
+import { ARTES } from './arte-lib.js';
 
 /** Dia de hoje na loja (Brasil, UTC−3, sem horário de verão desde 2019), no formato 2026-10-14. */
 export const hojeDaLoja = (agora = Date.now()) => new Date(agora - 3 * 3600000).toISOString().slice(0, 10);
@@ -116,6 +117,28 @@ export function iconeDaCategoria(nome) {
 // QUADROS ILUSTRADOS E "QUEM ESCOLHE SEU PEDIDO" (ficam em loja/config.vitrine)
 // ---------------------------------------------------------------------
 export const MAX_QUADROS = 4;
+/** SEÇÕES COLORIDAS: cada categoria ganha uma faixa de cor com desenho (ex.: Pastéis dourado, Açaí roxo). */
+export const MAX_SECOES = 4;
+export const ICONES_SECAO = Object.keys(ARTES);
+const COR_HEX = /^#[0-9a-fA-F]{6}$/;
+/** Tinta (texto) que se lê bem sobre a cor da seção: branco em cor escura, marrom bem escuro em cor clara. */
+export function tintaSobre(cor) {
+    if (!COR_HEX.test(String(cor))) return '#2a1a0c';
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(cor.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.32 ? '#2a1a0c' : '#ffffff';
+}
+/**
+ * Sugere seções para as categorias que a loja já tem: "pastel" vira dourado, "açaí" vira roxo.
+ * cats = [{ chave, nome }]. Devolve [] quando nenhuma categoria combina.
+ */
+export function secoesSugeridas(cats) {
+    const lista = Array.isArray(cats) ? cats : [];
+    const acha = (re) => lista.find((c) => re.test(semAcento(c.nome || c.chave)));
+    const saida = [], past = acha(/pastel|pasteis/), aca = acha(/acai/);
+    if (past) saida.push({ cat: past.chave, titulo: texto(past.nome || past.chave, 40), texto: 'Crocantes, na hora, direto da fritadeira.', cor: '#efb94a', icone: 'pastel' });
+    if (aca && aca !== past) saida.push({ cat: aca.chave, titulo: texto(aca.nome || aca.chave, 40), texto: 'Cremoso, gelado, do jeitinho que você monta.', cor: '#5a1f6b', icone: 'tigela' });
+    return saida;
+}
 /**
  * Confere o que o painel gravou antes de ir para a tela. O que não passa some.
  * { quadros: [{ img, titulo, texto, cat }], donos: { img, titulo, texto }, escolha }
@@ -143,6 +166,12 @@ export function vitrineSegura(bruto) {
     const tp = v.temperos && typeof v.temperos === 'object' ? v.temperos : {};
     const temperos = { titulo: texto(tp.titulo, 40), texto: texto(tp.texto, 160), cat: texto(tp.cat, 60) };
     if (temperos.titulo || temperos.texto || temperos.cat) saida.temperos = temperos;
+    // seções coloridas por categoria
+    const secoes = (Array.isArray(v.secoes) ? v.secoes : []).slice(0, 20).map((f) => {
+        const x = f && typeof f === 'object' ? f : {};
+        return { cat: texto(x.cat, 60), titulo: texto(x.titulo, 40), texto: texto(x.texto, 160), cor: COR_HEX.test(String(x.cor)) ? String(x.cor).toLowerCase() : '#efb94a', icone: ICONES_SECAO.includes(x.icone) ? x.icone : '' };
+    }).filter((x) => x.cat && x.titulo).slice(0, MAX_SECOES);
+    if (secoes.length) saida.secoes = secoes;
     // faixas da loja por categoria
     const faixas = (Array.isArray(v.faixas) ? v.faixas : []).slice(0, 20).map((f) => {
         const x = f && typeof f === 'object' ? f : {};

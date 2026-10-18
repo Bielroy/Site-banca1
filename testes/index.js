@@ -3161,6 +3161,32 @@ teste('vitrine: texto do bloco dos pacotes e faixas da loja por categoria, dentr
   const um = V.faixasDaVitrine([{ id: 'm1', cat: 'molhos' }], { proprias: [{ titulo: 'Molhos', cat: 'molhos' }] });
   assert.deepStrictEqual(um, [], 'faixa com 1 produto só não aparece');
 });
+teste('vitrine: seções coloridas por categoria (cor válida, até 4, texto legível, sugestão para pastel e açaí, ordem que não se mistura)', async () => {
+  const V = await import(raiz('js/vitrine-lib.js')), P = await import(raiz('js/pacote-lib.js')), Ap = await import(raiz('js/aparencia-lib.js'));
+  const v = V.vitrineSegura({ secoes: [
+    { cat: 'pasteis', titulo: ' Pastéis <b> ', texto: 'crocantes', cor: '#EFB94A', icone: 'pastel' },
+    { cat: 'acai', titulo: 'Açaí', cor: 'vermelho', icone: 'nao-existe' },
+    { cat: '', titulo: 'Sem categoria' }, { cat: 'x', titulo: '' },
+    { cat: 'a', titulo: 'A' }, { cat: 'b', titulo: 'B' }, { cat: 'c', titulo: 'C' } ] });
+  assert.deepStrictEqual(v.secoes.map((x) => x.titulo), ['Pastéis <b>', 'Açaí', 'A', 'B'], 'sem categoria ou sem título some; no máximo 4');
+  assert.strictEqual(v.secoes[0].cor, '#efb94a', 'cor em minúscula');
+  assert.strictEqual(v.secoes[1].cor, '#efb94a', 'cor inválida volta ao padrão (nunca vai para o CSS)');
+  assert.strictEqual(v.secoes[1].icone, '', 'desenho que não existe some');
+  assert.strictEqual(V.tintaSobre('#efb94a'), '#2a1a0c', 'cor clara: tinta escura');
+  assert.strictEqual(V.tintaSobre('#5a1f6b'), '#ffffff', 'cor escura: tinta branca');
+  assert.strictEqual(V.tintaSobre('url(x)'), '#2a1a0c', 'valor estranho: tinta escura');
+  const sug = V.secoesSugeridas([{ chave: 'bebidas', nome: 'Bebidas' }, { chave: 'a1', nome: 'Açaí' }, { chave: 'p1', nome: 'Pastéis' }]);
+  assert.deepStrictEqual(sug.map((x) => [x.cat, x.icone]), [['p1', 'pastel'], ['a1', 'tigela']], 'pastel primeiro (é o principal), açaí depois');
+  assert.deepStrictEqual(V.secoesSugeridas([{ chave: 'x', nome: 'Verduras' }]), []);
+  // ordem: cada seção numa faixa própria, antes dos soltos (0–1000), sem se encostar
+  for (let i = 0; i < 3; i++) assert.ok(P.ordemNaVitrine(0, 'secao', i) < P.ordemDaSecao(i + 1) - 1, 'o pior produto da seção não passa do cabeçalho da próxima');
+  assert.ok(P.ordemNaVitrine(0, 'secao', 3) < 0, 'a última seção ainda vem antes dos soltos');
+  assert.ok(P.ordemDaSecao(0) - 1 < P.ordemNaVitrine(1, 'secao', 0), 'o cabeçalho vem antes dos produtos da seção');
+  // capa sem película é uma escolha válida do tema
+  const cfg = { padrao: { primaria: '#000000' }, cores: ['primaria'], fontesTitulo: {}, fontesTexto: {}, formatos: {} };
+  assert.strictEqual(Ap.temaSeguro({ pelicula: 'nao' }, cfg).pelicula, 'nao');
+  assert.strictEqual(Ap.temaSeguro({ pelicula: 'talvez' }, cfg).pelicula, undefined, 'valor fora da lista é descartado');
+});
 teste('cartão: "como chamar 1 unidade" muda o botão e o contador ("+ 1 batata", "2 batatas")', async () => {
   const M = await import(raiz('js/modo-lib.js'));
   const p = { id: 'b', nome: 'Batata inglesa', unidade: 'kg', preco: 6.5, pesoMedio: 180, nomeUn: 'batata' };

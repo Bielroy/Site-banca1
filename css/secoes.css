@@ -1,0 +1,20 @@
+/* =====================================================================
+   css/secoes.css — SEÇÕES COLORIDAS por categoria (Aparência → Vitrine).
+   A loja escolhe uma cor e um desenho por categoria (ex.: Pastéis dourado,
+   Açaí roxo). A faixa e os cartões se pintam a partir de UMA cor
+   (--sec-cor), e a tinta do texto (--sec-tinta) vem pronta, clara ou escura.
+   ===================================================================== */
+.bloco-secao {
+    grid-column: 1 / -1; margin: 14px -16px 2px; padding: 16px 16px 12px;
+    background: var(--sec-cor); color: var(--sec-tinta);
+    border-top: 3px dashed color-mix(in srgb, var(--sec-tinta) 38%, transparent);
+}
+.bloco-secao h2 { margin: 0; display: flex; align-items: center; gap: 12px; font-family: var(--fonte-titulo); font-size: 1.45rem; font-weight: 750; line-height: 1.15; color: var(--sec-tinta); }
+.bloco-secao h2 .arte-cat { width: 46px; height: 46px; flex: none; }
+.bloco-secao p { margin: 6px 0 0; font-size: .9rem; line-height: 1.4; color: var(--sec-tinta); opacity: .88; max-width: 60ch; }
+@media (min-width: 601px) { .bloco-secao { margin: 18px 0 4px; border-radius: 16px; border: 3px dashed color-mix(in srgb, var(--sec-tinta) 38%, transparent); } }
+
+.produto-card--secao { background: color-mix(in srgb, var(--sec-cor) 14%, #fff); border-color: color-mix(in srgb, var(--sec-cor) 55%, #fff); }
+.produto-card--secao.na-sacola, .produto-card--secao.na-sacola:hover { border-color: var(--sec-cor); }
+@media (hover: hover) { .produto-card--secao:hover { border-color: var(--sec-cor); } }
+.produto-card--secao .produto-img-wrap, .produto-card--secao .produto-img-placeholder { background: color-mix(in srgb, var(--sec-cor) 30%, #fff); }

@@ -43,11 +43,13 @@ export const ehPotinho = (p, cfg) => ehTempero(p, cfg) && !fracionavel(p.unidade
 // ORDEM NA VITRINE (CSS "order"): faixas que NUNCA se encostam. A nota da lista inteligente vai de 0 a 1000.
 //   soltos 0–1000 · cabeçalho dos pacotes 1999 · pacotes 2000–3000 · cabeçalho dos temperos 4999 · temperos 5000–6000
 // (antes os temperos começavam em 3000: o pacote menos pedido, com 3000, caía dentro do cantinho dos temperos)
+//   seções coloridas (até 4): ficam ANTES dos soltos, cada uma numa faixa de 2000: -8000, -6000, -4000, -2000 (cabeçalho = faixa - 1)
 export const ORDEM_PACOTES = 2000, ORDEM_TEMPEROS = 5000;
-/** `p` = chance de o cliente levar (0 a 1); `tipo` = 'pacote' | 'tempero' | ''. */
-export function ordemNaVitrine(p, tipo = '') {
+export const ordemDaSecao = (i) => -8000 + 2000 * Math.max(0, Math.min(3, Number(i) || 0));
+/** `p` = chance de o cliente levar (0 a 1); `tipo` = 'pacote' | 'tempero' | 'secao' | ''; `secao` = posição da seção (0 a 3). */
+export function ordemNaVitrine(p, tipo = '', secao = 0) {
     const n = Number(p), nota = Math.min(1000, Math.max(0, Math.round((1 - (Number.isFinite(n) ? n : 0.3)) * 1000)));
-    return nota + (tipo === 'pacote' ? ORDEM_PACOTES : tipo === 'tempero' ? ORDEM_TEMPEROS : 0);
+    return nota + (tipo === 'pacote' ? ORDEM_PACOTES : tipo === 'tempero' ? ORDEM_TEMPEROS : tipo === 'secao' ? ordemDaSecao(secao) : 0);
 }
 
 /** É pacote fechado? Só produto que NÃO vai para a balança (pacote "por quilo" não existe). */

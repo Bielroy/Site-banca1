@@ -74,3 +74,10 @@
 .pacote-campos label.pacote-liga { display: flex; text-transform: none; letter-spacing: 0; font-size: 1rem; font-weight: 400; margin: 0; color: inherit; }
 .pacote-campos label.pacote-liga small { text-transform: none; letter-spacing: 0; font-weight: 500; }
 .pacote-campos label.pacote-liga b { text-transform: none; letter-spacing: 0; }
+
+/* seções coloridas: cor (seletor + código) e desenho lado a lado; no celular, um embaixo do outro */
+.vt-secao-cor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.vt-secao-cor-par { display: flex; align-items: center; gap: 8px; }
+.vt-secao-cor-par input[type="color"] { width: 46px; height: 40px; padding: 2px; flex: none; }
+.vt-secao-cor-par .vt-hex { flex: 1 1 0; min-width: 0; width: 0; font-family: ui-monospace, monospace; text-transform: lowercase; }
+@media (max-width: 420px) { .vt-secao-cor { grid-template-columns: minmax(0, 1fr); } }

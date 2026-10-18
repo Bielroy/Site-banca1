@@ -35,6 +35,7 @@ const RECADO_ORIGINAL = '+200 pedidos entregues. Pague com PIX, cartão ou dinhe
 // Textos das escolhas (a ordem é a de OPCOES; a 1ª é o visual de sempre)
 const ROTULOS = {
     cabecalho: { cor: 'Cor lisa', degrade: 'Degradê', capa: 'Foto de capa' },
+    pelicula: { sim: 'Com película (texto sempre legível)', nao: 'Sem película (a imagem aparece como é)' },
     borda: { toldo: 'Toldo listrado', onda: 'Onda', reta: 'Reta' },
     arte: { mostrar: 'Mostrar', esconder: 'Esconder' },
     alinhamento: { esquerda: 'À esquerda', centro: 'No centro' },
@@ -172,7 +173,8 @@ function render() {
                 ${escolha('fundoEstilo', 'Fundo da página', opcoesDe('fundoEstilo'), 'Uma textura bem leve no fundo, atrás dos produtos.')}`)}
             ${secao('cabecalho', 'Cabeçalho', 'O topo da loja', `
                 ${escolha('cabecalho', 'Fundo do cabeçalho', opcoesDe('cabecalho'))}
-                <div data-se="cabecalho=capa">${imagem('capa', 'Foto de capa', 'Foto deitada (mais larga que alta). A cor principal fica por cima, bem leve, para o nome continuar legível.')}</div>
+                <div data-se="cabecalho=capa">${imagem('capa', 'Foto de capa', 'Foto deitada (mais larga que alta). Com a película, a cor principal fica por cima para o nome continuar legível.')}</div>
+                <div data-se="cabecalho=capa">${escolha('pelicula', 'Película sobre a capa', opcoesDe('pelicula'), 'Escolha "sem película" quando a própria imagem já tem uma área escura atrás do nome (capa desenhada, com cores fortes).')}</div>
                 ${escolha('alinhamento', 'Nome da loja', opcoesDe('alinhamento'))}
                 ${escolha('arte', 'Desenho no canto', opcoesDe('arte'), 'O desenho do tipo de loja (caixote, pão, espeto...). Com o nome no centro, ele sai.')}
                 ${escolha('borda', 'Borda de baixo', opcoesDe('borda'))}`)}
