@@ -109,6 +109,10 @@ const imagem = (tipo, titulo, dica) => `
         </div>
         <small class="dica-campo" id="ap-${tipo}-status">${dica}</small>
     </div>`;
+/** Campo para digitar o código da cor (#rrggbb), ao lado do seletor. */
+const campoHex = (k, rot) => `<input type="text" class="ap-hex" data-hex="${k}" maxlength="7" size="8" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="#rrggbb" aria-label="Código da cor: ${escapeHTML(rot)}">`;
+/** O que a pessoa digitou virou uma cor? Aceita com ou sem #, e #abc (vira #aabbcc). Devolve '' se não for cor. */
+const corDoTexto = (txt, curta = false) => { let v = String(txt || '').trim().toLowerCase(); if (v && v[0] !== '#') v = '#' + v; if (curta && /^#[0-9a-f]{3}$/.test(v)) v = '#' + [...v.slice(1)].map((c) => c + c).join(''); return corValida(v) ? v : ''; };
 const opcoesFonte = (lista) => Object.keys(lista).map((n) => `<option value="${escapeHTML(n)}">${escapeHTML(n)}</option>`).join('');
 
 function render() {
@@ -158,10 +162,10 @@ function render() {
                     </div>
                 </div>
                 <div class="ap-cores">${CORES.map(([k, rot, dica]) => `
-                    <label class="ap-cor"><input type="color" data-cor="${k}" aria-label="${escapeHTML(rot)}"><span><b>${rot}</b>${dica ? `<small>${dica}</small>` : ''}</span></label>`).join('')}
+                    <div class="ap-cor"><input type="color" id="ap-c-${k}" data-cor="${k}" aria-label="${escapeHTML(rot)}"><span><b><label for="ap-c-${k}">${rot}</label></b>${dica ? `<small>${dica}</small>` : ''}${campoHex(k, rot)}</span></div>`).join('')}
                     <div class="ap-cor ap-cor--botao">
                         <input type="color" data-cor="botao" aria-label="Cor dos botões" id="ap-cor-botao">
-                        <span><b>Cor dos botões</b><label class="ap-check"><input type="checkbox" id="ap-botao-igual"> igual à cor principal</label></span>
+                        <span><b>Cor dos botões</b><label class="ap-check"><input type="checkbox" id="ap-botao-igual"> igual à cor principal</label>${campoHex('botao', 'Cor dos botões')}</span>
                     </div>
                 </div>
                 <div id="ap-avisos" class="ap-avisos" aria-live="polite"></div>
@@ -207,6 +211,7 @@ function sincronizar() {
     const t = estado.tema;
     raiz.querySelectorAll('[data-texto]').forEach((i) => { if (document.activeElement !== i) i.value = estado[i.dataset.texto] || ''; });
     raiz.querySelectorAll('input[data-cor]').forEach((i) => { const k = i.dataset.cor; const v = k === 'botao' ? (t.botao || t.primaria) : t[k]; if (corValida(v) && i.value.toLowerCase() !== v.toLowerCase()) i.value = v.toLowerCase(); });
+    raiz.querySelectorAll('input[data-hex]').forEach((i) => { const k = i.dataset.hex, v = k === 'botao' ? (t.botao || t.primaria) : t[k]; if (document.activeElement !== i && corValida(v)) { i.value = v.toLowerCase(); i.removeAttribute('aria-invalid'); } if (k === 'botao') i.disabled = !t.botao; });
     const igual = $('ap-botao-igual'); if (igual) { igual.checked = !t.botao; $('ap-cor-botao').disabled = !t.botao; }
     const gerar = $('ap-gerar-cor'); if (gerar && !gerar.dataset.mexeu) gerar.value = (t.primaria || '#1a3a2a').toLowerCase();
     raiz.querySelectorAll('input[data-op]').forEach((i) => {
@@ -370,6 +375,7 @@ function ligar() {
         const t = e.target;
         if (t.dataset.texto) mudar((s) => { s[t.dataset.texto] = t.value; }, true);
         else if (t.dataset.cor) mudar((s) => { s.tema[t.dataset.cor] = t.value; }, true);
+        else if (t.dataset.hex) { const v = corDoTexto(t.value); if (v) { t.removeAttribute('aria-invalid'); mudar((s) => { s.tema[t.dataset.hex] = v; }, true); } else t.setAttribute('aria-invalid', String(t.value.trim() !== '')); }
         else if (t.dataset.num === 'raio') mudar((s) => { s.tema.raio = Number(t.value); }, true);
         else if (t.id === 'ap-gerar-cor') t.dataset.mexeu = '1';
     });
@@ -379,6 +385,7 @@ function ligar() {
         else if (t.dataset.fonte) mudar((s) => { s.tema[t.dataset.fonte] = t.value; });
         else if (t.id === 'ap-botao-igual') mudar((s) => { if (t.checked) delete s.tema.botao; else s.tema.botao = s.tema.primaria; });
         else if (t.dataset.imagem && t.files && t.files[0]) { enviarImagem(t.dataset.imagem, t.files[0]); t.value = ''; }
+        else if (t.dataset.hex) { const v = corDoTexto(t.value, true); if (v) mudar((s) => { s.tema[t.dataset.hex] = v; }); ultimoMarco = 0; t.removeAttribute('aria-invalid'); const k = t.dataset.hex, atual = k === 'botao' ? (estado.tema.botao || estado.tema.primaria) : estado.tema[k]; if (corValida(atual)) t.value = atual.toLowerCase(); }
         else if (t.dataset.texto || t.dataset.cor || t.dataset.num) ultimoMarco = 0;          // soltou: a próxima mudança é outro passo do Desfazer
     });
     raiz.addEventListener('click', async (e) => {

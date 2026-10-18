@@ -100,13 +100,14 @@ export const MODELOS = {
     jantinha: { primaria: '#7a2e12', secundaria: '#c8662e', destaque: '#e0a23a', fundo: '#fbf3e7', superficie: '#fffaf2', texto: '#2a1c14', sobrePrimaria: '#fff8ef', fonteTitulo: 'Lora', fonteTexto: 'Nunito Sans', raio: 18, etiqueta: 'limpa' },
     padaria: { primaria: '#5b3a1e', secundaria: '#b9853f', destaque: '#d9a441', fundo: '#f7efe3', superficie: '#fffdf8', texto: '#2b1d10', sobrePrimaria: '#fff8ec', fonteTitulo: 'Playfair Display', fonteTexto: 'Lato', raio: 12, etiqueta: 'barbante', fundoEstilo: 'papel' },
     acai: { primaria: '#4a1650', secundaria: '#8e3a8f', destaque: '#f0b21a', fundo: '#f8f2f8', superficie: '#ffffff', texto: '#24102a', sobrePrimaria: '#ffffff', fonteTitulo: 'Baloo 2', fonteTexto: 'Poppins', raio: 20, etiqueta: 'selo', botaoFormato: 'pilula', card: 'sombra' },
+    pastelacai: { primaria: '#4a1650', secundaria: '#8e3a8f', destaque: '#f0b94a', fundo: '#fbf3dc', superficie: '#ffffff', texto: '#2a1230', sobrePrimaria: '#ffffff', fonteTitulo: 'Baloo 2', fonteTexto: 'Poppins', raio: 20, etiqueta: 'selo', botaoFormato: 'pilula', card: 'sombra' },
     mercadinho: { primaria: '#0f4c81', secundaria: '#2f8fd8', destaque: '#f2a516', fundo: '#f2f6fa', superficie: '#ffffff', texto: '#14212e', sobrePrimaria: '#ffffff', fonteTitulo: 'Montserrat', fonteTexto: 'Inter', raio: 10, etiqueta: 'selo', botaoFormato: 'arredondado', card: 'borda', borda: 'reta' },
     doceria: { primaria: '#c2416b', secundaria: '#e88aa8', destaque: '#7a3b2e', fundo: '#fdf3f5', superficie: '#ffffff', texto: '#3a1a24', sobrePrimaria: '#ffffff', fonteTitulo: 'Pacifico', fonteTexto: 'Nunito Sans', raio: 22, etiqueta: 'limpa', card: 'sombra', fundoEstilo: 'pontos', borda: 'onda' },
     natural: { primaria: '#3d5a40', secundaria: '#8aa87a', destaque: '#d08c3d', fundo: '#f3f1e8', superficie: '#fbfaf5', texto: '#1f2a20', sobrePrimaria: '#ffffff', fonteTitulo: 'Merriweather', fonteTexto: 'DM Sans', raio: 16, etiqueta: 'barbante', card: 'plano', fundoEstilo: 'papel' },
     noite: { primaria: '#1c1c1e', secundaria: '#3ddc84', destaque: '#3ddc84', fundo: '#0e0e10', superficie: '#1a1a1d', texto: '#f2f2f2', sobrePrimaria: '#ffffff', botao: '#3ddc84', fonteTitulo: 'Rubik', fonteTexto: 'Inter', raio: 12, etiqueta: 'selo', botaoFormato: 'arredondado', card: 'borda', borda: 'reta', cabecalho: 'degrade' },
 };
 /** Nomes dos modelos no painel. */
-export const NOMES_MODELOS = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', jantinha: 'Jantinha', padaria: 'Padaria', acai: 'Açaí', mercadinho: 'Mercadinho', doceria: 'Doceria', natural: 'Natural', noite: 'Noite' };
+export const NOMES_MODELOS = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', jantinha: 'Jantinha', padaria: 'Padaria', acai: 'Açaí', pastelacai: 'Pastel e açaí', mercadinho: 'Mercadinho', doceria: 'Doceria', natural: 'Natural', noite: 'Noite' };
 
 /** Formatos da área da foto no cartão do produto: rótulo e proporção (largura / altura). */
 export const FOTO_FORMATOS = { quadrada: ['Quadrada', '1 / 1'], alta: ['Em pé', '4 / 5'], 'bem-alta': ['Bem em pé (pacotes, garrafas)', '2 / 3'], larga: ['Deitada', '4 / 3'] };

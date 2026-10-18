@@ -669,6 +669,41 @@ teste('painel: a aba Aparência abre e a prévia da loja carrega dentro dela', a
   semErros(erros); await fechar();
 });
 
+teste('painel: Aparência aceita o código da cor digitado (#rrggbb), mostra o que vale e o modelo "Pastel e açaí" preenche tudo', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/testes/tela/painel-aparencia.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForSelector('#ap-gravar', { timeout: 8000 });
+  await pagina.evaluate(() => document.querySelectorAll('#aparencia-conteudo details').forEach((d) => { d.open = true; }));
+  const hex = (k) => pagina.locator(`[data-hex="${k}"]`), cor = (k) => pagina.locator(`input[type="color"][data-cor="${k}"]`);
+  assert.strictEqual(await hex('primaria').inputValue(), (await cor('primaria').inputValue()), 'o campo do código mostra a cor que está valendo');
+  // digitar sem o #: vale na hora e o seletor acompanha
+  await hex('primaria').fill('4a1650');
+  assert.strictEqual(await cor('primaria').inputValue(), '#4a1650');
+  assert.strictEqual(await pagina.locator('#ap-estado').innerText(), 'Mudanças ainda não gravadas');
+  // texto que não é cor: marca em vermelho, não muda nada, e ao sair volta ao código que vale
+  await hex('secundaria').fill('roxo');
+  assert.strictEqual(await hex('secundaria').getAttribute('aria-invalid'), 'true');
+  await pagina.locator('[data-hex="destaque"]').focus();
+  assert.strictEqual(await hex('secundaria').inputValue(), await cor('secundaria').inputValue(), 'saiu do campo: volta ao código que vale');
+  assert.strictEqual(await hex('secundaria').getAttribute('aria-invalid'), null);
+  // #abc vira #aabbcc ao sair do campo
+  await hex('destaque').fill('#fa0'); await hex('texto').focus();
+  assert.strictEqual(await cor('destaque').inputValue(), '#ffaa00');
+  // o modelo "Pastel e açaí" traz as cores certas e o campo mostra os códigos
+  await pagina.locator('[data-modelo="pastelacai"]').click();
+  for (const [k, v] of Object.entries({ primaria: '#4a1650', secundaria: '#8e3a8f', destaque: '#f0b94a', fundo: '#fbf3dc', superficie: '#ffffff', texto: '#2a1230', sobrePrimaria: '#ffffff' })) assert.strictEqual(await hex(k).inputValue(), v, k);
+  assert.ok(await pagina.locator('[data-modelo="pastelacai"]').evaluate((b) => b.classList.contains('ativo')), 'o modelo aparece marcado');
+  // cor dos botões: só dá para digitar quando não é "igual à cor principal"
+  assert.strictEqual(await hex('botao').isDisabled(), true);
+  await pagina.uncheck('#ap-botao-igual'); await hex('botao').fill('#f0b94a');
+  assert.strictEqual(await cor('botao').inputValue(), '#f0b94a');
+  await pagina.click('#ap-gravar');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /^tenants\/banca$/.test(g.path)), null, { timeout: 4000 });
+  const g = await pagina.evaluate(() => window.__gravados.filter((x) => /^tenants\/banca$/.test(x.path)).pop().dados);
+  assert.strictEqual(g.tema.primaria, '#4a1650'); assert.strictEqual(g.tema.botao, '#f0b94a'); assert.strictEqual(g.tema.fonteTitulo, 'Baloo 2');
+  semErros(erros); await fechar();
+});
+
 teste('painel: Vitrine (na aba Aparência) cria um quadro com botão de categoria e grava em loja/config', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
   const { pagina, erros, fechar } = await abrir('/testes/tela/painel-aparencia.html', cen);

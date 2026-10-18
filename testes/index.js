@@ -1692,13 +1692,14 @@ teste('app por loja: nome, cor e ícone próprios; a loja original e loja bloque
   assert.deepStrictEqual(L.ARTES, JSON.parse(JSON.stringify(A.ARTES)), 'js/arte-lib.js e lib/artes.js com os mesmos desenhos');
   for (const t of ['Padaria', 'hortifruti', 'Caldo de cana', 'Queijo, ovos e mel', 'espetinhos', 'Loja de presentes', '']) assert.strictEqual(L.arteDoTipo(t), A.arteDoTipo(t), t);
   const db = criarBanco({ 'tenants/pao-da-lu': { nome: 'Pães da <b>Lúcia</b>', tipo: 'Padaria', subtitulo: 'Pão quentinho', ativo: true, tema: { primaria: '#7a2e12', fundo: '#fbf3e7', sobrePrimaria: '#fff8ef' } },
-    'tenants/horta': { nome: 'Horta do Zé', tipo: 'hortifruti', ativo: true }, 'tenants/fechada': { nome: 'Fechada', ativo: false }, 'tenants/ruim': { nome: 'X', ativo: true, tema: { primaria: 'red"/><script>' } } });
+    'tenants/horta': { nome: 'Horta do Zé', tipo: 'hortifruti', ativo: true }, 'tenants/pastel-acai': { nome: 'Pastel e Açaí', tipo: 'Pastel e açaí', ativo: true, tema: { primaria: '#4a1650' } }, 'tenants/fechada': { nome: 'Fechada', ativo: false }, 'tenants/ruim': { nome: 'X', ativo: true, tema: { primaria: 'red"/><script>' } } });
   const api = carregarApi(raiz('api/manifest.js'), criarAdmin(db, {})), ch = (query, method = 'GET') => chamar(api, { method, query });
   const m = JSON.parse((await ch({ loja: 'pao-da-lu' })).corpo);
   assert.strictEqual(m.name, 'Pães da b Lúcia /b'.replace(/\s+/g, ' ')); assert.strictEqual(m.theme_color, '#7a2e12'); assert.strictEqual(m.background_color, '#fbf3e7');
   assert.strictEqual(m.start_url, '/?loja=pao-da-lu'); assert.strictEqual(m.id, '/?loja=pao-da-lu'); assert.ok(m.icons.some((i) => i.purpose === 'maskable') && m.icons.every((i) => i.src === '/api/manifest?loja=pao-da-lu&icone=1'));
   const svg = (await ch({ loja: 'pao-da-lu', icone: '1' })).corpo; assert.ok(svg.startsWith('<svg') && svg.includes('fill="#7a2e12"') && svg.includes(L.ARTES.pao));
   assert.ok((await ch({ loja: 'horta', icone: '1' })).corpo.includes('#E9A862'), 'hortifruti leva o caixote colorido');
+  const svgPA = (await ch({ loja: 'pastel-acai', icone: '1' })).corpo; assert.ok(svgPA.includes(L.ARTES.pastelacai) && svgPA.includes('fill="#4a1650"'), 'pastel e açaí leva o desenho dos dois sobre o roxo da loja');
   const ruim = (await ch({ loja: 'ruim', icone: '1' })).corpo; assert.ok(!ruim.includes('script') && ruim.includes('fill="#1a3a2a"'), 'cor inválida cai na padrão');
   for (const q of [{ loja: 'banca' }, { loja: 'fechada' }, { loja: 'nao-existe' }, { loja: '../x' }, {}]) assert.strictEqual((await ch(q)).status, 404, JSON.stringify(q));
   assert.strictEqual((await ch({ loja: 'pao-da-lu' }, 'POST')).status, 405);
@@ -1872,7 +1873,7 @@ teste('fotos: miniatura só para link https em produção, nas larguras que a Ve
 
 teste('cabeçalho: cada tipo de negócio tem o seu desenho', async () => {
   const A = await import(raiz('js/arte-lib.js'));
-  const casos = { hortifruti: 'caixote', 'Feira de Frutas': 'caixote', espetinhos: 'espeto', jantinha: 'prato', Padaria: 'pao', 'Pães': 'pao', 'Açaí': 'tigela', Pizzaria: 'pizza', 'Hambúrgueres': 'burger', Confeitaria: 'doce', Doces: 'doce', Bolo: 'bolo', Bolos: 'bolo', 'Sucos e Cafés': 'copo', 'Creme e suco': 'copo', Crepe: 'crepe', Pastel: 'pastel', 'Pastéis': 'pastel', 'Macarrão': 'macarrao', 'Caldo de cana': 'cana', Caldos: 'tigela', 'Queijo/ovos/mel e doces da roça': 'queijo', 'Banca do queijo': 'queijo', Mel: 'queijo', Pamonha: 'pamonha', 'Cachorro quente': 'hotdog', 'Loja de Presentes': 'sacola', '': 'sacola' };
+  const casos = { hortifruti: 'caixote', 'Feira de Frutas': 'caixote', espetinhos: 'espeto', jantinha: 'prato', Padaria: 'pao', 'Pães': 'pao', 'Açaí': 'tigela', Pizzaria: 'pizza', 'Hambúrgueres': 'burger', Confeitaria: 'doce', Doces: 'doce', Bolo: 'bolo', Bolos: 'bolo', 'Sucos e Cafés': 'copo', 'Creme e suco': 'copo', Crepe: 'crepe', Pastel: 'pastel', 'Pastéis': 'pastel', 'Macarrão': 'macarrao', 'Caldo de cana': 'cana', Caldos: 'tigela', 'Queijo/ovos/mel e doces da roça': 'queijo', 'Banca do queijo': 'queijo', Mel: 'queijo', Pamonha: 'pamonha', 'Cachorro quente': 'hotdog', 'Pastel e açaí': 'pastelacai', 'Pastel e Açaí da Rô': 'pastelacai', 'Açaí e pastel': 'pastelacai', Pastelaria: 'pastel', pastelacai: 'pastelacai', 'Loja de Presentes': 'sacola', '': 'sacola' };
   for (const [tipo, esperado] of Object.entries(casos)) assert.strictEqual(A.arteDoTipo(tipo), esperado, tipo);
   for (const [nome, html] of Object.entries(A.ARTES)) assert.ok(html.length > 40 && !/<script|on\w+=|href/i.test(html), nome);
   assert.ok(Object.values(casos).every((q) => q === 'caixote' || A.ARTES[q]));
