@@ -70,6 +70,36 @@ teste('busca e categoria filtram a vitrine', async () => {
   semErros(erros); await fechar();
 });
 
+teste('trocar de categoria com a página rolada para baixo leva ao primeiro produto, não ao fim da lista', async () => {
+  const c = cenarioPadrao();
+  for (let i = 1; i <= 30; i++) c.lojas.banca.produtos[`fruta${i}`] = { nome: `Fruta ${i}`, preco: 5 + i, unidade: 'kg', cat: 'frutas', ativo: true };
+  const { pagina, erros, fechar } = await abrir('/', c);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));   // lá embaixo da vitrine
+  await pagina.waitForTimeout(200);
+  const posicao = () => pagina.evaluate(() => {
+    const barra = document.querySelector('.controles').getBoundingClientRect().bottom;
+    const primeiro = [...document.querySelectorAll('#lista-produtos .produto-card')].find((x) => x.offsetParent !== null);
+    const r = primeiro.getBoundingClientRect();
+    return { nome: primeiro.querySelector('.produto-nome').textContent.trim(), topo: Math.round(r.top), barra: Math.round(barra), altura: innerHeight };
+  });
+  for (const [cat, nome] of [['verduras', 'Alface crespa'], ['legumes', 'Tomate italiano'], ['verduras', 'Alface crespa']]) {
+    await pagina.locator(`#categorias .cat-btn[data-cat="${cat}"]`).click();
+    await esperarVisiveis(pagina, () => [...document.querySelectorAll('#lista-produtos .produto-card')].filter((x) => x.offsetParent !== null).length === 1);
+    await pagina.waitForTimeout(150);
+    const p = await posicao();
+    assert.strictEqual(p.nome, nome);
+    assert.ok(p.topo >= p.barra - 2 && p.topo < p.altura - 100, `${cat}: o produto tinha de aparecer logo abaixo das categorias (topo ${p.topo}, barra ${p.barra}, tela ${p.altura})`);
+    await pagina.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  }
+  // quem está no começo da página não é puxado para baixo
+  await pagina.locator('#categorias .cat-btn[data-cat="todas"]').click();
+  await pagina.evaluate(() => window.scrollTo(0, 0)); await pagina.waitForTimeout(100);
+  await pagina.locator('#categorias .cat-btn[data-cat="frutas"]').click(); await pagina.waitForTimeout(150);
+  assert.strictEqual(await pagina.evaluate(() => window.scrollY), 0, 'no topo, a página continua no topo');
+  semErros(erros); await fechar();
+});
+
 teste('pedido de ponta a ponta: põe na sacola, preenche a entrega, envia e vê o WhatsApp', async () => {
   const { pagina, erros, fechar } = await abrir('/');
   await cards(pagina).first().waitFor({ timeout: 8000 });
@@ -776,7 +806,8 @@ const ponteFalsa = (c) => (c.op === 'listar' ? { sucesso: true, pontes: [{ id: '
   });
   navegador = await chromium.launch();
   let falhas = 0;
-  for (const [nome, fn] of testes) {
+  // SO_TESTE="parte do nome" roda só os testes que têm esse texto no nome (para conferir um de cada vez)
+  for (const [nome, fn] of testes.filter(([n]) => !process.env.SO_TESTE || n.includes(process.env.SO_TESTE))) {
     try { await fn(); console.log('  ok    ' + nome); }
     catch (e) { falhas++; console.log('  FALHOU ' + nome + '\n         ' + String((e && e.stack) || e).split('\n').slice(0, 6).join('\n         ')); }
   }

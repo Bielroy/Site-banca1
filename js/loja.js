@@ -842,6 +842,17 @@ const posicionarBlocos = () => {
 };
 document.addEventListener('ranking-pronto', posicionarBlocos);
 
+// Trocar de categoria com a página rolada para baixo: a lista nova (mais curta) aparecia com a página
+// no mesmo lugar, e o navegador jogava a pessoa para o FIM dela, onde não tem produto. Agora a página
+// sobe até o primeiro produto, logo abaixo da barra de busca e categorias (que fica presa no topo).
+// Quem ainda está acima da lista (no começo da página) não é mexido.
+function subirParaOsProdutos() {
+    const grid = document.getElementById('lista-produtos'); if (!grid) return;
+    const barra = document.querySelector('.controles');
+    const alvo = Math.max(0, Math.round(grid.getBoundingClientRect().top + window.scrollY - (barra ? barra.offsetHeight : 0) - 8));
+    if (window.scrollY > alvo + 2) window.scrollTo({ top: alvo, behavior: 'auto' });
+}
+
 // ---------------------------------------------------------------------
 // FUNIL (para o dono ver o antes e depois da vitrine no painel): cada aparelho conta
 // UMA vez por dia em cada etapa. Só número; a prévia do painel não conta.
@@ -1935,6 +1946,7 @@ document.body.addEventListener('click', async (e) => {
             document.querySelectorAll('#categorias .cat-btn').forEach(b => b.classList.toggle('active', b === actionTarget));
             actionTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
             renderLoja();
+            subirParaOsProdutos();
         }
         else if (action === 'ver-pacote') {     // "Também tem em pacote" na sacola: fecha a sacola e mostra o pacote na vitrine
             if (history.state && history.state.cart) history.back();
