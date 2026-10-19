@@ -60,6 +60,7 @@ export function criarCamposEndereco(raiz, p) {
             <label for="${p}-cond">Condomínio</label>
             <select id="${p}-cond"></select>
             <input type="text" id="${p}-cond-outro" placeholder="Nome do condomínio" autocomplete="off" maxlength="60" hidden>
+            <p class="end-fixo" id="${p}-cond-fixo" hidden></p>
         </div>
         <div class="grid-2 end-grid">
             <div class="form-group"><label for="${p}-quadra">Quadra</label><input type="text" id="${p}-quadra" maxlength="60" autocomplete="off"></div>
@@ -67,17 +68,22 @@ export function criarCamposEndereco(raiz, p) {
         </div>`;
     const sel = raiz.querySelector(`#${p}-cond`), outro = raiz.querySelector(`#${p}-cond-outro`);
     const campoA = raiz.querySelector(`#${p}-quadra`), campoB = raiz.querySelector(`#${p}-lote`);
-    let lista = [];
+    const fixo = raiz.querySelector(`#${p}-cond-fixo`);
+    let lista = [], travado = null;      // travado = condomínio da feira do cliente: não dá para trocar (a troca é pelo link da outra feira)
 
     const formatoAtual = () => {
+        if (travado) return travado.formato === 'rua' ? 'rua' : travado.formato === 'livre' ? 'livre' : 'ql';
         if (!lista.length || sel.value === OUTRO) return 'livre';
         const c = lista.find((x) => x.id === sel.value);
         return c && c.formato === 'rua' ? 'rua' : 'ql';
     };
     const ajustar = () => {
         const semLista = !lista.length;
-        sel.hidden = semLista;
-        outro.hidden = !(semLista || sel.value === OUTRO);
+        sel.hidden = semLista || !!travado;
+        outro.hidden = !!travado || !(semLista || sel.value === OUTRO);
+        fixo.hidden = !travado;
+        if (travado) fixo.innerHTML = `Entregamos no condomínio <b>${escapeHTML(travado.nome)}</b>`;
+        raiz.querySelector(`label[for="${p}-cond"]`).hidden = !!travado;
         const r = ROTULOS[formatoAtual()];
         raiz.querySelector(`label[for="${p}-quadra"]`).textContent = r.a;
         raiz.querySelector(`label[for="${p}-lote"]`).textContent = r.b;
@@ -86,17 +92,20 @@ export function criarCamposEndereco(raiz, p) {
     };
     sel.addEventListener('change', () => { ajustar(); (sel.value === OUTRO ? outro : campoA).focus(); });
 
-    const definirLista = (nova) => {
+    let semOutro = false;
+    const definirLista = (nova, opcoes = {}) => {
+        semOutro = !!opcoes.semOutro;       // cliente de feira: só os condomínios da feira dele (sem "não está na lista")
         const antes = ler();
         lista = (Array.isArray(nova) ? nova : []).filter((c) => c && c.id && c.nome && c.ativo !== false);
         sel.innerHTML = '<option value="">Escolha o condomínio</option>'
             + lista.map((c) => `<option value="${escapeHTML(c.id)}">${escapeHTML(c.nome)}</option>`).join('')
-            + `<option value="${OUTRO}">Meu condomínio não está na lista</option>`;
+            + (semOutro && lista.length ? '' : `<option value="${OUTRO}">Meu condomínio não está na lista</option>`);
         preencher(antes);
     };
 
     const preencher = (e) => {
         e = e || {};
+        if (travado) { campoA.value = e.quadra || ''; campoB.value = e.lote || ''; ajustar(); return; }
         const daLista = lista.find((c) => c.id === e.condominioId)
             || lista.find((c) => c.nome.toLowerCase() === String(e.condominio || '').trim().toLowerCase());
         if (daLista) { sel.value = daLista.id; outro.value = ''; }
@@ -107,6 +116,7 @@ export function criarCamposEndereco(raiz, p) {
     };
 
     const ler = () => {
+        if (travado) return { condominioId: travado.id, condominio: travado.nome, formatoEndereco: formatoAtual(), quadra: campoA.value.trim(), lote: campoB.value.trim() };
         const c = lista.find((x) => x.id === sel.value);
         return {
             condominioId: c ? c.id : '',
@@ -125,6 +135,14 @@ export function criarCamposEndereco(raiz, p) {
         return '';
     };
 
+    /** Trava o condomínio (cliente de uma feira): só quadra e lote ficam para preencher. `null` solta de novo. */
+    const travar = (c) => {
+        const quadra = campoA.value, lote = campoB.value;
+        travado = c && c.nome ? { id: c.id || '', nome: String(c.nome), formato: c.formato || 'ql' } : null;
+        ajustar();
+        campoA.value = quadra; campoB.value = lote;
+    };
+
     definirLista([]);
-    return { definirLista, preencher, ler, validar };
+    return { definirLista, preencher, ler, validar, travar };
 }

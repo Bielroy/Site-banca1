@@ -219,6 +219,16 @@ export function condominiosDasFeiras() {
     }
     return out;
 }
+/**
+ * O condomínio guardado no aparelho é de UMA das feiras do cliente? Então o endereço fica travado nele:
+ * trocar de condomínio (e de feira) só pelo link da outra feira. Devolve { id, nome, formato } ou null.
+ */
+export function condominioTravado(nome) {
+    if (!FEIRA_CLIENTE || !nome) return null;
+    const n = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(), alvo = n(nome);
+    const c = condominiosDasFeiras().find((x) => [x.nome, ...(x.apelidos || [])].some((v) => n(v) === alvo));
+    return c ? { id: c.id, nome: c.nome, formato: c.formato } : null;
+}
 const lojasValidas = (feira) => ((feira && feira.lojas) || []).filter((l) => l && /^[a-z0-9][a-z0-9-]{1,39}$/.test(l.id || '') && l.nome);
 
 // SELO DA FEIRA no cabeçalho ("Feira do Madri"): só para quem entrou pelo link/QR daquela feira.

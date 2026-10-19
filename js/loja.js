@@ -10,7 +10,7 @@ import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_
 import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, chavePromo, contaDaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO, ehTempero, ehPotinho, NOMES_POTE, TEMPEROS_PADRAO, ORDEM_PACOTES, ORDEM_TEMPEROS, ordemDaSecao } from './pacote-lib.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
-import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras } from './tema.js';
+import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras, condominioTravado } from './tema.js';
 import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
@@ -520,11 +520,23 @@ const agoraLoja = () => Date.now() + ACERTO_RELOGIO;
 const pintarListaDeCondominios = () => {
     const daLoja = Array.isArray(STATE.config.condominios) ? STATE.config.condominios : [];
     const ja = new Set(daLoja.filter((c) => c && c.nome).map((c) => normNome(c.nome)));
-    const lista = daLoja.concat(condominiosDasFeiras().filter((c) => ![c.nome, ...(c.apelidos || [])].some((n) => ja.has(normNome(n)))).map(({ apelidos, ...c }) => c));
-    try { endCheckout.definirLista(lista); endTopo.definirLista(lista); } catch (_) { /* campos ainda não montados */ }
+    const daFeira = condominiosDasFeiras();
+    // Cliente de uma feira (entrou pelo link dela): só vê os condomínios DA feira dele. Para ver os de outra feira, só com o link dela.
+    const soDaFeira = !!feiraDoClienteAqui() && daFeira.length > 0;
+    const lista = soDaFeira ? daFeira.map(({ apelidos, ...c }) => c)
+        : daLoja.concat(daFeira.filter((c) => ![c.nome, ...(c.apelidos || [])].some((n) => ja.has(normNome(n)))).map(({ apelidos, ...c }) => c));
+    try { endCheckout.definirLista(lista, { semOutro: soDaFeira }); endTopo.definirLista(lista, { semOutro: soDaFeira }); } catch (_) { /* campos ainda não montados */ }
+    travarCondominio();
+};
+// Condomínio já escolhido e que é da feira do cliente: fica TRAVADO (só quadra e lote mudam) e o topo mostra só "Entregar: Qd.. · Lt..".
+const travarCondominio = () => {
+    const e = lerEnderecoSalvo(), c = e && e.condominio ? condominioTravado(e.condominio) : null;
+    try { endCheckout.travar(c); endTopo.travar(c); } catch (_) { /* campos ainda não montados */ }
+    pintarResumoEndereco();
 };
 const normNome = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 document.addEventListener('feiras-da-loja', () => pintarListaDeCondominios());
+document.addEventListener('feira-do-cliente', () => pintarListaDeCondominios());
 /** Para quando é o pedido de um cliente da feira (null = não é cliente de feira desta banca). */
 const entregaDaFeira = () => { const f = feiraDoClienteAqui(); return f ? proximaEntrega(f, agoraLoja()) : null; };
 /** Dia da semana que decide o preço: o da entrega da feira do cliente, ou hoje (Brasília). Mesmo critério do servidor. */
@@ -1784,10 +1796,15 @@ const transicaoFoto = (fotoCard, abrir) => {
 // =========================================================
 const endCheckout = criarCamposEndereco(document.getElementById('checkout-endereco'), 'cli');
 const endTopo = criarCamposEndereco(document.getElementById('endereco-campos'), 'end');
-const pintarResumoEndereco = () => {
-    const e = lerEnderecoSalvo();
-    document.getElementById('endereco-resumo').textContent = e && e.condominio ? linhaEndereco(e, { curto: true }) : 'Escolha onde entregar';
-};
+function pintarResumoEndereco() {
+    const e = lerEnderecoSalvo(), el = document.getElementById('endereco-resumo');
+    if (!el) return;
+    if (!(e && e.condominio)) { el.textContent = 'Escolha onde entregar'; return; }
+    const travado = e.modo !== 'retirada' && condominioTravado(e.condominio);
+    // condomínio travado: só quadra e lote (o condomínio é o da feira dele e não muda por aqui)
+    const resto = travado ? linhaEndereco({ ...e, condominio: '' }, { curto: true }) : '';
+    el.textContent = travado ? (resto ? `Entregar: ${resto}` : 'Informe quadra e lote') : linhaEndereco(e, { curto: true });
+}
 pintarResumoEndereco();
 
 // =========================================================
@@ -1852,7 +1869,7 @@ const esquecerDados = async () => {
 document.getElementById('btn-salvar-endereco').addEventListener('click', () => {
     const falta = endTopo.validar();
     if (falta) return showToast(falta, true);
-    const endNovo = endTopo.ler(); salvarEndereco(endNovo); pintarResumoEndereco(); feiraDoEnderecoSalvo(endNovo);
+    const endNovo = endTopo.ler(); salvarEndereco(endNovo); travarCondominio(); feiraDoEnderecoSalvo(endNovo);
     closeModal('modal-endereco');
     if (history.state && history.state.modal === 'modal-endereco') history.back();
     showToast('Endereço guardado neste aparelho');
@@ -2298,7 +2315,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             clientes.unshift(este);
             localStorage.setItem(chave('banca_clientes'), JSON.stringify(clientes.slice(0, 5)));
             if (data.temConta) marcarConta(true);
-            if (!retirada) { salvarEndereco(endereco); pintarResumoEndereco(); feiraDoEnderecoSalvo(endereco); }
+            if (!retirada) { salvarEndereco(endereco); travarCondominio(); feiraDoEnderecoSalvo(endereco); }
 
             const meusPedidos = lerLista('banca_meus_pedidos');
             meusPedidos.unshift({

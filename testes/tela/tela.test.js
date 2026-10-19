@@ -452,6 +452,41 @@ teste('loja aberta pelo endereço normal (sem link de feira) não mostra selo de
   semErros(erros); await fechar();
 });
 
+teste('feira: cliente que entrou pelo link não troca o condomínio no topo (só quadra e lote); o link da outra feira troca', async () => {
+  const cen = cenarioPadrao();
+  cen.feiras = { ...cen.feiras,
+    florenca: { ...cen.feiras.florenca, conds: [{ id: 'jf', nome: 'Jardins Florença', formato: 'ql' }, { id: 'vf', nome: 'Vila Florença', formato: 'ql' }] },
+    madri: { nome: 'Feira Madri', dias: [3], lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', cor: '#1a3a2a' }], conds: [{ id: 'sm', nome: 'Solar Madri', formato: 'ql' }] } };
+  cen.lojas.banca.ficha = { ...cen.lojas.banca.ficha, feiras: ['florenca', 'madri'] };
+  const { pagina, erros, fechar } = await abrir('/feira/florenca', cen);
+  await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
+  assert.strictEqual((await pagina.locator('#endereco-resumo').innerText()).trim(), 'Escolha onde entregar');
+  await pagina.click('#btn-endereco');
+  // lista só com os condomínios DA feira dele, sem "não está na lista" e sem o de outra feira
+  assert.deepStrictEqual(await opcoesDe(pagina, '#end-cond'), ['Escolha o condomínio', 'Jardins Florença', 'Vila Florença']);
+  await pagina.selectOption('#end-cond', { label: 'Jardins Florença' });
+  await pagina.fill('#end-quadra', '5'); await pagina.fill('#end-lote', '12');
+  await pagina.click('#btn-salvar-endereco');
+  await pagina.waitForTimeout(400);
+  // o topo mostra só quadra e lote
+  assert.strictEqual((await pagina.locator('#endereco-resumo').innerText()).trim(), 'Entregar: Qd 5 · Lt 12');
+  await pagina.click('#btn-endereco');
+  assert.ok(!(await pagina.locator('#end-cond').isVisible()), 'o seletor de condomínio some');
+  assert.match(await pagina.locator('#end-cond-fixo').innerText(), /Entregamos no condomínio Jardins Florença/);
+  await pagina.fill('#end-lote', '14'); await pagina.click('#btn-salvar-endereco'); await pagina.waitForTimeout(300);
+  assert.strictEqual((await pagina.locator('#endereco-resumo').innerText()).trim(), 'Entregar: Qd 5 · Lt 14');
+  const salvo = await pagina.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => /^banca_endereco/.test(k)))));
+  assert.strictEqual(salvo.condominio, 'Jardins Florença'); assert.strictEqual(salvo.lote, '14');
+  // o link da OUTRA feira destrava e mostra os condomínios dela
+  await pagina.goto(servidor.base + '/feira/madri');
+  await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
+  assert.match(await pagina.locator('#selo-feira').innerText(), /Madri/);
+  assert.notStrictEqual((await pagina.locator('#endereco-resumo').innerText()).trim().startsWith('Entregar:'), true, 'condomínio de outra feira: não fica travado');
+  await pagina.click('#btn-endereco');
+  assert.deepStrictEqual(await opcoesDe(pagina, '#end-cond'), ['Escolha o condomínio', 'Solar Madri']);
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- REGISTRO DE ERROS
 teste('erro de código na loja é avisado ao servidor (sem os parâmetros do endereço)', async () => {
   const { pagina, fechar } = await abrir('/?loja=paes-da-lucia&tel=62999', cenarioPadrao(), { antes: () => { window.__errosSiteTeste = true; } });

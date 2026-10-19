@@ -434,3 +434,7 @@ button, a, input, select, textarea, label, summary, [data-action], .produto-card
 }
 .selo-feira svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .selo-feira span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* condomínio travado (cliente de uma feira): só quadra e lote se preenchem */
+.end-fixo { margin: 0 0 4px; padding: 10px 14px; border-radius: var(--radius-sm, 12px); background: var(--parchment, #f2ede3); color: var(--text-dark); font-size: .95rem; line-height: 1.4; }
+.end-fixo b { color: var(--primaria, var(--forest)); }
