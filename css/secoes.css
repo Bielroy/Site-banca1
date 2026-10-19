@@ -69,3 +69,11 @@ body.cat-imersiva .rodape-loja, body.cat-imersiva footer { color: var(--cat-tint
 @media (prefers-reduced-motion: reduce) { .fundo-secao, body.cat-imersiva { transition: none; } }
 body.cat-imersiva .fundo-secao { background-image: none; }
 body.cat-imersiva .cat-btn.active { background: var(--cat-tinta); color: var(--cat-cor); border-color: var(--cat-tinta); box-shadow: 0 2px 8px color-mix(in srgb, #000 20%, transparent); }
+
+/* ---------- ajustes de desenho ---------- */
+/* botão "Adicionar" sobre a cor da seção: a cor de botão da loja quando se destaca (roxo sobre dourado), senão a tinta da seção */
+#lista-produtos .produto-card--imersivo .card-add, #lista-produtos .produto-card--imersivo .modo-btn.principal {
+    background: var(--sec-botao, var(--sec-tinta)); color: var(--sec-sobre-botao, var(--sec-cor));
+    box-shadow: 0 3px 0 color-mix(in srgb, var(--sec-botao, var(--sec-tinta)) 62%, #000);
+}
+@media (hover: hover) { #lista-produtos .produto-card--imersivo .card-add:hover { background: var(--sec-botao, var(--sec-tinta)); } }

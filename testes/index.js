@@ -2840,7 +2840,9 @@ teste('vitrine: faixas novas respeitam o mínimo de produtos e o limite de 4 fai
   assert.deepStrictEqual(f.map((x) => [x.id, x.lugar]), [['chegou', 'topo'], ['estacao', 'meio'], ['mais', 'meio'], ['kits', 'meio']]);
   assert.deepStrictEqual(f[2].ids, ['t', 'b', 'm', 'u'], 'produto que saiu da loja não entra');
   f = V.faixasDaVitrine(ps, { hoje, maisPedidos: ['t', 'b', 'm', 'u'], temOfertas: true, temSempre: true });
-  assert.deepStrictEqual(f.map((x) => x.id), ['chegou', 'estacao'], 'com Ofertas e Seus de sempre, sobram 2 vagas');
+  assert.deepStrictEqual(f.map((x) => x.id), ['estacao', 'mais'], 'com Ofertas e Seus de sempre, sobram 2 vagas; "Chegou hoje" não entra (só uma faixa no alto)');
+  f = V.faixasDaVitrine(ps, { hoje, maisPedidos: [], temOfertas: true });
+  assert.ok(!f.some((x) => x.id === 'chegou'), 'com Ofertas de hoje no alto, "Chegou hoje" vira só o selo do produto');
   f = V.faixasDaVitrine(ps, { hoje: '2026-10-15', maisPedidos: ['t', 'b', 'm'] });
   assert.deepStrictEqual(f.map((x) => x.id), ['estacao', 'kits'], 'sem "chegou" de hoje; "mais pedidos" precisa de 4');
   assert.deepStrictEqual(V.faixasDaVitrine(null), []);

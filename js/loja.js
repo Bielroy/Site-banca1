@@ -6,7 +6,7 @@ import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, sho
 import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques, maisPedidos } from './ranking-loja.js';
 import { contatoDaLoja, telefoneBonito } from './contato-lib.js';
-import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca, tintaSobre } from './vitrine-lib.js';
+import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca, tintaSobre, botaoSobre } from './vitrine-lib.js';
 import { ARTES } from './arte-lib.js';
 import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_POTE } from './vitrine-arte.js';
 import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, chavePromo, contaDaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO, ehTempero, ehPotinho, NOMES_POTE, TEMPEROS_PADRAO, ORDEM_PACOTES, ORDEM_TEMPEROS, ordemDaSecao } from './pacote-lib.js';
@@ -625,7 +625,7 @@ const etiquetaBase = (p) => {
     if (temDoisModos(p)) {
         // com peso médio, o tamanho de 1 unidade ajuda a escolher sem fazer conta ("1 un. ≈ 450 g")
         return `<div class="etq-preco">${fmt(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>
-                <div class="etq-ref">${pm > 0 ? `1 un. ${escapeHTML(pesoAproximado(pm))} · ` : ''}pesado na hora</div>`;
+                <div class="etq-ref">${pm > 0 ? `${escapeHTML(pesoAproximado(pm))} cada · ${fmt(pm * p.preco / 1000)}` : 'pesado na hora'}</div>`;
     }
     if (frac && pm > 0) {
         // R$/kg sempre junto da estimativa (Decreto 5.903/2006: preço sem o cliente precisar calcular)
@@ -652,13 +652,16 @@ const vitrineDaLoja = () => { if (_vitrineDe !== STATE.config.vitrine) { _vitrin
 // SEÇÕES COLORIDAS (Aparência → Vitrine): a posição da seção a que o produto pertence (-1 = nenhuma). Pacote e tempero têm bloco próprio.
 const secaoDoProduto = (p) => { const l = vitrineDaLoja().secoes || [], c = String(p.cat || '').toLowerCase(); return c ? l.findIndex((x) => x.cat.toLowerCase() === c) : -1; };
 
+// Cor do botão da loja (Aparência → cor dos botões; sem ela, a cor principal), para o botão sobre a seção colorida
+const corDaMarca = () => { try { const s = getComputedStyle(document.documentElement); return (s.getPropertyValue('--cor-botao') || s.getPropertyValue('--forest') || '').trim(); } catch (_) { return ''; } };
+const varsDaSecao = (cor) => { const b = botaoSobre(cor, corDaMarca()); return `--sec-cor: ${cor}; --sec-tinta: ${tintaSobre(cor)}; --sec-botao: ${b.fundo}; --sec-sobre-botao: ${b.texto};`; };
 // Um card de produto. `rapido` = foto carregada já (os primeiros da tela); `prioridade` = a foto passa na frente
 // do resto (só as primeiras da vitrine, que são o "maior elemento" que o celular espera para mostrar a loja).
 const cardHtml = (p, rapido = false, prioridade = false) => {
         const favActive = STATE.favoritos.includes(p.id) ? 'ativo' : '';
         const pac = ehPacote(p), tmp = !pac && ehTemp(p), sec = pac || tmp ? -1 : secaoDoProduto(p), secX = sec > -1 ? vitrineDaLoja().secoes[sec] : null, secCor = secX ? secX.cor : '', imersivo = !!secX && secX.estilo === 'fundo';
         return `
-        <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : sec > -1 ? ` produto-card--secao${imersivo ? ' produto-card--imersivo' : ''}` : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : sec > -1 ? ` data-secao="${sec}"` : ''} style="display: flex;${pac ? ` order: ${ORDEM_PACOTES};` : tmp ? ` order: ${ORDEM_TEMPEROS};` : sec > -1 ? ` order: ${ordemDaSecao(sec) + 500}; --sec-cor: ${secCor}; --sec-tinta: ${tintaSobre(secCor)};` : ''}">
+        <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : sec > -1 ? ` produto-card--secao${imersivo ? ' produto-card--imersivo' : ''}` : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : sec > -1 ? ` data-secao="${sec}"` : ''} style="display: flex;${pac ? ` order: ${ORDEM_PACOTES};` : tmp ? ` order: ${ORDEM_TEMPEROS};` : sec > -1 ? ` order: ${ordemDaSecao(sec) + 500}; ${varsDaSecao(secCor)}` : ''}">
             <div class="produto-img-wrap">
                 ${p.foto ? `<img src="${escapeHTML(fotoPequena(p, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
@@ -936,7 +939,7 @@ const pintarBlocosSecoes = (grid, aba) => {
         else if (!fim) grid.insertAdjacentHTML('beforeend', `<div class="fim-secao" data-i="${i}" aria-hidden="true" style="order: ${ordemDaSecao(i) + 1999}"></div>`);
         if (cab && cab.dataset.cara === cara) return;
         const ico = sec.icone && ARTES[sec.icone] ? `<svg class="arte-cat" viewBox="0 0 120 120" aria-hidden="true" focusable="false">${ARTES[sec.icone]}</svg>` : '';
-        const html = `<header class="bloco-secao${fundo ? ' bloco-secao--fundo' : ''}" data-i="${i}" data-cara="${escapeHTML(cara)}" style="order: ${ordemDaSecao(i) - 1}; --sec-cor: ${sec.cor}; --sec-tinta: ${tintaSobre(sec.cor)}"><h2>${ico}<span>${escapeHTML(sec.titulo)}</span></h2>${sec.texto ? `<p>${escapeHTML(sec.texto)}</p>` : ''}</header>`;
+        const html = `<header class="bloco-secao${fundo ? ' bloco-secao--fundo' : ''}" data-i="${i}" data-cara="${escapeHTML(cara)}" style="order: ${ordemDaSecao(i) - 1}; ${varsDaSecao(sec.cor)}"><h2>${ico}<span>${escapeHTML(sec.titulo)}</span></h2>${sec.texto ? `<p>${escapeHTML(sec.texto)}</p>` : ''}</header>`;
         if (cab) cab.outerHTML = html; else grid.insertAdjacentHTML('beforeend', html);
     });
     pintarPaginaDaSecao(lista.find((x) => x.estilo === 'fundo' && aba && aba === x.cat));
@@ -1124,7 +1127,8 @@ const pintarHorariosDeEntrega = () => {
 
 const renderCategorias = () => {
     const temPacote = (STATE.produtos || []).some(ehPacote);
-    const abas = [{ chave: 'todas', nome: 'Todos' }, { chave: 'favoritos', nome: 'Favoritos' }, ...(temPacote ? [{ chave: 'pacotes', nome: 'Pacotes' }] : []), ...abasDeCategoria(STATE.produtos)];
+    // as categorias da loja vêm logo depois de "Todos" (é o que o cliente procura); Favoritos, que começa vazio, fica no fim
+    const abas = [{ chave: 'todas', nome: 'Todos' }, ...(temPacote ? [{ chave: 'pacotes', nome: 'Pacotes' }] : []), ...abasDeCategoria(STATE.produtos), { chave: 'favoritos', nome: 'Favoritos' }];
     // se a categoria aberta sumiu (ocultada no painel), volta para "Todos"
     if (!abas.some(a => a.chave === STATE.catAtiva)) STATE.catAtiva = 'todas';
     STATE.abas = abas;
@@ -1875,7 +1879,7 @@ const endTopo = criarCamposEndereco(document.getElementById('endereco-campos'), 
 function pintarResumoEndereco() {
     const e = lerEnderecoSalvo(), el = document.getElementById('endereco-resumo');
     if (!el) return;
-    if (!(e && e.condominio)) { el.textContent = 'Escolha onde entregar'; return; }
+    if (!(e && e.condominio)) { el.textContent = 'Onde entregar?'; return; }
     const travado = e.modo !== 'retirada' && condominioTravado(e.condominio);
     // condomínio travado: só quadra e lote (o condomínio é o da feira dele e não muda por aqui)
     const resto = travado ? linhaEndereco({ ...e, condominio: '' }, { curto: true }) : '';

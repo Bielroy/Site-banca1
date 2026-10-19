@@ -479,7 +479,7 @@ teste('feira: cliente que entrou pelo link não troca o condomínio no topo (só
   cen.lojas.banca.ficha = { ...cen.lojas.banca.ficha, feiras: ['florenca', 'madri'] };
   const { pagina, erros, fechar } = await abrir('/feira/florenca', cen);
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
-  assert.strictEqual((await pagina.locator('#endereco-resumo').innerText()).trim(), 'Escolha onde entregar');
+  assert.strictEqual((await pagina.locator('#endereco-resumo').innerText()).trim(), 'Onde entregar?');
   await pagina.click('#btn-endereco');
   // lista só com os condomínios DA feira dele, sem "não está na lista" e sem o de outra feira
   assert.deepStrictEqual(await opcoesDe(pagina, '#end-cond'), ['Escolha o condomínio', 'Jardins Florença', 'Vila Florença']);

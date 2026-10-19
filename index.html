@@ -139,7 +139,7 @@
         <nav class="header-acoes" aria-label="Endereço e pedidos">
             <button class="chip-header" id="btn-endereco" data-action="open-endereco">
                 <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>
-                <span id="endereco-resumo">Escolha onde entregar</span>
+                <span id="endereco-resumo">Onde entregar?</span>
             </button>
             <button class="chip-header btn-historico" data-action="open-historico">
                 <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10a2 2 0 0 1 2 2v14l-3-2-2 2-2-2-2 2-3-2V6a2 2 0 0 1 2-2z"/><path d="M9 9h6M9 13h6"/></svg>
@@ -149,6 +149,15 @@
             <button class="chip-header btn-instalar" id="btn-instalar" data-action="instalar" hidden>
                 <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/></svg>
                 <span>Instalar o app</span>
+            </button>
+            <!-- Ajudante: botão redondo do cabeçalho (antes flutuava por cima dos produtos e tampava preço e botões) -->
+            <button type="button" id="btn-ia-flutuante" class="chip-header chip-rede btn-ajudante" aria-label="Falar com o Ajudante da Banca" title="Ajudante da Banca">
+                <svg class="ico" viewBox="0 0 48 48" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M8 20h32l-3.4 17.2a4 4 0 0 1-3.9 3.2H15.3a4 4 0 0 1-3.9-3.2L8 20Z" fill="rgba(255,255,255,.18)"/>
+                    <path d="M16 20c0-6 3.6-10 8-10s8 4 8 10"/>
+                    <path d="M17 27v8M24 27v8M31 27v8"/>
+                    <path d="M30 10c3-.2 5.4-1.6 6.4-4.2-3.2-.6-6 .8-6.4 4.2Z" fill="currentColor" stroke="none"/>
+                </svg>
             </button>
             <!-- Instagram e WhatsApp da loja (Configurações → Atendimento). Preenchidos por js/loja.js -->
             <span class="header-redes" id="header-redes" hidden></span>
@@ -374,15 +383,7 @@
     </div>
 </div>
 
-<button id="btn-ia-flutuante" class="ia-fab" aria-label="Falar com o Ajudante da Banca">
-    <svg viewBox="0 0 48 48" width="30" height="30" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M8 20h32l-3.4 17.2a4 4 0 0 1-3.9 3.2H15.3a4 4 0 0 1-3.9-3.2L8 20Z" fill="rgba(255,255,255,.18)"/>
-        <path d="M16 20c0-6 3.6-10 8-10s8 4 8 10"/>
-        <path d="M17 27v8M24 27v8M31 27v8"/>
-        <path d="M30 10c3-.2 5.4-1.6 6.4-4.2-3.2-.6-6 .8-6.4 4.2Z" fill="currentColor" stroke="none"/>
-    </svg>
-    <span class="ia-fab-rotulo">Ajuda</span>
-</button>
+
 
 <div class="modal-overlay" id="modal-ia-chat" role="dialog" aria-modal="true" aria-labelledby="ia-titulo">
     <div class="modal ia-modal">

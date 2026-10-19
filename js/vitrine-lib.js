@@ -70,6 +70,7 @@ export function faixasDaVitrine(produtos, { hoje = hojeDaLoja(), maisPedidos = [
     const saida = [];
     for (const f of candidatas) {
         if (!vagas) break;
+        if (f.id === 'chegou' && temOfertas) continue;     // no alto da loja cabe UMA faixa só: com Ofertas de hoje, o "Chegou hoje" fica no selo do produto
         const ids = [...new Set(f.ids)].slice(0, MAX_NA_FAIXA);
         if (ids.length < f.minimo) continue;
         saida.push({ id: f.id, lugar: f.lugar, titulo: f.titulo, sub: f.sub, ids });
@@ -154,6 +155,21 @@ export function tintaSobre(cor) {
     const [r, g, b] = [1, 3, 5].map((i) => parseInt(cor.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
     return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.32 ? '#2a1a0c' : '#ffffff';
 }
+const luz = (cor) => { const [r, g, b] = [1, 3, 5].map((i) => parseInt(cor.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+/** Contraste entre duas cores #rrggbb (1 a 21). Cor inválida → 1. */
+export function contraste(a, b) {
+    if (!COR_HEX.test(String(a)) || !COR_HEX.test(String(b))) return 1;
+    const [x, y] = [luz(a), luz(b)].sort((m, n) => n - m);
+    return (x + 0.05) / (y + 0.05);
+}
+/**
+ * Cor do botão "Adicionar" sobre uma seção colorida: a cor de botão da loja quando se destaca do fundo da seção
+ * (roxo da marca sobre dourado), senão a tinta da seção (branco sobre roxo). Devolve { fundo, texto }.
+ */
+export function botaoSobre(corSecao, corMarca) {
+    if (COR_HEX.test(String(corMarca)) && contraste(corSecao, corMarca) >= 3.2) return { fundo: corMarca, texto: tintaSobre(corMarca) };
+    return { fundo: tintaSobre(corSecao), texto: corSecao };
+}
 /**
  * Sugere seções para as categorias que a loja já tem: "pastel" vira dourado, "açaí" vira roxo.
  * cats = [{ chave, nome }]. Devolve [] quando nenhuma categoria combina.
@@ -162,7 +178,7 @@ export function secoesSugeridas(cats) {
     const lista = Array.isArray(cats) ? cats : [];
     const acha = (re) => lista.find((c) => re.test(semAcento(c.nome || c.chave)));
     const saida = [], past = acha(/pastel|pasteis/), aca = acha(/acai/);
-    if (past) saida.push({ cat: past.chave, titulo: texto(past.nome || past.chave, 40), texto: 'Crocantes, na hora, direto da fritadeira.', cor: '#efb94a', icone: 'pastel', estilo: 'fundo' });
+    if (past) saida.push({ cat: past.chave, titulo: texto(past.nome || past.chave, 40), texto: 'Crocantes, na hora, direto da fritadeira.', cor: '#f4d27c', icone: 'pastel', estilo: 'fundo' });
     if (aca && aca !== past) saida.push({ cat: aca.chave, titulo: texto(aca.nome || aca.chave, 40), texto: 'Cremoso, gelado, do jeitinho que você monta.', cor: '#5a1f6b', icone: 'tigela', estilo: 'fundo' });
     return saida;
 }

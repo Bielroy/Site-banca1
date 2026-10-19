@@ -151,3 +151,20 @@ body.cat-imersiva .fale-loja h2, body.cat-imersiva .fale-loja p { color: var(--c
 }
 /* mouse: foco visível para quem navega pelo teclado */
 :focus-visible { outline: 3px solid color-mix(in srgb, var(--manga, #e9a862) 85%, #000); outline-offset: 2px; }
+
+/* ---------- 8. AJUSTES DE DESENHO (menos informação por cartão, nada por cima dos produtos) ---------- */
+/* cartão de produto por quilo: o preço da unidade já está escrito na linha pequena; os botões ficam só "+ 1 unidade" e "+ 1 kg" */
+.produto-card .card-acao .modo-btn:not(.trocar) small { display: none; }
+.produto-card .card-acao .modo-btn:not(.trocar) { min-height: 40px; }
+/* Ajudante no cabeçalho (era o botão "AJUDA" fixo por cima dos produtos) */
+.chip-header.btn-ajudante { width: 44px; padding: 0; justify-content: center; flex: none; }
+.chip-header.btn-ajudante .ico { width: 24px; height: 24px; }
+.sem-ia .btn-ajudante { display: none; }
+.btn-ajudante.pulse-anim { color: #fff; }
+/* "Fale com a loja" logo depois dos produtos (o espaço de baixo era reservado à barra do pedido, que cobre o rodapé, não esta parte) */
+@media (max-width: 600px) {
+    .layout:has(~ .fale-loja:not([hidden])) { padding-bottom: 8px; }
+    .fale-loja { margin-top: 20px; }
+    .fale-loja ~ .site-rodape { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); }
+}
+.produto-card .etq-ref { font-size: .72rem; }
