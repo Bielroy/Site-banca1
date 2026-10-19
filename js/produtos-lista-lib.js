@@ -47,10 +47,15 @@ export const passaNaCategoria = (p, cat) => !cat || cat === TODAS || categoriaDo
  * acao: 'loja' (pôr à venda) | 'fora' (tirar da loja) | 'chegou' (chegou hoje: põe à venda e marca o selo).
  * Devolve [{ id, dados }] só dos que mudam. "Só ingrediente" não vai para a loja.
  */
-export function mudancasEmLote(produtos, acao, hoje, agora = Date.now()) {
+export function mudancasEmLote(produtos, acao, hoje, agora = Date.now(), preco = 0) {
     const out = [];
+    const novoPreco = Math.round(Number(preco) * 100) / 100;
+    if (acao === 'preco' && !(novoPreco > 0)) return out;
     for (const p of produtos || []) {
-        if (!p || !p.id || p.soInsumo === true) continue;
+        if (!p || !p.id) continue;
+        // preço igual para todos os marcados ("todos os pastéis agora custam 16"); a oferta só fica se o preço antigo ainda for maior
+        if (acao === 'preco') { if (Number(p.preco) !== novoPreco) out.push({ id: p.id, dados: { preco: novoPreco, precoDe: Number(p.precoDe) > novoPreco ? Number(p.precoDe) : null, ultimaModificacao: agora } }); continue; }
+        if (p.soInsumo === true) continue;
         let dados = null;
         if (acao === 'loja' && !p.ativo) dados = { ativo: true };
         else if (acao === 'fora' && p.ativo) dados = { ativo: false };

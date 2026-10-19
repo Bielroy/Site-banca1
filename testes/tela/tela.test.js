@@ -617,6 +617,7 @@ teste('pacotes: no painel, peso do pacote em branco é aceito e promoção mais 
   const cen = cenarioPacotes(); cen.conta = { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } };
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
   await pagina.locator('[data-action="editar-produto"][data-id="cb"]').first().click({ timeout: 8000 });
+  await pagina.waitForFunction(() => document.activeElement && document.activeElement.id === 'edit-nome', null, { timeout: 3000 });   // a janela põe o foco no nome logo depois de abrir
   assert.ok(await pagina.locator('#edit-pacote').isChecked());
   assert.strictEqual(await pagina.locator('#edit-peso-pacote').inputValue(), '');
   await pagina.fill('#edit-promo-qtd', '4'); await pagina.fill('#edit-promo-preco', '15');
@@ -1167,6 +1168,94 @@ const descansando = () => ({ id: 'pt0123456789abcdef', nome: 'Moto G', criadoEm:
 const ponteFalsa = (c) => (c.op === 'listar' && celularDescansando ? { sucesso: true, pontes: [descansando()] } : c.op === 'listar' ? { sucesso: true, pontes: [{ id: 'pt0123456789abcdef', nome: 'Moto G', criadoEm: new Date().toISOString(), visto: new Date().toISOString(), online: true, impressora: { estado: 'ok', nome: 'GS-FJ80M', msg: '' }, app: { versao: '1.0.1' }, cfg: { auto: 'chegada', largura: 80, acentos: true, copias: 1, autoEtiqueta: false, autoPesado: false, autoCancelado: true } }, ...(doisCelulares ? [outroCelular()] : [])] }
   : c.op === 'config' ? { sucesso: true, cfg: { auto: 'chegada', largura: 80, acentos: true, copias: 2, autoEtiqueta: false, autoPesado: false, autoCancelado: true }, pulados: 0 }
   : c.op === 'imprimir' ? { sucesso: true, id: 'im-teste-1', online: true, visto: new Date().toISOString() } : { sucesso: true });
+
+// ------------------------------------------------------------------ cadastro rápido de produtos
+const cenarioPastelaria = () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const prod = (nome, cat, preco, unidade = 'un') => ({ nome, preco, unidade, cat, ativo: true });
+  cen.lojas.banca.ficha = { ...cen.lojas.banca.ficha, tipo: 'Pastel e açaí', campos: { duracao: false } };
+  cen.lojas.banca.produtos = { q: prod('Pastel de queijo', 'pasteis', 15), c: prod('Pastel de calabresa', 'pasteis', 15), e: prod('Pastel especial', 'pasteis', 18), a: prod('Açaí 300 ml', 'acai', 16), b: prod('Banana', 'frutas', 6, 'kg'), m: prod('Maçã', 'frutas', 9, 'kg'), l: prod('Laranja', 'frutas', 5, 'kg') };
+  cen.lojas.banca.categorias = [{ chave: 'pasteis', nome: 'Pastéis', ordem: 1 }, { chave: 'acai', nome: 'Açaí', ordem: 2 }, { chave: 'frutas', nome: 'Frutas', ordem: 3 }];
+  return cen;
+};
+const gravadosDe = (pagina, re) => pagina.evaluate((r) => (window.__gravados || []).filter((g) => new RegExp(r).test(g.path)).map((g) => g.dados), re.source);
+
+teste('painel: produto novo já vem na categoria aberta e na unidade dela; "Salvar e criar outro igual" e Enter só trocam o nome; campo desligado pela plataforma some', async () => {
+  const { pagina, erros, fechar } = await abrir('/admin.html', cenarioPastelaria(), { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.locator('#pl-cats [data-pl-cat="pasteis"]').click({ timeout: 8000 });
+  await pagina.locator('[data-action="novo-produto"]').click();
+  await pagina.waitForFunction(() => document.activeElement && document.activeElement.id === 'edit-nome', null, { timeout: 3000 });
+  assert.strictEqual(await pagina.locator('#edit-cat').inputValue(), 'Pastéis');
+  assert.strictEqual(await pagina.locator('#cat-chips .prod-chip.on').innerText(), 'Pastéis');
+  assert.strictEqual(await pagina.locator('#unidade-chips .prod-chip.on').innerText(), 'Unidade', 'em Pastéis tudo é unidade (e não quilo)');
+  assert.match(await pagina.locator('#edit-preco').getAttribute('placeholder'), /15,00.*Pastéis/);
+  assert.ok(!(await pagina.locator('#edit-duracao').isVisible()), 'gaveta "Mais opções" fechada');
+  await pagina.locator('#prod-mais > summary').click();
+  assert.ok(!(await pagina.locator('#edit-duracao').isVisible()), '"Quanto tempo dura" desligado pela plataforma nesta loja');
+  assert.ok(await pagina.locator('#edit-preco-de').isVisible(), 'oferta continua');
+  assert.ok(!/quanto dura/.test(await pagina.locator('#prod-mais-resumo').innerText()));
+  // primeiro: escreve nome e preço e toca em "Salvar e criar outro igual"
+  await pagina.fill('#edit-nome', 'Pastel de pizza'); await pagina.fill('#edit-preco', '15');
+  await pagina.click('#btn-salvar-outro');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /^produtos\//.test(g.path) && g.dados.nome === 'Pastel de pizza'), null, { timeout: 4000 });
+  assert.ok(await pagina.locator('#modal-produto').evaluate((m) => m.classList.contains('aberto')), 'o formulário continua aberto');
+  assert.strictEqual(await pagina.locator('#edit-nome').inputValue(), ''); assert.strictEqual(await pagina.locator('#edit-preco').inputValue(), '15');
+  assert.match(await pagina.locator('#prod-repetindo').innerText(), /Pastel de pizza guardado/);
+  // segundo: só o nome e Enter
+  await pagina.fill('#edit-nome', 'Pastel de frango'); await pagina.press('#edit-nome', 'Enter');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /^produtos\//.test(g.path) && g.dados.nome === 'Pastel de frango'), null, { timeout: 4000 });
+  const novos = (await gravadosDe(pagina, /^produtos\//)).filter((d) => /pizza|frango/.test(d.nome));
+  assert.strictEqual(novos.length, 2);
+  for (const d of novos) { assert.strictEqual(d.preco, 15); assert.strictEqual(d.unidade, 'un'); assert.strictEqual(d.cat, 'pasteis'); assert.strictEqual(d.ativo, true); }
+  const caminhos = await pagina.evaluate(() => window.__gravados.filter((g) => /^produtos\//.test(g.path)).map((g) => g.path));
+  assert.strictEqual(new Set(caminhos).size, caminhos.length, 'cada um é um produto novo (não regrava o anterior)');
+  assert.match(await pagina.locator('#prod-repetindo').innerText(), /2 nesta leva/);
+  // "Criar outro parecido" a partir de um produto aberto
+  await pagina.locator('[data-fechar="modal-produto"]').click();
+  await pagina.locator('[data-action="editar-produto"][data-id="e"]').click();
+  assert.ok(await pagina.locator('#btn-duplicar').isVisible()); assert.ok(!(await pagina.locator('#btn-salvar-outro').isVisible()));
+  await pagina.click('#btn-duplicar');
+  assert.strictEqual(await pagina.locator('#edit-id').inputValue(), ''); assert.strictEqual(await pagina.locator('#edit-nome').inputValue(), '');
+  assert.strictEqual(await pagina.locator('#edit-preco').inputValue(), '18'); assert.match(await pagina.locator('#prod-repetindo').innerText(), /Copiado de Pastel especial/);
+  // categoria de quilo: num produto novo, tocar em Frutas troca a unidade para Quilo
+  await pagina.locator('[data-fechar="modal-produto"]').click();
+  await pagina.locator('#pl-cats [data-pl-cat="__todas__"]').first().click();
+  await pagina.locator('[data-action="novo-produto"]').click();
+  await pagina.locator('#cat-chips [data-cat-nome="Frutas"]').click();
+  assert.strictEqual(await pagina.locator('#unidade-chips .prod-chip.on').innerText(), 'Quilo');
+  await pagina.locator('#unidade-chips [data-unidade="un"]').click();
+  await pagina.locator('#cat-chips [data-cat-nome="Açaí"]').click();
+  assert.strictEqual(await pagina.locator('#unidade-chips .prod-chip.on').innerText(), 'Unidade', 'escolheu a unidade na mão: trocar a categoria não muda mais');
+  semErros(erros); await fechar();
+});
+
+teste('painel: "Vários de uma vez" cria os pastéis com o mesmo preço (preço diferente depois do traço) e "Mudar preço" muda os marcados', async () => {
+  const { pagina, erros, fechar } = await abrir('/admin.html', cenarioPastelaria(), { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.locator('#pl-cats [data-pl-cat="pasteis"]').click({ timeout: 8000 });
+  await pagina.locator('[data-action="varios-produtos"]').click();
+  await pagina.waitForSelector('#modal-varios.aberto', { timeout: 4000 }); await pagina.waitForTimeout(120);   // o foco automático da janela chega depois de 60 ms
+  assert.strictEqual(await pagina.locator('#vv-cats .prod-chip.on').innerText(), 'Pastéis');
+  assert.strictEqual(await pagina.locator('#vv-unidades .prod-chip.on').innerText(), 'Unidade');
+  assert.strictEqual(await pagina.locator('#vv-preco').inputValue(), '15,00', 'sugere o preço mais comum dos pastéis');
+  await pagina.fill('#vv-lista', 'Pastel de carne\nPastel de palmito - 17,50\nPastel de queijo\n\nPastel de carne');
+  const previa = await pagina.locator('#vv-previa').innerText();
+  assert.match(previa, /Pastel de palmito[\s\S]*17,50/); assert.match(previa, /já cadastrado/); assert.match(previa, /repetido na lista/);
+  assert.strictEqual(await pagina.locator('#vv-criar').innerText(), 'Criar 2 produtos');
+  await pagina.click('#vv-criar');
+  await pagina.waitForFunction(() => (window.__gravados || []).filter((g) => g.lote && /^produtos\//.test(g.path)).length === 2, null, { timeout: 4000 });
+  const criados = await pagina.evaluate(() => window.__gravados.filter((g) => g.lote && /^produtos\//.test(g.path)).map((g) => g.dados));
+  assert.deepStrictEqual(criados.map((d) => [d.nome, d.preco, d.unidade, d.cat, d.ativo]), [['Pastel de carne', 15, 'un', 'pasteis', true], ['Pastel de palmito', 17.5, 'un', 'pasteis', true]]);
+  assert.ok(!(await pagina.locator('#modal-varios').evaluate((m) => m.classList.contains('aberto'))), 'fecha depois de criar');
+  // preço de vários: marca dois pastéis e põe 16
+  await pagina.locator('[data-pl-sel="ligar"]').click();
+  await pagina.locator('[data-pl-marcar="q"]').click(); await pagina.locator('[data-pl-marcar="c"]').click();
+  await pagina.locator('[data-pl-sel="preco"]').click();
+  await pagina.fill('#pl-lote-preco', '16'); await pagina.press('#pl-lote-preco', 'Enter');
+  await pagina.waitForFunction(() => (window.__gravados || []).filter((g) => g.lote && /^produtos\/(q|c)$/.test(g.path)).length === 2, null, { timeout: 4000 });
+  const precos = await pagina.evaluate(() => window.__gravados.filter((g) => g.lote && /^produtos\/(q|c)$/.test(g.path)).map((g) => [g.path, g.dados.preco, g.dados.precoDe]));
+  assert.deepStrictEqual(precos.sort(), [['produtos/c', 16, null], ['produtos/q', 16, null]]);
+  semErros(erros); await fechar();
+});
 
 (async () => {
   servidor = await subir({

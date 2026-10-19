@@ -11,6 +11,7 @@ import { hojeDaLoja, iconeDaCategoria } from './vitrine-lib.js';
 import { TODAS, categoriasDaLista, passaNaCategoria, mudancasEmLote } from './produtos-lista-lib.js';
 import { cadastroPacote, promoDe, textoPromo, totalComPromo, nomesDaUnidade, emPalavras, ehPacote } from './pacote-lib.js';
 import { ARTE_PACOTE, ARTE_CATEGORIA } from './vitrine-arte.js';
+import { camposDaLoja, unidadeMaisUsada, precoMaisUsado, lerPreco } from './cadastro-lib.js';
 import './admin-instalar.js';
 import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar, bancasDaPessoa, mostrarSuspensa } from './admin-guard.js';
 import { htmlSimples, csvCampo } from './html-lib.js';
@@ -32,7 +33,7 @@ const TELAS = {
     crm: () => import('./admin-crm.js'), copiloto: () => import('./admin-copiloto.js'), calendario: () => import('./admin-calendario.js'),
     equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'), impressora: () => import('./admin-impressora.js'), avisos: () => import('./admin-avisos.js'),
     impressaoAuto: () => import('./impressao-auto.js'),
-    precosDia: () => import('./admin-precos-dia.js'), vitrine: () => import('./admin-vitrine.js'), rotulos: () => import('./admin-rotulos.js'),
+    varios: () => import('./admin-varios.js'), precosDia: () => import('./admin-precos-dia.js'), vitrine: () => import('./admin-vitrine.js'), rotulos: () => import('./admin-rotulos.js'),
 };
 const comImpressao = async (fn) => { try { await fn(await TELAS.impressao()); } catch (e) { console.error(e); showToast('Não consegui abrir a impressão. Confira a internet e toque de novo.', true); } };
 document.getElementById('btn-impressora')?.addEventListener('click', () => comImpressao((m) => m.abrirImpressora('whats')));
@@ -101,7 +102,9 @@ onAuthStateChanged(auth, async (user) => {
     // equipe esgotava o limite e ninguém mais entrava naquele dia. No balcão, "Sair" encerra na hora.
     iniciarLogoutPorInatividade(12 * 60);
     let suspensa = false;
-    try { const f = await getDoc(fichaRef()); suspensa = f.exists() && f.data().ativo === false; modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; lerDiasSemFeira(f.exists() ? f.data() : null); } catch (_) { modulosDaLoja = null; }
+    let fichaLida = null;
+    try { const f = await getDoc(fichaRef()); fichaLida = f.exists() ? f.data() : null; suspensa = f.exists() && f.data().ativo === false; modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; lerDiasSemFeira(f.exists() ? f.data() : null); } catch (_) { modulosDaLoja = null; }
+    try { aplicarCampos(fichaLida); } catch (e) { console.warn('[campos]', e); }   // campos do cadastro que a plataforma ligou nesta loja
     // LOJA BLOQUEADA pela plataforma (falta de pagamento): o painel não abre. Só a plataforma continua entrando.
     if (suspensa && papelAtual !== 'plataforma') { mostrarSuspensa(papelAtual === 'proprietario'); return; }
     { const tl = document.getElementById('topo-loja'); if (tl) tl.textContent = nomeDaLoja; }
@@ -666,7 +669,7 @@ const FILTROS_PRODUTO = [
 const PL_CAT = chave('banca_produtos_categoria');
 let adminCategoria = (() => { try { return sessionStorage.getItem(PL_CAT) || TODAS; } catch (_) { return TODAS; } })();
 // "Selecionar vários": tocar na linha marca o produto; a barra de baixo põe na loja, tira ou marca "chegou hoje" de uma vez
-const plSel = { ligado: false, ids: new Set() };
+const plSel = { ligado: false, ids: new Set(), preco: false, precoTexto: '' };
 const arteDaCategoria = (nome) => ARTE_CATEGORIA[iconeDaCategoria(nome)] || ARTE_CATEGORIA.cesta;
 const renderProdutos = () => {
     const daBusca = produtosAtuais.filter(p => !adminBuscaTermo || normalizar(p.nome).includes(adminBuscaTermo) || normalizar(nomeDaCategoria(p.cat)).includes(adminBuscaTermo) || normalizar(p.cat).includes(adminBuscaTermo));
@@ -744,7 +747,7 @@ document.getElementById('pl-cats')?.addEventListener('click', (e) => {
 document.addEventListener('categorias:mudou', () => renderProdutos());
 
 // ---- vários produtos de uma vez ----
-const sairDaSelecao = () => { plSel.ligado = false; plSel.ids.clear(); renderProdutos(); };
+const sairDaSelecao = () => { plSel.ligado = false; plSel.ids.clear(); plSel.preco = false; renderProdutos(); };
 function pintarLote() {
     const barra = document.getElementById('pl-lote'); if (!barra) return;
     barra.hidden = !plSel.ligado;
@@ -757,12 +760,17 @@ function pintarLote() {
             <button type="button" class="bt bt-pri" data-pl-lote="chegou"${n ? '' : ' disabled'}>${ico('broto')} Chegou hoje</button>
             <button type="button" class="bt bt-sec" data-pl-lote="loja"${n ? '' : ' disabled'}>Pôr na loja</button>
             <button type="button" class="bt bt-sec" data-pl-lote="fora"${n ? '' : ' disabled'}>Tirar da loja</button>
-        </div>`;
+            <button type="button" class="bt bt-sec${plSel.preco ? ' on' : ''}" data-pl-sel="preco" aria-expanded="${plSel.preco}"${n ? '' : ' disabled'}>Mudar preço</button>
+        </div>
+        ${plSel.preco && n ? `<div class="pl-lote-preco"><input type="text" id="pl-lote-preco" inputmode="decimal" autocomplete="off" placeholder="Novo preço de ${n === 1 ? 'todos' : `todos os ${n}`} (R$)" aria-label="Novo preço dos marcados" value="${escapeHTML(plSel.precoTexto)}">
+            <button type="button" class="bt bt-pri" data-pl-lote="preco">Aplicar</button></div>` : ''}`;
 }
 async function aplicarLote(acao, bt) {
     const escolhidos = produtosAtuais.filter((p) => plSel.ids.has(p.id));
-    const mud = mudancasEmLote(escolhidos, acao, hojeDaLoja());
-    if (!mud.length) { showToast(acao === 'fora' ? 'Os marcados já estão fora da loja.' : 'Os marcados já estão assim.'); return; }
+    const preco = acao === 'preco' ? lerPreco(plSel.precoTexto) : 0;
+    if (acao === 'preco' && !(preco > 0)) { showToast('Escreva o novo preço. Ex.: 16 ou 16,50', true); document.getElementById('pl-lote-preco')?.focus(); return; }
+    const mud = mudancasEmLote(escolhidos, acao, hojeDaLoja(), Date.now(), preco);
+    if (!mud.length) { showToast(acao === 'preco' ? `Os marcados já custam ${fmt(preco)}.` : acao === 'fora' ? 'Os marcados já estão fora da loja.' : 'Os marcados já estão assim.'); return; }
     if (acao === 'fora' && !(await customConfirm(`Tirar ${mud.length === 1 ? '1 produto' : `${mud.length} produtos`} da loja?`, 'Os clientes não vão ver até você pôr de volta.', { ok: 'Tirar da loja', nao: 'Voltar' }))) return;
     bt.disabled = true;
     try {
@@ -772,7 +780,8 @@ async function aplicarLote(acao, bt) {
             await lote.commit();
         }
         const q = mud.length === 1 ? '1 produto' : `${mud.length} produtos`;
-        showToast(acao === 'chegou' ? `${q} na loja com "Chegou hoje" até o fim do dia.` : acao === 'loja' ? `${q} de volta na loja.` : `${q} fora da loja.`);
+        if (acao === 'preco') plSel.precoTexto = '';
+        showToast(acao === 'preco' ? `${q} agora por ${fmt(preco)}.` : acao === 'chegou' ? `${q} na loja com "Chegou hoje" até o fim do dia.` : acao === 'loja' ? `${q} de volta na loja.` : `${q} fora da loja.`);
         sairDaSelecao();
     } catch (e) { console.error('[lote]', e); showToast('Não consegui salvar. Confira a internet e tente de novo.', true); bt.disabled = false; }
 }
@@ -784,6 +793,7 @@ document.getElementById('aba-produtos')?.addEventListener('click', (e) => {
         const a = s.dataset.plSel;
         if (a === 'ligar') { plSel.ligado = true; plSel.ids.clear(); renderProdutos(); }
         else if (a === 'sair') sairDaSelecao();
+        else if (a === 'preco') { plSel.preco = !plSel.preco; pintarLote(); document.getElementById('pl-lote-preco')?.focus(); }
         else if (a === 'todos') {
             const visiveis = [...document.querySelectorAll('#lista-produtos [data-pl-marcar]')].map((b) => b.dataset.plMarcar);
             const todos = visiveis.every((id) => plSel.ids.has(id));
@@ -794,6 +804,8 @@ document.getElementById('aba-produtos')?.addEventListener('click', (e) => {
     }
     const l = e.target.closest('[data-pl-lote]'); if (l && !l.disabled) aplicarLote(l.dataset.plLote, l);
 });
+document.getElementById('aba-produtos')?.addEventListener('input', (e) => { if (e.target.id === 'pl-lote-preco') plSel.precoTexto = e.target.value; });
+document.getElementById('aba-produtos')?.addEventListener('keydown', (e) => { if (e.target.id === 'pl-lote-preco' && e.key === 'Enter') { e.preventDefault(); document.querySelector('[data-pl-lote="preco"]')?.click(); } });
 
 // Banco de fotos: escolhe uma foto já enviada, sem galeria nem link.
 document.getElementById('btn-banco-fotos')?.addEventListener('click', async () => {
@@ -841,6 +853,7 @@ const definirUnidade = (valor) => {
     if (igual) v = igual.value;
     else sel.add(new Option(v, v));
     sel.value = v;
+    pintarUnidades();
 };
 
 const alternarCampoPesoMedio = () => {
@@ -904,20 +917,142 @@ const limparFormularioProduto = () => {
     if (document.getElementById('edit-peso-medio')) document.getElementById('edit-peso-medio').value = '';
     if (document.getElementById('edit-mostrar-primeiro')) document.getElementById('edit-mostrar-primeiro').value = 'un';
     const url = document.getElementById('edit-foto-url'); if (url) { delete url.dataset.bancoUrl; delete url.dataset.bancoMini; }
-    definirUnidade('kg');          // produto novo começa sempre em "Quilo" (antes herdava o do último aberto)
+    definirUnidade(unidadeMaisUsada(produtosAtuais));   // produto novo começa na unidade mais usada da loja (antes herdava a do último aberto)
     alternarCampoPesoMedio();
     preencherPacote(null);
     const previa = document.getElementById('preview-foto-wrapper'); if (previa) previa.innerHTML = placeholderSVG;
     document.getElementById('btn-excluir-produto').style.display = 'none';
     { const g = document.getElementById('grupo-rotulo-produto'); if (g) g.hidden = true; }
     { const bp = document.getElementById('btn-post-ia'); if (bp) bp.hidden = true; }
+    modoDoFormulario('novo');
 };
+
+// =====================================================================
+// CADASTRO RÁPIDO (js/cadastro-lib.js)
+//  • unidade e categoria em botões (um toque, sem lista para abrir);
+//  • produto novo já vem com a categoria que está aberta na lista e a unidade mais usada nela;
+//  • "Salvar e criar outro igual": guarda e deixa preço, unidade e categoria — só troca o nome;
+//  • "Criar outro parecido": a partir de um produto aberto;
+//  • o que é de cada loja (quanto dura na banca, peso médio...) fica em "Mais opções",
+//    e a plataforma escolhe por loja o que aparece (ficha.campos).
+// =====================================================================
+const $p = (id) => document.getElementById(id);
+const NOMES_UNIDADE = { kg: 'Quilo', un: 'Unidade', 'maço': 'Maço', bdj: 'Bandeja', kit: 'Kit / Cesta' };
+const CURTOS_CAMPO = { oferta: 'oferta', estoque: 'estoque', pacote: 'pacote e promoção', pesoMedio: 'peso médio', selos: 'selos', descricao: 'descrição', insumo: 'só ingrediente', duracao: 'quanto dura', rotulo: 'rótulo' };
+let camposLoja = null, unidadeMexida = false, repetidos = 0;
+function aplicarCampos(ficha) {
+    camposLoja = camposDaLoja(ficha, ehLojaOriginal);
+    const m = $p('modal-produto'); if (!m) return;
+    Object.entries(camposLoja).forEach(([k, on]) => m.classList.toggle(`sem-${k}`, !on));
+    resumoMaisOpcoes();
+}
+function resumoMaisOpcoes() {
+    const mais = $p('prod-mais'), res = $p('prod-mais-resumo'); if (!mais || !res) return;
+    const lig = Object.entries(camposLoja || camposDaLoja(null, ehLojaOriginal)).filter(([, on]) => on).map(([k]) => CURTOS_CAMPO[k]).filter(Boolean);
+    mais.hidden = !lig.length;
+    res.textContent = lig.length > 4 ? `${lig.slice(0, 4).join(', ')}…` : lig.join(', ');
+}
+function pintarUnidades() {
+    const sel = $p('edit-unidade'), box = $p('unidade-chips'); if (!sel || !box) return;
+    box.innerHTML = [...sel.options].map((o) => { const on = o.value === sel.value; return `<button type="button" class="prod-chip${on ? ' on' : ''}" role="radio" aria-checked="${on}" data-unidade="${escapeHTML(o.value)}">${escapeHTML(NOMES_UNIDADE[o.value] || o.textContent)}</button>`; }).join('');
+}
+const categoriasParaEscolher = () => {
+    const vistas = new Map();
+    ordemDasCategorias().forEach((k) => { if (k && !vistas.has(normalizar(k))) vistas.set(normalizar(k), k); });
+    produtosAtuais.forEach((p) => { if (p.cat && !vistas.has(normalizar(p.cat))) vistas.set(normalizar(p.cat), p.cat); });
+    return [...vistas.values()].map((k) => ({ chave: k, nome: nomeDaCategoria(k) || k }));
+};
+function pintarCategorias() {
+    const box = $p('cat-chips'), campo = $p('edit-cat'); if (!box || !campo) return;
+    const atual = normalizar(chaveDaCategoria(campo.value));
+    const lista = categoriasParaEscolher();
+    box.hidden = !lista.length;
+    box.innerHTML = lista.map((c) => { const on = !!atual && normalizar(c.chave) === atual; return `<button type="button" class="prod-chip prod-chip-cat${on ? ' on' : ''}" role="radio" aria-checked="${on}" data-cat-nome="${escapeHTML(c.nome)}"><span class="prod-chip-ico" aria-hidden="true">${arteDaCategoria(c.nome)}</span>${escapeHTML(c.nome)}</button>`; }).join('');
+}
+// categoria escolhida num produto NOVO: a unidade vira a mais usada nela (se a pessoa ainda não escolheu) e o preço mostra o mais comum como dica
+function aoMudarCategoria() {
+    const chaveCat = chaveDaCategoria($p('edit-cat')?.value || '');
+    const novo = !$p('edit-id')?.value;
+    if (novo && !unidadeMexida && chaveCat) {
+        const un = unidadeMaisUsada(produtosAtuais, chaveCat);
+        if (un !== $p('edit-unidade')?.value) { definirUnidade(un); $p('edit-unidade').dispatchEvent(new Event('change')); }
+    }
+    const pm = novo ? precoMaisUsado(produtosAtuais, chaveCat) : null, preco = $p('edit-preco');
+    if (preco) preco.placeholder = pm ? `Ex.: ${String(pm.toFixed(2)).replace('.', ',')} (o mais comum em ${nomeDaCategoria(chaveCat)})` : '0,00';
+}
+$p('unidade-chips')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-unidade]'); if (!b) return;
+    unidadeMexida = true;
+    definirUnidade(b.dataset.unidade);
+    $p('edit-unidade').dispatchEvent(new Event('change'));
+});
+$p('cat-chips')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cat-nome]'); if (!b) return;
+    $p('edit-cat').value = b.dataset.catNome;
+    pintarCategorias(); aoMudarCategoria();
+});
+$p('edit-cat')?.addEventListener('input', () => { pintarCategorias(); aoMudarCategoria(); });
+document.addEventListener('categorias:mudou', () => { if ($p('modal-produto')?.classList.contains('aberto')) pintarCategorias(); });
+
+// produto com alguma opção extra em uso: "Mais opções" já abre aberto, para ninguém achar que sumiu
+const usaMaisOpcoes = (p) => Number(p.precoDe) > Number(p.preco) || temEstoque(p) || p.pacote === true || Number(p.promoQtd) >= 2 || Number(p.pesoMedio) > 0 || !!p.nomeUn
+    || p.chegouEm === hojeDaLoja() || p.estacao === true || p.escolha === true || p.soInsumo === true || ['curta', 'longa'].includes(p.duracao);
+function modoDoFormulario(modo, p = null) {
+    const novo = modo === 'novo';
+    { const b = $p('btn-salvar-outro'); if (b) b.hidden = !novo; }
+    { const b = $p('btn-duplicar'); if (b) b.hidden = novo; }
+    if (novo) { unidadeMexida = false; repetidos = 0; const r = $p('prod-repetindo'); if (r) r.hidden = true; }
+    pintarUnidades(); pintarCategorias();
+    { const pr = $p('edit-preco'); if (pr) pr.placeholder = '0,00'; }
+    const mais = $p('prod-mais'); if (mais) mais.open = !novo && !!p && usaMaisOpcoes(p);
+    resumoMaisOpcoes();
+}
+// tira só o que é DESTE produto (id, nome, foto, descrição, estoque); preço, unidade, categoria e opções ficam
+function esvaziarParaOutro() {
+    ['edit-id', 'edit-nome', 'edit-foto', 'edit-foto-url'].forEach((i) => { const c = $p(i); if (c) c.value = ''; });
+    { const u = $p('edit-foto-url'); if (u) { delete u.dataset.bancoUrl; delete u.dataset.bancoMini; } }
+    { const d = $p('edit-descricao'); if (d) d.value = ''; }
+    { const est = $p('edit-estoque-fisico'); if (est) { est.value = ''; est.dataset.aoAbrir = ''; } }
+    { const pv = $p('preview-foto-wrapper'); if (pv) pv.innerHTML = placeholderSVG; }
+    $p('modal-titulo').textContent = 'Novo produto';
+    $p('btn-excluir-produto').style.display = 'none';
+    { const g = $p('grupo-rotulo-produto'); if (g) g.hidden = true; }
+    { const bp = $p('btn-post-ia'); if (bp) bp.hidden = true; }
+    { const b = $p('btn-salvar-outro'); if (b) b.hidden = false; }
+    { const b = $p('btn-duplicar'); if (b) b.hidden = true; }
+}
+function avisarRepetindo(html) {
+    const r = $p('prod-repetindo'); if (r) { r.innerHTML = html; r.hidden = false; }
+    const nome = $p('edit-nome');
+    if (nome) { nome.focus(); r?.scrollIntoView({ block: 'nearest' }); }
+}
+function prepararOutroIgual(nomeSalvo) {
+    repetidos++;
+    esvaziarParaOutro();
+    showToast(`${nomeSalvo} guardado.`);
+    const cat = nomeDaCategoria(chaveDaCategoria($p('edit-cat')?.value || ''));
+    avisarRepetindo(`<b>${escapeHTML(nomeSalvo)}</b> guardado${repetidos > 1 ? ` (${repetidos} nesta leva)` : ''}. Escreva o nome do próximo: preço, unidade${cat ? ` e a categoria <b>${escapeHTML(cat)}</b>` : ' e categoria'} continuam iguais.`);
+}
+function duplicarProduto() {
+    const base = $p('edit-nome')?.value.trim() || 'o produto';
+    esvaziarParaOutro();
+    unidadeMexida = true; repetidos = 0;
+    avisarRepetindo(`Copiado de <b>${escapeHTML(base)}</b>. Escreva o nome do novo produto: preço, unidade, categoria e as outras opções vieram iguais. A foto fica em branco.`);
+}
+function abrirProdutoNovo() {
+    injetarEstoqueUI();
+    limparFormularioProduto();
+    $p('modal-titulo').textContent = 'Novo produto';
+    // com uma categoria aberta na lista ("Pastéis"), o produto novo já nasce nela
+    if (adminCategoria !== TODAS) { $p('edit-cat').value = nomeDaCategoria(adminCategoria); pintarCategorias(); aoMudarCategoria(); }
+    openModal('modal-produto');   // a janela já põe o foco no nome (o primeiro campo)
+}
 
 const injetarEstoqueUI = () => {
     if (!document.getElementById('edit-estoque-fisico')) {
-        const precoRow = document.getElementById('edit-preco')?.closest('.grid-2');
-        if (precoRow) {
-            precoRow.insertAdjacentHTML('afterend', `
+        const lugar = document.getElementById('lugar-estoque');
+        if (lugar) {
+            lugar.insertAdjacentHTML('beforeend', `
                 <div class="form-group-estoque">
                     <label for="edit-estoque-fisico"><i class="ic" data-i="caixa"></i> Quantidade em estoque (opcional)</label>
                     <input type="number" id="edit-estoque-fisico" min="0" placeholder="Em branco = sem controle de estoque">
@@ -1395,14 +1530,8 @@ document.body.addEventListener('click', async (e) => {
     const action = target.dataset.action;
 
     try {
-        if (action === 'novo-produto') {
-            injetarEstoqueUI();
-            document.getElementById('modal-titulo').textContent = 'Novo produto';
-            limparFormularioProduto();
-            document.getElementById('btn-excluir-produto').style.display = 'none';
-    { const g = document.getElementById('grupo-rotulo-produto'); if (g) g.hidden = true; }
-            openModal('modal-produto');
-        }
+        if (action === 'novo-produto') abrirProdutoNovo();
+        else if (action === 'varios-produtos') (await TELAS.varios()).abrirVarios({ produtos: produtosAtuais, categorias: categoriasParaEscolher(), arte: arteDaCategoria, categoria: adminCategoria !== TODAS ? adminCategoria : '' });
 
         else if (action === 'editar-produto') {
             injetarEstoqueUI();
@@ -1435,6 +1564,7 @@ document.body.addEventListener('click', async (e) => {
             document.getElementById('btn-excluir-produto').style.display = 'block';
             { const g = document.getElementById('grupo-rotulo-produto'); if (g) g.hidden = false; }
             { const bp = document.getElementById('btn-post-ia'); if (bp) { bp.hidden = !ehGestor(papelAtual); bp.dataset.id = p.id; } }
+            modoDoFormulario('editar', p);
             openModal('modal-produto');
         }
 
@@ -1606,7 +1736,7 @@ const mostrarTextoGerado = (titulo, texto) => {
 const iniciarIAFeaturesDOM = () => {
     const catInput = document.getElementById('edit-cat');
     if (catInput && !document.getElementById('form-group-descricao')) {
-        catInput.closest('.form-group').insertAdjacentHTML('afterend', `
+        (document.getElementById('lugar-descricao') || catInput.closest('.form-group')).insertAdjacentHTML('beforeend', `
             <div class="form-group w-100" id="form-group-descricao">
                 <label style="display:flex; justify-content:space-between; align-items:center;">
                     Descrição
@@ -1659,7 +1789,7 @@ const iniciarIAFeaturesDOM = () => {
                 document.getElementById('modal-titulo').textContent = '' + data.kit.nome;
                 document.getElementById('edit-id').value = ''; document.getElementById('edit-nome').value = data.kit.nome;
                 document.getElementById('edit-preco').value = data.kit.preco;
-                document.getElementById('edit-cat').value = 'Kits Inteligentes';
+                document.getElementById('edit-cat').value = 'Kits Inteligentes'; pintarCategorias();
                 definirUnidade('kit');
                 alternarCampoPesoMedio();
                 if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = `${data.kit.descricao}\n\nO que inclui:\n${data.kit.itensInclusos}`;
@@ -1671,8 +1801,10 @@ const iniciarIAFeaturesDOM = () => {
     }
 };
 
-document.getElementById('btn-salvar-produto').addEventListener('click', async () => {
-    const btn = document.getElementById('btn-salvar-produto');
+// outro = true: "Salvar e criar outro igual" (o formulário fica com preço, unidade e categoria; só troca o nome)
+const salvarProduto = async (outro = false) => {
+    const btn = document.getElementById(outro ? 'btn-salvar-outro' : 'btn-salvar-produto'), rotuloBtn = btn.innerHTML;
+    if (btn.disabled) return;
     btn.textContent = "A guardar..."; btn.disabled = true;
 
     try {
@@ -1750,12 +1882,22 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
             try { await (await TELAS.estoque()).contarEstoque(id, estoqueFinal, 'Alterado no cadastro do produto'); }
             catch (e) { throw new Error(`Produto guardado, mas o estoque não mudou: ${e.message}`); }
         }
-        closeModal('modal-produto'); showToast("Produto guardado com sucesso!");
+        if (outro) prepararOutroIgual(pData.nome);
+        else { closeModal('modal-produto'); showToast("Produto guardado com sucesso!"); }
     } catch (erro) {
         showToast(erro.message || "Erro ao guardar o produto.", true);
     } finally {
-        btn.textContent = "Salvar produto"; btn.disabled = false;
+        btn.innerHTML = rotuloBtn; btn.disabled = false;
     }
+};
+document.getElementById('btn-salvar-produto').addEventListener('click', () => salvarProduto(false));
+document.getElementById('btn-salvar-outro')?.addEventListener('click', () => salvarProduto(true));
+document.getElementById('btn-duplicar')?.addEventListener('click', () => duplicarProduto());
+// Enter no nome salva (no "criar outro igual" é o jeito mais rápido: digita o nome, Enter, digita o próximo...)
+document.getElementById('edit-nome')?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    e.preventDefault();
+    salvarProduto(!document.getElementById('btn-salvar-outro').hidden);
 });
 
 document.getElementById('btn-precos-dia')?.addEventListener('click', async () => {

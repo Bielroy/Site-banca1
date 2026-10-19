@@ -3565,6 +3565,54 @@ teste('ponte: o Dockerfile leva as duas bibliotecas do painel que o servidor usa
   for (const arq of ['js/impressao-lib.js', 'js/impressao-fila-lib.js']) assert.ok(!/^\s*import\s/m.test(fs.readFileSync(raiz(arq), 'utf8')), `${arq} não pode importar outros arquivos do site (não vão para a imagem)`);
 });
 
+teste('cadastro: vários de uma vez (preço depois do traço, repetidos, já cadastrados), unidade da categoria, campos por loja e preço em lote', async () => {
+  const C = await import(raiz('js/cadastro-lib.js')), L = await import(raiz('js/produtos-lista-lib.js')), LC = require(raiz('lib/campos'));
+  assert.deepStrictEqual(LC.CAMPOS_PRODUTO, C.CAMPOS_PRODUTO, 'lib/campos.js e js/cadastro-lib.js: mesma lista de campos');
+  // preço
+  for (const [t, v] of [['15', 15], ['15,5', 15.5], ['R$ 17,50', 17.5], ['1.234,56', 1234.56], ['12.5', 12.5]]) assert.strictEqual(C.lerPreco(t), v, t);
+  for (const t of ['', 'abc', '-3', '12,555']) assert.ok(Number.isNaN(C.lerPreco(t)), t);
+  // lista
+  const l = C.lerLista('Pastel de carne\n  2. Pastel especial - 18\nAçaí 500 ml\nPastel 4 queijos R$ 17,50\npastel DE CARNE\nPastel de pizza\nx\nPastel misto (presunto-queijo): 16\n\n', '15', ['Pastel de Pizza']);
+  assert.deepStrictEqual(l.map((x) => [x.nome, x.preco, x.aviso]), [
+    ['Pastel de carne', 15, ''], ['Pastel especial', 18, ''], ['Açaí 500 ml', 15, ''], ['Pastel 4 queijos', 17.5, ''],
+    ['pastel DE CARNE', 15, 'repetido na lista'], ['Pastel de pizza', 15, 'já cadastrado'], ['x', 15, 'nome curto demais'], ['Pastel misto (presunto-queijo)', 16, '']]);
+  assert.strictEqual(C.lerLista('Coxinha', '')[0].aviso, 'sem preço', 'sem preço padrão e sem preço na linha: fica de fora');
+  assert.strictEqual(C.lerLista(Array.from({ length: 70 }, (_, i) => `P${i}`).join('\n'), 5).length, C.MAX_DE_UMA_VEZ);
+  assert.strictEqual(C.linhasDemais(Array.from({ length: 70 }, (_, i) => `P${i}`).join('\n')), 10);
+  // unidade e preço mais usados
+  const ps = [{ cat: 'pasteis', unidade: 'un', preco: 15 }, { cat: 'pasteis', unidade: 'un', preco: 15 }, { cat: 'pasteis', unidade: 'un', preco: 18 }, { cat: 'frutas', unidade: 'kg', preco: 9 }, { cat: 'frutas', unidade: 'kg', preco: 7 }, { cat: 'frutas', unidade: 'kg', preco: 7 }, { cat: 'frutas', unidade: 'kg', preco: 6 }];
+  assert.strictEqual(C.unidadeMaisUsada(ps, 'Pasteis'), 'un'); assert.strictEqual(C.unidadeMaisUsada(ps, 'frutas'), 'kg');
+  assert.strictEqual(C.unidadeMaisUsada(ps, 'nova'), 'kg', 'categoria nova: a mais usada da loja'); assert.strictEqual(C.unidadeMaisUsada([], ''), 'kg');
+  assert.strictEqual(C.precoMaisUsado(ps, 'pasteis'), 15); assert.strictEqual(C.precoMaisUsado(ps, 'nova'), null); assert.strictEqual(C.precoMaisUsado(ps, ''), null);
+  // campos por loja: hortifrúti vê tudo; pastelaria começa sem "quanto dura" e "peso médio"; o que a plataforma marcou vale
+  assert.ok(Object.values(C.camposDaLoja({ tipo: 'hortifruti' })).every(Boolean));
+  assert.ok(Object.values(C.camposDaLoja(null, true)).every(Boolean), 'a loja original vê tudo');
+  const pa = C.camposDaLoja({ tipo: 'Pastel e açaí' }); assert.strictEqual(pa.duracao, false); assert.strictEqual(pa.pesoMedio, false); assert.strictEqual(pa.oferta, true);
+  const mx = C.camposDaLoja({ tipo: 'Pastel e açaí', campos: { duracao: true, oferta: false, inventado: false, selos: 'nao' } });
+  assert.strictEqual(mx.duracao, true); assert.strictEqual(mx.oferta, false); assert.strictEqual(mx.selos, true); assert.ok(!('inventado' in mx));
+  // preço em lote: só muda quem tem preço diferente; oferta fica só se o preço antigo ainda for maior
+  const lote = L.mudancasEmLote([{ id: 'a', preco: 15 }, { id: 'b', preco: 14, precoDe: 20 }, { id: 'c', preco: 12, precoDe: 15 }, { id: 'd', preco: 1, soInsumo: true }], 'preco', 'x', 7, 16);
+  assert.deepStrictEqual(lote, [{ id: 'a', dados: { preco: 16, precoDe: null, ultimaModificacao: 7 } }, { id: 'b', dados: { preco: 16, precoDe: 20, ultimaModificacao: 7 } }, { id: 'c', dados: { preco: 16, precoDe: null, ultimaModificacao: 7 } }, { id: 'd', dados: { preco: 16, precoDe: null, ultimaModificacao: 7 } }]);
+  assert.deepStrictEqual(L.mudancasEmLote([{ id: 'a', preco: 15 }], 'preco', 'x', 7, 0), [], 'sem preço, nada muda');
+  assert.deepStrictEqual(L.mudancasEmLote([{ id: 'a', preco: 16 }], 'preco', 'x', 7, 16), []);
+});
+
+teste('plataforma: liga e desliga campos do cadastro de produto por loja', async () => {
+  const db = criarBanco({ 'tenants/bie': { nome: 'Bié', ativo: true, tipo: 'Pastel e açaí', tema: { primaria: '#4a1650' } } });
+  const tokens = { super: { uid: 'sup-1', plataforma: true }, dono: { uid: 'd-1', tenants: { bie: 'proprietario' } } };
+  const api = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, tokens, []));
+  const ch = (tk, body) => chamar(api, { headers: { authorization: `Bearer ${tk}` }, body });
+  assert.strictEqual((await ch('dono', { acao: 'campos', id: 'bie', campos: { duracao: true } })).status, 403, 'o dono da loja não mexe nisso');
+  for (const ruim of [{ campos: { inventado: true } }, { campos: { duracao: 'sim' } }, { campos: [] }, {}]) assert.strictEqual((await ch('super', { acao: 'campos', id: 'bie', ...ruim })).status, 400, JSON.stringify(ruim));
+  assert.strictEqual((await ch('super', { acao: 'campos', id: 'nao-existe', campos: { duracao: true } })).status, 404);
+  assert.strictEqual((await ch('super', { acao: 'campos', id: 'bie', campos: { duracao: true, oferta: false } })).status, 200);
+  assert.strictEqual((await ch('super', { acao: 'campos', id: 'bie', campos: { selos: false } })).status, 200);
+  assert.deepStrictEqual(db._dados.get('tenants/bie').campos, { duracao: true, oferta: false, selos: false }, 'soma ao que já estava');
+  const l = (await ch('super', { acao: 'lojas' })).corpo;
+  assert.deepStrictEqual(l.lojas.find((x) => x.id === 'bie').campos, { duracao: true, oferta: false, selos: false });
+  assert.ok(l.campos && l.campos.duracao, 'a tela recebe os nomes dos campos');
+});
+
 (async () => {
   let falhas = 0;
   for (const [nome, fn] of testes) {

@@ -35,6 +35,7 @@
     <link rel="stylesheet" href="./css/admin-vitrine.css">
     <link rel="stylesheet" href="./css/admin-rotulos.css">
     <link rel="stylesheet" href="./css/admin-impressora.css">
+    <link rel="stylesheet" href="./css/admin-cadastro.css">
 </head>
 <body>
 
@@ -110,6 +111,7 @@
             <div class="pl-topo">
                 <input type="search" id="admin-busca-input" placeholder="Buscar produto..." aria-label="Buscar produto ou categoria">
                 <button class="bt bt-sec pl-rotulos" data-action="rotulos" title="Imprimir rótulos adesivos com a imagem que você quiser"><i class="ic" data-i="etiqueta"></i> Rótulos</button>
+                <button class="bt bt-sec pl-varios" data-action="varios-produtos" title="Criar vários produtos com o mesmo preço, unidade e categoria">+ Vários de uma vez</button>
                 <button class="bt bt-pri" data-action="novo-produto">+ Novo produto</button>
             </div>
             <div class="pl-cats" id="pl-cats" role="group" aria-label="Categoria" hidden></div>
@@ -445,13 +447,41 @@
             </header>
             <div class="modal-body">
                 <input type="hidden" id="edit-id">
+                <!-- O ESSENCIAL primeiro: nome, preço, unidade, categoria e foto. O resto fica em "Mais opções";
+                     a plataforma escolhe, por loja, quais desses aparecem (js/cadastro-lib.js). -->
+                <p class="prod-repetindo" id="prod-repetindo" hidden></p>
+                <div class="form-group"><label for="edit-nome">Nome do produto</label><input type="text" id="edit-nome" autocomplete="off" enterkeyhint="done" placeholder="Ex.: Pastel de carne"></div>
+                <div class="form-group prod-preco">
+                    <label for="edit-preco">Preço (R$)</label>
+                    <input type="number" id="edit-preco" step="0.10" inputmode="decimal" placeholder="0,00">
+                </div>
                 <div class="form-group">
-                    <label for="edit-foto">Foto</label>
-                    <div id="preview-foto-wrapper" style="width:100%; height:160px; border-radius:12px; overflow:hidden; background:var(--parchment); margin-bottom:12px;"></div>
-                    <input type="file" id="edit-foto" accept="image/*">
-                    <p class="ou-divisor">OU</p>
+                    <span class="prod-rot" id="rot-unidade">Vendido por</span>
+                    <div class="prod-chips" id="unidade-chips" role="radiogroup" aria-labelledby="rot-unidade"></div>
+                    <select id="edit-unidade" class="sr-only" tabindex="-1" aria-hidden="true">
+                        <option value="kg">Quilo (kg)</option>
+                        <option value="un">Unidade (un)</option>
+                        <option value="maço">Maço</option>
+                        <option value="bdj">Bandeja</option>
+                        <option value="kit">Kit / Cesta</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <span class="prod-rot" id="rot-cat">Categoria (aba da loja)</span>
+                    <div class="prod-chips prod-chips-cat" id="cat-chips" role="radiogroup" aria-labelledby="rot-cat"></div>
+                    <input type="text" id="edit-cat" autocomplete="off" placeholder="Ou digite uma categoria nova" aria-label="Categoria">
+                </div>
+                <div class="form-group prod-foto">
+                    <span class="prod-rot">Foto</span>
+                    <div class="prod-foto-linha">
+                        <div id="preview-foto-wrapper" class="prod-foto-previa"></div>
+                        <div class="prod-foto-bts">
+                            <label class="btn-outline prod-foto-bt" for="edit-foto"><i class="ic" data-i="camera"></i> Tirar ou escolher foto</label>
+                            <input type="file" id="edit-foto" accept="image/*" class="sr-only">
+                            <button type="button" class="btn-outline btn-banco-fotos" id="btn-banco-fotos">Escolher do banco de fotos</button>
+                        </div>
+                    </div>
                     <input type="url" id="edit-foto-url" placeholder="Ou cole aqui o link de uma foto">
-                    <button type="button" class="btn-outline btn-banco-fotos" id="btn-banco-fotos">Escolher do banco de fotos</button>
                     <details class="guia-foto">
                         <summary>Como tirar uma foto que dá vontade de comprar</summary>
                         <ol>
@@ -464,28 +494,17 @@
                         <small>Foto do produto de verdade vende mais que foto da internet ou feita por IA, e evita reclamação de "veio diferente".</small>
                     </details>
                 </div>
-                <div class="form-group"><label for="edit-nome">Nome do produto</label><input type="text" id="edit-nome"></div>
-                <div class="form-group">
+
+                <details class="prod-mais" id="prod-mais">
+                    <summary><b>Mais opções</b> <small id="prod-mais-resumo"></small></summary>
+                    <div class="form-group" data-campo="oferta">
                     <label for="edit-preco-de">Oferta: preço antigo, que aparece riscado (opcional)</label>
                     <input type="number" id="edit-preco-de" step="0.10" inputmode="decimal" placeholder="Deixe vazio se não é oferta">
                     <small class="dica-campo">Se for maior que o preço de venda, o produto ganha o selo de oferta e entra na faixa "Ofertas de hoje". Para encerrar a oferta, apague este campo.</small>
                 </div>
-                <div class="grid-2">
-                    <div class="form-group"><label for="edit-preco">Preço (R$)</label><input type="number" id="edit-preco" step="0.10" inputmode="decimal"></div>
-                    <div class="form-group">
-                        <label for="edit-unidade">Vendido por</label>
-                        <select id="edit-unidade">
-                            <option value="kg">Quilo (kg)</option>
-                            <option value="un">Unidade (un)</option>
-                            <option value="maço">Maço</option>
-                            <option value="bdj">Bandeja</option>
-                            <option value="kit">Kit / Cesta</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- PACOTE FECHADO e PROMOÇÃO POR QUANTIDADE (js/pacote-lib.js). Só para o que NÃO vai à balança. -->
-                <fieldset class="form-group pacote-campos" id="grupo-pacote">
+                    <div id="lugar-estoque" data-campo="estoque"></div>
+                    <!-- PACOTE FECHADO e PROMOÇÃO POR QUANTIDADE (js/pacote-lib.js). Só para o que NÃO vai à balança. -->
+                <fieldset class="form-group pacote-campos" id="grupo-pacote" data-campo="pacote">
                     <legend class="sr-only">Pacote e promoção</legend>
                     <label class="pacote-liga"><input type="checkbox" id="edit-pacote">
                         <span class="pacote-liga-txt"><span class="pacote-ico" data-arte="pacote"></span><b>É pacote fechado</b>
@@ -504,10 +523,10 @@
                     </div>
                 </fieldset>
 
-                <!-- NOVO: peso médio por unidade. Alimenta a estimativa de preço
+                    <!-- NOVO: peso médio por unidade. Alimenta a estimativa de preço
                      que o cliente vê ao pedir "5 batatas" na loja. Só aparece
                      quando a métrica de venda é por peso. -->
-                <div class="form-group" id="form-group-peso-medio" style="display:none; background:var(--foam); padding:14px; border-radius:var(--radius-sm);">
+                <div class="form-group" id="form-group-peso-medio" data-campo="pesoMedio" style="display:none; background:var(--foam); padding:14px; border-radius:var(--radius-sm);">
                     <label for="edit-peso-medio"><i class="ic" data-i="balanca"></i> Peso médio de 1 unidade (em gramas)</label>
                     <input type="number" id="edit-peso-medio" min="1" step="1" placeholder="Ex: 150 (uma batata média)" inputmode="numeric">
                     <small style="color:var(--text-mid); font-size:0.78rem; display:block; margin-top:6px; line-height:1.5;">
@@ -530,14 +549,10 @@
                     </div>
                 </div>
 
-                <!-- Rótulo adesivo personalizado deste produto (js/admin-rotulos.js). Só com o produto já salvo. -->
-                <div class="form-group" id="grupo-rotulo-produto" hidden>
-                    <button type="button" class="btn-outline btn-rotulo-produto" data-action="rotulo-do-produto"><i class="ic" data-i="etiqueta"></i> Rótulo adesivo deste produto</button>
-                    <small class="dica-campo">Monte o adesivo com a imagem que quiser (foto, desenho, logo) e imprima quantos precisar.</small>
-                </div>
+                    <div id="lugar-descricao" data-campo="descricao"></div>
 
-                <!-- Selos na loja (js/vitrine-lib.js). Só o que for verdade: o selo é uma promessa para o cliente. -->
-                <fieldset class="form-group selos-produto">
+                    <!-- Selos na loja (js/vitrine-lib.js). Só o que for verdade: o selo é uma promessa para o cliente. -->
+                <fieldset class="form-group selos-produto" data-campo="selos">
                     <legend>Selos na loja (opcional)</legend>
                     <label class="chk-linha"><input type="checkbox" id="edit-selo-chegou"> <span><b>Chegou hoje</b> <small>vale só hoje; amanhã some sozinho</small></span></label>
                     <label class="chk-linha"><input type="checkbox" id="edit-selo-estacao"> <span><b>Da estação</b> <small>está na safra</small></span></label>
@@ -545,13 +560,13 @@
                     <small class="dica-campo">Cada selo coloca o produto numa faixa no topo da loja ("Chegou hoje", "Da estação"). No dia a dia, o botão <b>hoje</b> na lista de produtos marca o "Chegou hoje" num toque.</small>
                 </fieldset>
 
-                <div class="form-group">
+                    <div class="form-group" data-campo="insumo">
                     <label class="chk-linha"><input type="checkbox" id="edit-so-insumo"> Só ingrediente (não aparece na loja)</label>
                     <small class="dica-campo">Para o que entra em receitas e não é vendido: azeite, sal, embalagem. O preço pode ficar em branco.</small>
                 </div>
 
-                <!-- Usado pela aba Previsão para decidir a folga da compra de cada produto -->
-                <div class="form-group">
+                    <!-- Usado pela aba Previsão para decidir a folga da compra de cada produto -->
+                <div class="form-group" data-campo="duracao">
                     <label for="edit-duracao">Quanto tempo dura na banca</label>
                     <select id="edit-duracao">
                         <option value="curta">Pouco: estraga em 1 ou 2 dias (folhas, ervas, morango)</option>
@@ -561,21 +576,25 @@
                     <small class="dica-campo">A sugestão de compra da aba Previsão usa isto: o que estraga rápido recebe menos folga, para sobrar menos.</small>
                 </div>
 
-                <div class="form-group">
-                    <label for="edit-cat">Categoria (aba da loja)</label>
-                    <input type="text" id="edit-cat" autocomplete="off" placeholder="Toque para escolher ou digite uma nova">
-                    <small class="dica-campo">As categorias são criadas e ordenadas na aba <i class="ic" data-i="etiqueta"></i> Categorias.</small>
+                    <!-- Rótulo adesivo personalizado deste produto (js/admin-rotulos.js). Só com o produto já salvo. -->
+                <div class="form-group" id="grupo-rotulo-produto" data-campo="rotulo" hidden>
+                    <button type="button" class="btn-outline btn-rotulo-produto" data-action="rotulo-do-produto"><i class="ic" data-i="etiqueta"></i> Rótulo adesivo deste produto</button>
+                    <small class="dica-campo">Monte o adesivo com a imagem que quiser (foto, desenho, logo) e imprima quantos precisar.</small>
                 </div>
+                </details>
             </div>
             <footer class="modal-footer" style="display: flex; flex-direction: column; gap: 10px;">
                 <button class="bt bt-pri" id="btn-salvar-produto">Salvar produto</button>
+                <button type="button" class="bt bt-sec" id="btn-salvar-outro" hidden><i class="ic" data-i="mais"></i> Salvar e criar outro igual</button>
+                <button type="button" class="bt bt-sec" id="btn-duplicar" hidden>Criar outro parecido</button>
                 <button type="button" class="bt bt-sec" id="btn-post-ia" data-action="gerar-post" hidden><i class="ic" data-i="faisca"></i> Texto de divulgação com IA</button>
                 <button class="bt bt-perigo" id="btn-excluir-produto"><i class="ic" data-i="lixeira"></i> Apagar produto</button>
             </footer>
         </div>
     </div>
 
-    <!-- Modal Compartilhado Custom Confirm -->
+    
+<!-- Modal Compartilhado Custom Confirm -->
     <div class="modal-overlay" id="modal-precos-dia">
         <div class="modal">
             <header class="modal-head">

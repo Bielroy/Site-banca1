@@ -10,6 +10,7 @@
 //  POST { acao: 'tipo', id, tipo }                              muda o tipo de negócio de uma loja
 //  POST { acao: 'ativo', id, ativo }                        bloquear / liberar
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
+//  POST { acao: 'campos', id, campos: { duracao: false, ... } }   campos do cadastro de produto (lib/campos.js)
 //  POST { acao: 'proprietario', id, email, remover? }
 //  POST { acao: 'condominio', id?, nome, formato, remover? }  cadastro de condomínios da plataforma
 //  POST { acao: 'assinatura', id, valor, dia, obs }        mensalidade da banca (valor vazio = tira)
@@ -21,6 +22,7 @@
 const admin = require('firebase-admin');
 const T = require('../lib/tenant');
 const { MODELOS, MODULOS } = require('../lib/modelos');
+const { CAMPOS_PRODUTO } = require('../lib/campos');
 const Segredos = require('../lib/segredos');
 const P = require('../lib/prudencia');
 const crypto = require('crypto');
@@ -76,14 +78,14 @@ async function lojas(res) {
   const lista = await Promise.all(ids.map(async (id) => {
     const f = fichas.get(id), [mes, donos] = await Promise.all([movimentoDoMes(id), donosDe(id)]);
     const modulos = {}; Object.keys(MODULOS).forEach((m) => { modulos[m] = m === 'ia' && id !== T.TENANT_PADRAO ? !!(f.modulos && f.modulos.ia === true) : T.moduloAtivo(f, m); });
-    return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, mes, donos, assinatura: assinaturas.get(id) || null };
+    return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, campos: camposMarcados(f), mes, donos, assinatura: assinaturas.get(id) || null };
   }));
   const condominios = await Cond.garantir(db, T);   // sem o cadastro, a tela não abre (senão salvar uma feira apagaria os condomínios dela)
   const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, condominiosIds: Cond.idsDaFeira(condominios, d.data()), dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira) }));
   const seg = await db.collection('plataforma').doc('segredos').get();
   const fotos = /^[a-f0-9]{32}$/i.test(String(process.env.IMGBB_API_KEY || (seg.exists && seg.data().imgbb) || ''));
   const pix = !!process.env.PAGBANK_API_TOKEN || Segredos.tokenPagbankValido(seg.exists && seg.data().pagbank);
-  return res.status(200).json({ sucesso: true, lojas: lista, feiras, condominios, modelos: Object.keys(MODELOS), modulos: MODULOS, mes: mesAtual(), fotos, pix });
+  return res.status(200).json({ sucesso: true, lojas: lista, feiras, condominios, modelos: Object.keys(MODELOS), modulos: MODULOS, campos: CAMPOS_PRODUTO, mes: mesAtual(), fotos, pix });
 }
 
 async function definirDono(id, email, remover) {
@@ -159,6 +161,21 @@ async function modulos(req, res) {
   await fichaRef(id).set({ ...base(f), modulos: novo }, { merge: true });
   T._cacheFichas.delete(id);
   return res.status(200).json({ sucesso: true, modulos: novo });
+}
+// só o que a plataforma MARCOU (true/false); o que falta segue o tipo de negócio (js/cadastro-lib.js)
+function camposMarcados(f) {
+  const c = f && f.campos && typeof f.campos === 'object' ? f.campos : {}, r = {};
+  Object.keys(CAMPOS_PRODUTO).forEach((k) => { if (typeof c[k] === 'boolean') r[k] = c[k]; });
+  return r;
+}
+async function campos(req, res) {
+  const id = String((req.body || {}).id || ''), f = await exigirLoja(id), pedido = (req.body || {}).campos;
+  if (!pedido || typeof pedido !== 'object' || Array.isArray(pedido)) throw falha(400, 'Nada para mudar.');
+  const novo = camposMarcados(f);
+  for (const [k, v] of Object.entries(pedido)) { if (!CAMPOS_PRODUTO[k] || typeof v !== 'boolean') throw falha(400, 'Campo desconhecido.'); novo[k] = v; }
+  await fichaRef(id).set({ ...base(f), campos: novo }, { merge: true });
+  T._cacheFichas.delete(id);
+  return res.status(200).json({ sucesso: true, campos: novo });
 }
 async function proprietario(req, res) {
   const b = req.body || {}, id = String(b.id || ''), email = String(b.email || '').trim().toLowerCase(); await exigirLoja(id);
@@ -302,7 +319,7 @@ module.exports = async function handler(req, res) {
   // outra conta dona da loja original ainda conseguiria assumir. Ao usar a tela, o registro passa a existir.
   try { await db.runTransaction(async (t) => { const r = db.collection('plataforma').doc('dono'), s = await t.get(r); if (!s.exists) t.set(r, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() }); }); }
   catch (e) { console.error('[plataforma] dono', e && e.message); }
-  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
+  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), campos: () => campos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
   const nomeAcao = typeof (req.body || {}).acao === 'string' ? (req.body || {}).acao : '';
   const fn = Object.prototype.hasOwnProperty.call(acoes, nomeAcao) ? acoes[nomeAcao] : null;
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });

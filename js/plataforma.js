@@ -14,6 +14,7 @@ import { auth, onAuthStateChanged } from './firebase.js';
 import { urlDaLoja } from './tenant.js';
 import { escapeHTML, fmt, showToast, customConfirm } from './utils.js';
 import { sugerirId, idValido, totais, diasDaFeira, textoDoDia, proximaEntrega, normCond } from './plataforma-lib.js';
+import { CAMPOS_PRODUTO, camposDaLoja } from './cadastro-lib.js';
 const diasEmTexto = (dias) => diasDaFeira(dias);
 import './icones-admin.js';
 
@@ -232,6 +233,8 @@ function folhaLoja(l) {
     ${l.original ? '' : `<section class="pf-sec"><label class="pf-rot" for="pf-l-tipo">Tipo de negócio</label><div class="pf-form-linha"><input type="text" id="pf-l-tipo" maxlength="30" autocomplete="off" value="${escapeHTML(NOMES_MODELO[l.tipo] || l.tipo || '')}" placeholder="Ex.: Padaria"><button type="button" class="pf-bt" data-pf="mudar-tipo">Salvar</button></div></section>`}
     <section class="pf-sec"><span class="pf-rot">Módulos ligados</span><small class="pf-dica">Muda na hora, ao tocar.</small>
         <div class="pf-toggles">${Object.entries(S.dados.modulos).map(([k, rot]) => `<label><input type="checkbox" data-pf-modulo="${k}"${l.modulos[k] ? ' checked' : ''}> ${escapeHTML(rot)}</label>`).join('')}</div></section>
+    <section class="pf-sec"><span class="pf-rot">Campos no cadastro de produto</span><small class="pf-dica">O que esta loja vê ao criar ou editar um produto. Nome, preço, unidade, categoria e foto sempre aparecem. Muda na hora, ao tocar.</small>
+        <div class="pf-toggles">${(() => { const lig = camposDaLoja({ tipo: l.tipo, campos: l.campos || {} }, l.original); return Object.entries(S.dados.campos || CAMPOS_PRODUTO).map(([k, rot]) => `<label><input type="checkbox" data-pf-campo="${k}"${lig[k] ? ' checked' : ''}> ${escapeHTML(rot)}</label>`).join(''); })()}</div></section>
     <section class="pf-sec"><span class="pf-rot">Feiras</span>${fs.length ? `<ul class="pf-mini-lista">${fs.map((f) => `<li>${escapeHTML(f.nome)}<small>${escapeHTML(diasEmTexto(f.dias))}</small></li>`).join('')}</ul>` : '<p class="pf-dica">Não está em nenhuma feira.</p>'}<small class="pf-dica">Para colocar ou tirar de uma feira, use a aba Feiras.</small></section>
     <section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt${l.ativo ? ' perigo' : ' pri'}" data-pf="${l.ativo ? 'bloquear' : 'liberar'}">${l.ativo ? 'Bloquear a loja' : 'Liberar a loja'}</button><small class="pf-dica">Bloqueada, a loja para de receber pedidos e some das feiras, e o painel dela fecha com o aviso "Sua assinatura foi interrompida por falta de pagamento. Pague e volte a usar", mostrando a mensalidade. Nada se perde: ao liberar, tudo volta.</small></section>`;
     return [l.nome, corpo, '<button type="button" class="pf-bt" data-pf="fechar-folha">Fechar</button>'];
@@ -446,6 +449,11 @@ function ligar() {
         if (t.id === 'pf-f-limite' && S.rascunho) { S.rascunho.horaLimite = t.value; marcarMudanca(); return; }
         if (t.dataset.pfFLoja && S.rascunho) { if (t.checked) S.rascunho.lojas.add(t.dataset.pfFLoja); else S.rascunho.lojas.delete(t.dataset.pfFLoja); $('pf-f-n-lojas').textContent = S.rascunho.lojas.size; marcarMudanca(); return; }
         if (t.dataset.pfFCond && S.rascunho) { if (t.checked) S.rascunho.conds.add(t.dataset.pfFCond); else S.rascunho.conds.delete(t.dataset.pfFCond); $('pf-f-n-conds').textContent = S.rascunho.conds.size; marcarMudanca(); return; }
+        if (t.dataset.pfCampo && S.folha && S.folha.tipo === 'loja') {
+            const k = t.dataset.pfCampo, nome = (S.dados.campos || CAMPOS_PRODUTO)[k];
+            if (!(await fazer({ acao: 'campos', id: S.folha.id, campos: { [k]: t.checked } }, `${nome}: ${t.checked ? 'aparece' : 'escondido'} no cadastro.`))) t.checked = !t.checked;
+            return;
+        }
         if (t.dataset.pfModulo && S.folha && S.folha.tipo === 'loja') {
             const nome = S.dados.modulos[t.dataset.pfModulo];
             if (!(await fazer({ acao: 'modulos', id: S.folha.id, modulos: { [t.dataset.pfModulo]: t.checked } }, `${nome}: ${t.checked ? 'ligado' : 'desligado'}.`))) t.checked = !t.checked;
