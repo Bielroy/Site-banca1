@@ -2855,7 +2855,24 @@ teste('vitrine: peso aproximado, ícone da categoria, quadros conferidos e lugar
   assert.strictEqual(V.iconeDaCategoria('FRUTAS'), 'fruta');
   assert.strictEqual(V.iconeDaCategoria('Raízes'), 'raiz');
   assert.strictEqual(V.iconeDaCategoria('Temperos'), 'tempero');
-  assert.strictEqual(V.iconeDaCategoria('Pães'), '');
+  assert.strictEqual(V.iconeDaCategoria('Pães'), 'pao');
+  assert.strictEqual(V.iconeDaCategoria('Ervas finas'), 'tempero');
+  assert.strictEqual(V.iconeDaCategoria('Eletrônicos'), '');
+  // comida pronta: o prato vence o ingrediente ("Pastel de queijo" é pastel, "Batata frita" é fritas)
+  [['Pastéis', 'pastel'], ['Pastel de queijo', 'pastel'], ['Açaí', 'tigela'], ['Açaí na tigela', 'tigela'], ['Suco de laranja', 'copo'],
+   ['Salgados', 'salgado'], ['Coxinhas', 'salgado'], ['Hambúrguer', 'hamburguer'], ['Lanches', 'hamburguer'], ['Cachorro-quente', 'cachorro'],
+   ['Pizzas', 'pizza'], ['Batata frita', 'fritas'], ['Porções', 'fritas'], ['Sorvetes', 'sorvete'], ['Bolos', 'bolo'], ['Brigadeiros', 'docinho'],
+   ['Café', 'cafe'], ['Refrigerantes', 'lata'], ['Cervejas', 'cerveja'], ['Água', 'agua'], ['Espetinhos', 'carne'], ['Frango assado', 'frango'],
+   ['Peixes', 'peixe'], ['Massas', 'massa'], ['Marmitas', 'marmita'], ['Tapioca', 'tapioca'], ['Molhos', 'molho'], ['Promoções', 'promo'],
+   ['Frutas', 'fruta'], ['Raízes', 'raiz'], ['Queijos', 'queijo'], ['Kit churrasco', 'cesta']
+  ].forEach(([nome, icone]) => assert.strictEqual(V.iconeDaCategoria(nome), icone, nome));
+  // todo ícone que as regras devolvem tem desenho guardado (senão a categoria ficaria sem figura)
+  const A = await import(raiz('js/vitrine-arte.js'));
+  [...new Set(['Pastéis', 'Açaí', 'Salgados', 'Lanches', 'Cachorro-quente', 'Pizzas', 'Porções', 'Sorvetes', 'Bolos', 'Brigadeiros', 'Café', 'Pães', 'Refrigerantes', 'Cervejas', 'Água', 'Espetinhos',
+    'Frango', 'Peixes', 'Massas', 'Marmitas', 'Tapioca', 'Molhos', 'Promoções', 'Suco', 'Frutas', 'Verduras', 'Raízes', 'Legumes', 'Temperos', 'Ovos', 'Kits', 'Queijos', 'Doces'])]
+    .forEach((n) => assert.ok(A.ARTE_CATEGORIA[V.iconeDaCategoria(n)], `sem desenho para ${n}`));
+  ['pastel', 'tigela', 'salgado', 'hamburguer', 'cachorro', 'pizza', 'fritas', 'sorvete', 'bolo', 'docinho', 'cafe', 'pao', 'lata', 'cerveja', 'agua', 'carne', 'frango', 'peixe', 'massa', 'marmita', 'tapioca', 'molho', 'promo']
+    .forEach((k) => assert.ok(/^<svg[\s\S]*<\/svg>$/.test(A.ARTE_CATEGORIA[k]), `desenho ${k}`));
   const v = V.vitrineSegura({
     quadros: [
       { img: 'https://i.ibb.co/x/a.webp', titulo: 'Como escolher manga', texto: 'Aperte de leve...', cat: 'frutas' },
