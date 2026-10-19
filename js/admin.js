@@ -1,4 +1,5 @@
 import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
+import { normalizarInstagram, normalizarWhatsapp, telefoneBonito } from './contato-lib.js';
 import { miniatura } from './foto-lib.js';   // foto pelo redutor do site (o i.ibb.co direto não abre em algumas redes)
 import { getDoc, auth, db, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, limit, writeBatch, where, updateDoc } from './firebase.js';
 import { horariosDoTexto } from './entrega-lib.js';
@@ -467,6 +468,7 @@ const iniciarRealTimeSync = () => {
         if (snap.exists()) {
             const data = snap.data();
             document.getElementById('config-wpp').value = data.wpp || '';
+            { const k = data.contato || {}; document.getElementById('config-instagram').value = k.instagram ? '@' + k.instagram : ''; document.getElementById('config-wpp-contato').value = k.whatsapp ? telefoneBonito(k.whatsapp) : ''; document.getElementById('config-mostrar-wpp').checked = k.mostrarWpp === true; }
             document.getElementById('config-minimo').value = data.minimo || 0;
             const ent = data.entrega || {}, campoHor = document.getElementById('config-horarios');
             if (document.activeElement?.id !== 'config-taxa') document.getElementById('config-taxa').value = Number(ent.taxa) > 0 ? ent.taxa : '';
@@ -2899,7 +2901,13 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
             pix = { tipo: pixTipo, chave, nome: pixNome.slice(0, 25), cidade: pixCidade.slice(0, 15) };
         }
         const cidade = (document.getElementById('config-cidade')?.value || '').trim().slice(0, 60);   // usada pelo motor de previsão para o clima
-        await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios, pixAutomatico, entrega, pix, cidade }, { merge: true });
+        // Instagram e WhatsApp que o cliente vê na loja (js/contato-lib.js)
+        const igBruto = document.getElementById('config-instagram').value.trim(), instagram = normalizarInstagram(igBruto);
+        if (igBruto && !instagram) throw new Error('Confira o Instagram: escreva o @ da loja (ex.: @pastelacaidobie) ou cole o link do perfil.');
+        const wcBruto = document.getElementById('config-wpp-contato').value.trim(), wppContato = normalizarWhatsapp(wcBruto);
+        if (wcBruto && !wppContato) throw new Error('Confira o WhatsApp para o cliente: com DDD, ex.: 62 99999-8888 (ou deixe vazio para usar o dos pedidos).');
+        const contato = { instagram, whatsapp: wppContato, mostrarWpp: document.getElementById('config-mostrar-wpp').checked === true };
+        await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios, pixAutomatico, entrega, pix, cidade, contato }, { merge: true });
         agendaMexida = false;
         showToast("Configurações atualizadas!");
     } catch (err) {

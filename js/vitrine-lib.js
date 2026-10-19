@@ -143,7 +143,9 @@ export function iconeDaCategoria(nome) {
 // ---------------------------------------------------------------------
 export const MAX_QUADROS = 4;
 /** SEÇÕES COLORIDAS: cada categoria ganha uma faixa de cor com desenho (ex.: Pastéis dourado, Açaí roxo). */
-export const MAX_SECOES = 4;
+export const MAX_SECOES = 8;
+/** Jeito da seção: 'fundo' = a cor toma o fundo inteiro da seção e os produtos ficam soltos sobre ela (imersivo); 'faixa' = só a faixa do título. */
+export const ESTILOS_SECAO = ['fundo', 'faixa'];
 export const ICONES_SECAO = Object.keys(ARTES);
 const COR_HEX = /^#[0-9a-fA-F]{6}$/;
 /** Tinta (texto) que se lê bem sobre a cor da seção: branco em cor escura, marrom bem escuro em cor clara. */
@@ -160,8 +162,8 @@ export function secoesSugeridas(cats) {
     const lista = Array.isArray(cats) ? cats : [];
     const acha = (re) => lista.find((c) => re.test(semAcento(c.nome || c.chave)));
     const saida = [], past = acha(/pastel|pasteis/), aca = acha(/acai/);
-    if (past) saida.push({ cat: past.chave, titulo: texto(past.nome || past.chave, 40), texto: 'Crocantes, na hora, direto da fritadeira.', cor: '#efb94a', icone: 'pastel' });
-    if (aca && aca !== past) saida.push({ cat: aca.chave, titulo: texto(aca.nome || aca.chave, 40), texto: 'Cremoso, gelado, do jeitinho que você monta.', cor: '#5a1f6b', icone: 'tigela' });
+    if (past) saida.push({ cat: past.chave, titulo: texto(past.nome || past.chave, 40), texto: 'Crocantes, na hora, direto da fritadeira.', cor: '#efb94a', icone: 'pastel', estilo: 'fundo' });
+    if (aca && aca !== past) saida.push({ cat: aca.chave, titulo: texto(aca.nome || aca.chave, 40), texto: 'Cremoso, gelado, do jeitinho que você monta.', cor: '#5a1f6b', icone: 'tigela', estilo: 'fundo' });
     return saida;
 }
 /**
@@ -194,7 +196,7 @@ export function vitrineSegura(bruto) {
     // seções coloridas por categoria
     const secoes = (Array.isArray(v.secoes) ? v.secoes : []).slice(0, 20).map((f) => {
         const x = f && typeof f === 'object' ? f : {};
-        return { cat: texto(x.cat, 60), titulo: texto(x.titulo, 40), texto: texto(x.texto, 160), cor: COR_HEX.test(String(x.cor)) ? String(x.cor).toLowerCase() : '#efb94a', icone: ICONES_SECAO.includes(x.icone) ? x.icone : '' };
+        return { cat: texto(x.cat, 60), titulo: texto(x.titulo, 40), texto: texto(x.texto, 160), cor: COR_HEX.test(String(x.cor)) ? String(x.cor).toLowerCase() : '#efb94a', icone: ICONES_SECAO.includes(x.icone) ? x.icone : '', estilo: ESTILOS_SECAO.includes(x.estilo) ? x.estilo : 'fundo' };
     }).filter((x) => x.cat && x.titulo).slice(0, MAX_SECOES);
     if (secoes.length) saida.secoes = secoes;
     // faixas da loja por categoria

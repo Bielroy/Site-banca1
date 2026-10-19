@@ -184,6 +184,10 @@
     {
       "source": "/previa",
       "destination": "/index.html"
+    },
+    {
+      "source": "/admin-plataforma",
+      "destination": "/plataforma.html"
     }
   ],
   "redirects": [

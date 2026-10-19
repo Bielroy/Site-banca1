@@ -18,3 +18,54 @@
 .produto-card--secao.na-sacola, .produto-card--secao.na-sacola:hover { border-color: var(--sec-cor); }
 @media (hover: hover) { .produto-card--secao:hover { border-color: var(--sec-cor); } }
 .produto-card--secao .produto-img-wrap, .produto-card--secao .produto-img-placeholder { background: color-mix(in srgb, var(--sec-cor) 30%, #fff); }
+
+/* ---------- jeito "fundo" (imersivo): a cor toma a seção inteira e os produtos ficam soltos sobre ela ----------
+   O retângulo .fundo-secao é posto por js/loja.js (pintarFundosDasSecoes) atrás do título e dos produtos da seção. */
+#lista-produtos { position: relative; }
+#lista-produtos > :not(.fundo-secao) { position: relative; z-index: 1; }
+.fundo-secao {
+    position: absolute; z-index: 0; left: -16px; right: -16px; pointer-events: none;
+    background: var(--sec-cor);
+    background-image: radial-gradient(circle at 12% 0%, color-mix(in srgb, #fff 16%, transparent), transparent 46%),
+                      radial-gradient(circle at 100% 100%, color-mix(in srgb, #000 12%, transparent), transparent 50%);
+    transition: top .25s ease, height .25s ease;
+}
+@media (min-width: 601px) { .fundo-secao { left: -14px; right: -14px; border-radius: 26px; } .fundo-secao.emenda-cima { border-top-left-radius: 0; border-top-right-radius: 0; } .fundo-secao.emenda-baixo { border-bottom-left-radius: 0; border-bottom-right-radius: 0; } }
+.bloco-secao--fundo { background: none; border: 0; margin-top: 12px; margin-bottom: 0; padding-top: 8px; padding-bottom: 4px; }
+@media (min-width: 601px) { .bloco-secao--fundo { margin: 16px 0 0; padding: 10px 4px 2px; border: 0; } }
+.bloco-secao--fundo h2 { font-size: 1.6rem; }
+.bloco-secao--fundo h2 .arte-cat { width: 54px; height: 54px; filter: drop-shadow(0 3px 6px rgba(0,0,0,.18)); }
+.fim-secao { grid-column: 1 / -1; height: 6px; }
+
+/* produto solto sobre a cor: sem a caixa do cartão, foto arredondada, texto e botão na tinta da seção */
+#lista-produtos .produto-card--imersivo, #lista-produtos .produto-card--imersivo.na-sacola { background: transparent; border-color: transparent; box-shadow: none; color: var(--sec-tinta); }
+@media (hover: hover) { #lista-produtos .produto-card--imersivo:hover { background: color-mix(in srgb, var(--sec-tinta) 7%, transparent); border-color: transparent; box-shadow: none; } }
+#lista-produtos .produto-card--imersivo .produto-img-wrap { margin: 0; border-radius: calc(var(--raio-card, 16px) + 2px); background: color-mix(in srgb, var(--sec-tinta) 14%, var(--sec-cor)); box-shadow: 0 6px 16px color-mix(in srgb, #000 18%, transparent); }
+#lista-produtos .produto-card--imersivo .produto-img-placeholder { background: color-mix(in srgb, var(--sec-tinta) 14%, var(--sec-cor)); }
+#lista-produtos .produto-card--imersivo .produto-info { padding: 10px 2px 4px; }
+#lista-produtos .produto-card--imersivo .produto-nome { color: var(--sec-tinta); }
+#lista-produtos .produto-card--imersivo .etiqueta { background: color-mix(in srgb, var(--sec-tinta) 15%, transparent); color: var(--sec-tinta); box-shadow: none; }
+#lista-produtos .produto-card--imersivo .etiqueta::before { background: var(--sec-cor); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sec-tinta) 45%, transparent); }
+#lista-produtos .produto-card--imersivo .etiqueta::after { background: color-mix(in srgb, var(--sec-tinta) 45%, transparent); }
+.etiqueta-limpa #lista-produtos .produto-card--imersivo .etiqueta { background: none; border-left-color: var(--sec-tinta); color: var(--sec-tinta); }
+#lista-produtos .produto-card--imersivo .etq-ref, #lista-produtos .produto-card--imersivo .etq-preco small { color: inherit; }
+#lista-produtos .produto-card--imersivo .card-add, #lista-produtos .produto-card--imersivo .modo-btn.principal { background: var(--sec-tinta); color: var(--sec-cor); box-shadow: 0 3px 0 color-mix(in srgb, var(--sec-tinta) 55%, #000); }
+@media (hover: hover) { #lista-produtos .produto-card--imersivo .card-add:hover { background: var(--sec-tinta); filter: brightness(1.06); } }
+#lista-produtos .produto-card--imersivo .modo-btn { background: transparent; border-color: var(--sec-tinta); color: var(--sec-tinta); }
+#lista-produtos .produto-card--imersivo .modo-btn small { color: inherit; opacity: .85; }
+#lista-produtos .produto-card--imersivo .card-qtd { background: color-mix(in srgb, var(--sec-tinta) 16%, var(--sec-cor)); color: var(--sec-tinta); box-shadow: inset 0 0 0 1.5px var(--sec-tinta); }
+#lista-produtos .produto-card--imersivo .card-qtd output small { color: inherit; }
+#lista-produtos .produto-card--imersivo .card-qtd button { background: var(--sec-tinta); color: var(--sec-cor); }
+#lista-produtos .produto-card--imersivo .promo-falta { color: var(--sec-tinta); }
+#lista-produtos .produto-card--imersivo .btn-fav { background: color-mix(in srgb, #fff 88%, transparent); }
+
+#lista-produtos .produto-card--imersivo.na-sacola .produto-img-wrap { box-shadow: 0 0 0 3px var(--sec-tinta), 0 6px 16px color-mix(in srgb, #000 18%, transparent); }
+
+/* categoria imersiva escolhida: a página inteira fica da cor dela */
+body.cat-imersiva { background: var(--cat-cor); transition: background-color .35s ease; }
+body.cat-imersiva .controles { background: color-mix(in srgb, var(--cat-cor) 88%, #fff); }
+body.cat-imersiva .layout .vitrine > .faixa-sempre h2, body.cat-imersiva .empty-state p, body.cat-imersiva .empty-state span { color: var(--cat-tinta); }
+body.cat-imersiva .rodape-loja, body.cat-imersiva footer { color: var(--cat-tinta); }
+@media (prefers-reduced-motion: reduce) { .fundo-secao, body.cat-imersiva { transition: none; } }
+body.cat-imersiva .fundo-secao { background-image: none; }
+body.cat-imersiva .cat-btn.active { background: var(--cat-tinta); color: var(--cat-cor); border-color: var(--cat-tinta); box-shadow: 0 2px 8px color-mix(in srgb, #000 20%, transparent); }

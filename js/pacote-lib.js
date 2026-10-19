@@ -45,7 +45,7 @@ export const ehPotinho = (p, cfg) => ehTempero(p, cfg) && !fracionavel(p.unidade
 // (antes os temperos começavam em 3000: o pacote menos pedido, com 3000, caía dentro do cantinho dos temperos)
 //   seções coloridas (até 4): ficam ANTES dos soltos, cada uma numa faixa de 2000: -8000, -6000, -4000, -2000 (cabeçalho = faixa - 1)
 export const ORDEM_PACOTES = 2000, ORDEM_TEMPEROS = 5000;
-export const ordemDaSecao = (i) => -8000 + 2000 * Math.max(0, Math.min(3, Number(i) || 0));
+export const ordemDaSecao = (i) => -16000 + 2000 * Math.max(0, Math.min(7, Number(i) || 0));
 /** `p` = chance de o cliente levar (0 a 1); `tipo` = 'pacote' | 'tempero' | 'secao' | ''; `secao` = posição da seção (0 a 3). */
 export function ordemNaVitrine(p, tipo = '', secao = 0) {
     const n = Number(p), nota = Math.min(1000, Math.max(0, Math.round((1 - (Number.isFinite(n) ? n : 0.3)) * 1000)));

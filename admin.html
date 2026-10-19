@@ -69,7 +69,7 @@
             </div>
             <div class="menu-mais" id="menu-mais" hidden>
                 <div class="menu-bancas" id="menu-bancas" hidden></div>
-                <a id="link-plataforma" href="./plataforma.html" hidden>Plataforma (todas as lojas)</a>
+                <a id="link-plataforma" href="./admin-plataforma" hidden>Plataforma (todas as lojas)</a>
                 <button type="button" id="btn-instalar-painel" hidden>Instalar o painel no celular</button>
                 <button type="button" id="btn-impressora"><i class="ic" data-i="impressora"></i> Impressora</button>
                 <button type="button" id="btn-logout"><i class="ic" data-i="sair"></i> Sair</button>
@@ -307,7 +307,7 @@
                     </div>
                 </details>
                 <details class="op-secao">
-                    <summary><span><b>Atendimento</b><small>WhatsApp da loja e pedido mínimo</small></span></summary>
+                    <summary><span><b>Atendimento</b><small>WhatsApp, Instagram e pedido mínimo</small></span></summary>
                     <div class="op-corpo">
                 <div class="grid-2" style="width: 100%;">
                     <div class="form-group">
@@ -317,6 +317,21 @@
                     </div>
                     <div class="form-group"><label for="config-minimo"><i class="ic" data-i="moedas"></i> Pedido mínimo (R$)</label><input type="number" id="config-minimo" step="0.5"></div>
                 </div>
+                <fieldset class="contato-loja">
+                    <legend>Redes da loja (aparecem para o cliente)</legend>
+                    <div class="grid-2" style="width: 100%;">
+                        <div class="form-group">
+                            <label for="config-instagram">Instagram da loja</label>
+                            <input type="text" id="config-instagram" placeholder="@sualoja" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url">
+                            <small class="dica-campo">Pode colar o link do perfil ou escrever o @. Vazio = não aparece.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-wpp-contato">WhatsApp para o cliente falar com a loja</label>
+                            <input type="tel" id="config-wpp-contato" placeholder="Vazio = o mesmo dos pedidos" inputmode="tel">
+                            <label class="contato-check"><input type="checkbox" id="config-mostrar-wpp"> Mostrar o botão do WhatsApp na loja</label>
+                        </div>
+                    </div>
+                </fieldset>
 
                     </div>
                 </details>

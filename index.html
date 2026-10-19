@@ -78,6 +78,7 @@
     <link rel="stylesheet" href="./css/vitrine.css">
     <link rel="stylesheet" href="./css/pacotes.css">
     <link rel="stylesheet" href="./css/secoes.css">
+    <link rel="stylesheet" href="./css/encaixe.css">
 
     <link rel="icon" href="./icon-192.png">
     <!-- O <link rel="manifest"> não é escrito aqui. O vite-plugin-pwa
@@ -92,7 +93,9 @@
          ícone genérico (um print da página) em vez da logo da banca. -->
     <link rel="apple-touch-icon" href="./icon-192.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <!-- iPhone com a loja na tela inicial: o topo colorido da loja vai até em cima (atrás do relógio e da bateria),
+         em vez de uma faixa branca. As margens da área segura estão em css/encaixe.css. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Banca Adair">
 </head>
 <body>
@@ -147,6 +150,8 @@
                 <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/></svg>
                 <span>Instalar o app</span>
             </button>
+            <!-- Instagram e WhatsApp da loja (Configurações → Atendimento). Preenchidos por js/loja.js -->
+            <span class="header-redes" id="header-redes" hidden></span>
         </nav>
     </div>
 </header>
@@ -238,6 +243,9 @@
 
 <!-- Rodapé com o link da política de privacidade. A LGPD pede que a
      informação esteja acessível de onde os dados são coletados. -->
+<!-- "Fale com a loja": Instagram e WhatsApp, no fim da página. Preenchido por js/loja.js -->
+<section class="fale-loja" id="fale-loja" aria-labelledby="fale-loja-titulo" hidden></section>
+
 <footer class="site-rodape">
     <a href="/privacidade.html">Privacidade</a>
     <span aria-hidden="true">·</span>

@@ -76,11 +76,12 @@ function render() {
                         <div class="form-group"><label>Cor da seção</label><span class="vt-secao-cor-par"><input type="color" data-sc="${i}" data-campo="cor" value="${COR_SECAO.test(x.cor) ? x.cor : '#efb94a'}" aria-label="Cor da seção ${i + 1}"><input type="text" maxlength="7" data-sc="${i}" data-campo="corhex" value="${escapeHTML(x.cor || '#efb94a')}" aria-label="Código da cor da seção ${i + 1}" class="vt-hex"></span></div>
                         <div class="form-group"><label>Desenho</label><select data-sc="${i}" data-campo="icone"><option value="">Sem desenho</option>${ICONES_SECAO.map((k) => `<option value="${k}">${escapeHTML(ROTULO_ICONE[k] || k)}</option>`).join('')}</select></div>
                     </div>
+                    <div class="form-group"><label>Jeito da seção</label><select data-sc="${i}" data-campo="estilo"><option value="fundo">Fundo inteiro da cor (produtos soltos sobre ela)</option><option value="faixa">Só a faixa do título (cartões normais)</option></select></div>
                     <button type="button" class="vt-remover" data-remover-secao="${i}">Tirar esta seção</button>
                 </fieldset>`).join('') || '<p class="config-sub">Nenhuma seção ainda. As categorias aparecem juntas, sem faixa de cor.</p>'}
                 ${v.secoes.length < MAX_SECOES ? '<button type="button" class="btn-outline vt-mais" data-acao-vt="mais-secao">+ Nova seção</button>' : ''}
                 ${!v.secoes.length && secoesSugeridas(categorias).length ? '<button type="button" class="btn-outline vt-mais" data-acao-vt="sugerir-secoes">Montar para pastel e açaí</button>' : ''}
-                <small class="dica-campo">As seções vêm antes dos produtos soltos, na ordem em que estão aqui. A faixa aparece na loja inteira (não na busca nem quando o cliente escolhe uma categoria). Os botões continuam na cor dos botões da loja.</small>
+                <small class="dica-campo">As seções vêm antes dos produtos soltos, na ordem em que estão aqui. Com <b>Fundo inteiro</b>, a cor toma a seção toda e os produtos ficam soltos sobre ela; quando o cliente toca na categoria, a página inteira fica dessa cor. Com <b>Só a faixa</b>, aparece só o título colorido e os cartões ficam como os outros. Na busca não aparece nenhuma das duas.</small>
             </div>
         </details>
 
@@ -155,7 +156,7 @@ function render() {
         <section class="vt-funil" id="vt-funil" aria-live="polite">${funilHtml || '<p class="config-sub">Carregando os números da vitrine...</p>'}</section>
     </section>`;
     el().querySelectorAll('select[data-q]').forEach((s) => { s.value = (v.quadros[Number(s.dataset.q)] || {}).cat || ''; });
-    el().querySelectorAll('select[data-sc]').forEach((s) => { const x = v.secoes[Number(s.dataset.sc)] || {}; s.value = x[s.dataset.campo] || ''; });
+    el().querySelectorAll('select[data-sc]').forEach((s) => { const x = v.secoes[Number(s.dataset.sc)] || {}; s.value = x[s.dataset.campo] || (s.dataset.campo === 'estilo' ? 'fundo' : ''); });
     el().querySelectorAll('select[data-fx]').forEach((s) => { s.value = (v.faixas[Number(s.dataset.fx)] || {}).cat || ''; });
     pintarEstado();
 }
@@ -259,7 +260,7 @@ function ligar() {
         if (b.dataset.acaoVt === 'mais' && estado.quadros.length < MAX_QUADROS) { estado.quadros.push({ titulo: '', texto: '', cat: '' }); render(); return; }
         if (b.dataset.remover !== undefined) { estado.quadros.splice(Number(b.dataset.remover), 1); render(); return; }
         if (b.dataset.acaoVt === 'mais-faixa' && estado.faixas.length < MAX_FAIXAS_LOJA) { estado.faixas.push({ titulo: '', texto: '', cat: '' }); render(); return; }
-        if (b.dataset.acaoVt === 'mais-secao' && estado.secoes.length < MAX_SECOES) { estado.secoes.push({ cat: '', titulo: '', texto: '', cor: '#efb94a', icone: '' }); render(); return; }
+        if (b.dataset.acaoVt === 'mais-secao' && estado.secoes.length < MAX_SECOES) { estado.secoes.push({ cat: '', titulo: '', texto: '', cor: '#efb94a', icone: '', estilo: 'fundo' }); render(); return; }
         if (b.dataset.acaoVt === 'sugerir-secoes') { estado.secoes = secoesSugeridas(categorias); render(); return; }
         if (b.dataset.removerSecao !== undefined) { estado.secoes.splice(Number(b.dataset.removerSecao), 1); render(); return; }
         if (b.dataset.removerFaixa !== undefined) { estado.faixas.splice(Number(b.dataset.removerFaixa), 1); render(); return; }
@@ -307,7 +308,7 @@ export async function abrirVitrine(cats = []) {
     catch (_) { el().innerHTML = '<p class="config-sub">Não consegui ler a vitrine. Confira a internet e abra a aba de novo.</p>'; return; }
     const v = vitrineSegura(cfg.vitrine);
     estado = { quadros: v.quadros.map((q) => ({ cat: '', ...q })), donos: { titulo: '', texto: '', ...(v.donos || {}) }, escolha: v.escolha || '',
-        pacotes: { titulo: '', texto: '', ...(v.pacotes || {}) }, temperos: { titulo: '', texto: '', cat: '', ...(v.temperos || {}) }, faixas: (v.faixas || []).map((f) => ({ texto: '', ...f })), secoes: (v.secoes || []).map((x) => ({ texto: '', icone: '', ...x })) };
+        pacotes: { titulo: '', texto: '', ...(v.pacotes || {}) }, temperos: { titulo: '', texto: '', cat: '', ...(v.temperos || {}) }, faixas: (v.faixas || []).map((f) => ({ texto: '', ...f })), secoes: (v.secoes || []).map((x) => ({ texto: '', icone: '', estilo: 'fundo', ...x })) };
     gravado = atual();
     render(); ligar(); pintarFunil();
 }

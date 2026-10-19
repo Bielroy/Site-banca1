@@ -207,6 +207,25 @@ teste('painel: Configurações guarda a retirada na banca (ligada, horários e l
   semErros(erros); await fechar();
 });
 
+teste('painel: Configurações guarda o Instagram (link vira só o nome) e o WhatsApp para o cliente; Instagram errado não grava', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.locator('.tab[data-aba="config"]').click();
+  await pagina.evaluate(() => document.querySelectorAll('#aba-config details').forEach((d) => { d.open = true; }));
+  await pagina.waitForSelector('#config-instagram', { state: 'visible', timeout: 8000 });
+  await pagina.fill('#config-instagram', 'facebook.com/banca');
+  await pagina.click('#btn-salvar-config');
+  await pagina.waitForTimeout(400);
+  assert.ok(!(await pagina.evaluate(() => (window.__gravados || []).some((g) => g.path === 'loja/config' && g.dados && g.dados.contato))), 'Instagram errado: não grava');
+  await pagina.fill('#config-instagram', 'https://www.instagram.com/BancaAdair/');
+  await pagina.fill('#config-wpp-contato', '62 98888-7777');
+  await pagina.check('#config-mostrar-wpp');
+  await pagina.click('#btn-salvar-config');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config' && g.dados && g.dados.contato), null, { timeout: 4000 });
+  const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config' && x.dados.contato).dados);
+  assert.deepStrictEqual(g.contato, { instagram: 'bancaadair', whatsapp: '5562988887777', mostrarWpp: true });
+  semErros(erros); await fechar();
+});
 teste('retirada por dia e horários de entrega por dia: no dia sem retirada a escolha some; a regra do dia troca a lista de horários', async () => {
   const hoje = new Date(Date.now() - 3 * 3600000).getUTCDay(), outros = [0, 1, 2, 3, 4, 5, 6].filter((d) => d !== hoje);
   // hoje NÃO é dia de retirada: o cliente só vê a entrega
@@ -705,15 +724,15 @@ teste('painel: a aba Aparência abre e a prévia da loja carrega dentro dela', a
   semErros(erros); await fechar();
 });
 
-teste('loja: seções coloridas por categoria (pastéis dourado, açaí roxo) vêm antes dos soltos, cada uma com seu cabeçalho; capa sem película tira o véu', async () => {
+teste('loja: seções coloridas (jeito "só a faixa") por categoria vêm antes dos soltos, cada uma com seu cabeçalho; capa sem película tira o véu', async () => {
   const c = cenarioPadrao();
   const prod = (nome, cat, preco = 9) => ({ nome, preco, unidade: 'un', cat, ativo: true });
   c.lojas.bie = { ficha: { nome: 'Pastel & Açaí do Bié', ativo: true, tipo: 'Pastel e açaí', tema: { primaria: '#4a1650', secundaria: '#8e3a8f', destaque: '#f0b94a', fundo: '#fff6e4', superficie: '#ffffff', texto: '#2a1230', sobrePrimaria: '#ffffff', botao: '#7b2d8b', cabecalho: 'capa', pelicula: 'nao', capa: 'https://capa.exemplo.com/capa.png' } },
     produtos: { p1: prod('Pastel de carne', 'pasteis'), p2: prod('Pastel de queijo', 'pasteis'), a1: prod('Açaí 300 ml', 'acai', 16), a2: prod('Açaí 500 ml', 'acai', 22), c1: prod('Caldo de cana', 'bebidas', 7) },
     categorias: [{ chave: 'pasteis', nome: 'Pastéis', ordem: 1 }, { chave: 'acai', nome: 'Açaí', ordem: 2 }, { chave: 'bebidas', nome: 'Bebidas', ordem: 3 }],
     config: { lojaAberta: true, diasAbertos: [0, 1, 2, 3, 4, 5, 6], minimo: 0, wpp: '5562999990000', vitrine: { secoes: [
-      { cat: 'pasteis', titulo: 'Pastéis', texto: 'Crocantes, na hora.', cor: '#efb94a', icone: 'pastel' },
-      { cat: 'acai', titulo: 'Açaí', texto: 'Cremoso e gelado.', cor: '#5a1f6b', icone: 'tigela' }] } } };
+      { cat: 'pasteis', titulo: 'Pastéis', texto: 'Crocantes, na hora.', cor: '#efb94a', icone: 'pastel', estilo: 'faixa' },
+      { cat: 'acai', titulo: 'Açaí', texto: 'Cremoso e gelado.', cor: '#5a1f6b', icone: 'tigela', estilo: 'faixa' }] } } };
   const { pagina, erros, fechar } = await abrir('/?loja=bie', c);
   await cards(pagina).first().waitFor({ timeout: 8000 });
   const ordem = await pagina.evaluate(() => [...document.querySelectorAll('#lista-produtos > .produto-card, #lista-produtos > .bloco-secao')]
@@ -742,6 +761,68 @@ teste('loja: seções coloridas por categoria (pastéis dourado, açaí roxo) v�
   await pagina.waitForSelector('.bloco-secao[data-i="1"]', { timeout: 3000 });
   assert.deepStrictEqual(erros, [], 'sem erro de código: ' + erros.join(' | '));
   await fechar();
+});
+teste('loja: seção imersiva (fundo inteiro) pinta atrás do título e dos produtos, tira a caixa do cartão e, na aba, pinta a página; Instagram e WhatsApp da loja aparecem', async () => {
+  const c = cenarioPadrao();
+  const prod = (nome, cat, preco = 9) => ({ nome, preco, unidade: 'un', cat, ativo: true });
+  c.lojas.bie = { ficha: { nome: 'Pastel & Açaí do Bié', ativo: true, tema: { primaria: '#4a1650', fundo: '#fff6e4', superficie: '#ffffff', texto: '#2a1230', sobrePrimaria: '#ffffff' } },
+    produtos: { p1: prod('Pastel de carne', 'pasteis'), p2: prod('Pastel de queijo', 'pasteis'), p3: prod('Pastel de frango', 'pasteis'), a1: prod('Açaí 300 ml', 'acai', 16), c1: prod('Caldo de cana', 'bebidas', 7) },
+    categorias: [{ chave: 'pasteis', nome: 'Pastéis', ordem: 1 }, { chave: 'acai', nome: 'Açaí', ordem: 2 }, { chave: 'bebidas', nome: 'Bebidas', ordem: 3 }],
+    config: { lojaAberta: true, diasAbertos: [0, 1, 2, 3, 4, 5, 6], minimo: 0, wpp: '5562999990000', contato: { instagram: 'pasteldobie', mostrarWpp: true },
+      vitrine: { secoes: [{ cat: 'pasteis', titulo: 'Pastéis', cor: '#efb94a', icone: 'pastel' }, { cat: 'acai', titulo: 'Açaí', cor: '#5a1f6b', icone: 'tigela' }] } } };
+  const { pagina, erros, fechar } = await abrir('/?loja=bie', c);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForSelector('.fundo-secao[data-i="0"]', { state: 'attached', timeout: 3000 });
+  // o fundo cobre do título ao último pastel
+  const caixa = await pagina.evaluate(() => {
+    const f = document.querySelector('.fundo-secao[data-i="0"]').getBoundingClientRect();
+    const els = [...document.querySelectorAll('.bloco-secao[data-i="0"], .produto-card[data-secao="0"]')].map((e) => e.getBoundingClientRect());
+    return { f: { t: f.top, b: f.bottom }, t: Math.min(...els.map((r) => r.top)), b: Math.max(...els.map((r) => r.bottom)), cor: getComputedStyle(document.querySelector('.fundo-secao[data-i="0"]')).backgroundColor };
+  });
+  assert.ok(caixa.f.t <= caixa.t + 1 && caixa.f.b >= caixa.b - 1, 'o fundo cobre a seção inteira: ' + JSON.stringify(caixa));
+  assert.strictEqual(caixa.cor, 'rgb(239, 185, 74)');
+  const card = pagina.locator('.produto-card[data-id="a1"]');
+  assert.ok(await card.evaluate((e) => e.classList.contains('produto-card--imersivo')));
+  assert.strictEqual(await card.evaluate((e) => getComputedStyle(e).backgroundColor), 'rgba(0, 0, 0, 0)', 'sem a caixa do cartão');
+  assert.strictEqual(await card.locator('.produto-nome').evaluate((e) => getComputedStyle(e).color), 'rgb(255, 255, 255)', 'nome em branco sobre o roxo');
+  assert.strictEqual(await pagina.locator('.bloco-secao[data-i="0"]').evaluate((e) => getComputedStyle(e).backgroundColor), 'rgba(0, 0, 0, 0)', 'o título fica sobre o fundo (sem faixa à parte)');
+  assert.strictEqual(await pagina.locator('.produto-card[data-id="c1"]').evaluate((e) => e.classList.contains('produto-card--imersivo')), false);
+  // na aba do açaí: título continua, a página fica roxa; em "Todos" volta
+  await pagina.locator('#categorias .cat-btn[data-cat="acai"]').click();
+  await pagina.waitForFunction(() => document.body.classList.contains('cat-imersiva'), null, { timeout: 3000 });
+  await pagina.waitForTimeout(600);          // a cor entra devagar (transição)
+  assert.strictEqual(await pagina.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(90, 31, 107)');
+  assert.ok(await pagina.locator('.bloco-secao[data-i="1"]').isVisible(), 'o título da seção aparece na aba dela');
+  await pagina.locator('#categorias .cat-btn[data-cat="todas"]').click();
+  await pagina.waitForFunction(() => !document.body.classList.contains('cat-imersiva'), null, { timeout: 3000 });
+  // contato da loja: dois botões no topo e o bloco no fim
+  assert.ok(await pagina.locator('#header-redes').isVisible());
+  assert.strictEqual(await pagina.locator('#header-redes a[href="https://www.instagram.com/pasteldobie/"]').count(), 1);
+  assert.strictEqual(await pagina.locator('#header-redes a[href^="https://wa.me/5562999990000"]').count(), 1);
+  assert.ok(/@pasteldobie/.test(await pagina.locator('#fale-loja').innerText()) && /\(62\) 99999-0000/.test(await pagina.locator('#fale-loja').innerText()));
+  assert.deepStrictEqual(erros, [], 'sem erro de código: ' + erros.join(' | '));
+  await fechar();
+});
+teste('loja encaixa: celular pequeno, letra grande e computador sem rolar para o lado; com letra grande o produto deita (foto ao lado)', async () => {
+  const c = cenarioPadrao();
+  for (const [vw, vh, letra, mobile] of [[320, 640, '', true], [390, 844, '150%', true], [390, 844, '200%', true], [1366, 800, '', false], [768, 1024, '', true]]) {
+    const { pagina, erros, fechar } = await abrir('/', c, { contexto: { viewport: { width: vw, height: vh }, isMobile: mobile, hasTouch: mobile } });
+    if (letra) await pagina.evaluate((l) => { document.documentElement.style.fontSize = l; dispatchEvent(new Event('resize')); }, letra);
+    await cards(pagina).first().waitFor({ timeout: 8000 });
+    await pagina.waitForTimeout(400);
+    const largura = await pagina.evaluate(() => document.documentElement.scrollWidth);
+    assert.ok(largura <= vw, `${vw}px ${letra || 'letra normal'}: a página tem ${largura}px (rola para o lado)`);
+    if (letra === '200%') {
+      assert.ok(await pagina.evaluate(() => document.documentElement.classList.contains('texto-grande')), 'liga .texto-grande');
+      const dir = await cards(pagina).first().evaluate((e) => getComputedStyle(e).flexDirection);
+      assert.strictEqual(dir, 'row', 'uma coluna só: foto ao lado do texto');
+    }
+    if (vw === 1366) {
+      const cols = await pagina.evaluate(() => getComputedStyle(document.getElementById('lista-produtos')).gridTemplateColumns.split(' ').length);
+      assert.ok(cols >= 4, `computador: ${cols} colunas de produtos`);
+    }
+    semErros(erros); await fechar();
+  }
 });
 teste('painel: Aparência aceita o código da cor digitado (#rrggbb), mostra o que vale e o modelo "Pastel e açaí" preenche tudo', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
@@ -821,7 +902,7 @@ teste('painel: Vitrine monta uma seção colorida (categoria, cor pelo código, 
   await pagina.click('#vt-gravar');
   await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config'), null, { timeout: 4000 });
   const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config').dados);
-  assert.deepStrictEqual(g.vitrine.secoes, [{ cat: 'frutas', titulo: 'Frutas do dia', texto: '', cor: '#5a1f6b', icone: 'tigela' }]);
+  assert.deepStrictEqual(g.vitrine.secoes, [{ cat: 'frutas', titulo: 'Frutas do dia', texto: '', cor: '#5a1f6b', icone: 'tigela', estilo: 'fundo' }], 'o jeito padrão é o fundo inteiro');
   semErros(erros); await fechar();
 });
 

@@ -1,9 +1,11 @@
 import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
+import './texto-grande.js';   // a letra do aparelho (iPhone: Tamanho do Texto) vale no site
 import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc, signOut } from './firebase.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja, EM_PREVIA } from './tenant.js';
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage, haVersaoNova, conferirVersaoAgora, recarregarFresco } from './utils.js';
 import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques, maisPedidos } from './ranking-loja.js';
+import { contatoDaLoja, telefoneBonito } from './contato-lib.js';
 import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca, tintaSobre } from './vitrine-lib.js';
 import { ARTES } from './arte-lib.js';
 import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_POTE } from './vitrine-arte.js';
@@ -654,9 +656,9 @@ const secaoDoProduto = (p) => { const l = vitrineDaLoja().secoes || [], c = Stri
 // do resto (só as primeiras da vitrine, que são o "maior elemento" que o celular espera para mostrar a loja).
 const cardHtml = (p, rapido = false, prioridade = false) => {
         const favActive = STATE.favoritos.includes(p.id) ? 'ativo' : '';
-        const pac = ehPacote(p), tmp = !pac && ehTemp(p), sec = pac || tmp ? -1 : secaoDoProduto(p), secCor = sec > -1 ? vitrineDaLoja().secoes[sec].cor : '';
+        const pac = ehPacote(p), tmp = !pac && ehTemp(p), sec = pac || tmp ? -1 : secaoDoProduto(p), secX = sec > -1 ? vitrineDaLoja().secoes[sec] : null, secCor = secX ? secX.cor : '', imersivo = !!secX && secX.estilo === 'fundo';
         return `
-        <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : sec > -1 ? ' produto-card--secao' : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : sec > -1 ? ` data-secao="${sec}"` : ''} style="display: flex;${pac ? ` order: ${ORDEM_PACOTES};` : tmp ? ` order: ${ORDEM_TEMPEROS};` : sec > -1 ? ` order: ${ordemDaSecao(sec) + 500}; --sec-cor: ${secCor};` : ''}">
+        <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : sec > -1 ? ` produto-card--secao${imersivo ? ' produto-card--imersivo' : ''}` : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : sec > -1 ? ` data-secao="${sec}"` : ''} style="display: flex;${pac ? ` order: ${ORDEM_PACOTES};` : tmp ? ` order: ${ORDEM_TEMPEROS};` : sec > -1 ? ` order: ${ordemDaSecao(sec) + 500}; --sec-cor: ${secCor}; --sec-tinta: ${tintaSobre(secCor)};` : ''}">
             <div class="produto-img-wrap">
                 ${p.foto ? `<img src="${escapeHTML(fotoPequena(p, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
@@ -899,7 +901,7 @@ const renderLoja = (forcarRebuild = false) => {
         if(matchBusca && matchCat) { card.style.display = 'flex'; itensVisiveis++; if (card.dataset.pacote !== '1' && card.dataset.tempero !== '1') soltosVisiveis++; } 
         else { card.style.display = 'none'; }
     });
-    pintarBlocosSecoes(grid, !termo && STATE.catAtiva === 'todas');
+    pintarBlocosSecoes(grid, termo ? '' : STATE.catAtiva);
     pintarBlocoPacotes(grid);
     pintarBlocoTemperos(grid);
     // aviso de "nada aqui": sempre refeito, para o texto acompanhar busca/aba
@@ -914,22 +916,71 @@ const renderLoja = (forcarRebuild = false) => {
     renderBlocos(!termo && STATE.catAtiva === 'todas' ? soltosVisiveis : 0);
 };
 
-// SEÇÕES COLORIDAS: antes dos produtos soltos, cada categoria escolhida na Aparência → Vitrine ganha uma faixa de cor com desenho,
-// título e frase (ex.: Pastéis em dourado, Açaí em roxo). Só na vitrine inteira: com busca ou categoria escolhida, não faz sentido.
-const pintarBlocosSecoes = (grid, mostrar) => {
+// SEÇÕES COLORIDAS: antes dos produtos soltos, cada categoria escolhida na Aparência → Vitrine ganha a sua cor, desenho,
+// título e frase (ex.: Pastéis em dourado, Açaí em roxo). Dois jeitos (vitrineSegura):
+//   'faixa' → só a faixa do título, na vitrine inteira;
+//   'fundo' → a cor toma o FUNDO da seção inteira e os produtos ficam soltos sobre ela, sem a caixa do cartão (imersivo).
+//             Aparece também quando o cliente escolhe a categoria, e então a página toda fica dessa cor.
+// `aba` = categoria escolhida ('todas', 'pasteis'...) ou '' com busca (com busca não há faixa nenhuma).
+const pintarBlocosSecoes = (grid, aba) => {
     const lista = vitrineDaLoja().secoes || [];
-    grid.querySelectorAll('.bloco-secao').forEach((c) => { if (!mostrar || !lista[Number(c.dataset.i)]) c.remove(); });
-    if (!mostrar) return;
+    const vale = (sec) => !!sec && !!aba && (aba === 'todas' || (sec.estilo === 'fundo' && aba === sec.cat));
+    grid.querySelectorAll('.bloco-secao, .fim-secao').forEach((c) => { if (!vale(lista[Number(c.dataset.i)])) c.remove(); });
     lista.forEach((sec, i) => {
-        const cab = grid.querySelector(`.bloco-secao[data-i="${i}"]`);
+        if (!vale(sec)) return;
+        const cab = grid.querySelector(`.bloco-secao[data-i="${i}"]`), fim = grid.querySelector(`.fim-secao[data-i="${i}"]`);
         const algum = [...grid.querySelectorAll(`.produto-card[data-secao="${i}"]`)].some((c) => c.style.display !== 'none');
-        if (!algum) { cab?.remove(); return; }
-        const cara = `${sec.titulo}|${sec.texto}|${sec.cor}|${sec.icone}`;
+        if (!algum) { cab?.remove(); fim?.remove(); return; }
+        const fundo = sec.estilo === 'fundo', cara = `${sec.titulo}|${sec.texto}|${sec.cor}|${sec.icone}|${sec.estilo}`;
+        if (!fundo) fim?.remove();
+        else if (!fim) grid.insertAdjacentHTML('beforeend', `<div class="fim-secao" data-i="${i}" aria-hidden="true" style="order: ${ordemDaSecao(i) + 1999}"></div>`);
         if (cab && cab.dataset.cara === cara) return;
         const ico = sec.icone && ARTES[sec.icone] ? `<svg class="arte-cat" viewBox="0 0 120 120" aria-hidden="true" focusable="false">${ARTES[sec.icone]}</svg>` : '';
-        const html = `<header class="bloco-secao" data-i="${i}" data-cara="${escapeHTML(cara)}" style="order: ${ordemDaSecao(i) - 1}; --sec-cor: ${sec.cor}; --sec-tinta: ${tintaSobre(sec.cor)}"><h2>${ico}<span>${escapeHTML(sec.titulo)}</span></h2>${sec.texto ? `<p>${escapeHTML(sec.texto)}</p>` : ''}</header>`;
+        const html = `<header class="bloco-secao${fundo ? ' bloco-secao--fundo' : ''}" data-i="${i}" data-cara="${escapeHTML(cara)}" style="order: ${ordemDaSecao(i) - 1}; --sec-cor: ${sec.cor}; --sec-tinta: ${tintaSobre(sec.cor)}"><h2>${ico}<span>${escapeHTML(sec.titulo)}</span></h2>${sec.texto ? `<p>${escapeHTML(sec.texto)}</p>` : ''}</header>`;
         if (cab) cab.outerHTML = html; else grid.insertAdjacentHTML('beforeend', html);
     });
+    pintarPaginaDaSecao(lista.find((x) => x.estilo === 'fundo' && aba && aba === x.cat));
+    pedirFundosDasSecoes();
+};
+
+// O FUNDO de cada seção imersiva: um retângulo atrás do título e dos produtos dela, do primeiro ao último
+// (os produtos ficam num grid só, ordenados por `order`; por isso o fundo é medido e posto por baixo).
+const pintarFundosDasSecoes = () => {
+    const grid = document.getElementById('lista-produtos'); if (!grid) return;
+    const lista = vitrineDaLoja().secoes || [], usados = new Set(), caixas = [];
+    lista.forEach((sec, i) => {
+        if (sec.estilo !== 'fundo') return;
+        const els = [...grid.querySelectorAll(`.bloco-secao[data-i="${i}"], .produto-card[data-secao="${i}"], .fim-secao[data-i="${i}"]`)].filter((e) => e.style.display !== 'none' && e.offsetParent);
+        if (!els.some((e) => e.classList.contains('produto-card'))) return;
+        let topo = Infinity, base = -Infinity;
+        for (const e of els) { const m = e.classList.contains('bloco-secao') ? parseFloat(getComputedStyle(e).marginTop) || 0 : 0; topo = Math.min(topo, e.offsetTop - m); base = Math.max(base, e.offsetTop + e.offsetHeight); }
+        if (!grid.querySelector(`.bloco-secao[data-i="${i}"]`)) topo -= 14;          // sem o título (aba escolhida): um respiro em cima
+        let f = grid.querySelector(`.fundo-secao[data-i="${i}"]`);
+        if (!f) { f = document.createElement('div'); f.className = 'fundo-secao'; f.dataset.i = String(i); f.setAttribute('aria-hidden', 'true'); grid.prepend(f); }
+        caixas.push({ f, topo, base, cor: sec.cor });
+        usados.add(String(i));
+    });
+    // seções vizinhas se encostam: uma cor emenda na outra, sem a tira do fundo da loja no meio
+    caixas.sort((a, b) => a.topo - b.topo).forEach((c, k, l) => { const prox = l[k + 1]; if (prox && prox.topo - c.base < 48) { c.base = prox.topo; c.baixo = prox.cima = true; } });
+    caixas.forEach((c) => { c.f.style.cssText = `top: ${Math.round(c.topo)}px; height: ${Math.max(0, Math.round(c.base - c.topo))}px; --sec-cor: ${c.cor}`; c.f.classList.toggle('emenda-cima', !!c.cima); c.f.classList.toggle('emenda-baixo', !!c.baixo); });
+    grid.querySelectorAll('.fundo-secao').forEach((f) => { if (!usados.has(f.dataset.i)) f.remove(); });
+};
+let _fundosPedido = 0, _fundosObs = null;
+const pedirFundosDasSecoes = () => {
+    cancelAnimationFrame(_fundosPedido); _fundosPedido = requestAnimationFrame(pintarFundosDasSecoes);
+    if (!_fundosObs && typeof ResizeObserver !== 'undefined') {       // fonte que chega, foto que carrega, letra maior, giro da tela: mede de novo
+        const grid = document.getElementById('lista-produtos');
+        if (grid) { _fundosObs = new ResizeObserver(() => { cancelAnimationFrame(_fundosPedido); _fundosPedido = requestAnimationFrame(pintarFundosDasSecoes); }); _fundosObs.observe(grid); }
+    }
+};
+// Categoria imersiva escolhida: a página inteira fica da cor dela (volta ao normal em "Todos" ou com busca).
+const pintarPaginaDaSecao = (sec) => {
+    const b = document.body;
+    b.classList.toggle('cat-imersiva', !!sec);
+    if (sec) { b.style.setProperty('--cat-cor', sec.cor); b.style.setProperty('--cat-tinta', tintaSobre(sec.cor)); }
+    else { b.style.removeProperty('--cat-cor'); b.style.removeProperty('--cat-tinta'); }
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) { if (!meta.dataset.original) meta.dataset.original = meta.content || ''; meta.content = sec ? sec.cor : meta.dataset.original; }
 };
 
 // BLOCO "PACOTES PRONTOS": os pacotes vão para o fim da vitrine (order 2000+, js/ranking-loja.js), depois deste cabeçalho.
@@ -1086,6 +1137,30 @@ document.getElementById('busca-input').addEventListener('input', (e) => {
     clearTimeout(buscaTimeout); buscaTimeout = setTimeout(() => { STATE.busca = e.target.value; renderLoja(); }, 150);
 });
 
+// INSTAGRAM E WHATSAPP DA LOJA (Configurações → Atendimento, js/contato-lib.js): dois botões redondos no topo
+// e o bloco "Fale com a loja" no fim da página. Sem nada cadastrado, nada aparece.
+const ICO_INSTA = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r=".6" fill="currentColor"/></svg>';
+const ICO_ZAP = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5l1.2-3.6A8 8 0 1 1 8.4 18.6z"/><path d="M9.2 8.6c.3 2.8 2.6 5.2 5.4 5.6l1-1.3-1.7-.9-.8.7c-.9-.4-1.9-1.3-2.3-2.3l.7-.8-.9-1.7z" fill="currentColor" stroke="none"/></svg>';
+let _contatoDe = '';
+const pintarContato = () => {
+    const k = contatoDaLoja(STATE.config), cara = JSON.stringify(k);
+    if (cara === _contatoDe) return; _contatoDe = cara;
+    const topo = document.getElementById('header-redes'), fim = document.getElementById('fale-loja');
+    const tem = !!(k.instagram || k.whatsapp);
+    if (topo) {
+        topo.innerHTML = (k.whatsapp ? `<a class="chip-header chip-rede" href="${escapeHTML(k.urlWhatsapp)}" target="_blank" rel="noopener noreferrer" aria-label="Falar com a loja no WhatsApp">${ICO_ZAP}</a>` : '')
+            + (k.instagram ? `<a class="chip-header chip-rede" href="${escapeHTML(k.urlInstagram)}" target="_blank" rel="noopener noreferrer" aria-label="Instagram da loja: @${escapeHTML(k.instagram)}">${ICO_INSTA}</a>` : '');
+        topo.hidden = !tem;
+    }
+    if (fim) {
+        fim.innerHTML = tem ? `<h2 id="fale-loja-titulo">Fale com a loja</h2><p>Dúvida, encomenda ou só um oi: estamos por aqui.</p><div class="fale-loja-bts">`
+            + (k.whatsapp ? `<a class="fale-bt fale-bt--zap" href="${escapeHTML(k.urlWhatsapp)}" target="_blank" rel="noopener noreferrer">${ICO_ZAP}<span><b>WhatsApp</b><small>${escapeHTML(telefoneBonito(k.whatsapp))}</small></span></a>` : '')
+            + (k.instagram ? `<a class="fale-bt fale-bt--insta" href="${escapeHTML(k.urlInstagram)}" target="_blank" rel="noopener noreferrer">${ICO_INSTA}<span><b>Instagram</b><small>@${escapeHTML(k.instagram)}</small></span></a>` : '')
+            + '</div>' : '';
+        fim.hidden = !tem;
+    }
+};
+
 const iniciarRealTimeSync = () => {
     renderSkeletons();
     const unsubConfig = onSnapshot(tdoc("loja", "config"), (snap) => {
@@ -1094,6 +1169,7 @@ const iniciarRealTimeSync = () => {
         if (STATE.lojaRenderizada && JSON.stringify(vitrineDaLoja()) !== vitrineAntes) renderLoja(true);   // o dono mudou os quadros ou o texto da escolha
         pintarListaDeCondominios();
         pintarModo();
+        pintarContato();
     }, (e) => console.warn('[loja] config:', e?.code || e));
     unsubscribes.push(unsubConfig);
 
@@ -2142,7 +2218,10 @@ window.addEventListener('popstate', (e) => {
 });
 
 const toggleCartMobile = (abrir) => {
-    if (!ehCelular()) return;
+    if (!ehCelular()) {        // tablet: a sacola fica embaixo dos produtos; o botão flutuante leva até ela
+        if (abrir) document.getElementById('carrinho')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+        return;
+    }
     if (abrir) { 
         document.getElementById('carrinho').classList.add('aberto'); document.getElementById('carrinho-overlay').classList.add('aberto'); 
         document.body.style.overflow = 'hidden'; history.pushState({cart: true}, ''); 

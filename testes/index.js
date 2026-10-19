@@ -2626,7 +2626,7 @@ teste('cloudflare: _headers não soma cabeçalhos em nenhum endereço, /previa t
   const C = require(raiz('lib/cloudflare-arquivos')), vercel = require(raiz('vercel.json'));
   const texto = C.gerarHeaders(vercel), trechos = texto.split('\n\n').slice(1).map((t) => { const [fim, ...hs] = t.split('\n'); return { padrao: fim.trim(), hs: Object.fromEntries(hs.map((l) => { const i = l.indexOf(':'); return [l.slice(2, i), l.slice(i + 2)]; })) }; });
   assert.ok(trechos.length < 100, 'o Cloudflare aceita até 100 trechos'); assert.ok(texto.split('\n').every((l) => l.length < 2000), 'linha de até 2000 letras');
-  const caminhos = ['/', '/admin', '/admin.html', '/plataforma', '/feira', '/privacidade', '/assets/index-ab12.js', '/assets/x.css', '/sw.js', '/workbox-1a2b.js', '/registerSW.js', '/push-sw.js', '/manifest.webmanifest', '/admin.webmanifest', '/icon-192.png', '/icon-painel-512.png', '/og-image.png', '/robots.txt', '/sitemap.xml', '/previa'];
+  const caminhos = ['/', '/admin', '/admin.html', '/plataforma', '/admin-plataforma', '/feira', '/privacidade', '/assets/index-ab12.js', '/assets/x.css', '/sw.js', '/workbox-1a2b.js', '/registerSW.js', '/push-sw.js', '/manifest.webmanifest', '/admin.webmanifest', '/icon-192.png', '/icon-painel-512.png', '/og-image.png', '/robots.txt', '/sitemap.xml', '/previa'];
   for (const c of caminhos) {
     const vistos = {};
     for (const t of trechos.filter((x) => C.casa(x.padrao, c))) for (const k of Object.keys(t.hs)) vistos[k] = (vistos[k] || 0) + 1;
@@ -2638,7 +2638,8 @@ teste('cloudflare: _headers não soma cabeçalhos em nenhum endereço, /previa t
   assert.strictEqual(de('/')['X-Frame-Options'], 'DENY'); assert.ok(/frame-ancestors 'none'/.test(de('/')['Content-Security-Policy']));
   assert.ok(/noindex/.test(de('/admin')['X-Robots-Tag']) && /noindex/.test(de('/plataforma')['X-Robots-Tag']) && !de('/')['X-Robots-Tag']);
   assert.deepStrictEqual(C.gerarRedirects(vercel).split('\n').slice(1).filter(Boolean), ['/feira/:id /?feira=:id&entrar=1 302'], '/previa não é reescrita (os cabeçalhos do /index.html vinham junto)');
-  assert.deepStrictEqual(C.copiasDePagina(vercel), [{ de: 'index.html', para: 'previa.html' }], '/previa vira um arquivo próprio');
+  assert.deepStrictEqual(C.copiasDePagina(vercel), [{ de: 'index.html', para: 'previa.html' }, { de: 'plataforma.html', para: 'admin-plataforma.html' }], '/previa vira um arquivo próprio; a plataforma ganha uma cópia dentro do app do painel');
+  assert.ok(/noindex/.test(de('/admin-plataforma')['X-Robots-Tag']), 'a plataforma dentro do painel também fica fora do Google');
   assert.ok(!C.ENDERECOS_DO_SITE.some((e) => C.casa(e, '/previa') || C.casa(e, '/previa.html')), 'nenhum trecho "de todas as páginas" vale para a prévia');
   // um bloco novo no vercel.json que o tradutor não conhece derruba o teste (em vez de ficar sem cabeçalho no Cloudflare)
   assert.throws(() => C.gerarHeaders({ ...vercel, headers: [...vercel.headers, { source: '/novo', headers: [{ key: 'X', value: 'y' }] }] }), /ensine/);
@@ -3178,14 +3179,21 @@ teste('vitrine: texto do bloco dos pacotes e faixas da loja por categoria, dentr
   const um = V.faixasDaVitrine([{ id: 'm1', cat: 'molhos' }], { proprias: [{ titulo: 'Molhos', cat: 'molhos' }] });
   assert.deepStrictEqual(um, [], 'faixa com 1 produto só não aparece');
 });
-teste('vitrine: seções coloridas por categoria (cor válida, até 4, texto legível, sugestão para pastel e açaí, ordem que não se mistura)', async () => {
+teste('vitrine: seções coloridas por categoria (cor válida, até 8, fundo imersivo ou faixa, texto legível, sugestão para pastel e açaí, ordem que não se mistura)', async () => {
   const V = await import(raiz('js/vitrine-lib.js')), P = await import(raiz('js/pacote-lib.js')), Ap = await import(raiz('js/aparencia-lib.js'));
   const v = V.vitrineSegura({ secoes: [
     { cat: 'pasteis', titulo: ' Pastéis <b> ', texto: 'crocantes', cor: '#EFB94A', icone: 'pastel' },
     { cat: 'acai', titulo: 'Açaí', cor: 'vermelho', icone: 'nao-existe' },
     { cat: '', titulo: 'Sem categoria' }, { cat: 'x', titulo: '' },
     { cat: 'a', titulo: 'A' }, { cat: 'b', titulo: 'B' }, { cat: 'c', titulo: 'C' } ] });
-  assert.deepStrictEqual(v.secoes.map((x) => x.titulo), ['Pastéis <b>', 'Açaí', 'A', 'B'], 'sem categoria ou sem título some; no máximo 4');
+  assert.deepStrictEqual(v.secoes.map((x) => x.titulo), ['Pastéis <b>', 'Açaí', 'A', 'B', 'C'], 'sem categoria ou sem título some');
+  const muitas = V.vitrineSegura({ secoes: Array.from({ length: 12 }, (_, i) => ({ cat: 'c' + i, titulo: 'S' + i })) }).secoes;
+  assert.strictEqual(muitas.length, V.MAX_SECOES, 'no máximo MAX_SECOES');
+  assert.strictEqual(V.MAX_SECOES, 8);
+  // jeito da seção: 'fundo' (imersivo) é o padrão; 'faixa' só quando escolhido; valor estranho vira 'fundo'
+  assert.deepStrictEqual(V.vitrineSegura({ secoes: [{ cat: 'a', titulo: 'A' }, { cat: 'b', titulo: 'B', estilo: 'faixa' }, { cat: 'c', titulo: 'C', estilo: 'url(x)' }] }).secoes.map((x) => x.estilo), ['fundo', 'faixa', 'fundo']);
+  for (let i = 0; i < 7; i++) assert.ok(P.ordemNaVitrine(0, 'secao', i) < P.ordemDaSecao(i + 1) - 1, `seção ${i} não encosta na ${i + 1}`);
+  assert.ok(P.ordemNaVitrine(0, 'secao', 7) < P.ordemDaSecao(7) + 1999 && P.ordemDaSecao(7) + 1999 < 0, 'até a 8ª seção (e o fim dela) vem antes dos soltos');
   assert.strictEqual(v.secoes[0].cor, '#efb94a', 'cor em minúscula');
   assert.strictEqual(v.secoes[1].cor, '#efb94a', 'cor inválida volta ao padrão (nunca vai para o CSS)');
   assert.strictEqual(v.secoes[1].icone, '', 'desenho que não existe some');
@@ -3203,6 +3211,25 @@ teste('vitrine: seções coloridas por categoria (cor válida, até 4, texto leg
   const cfg = { padrao: { primaria: '#000000' }, cores: ['primaria'], fontesTitulo: {}, fontesTexto: {}, formatos: {} };
   assert.strictEqual(Ap.temaSeguro({ pelicula: 'nao' }, cfg).pelicula, 'nao');
   assert.strictEqual(Ap.temaSeguro({ pelicula: 'talvez' }, cfg).pelicula, undefined, 'valor fora da lista é descartado');
+});
+teste('contato da loja: Instagram aceita @, link ou nome e guarda só o nome; WhatsApp com DDD; nada cadastrado = nada aparece', async () => {
+  const K = await import(raiz('js/contato-lib.js'));
+  for (const v of ['@PastelDoBie', 'pasteldobie', 'instagram.com/pasteldobie', 'https://www.instagram.com/pasteldobie/?hl=pt-br', 'http://m.instagram.com/pasteldobie', '  @pasteldobie  '])
+    assert.strictEqual(K.normalizarInstagram(v), 'pasteldobie', v);
+  assert.strictEqual(K.normalizarInstagram('pastel.do_bie'), 'pastel.do_bie');
+  for (const v of ['', 'facebook.com/x', 'https://site.com/pastel', '.pastel', 'pastel.', 'pa..stel', 'nome com espaço', 'a'.repeat(31), 'instagram.com/p/abc', '<script>'])
+    assert.strictEqual(K.normalizarInstagram(v), '', `recusa ${v}`);
+  assert.strictEqual(K.normalizarWhatsapp('62 99999-8888'), '5562999998888');
+  assert.strictEqual(K.normalizarWhatsapp('+55 (62) 3333-4444'), '556233334444');
+  assert.strictEqual(K.normalizarWhatsapp('123'), '');
+  assert.strictEqual(K.telefoneBonito('5562999998888'), '(62) 99999-8888');
+  assert.deepStrictEqual(K.contatoDaLoja({ wpp: '5562999998888' }), { instagram: '', urlInstagram: '', whatsapp: '', urlWhatsapp: '' }, 'sem nada marcado não aparece nada');
+  const c = K.contatoDaLoja({ wpp: '5562999998888', contato: { instagram: '@Bie', mostrarWpp: true } });
+  assert.strictEqual(c.urlInstagram, 'https://www.instagram.com/bie/');
+  assert.strictEqual(c.whatsapp, '5562999998888', 'sem número próprio usa o dos pedidos');
+  assert.ok(c.urlWhatsapp.startsWith('https://wa.me/5562999998888?text='));
+  assert.strictEqual(K.contatoDaLoja({ wpp: '5562999998888', contato: { whatsapp: '62 98888-7777', mostrarWpp: true } }).whatsapp, '5562988887777', 'número próprio vence');
+  assert.strictEqual(K.contatoDaLoja({ wpp: '5562999998888', contato: { whatsapp: '62 98888-7777', mostrarWpp: false } }).whatsapp, '', 'desmarcado não aparece');
 });
 teste('cartão: "como chamar 1 unidade" muda o botão e o contador ("+ 1 batata", "2 batatas")', async () => {
   const M = await import(raiz('js/modo-lib.js'));
