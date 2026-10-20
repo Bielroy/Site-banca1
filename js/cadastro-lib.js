@@ -25,6 +25,8 @@ export const CAMPOS_PRODUTO = {
     duracao: 'Quanto tempo dura na banca',
     rotulo: 'Rótulo adesivo',
     montar: 'Montar pedido (complementos e adicionais)',
+    dias: 'Dias da semana em que o produto sai',
+    palavras: 'Outras palavras para a busca',
 };
 
 // Tipos de negócio de feira/hortifrúti: lá tudo vem ligado. Nos outros, o que é de hortifrúti começa desligado.

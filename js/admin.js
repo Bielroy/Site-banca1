@@ -14,6 +14,7 @@ import { cadastroPacote, promoDe, textoPromo, totalComPromo, nomesDaUnidade, emP
 import { ARTE_PACOTE, ARTE_CATEGORIA } from './vitrine-arte.js';
 import { camposDaLoja, unidadeMaisUsada, precoMaisUsado, lerPreco } from './cadastro-lib.js';
 import { iniciarMontarAdmin, preencherMontar, lerMontar } from './admin-montar.js';
+import { preencherDias, lerDias, lerPalavras } from './admin-dias.js';   // dias em que o produto sai e palavras da busca
 import './admin-instalar.js';
 import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar, bancasDaPessoa, mostrarSuspensa } from './admin-guard.js';
 import { htmlSimples, csvCampo } from './html-lib.js';
@@ -712,6 +713,7 @@ const renderProdutos = () => {
         if (Number(p.precoDe) > Number(p.preco)) avisos.push('<span class="pl-selo oferta">oferta</span>');
         else if (p.precosDia && Object.values(p.precosDia).some((v) => Number(v) > 0)) avisos.push('<span class="pl-selo">preço por dia</span>');
         if (temEstoque(p)) { const q = Number(p.estoqueFisico); avisos.push(q <= 0 ? '<span class="pl-selo ruim">estoque zerado</span>' : q <= 5 ? `<span class="pl-selo atencao">restam ${q}</span>` : `<span class="pl-selo">estoque ${q}</span>`); }
+        if (Array.isArray(p.dias) && p.dias.length && p.dias.length < 7) avisos.push(`<span class="pl-selo">só ${escapeHTML(p.dias.slice().sort().map((d) => ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'][d]).filter(Boolean).join(', '))}</span>`);
         if (p.chegouEm === hojeDaLoja()) avisos.push('<span class="pl-selo bom">chegou hoje</span>');
         if (p.estacao === true) avisos.push('<span class="pl-selo bom">da estação</span>');
         if (p.escolha === true) avisos.push('<span class="pl-selo bom">escolha da casa</span>');
@@ -923,6 +925,7 @@ const limparFormularioProduto = () => {
     definirUnidade(unidadeMaisUsada(produtosAtuais));   // produto novo começa na unidade mais usada da loja (antes herdava a do último aberto)
     alternarCampoPesoMedio();
     preencherPacote(null);
+    preencherDias(null);
     iniciarMontarAdmin({ produtos: () => produtosAtuais }); preencherMontar(null);
     const previa = document.getElementById('preview-foto-wrapper'); if (previa) previa.innerHTML = placeholderSVG;
     document.getElementById('btn-excluir-produto').style.display = 'none';
@@ -1563,6 +1566,7 @@ document.body.addEventListener('click', async (e) => {
             alternarCampoPesoMedio();
             preencherPacote(p);
             iniciarMontarAdmin({ produtos: () => produtosAtuais }); preencherMontar(p);
+            preencherDias(p);
 
             const previewContainer = document.getElementById('preview-foto-wrapper');
             if (previewContainer) previewContainer.innerHTML = p.foto ? `<img src="${escapeHTML(p.foto)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" alt="${escapeHTML(p.nome)}">` : placeholderSVG;
@@ -1854,6 +1858,8 @@ const salvarProduto = async (outro = false) => {
         }
         if (!pData.unidade) throw new Error("Escolha a métrica de venda (quilo, unidade...).");
         pData.montar = lerMontar();   // complementos e adicionais (null = produto sem montar)
+        pData.dias = lerDias();       // dias da semana em que sai (null = todo dia)
+        pData.palavras = lerPalavras();   // outras palavras para a busca da loja
         if (!pData.cat) throw new Error("Escolha a categoria do produto.");
         if (pData.soInsumo && !(pData.preco > 0)) pData.preco = 0;
         else if (isNaN(pData.preco) || pData.preco <= 0) throw new Error("Informe um preço válido.");

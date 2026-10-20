@@ -58,7 +58,9 @@
 #modal-produto.sem-insumo [data-campo="insumo"],
 #modal-produto.sem-duracao [data-campo="duracao"],
 #modal-produto.sem-rotulo [data-campo="rotulo"],
-#modal-produto.sem-montar [data-campo="montar"] { display: none !important; }
+#modal-produto.sem-montar [data-campo="montar"],
+#modal-produto.sem-dias [data-campo="dias"],
+#modal-produto.sem-palavras [data-campo="palavras"] { display: none !important; }
 
 /* ---------------------------------------------------------------
    VÁRIOS DE UMA VEZ (js/admin-varios.js)
@@ -99,3 +101,12 @@
 .contato-loja legend { padding: 0 6px; font-weight: 800; font-size: .9rem; }
 .form-group label.contato-check { display: flex; align-items: center; gap: 10px; margin: 10px 0 0; text-transform: none; letter-spacing: 0; font-size: .95rem; font-weight: 600; color: var(--text-dark, #2a1a0c); cursor: pointer; }
 .contato-check input { width: 22px; height: 22px; flex: none; accent-color: var(--forest, #1a3a2a); }
+
+/* "Sai em quais dias?" (js/admin-dias.js) */
+.prod-dias-chips { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.prod-dia { min-height: 42px; padding: 0; border-radius: 10px; border: 1.5px solid var(--linha, #e4dfd3); background: var(--cream, #faf7f2); color: var(--text-mid);
+    font: inherit; font-size: .85rem; font-weight: 800; text-transform: capitalize; cursor: pointer; }
+.prod-dia.on { background: var(--forest); border-color: var(--forest); color: #fff; }
+.prod-dia-todos { grid-column: 1 / -1; min-height: 38px; border-radius: 10px; border: 1.5px dashed var(--linha, #d8d1c1); background: none; color: var(--forest); font: inherit; font-weight: 700; cursor: pointer; }
+.prod-dia-todos[hidden] { display: none; }
+#dias-previa.erro { color: var(--danger, #c0392b); font-weight: 700; }

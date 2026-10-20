@@ -112,6 +112,7 @@ const Cofre = require('../lib/cofre');
 const Feira = require('../lib/feira');
 const Pac = require('../lib/pacote');   // pacote fechado e promoção "4 por R$ 10" (mesma conta de js/pacote-lib.js)
 const Montar = require('../lib/montar');   // montar pedido: complementos e adicionais (mesma conta de js/montar-lib.js)
+const Dias = require('../lib/dias');   // produto por dia da semana e pedido para amanhã (mesma conta de js/dias-lib.js)
 
 function montarTextoWhatsApp(pedido, numero) {
   const dividido = pedido.parte && pedido.parte.de > 1;
@@ -124,7 +125,7 @@ function montarTextoWhatsApp(pedido, numero) {
   msg += `👤 ${pedido.nome}\n`;
   msg += `📍 ${linhaEndereco(pedido)}${pedido.modo === 'retirada' && pedido.retiradaLocal ? ` (${pedido.retiradaLocal})` : ''}\n`;
   // pedido feito fora do dia da feira: vai para o próximo dia de feira
-  if (pedido.feiraId && pedido.entregaDia && pedido.paraHoje === false) msg += `📅 Para: *${Feira.textoDoDia(pedido.entregaDia)}*\n`;
+  if (pedido.entregaDia && pedido.paraHoje === false) msg += `📅 Para: *${Feira.textoDoDia(pedido.entregaDia)}*\n`;
   const rotuloHora = pedido.modo === 'retirada' ? 'Retirada' : 'Entrega';
   if (pedido.entrega && pedido.entrega.horario) msg += `🕒 ${rotuloHora}: ${pedido.entrega.horario}\n`;
   else if (pedido.entrega && pedido.entrega.horarioACombinar) msg += `🕒 ${rotuloHora}: horário a combinar\n`;
@@ -342,6 +343,11 @@ module.exports = async function handler(req, res) {
       if (feiraDoPedido) {
         entrega = Feira.proximaEntrega(feiraDoPedido, Date.now());
         if (!entrega) throw new Error('Esta feira está sem data marcada. Fale com a banca pelo WhatsApp.');
+      } else if (req.body && req.body.paraAmanha === true) {
+        // "Para quando? Amanhã": vale se a loja não desligou e amanhã é dia de abrir. Preço, vitrine e caixa são os de amanhã.
+        if (!Dias.amanhaPermitido(configSnap.exists ? configSnap.data() : {}, Date.now())) throw new Error('A loja não está aceitando pedido para amanhã. Escolha "Hoje" e envie de novo.');
+        const a = Dias.diaBR(Date.now(), 1);
+        entrega = { dia: a.dia, dow: a.dow, hoje: false, amanha: true };
       } else if (configSnap.exists) {
         const diasAbertos = configSnap.data().diasAbertos || [0, 1, 2, 3, 4, 5, 6];
         if (!diasAbertos.includes(agoraBrasilia().getUTCDay())) throw new Error('A loja não abre hoje.');
@@ -397,6 +403,8 @@ module.exports = async function handler(req, res) {
         const p = snap.data();
         if (p.ativo === false) throw new Error(`"${p.nome}" está esgotado.`);
         if (p.soInsumo === true) throw new Error(`"${p.nome}" não está à venda.`);   // só ingrediente de ficha técnica
+        // produto de dia certo (alface só na quarta): tem de sair no dia da ENTREGA
+        if (!Dias.vendeNoDia(p, diaDoPreco)) throw new Error(`"${p.nome}" não sai ${entrega && entrega.amanha ? 'amanhã' : entrega && !entrega.hoje ? `em ${Feira.textoDoDia(entrega.dia)}` : 'hoje'} (só ${Dias.textoDosDias(p.dias)}). Tire da sacola e envie de novo.`);
 
         // Produto sem preço (ou com preço que não é número) não é vendido: antes isso virava "NaN" no total do
         // pedido e ESTRAGAVA o caixa do dia e o total geral da loja, que são somas.
@@ -560,7 +568,8 @@ module.exports = async function handler(req, res) {
         data: new Date().toISOString(),
         // PARA QUANDO é o pedido. Caixa do dia, fechamento e previsão contam por esta data.
         entregaDia: entrega ? entrega.dia : Feira.hojeBR(),
-        ...(entrega ? { feiraId: feiraDoPedido.id, paraHoje: entrega.hoje } : {}),
+        ...(entrega && feiraDoPedido ? { feiraId: feiraDoPedido.id, paraHoje: entrega.hoje } : {}),
+        ...(entrega && entrega.amanha ? { paraHoje: false, paraAmanha: true } : {}),
         origem: 'whatsapp',
       };
 

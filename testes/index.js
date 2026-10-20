@@ -3723,3 +3723,83 @@ teste('montar pedido no checkout: servidor cobra as escolhas, aceita o mesmo pro
   const demais = await chamar(api, { headers: { ...ip(), 'X-Loja': 'espetinhos' }, body: pedido({ itens: [{ id: 'acai', qtd: 1, opcoes: { complementos: ['granola', 'banana', 'pacoca', 'morango', 'amendoim'] } }] }) });
   assert.strictEqual(demais.status, 400); assert.match(demais.corpo.error, /até 4/);
 });
+
+teste('dias da semana: a conta do navegador e a do servidor são iguais (produto de dia certo e pedido para amanhã)', async () => {
+  const S = require(raiz('lib/dias.js')), N = await import(raiz('js/dias-lib.js'));
+  const casos = [undefined, null, [], [3], [3, 6], [6, 3, 3], [0, 1, 2, 3, 4, 5, 6], [1, 2, 3, 4, 5], ['3', 9, -1, 2.5]];
+  for (const c of casos) {
+    assert.deepStrictEqual(N.limparDiasProduto(c), S.limparDiasProduto(c), JSON.stringify(c));
+    assert.strictEqual(N.textoDosDias(c), S.textoDosDias(c));
+    for (let d = -1; d <= 7; d++) assert.strictEqual(N.vendeNoDia({ dias: c }, d), S.vendeNoDia({ dias: c }, d));
+  }
+  assert.strictEqual(S.textoDosDias([3, 6]), 'quarta e sábado');
+  assert.strictEqual(S.textoDosDias([1, 2, 3, 4, 5]), 'segunda a sexta');
+  assert.strictEqual(S.vendeNoDia({ dias: [3] }, 2), false); assert.strictEqual(S.vendeNoDia({ dias: [3] }, 3), true);
+  assert.strictEqual(S.vendeNoDia({}, 2), true, 'sem dias marcados: todo dia');
+  // terça, 20/10/2026, 17h em Brasília
+  const terca = Date.UTC(2026, 9, 20, 20, 0);
+  assert.deepStrictEqual(S.diaBR(terca, 1), { dia: '2026-10-21', dow: 3 }); assert.deepStrictEqual(N.diaBR(terca, 1), S.diaBR(terca, 1));
+  assert.deepStrictEqual(S.diaBR(Date.UTC(2026, 9, 21, 2, 30)), { dia: '2026-10-20', dow: 2 }, '23h30 de terça em Brasília ainda é terça');
+  assert.strictEqual(N.aceitaAmanha({}, [{ nome: 'Tomate' }], terca), false, 'automático: sem produto de dia certo, não pergunta');
+  assert.strictEqual(N.aceitaAmanha({}, [{ nome: 'Alface', dias: [3] }], terca), true);
+  assert.strictEqual(N.aceitaAmanha({ pedidoAmanha: true }, [], terca), true);
+  assert.strictEqual(N.aceitaAmanha({ pedidoAmanha: false }, [{ dias: [3] }], terca), false);
+  assert.strictEqual(N.aceitaAmanha({ diasAbertos: [2] }, [{ dias: [3] }], terca), false, 'amanhã a loja não abre');
+  assert.strictEqual(S.amanhaPermitido({ diasAbertos: [3] }, terca), true); assert.strictEqual(S.amanhaPermitido({ pedidoAmanha: false }, terca), false);
+});
+
+teste('busca da loja: "folhas" acha a alface, perdoa plural, acento e uma letra errada, e usa as palavras cadastradas', async () => {
+  const B = await import(raiz('js/busca-lib.js'));
+  const achados = (termo, lista) => lista.filter((p) => B.combinaBusca(B.textoDeBusca(p, p.catNome || ''), termo)).map((p) => p.nome);
+  const ps = [{ nome: 'Alface crespa' }, { nome: 'Rúcula' }, { nome: 'Tomate italiano' }, { nome: 'Limão taiti' }, { nome: 'Pastel de carne' }, { nome: 'Pera' }, { nome: 'Ovos caipira' },
+    { nome: 'Mix especial', palavras: ['salada pronta'] }, { nome: 'Maracujá', catNome: 'Hortifruti' }];
+  assert.deepStrictEqual(achados('folhas', ps), ['Alface crespa', 'Rúcula']);
+  assert.deepStrictEqual(achados('Verdura', ps), ['Alface crespa', 'Rúcula']);
+  assert.deepStrictEqual(achados('tomates', ps), ['Tomate italiano']);
+  assert.deepStrictEqual(achados('limões', ps), ['Limão taiti']);
+  assert.deepStrictEqual(achados('pastéis', ps), ['Pastel de carne']);
+  assert.deepStrictEqual(achados('alfase', ps), ['Alface crespa'], 'uma letra errada em palavra comprida');
+  assert.deepStrictEqual(achados('pepa', ps), [], 'palavra curta não "adivinha"');
+  assert.deepStrictEqual(achados('salada pronta', ps), ['Mix especial'], 'palavra cadastrada pela loja');
+  assert.deepStrictEqual(achados('hortifruti', ps), ['Maracujá'], 'nome da categoria');
+  assert.deepStrictEqual(achados('quero ovos', ps), ['Ovos caipira'], 'palavras vazias não atrapalham');
+  assert.deepStrictEqual(achados('', ps).length, ps.length);
+  assert.deepStrictEqual(B.limparPalavras('salada, Salada,  verdinha ,, <b>x</b>'), ['salada', 'verdinha', 'bx/b']);
+  assert.ok(B.palavrasAutomaticas('Alface americana').includes('folhas'));
+});
+
+teste('pedido para amanhã: preço, vitrine e caixa de amanhã; produto que não sai no dia é recusado', async () => {
+  const sem = semente();
+  sem['produtos/alface'] = { nome: 'Alface', preco: 3, unidade: 'un', cat: 'folhas', ativo: true, dias: [3], precosDia: { 3: 2.5 } };
+  const db = criarBanco(sem); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  const realNow = Date.now;
+  Date.now = () => Date.UTC(2026, 9, 20, 20, 0);   // terça, 17h em Brasília
+  try {
+    const hoje = await chamar(api, { headers: ip(), body: pedido({ itens: [{ id: 'alface', qtd: 2, tipo: 'un' }] }) });
+    assert.strictEqual(hoje.status, 400); assert.match(hoje.corpo.error, /Alface" não sai hoje \(só quarta\)/);
+    const p = pedido({ paraAmanha: true, diaPreco: 3, entregaDia: '2026-10-21', itens: [{ id: 'alface', qtd: 2, tipo: 'un' }] });
+    const r = await chamar(api, { headers: ip(), body: p });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+    assert.strictEqual(r.corpo.pedido.total, 5, 'preço de quarta (2,50)');
+    const g = db._dados.get(`pedidos/${p.idempotencyKey}`);
+    assert.strictEqual(g.entregaDia, '2026-10-21'); assert.strictEqual(g.paraHoje, false); assert.strictEqual(g.paraAmanha, true); assert.strictEqual(g.feiraId, undefined);
+    assert.ok(decodeURIComponent(r.corpo.pedido.whatsappMsg).includes('Para: *quarta, 21/10*'));
+    // a loja não abre amanhã, ou desligou o pedido para amanhã: recusa com o motivo
+    sem['loja/config'] = { ...sem['loja/config'], diasAbertos: [2] };
+    const db2 = criarBanco(sem); const api2 = carregarApi(raiz('api/checkout.js'), criarAdmin(db2, TOKENS));
+    const fechado = await chamar(api2, { headers: ip(), body: pedido({ paraAmanha: true, itens: [{ id: 'tomate', qtd: 1, tipo: 'kg' }] }) });
+    assert.strictEqual(fechado.status, 400); assert.match(fechado.corpo.error, /amanhã/);
+  } finally { Date.now = realNow; }
+});
+
+teste('link de outra loja no WhatsApp: o cartão leva o nome e a capa da loja, nunca os da Banca Adair', async () => {
+  const M = await import(raiz('functions/_middleware.js'));
+  assert.ok(M.ehRobo('WhatsApp/2.24.1.6 A')); assert.ok(M.ehRobo('facebookexternalhit/1.1')); assert.ok(M.ehRobo('TelegramBot (like TwitterBot)'));
+  assert.ok(!M.ehRobo('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1'));
+  const doc = { fields: { nome: { stringValue: 'Pastel & Açaí do Bié' }, subtitulo: { stringValue: 'Pastel na hora e açaí do seu jeito' }, ativo: { booleanValue: true },
+    tema: { mapValue: { fields: { capa: { stringValue: 'https://i.ibb.co/x/capa.jpg' }, logo: { stringValue: 'https://i.ibb.co/x/logo.png' } } } } } };
+  assert.deepStrictEqual(M.fichaParaCartao(doc), { nome: 'Pastel & Açaí do Bié', descricao: 'Pastel na hora e açaí do seu jeito', imagem: 'https://i.ibb.co/x/capa.jpg' });
+  assert.strictEqual(M.fichaParaCartao({ fields: { nome: { stringValue: 'X' }, ativo: { booleanValue: false } } }), null, 'loja desligada');
+  assert.strictEqual(M.fichaParaCartao({ fields: { nome: { stringValue: 'Y' }, tema: { mapValue: { fields: { capa: { stringValue: 'javascript:alert(1)' } } } } } }).imagem, '', 'só foto https');
+  assert.strictEqual(M.fichaParaCartao({ fields: { nome: { stringValue: 'Loja <b>"Z"' } } }).nome, 'Loja b Z', 'sem marcação');
+});

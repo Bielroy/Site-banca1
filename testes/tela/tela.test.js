@@ -1509,3 +1509,117 @@ teste('checkout com o teclado: comanda fechada numa linha, pagamento em botões,
   assert.match(await pagina.locator('#checkout-mais-resumo').innerText(), /cupom FEIRA10/);
   semErros(erros); await fechar();
 });
+
+teste('busca à prova de erro: "folhas" acha a alface, plural e letra errada também, e sem resultado oferece o WhatsApp da banca', async () => {
+  const { pagina, erros, fechar } = await abrir('/');
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  for (const [termo, nome] of [['folhas', 'Alface crespa'], ['Tomates', 'Tomate italiano'], ['verdura', 'Alface crespa'], ['tomatte', 'Tomate italiano'], ['alfase', 'Alface crespa']]) {
+    await pagina.fill('#busca-input', termo);
+    await pagina.waitForFunction((n) => { const v = [...document.querySelectorAll('#lista-produtos .produto-card')].filter((c) => c.offsetParent !== null).map((c) => c.querySelector('.produto-nome').textContent.trim()); return v.length === 1 && v[0] === n; }, nome, { timeout: 4000 })
+      .catch(async () => assert.fail(`"${termo}" devia achar só ${nome}; achou ${JSON.stringify(await visiveis(pagina))}`));
+  }
+  await pagina.fill('#busca-input', 'pizza');
+  await pagina.waitForSelector('#empty-grid-msg .btn-nao-achei', { timeout: 3000 });
+  const href = await pagina.getAttribute('#empty-grid-msg .btn-nao-achei', 'href');
+  assert.ok(href.startsWith('https://wa.me/5562999990000?text='), href);
+  assert.match(decodeURIComponent(href), /Vocês têm pizza\?/);
+  semErros(erros); await fechar();
+});
+
+const amanhaDow = () => new Date(Date.now() - 3 * 3600000 + 864e5).getUTCDay();
+const cenarioDias = () => {
+  const c = cenarioPadrao();
+  c.lojas.banca.produtos = { ...c.lojas.banca.produtos, alface: { ...c.lojas.banca.produtos.alface, dias: [amanhaDow()] } };
+  return c;
+};
+
+teste('produto de dia certo: a alface só de amanhã some de hoje, a busca avisa, "Amanhã" mostra, a sacola segura e o pedido vai para amanhã', async () => {
+  const { pagina, erros, fechar } = await abrir('/', cenarioDias());
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForSelector('#escolha-dia:not([hidden]) .ed-op', { timeout: 4000 });
+  assert.match(await pagina.locator('#escolha-dia').innerText(), /Para quando é o pedido\?[\s\S]*Hoje[\s\S]*Amanhã/);
+  assert.ok(!(await visiveis(pagina)).includes('Alface crespa'), 'hoje a alface não aparece');
+  // a busca não deixa a pessoa achando que a banca não vende: diz o dia e oferece trocar
+  await pagina.fill('#busca-input', 'alface');
+  await pagina.waitForSelector('#busca-outro-dia .btn-outro-dia', { timeout: 3000 });
+  assert.match(await pagina.locator('#busca-outro-dia').innerText(), /Alface crespa/);
+  await pagina.click('#busca-outro-dia .btn-outro-dia');
+  await esperarVisiveis(pagina, () => [...document.querySelectorAll('#lista-produtos .produto-card')].some((c) => c.offsetParent !== null && /Alface/.test(c.textContent)));
+  assert.strictEqual(await pagina.getAttribute('#escolha-dia [data-dia-pedido="amanha"]', 'aria-checked'), 'true');
+  await pagina.fill('#busca-input', '');
+  await cards(pagina).filter({ hasText: 'Alface' }).locator('[data-action="add"]').first().click();
+  // volta para hoje: a alface FICA na sacola, marcada, e o botão de finalizar explica
+  await pagina.click('#escolha-dia [data-dia-pedido="hoje"]');
+  await pagina.click('#btn-carrinho-mobile');
+  await pagina.waitForSelector('#carrinho-itens .item-fora', { timeout: 3000 });
+  assert.match(await pagina.locator('#btn-abrir-checkout').innerText(), /Tire "Alface crespa"/);
+  assert.ok(await pagina.locator('#btn-abrir-checkout').isDisabled());
+  await pagina.click('#carrinho-itens .item-fora button');
+  await pagina.waitForFunction(() => !document.querySelector('#carrinho-itens .item-fora'), null, { timeout: 3000 });
+  // de novo para amanhã, com a alface e os ovos: o pedido leva o dia
+  await pagina.click('#btn-fechar-sacola').catch(() => {});
+  await pagina.click('#escolha-dia [data-dia-pedido="amanha"]');
+  await cards(pagina).filter({ hasText: 'Alface' }).locator('[data-action="add"]').first().click();
+  await pagina.click('#btn-carrinho-mobile'); await pagina.click('#btn-abrir-checkout');
+  await pagina.waitForSelector('#modal-checkout.aberto', { timeout: 4000 });
+  assert.match(await pagina.locator('#comanda summary').innerText(), /para amanhã/);
+  const lista = pagina.locator('#checkout-endereco select:visible');
+  if (await lista.count()) await lista.first().selectOption({ index: 1 });
+  const campos = pagina.locator('#checkout-endereco input:visible');
+  for (let i = 0; i < await campos.count(); i++) await campos.nth(i).fill(['Jardins Florença', '12', '7'][i] || '1');
+  await pagina.fill('#cli-nome', 'Ana'); await pagina.fill('#cli-telefone', '62999998888');
+  await pagina.click('#btn-enviar-pedido');
+  await pagina.waitForFunction(() => true, null, { timeout: 100 });
+  await pagina.waitForTimeout(800);
+  const enviado = pedidosEnviados().pop();
+  assert.ok(enviado, 'o pedido foi para o servidor');
+  assert.strictEqual(enviado.corpo.paraAmanha, true);
+  assert.strictEqual(enviado.corpo.diaPreco, amanhaDow());
+  assert.strictEqual(enviado.corpo.entregaDia, new Date(Date.now() - 3 * 3600000 + 864e5).toISOString().slice(0, 10));
+  semErros(erros); await fechar();
+});
+
+teste('loja sem produto de dia certo não pergunta "para quando"', async () => {
+  const { pagina, erros, fechar } = await abrir('/');
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForTimeout(300);
+  assert.ok(await pagina.locator('#escolha-dia').isHidden());
+  semErros(erros); await fechar();
+});
+
+teste('checkout: observação, troca e cupom ficam dentro da caixa (nada passa da margem) e a bolinha não cobre o texto', async () => {
+  const { pagina, erros, fechar } = await abrir('/');
+  await abrirCheckoutComOvos(pagina);
+  await pagina.locator('#checkout-mais > summary').click();
+  const medidas = await pagina.evaluate(() => {
+    const caixa = document.getElementById('checkout-mais').getBoundingClientRect();
+    const fora = [...document.querySelectorAll('#checkout-mais *')].filter((el) => el.offsetParent !== null).map((el) => ({ el: el.id || el.className || el.tagName, d: Math.round(el.getBoundingClientRect().right - caixa.right) })).filter((x) => x.d > 0);
+    const bola = document.querySelector('#checkout-mais .troca-op input').getBoundingClientRect(), texto = document.querySelector('#checkout-mais .troca-op span').getBoundingClientRect();
+    return { fora, bola: Math.round(bola.width), separado: bola.right <= texto.left, larguraPagina: document.documentElement.scrollWidth };
+  });
+  assert.deepStrictEqual(medidas.fora, [], 'passou da caixa: ' + JSON.stringify(medidas.fora));
+  assert.ok(medidas.bola <= 22, `bolinha com ${medidas.bola}px`);
+  assert.ok(medidas.separado, 'a bolinha encosta no texto');
+  assert.match(await pagina.locator('#pag-nota').innerText(), /Nada é cobrado pelo site/);
+  semErros(erros); await fechar();
+});
+
+teste('painel: "Sai em quais dias?" grava os dias do produto; palavras da busca também', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.locator('#pl-cats [data-pl-cat="verduras"]').click({ timeout: 8000 });
+  await pagina.locator('[data-action="editar-produto"][data-id="alface"]').first().click();
+  await pagina.waitForSelector('#modal-produto.aberto', { timeout: 3000 });
+  assert.strictEqual(await pagina.locator('#dias-chips .prod-dia.on').count(), 7, 'começa em todo dia');
+  for (const d of [0, 1, 2, 4, 5]) await pagina.click(`#dias-chips [data-dia="${d}"]`);   // fica quarta e sábado
+  assert.match(await pagina.locator('#dias-previa').innerText(), /quarta e sábado/);
+  await pagina.evaluate(() => { document.getElementById('prod-mais').open = true; });
+  assert.match(await pagina.locator('#palavras-previa').textContent(), /folhas/);
+  await pagina.fill('#edit-palavras', 'pé de alface, verdinha');
+  await pagina.click('#btn-salvar-produto');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /^produtos\/alface$/.test(g.path)), null, { timeout: 4000 });
+  const salvo = (await gravadosDe(pagina, /^produtos\/alface$/)).pop();
+  assert.deepStrictEqual(salvo.dias, [3, 6]);
+  assert.deepStrictEqual(salvo.palavras, ['pé de alface', 'verdinha']);
+  semErros(erros); await fechar();
+});

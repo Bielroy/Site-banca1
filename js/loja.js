@@ -5,7 +5,7 @@ import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaL
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage, haVersaoNova, conferirVersaoAgora, recarregarFresco } from './utils.js';
 import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques, maisPedidos } from './ranking-loja.js';
-import { contatoDaLoja, telefoneBonito } from './contato-lib.js';
+import { contatoDaLoja, telefoneBonito, linkWhatsapp, normalizarWhatsapp } from './contato-lib.js';
 import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca, tintaSobre, botaoSobre } from './vitrine-lib.js';
 import { ARTES } from './arte-lib.js';
 import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_POTE } from './vitrine-arte.js';
@@ -27,7 +27,9 @@ const fotoPequena = (p, largura) => miniatura(p.fotoMini || p.foto, largura);
 import { emOferta, desconto, ofertasDe, precoDoDia } from './oferta-lib.js';
 import { codigoPix, pixDaLojaValido, chaveBonita } from './pix-chave-lib.js';
 import { listaValida, listaDoCarrinho, separar, mesmoConjunto, podeConvidarAvaliar, nomeDoDia, textoDaNota } from './atalhos-lib.js';
-import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
+import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias, nomeDaCategoria } from './categorias-loja.js';
+import { vendeNoDia, textoDosDias, diaBR, aceitaAmanha, NOMES_DIA } from './dias-lib.js';
+import { textoDeBusca, combinaBusca } from './busca-lib.js';
 import { ligarVerFoto } from './ver-foto.js';
 import { temDoisModos, modoPreferido, limparMemoria, botoesDoCard, textoNoPedido, proximaQtd } from './modo-lib.js';
 import { juntarPedidos, perfilParaAparelho, unirFavs, unirModo, sacolaParaGuardar, sacolaVale } from './conta-lib.js';
@@ -114,7 +116,11 @@ const syncCarrinhoComPrecosAoVivo = () => {
             else if (nova.preco !== itemCart.preco || nova.linha !== itemCart.linha || nova.adicionais !== itemCart.adicionais) { Object.assign(itemCart, nova, { qtd: itemCart.qtd }); modificou = true; }
         } else if (prodAoVivo) {
             if (itemCart.preco !== prodAoVivo.preco) { itemCart.preco = prodAoVivo.preco; modificou = true; }
+        } else if ((STATE.foraDoDia || []).some((p) => p.id === itemCart.id)) {
+            // não sai no dia escolhido: FICA na sacola, marcado (a pessoa decide: tira ou troca o dia). Nunca some em silêncio.
+            if (!itemCart.foraDoDia) { itemCart.foraDoDia = true; modificou = true; }
         } else { itemCart.qtd = 0; itensRemovidos++; modificou = true; }
+        if (prodAoVivo && itemCart.foraDoDia) { delete itemCart.foraDoDia; modificou = true; }
     });
     if (modificou) {
         STATE.carrinho = STATE.carrinho.filter(i => i.qtd > 0);
@@ -469,7 +475,9 @@ const atualizarRodapeCarrinhoDOM = () => {
     const lojaAberta = STATE.config.lojaAberta !== false;
     // Cliente da feira: quem manda são os dias da FEIRA. Fora do dia, o pedido vai para o próximo dia de feira.
     const ent = entregaDaFeira();
-    const hojePermitido = ent ? true : feiraDoClienteAqui() ? false : (STATE.config.diasAbertos || [0,1,2,3,4,5,6]).includes(new Date(Date.now() - 3 * 3600000).getUTCDay());
+    const hojePermitido = entregaDoPedido() ? true : feiraDoClienteAqui() ? false : hojeAbre();
+    const foraDoDia = STATE.carrinho.filter((i) => i.foraDoDia);
+    pintarEscolhaDia();
     const bannerFeira = document.getElementById('banner-feira');
     if (bannerFeira) { const futuro = lojaAberta && ent && !ent.hoje; bannerFeira.textContent = futuro ? `Hoje não tem feira. Seu pedido vai para ${textoDoDia(ent.dia)}.` : ''; bannerFeira.classList.toggle('visivel', !!futuro); }
     
@@ -478,7 +486,10 @@ const atualizarRodapeCarrinhoDOM = () => {
         bannerMin.classList.remove('visivel'); bannerFechado.classList.add('visivel');
     } else { 
         bannerFechado.classList.remove('visivel'); 
-        if (falta > 0) { 
+        if (foraDoDia.length) {
+            btnF.disabled = true; btnF.textContent = foraDoDia.length > 1 ? `Tire os ${foraDoDia.length} itens que não saem nesse dia` : `Tire "${foraDoDia[0].nome}" (não sai nesse dia)`;
+            bannerMin.classList.remove('visivel');
+        } else if (falta > 0) { 
             btnF.disabled = true; btnF.textContent = `Faltam ${fmt(falta)}`;
             bannerMin.textContent = `Pedido mínimo: ${fmt(minimo)}`; bannerMin.classList.add('visivel'); 
         } else { 
@@ -529,6 +540,7 @@ const renderCarrinhoCompleto = () => {
             <div class="item-meio">
                 <h3 class="item-nome">${escapeHTML(item.nome)} </h3>
                 <p class="item-palavras">${palavrasHtml(item)}</p>
+                ${item.foraDoDia ? `<p class="item-fora">Não sai para ${escapeHTML(nomeDoDiaDoPedido())}${(() => { const f = (STATE.foraDoDia || []).find((p) => p.id === item.id); return f ? `: só ${escapeHTML(textoDosDias(f.dias))}` : ''; })()}. <button type="button" data-tirar-linha="${escapeHTML(chaveDaLinha(item))}">Tirar da sacola</button></p>` : ''}
                 ${item.linha ? `<p class="item-adicionais">${item.adicionais ? escapeHTML(item.adicionais) : 'Sem adicionais'}</p><button type="button" class="item-alterar" data-action="montar" data-id="${escapeHTML(item.id)}" data-linha="${escapeHTML(item.linha)}">Alterar</button>` : ''}
                 <div class="qtd-ctrl">
                     <button class="btn-qtd" data-action="dec" data-id="${escapeHTML(item.id)}"${item.linha ? ` data-linha="${escapeHTML(item.linha)}"` : ''} aria-label="Diminuir ${escapeHTML(item.nome)}">−</button>
@@ -589,11 +601,69 @@ document.addEventListener('feira-do-cliente', () => pintarListaDeCondominios());
 /** Para quando é o pedido de um cliente da feira (null = não é cliente de feira desta banca). */
 const entregaDaFeira = () => { const f = feiraDoClienteAqui(); return f ? proximaEntrega(f, agoraLoja()) : null; };
 /** Dia da semana que decide o preço: o da entrega da feira do cliente, ou hoje (Brasília). Mesmo critério do servidor. */
-const diaDoPreco = () => { const e = entregaDaFeira(); return e ? e.dow : new Date(agoraLoja() - 3 * 3600000).getUTCDay(); };
+// PEDIDO PARA AMANHÃ (quem não é cliente de feira): "Para quando? Hoje | Amanhã" no alto da vitrine. A escolha vale até a
+// meia-noite (guarda a DATA de amanhã; no dia seguinte volta sozinha para "hoje"). Aparece quando a loja tem produto que não sai
+// todo dia (ou ligou "sempre" no painel) e amanhã é dia de abrir. Hoje fechado e amanhã aberto: o pedido já vai para amanhã.
+const hojeAbre = () => (Array.isArray(STATE.config.diasAbertos) && STATE.config.diasAbertos.length ? STATE.config.diasAbertos : [0, 1, 2, 3, 4, 5, 6]).includes(diaBR(agoraLoja()).dow);
+const podeAmanha = () => !feiraDoClienteAqui() && aceitaAmanha(STATE.config, STATE.produtosTodos || [], agoraLoja());
+const amanhaEscolhido = () => { try { return localStorage.getItem(chave('pedido_para')) === diaBR(agoraLoja(), 1).dia; } catch (_) { return false; } };
+const entregaAmanha = () => { if (!podeAmanha() || (!amanhaEscolhido() && hojeAbre())) return null; const a = diaBR(agoraLoja(), 1); return { dia: a.dia, dow: a.dow, hoje: false, amanha: true }; };
+/** Para quando é o pedido: o dia da feira do cliente, amanhã (escolhido) ou null = hoje. */
+const entregaDoPedido = () => entregaDaFeira() || entregaAmanha();
+/** Dia da semana que decide o preço E o que aparece na vitrine: o da entrega, ou hoje (Brasília). Mesmo critério do servidor. */
+const diaDoPreco = () => { const e = entregaDoPedido(); return e ? e.dow : diaBR(agoraLoja()).dow; };
+const nomeDoDiaDoPedido = () => { const e = entregaDoPedido(); return e && e.amanha ? `amanhã (${NOMES_DIA[e.dow]})` : e && !e.hoje ? textoDoDia(e.dia) : `hoje (${NOMES_DIA[diaBR(agoraLoja()).dow]})`; };
 /** Aviso "seu pedido é para..." dentro da tela de envio. */
 const pintarAvisoDeEntrega = () => {
-    const ent = entregaDaFeira(), aviso = document.getElementById('checkout-entrega'); if (!aviso) return;
-    aviso.textContent = ent ? (ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.`) : ''; aviso.hidden = !ent;
+    const ent = entregaDoPedido(), aviso = document.getElementById('checkout-entrega'); if (!aviso) return;
+    aviso.textContent = !ent ? '' : ent.amanha ? `📅 Seu pedido é para amanhã, ${textoDoDia(ent.dia)}.` : ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.`;
+    aviso.hidden = !ent;
+};
+let _escolhaDiaHtml = null;
+const pintarEscolhaDia = () => {
+    const box = document.getElementById('escolha-dia'); if (!box) return;
+    let html = '';
+    if (podeAmanha()) {
+        const hoje = diaBR(agoraLoja()), am = diaBR(agoraLoja(), 1), amanha = !!entregaAmanha();
+        html = !hojeAbre()
+            ? `<p class="ed-so"><b>Hoje a banca não abre.</b> Seu pedido é para amanhã, ${NOMES_DIA[am.dow]}.</p>`
+            : `<span class="ed-rot">Para quando é o pedido?</span><div class="ed-ops" role="radiogroup" aria-label="Para quando é o pedido">`
+              + `<button type="button" class="ed-op${amanha ? '' : ' on'}" role="radio" aria-checked="${!amanha}" data-dia-pedido="hoje"><b>Hoje</b><small>${NOMES_DIA[hoje.dow]}</small></button>`
+              + `<button type="button" class="ed-op${amanha ? ' on' : ''}" role="radio" aria-checked="${amanha}" data-dia-pedido="amanha"><b>Amanhã</b><small>${NOMES_DIA[am.dow]}</small></button></div>`;
+    }
+    if (html === _escolhaDiaHtml) return;
+    _escolhaDiaHtml = html; box.innerHTML = html; box.hidden = !html;
+};
+const trocarDiaDoPedido = (amanha) => {
+    try { if (amanha) localStorage.setItem(chave('pedido_para'), diaBR(agoraLoja(), 1).dia); else localStorage.removeItem(chave('pedido_para')); } catch (_) { /* aparelho sem armazenamento: vale só nesta tela */ }
+    document.dispatchEvent(new CustomEvent('feira-do-cliente'));   // refaz preços, vitrine e sacola para o dia novo
+    pintarEscolhaDia(); pintarAvisoDeEntrega();
+    const fora = STATE.carrinho.filter((i) => i.foraDoDia);
+    if (fora.length) showToast(`${fora.map((i) => i.nome).join(', ')} não ${fora.length > 1 ? 'saem' : 'sai'} ${amanha ? 'amanhã' : 'hoje'}. Tire da sacola ou volte para ${amanha ? 'hoje' : 'amanhã'}.`, true);
+    else showToast(amanha ? `Pronto: mostrando o que tem amanhã, ${NOMES_DIA[diaBR(agoraLoja(), 1).dow]}.` : 'Pronto: mostrando o que tem hoje.');
+};
+document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-dia-pedido]'); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    const amanha = b.dataset.diaPedido === 'amanha';
+    if (amanha !== !!entregaAmanha()) trocarDiaDoPedido(amanha);
+});
+// BUSCA: o que combina com a busca mas não sai no dia escolhido ("Alface: só quarta") e, se o outro dia resolve, o botão para trocar.
+const notaDeOutroDia = (termo) => {
+    const fora = (STATE.foraDoDia || []).filter((p) => combinaBusca(textoDeBusca(p, nomeDaCategoria(p.cat)), termo)).slice(0, 6);
+    if (!fora.length) return '';
+    const amanha = !!entregaAmanha(), outro = diaBR(agoraLoja(), amanha ? 0 : 1).dow;
+    const resolve = podeAmanha() && hojeAbre() && !entregaDaFeira() && fora.some((p) => vendeNoDia(p, outro));
+    const itens = fora.map((p) => `<li><b>${escapeHTML(p.nome)}</b> <span>sai ${escapeHTML(textoDosDias(p.dias))}</span></li>`).join('');
+    return `<div id="busca-outro-dia" class="busca-outro-dia" style="grid-column: 1/-1; order: 99999;"><p>Não ${fora.length > 1 ? 'saem' : 'sai'} para ${escapeHTML(nomeDoDiaDoPedido())}:</p><ul>${itens}</ul>`
+        + (resolve ? `<button type="button" class="btn-outro-dia" data-dia-pedido="${amanha ? 'hoje' : 'amanha'}">Ver o que tem ${amanha ? 'hoje' : `amanhã (${NOMES_DIA[outro]})`}</button>` : '') + '</div>';
+};
+// "Não achei": abre o WhatsApp da banca já com a pergunta escrita. Ninguém fica sem caminho.
+const botaoNaoAchei = (termo) => {
+    const k = contatoDaLoja(STATE.config), numero = k.whatsapp || normalizarWhatsapp(STATE.config.wpp);
+    if (!numero) return '';
+    const t = String(termo || '').trim().slice(0, 60);
+    return `<a class="btn-nao-achei" href="${escapeHTML(linkWhatsapp(numero, `Oi! Vocês têm ${t}?`))}" target="_blank" rel="noopener noreferrer">${ICO_ZAP}<span>Perguntar "${escapeHTML(t)}" no WhatsApp</span></a>`;
 };
 document.addEventListener('feira-do-cliente', () => { try { atualizarRodapeCarrinhoDOM(); } catch (_) { /* carrinho ainda não montado */ } try { pintarModo(); } catch (_) { /* tela de envio ainda não montada */ } });
 const feiraDoEnderecoSalvo = (e) => { if (e && e.condominio) feiraPeloCondominio(e.condominio, perguntarFeira).then((id) => { if (id) guardarNaConta(); }).catch(() => {}); };
@@ -711,7 +781,7 @@ const cardHtml = (p, rapido = false, prioridade = false) => {
         const favActive = STATE.favoritos.includes(p.id) ? 'ativo' : '';
         const pac = ehPacote(p), tmp = !pac && ehTemp(p), sec = pac || tmp ? -1 : secaoDoProduto(p), secX = sec > -1 ? vitrineDaLoja().secoes[sec] : null, secCor = secX ? secX.cor : '', imersivo = !!secX && secX.estilo === 'fundo';
         return `
-        <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : sec > -1 ? ` produto-card--secao${imersivo ? ' produto-card--imersivo' : ''}` : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : sec > -1 ? ` data-secao="${sec}"` : ''} style="display: flex;${pac ? ` order: ${ORDEM_PACOTES};` : tmp ? ` order: ${ORDEM_TEMPEROS};` : sec > -1 ? ` order: ${ordemDaSecao(sec) + 500}; ${varsDaSecao(secCor)}` : ''}">
+        <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : sec > -1 ? ` produto-card--secao${imersivo ? ' produto-card--imersivo' : ''}` : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(textoDeBusca(p, nomeDaCategoria(p.cat)))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : sec > -1 ? ` data-secao="${sec}"` : ''} style="display: flex;${pac ? ` order: ${ORDEM_PACOTES};` : tmp ? ` order: ${ORDEM_TEMPEROS};` : sec > -1 ? ` order: ${ordemDaSecao(sec) + 500}; ${varsDaSecao(secCor)}` : ''}">
             <div class="produto-img-wrap">
                 ${p.foto ? `<img src="${escapeHTML(fotoPequena(p, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
@@ -948,7 +1018,7 @@ const renderLoja = (forcarRebuild = false) => {
     let itensVisiveis = 0, soltosVisiveis = 0;
 
     cards.forEach(card => {
-        const matchBusca = (card.dataset.nome || '').includes(termo);
+        const matchBusca = !termo || combinaBusca(card.dataset.nome || '', termo);   // nome, palavras da loja, categoria, "folhas"... (js/busca-lib.js)
         // [PATCH 1] Favoritos: usar card.dataset.id (o data-id existe; produtoId não existia)
         const matchCat = !!termo || (STATE.catAtiva === 'todas') || (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(card.dataset.id)) || (STATE.catAtiva === 'pacotes' && card.dataset.pacote === '1') || (card.dataset.cat === STATE.catAtiva);
         if(matchBusca && matchCat) { card.style.display = 'flex'; itensVisiveis++; if (card.dataset.pacote !== '1' && card.dataset.tempero !== '1') soltosVisiveis++; } 
@@ -959,10 +1029,12 @@ const renderLoja = (forcarRebuild = false) => {
     pintarBlocoTemperos(grid);
     // aviso de "nada aqui": sempre refeito, para o texto acompanhar busca/aba
     document.getElementById('empty-grid-msg')?.remove();
+    document.getElementById('busca-outro-dia')?.remove();
+    if (termo) { const nota = notaDeOutroDia(termo); if (nota) grid.insertAdjacentHTML('beforeend', nota); }
     if (itensVisiveis === 0 && cards.length > 0) {
         const titulo = termo ? 'Não achei esse produto' : (STATE.catAtiva === 'favoritos' ? 'Nenhum favorito ainda' : 'Nenhum produto aqui hoje');
-        const dica = termo ? 'Tente outro nome.' : (STATE.catAtiva === 'favoritos' ? 'Toque no coração de um produto para guardar aqui.' : '');
-        grid.insertAdjacentHTML('beforeend', `<div id="empty-grid-msg" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>${titulo}</p><span>${dica}</span></div>`);
+        const dica = termo ? 'Tente outro nome, ou pergunte direto para a banca:' : (STATE.catAtiva === 'favoritos' ? 'Toque no coração de um produto para guardar aqui.' : '');
+        grid.insertAdjacentHTML('beforeend', `<div id="empty-grid-msg" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>${titulo}</p><span>${dica}</span>${termo ? botaoNaoAchei(STATE.busca) : ''}</div>`);
     } else if (cards.length === 0) {
         grid.insertAdjacentHTML('beforeend', `<div id="empty-grid-msg" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>A banca está sem produtos no momento</p><span>Volte daqui a pouco.</span></div>`);
     }
@@ -1220,6 +1292,7 @@ const iniciarRealTimeSync = () => {
     const unsubConfig = onSnapshot(tdoc("loja", "config"), (snap) => {
         const vitrineAntes = JSON.stringify(vitrineDaLoja());
         if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()}; atualizarRodapeCarrinhoDOM();
+        if (STATE.diaDoPreco != null && diaDoPreco() !== STATE.diaDoPreco) document.dispatchEvent(new CustomEvent('feira-do-cliente'));   // dias abertos / "pedido para amanhã" mudaram
         if (STATE.lojaRenderizada && JSON.stringify(vitrineDaLoja()) !== vitrineAntes) renderLoja(true);   // o dono mudou os quadros ou o texto da escolha
         pintarListaDeCondominios();
         pintarModo();
@@ -1240,13 +1313,16 @@ const iniciarRealTimeSync = () => {
     let _catsProntas = false;      // espera a 1ª resposta das categorias p/ não "piscar" produto de categoria oculta
     // Junta produtos + categorias do painel (ocultas somem; renomear/ordenar reflete na hora)
     let _lista = '', _porProduto = new Map();
-    const assinaturaDe = (p) => `${p.preco}:${p.precoDe || ''}:${p.foto || ''}:${p.fotoMini || ''}:${p.nome}:${p.cat}:${p.unidade || ''}:${p.pesoMedio || ''}:${p.mostrarPrimeiro || ''}:${p.chegouEm || ''}:${p.estacao ? 1 : ''}:${p.escolha ? 1 : ''}`;
+    const assinaturaDe = (p) => `${p.preco}:${p.precoDe || ''}:${p.foto || ''}:${p.fotoMini || ''}:${p.nome}:${p.cat}:${p.unidade || ''}:${p.pesoMedio || ''}:${p.mostrarPrimeiro || ''}:${p.chegouEm || ''}:${p.estacao ? 1 : ''}:${p.escolha ? 1 : ''}:${Array.isArray(p.palavras) ? p.palavras.join(',') : ''}`;
     const aplicarCatalogo = () => {
         if (!_catsProntas || !_produtosChegaram) return;
         STATE.catalogoChegou = true;
         // preço do DIA DA ENTREGA (feira do cliente, ou hoje): todo o resto da loja usa p.preco
         const dia = diaDoPreco(); _diaDoPrecoAplicado = dia; STATE.diaDoPreco = dia;
-        STATE.produtos = aplicarCategorias(_produtosBrutos.map((p) => ({ ...p, precoNormal: p.preco, preco: precoDoDia(p, dia) })));
+        const comPreco = aplicarCategorias(_produtosBrutos.map((p) => ({ ...p, precoNormal: p.preco, preco: precoDoDia(p, dia) })));
+        // produto que não sai neste dia (js/dias-lib.js) sai da vitrine; a busca ainda avisa "Alface: só quarta"
+        STATE.produtos = comPreco.filter((p) => vendeNoDia(p, dia));
+        STATE.foraDoDia = comPreco.filter((p) => !vendeNoDia(p, dia));
         const lista = STATE.produtos.map(p => p.id).join('|') + '#' + assinaturaCategorias();
         const porProduto = new Map(STATE.produtos.map(p => [p.id, assinaturaDe(p)]));
         const assinatura = lista + '#' + [...porProduto.values()].join('|');
@@ -1262,6 +1338,8 @@ const iniciarRealTimeSync = () => {
         }
         syncCarrinhoComPrecosAoVivo();
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
+        pintarEscolhaDia();
+        if (STATE.carrinho.some((i) => i.foraDoDia)) atualizarRodapeCarrinhoDOM();
         tentarRestaurarSacola();
     };
     // a feira do cliente mudou (link, condomínio, conta) ou virou o dia: os preços mudam junto
@@ -1270,6 +1348,7 @@ const iniciarRealTimeSync = () => {
     const unsubProdutos = onSnapshot(tcol("produtos"), (snap) => {
         _produtosChegaram = true;
         _produtosBrutos = snap.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter(p => p.ativo && !p.soInsumo);   // ingrediente de receita não vai para a vitrine
+        STATE.produtosTodos = _produtosBrutos;   // para saber se a loja tem produto de dia certo (mostra "Hoje | Amanhã")
         aplicarCatalogo();
     }, (e) => {
         console.warn('[loja] produtos:', e?.code || e);
@@ -1826,7 +1905,7 @@ const instalarApp = async () => {
 // "Indicar para um vizinho": abre o compartilhar do celular (WhatsApp, etc.) com um recado pronto e o link da loja.
 const indicarLoja = async () => {
     const nome = (document.getElementById('header-nome')?.textContent || 'a loja').trim(), url = location.href.split('#')[0];
-    const texto = `Estou pedindo na ${nome} e entregam aqui no condomínio. Dá uma olhada:`;
+    const texto = ehLojaOriginal ? `Estou pedindo na ${nome} e entregam aqui no condomínio. Dá uma olhada:` : `Estou pedindo na ${nome} pelo celular. Dá uma olhada:`;
     try { if (navigator.share) { await navigator.share({ title: nome, text: texto, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
     window.open(`https://wa.me/?text=${encodeURIComponent(texto + ' ' + url)}`, '_blank', 'noopener');
 };
@@ -2218,6 +2297,13 @@ document.addEventListener('input', (e) => {
 
 // 'change' (ao sair do campo / OK do teclado), não 'input': aplicando a cada
 // tecla, "1,5" virava 15 kg e digitar "0" apagava o item no meio da digitação.
+// item que não sai no dia escolhido: "Tirar da sacola" num toque
+document.getElementById('carrinho-itens').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tirar-linha]'); if (!b) return;
+    e.stopPropagation();
+    STATE.carrinho = STATE.carrinho.filter((i) => chaveDaLinha(i) !== b.dataset.tirarLinha);
+    persistirCarrinhoComDebounce(); renderCarrinhoCompleto();
+});
 document.getElementById('carrinho-itens').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.classList.contains('qtd-input')) { e.preventDefault(); e.target.blur(); }
 });
@@ -2340,8 +2426,8 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
 // a quantidade grande à esquerda ("2 batatas", "1 kg", "4 pacotes") já deixa claro o que vai.
 const renderComanda = () => {
     const el = document.getElementById('comanda'); if (!el) return;
-    const ent = entregaDaFeira();
-    const quando = ent && !ent.hoje ? `para ${textoDoDia(ent.dia)}` : 'para hoje';
+    const ent = entregaDoPedido();
+    const quando = ent && ent.amanha ? `para amanhã, ${textoDoDia(ent.dia)}` : ent && !ent.hoje ? `para ${textoDoDia(ent.dia)}` : 'para hoje';
     const grupos = GRUPOS_SACOLA.map(g => ({ ...g, itens: STATE.carrinho.filter(i => grupoDoItem(i) === g.id) })).filter(g => g.itens.length);
     let exato = 0, estimado = 0, temPesar = false, semEst = false;
     const valor = (i) => {
@@ -2428,11 +2514,13 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             showToast(ent && !ent.hoje ? `Seu condomínio é atendido na feira de ${textoDoDia(ent.dia)}: os preços são os desse dia. Confira e toque em enviar de novo.` : 'Os preços foram atualizados. Confira e toque em enviar de novo.');
             return;
         }
-        const ent = entregaDaFeira();
+        const ent = entregaDoPedido();
+        { const fora = STATE.carrinho.filter((i) => i.foraDoDia); if (fora.length) { showToast(`${fora.map((i) => i.nome).join(', ')} não ${fora.length > 1 ? 'saem' : 'sai'} para ${nomeDoDiaDoPedido()}. Tire da sacola ou troque o dia.`, true); return; } }
         const payload = {
             feira: lerFeiraCliente(),                       // a feira vale também para a retirada (o servidor confere a agenda do dia)
             modo: retirada ? 'retirada' : 'entrega',
             diaPreco: STATE.diaDoPreco, ...(ent ? { entregaDia: ent.dia } : {}),   // o dia que a loja mostrou: o servidor confere
+            ...(ent && ent.amanha ? { paraAmanha: true } : {}),                    // "Para quando? Amanhã" (quem não é de feira)
             nome, quadra, lote, telefone, pag, troco: trocoRaw, obs, cupom,
             condominio: endereco.condominio, condominioId: endereco.condominioId, formatoEndereco: endereco.formatoEndereco,
             aceitaOfertas: !!document.getElementById('cli-ofertas')?.checked,

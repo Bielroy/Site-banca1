@@ -46,5 +46,8 @@ export const abasDeCategoria = (produtos) => {
     return [...cadastradas, ...soltas];
 };
 
+/** Nome da categoria como aparece na loja (para a busca achar "Verduras" pelo nome da aba). */
+export const nomeDaCategoria = (cat) => { const c = achar(cat); return c ? String(c.nome || c.chave) : String(cat || ''); };
+
 /** Assinatura curta: muda quando algo visível das categorias muda (para re-renderizar). */
 export const assinaturaCategorias = () => categorias.map((c) => `${c.chave}:${c.nome}:${c.ordem}:${c.visivel !== false}`).join('|');

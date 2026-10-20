@@ -83,3 +83,20 @@
 /* computador e tablet: itens, sugestão e lista rolam juntos dentro da sacola */
 .carrinho-rolo { display: flex; flex-direction: column; min-height: 0; }
 @media (min-width: 601px) { .carrinho-rolo { flex: 1 1 auto; overflow-y: auto; } .carrinho-rolo .carrinho-itens { overflow: visible; flex: none; } .carrinho-rolo .lista-semana-card { margin: 4px 20px 12px; } }
+
+/* CAMPOS QUE PASSAVAM DA MARGEM: o .form-group tem width:100% e, com a margem lateral do bloco "Observação,
+   troca e cupom", ficava 28px mais largo que a caixa. E o estilo dos campos de texto (padding 14px, width 100%)
+   pegava também as bolinhas de "Se faltar algum item", que ficavam grandes e por cima do texto. */
+.checkout-mais > :not(summary) { width: auto; box-sizing: border-box; }
+#modal-checkout .form-group input, #modal-checkout .form-group textarea, #modal-checkout .form-group select { box-sizing: border-box; max-width: 100%; }
+#modal-checkout .form-group input[type="radio"], #modal-checkout .form-group input[type="checkbox"],
+.form-group .troca-op input[type="radio"] { width: 20px; height: 20px; min-width: 20px; padding: 0; margin: 0; border: 0; background: none; box-shadow: none; flex: none; accent-color: var(--cor-botao, var(--forest)); }
+#modal-checkout .troca-ops { display: flex; flex-wrap: wrap; gap: 8px; }
+/* ".form-group label { display: block }" vencia o ".troca-op { display: flex }": a bolinha subia e grudava no texto */
+#modal-checkout .form-group label.troca-op { display: flex; align-items: center; box-sizing: border-box; min-width: 0; gap: 12px; margin: 0; line-height: 1.3; }
+#modal-checkout fieldset { min-width: 0; padding: 0; border: 0; }
+#modal-checkout > .modal > .modal-body > fieldset { margin-left: 0; margin-right: 0; }
+#modal-checkout .modal-body { overflow-x: hidden; }
+
+/* pagamento: deixa claro que nada é cobrado pelo site (enquanto o pagamento online não estiver ligado) */
+.pag-nota { margin: 8px 2px 0; font-size: .8rem; line-height: 1.4; color: var(--text-mid); }
