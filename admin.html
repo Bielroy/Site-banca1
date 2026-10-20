@@ -36,6 +36,7 @@
     <link rel="stylesheet" href="./css/admin-rotulos.css">
     <link rel="stylesheet" href="./css/admin-impressora.css">
     <link rel="stylesheet" href="./css/admin-cadastro.css">
+    <link rel="stylesheet" href="./css/admin-montar.css">
 </head>
 <body>
 
@@ -596,6 +597,12 @@
                     <button type="button" class="btn-outline btn-rotulo-produto" data-action="rotulo-do-produto"><i class="ic" data-i="etiqueta"></i> Rótulo adesivo deste produto</button>
                     <small class="dica-campo">Monte o adesivo com a imagem que quiser (foto, desenho, logo) e imprima quantos precisar.</small>
                 </div>
+                </details>
+
+                <!-- MONTAR PEDIDO (js/admin-montar.js): complementos, adicionais, "escolha 1"... O cliente escolhe antes de pôr na sacola. -->
+                <details class="prod-mais prod-montar" id="prod-montar" data-campo="montar">
+                    <summary><b>Montar pedido</b> <small id="montar-resumo">açaí com complementos, pastel com adicionais...</small></summary>
+                    <div id="montar-corpo"></div>
                 </details>
             </div>
             <footer class="modal-footer" style="display: flex; flex-direction: column; gap: 10px;">

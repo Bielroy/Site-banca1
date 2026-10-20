@@ -596,6 +596,7 @@ teste('pacotes: bloco no fim da vitrine, atalho "Pacotes", "+ 1 pacote", sacola 
   assert.ok(/R\$\s10,00/.test(await pagina.locator('#cart-row-bb .item-preco').innerText()));
   // comanda: o pedido como a banca recebe
   await pagina.locator('#btn-abrir-checkout').click();
+  await pagina.click('#comanda .cm-dobra > summary');   // a comanda abre fechada numa linha (itens, dia e total)
   const comanda = await pagina.locator('#comanda').innerText();
   assert.ok(/4 pacotes/.test(comanda) && /1 batata/.test(comanda) && /pacote de 500 g/.test(comanda) && /promoção 4 por R\$ 10/.test(comanda), comanda);
   assert.ok(/≈ R\$\s11,17/.test(comanda), 'total estimado = R$ 10 (pacotes) + ≈ R$ 1,17 (1 batata)\n' + comanda);
@@ -624,6 +625,7 @@ teste('pacotes: "4 por R$ 10" misturando 2 de batata e 2 de cenoura (cartão, sa
   await pagina.locator('#btn-carrinho-mobile').click();
   for (const id of ['bb', 'cb']) assert.ok(/R\$\s5,00/.test(await pagina.locator(`#cart-row-${id} .item-preco`).innerText()), id);
   await pagina.locator('#btn-abrir-checkout').click();
+  await pagina.click('#comanda .cm-dobra > summary');   // a comanda abre fechada numa linha (itens, dia e total)
   const comanda = await pagina.locator('#comanda').innerText();
   assert.ok((comanda.match(/promoção 4 por R\$ 10/g) || []).length === 2, comanda);
   assert.ok(/R\$\s10,00/.test(await pagina.locator('#comanda .cm-total').innerText()), comanda);
@@ -662,6 +664,7 @@ teste('temperos: cantinho no fim (depois dos pacotes), "+ 1 potinho", sacola com
   const sacola = await pagina.locator('#carrinho-itens').innerText();
   assert.ok(/Temperos/i.test(sacola) && /2 potinhos/.test(sacola) && /Pacotes prontos/i.test(sacola), sacola);
   await pagina.locator('#btn-abrir-checkout').click();
+  await pagina.click('#comanda .cm-dobra > summary');   // a comanda abre fechada numa linha (itens, dia e total)
   const comanda = await pagina.locator('#comanda').innerText();
   assert.ok(/2 potinhos/.test(comanda) && /Colorau/.test(comanda) && /R\$\s8,00/.test(comanda), comanda);
   semErros(erros); await fechar();
@@ -945,15 +948,20 @@ teste('lista da semana: cartão na sacola guarda a lista, "Só guardar" esvazia 
   await pagina.locator('#lista-produtos .produto-card[data-id="alface"] .card-add').click();
   await pagina.locator('#lista-produtos .produto-card[data-id="ovos"] .card-add').click();
   await pagina.locator('#btn-carrinho-mobile').click();
+  await pagina.waitForTimeout(300);
+  assert.ok(await pagina.locator('#lista-semana-card').isHidden(), 'com 1 ou 2 itens o cartão não aparece (não empurra o total)');
+  await pagina.click('#btn-fechar-sacola'); await pagina.waitForTimeout(400);
+  await pagina.locator('#lista-produtos .produto-card[data-id="tomate"] .modo-btn.principal').click();
+  await pagina.locator('#btn-carrinho-mobile').click();
   await pagina.waitForSelector('#lista-semana-card:not([hidden])', { timeout: 3000 });
   assert.strictEqual(await pagina.locator('#btn-guardar-lista').innerText(), 'Guardar lista');
   await pagina.click('#btn-guardar-lista');
   await pagina.getByRole('button', { name: 'Só guardar' }).click();
   await pagina.waitForFunction(() => document.getElementById('qtd-badge')?.textContent.trim() === '0', null, { timeout: 3000 });
   await pagina.waitForSelector('#atalhos [data-action="por-lista"]', { timeout: 3000 });
-  assert.match(await pagina.locator('#atalhos [data-action="por-lista"]').innerText(), /Minha lista da semana[\s\S]*2 itens/);
+  assert.match(await pagina.locator('#atalhos [data-action="por-lista"]').innerText(), /Minha lista da semana[\s\S]*3 itens/);
   await pagina.click('#atalhos [data-action="por-lista"]');
-  await pagina.waitForFunction(() => document.getElementById('qtd-badge')?.textContent.trim() === '2', null, { timeout: 3000 });
+  await pagina.waitForFunction(() => document.getElementById('qtd-badge')?.textContent.trim() === '3', null, { timeout: 3000 });
   assert.strictEqual(await pagina.locator('#lista-semana-titulo').innerText(), 'Esta é a sua lista da semana');
   semErros(erros); await fechar();
 });
@@ -1395,3 +1403,109 @@ teste('painel: "Vários de uma vez" cria os pastéis com o mesmo preço (preço 
   console.log(`\n${testes.length - falhas} de ${testes.length} testes de tela passaram.`);
   process.exit(falhas ? 1 : 0);
 })().catch((e) => { console.error('Não consegui rodar os testes de tela:', e); process.exit(1); });
+
+// ------------------------------------------------------------------ MONTAR PEDIDO
+const cenarioAcai = () => {
+  const cen = cenarioPastelaria();
+  cen.lojas.banca.produtos.a = { nome: 'Açaí 300 ml', preco: 16, unidade: 'un', cat: 'acai', ativo: true, montar: { grupos: [
+    { id: 'tam', nome: 'Calda', min: 1, max: 1, opcoes: [{ id: 'mor', nome: 'Morango', preco: 0 }, { id: 'cho', nome: 'Chocolate', preco: 0 }] },
+    { id: 'comp', nome: 'Complementos', min: 0, max: 3, gratis: 2, opcoes: [{ id: 'gra', nome: 'Granola', preco: 1 }, { id: 'ban', nome: 'Banana', preco: 2 }, { id: 'nut', nome: 'Nutella', preco: 4 }, { id: 'kiw', nome: 'Kiwi', preco: 3, ativo: false }] },
+  ] } };
+  return cen;
+};
+
+teste('montar pedido: o açaí abre a tela de montar, obrigatório segura o botão, grátis e pagos somam certo, duas montagens viram duas linhas e o pedido leva as escolhas', async () => {
+  const { pagina, erros, fechar } = await abrir('/', cenarioAcai());
+  const card = pagina.locator('#lista-produtos .produto-card[data-id="a"]');
+  await card.waitFor({ timeout: 8000 });
+  assert.match(await card.locator('.card-add--montar').innerText(), /Montar o seu/);
+  assert.match(await card.locator('.etiqueta').innerText(), /a partir de/);
+  await card.locator('.card-add--montar').click();
+  await pagina.waitForSelector('#modal-montar.aberto', { timeout: 3000 });
+  assert.match(await pagina.locator('#mt-ok').innerText(), /Escolha: Calda/, 'grupo obrigatório ainda não escolhido');
+  assert.ok(await pagina.locator('#modal-montar .mt-op[data-o="kiw"]').isDisabled(), 'opção que acabou não dá para escolher');
+  await pagina.click('#mt-ok');
+  assert.ok(await pagina.locator('#modal-montar.aberto').count(), 'sem a calda, não entra na sacola');
+  await pagina.click('#modal-montar .mt-op[data-o="cho"]');
+  for (const o of ['gra', 'ban', 'nut']) await pagina.click(`#modal-montar .mt-op[data-o="${o}"]`);
+  // 3 complementos, 2 grátis (os mais caros: Nutella e Banana) → paga só a Granola (R$ 1)
+  assert.match(await pagina.locator('#mt-ok').innerText(), /Pôr na sacola[\s\S]*17,00/);
+  assert.ok(await pagina.locator('#modal-montar .mt-op[data-o="kiw"]').evaluate((b) => b.classList.contains('cheio') || b.disabled));
+  await pagina.click('#modal-montar [data-mt="mais"]');
+  assert.match(await pagina.locator('#mt-ok').innerText(), /34,00/);
+  await pagina.click('#mt-ok');
+  await pagina.waitForSelector('#modal-montar.aberto', { state: 'detached', timeout: 100 }).catch(() => {});
+  await pagina.waitForFunction(() => !document.querySelector('#modal-montar.aberto'), null, { timeout: 3000 });
+  assert.match(await card.locator('.card-add--montar').innerText(), /Mais um[\s\S]*2/);
+  // outro açaí, de outro jeito
+  await card.locator('.card-add--montar').click();
+  await pagina.waitForSelector('#modal-montar.aberto', { timeout: 3000 });
+  await pagina.click('#modal-montar .mt-op[data-o="mor"]'); await pagina.click('#mt-ok');
+  await pagina.waitForFunction(() => !document.querySelector('#modal-montar.aberto'), null, { timeout: 3000 });
+  await pagina.click('#btn-carrinho-mobile');
+  const linhas = pagina.locator('#carrinho-itens .carrinho-item--montado');
+  assert.strictEqual(await linhas.count(), 2, 'dois jeitos de montar = duas linhas');
+  assert.match(await linhas.first().locator('.item-adicionais').innerText(), /Calda: Chocolate · Complementos: Granola, Banana, Nutella/);
+  assert.match(await pagina.locator('#total-val').innerText(), /50,00/);
+  // + na linha montada soma só nela
+  await linhas.nth(1).locator('[data-action="inc"]').click();
+  assert.match(await pagina.locator('#total-val').innerText(), /66,00/);
+  // envia: as escolhas vão como ids
+  await pagina.click('#btn-abrir-checkout');
+  await pagina.waitForSelector('#modal-checkout.aberto', { timeout: 4000 });
+  const lista = pagina.locator('#checkout-endereco select:visible'); if (await lista.count()) await lista.first().selectOption({ index: 1 });
+  const campos = pagina.locator('#checkout-endereco input:visible');
+  for (let i = 0; i < await campos.count(); i++) await campos.nth(i).fill(['Jardins Florença', '12', '7'][i] || '1');
+  await pagina.fill('#cli-nome', 'Cliente Açaí');
+  await pagina.click('#btn-enviar-pedido');
+  await pagina.waitForSelector('#sucesso-whatsapps .btn-wpp', { timeout: 6000 });
+  const itens = pedidosEnviados().pop().corpo.itens;
+  assert.deepStrictEqual(itens.map((i) => [i.id, i.qtd, i.opcoes]), [['a', 2, { tam: ['cho'], comp: ['gra', 'ban', 'nut'] }], ['a', 2, { tam: ['mor'] }]]);
+  semErros(erros); await fechar();
+});
+
+teste('montar pedido no painel: modelo de açaí, ajusta, salva no produto; "Escolhe 1" e opção que acabou ficam gravadas', async () => {
+  const { pagina, erros, fechar } = await abrir('/admin.html', cenarioPastelaria(), { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.locator('#pl-cats [data-pl-cat="acai"]').click({ timeout: 8000 });
+  await pagina.locator('[data-action="editar-produto"][data-id="a"]').first().click();
+  await pagina.waitForSelector('#modal-produto.aberto', { timeout: 3000 });
+  await pagina.locator('#prod-montar > summary').click();
+  await pagina.click('[data-mt-modelo="acai"]');
+  assert.strictEqual(await pagina.locator('#montar-corpo .mt-ad-grupo').count(), 2);
+  assert.match(await pagina.locator('#montar-resumo').innerText(), /2 grupos · 13 opções/);
+  // o 2º grupo vira "Escolhe 1 (obrigatório)" com outro nome, e a primeira opção dele acaba
+  const g2 = pagina.locator('#montar-corpo .mt-ad-grupo').nth(1);
+  await g2.locator('.mt-ad-nome').fill('Cobertura');
+  await g2.locator('[data-mt-tipo="uma"]').click();
+  await pagina.locator('#montar-corpo .mt-ad-grupo').nth(1).locator('li').first().locator('[data-mt-acao="ativo"]').click();
+  await pagina.click('#btn-salvar-produto');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /^produtos\/a$/.test(g.path)), null, { timeout: 4000 });
+  const salvo = (await gravadosDe(pagina, /^produtos\/a$/)).pop().montar;
+  assert.strictEqual(salvo.grupos.length, 2);
+  assert.strictEqual(salvo.grupos[0].nome, 'Complementos'); assert.strictEqual(salvo.grupos[0].max, 4);
+  assert.deepStrictEqual([salvo.grupos[1].nome, salvo.grupos[1].min, salvo.grupos[1].max], ['Cobertura', 1, 1]);
+  assert.strictEqual(salvo.grupos[1].opcoes[0].ativo, false);
+  assert.strictEqual(salvo.grupos[1].opcoes[0].preco, 4);
+  semErros(erros); await fechar();
+});
+
+teste('checkout com o teclado: comanda fechada numa linha, pagamento em botões, opcional recolhido e "próximo" pula de campo', async () => {
+  const { pagina, erros, fechar } = await abrir('/');
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await cards(pagina).filter({ hasText: 'Ovos' }).locator('[data-action="add"]').first().click();
+  await pagina.click('#btn-carrinho-mobile'); await pagina.click('#btn-abrir-checkout');
+  await pagina.waitForSelector('#modal-checkout.aberto', { timeout: 4000 });
+  assert.ok(!(await pagina.locator('#comanda .cm-itens').isVisible()), 'a lista começa fechada');
+  assert.match(await pagina.locator('#comanda summary').innerText(), /1 item[\s\S]*R\$\s14,00/);
+  assert.ok(!(await pagina.locator('#cli-obs').isVisible()), 'observação fica em "Observação, troca e cupom"');
+  assert.strictEqual(await pagina.locator('#pag-chips .pag-chip').count(), 3);
+  await pagina.click('#pag-chips .pag-chip[data-pag="Dinheiro"]');
+  assert.strictEqual(await pagina.locator('#cli-pagamento').inputValue(), 'Dinheiro');
+  assert.ok(await pagina.locator('#troco-group').isVisible(), 'dinheiro mostra o troco');
+  await pagina.fill('#cli-nome', 'Ana'); await pagina.press('#cli-nome', 'Enter');
+  assert.strictEqual(await pagina.evaluate(() => document.activeElement.id), 'cli-telefone', 'Enter = próximo campo');
+  await pagina.locator('#checkout-mais > summary').click();
+  await pagina.fill('#cli-cupom', 'feira10');
+  assert.match(await pagina.locator('#checkout-mais-resumo').innerText(), /cupom FEIRA10/);
+  semErros(erros); await fechar();
+});

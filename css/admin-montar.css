@@ -1,0 +1,37 @@
+/* =====================================================================
+   css/admin-montar.css — "Montar pedido" no cadastro do produto (js/admin-montar.js)
+   ===================================================================== */
+.prod-montar { margin-top: 10px; }
+#montar-corpo { padding-top: 12px; }
+.mt-ad-inicio p { margin: 0 0 10px; font-size: .92rem; line-height: 1.45; color: var(--text-mid); }
+.mt-ad-modelos { display: flex; flex-wrap: wrap; gap: 8px; }
+.mt-ad-copiar { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; font-size: .88rem; font-weight: 600; color: var(--text-mid); }
+.mt-ad-aviso { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--foam, #eef6f0); font-size: .9rem; line-height: 1.45; }
+
+.mt-ad-grupo { border: 1.5px solid var(--linha, #e4dfd3); border-radius: 14px; background: var(--superficie, #fff); padding: 12px; margin: 0 0 12px; min-width: 0; }
+.mt-ad-grupo-topo { display: flex; gap: 8px; align-items: center; }
+.mt-ad-nome { flex: 1 1 auto; min-width: 0; font-weight: 700; }
+.mt-ad-mover { display: flex; gap: 4px; flex: none; }
+.mt-ad-mover button, .mt-ad-x { width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--linha, #e4dfd3); background: var(--cream); font-size: 1.05rem; cursor: pointer; color: var(--text-dark); }
+.mt-ad-mover button:disabled { opacity: .35; cursor: default; }
+.mt-ad-tipo { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 8px; }
+.mt-ad-regras { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 4px; }
+.mt-ad-regras label { display: flex; align-items: center; gap: 6px; font-size: .88rem; font-weight: 600; color: var(--text-mid); }
+.mt-ad-regras input { width: 70px; }
+.mt-ad-ops { list-style: none; margin: 10px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mt-ad-ops li { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem auto auto; gap: 6px; align-items: center; }
+.mt-ad-ops li.acabou input { opacity: .55; text-decoration: line-through; }
+.mt-ad-ops input.erro { border-color: var(--danger, #c0392b); }
+.mt-ad-tem { height: 38px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--linha, #e4dfd3); background: var(--cream); font-size: .8rem; font-weight: 700; cursor: pointer; color: var(--text-mid); }
+.mt-ad-tem.on { background: var(--foam, #e6f4ea); color: var(--forest); border-color: color-mix(in srgb, var(--forest) 35%, transparent); }
+.mt-ad-mais { border: 1.5px dashed var(--linha, #d8d1c1); background: none; border-radius: 10px; padding: 8px 14px; font-weight: 700; color: var(--forest); cursor: pointer; }
+.mt-ad-previa { margin: 8px 0 0; font-size: .82rem; color: var(--text-light); }
+.mt-ad-novo { width: 100%; }
+@media (max-width: 420px) { .mt-ad-ops li { grid-template-columns: minmax(0, 1fr) 5.2rem auto auto; } }
+.ped-adicionais { color: var(--text-mid); }
+#montar-corpo input[type="text"], #montar-corpo input[type="number"], #montar-corpo select {
+    min-height: 40px; padding: 0 10px; border-radius: 10px; border: 1.5px solid var(--linha, #e4dfd3); background: var(--cream, #faf7f2);
+    font: inherit; font-size: .95rem; color: var(--text-dark); box-sizing: border-box; width: 100%; }
+#montar-corpo .mt-ad-regras input { width: 72px; }
+#montar-corpo input:focus, #montar-corpo select:focus { outline: none; border-color: var(--forest); background: #fff; }
+#montar-corpo .mt-ad-nome { font-weight: 700; }

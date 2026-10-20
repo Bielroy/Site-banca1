@@ -24,6 +24,7 @@ export const CAMPOS_PRODUTO = {
     insumo: 'Só ingrediente (fora da loja)',
     duracao: 'Quanto tempo dura na banca',
     rotulo: 'Rótulo adesivo',
+    montar: 'Montar pedido (complementos e adicionais)',
 };
 
 // Tipos de negócio de feira/hortifrúti: lá tudo vem ligado. Nos outros, o que é de hortifrúti começa desligado.

@@ -13,6 +13,7 @@ import { TODAS, categoriasDaLista, passaNaCategoria, mudancasEmLote } from './pr
 import { cadastroPacote, promoDe, textoPromo, totalComPromo, nomesDaUnidade, emPalavras, ehPacote } from './pacote-lib.js';
 import { ARTE_PACOTE, ARTE_CATEGORIA } from './vitrine-arte.js';
 import { camposDaLoja, unidadeMaisUsada, precoMaisUsado, lerPreco } from './cadastro-lib.js';
+import { iniciarMontarAdmin, preencherMontar, lerMontar } from './admin-montar.js';
 import './admin-instalar.js';
 import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar, bancasDaPessoa, mostrarSuspensa } from './admin-guard.js';
 import { htmlSimples, csvCampo } from './html-lib.js';
@@ -922,6 +923,7 @@ const limparFormularioProduto = () => {
     definirUnidade(unidadeMaisUsada(produtosAtuais));   // produto novo começa na unidade mais usada da loja (antes herdava a do último aberto)
     alternarCampoPesoMedio();
     preencherPacote(null);
+    iniciarMontarAdmin({ produtos: () => produtosAtuais }); preencherMontar(null);
     const previa = document.getElementById('preview-foto-wrapper'); if (previa) previa.innerHTML = placeholderSVG;
     document.getElementById('btn-excluir-produto').style.display = 'none';
     { const g = document.getElementById('grupo-rotulo-produto'); if (g) g.hidden = true; }
@@ -940,7 +942,7 @@ const limparFormularioProduto = () => {
 // =====================================================================
 const $p = (id) => document.getElementById(id);
 const NOMES_UNIDADE = { kg: 'Quilo', un: 'Unidade', 'maço': 'Maço', bdj: 'Bandeja', kit: 'Kit / Cesta' };
-const CURTOS_CAMPO = { oferta: 'oferta', estoque: 'estoque', pacote: 'pacote e promoção', pesoMedio: 'peso médio', selos: 'selos', descricao: 'descrição', insumo: 'só ingrediente', duracao: 'quanto dura', rotulo: 'rótulo' };
+const CURTOS_CAMPO = { oferta: 'oferta', estoque: 'estoque', pacote: 'pacote e promoção', pesoMedio: 'peso médio', selos: 'selos', descricao: 'descrição', insumo: 'só ingrediente', duracao: 'quanto dura', rotulo: 'rótulo' };   // (montar tem bloco próprio)
 let camposLoja = null, unidadeMexida = false, repetidos = 0;
 function aplicarCampos(ficha) {
     camposLoja = camposDaLoja(ficha, ehLojaOriginal);
@@ -1290,6 +1292,7 @@ const renderConferencia = () => {
                    : `<div class="pk-linha-foto"></div>`}
             <div class="pk-linha-info">
                 <div class="pk-linha-nome">${escapeHTML(item.nome)}</div>
+                ${item.adicionais ? `<div class="pk-linha-detalhe">↳ ${escapeHTML(item.adicionais)}</div>` : ''}
                 <div class="pk-linha-detalhe">${detalhe}</div>
                 <button class="pk-linha-editar" data-corrigir="${i}">corrigir</button>
             </div>
@@ -1559,6 +1562,7 @@ document.body.addEventListener('click', async (e) => {
             { const m = (i, v) => { const c = document.getElementById(i); if (c) c.checked = v; }; m('edit-selo-chegou', p.chegouEm === hojeDaLoja()); m('edit-selo-estacao', p.estacao === true); m('edit-selo-escolha', p.escolha === true); }
             alternarCampoPesoMedio();
             preencherPacote(p);
+            iniciarMontarAdmin({ produtos: () => produtosAtuais }); preencherMontar(p);
 
             const previewContainer = document.getElementById('preview-foto-wrapper');
             if (previewContainer) previewContainer.innerHTML = p.foto ? `<img src="${escapeHTML(p.foto)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" alt="${escapeHTML(p.nome)}">` : placeholderSVG;
@@ -1849,6 +1853,7 @@ const salvarProduto = async (outro = false) => {
             Object.assign(pData, cad.dados);
         }
         if (!pData.unidade) throw new Error("Escolha a métrica de venda (quilo, unidade...).");
+        pData.montar = lerMontar();   // complementos e adicionais (null = produto sem montar)
         if (!pData.cat) throw new Error("Escolha a categoria do produto.");
         if (pData.soInsumo && !(pData.preco > 0)) pData.preco = 0;
         else if (isNaN(pData.preco) || pData.preco <= 0) throw new Error("Informe um preço válido.");
@@ -1965,7 +1970,7 @@ const renderHtmlPedidos = (pedidos) => {
 
         const itensStr = p.itens ? p.itens.map(i => {
             const extra = i.aPesar ? ' <span style="color:var(--earth);font-weight:bold;">(A Pesar)</span>' : '';
-            return `${qtdDoItem(i)} ${escapeHTML(i.nome)}${extra}`;
+            return `${qtdDoItem(i)} ${escapeHTML(i.nome)}${extra}${i.adicionais ? `<br><small class="ped-adicionais">↳ ${escapeHTML(i.adicionais)}</small>` : ''}`;
         }).join('<br> • ') : '';
 
         const temAPesar = p.itens && p.itens.some(i => i.aPesar);

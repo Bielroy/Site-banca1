@@ -111,6 +111,7 @@ const Conta = require('../lib/conta');
 const Cofre = require('../lib/cofre');
 const Feira = require('../lib/feira');
 const Pac = require('../lib/pacote');   // pacote fechado e promoção "4 por R$ 10" (mesma conta de js/pacote-lib.js)
+const Montar = require('../lib/montar');   // montar pedido: complementos e adicionais (mesma conta de js/montar-lib.js)
 
 function montarTextoWhatsApp(pedido, numero) {
   const dividido = pedido.parte && pedido.parte.de > 1;
@@ -142,6 +143,7 @@ function montarTextoWhatsApp(pedido, numero) {
         : i.pacote ? `${i.qtd} ${i.qtd === 1 ? 'pacote' : 'pacotes'}${i.pesoPacote ? ` de ${i.pesoPacote}` : ''} de` : `${i.qtd}x`;
       const promo = i.promo ? ` _(promoção ${i.promo.qtd} por ${fmtBRL(i.promo.preco)})_` : '';
       msg += `• ${rotulo} ${i.nome} — ${fmtBRL(i.subtotal)}${promo}\n`;
+      if (i.adicionais) msg += `   ↳ ${i.adicionais}\n`;   // montar pedido: o que o cliente escolheu
     }
   });
 
@@ -365,11 +367,14 @@ module.exports = async function handler(req, res) {
       const modoPedido = escolha.modo, retirada = modoPedido === 'retirada';
       if (!retirada && (!quadra || !lote)) throw new Error('Preencha o endereço da entrega.');
 
-      // O mesmo produto duas vezes no pedido baixaria o estoque só pela última linha
+      // O mesmo item duas vezes no pedido é erro da sacola. Produto MONTADO pode vir em várias linhas, uma por
+      // jeito de montar (um açaí com granola e outro com Nutella): a linha é o produto + as escolhas.
       const idsVistos = new Set();
       for (const i of itens) {
-        if (idsVistos.has(i.id)) throw new Error('Há um produto repetido no pedido. Atualize a página e monte o carrinho de novo.');
-        idsVistos.add(i.id);
+        const ops = Montar.limparOpcoes(i.opcoes);
+        const chaveLinha = `${i.id}~${Object.keys(ops).sort().map((g) => `${g}:${ops[g].slice().sort().join(',')}`).join('|')}`;
+        if (idsVistos.has(chaveLinha)) throw new Error('Há um produto repetido no pedido. Atualize a página e monte o carrinho de novo.');
+        idsVistos.add(chaveLinha);
       }
 
       const prodSnaps = await Promise.all(itens.map((i) => t.get(T.docDe(db, tid, `produtos/${i.id}`))));
@@ -384,6 +389,7 @@ module.exports = async function handler(req, res) {
       const linhasPromo = [];   // itens com promoção por quantidade; a conta é feita junto, depois do laço
       const itensValidados = [];
       const estoqueUpdates = [];
+      const baixas = new Map();   // estoque por PRODUTO (o mesmo açaí em duas linhas baixa as duas juntas)
 
       itens.forEach((item, idx) => {
         const snap = prodSnaps[idx];
@@ -423,26 +429,39 @@ module.exports = async function handler(req, res) {
             precoOriginal: p.preco, unidade: p.unidade || 'un', subtotal: 0,
           });
         } else {
+          // MONTAR PEDIDO: as escolhas são conferidas contra o cadastro de AGORA e o preço de cada uma vem daqui (lib/montar.js).
+          const montar = Montar.montarDoProduto(p);
+          const escolha = montar ? Montar.conferirEscolha(montar, item.opcoes) : null;
+          if (escolha && !escolha.ok) throw new Error(`"${p.nome}": ${escolha.erro}`);
+          const precoUnit = escolha ? Montar.precoMontado(p.preco, escolha.extraC) : p.preco;
           // PROMOÇÃO POR QUANTIDADE ("4 por R$ 10"): só no que não vai à balança, com o preço do dia. A conta é daqui, nunca do navegador.
           // Pacotes com a MESMA promoção se juntam (2 de batata + 2 de cenoura = 4): a conta fecha depois do laço.
-          const promo = fracionavel ? null : Pac.promoDe(p, p.preco);
-          const subC = Math.round(paraCentavos(p.preco) * qtd);
+          // Produto montado não entra em promoção por quantidade (cada um sai de um jeito).
+          const promo = fracionavel || montar ? null : Pac.promoDe(p, p.preco);
+          const subC = Math.round(paraCentavos(precoUnit) * qtd);
           if (promo) linhasPromo.push({ idx: itensValidados.length, preco: p.preco, qtd, promo, chave: Pac.chavePromo({ ...p, id: item.id }, promo) });
           else totalExatoCentavos += subC;
           itensValidados.push({
             id: item.id, nome: p.nome, cat: p.cat || '', qtd, tipo, aPesar: false,
-            preco: p.preco, precoOriginal: p.preco, unidade: p.unidade || 'un',
+            preco: precoUnit, precoOriginal: precoUnit, unidade: p.unidade || 'un',
             subtotal: paraFlutuante(subC),
             ...(Pac.ehPacote(p) ? { pacote: true, ...(typeof p.pesoPacote === 'string' && p.pesoPacote.trim() ? { pesoPacote: p.pesoPacote.replace(/[<>]/g, '').trim().slice(0, 16) } : {}) } : {}),
+            // o que o cliente escolheu: texto para a banca ler (painel, cupom, WhatsApp) e os ids para "pedir de novo"
+            ...(escolha && escolha.escolhas.length ? { adicionais: Montar.textoDaEscolha(escolha.escolhas), escolhas: escolha.escolhas, opcoes: escolha.opcoes, precoBase: p.preco } : {}),
           });
-          // Baixa de estoque só para itens de valor fechado
+          // Baixa de estoque só para itens de valor fechado (somada por produto, depois do laço)
           if (p.estoqueFisico !== null && p.estoqueFisico !== undefined && p.estoqueFisico !== '') {
-            const novo = fixFloat(Number(p.estoqueFisico) - qtd);
-            if (novo < 0) throw new Error(`"${p.nome}" não tem estoque suficiente.`);
-            estoqueUpdates.push([snap.ref, { estoqueFisico: novo, ativo: novo > 0 }, { produtoId: item.id, nome: p.nome, unidade: p.unidade, delta: -qtd, saldo: novo, custoUnit: p.custo }]);
+            const b = baixas.get(item.id) || { ref: snap.ref, p, qtd: 0 };
+            b.qtd = fixFloat(b.qtd + qtd); baixas.set(item.id, b);
           }
         }
       });
+
+      for (const [produtoId, b] of baixas) {
+        const novo = fixFloat(Number(b.p.estoqueFisico) - b.qtd);
+        if (novo < 0) throw new Error(`"${b.p.nome}" não tem estoque suficiente.`);
+        estoqueUpdates.push([b.ref, { estoqueFisico: novo, ativo: novo > 0 }, { produtoId, nome: b.p.nome, unidade: b.p.unidade, delta: -b.qtd, saldo: novo, custoUnit: b.p.custo }]);
+      }
 
       // ---- Promoção por quantidade (junta os pacotes com a mesma promoção) ----
       if (linhasPromo.length) {

@@ -32,6 +32,9 @@ import { ligarVerFoto } from './ver-foto.js';
 import { temDoisModos, modoPreferido, limparMemoria, botoesDoCard, textoNoPedido, proximaQtd } from './modo-lib.js';
 import { juntarPedidos, perfilParaAparelho, unirFavs, unirModo, sacolaParaGuardar, sacolaVale } from './conta-lib.js';
 import { buscarConta, agendarGuardar, marcarConta, sairDaConta } from './conta-loja.js';
+import { temMontar, remontar, linhaMontada, chaveDaLinha } from './montar-lib.js';
+import { abrirMontar } from './montar-loja.js';
+import './checkout-teclado.js';   // tela de envio com o teclado aberto: campos, botão e pagamento em botões
 ligarVerFoto();   // tocar na foto da janela do produto abre ela inteira
 
 // Lista guardada no aparelho. Dado corrompido ou armazenamento bloqueado NÃO pode derrubar a loja:
@@ -104,7 +107,12 @@ const syncCarrinhoComPrecosAoVivo = () => {
     let modificou = false; let itensRemovidos = 0;
     STATE.carrinho.forEach(itemCart => {
         const prodAoVivo = STATE.produtos.find(p => p.id === itemCart.id);
-        if (prodAoVivo) {
+        if (prodAoVivo && (itemCart.linha || temMontar(prodAoVivo))) {
+            // produto montado: as escolhas são conferidas no cadastro de agora (opção que acabou tira a linha)
+            const nova = remontar(prodAoVivo, itemCart.opcoes, itemCart.qtd);
+            if (!nova) { itemCart.qtd = 0; itensRemovidos++; modificou = true; }
+            else if (nova.preco !== itemCart.preco || nova.linha !== itemCart.linha || nova.adicionais !== itemCart.adicionais) { Object.assign(itemCart, nova, { qtd: itemCart.qtd }); modificou = true; }
+        } else if (prodAoVivo) {
             if (itemCart.preco !== prodAoVivo.preco) { itemCart.preco = prodAoVivo.preco; modificou = true; }
         } else { itemCart.qtd = 0; itensRemovidos++; modificou = true; }
     });
@@ -118,7 +126,8 @@ const syncCarrinhoComPrecosAoVivo = () => {
     }
 };
 
-const getCartQty = (id) => { const item = STATE.carrinho.find(x => x.id === id); return item ? item.qtd : 0; };
+const getCartQty = (id) => STATE.carrinho.reduce((t, x) => t + (x.id === id ? Number(x.qtd) || 0 : 0), 0);   // produto montado pode estar em várias linhas
+const linhasDoProduto = (id) => STATE.carrinho.filter((x) => x.id === id);
 
 // ---------------------------------------------------------------------
 // ITENS "A PESAR" — pedido em unidades de um produto vendido por quilo.
@@ -131,7 +140,7 @@ const valorEstimado = (item) => { const pm = pesoMedioDe(item); return pm > 0 ? 
 // PACOTE e PROMOÇÃO "4 por R$ 10" (js/pacote-lib.js). O produto vale pelo cadastro AO VIVO (o item da sacola pode ser velho);
 // quem cobra de verdade é o servidor, com a mesma conta (lib/pacote.js).
 const produtoDoItem = (item) => (STATE.produtos || []).find(p => p.id === item.id) || item;
-const promoDoItem = (item) => (item.tipo === 'kg' || isFracionavel(item.unidade) ? null : promoDe(produtoDoItem(item), item.preco));
+const promoDoItem = (item) => (item.tipo === 'kg' || item.linha || isFracionavel(item.unidade) ? null : promoDe(produtoDoItem(item), item.preco));
 // A promoção é da SACOLA, não do item: pacotes com a mesma promoção se juntam (2 de batata + 2 de cenoura = "4 por R$ 10").
 const linhaPromo = (item) => { const pr = promoDoItem(item); return { preco: item.preco, qtd: pr ? item.qtd : 0, promo: pr, chave: pr ? chavePromo(produtoDoItem(item), pr) : '' }; };
 const contaDaSacola = (carrinho = STATE.carrinho) => contaDaPromo(carrinho.map(linhaPromo));
@@ -222,6 +231,41 @@ const pintarDoisModos = (area, p, item) => {
     }
     if (foco) (area.querySelector(`[data-action="${foco}"]`) || area.querySelector('[data-action="inc"], .modo-btn'))?.focus({ preventScroll: true });
 };
+// MONTAR PEDIDO (açaí, pastel...): o card tem um botão só, que abre a tela de montar. Com o produto na sacola,
+// o botão diz quantos já vão ("2 na sacola") e monta outro.
+const pintarBotaoMontar = (area, p) => {
+    const n = getCartQty(p.id), sig = `m|${n}`;
+    area.closest('.produto-card')?.classList.toggle('na-sacola', n > 0);
+    if (area.dataset.sig === sig) return;
+    area.dataset.sig = sig; area.classList.remove('dupla'); area.classList.add('montar');
+    const nome = escapeHTML(p.nome || '');
+    area.innerHTML = `<button type="button" class="card-add card-add--montar" data-action="montar" data-id="${escapeHTML(p.id)}" aria-label="${n ? `Montar outro ${nome}` : `Montar ${nome}`}">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M4 12h7M4 17h5M17 10v8M13 14h8"/></svg><span>${n ? 'Mais um' : 'Montar o seu'}</span>${n ? `<b class="montar-n">${n}</b>` : ''}</button>`;
+};
+const abrirMontarDoProduto = (id, linhaChave = null) => {
+    const p = produtoPorId(id); if (!p) return;
+    const linha = linhaChave ? STATE.carrinho.find((x) => chaveDaLinha(x) === linhaChave) : null;
+    abrirMontar({ produto: p, linha, fmt, foto: p.foto ? fotoPequena(p, 828) : '', rotuloBotao: STATE.config.textoBotao || 'Pôr na sacola', aoConfirmar: porMontadoNaSacola });
+};
+/** O cliente terminou de montar: entra na sacola (ou troca a linha que estava sendo alterada). Igual + igual = soma. */
+const porMontadoNaSacola = (p, conferido, qtd, antiga) => {
+    const nova = linhaMontada(p, conferido, qtd);
+    if (antiga) STATE.carrinho = STATE.carrinho.filter((x) => x !== antiga);
+    const igual = STATE.carrinho.find((x) => chaveDaLinha(x) === nova.linha);
+    if (igual) igual.qtd = Math.min(50, Number(igual.qtd) + nova.qtd); else STATE.carrinho.push(nova);
+    if (!antiga) { contarFunil('adicionou'); showToast(`${nova.qtd > 1 ? `${nova.qtd}× ` : ''}${p.nome} na sacola.`); }
+    persistirCarrinhoComDebounce(); atualizarBadgesDOM(p.id, getCartQty(p.id), true); renderCarrinhoCompleto(); hapticFeedback();
+    const card = document.querySelector(`#lista-produtos .produto-card[data-id="${CSS.escape(String(p.id))}"]`);
+    if (card && !antiga) voarParaPedido(card);
+};
+/** + e − de uma linha montada da sacola. */
+const mudarLinhaMontada = (chave, delta, fixo = false) => {
+    const item = STATE.carrinho.find((x) => chaveDaLinha(x) === chave); if (!item) return;
+    const n = fixo ? Math.round(delta) : Math.round(Number(item.qtd) + delta);
+    if (n <= 0) STATE.carrinho = STATE.carrinho.filter((x) => x !== item); else item.qtd = Math.min(50, n);
+    persistirCarrinhoComDebounce(); atualizarBadgesDOM(item.id); renderCarrinhoCompleto();
+};
+
 // produto pelo id sem varrer a lista inteira a cada card (com catálogo grande, a vitrine fazia N × N buscas)
 let _mapaProdutos = null, _mapaDe = null;
 const produtoPorId = (id) => { if (_mapaDe !== STATE.produtos) { _mapaDe = STATE.produtos; _mapaProdutos = new Map((STATE.produtos || []).map((p) => [p.id, p])); } return _mapaProdutos.get(id); };
@@ -229,6 +273,8 @@ const pintarAcao = (area, produtoId, animar) => {
     const item = STATE.carrinho.find(x => x.id === produtoId);
     area.closest('.produto-card')?.classList.toggle('na-sacola', !!item);
     const prod = produtoPorId(produtoId);
+    if (prod && temMontar(prod)) return pintarBotaoMontar(area, prod);
+    if (area.classList.contains('montar')) { area.classList.remove('montar'); delete area.dataset.sig; area.textContent = ''; }
     if (prod && temDoisModos(prod)) return pintarDoisModos(area, prod, item);
     if (area.classList.contains('dupla')) { area.classList.remove('dupla'); delete area.dataset.sig; area.textContent = ''; }   // o produto deixou de ser por quilo
 
@@ -478,15 +524,16 @@ const renderCarrinhoCompleto = () => {
         // pediu poucas unidades de algo pesado e existe o pacote "parecido": só informa, sem perguntar nada
         const parecido = item.tipo === 'un' && isFracionavel(item.unidade) && Math.round(item.qtd) <= 3 ? pacoteParecido(prod, STATE.produtos) : null;
         return `
-        <article class="carrinho-item${itemEhPacote(item) ? ' carrinho-item--pacote' : itemEhPote(item) ? ' carrinho-item--tempero' : ''}" id="cart-row-${escapeHTML(item.id)}">
+        <article class="carrinho-item${itemEhPacote(item) ? ' carrinho-item--pacote' : itemEhPote(item) ? ' carrinho-item--tempero' : ''}${item.linha ? ' carrinho-item--montado' : ''}" id="cart-row-${escapeHTML(chaveDaLinha(item))}">
             <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(fotoPequena(item, 128))}" data-original="${escapeHTML(item.foto)}" alt="${escapeHTML(item.nome)}" loading="lazy" width="48" height="48">` : (itemEhPacote(item) ? ARTE_PACOTE : itemEhPote(item) ? ARTE_POTE : '')}</div>
             <div class="item-meio">
                 <h3 class="item-nome">${escapeHTML(item.nome)} </h3>
                 <p class="item-palavras">${palavrasHtml(item)}</p>
+                ${item.linha ? `<p class="item-adicionais">${item.adicionais ? escapeHTML(item.adicionais) : 'Sem adicionais'}</p><button type="button" class="item-alterar" data-action="montar" data-id="${escapeHTML(item.id)}" data-linha="${escapeHTML(item.linha)}">Alterar</button>` : ''}
                 <div class="qtd-ctrl">
-                    <button class="btn-qtd" data-action="dec" data-id="${escapeHTML(item.id)}" aria-label="Diminuir ${escapeHTML(item.nome)}">−</button>
-                    <input class="qtd-input" type="text" inputmode="decimal" value="${escapeHTML(formatarQuantidadeVisual(Number(item.qtd) || 0, isPeso))}" data-id="${escapeHTML(item.id)}" aria-label="Quantidade de ${escapeHTML(item.nome)}" enterkeyhint="done">
-                    <button class="btn-qtd" data-action="inc" data-id="${escapeHTML(item.id)}" aria-label="Aumentar ${escapeHTML(item.nome)}">+</button>
+                    <button class="btn-qtd" data-action="dec" data-id="${escapeHTML(item.id)}"${item.linha ? ` data-linha="${escapeHTML(item.linha)}"` : ''} aria-label="Diminuir ${escapeHTML(item.nome)}">−</button>
+                    <input class="qtd-input" type="text" inputmode="${item.linha ? 'numeric' : 'decimal'}" value="${escapeHTML(formatarQuantidadeVisual(Number(item.qtd) || 0, isPeso))}" data-id="${escapeHTML(item.id)}"${item.linha ? ` data-linha="${escapeHTML(item.linha)}"` : ''} aria-label="Quantidade de ${escapeHTML(item.nome)}" enterkeyhint="done">
+                    <button class="btn-qtd" data-action="inc" data-id="${escapeHTML(item.id)}"${item.linha ? ` data-linha="${escapeHTML(item.linha)}"` : ''} aria-label="Aumentar ${escapeHTML(item.nome)}">+</button>
                     <span class="qtd-unid">${isPeso ? escapeHTML(String(item.unidade || 'kg').toLowerCase()) : itemEhPacote(item) ? 'pct' : itemEhPote(item) ? 'pote' : 'un'}</span>
                 </div>
                 ${parecido ? `<button type="button" class="item-tambem" data-action="ver-pacote" data-id="${escapeHTML(parecido.id)}">Também tem em pacote: <u>${escapeHTML(parecido.nome)}</u></button>` : ''}
@@ -569,6 +616,7 @@ const avisarAoAdicionar = (p, tipo) => {
 };
 const modificarCarrinho = (id, delta, fixo = false, tipoCompraForcado = null) => {
     const p = STATE.produtos.find(x => x.id === id); if (!p) return;
+    if (temMontar(p)) { if (delta > 0) abrirMontarDoProduto(id); return; }   // montado: escolhe as opções antes
     
     const idx = STATE.carrinho.findIndex(x => x.id === id);
     const itemAtual = idx > -1 ? STATE.carrinho[idx] : null;
@@ -620,6 +668,8 @@ const etiquetaDeOferta = (p) => {
 const etiquetaBase = (p) => {
     const frac = isFracionavel(p.unidade), pm = Number(p.pesoMedio || 0);
     if (ehPacote(p)) return `<div class="etq-preco">${fmt(p.preco)} <small>o pacote</small></div>`;
+    // produto montado com adicional pago: o preço do cartão é o de partida
+    if (temMontar(p) && (p.montar.grupos || []).some((g) => (g.opcoes || []).some((o) => Number(o.preco) > 0))) return `<div class="etq-de">a partir de</div><div class="etq-preco">${fmt(p.preco)}</div>`;
     if (ehPote(p)) return `<div class="etq-preco">${fmt(p.preco)} <small>o potinho</small></div>`;
     // por quilo com os dois botões: a etiqueta mostra o quilo; o preço da unidade vai escrito no botão dela
     if (temDoisModos(p)) {
@@ -1693,7 +1743,7 @@ const repetirPedido = (pedId) => {
 // conforme a lista guardada: "Guardar lista", "Atualizar lista" ou "Esta é a sua lista".
 const pintarCartaoDaLista = () => {
     const card = document.getElementById('lista-semana-card'); if (!card) return;
-    card.hidden = !STATE.carrinho.length || EM_PREVIA;
+    card.hidden = STATE.carrinho.length < 3 || EM_PREVIA;
     if (card.hidden) return;
     const lista = lerListaSemana(), igual = !!lista && mesmoConjunto(STATE.carrinho, lista.itens);
     document.getElementById('lista-semana-titulo').textContent = igual ? 'Esta é a sua lista da semana' : (lista ? 'Mudou a sua lista?' : 'Compra isso toda semana?');
@@ -1989,7 +2039,11 @@ document.body.addEventListener('click', async (e) => {
     const actionTarget = e.target.closest('[data-action]'); 
     if (actionTarget) {
         const action = actionTarget.dataset.action; const id = actionTarget.dataset.id;
-        if(action === 'add' || action === 'inc' || action === 'dec' || action === 'fav' || action === 'trocar') e.stopPropagation();
+        if(action === 'add' || action === 'inc' || action === 'dec' || action === 'fav' || action === 'trocar' || action === 'montar') e.stopPropagation();
+        // MONTAR PEDIDO: abre a tela de montar (de novo, ou para alterar uma linha da sacola); + e − da linha montada
+        if (action === 'montar') { abrirMontarDoProduto(id, actionTarget.dataset.linha || null); return; }
+        if ((action === 'inc' || action === 'dec') && actionTarget.dataset.linha) { mudarLinhaMontada(actionTarget.dataset.linha, action === 'inc' ? 1 : -1); return; }
+        if (action === 'detalhe' && temMontar(produtoPorId(id) || {})) { abrirMontarDoProduto(id); return; }
 
         // CARD COM UNIDADE E QUILO: cada botão diz o que faz, e o toque faz exatamente isso
         const modo = actionTarget.dataset.modo === 'kg' ? 'kg' : actionTarget.dataset.modo === 'un' ? 'un' : null;
@@ -2171,6 +2225,11 @@ document.getElementById('carrinho-itens').addEventListener('focusin', (e) => {
     if (e.target.classList.contains('qtd-input')) e.target.select?.();
 });
 document.getElementById('carrinho-itens').addEventListener('change', (e) => {
+    if(e.target.classList.contains('qtd-input') && e.target.dataset.linha) {
+        const v = /^\d{1,3}$/.test(e.target.value.trim()) ? Number(e.target.value.trim()) : NaN;
+        if (!Number.isFinite(v)) { renderCarrinhoCompleto(); return; }
+        mudarLinhaMontada(e.target.dataset.linha, v, true); return;
+    }
     if(e.target.classList.contains('qtd-input')) {
         const id = e.target.dataset.id; const p = STATE.produtos.find(x => x.id === id);
         const itemCart = STATE.carrinho.find(x => x.id === id);
@@ -2235,6 +2294,7 @@ const toggleCartMobile = (abrir) => {
 };
 document.getElementById('btn-carrinho-mobile')?.addEventListener('click', () => toggleCartMobile(true));
 document.getElementById('carrinho-overlay')?.addEventListener('click', () => { if (history.state?.cart) history.back(); });
+['btn-fechar-sacola', 'btn-continuar-comprando'].forEach((id) => document.getElementById(id)?.addEventListener('click', () => { if (history.state?.cart) history.back(); }));
 
 document.getElementById('cli-pagamento').addEventListener('change', (e) => { 
     const isDinheiro = e.target.value === 'Dinheiro';
@@ -2243,7 +2303,7 @@ document.getElementById('cli-pagamento').addEventListener('change', (e) => {
 });
 
 // UI Checkout
-const assinaturaDoCarrinho = () => STATE.carrinho.map(i => `${i.id}:${i.qtd}:${i.tipo || ''}`).join('|');
+const assinaturaDoCarrinho = () => STATE.carrinho.map(i => `${chaveDaLinha(i)}:${i.qtd}:${i.tipo || ''}`).join('|');
 // Guarda o carrinho JÁ (sem esperar) e recarrega buscando a versão nova no servidor.
 const recarregarComPedidoGuardado = (aviso) => {
     try { clearTimeout(debounceSalvarCarrinho); dbStorage.set(chave('banca_cart'), { v: CART_VERSION, items: STATE.carrinho }); } catch (_) { /* segue */ }
@@ -2293,18 +2353,22 @@ const renderComanda = () => {
         const pac = itemEhPacote(i), pote = !pac && itemEhPote(i), frac = isFracionavel(i.unidade), pm = pesoMedioDe(i);
         const q = frac && i.tipo !== 'un' ? `${formatarQuantidadeVisual(Number(i.qtd) || 0, true)} ${String(i.unidade || 'kg').toLowerCase()}`
             : emPalavras(n, pac ? NOMES_PACOTE : pote ? NOMES_POTE : frac ? nomesDaUnidade(p.nomeUn) : { um: 'unidade', varios: 'unidades' });
-        const sub = [frac && i.tipo === 'un' && pm > 0 ? pesoAproximado(pm * n) : '', pac && pesoDoPacote(p) ? `pacote de ${pesoDoPacote(p)}` : '', usou ? `promoção ${textoPromo(pr)}` : ''].filter(Boolean).join(' · ');
+        const sub = [frac && i.tipo === 'un' && pm > 0 ? pesoAproximado(pm * n) : '', pac && pesoDoPacote(p) ? `pacote de ${pesoDoPacote(p)}` : '', usou ? `promoção ${textoPromo(pr)}` : '', i.adicionais || ''].filter(Boolean).join(' · ');
         return `<li class="cm-linha${pac ? ' cm-linha--pacote' : pote ? ' cm-linha--tempero' : ''}"><span class="cm-q">${escapeHTML(q)}</span><span class="cm-n">${escapeHTML(i.nome)}${sub ? `<small>${escapeHTML(sub)}</small>` : ''}</span><span class="cm-v">${valor(i)}</span></li>`;
     };
     const corpo = grupos.map(g => `${grupos.length > 1 ? `<li class="cm-grupo cm-grupo--${g.id}">${g.ico()}<span>${g.titulo}</span></li>` : ''}${g.itens.map(linha).join('')}`).join('');
     const total = exato + estimado, aproximado = temPesar || semEst;
     const temPac = STATE.carrinho.some(itemEhPacote);
+    // A comanda começa FECHADA numa linha (itens, dia e total): os campos aparecem logo, sem rolar. Um toque abre a lista.
+    const nItens = STATE.carrinho.length, aberta = el.querySelector('details')?.open === true;
     el.innerHTML = `
-        <div class="cm-cab"><b>Seu pedido</b><span>${escapeHTML(quando)}</span></div>
-        <ul class="cm-itens">${corpo}</ul>
-        <div class="cm-total"><b>${aproximado ? 'Total estimado' : 'Total'}</b><span>${aproximado ? '≈ ' : ''}${fmt(total)}${semEst ? ' + itens a pesar' : ''}</span></div>
-        ${aproximado ? `<p class="cm-nota">O que é pesado na hora pode variar um pouco${temPac ? '. Os pacotes têm preço certo.' : '.'}</p>` : ''}
-        <button type="button" class="cm-voltar" data-fechar="modal-checkout">‹ Voltar e mudar algum item</button>`;
+        <details class="cm-dobra"${aberta ? ' open' : ''}>
+            <summary class="cm-cab"><span class="cm-cab-txt"><b>Seu pedido</b><small>${nItens} ${nItens === 1 ? 'item' : 'itens'} · ${escapeHTML(quando)}</small></span><span class="cm-cab-total">${aproximado ? '≈ ' : ''}${fmt(total)}${semEst ? ' +' : ''}</span><span class="cm-seta" aria-hidden="true"></span></summary>
+            <ul class="cm-itens">${corpo}</ul>
+            <div class="cm-total"><b>${aproximado ? 'Total estimado' : 'Total'}</b><span>${aproximado ? '≈ ' : ''}${fmt(total)}${semEst ? ' + itens a pesar' : ''}</span></div>
+            ${aproximado ? `<p class="cm-nota">O que é pesado na hora pode variar um pouco${temPac ? '. Os pacotes têm preço certo.' : '.'}</p>` : ''}
+            <button type="button" class="cm-voltar" data-fechar="modal-checkout">‹ Voltar e mudar algum item</button>
+        </details>`;
 };
 
 // "Se faltar algum item": a escolha vai no fim da observação do pedido e fica lembrada neste aparelho.
@@ -2349,7 +2413,8 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
                 qtd: item.qtd, 
                 tipo: item.tipo, // 'kg' ou 'un'
                 aPesar: isAPesar,
-                precoOriginal: item.preco
+                precoOriginal: item.preco,
+                ...(item.linha ? { opcoes: item.opcoes || {}, adicionais: item.adicionais || '' } : {})   // montar pedido: só os ids vão para o servidor (ele cobra)
             };
         });
 
@@ -2403,7 +2468,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             const meusPedidos = lerLista('banca_meus_pedidos');
             meusPedidos.unshift({
                 id: data.pedido.id, data: new Date().toISOString(), total: data.pedido.total,
-                descItens: STATE.carrinho.map(i => i.tipo === 'un' && isFracionavel(i.unidade) ? `${i.qtd} un de ${i.nome} (A Pesar)` : `${i.qtd}x ${i.nome}`).join(', '),
+                descItens: STATE.carrinho.map(i => i.tipo === 'un' && isFracionavel(i.unidade) ? `${i.qtd} un de ${i.nome} (A Pesar)` : `${i.qtd}x ${i.nome}${i.adicionais ? ` (${i.adicionais})` : ''}`).join(', '),
                 itens: itensFormatados
             });
             localStorage.setItem(chave('banca_meus_pedidos'), JSON.stringify(meusPedidos.slice(0, 10)));
@@ -2469,7 +2534,7 @@ if (!navigator.onLine) document.getElementById('banner-offline')?.classList.add(
   cart.addEventListener('touchstart', (e) => {
     // Quem rola é a LISTA de itens, não a gaveta. Se o toque começou na lista
     // já rolada (ou num campo), é rolagem/edição — não é para fechar.
-    const lista = e.target.closest('.carrinho-itens');
+    const lista = e.target.closest('.carrinho-rolo');
     const editando = e.target.closest('input, textarea, select');
     y0 = (editando || (lista && lista.scrollTop > 0)) ? null : e.touches[0].clientY;
   }, { passive: true });

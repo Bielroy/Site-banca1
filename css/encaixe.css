@@ -161,6 +161,8 @@ body.cat-imersiva .fale-loja h2, body.cat-imersiva .fale-loja p { color: var(--c
 .chip-header.btn-ajudante .ico { width: 24px; height: 24px; }
 .sem-ia .btn-ajudante { display: none; }
 .btn-ajudante.pulse-anim { color: #fff; }
+/* a barra "Ver pedido" ocupa a largura toda: o espaço da direita era do antigo botão Ajuda, que foi para o cabeçalho */
+@media (max-width: 600px) { .btn-flutuante-carrinho, .sem-ia .btn-flutuante-carrinho { left: 16px; right: 16px; } }
 /* "Fale com a loja" logo depois dos produtos (o espaço de baixo era reservado à barra do pedido, que cobre o rodapé, não esta parte) */
 @media (max-width: 600px) {
     .layout:has(~ .fale-loja:not([hidden])) { padding-bottom: 8px; }

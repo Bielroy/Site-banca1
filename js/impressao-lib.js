@@ -46,6 +46,7 @@ export function cupomDoPedido(p, { loja = '', aviso = '' } = {}) {
     itens.forEach((i) => {
         if (i.aPesar) { aPesar++; L.push({ t: 'par', e: `${qtdTxt(i)} ${limpo(i.nome, 60)}`, d: 'a pesar' }); }
         else { soma += Number(i.subtotal) || 0; L.push({ t: 'par', e: `${qtdTxt(i)} ${limpo(i.nome, 60)}`, d: reais(i.subtotal) }); }
+        if (i.adicionais) L.push(txt(`  + ${limpo(i.adicionais, 200)}`));   // montar pedido: o que o cliente escolheu
     });
     L.push(SEP);
     const desc = p.cupom && Number(p.cupom.desconto) > 0 ? Number(p.cupom.desconto) : 0;

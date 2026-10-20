@@ -57,7 +57,8 @@
 #modal-produto.sem-descricao [data-campo="descricao"],
 #modal-produto.sem-insumo [data-campo="insumo"],
 #modal-produto.sem-duracao [data-campo="duracao"],
-#modal-produto.sem-rotulo [data-campo="rotulo"] { display: none !important; }
+#modal-produto.sem-rotulo [data-campo="rotulo"],
+#modal-produto.sem-montar [data-campo="montar"] { display: none !important; }
 
 /* ---------------------------------------------------------------
    VÁRIOS DE UMA VEZ (js/admin-varios.js)

@@ -3668,3 +3668,58 @@ teste('plataforma: liga e desliga campos do cadastro de produto por loja', async
   console.log(`\n${testes.length - falhas} de ${testes.length} testes passaram.`);
   process.exit(falhas ? 1 : 0);
 })();
+
+// ------------------------------------------------------------------ montar pedido
+teste('montar pedido: a conta do navegador e a do servidor são iguais, e as regras do grupo valem', async () => {
+  const S = require(raiz('lib/montar.js')); const N = await import(raiz('js/montar-lib.js'));
+  const grupos = S.gruposDoModelo('acai'); grupos[1].opcoes[0].preco = 4; grupos.push({ id: 'tam', nome: 'Tamanho', min: 1, max: 1, opcoes: [{ id: 'p', nome: '300 ml', preco: 0 }, { id: 'g', nome: '500 ml', preco: 5 }] });
+  const p = { unidade: 'un', preco: 15, montar: { grupos } };
+  assert.deepStrictEqual(S.montarDoProduto(p), N.montarDoProduto(p));
+  const casos = [{}, { tam: ['g'] }, { tam: ['g'], complementos: ['granola', 'banana'], adicionais: ['nutella', 'mel'] }, { tam: ['p', 'g'] }, { tam: ['zz'] }, { tam: ['p'], complementos: ['granola', 'banana', 'pacoca', 'morango', 'amendoim'] }];
+  for (const c of casos) assert.deepStrictEqual(S.conferirEscolha(S.montarDoProduto(p), c), N.conferirEscolha(N.montarDoProduto(p), c), JSON.stringify(c));
+  const m = S.montarDoProduto(p);
+  assert.match(S.conferirEscolha(m, {}).erro, /Tamanho/, 'grupo obrigatório');
+  assert.strictEqual(S.conferirEscolha(m, { tam: ['g'], adicionais: ['nutella', 'mel'] }).extraC, 500 + 400 + 200);
+  assert.strictEqual(S.conferirEscolha(m, { tam: ['p', 'g'] }).ok, false, 'escolha única');
+  assert.strictEqual(S.conferirEscolha(m, { tam: ['p'], complementos: ['granola', 'banana', 'pacoca', 'morango', 'amendoim'] }).ok, false, 'passa do máximo');
+  // "2 grátis": as mais caras saem de graça
+  const g2 = S.montarDoProduto({ unidade: 'un', preco: 10, montar: { grupos: [{ id: 'x', nome: 'Extras', max: 3, gratis: 2, opcoes: [{ id: 'a', nome: 'A', preco: 1 }, { id: 'b', nome: 'B', preco: 3 }, { id: 'c', nome: 'C', preco: 2 }] }] } });
+  assert.strictEqual(S.conferirEscolha(g2, { x: ['a', 'b', 'c'] }).extraC, 100);
+  assert.strictEqual(S.regraDoGrupo(g2.grupos[0]), 'Escolha até 3 · 2 grátis · opcional');
+  // produto por quilo não se monta; opção inventada some; ids vêm do nome quando faltam
+  assert.strictEqual(S.montarDoProduto({ unidade: 'kg', montar: { grupos } }), null);
+  assert.strictEqual(S.montarDoProduto({ unidade: 'un', montar: { grupos: [{ nome: 'X', opcoes: [] }] } }), null);
+  assert.strictEqual(S.montarDoProduto({ unidade: 'un', montar: { grupos: [{ nome: 'Coberturas', opcoes: [{ nome: 'Leite condensado' }] }] } }).grupos[0].opcoes[0].id, 'leite-condensado');
+  assert.deepStrictEqual(S.limparOpcoes({ ok: ['a', 'a', 'b'], 'MAL/': ['x'], vazio: [], num: [1] }), { ok: ['a', 'b'] });
+  // a linha da sacola: mesma escolha (em outra ordem) = mesma linha
+  const l1 = N.remontar({ id: 'acai', ...p }, { tam: ['g'], adicionais: ['mel', 'nutella'] }, 2), l2 = N.remontar({ id: 'acai', ...p }, { adicionais: ['nutella', 'mel'], tam: ['g'] }, 1);
+  assert.strictEqual(l1.linha, l2.linha); assert.strictEqual(l1.preco, 26); assert.match(l1.adicionais, /Tamanho: 500 ml/);
+});
+
+teste('montar pedido no checkout: servidor cobra as escolhas, aceita o mesmo produto montado de dois jeitos e baixa o estoque somado', async () => {
+  const S = require(raiz('lib/montar.js'));
+  const sem = semente();
+  sem['tenants/espetinhos/produtos/acai'] = { nome: 'Açaí 300 ml', preco: 15, unidade: 'un', cat: 'acai', ativo: true, estoqueFisico: 10, montar: { grupos: S.gruposDoModelo('acai') } };
+  const db = criarBanco(sem); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  const p = pedido({ itens: [
+    { id: 'acai', qtd: 2, tipo: 'un', precoOriginal: 1, opcoes: { complementos: ['granola', 'banana'] } },
+    { id: 'acai', qtd: 1, tipo: 'un', precoOriginal: 1, opcoes: { complementos: ['granola'], adicionais: ['nutella', 'mel'] } },
+  ] });
+  const r = await chamar(api, { headers: { ...ip(), 'X-Loja': 'espetinhos' }, body: p });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(r.corpo.pedido.total, 2 * 15 + (15 + 4 + 2), 'preço vem do cadastro, com os adicionais');
+  const gravado = db._dados.get(`tenants/espetinhos/pedidos/${p.idempotencyKey}`);
+  assert.strictEqual(gravado.itens.length, 2);
+  assert.strictEqual(gravado.itens[1].adicionais, 'Complementos: Granola · Adicionais: Nutella, Mel');
+  assert.deepStrictEqual(gravado.itens[1].opcoes, { complementos: ['granola'], adicionais: ['nutella', 'mel'] });
+  assert.strictEqual(gravado.itens[1].preco, 21); assert.strictEqual(gravado.itens[1].precoBase, 15);
+  assert.strictEqual(db._dados.get('tenants/espetinhos/produtos/acai').estoqueFisico, 7, 'as duas linhas baixam juntas');
+  assert.ok(decodeURIComponent(r.corpo.pedido.whatsappMsg).includes('↳ Complementos: Granola · Adicionais: Nutella, Mel'));
+  // o mesmo jeito duas vezes, opção que não existe e grupo acima do máximo são recusados
+  const repetido = await chamar(api, { headers: { ...ip(), 'X-Loja': 'espetinhos' }, body: pedido({ itens: [{ id: 'acai', qtd: 1, opcoes: { complementos: ['banana', 'granola'] } }, { id: 'acai', qtd: 1, opcoes: { complementos: ['granola', 'banana'] } }] }) });
+  assert.strictEqual(repetido.status, 400); assert.match(repetido.corpo.error, /repetido/);
+  const inventada = await chamar(api, { headers: { ...ip(), 'X-Loja': 'espetinhos' }, body: pedido({ itens: [{ id: 'acai', qtd: 1, opcoes: { adicionais: ['ouro'] } }] }) });
+  assert.strictEqual(inventada.status, 400); assert.match(inventada.corpo.error, /acabou/);
+  const demais = await chamar(api, { headers: { ...ip(), 'X-Loja': 'espetinhos' }, body: pedido({ itens: [{ id: 'acai', qtd: 1, opcoes: { complementos: ['granola', 'banana', 'pacoca', 'morango', 'amendoim'] } }] }) });
+  assert.strictEqual(demais.status, 400); assert.match(demais.corpo.error, /até 4/);
+});

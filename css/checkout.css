@@ -1,0 +1,85 @@
+/* =====================================================================
+   css/checkout.css — "Confira e envie" pensado para o celular com teclado
+   (js/checkout-teclado.js). Comanda fechada numa linha, campos na ordem
+   do que importa, pagamento em botões, o opcional recolhido.
+   ===================================================================== */
+#modal-checkout .modal-body { padding: 18px 18px 22px; }
+#modal-checkout .form-group { margin-bottom: 14px; }
+#modal-checkout .form-group label { margin-bottom: 6px; }
+#modal-checkout .checkout-sub { margin: 4px 0 10px; }
+#modal-checkout .chk-oferta { margin: -6px 0 14px; font-size: .85rem; }
+
+/* comanda numa linha: "Seu pedido · 3 itens · para hoje ........ R$ 38,00 ▾" */
+.comanda { margin: 6px 0 16px; padding: 12px 14px 10px; }
+.cm-dobra > summary { list-style: none; cursor: pointer; }
+.cm-dobra > summary::-webkit-details-marker { display: none; }
+.cm-dobra .cm-cab { align-items: center; border-bottom: 0; padding-bottom: 2px; }
+.cm-dobra[open] .cm-cab { border-bottom: 2px solid #1a3a2a; padding-bottom: 8px; margin-bottom: 2px; }
+.cm-cab-txt { display: flex; flex-direction: column; min-width: 0; }
+.cm-cab-txt small { font-size: .8rem; font-weight: 600; color: #6b665b; }
+.cm-cab-total { margin-left: auto; font-family: var(--fonte-titulo); font-size: 1.25rem; font-weight: 750; color: #1a3a2a; white-space: nowrap; }
+.cm-seta { width: 10px; height: 10px; border-right: 2.5px solid #1a3a2a; border-bottom: 2.5px solid #1a3a2a; transform: rotate(45deg) translateY(-3px); transition: transform .2s ease; flex: none; margin-left: 4px; }
+.cm-dobra[open] .cm-seta { transform: rotate(-135deg) translateY(-2px); }
+.cm-dobra:not([open]) .cm-cab-total { font-size: 1.15rem; }
+
+/* pagamento: um toque, sem lista para abrir */
+.pag-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); gap: 8px; }
+.pag-chips[hidden] { display: none; }
+.pag-chip { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; min-height: 56px; padding: 8px 12px; text-align: left; cursor: pointer;
+    border-radius: 14px; border: 1.5px solid var(--linha, #e0d9c8); background: var(--superficie, #fff); color: var(--text-dark); font: inherit; transition: border-color .15s ease, background .15s ease; }
+.pag-chip b { font-size: .98rem; }
+.pag-chip small { font-size: .74rem; color: var(--text-mid); line-height: 1.2; }
+.pag-chip.on { border-color: var(--cor-botao, var(--forest)); background: color-mix(in srgb, var(--cor-botao, var(--forest)) 9%, var(--superficie, #fff)); box-shadow: inset 0 0 0 1px var(--cor-botao, var(--forest)); }
+.pag-select { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.pag-select.pag-select--so { position: static; width: 100%; height: auto; opacity: 1; pointer-events: auto; }
+
+/* o opcional, recolhido */
+.checkout-mais { border: 1.5px solid var(--linha, #e4dfd3); border-radius: 14px; margin-top: 4px; }
+.checkout-mais > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding: 14px 16px; min-height: 50px; }
+.checkout-mais > summary::-webkit-details-marker { display: none; }
+.checkout-mais > summary::before { content: '+'; font-weight: 800; color: var(--forest-texto, var(--forest)); width: 1em; }
+.checkout-mais[open] > summary::before { content: '−'; }
+.checkout-mais > summary small { color: var(--text-light, #7b7466); font-size: .82rem; }
+.checkout-mais > :not(summary) { margin-left: 14px; margin-right: 14px; }
+.checkout-mais[open] { padding-bottom: 14px; }
+
+/* TECLADO ABERTO (celular): a tela ocupa só o que sobra, o topo encolhe e o botão Enviar espera o teclado fechar */
+@media (max-width: 600px) {
+    .teclado-aberto #modal-checkout.aberto { inset: auto 0 auto 0; top: var(--vv-top, 0px); height: var(--vv-h, 100dvh); align-items: stretch; }
+    .teclado-aberto #modal-checkout .modal { max-height: none; height: 100%; border-radius: 0; animation: none; }
+    .teclado-aberto #modal-checkout .modal-head { padding: 8px 16px; }
+    .teclado-aberto #modal-checkout .modal-head h2 { font-size: 1.05rem; }
+    .teclado-aberto #modal-checkout .modal-head .btn-fechar { width: 36px; height: 36px; }
+    .teclado-aberto #modal-checkout .modal-footer { display: none; }
+    .teclado-aberto #modal-checkout .modal-body { padding-bottom: 40vh; }   /* o último campo também consegue subir até o meio */
+}
+
+/* =====================================================================
+   A SACOLA ("Ver pedido")
+   ===================================================================== */
+.carrinho-topo { gap: 8px; }
+.carrinho-topo .carrinho-titulo { margin-right: auto; }
+.carrinho-fechar { display: none; width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--parchment, #f1ead9); color: var(--text-dark); font-size: 1.5rem; line-height: 1; cursor: pointer; flex: none; }
+.carrinho-continuar { display: none; width: 100%; margin-top: 6px; min-height: 44px; border: 0; background: none; font: inherit; font-weight: 700; font-size: .92rem; color: var(--forest-texto, var(--forest)); cursor: pointer; }
+@media (max-width: 600px) {
+    .carrinho-fechar, .carrinho-continuar { display: block; }
+    .carrinho-topo { padding: 14px 16px 12px; }
+    /* o rodapé (total e botão) fica sempre à vista; só os itens rolam */
+    #carrinho.aberto { display: flex; flex-direction: column; }
+    #carrinho.aberto .carrinho-rolo { flex: 1 1 auto; overflow-y: auto; min-height: 0; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
+    #carrinho.aberto .carrinho-itens { overflow: visible; flex: none; }
+    #carrinho .lista-semana-card { margin: 4px 16px 12px; }
+    /* total e botão mais baixinhos: sobra lugar para ver os itens */
+    #carrinho .total-box { padding: 10px 16px; margin-bottom: 8px; }
+    #carrinho .total-valor { font-size: 1.45rem; }
+    #carrinho .carrinho-continuar { min-height: 38px; margin-top: 2px; }
+    #carrinho.aberto .carrinho-rodape { flex: none; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 -8px 20px rgba(0,0,0,.06); }
+    /* "Que tal levar?" mais baixinho: é sugestão, não pode empurrar o total para fora */
+    #carrinho .upsell-box { padding: 8px 12px; margin: 8px 16px; }
+    #carrinho .upsell-foto { width: 40px; height: 40px; }
+}
+.carrinho-item--montado { align-items: flex-start; }
+
+/* computador e tablet: itens, sugestão e lista rolam juntos dentro da sacola */
+.carrinho-rolo { display: flex; flex-direction: column; min-height: 0; }
+@media (min-width: 601px) { .carrinho-rolo { flex: 1 1 auto; overflow-y: auto; } .carrinho-rolo .carrinho-itens { overflow: visible; flex: none; } .carrinho-rolo .lista-semana-card { margin: 4px 20px 12px; } }
