@@ -56,14 +56,40 @@ a, button, [data-action] { touch-action: manipulation; }
 @media (min-width: 601px) { #lista-produtos { --card-min: 11.5rem; gap: 1rem; } }
 @media (min-width: 1025px) { #lista-produtos { --card-min: 10.75rem; gap: 1.1rem; } }
 
-/* UMA coluna só (letra bem grande, ou celular muito estreito): foto à esquerda, nome/preço/botão à direita */
-@container vitrine (max-width: 19.55rem) {
-    .produtos-grid .produto-card { flex-direction: row; align-items: stretch; }
-    .produtos-grid .produto-card .produto-img-wrap { flex: 0 0 38%; align-self: flex-start; margin: 8px 0 8px 8px; aspect-ratio: 1; }
-    .produtos-grid .produto-card .produto-info { flex: 1 1 auto; min-width: 0; justify-content: center; }
-    .produtos-grid .produto-card .produto-nome { min-height: 0; -webkit-line-clamp: 3; line-clamp: 3; }
-    #lista-produtos .produto-card--imersivo .produto-img-wrap { margin: 4px 0; }
-    #lista-produtos .produto-card--imersivo .produto-info { padding: 4px 0 4px 12px; }
+/* CELULAR ESTREITO COM LETRA NORMAL (iPhone com "Zoom da Tela: Ampliado", iPhone SE/mini): a tela tem 320px e o
+   cartão de 9,4rem não cabia duas vezes: a cliente via um produto por linha. Aqui o cartão fica um pouco mais estreito
+   e continuam DUAS colunas. Com a letra grande ligada (.texto-grande) segue uma coluna, que é para ler melhor. */
+@media (max-width: 359px) { html:not(.texto-grande) #lista-produtos { --card-min: 8.4rem; gap: .6rem; } }
+
+/* UMA coluna só (letra bem grande, ou celular muito estreito): foto à esquerda, nome/preço/botão à direita.
+   A largura em que vira uma coluna depende do cartão: 2 × 9,4rem + espaço; no celular estreito com letra normal, 2 × 8,4rem + espaço. */
+@media not all and (max-width: 359px) {
+    @container vitrine (max-width: 19.55rem) {
+        .produtos-grid .produto-card { flex-direction: row; align-items: stretch; }
+        .produtos-grid .produto-card .produto-img-wrap { flex: 0 0 38%; align-self: flex-start; margin: 8px 0 8px 8px; aspect-ratio: 1; }
+        .produtos-grid .produto-card .produto-info { flex: 1 1 auto; min-width: 0; justify-content: center; }
+        .produtos-grid .produto-card .produto-nome { min-height: 0; -webkit-line-clamp: 3; line-clamp: 3; }
+        #lista-produtos .produto-card--imersivo .produto-img-wrap { margin: 4px 0; }
+        #lista-produtos .produto-card--imersivo .produto-info { padding: 4px 0 4px 12px; }
+    }
+}
+@media (max-width: 359px) {
+    @container vitrine (max-width: 19.55rem) {
+        html.texto-grande .produtos-grid .produto-card { flex-direction: row; align-items: stretch; }
+        html.texto-grande .produtos-grid .produto-card .produto-img-wrap { flex: 0 0 38%; align-self: flex-start; margin: 8px 0 8px 8px; aspect-ratio: 1; }
+        html.texto-grande .produtos-grid .produto-card .produto-info { flex: 1 1 auto; min-width: 0; justify-content: center; }
+        html.texto-grande .produtos-grid .produto-card .produto-nome { min-height: 0; -webkit-line-clamp: 3; line-clamp: 3; }
+        html.texto-grande #lista-produtos .produto-card--imersivo .produto-img-wrap { margin: 4px 0; }
+        html.texto-grande #lista-produtos .produto-card--imersivo .produto-info { padding: 4px 0 4px 12px; }
+    }
+    @container vitrine (max-width: 17.4rem) {
+        html:not(.texto-grande) .produtos-grid .produto-card { flex-direction: row; align-items: stretch; }
+        html:not(.texto-grande) .produtos-grid .produto-card .produto-img-wrap { flex: 0 0 38%; align-self: flex-start; margin: 8px 0 8px 8px; aspect-ratio: 1; }
+        html:not(.texto-grande) .produtos-grid .produto-card .produto-info { flex: 1 1 auto; min-width: 0; justify-content: center; }
+        html:not(.texto-grande) .produtos-grid .produto-card .produto-nome { min-height: 0; -webkit-line-clamp: 3; line-clamp: 3; }
+        html:not(.texto-grande) #lista-produtos .produto-card--imersivo .produto-img-wrap { margin: 4px 0; }
+        html:not(.texto-grande) #lista-produtos .produto-card--imersivo .produto-info { padding: 4px 0 4px 12px; }
+    }
 }
 
 /* ---------- 4. LETRA GRANDE (js/texto-grande.js) ---------- */

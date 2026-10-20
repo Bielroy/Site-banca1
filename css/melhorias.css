@@ -17,6 +17,9 @@
 /* Card fora da tela não é desenhado até chegar perto (o navegador guarda o tamanho depois da 1ª vez).
    Com catálogo grande, a vitrine abria com o celular travado desenhando centenas de cards invisíveis. */
 #lista-produtos > .produto-card { content-visibility: auto; contain-intrinsic-size: auto 330px; }
+/* iPhone/iPad (todo navegador de iPhone usa o motor do Safari): o "não desenha o que está fora da tela" do Safari
+   deixava cards em BRANCO (só a borda e o selo, sem foto, nome e preço), pior com zoom e letra grande. Lá fica desligado. */
+@supports (-webkit-touch-callout: none) { #lista-produtos > .produto-card { content-visibility: visible; contain-intrinsic-size: none; } }
 /* Montagem por baixo da tela de entrada: invisível (não conta como "pulo" de tela). js/melhorias-ui.js tira a classe. */
 body.montando > :not(#splash-feira):not(script) { visibility: hidden; }
 /* O rodapé começa abaixo da tela: antes ele aparecia no meio da página vazia e era empurrado quando a vitrine chegava. */
