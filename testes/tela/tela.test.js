@@ -1199,6 +1199,55 @@ teste('impressão automática "ao aceitar": pedido novo espera; o aceito sai; ma
   }
 });
 
+teste('pedido do WhatsApp: imprime só o texto; depois "Conferir e registrar" casa com os produtos, registra e limpa; o próximo colado não junta com o anterior', async () => {
+  const antes = servidor.chamadas.length;
+  const ctx = await navegador.newContext({ ...CELULAR });
+  await ctx.addInitScript((c) => { window.__CENARIO = c; }, cenarioImpressao());
+  await ctx.addInitScript(impressoraFalsa, { modo: 'ponte', largura: 80, acentos: true, auto: 'manual', aparelho: 'ap-teste-07' });
+  await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+  await p.goto(servidor.base + '/admin.html');
+  await p.waitForTimeout(800);
+  await p.click('#btn-mais'); await p.click('#btn-impressora');
+  await p.locator('#ipr-itens').waitFor({ timeout: 6000 });
+  await p.fill('#ipr-itens', '[09:12, 21/10/2026] Viviane: 2 kg de tomatw; 3 bananas prata; 2 alfaces\n[09:13, 21/10/2026] Viviane: eu passo pegar por volta das 18 horas, so me avisar');
+  await p.fill('#ipr-nome', 'Viviane'); await p.fill('#ipr-pagamento', 'pix');
+  assert.strictEqual(await p.locator('#ipr-conf').isVisible(), false, 'antes de imprimir, só o papel');
+  await p.click('#ipr-imprimir');
+  await p.locator('#ipr-conf .iconf-convite').waitFor({ timeout: 4000 });
+  assert.ok(!servidor.chamadas.slice(antes).some((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'mensagem'), 'imprimir não registra nada');
+  await p.click('[data-conf="abrir"]');
+  await p.locator('#ipr-conf .iconf-linha').first().waitFor({ timeout: 3000 });
+  const linhas = await p.$$eval('#ipr-conf .iconf-linha', (ls) => ls.map((l) => ({ cls: l.className, prod: l.querySelector('[data-k="produto"]').selectedOptions[0].textContent.replace('★ ', ''), qtd: l.querySelector('[data-k="qtd"]')?.value || '', tipo: l.querySelector('[data-k="tipo"]')?.value || '' })));
+  assert.deepStrictEqual(linhas.map((l) => [l.prod, l.qtd, l.tipo]), [['Tomate italiano', '2', 'kg'], ['Banana prata', '3', 'un'], ['Alface crespa', '2', ''], ['Recado (não entra)', '', '']], JSON.stringify(linhas));
+  assert.ok(linhas[3].cls.includes('iconf-recado'));
+  assert.strictEqual(await p.locator('#iconf-pag').inputValue(), 'PIX', 'pagamento do campo de cima');
+  if (process.env.PRINT_CONF) { await p.locator('#ipr-conf').scrollIntoViewIfNeeded(); await p.locator('#ipr-conf').screenshot({ path: process.env.PRINT_CONF }); }
+  const largura = await p.evaluate(() => document.documentElement.scrollWidth);
+  assert.ok(largura <= 392, `a conferência passou da largura do celular (${largura}px)`);
+  // troca a banana para "kg" com 1,5: o valor da linha muda na hora
+  const ban = p.locator('#ipr-conf .iconf-linha').nth(1);
+  await ban.locator('[data-k="tipo"]').selectOption('kg');
+  await p.locator('#ipr-conf .iconf-linha').nth(1).locator('[data-k="qtd"]').fill('1,5');
+  await p.locator('#ipr-conf .iconf-linha').nth(1).locator('[data-k="qtd"]').dispatchEvent('change');
+  assert.match(await p.locator('#ipr-conf .iconf-linha').nth(1).locator('.iconf-valor').innerText(), /10,35/, '1,5 kg × 6,90');
+  await p.click('[data-conf="registrar"]');
+  await p.waitForFunction(() => document.getElementById('ipr-conf').hidden, null, { timeout: 4000 });
+  const reg = servidor.chamadas.slice(antes).filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'mensagem').pop();
+  assert.ok(reg, 'registrou');
+  assert.deepStrictEqual(reg.corpo.itens, [{ id: 'tomate', tipo: 'kg', qtd: 2 }, { id: 'banana', tipo: 'kg', qtd: 1.5 }, { id: 'alface', tipo: 'un', qtd: 2 }]);
+  assert.strictEqual(reg.corpo.pag, 'PIX'); assert.strictEqual(reg.corpo.cliente.nome, 'Viviane'); assert.match(reg.corpo.obs, /passo pegar/, 'o recado vai na observação');
+  assert.strictEqual(await p.locator('#ipr-itens').inputValue(), '', 'tela limpa para o próximo pedido');
+  // imprime um, cola outro: o novo SUBSTITUI o anterior
+  await p.fill('#ipr-itens', '1 alface'); await p.fill('#ipr-nome', 'Primeiro');
+  await p.click('#ipr-imprimir'); await p.locator('#ipr-conf .iconf-convite').waitFor({ timeout: 4000 });
+  await p.locator('#ipr-itens').focus();
+  await p.evaluate(() => { const t = document.getElementById('ipr-itens'); t.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: false })); t.value += '2 kg de tomate'; t.dispatchEvent(new Event('input', { bubbles: true })); });
+  assert.strictEqual(await p.locator('#ipr-itens').inputValue(), '2 kg de tomate', 'o pedido anterior saiu');
+  assert.strictEqual(await p.locator('#ipr-nome').inputValue(), '', 'o nome do anterior também');
+  semErros(errosP); await ctx.close();
+});
+
 teste('celular da banca (app Ponte): este painel não imprime sozinho, mostra o celular e o "Cupom" vai para a fila dele', async () => {
   const antes = servidor.chamadas.length;
   const ctx = await navegador.newContext({ viewport: { width: 1200, height: 900 }, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' });
@@ -1472,7 +1521,7 @@ teste('painel: "Vários de uma vez" cria os pastéis com o mesmo preço (preço 
 (async () => {
   servidor = await subir({
     // pesagem (de mentira): devolve o pedido pesado como o api/pdv.js de verdade
-    '/api/pdv': (c) => (c.acao === 'impressao' ? { sucesso: true, ok: true } : c.acao === 'ponte' ? ponteFalsa(c) : c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
+    '/api/pdv': (c) => (c.acao === 'impressao' ? { sucesso: true, ok: true } : c.acao === 'ponte' ? ponteFalsa(c) : c.acao === 'mensagem' ? { sucesso: true, id: c.chave, total: 24.3, itens: c.itens.length, aPesar: c.itens.filter((i) => i.id === 'banana' && i.tipo === 'un').length } : c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
     // ranking (de mentira) da banca, ao contrário da ordem do cadastro, chegando 1,5 s depois
     '/api/analytics': (c) => (c.acao === 'ranking' ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, nivel: 'popular', itens: ['ovos', 'banana', 'alface', 'tomate'].map((id, i) => ({ id, p: 0.9 - i * 0.2 })) }), 1500)) : {}),
     '/api/checkout': (c) => (c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),

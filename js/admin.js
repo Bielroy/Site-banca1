@@ -44,7 +44,7 @@ document.getElementById('btn-avisos')?.addEventListener('click', async () => { t
 let condominiosAtuais = [];
 const ABRIR = {
     aparencia: (m) => { m.abrirAparencia(); TELAS.vitrine().then((v) => v.abrirVitrine(categoriasComProduto())).catch((e) => console.error(e)); }, estoque: (m) => m.abrirEstoque(produtosAtuais), compras: (m) => m.abrirCompras(produtosAtuais),
-    pdv: (m) => { m.definirCondominiosPdv(condominiosAtuais); m.abrirPdv(produtosAtuais); }, crm: (m) => m.abrirCrm(produtosAtuais), copiloto: (m) => m.abrirCopiloto(), calendario: (m) => m.abrirCalendario({ podeEditar: ehGestor(papelAtual) }), equipe: (m) => m.abrirEquipe(), impressora: (m) => m.abrirAbaImpressora(),
+    pdv: (m) => { m.definirCondominiosPdv(condominiosAtuais); m.abrirPdv(produtosAtuais); }, crm: (m) => m.abrirCrm(produtosAtuais), copiloto: (m) => m.abrirCopiloto(), calendario: (m) => m.abrirCalendario({ podeEditar: ehGestor(papelAtual) }), equipe: (m) => m.abrirEquipe(), impressora: (m) => m.abrirAbaImpressora(produtosAtuais),
 };
 // categorias que têm produto à venda (para o botão "Ver Frutas" dos quadros da vitrine)
 const categoriasComProduto = () => [...new Set(produtosAtuais.filter((p) => p.ativo && !p.soInsumo && p.cat).map((p) => p.cat))]
@@ -459,6 +459,7 @@ const iniciarRealTimeSync = () => {
         renderProdutos();
         const abaAberta = (n) => document.getElementById(`aba-${n}`)?.classList.contains('active');
         ['estoque', 'compras', 'pdv'].forEach((n) => { if (abaAberta(n)) abrirTela(n); });
+        if (abaAberta('impressora')) import('./admin-impressora.js').then((m) => m.definirProdutosImpressora(produtosAtuais)).catch(() => { /* tela ainda não carregou */ });
     };
     if (cuidaDeEstoque(papelAtual)) unsubscribes.push(onSnapshot(tcol("produtos_custos"), (snap) => {
         custosPorId = new Map(snap.docs.map(d => [d.id, d.data()])); juntarProdutos();

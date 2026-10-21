@@ -147,3 +147,43 @@
 @media (prefers-reduced-motion: reduce) { .ipr-status.espera .ipr-led { animation: none; } .ipr-seg button { transition: none; } }
 /* nesta tela a faixa de cima já diz como a impressora está: a faixa geral da impressão automática sai */
 #dashboard:has(#aba-impressora.active) #imp-auto { display: none; }
+
+/* ---------------- Conferir e registrar o pedido do WhatsApp (js/admin-conferir-whats.js) ---------------- */
+.iconf { margin-top: 14px; }
+.iconf[hidden] { display: none; }
+.iconf-convite { display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 14px; background: color-mix(in srgb, var(--forest) 7%, #fff); border: 1.5px dashed color-mix(in srgb, var(--forest) 35%, #fff); }
+.iconf-convite b { font-size: 1rem; color: var(--forest); }
+.iconf-convite span { font-size: .86rem; color: var(--text-mid); line-height: 1.45; }
+.iconf-bt { align-self: flex-start; min-height: 46px; margin-top: 4px; padding: 10px 18px; border: 0; border-radius: 12px; background: var(--forest); color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
+.iconf-bt:disabled { opacity: .55; cursor: default; }
+.iconf-cab { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.iconf-cab b { font-size: 1.1rem; color: var(--forest); }
+.iconf-cab span { font-size: .86rem; color: var(--text-mid); }
+.iconf-cab em { font-style: normal; font-weight: 800; color: #8a5a00; }
+.iconf-dica { margin: 4px 0 10px; font-size: .8rem; color: var(--text-mid); }
+.iconf-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.iconf-linha { padding: 10px 12px; border-radius: 12px; background: #fff; border: 1.5px solid #e6e1d6; border-left-width: 5px; }
+.iconf-ok { border-left-color: #2f8a55; }
+.iconf-duvida { border-left-color: #e0a100; background: #fffaf0; }
+.iconf-nada { border-left-color: #c0392b; background: #fff6f5; }
+.iconf-fora, .iconf-recado { border-left-color: #c9c3b6; background: #f7f5f0; }
+.iconf-fora .iconf-orig, .iconf-recado .iconf-orig { text-decoration: none; opacity: .75; }
+.iconf-orig { display: block; margin-bottom: 6px; font-size: .78rem; color: var(--text-mid); line-height: 1.35; word-break: break-word; }
+.iconf-campos { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.iconf-prod { flex: 1 1 100%; min-width: 0; min-height: 44px; padding: 8px 10px; border-radius: 10px; border: 1.5px solid #ddd6c8; background: #fff; font-size: 16px; }
+.iconf-qtd { width: 76px; min-height: 42px; padding: 8px 10px; border-radius: 10px; border: 1.5px solid #ddd6c8; font-size: 16px; text-align: right; }
+.iconf-campos select[data-k="tipo"] { min-height: 42px; padding: 6px 8px; border-radius: 10px; border: 1.5px solid #ddd6c8; background: #fff; font-size: 15px; }
+.iconf-un { font-size: .85rem; color: var(--text-mid); }
+.iconf-valor { margin-left: auto; font-size: .95rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.iconf-aviso { margin: 6px 0 0; font-size: .8rem; font-weight: 700; color: #8a5a00; line-height: 1.35; }
+.iconf-nada .iconf-aviso { color: #a1301f; }
+.iconf-rodape { position: sticky; bottom: 0; margin-top: 12px; padding: 12px; border-radius: 14px; background: #fff; border: 1.5px solid #e6e1d6; box-shadow: 0 -6px 16px -12px rgba(0,0,0,.25); }
+.iconf-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.iconf-grade .form-group { margin: 0; }
+.iconf-grade input, .iconf-grade select { width: 100%; min-height: 44px; font-size: 16px; }
+.iconf-total { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 10px 0; }
+.iconf-total span { color: var(--text-mid); font-weight: 600; }
+.iconf-total b { text-align: right; font-size: 1.05rem; color: var(--forest); }
+.iconf-acoes { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.iconf-acoes .iconf-bt { margin: 0; }
+@media (max-width: 380px) { .iconf-grade { grid-template-columns: 1fr; } }

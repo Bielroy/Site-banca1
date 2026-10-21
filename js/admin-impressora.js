@@ -2,8 +2,9 @@
 //  js/admin-impressora.js — tela "Impressora" do Menu.
 //
 //  Três partes, uma de cada vez:
-//    Pedido do WhatsApp  cola ou digita o pedido que chegou por mensagem e imprime o cupom
-//                        (não entra no sistema: para isso, use o Balcão).
+//    Pedido do WhatsApp  cola ou digita o pedido que chegou por mensagem e imprime o cupom.
+//                        Depois do papel, "Conferir e registrar" (opcional, js/admin-conferir-whats.js)
+//                        casa cada linha com um produto e grava o pedido no sistema.
 //    Foto                tira ou escolhe uma foto (lista escrita, print da conversa) e
 //                        imprime a imagem no papel, em preto e branco.
 //    Ajustes             caminho da impressora, papel, vias, impressão automática e o
@@ -17,6 +18,7 @@ import { paraCinza, rasterEscPos } from './rotulo-lib.js';
 import { prepararFoto, tamanhoNoPapel, tintaUsada } from './foto-termica-lib.js';
 import * as Ponte from './impressao-ponte.js';
 import { loja, mandar, pintar as pintarAjustes, ligarAjustes, larguraAtual, imprimirTeste } from './admin-impressao.js';
+import { criarConferencia } from './admin-conferir-whats.js';
 
 const $ = (id) => document.getElementById(id);
 const SECOES = { whats: 'Pedido do WhatsApp', foto: 'Foto', ajustes: 'Ajustes' };
@@ -28,6 +30,8 @@ const RASCUNHO = 'banca_impressora_rascunho';
 const lerRascunho = () => { try { return JSON.parse(sessionStorage.getItem(RASCUNHO) || 'null') || {}; } catch (_) { return {}; } };
 const guardarRascunho = (d) => { try { sessionStorage.setItem(RASCUNHO, JSON.stringify(d)); } catch (_) { /* armazenamento bloqueado */ } };
 const dadosDoForm = () => Object.fromEntries(CAMPOS.map((k) => [k, ($(`ipr-${k}`) || {}).value || '']));
+// depois de registrar, a tela fica pronta para o próximo pedido
+const Conferir = criarConferencia({ $, lerForm: dadosDoForm, depoisDeRegistrar: () => $('ipr-limpar')?.click() });
 
 // ---------------------------------------------------------------- faixa de cima: a impressora está pronta?
 function estadoDaImpressora() {
@@ -171,7 +175,7 @@ async function imprimirAgora() {
             const d = dadosDoForm();
             if (!avulsoTemConteudo(d)) return;
             const ok = await mandar([pedidoAvulso(d, { loja: nomeLoja })], { copias: S.vias }, S.vias > 1 ? `${S.vias} vias enviadas para a impressora.` : 'Pedido enviado para a impressora.');
-            if (ok) $('ipr-limpar').hidden = false;
+            if (ok) { $('ipr-limpar').hidden = false; S.impresso = true; Conferir.oferecer(); }
         }
     } finally { S.enviando = false; bt.textContent = antes; pintarPapel(); }
 }
@@ -223,8 +227,9 @@ function montar() {
                 </div>
                 <datalist id="ipr-pag-lista"><option value="PIX"><option value="Dinheiro"><option value="Cartão na entrega"><option value="Já pago"></datalist>
                 <datalist id="ipr-entrega-lista"><option value="Hoje"><option value="Amanhã"><option value="Retira na banca"></datalist>
-                <p class="ipr-nota">Este papel não entra na lista de pedidos nem no caixa. Para registrar a venda, lance no <button type="button" class="ipr-link" data-ir-aba="pdv">Balcão</button>.</p>
+                <p class="ipr-nota">O papel sai só com o texto. Depois de imprimir, se quiser, confira os produtos e registre o pedido: ele entra na lista de pedidos, no caixa e no estoque.</p>
                 <button type="button" class="ipr-link ipr-limpar" id="ipr-limpar"${avulsoTemConteudo(r) ? '' : ' hidden'}>Limpar para o próximo pedido</button>
+                <div class="iconf" id="ipr-conf" hidden></div>
             </section>
 
             <section class="ipr-painel" id="ipr-p-foto" role="tabpanel" aria-labelledby="ipr-tab-foto">
@@ -297,16 +302,22 @@ function ligar() {
         irPara(ks[i]); $(`ipr-tab-${ks[i]}`).focus();
     });
     $('ipr-p-whats').addEventListener('input', () => { guardarRascunho(dadosDoForm()); pintarPapel(); });
+    // Depois que a via saiu, o próximo pedido colado SUBSTITUI o anterior (antes ele ia junto, embaixo, e saía no
+    // papel do próximo cliente). Antes de imprimir, colar de novo junta: o cliente às vezes manda várias mensagens.
+    const novoPedidoSeJaSaiu = () => { if (!S.impresso) return; S.impresso = false; CAMPOS.forEach((k) => { const el = $(`ipr-${k}`); if (el) el.value = ''; }); $('ipr-limpar').hidden = true; Conferir.fechar(); };
+    $('ipr-itens').addEventListener('paste', novoPedidoSeJaSaiu);
     $('ipr-colar').addEventListener('click', async () => {
         try {
             const t = await navigator.clipboard.readText();
             if (!t || !t.trim()) { showToast('Não tem texto copiado. No WhatsApp, segure a mensagem e toque em Copiar.'); return; }
+            novoPedidoSeJaSaiu();
             const el = $('ipr-itens'); el.value = el.value.trim() ? `${el.value.trim()}\n${t.trim()}` : t.trim();
             guardarRascunho(dadosDoForm()); pintarPapel();
         } catch (_) { showToast('O navegador não deixou colar daqui. Segure dentro da caixa e toque em Colar.'); $('ipr-itens').focus(); }
     });
     $('ipr-limpar').addEventListener('click', () => {
         CAMPOS.forEach((k) => { const el = $(`ipr-${k}`); if (el) el.value = ''; });
+        S.impresso = false; Conferir.fechar();
         guardarRascunho({}); $('ipr-limpar').hidden = true; pintarPapel(); $('ipr-itens').focus();
     });
     for (const id of ['ipr-camera', 'ipr-galeria']) $(id).addEventListener('change', (e) => { abrirFoto(e.target.files && e.target.files[0]); e.target.value = ''; });
@@ -334,12 +345,15 @@ function ligar() {
 }
 
 /** Chamada quando a aba "Impressora" abre (js/admin.js). */
-export async function abrirAbaImpressora() {
+export async function abrirAbaImpressora(produtos) {
+    if (Array.isArray(produtos)) Conferir.definirProdutos(produtos);
     nomeLoja = await loja();
     if (!S.montada || !$('ipr-status')) montar();
     pintarStatus(); irPara(S.secao);
     if (lerConfig().modo === 'ponte') Ponte.atualizar();
 }
+/** Os produtos mudaram (preço, estoque, produto novo): a conferência do pedido usa a lista nova. */
+export const definirProdutosImpressora = (produtos) => Conferir.definirProdutos(produtos);
 /** Abre a aba "Impressora" numa parte: 'whats' | 'foto' | 'ajustes'. */
 export function irParaImpressora(secao = 'whats') {
     S.secao = SECOES[secao] ? secao : 'whats';

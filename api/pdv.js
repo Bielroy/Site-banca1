@@ -6,6 +6,12 @@
 //      vira um pedido já concluído (origem "balcao"), então entra sozinha no
 //      estoque, no faturamento, no Balanço e no motor de demanda.
 //
+//  POST { acao: 'mensagem', chave, itens:[{id, qtd, tipo:'kg'|'un'}], cliente:{nome, telefone, endereco}, pag, obs, entrega }
+//      Pedido que chegou por MENSAGEM (WhatsApp colado na tela da impressora, js/whats-produtos-lib.js).
+//      Vira um pedido normal, para hoje: preço do cadastro (nunca do navegador), por quilo com peso
+//      escrito = valor fechado; por quilo pedido em unidades = "a pesar" (fecha na Pesagem, como o da
+//      loja); por unidade = preço × quantidade. Baixa o estoque do que tem valor fechado, sem barrar.
+//
 //  POST { acao: 'pesagem', pedidoId, pesos:[{i, peso}] }
 //      Fecha a pesagem de um pedido da loja: calcula o valor de cada item pelo
 //      peso, MANTÉM o desconto do cupom e baixa do estoque o que foi pesado.
@@ -120,6 +126,81 @@ async function venda(req, res, { tid, dec }) {
   } catch (e) {
     if (P.ehFalhaInterna(e)) { await P.avisarFalha(db, tid, 'A venda no balcão', e); return res.status(500).json({ error: 'Não consegui registrar a venda agora. Tente de novo em instantes.' }); }
     return res.status(400).json({ error: e.message || 'Não foi possível registrar a venda.' });
+  }
+}
+
+async function mensagem(req, res, { tid, dec }) {
+  const b = req.body || {}, chave = String(b.chave || '');
+  if (!/^[\w-]{8,80}$/.test(chave)) return res.status(400).json({ error: 'Chave obrigatória.' });
+  const itens = Array.isArray(b.itens) ? b.itens : [];
+  if (!itens.length || itens.length > 120) return res.status(400).json({ error: 'Inclua pelo menos um produto.' });
+  if (itens.some((i) => !i || !/^[\w-]{1,80}$/.test(String(i.id)) || !['kg', 'un'].includes(i.tipo))) return res.status(400).json({ error: 'Produto inválido.' });
+  const pag = PAGAMENTOS.includes(b.pag) ? b.pag : null;
+  if (!pag) return res.status(400).json({ error: 'Escolha a forma de pagamento.' });
+  const c = b.cliente && typeof b.cliente === 'object' ? b.cliente : {};
+  const nome = V.texto(c.nome, 100);
+  if (!nome) return res.status(400).json({ error: 'Escreva o nome do cliente.' });
+  const hoje = Feira.hojeBR(), dow = new Date(`${hoje}T12:00:00-03:00`).getUTCDay();
+
+  try {
+    const saida = await db.runTransaction(async (t) => {
+      const pedidoRef = T.tdoc(db, tid, 'pedidos', chave);
+      const ids = [...new Set(itens.map((i) => String(i.id)))];
+      const [jaSnap, ...prodSnaps] = await Promise.all([t.get(pedidoRef), ...ids.map((id) => t.get(T.tdoc(db, tid, 'produtos', id)))]);
+      if (jaSnap.exists) return { repetido: true, id: chave, total: jaSnap.data().total };       // toque repetido
+      const prods = new Map(prodSnaps.map((s, i) => [ids[i], s]));
+
+      let totalC = 0; const linhas = [], baixa = new Map();
+      itens.forEach((item) => {
+        const s = prods.get(String(item.id));
+        if (!s || !s.exists) throw new Error('Um dos produtos não existe mais.');
+        const p = s.data(), frac = V.isFracionavel(p.unidade), preco = Feira.precoDoDia(p, dow);
+        if (!(preco > 0)) throw new Error(`"${p.nome}" está sem preço de venda.`);
+        let qtd = Number(item.qtd);
+        if (!Number.isFinite(qtd) || qtd <= 0 || qtd > 10000) throw new Error(`Quantidade inválida para "${p.nome}".`);
+        const base = { id: String(item.id), nome: p.nome, cat: p.cat || '', preco, precoOriginal: preco, unidade: p.unidade || 'un' };
+        if (item.tipo === 'kg') {
+          if (!frac) throw new Error(`"${p.nome}" é vendido por ${p.unidade || 'unidade'}, não por quilo.`);
+          qtd = E.fix(qtd); const subC = Math.round(V.paraCentavos(preco) * qtd); totalC += subC;
+          linhas.push({ ...base, qtd, tipo: 'kg', aPesar: false, subtotal: V.paraReais(subC) });
+          baixa.set(base.id, E.fix((baixa.get(base.id) || 0) + qtd));
+        } else {
+          qtd = Math.round(qtd);
+          if (qtd < 1) throw new Error(`Quantidade inválida para "${p.nome}".`);
+          if (frac) linhas.push({ ...base, qtd, tipo: 'un', aPesar: true, subtotal: 0 });       // por quilo, pedido em unidades: valor na balança
+          else {
+            const subC = Math.round(V.paraCentavos(preco) * qtd); totalC += subC;
+            linhas.push({ ...base, qtd, tipo: 'un', aPesar: false, subtotal: V.paraReais(subC) });
+            baixa.set(base.id, (baixa.get(base.id) || 0) + qtd);
+          }
+        }
+      });
+      // estoque: só o que tem valor fechado (o "a pesar" baixa na Pesagem). Pedido por mensagem nunca é barrado.
+      const movs = [];
+      for (const [id, q] of baixa) {
+        const s = prods.get(id), p = s.data(); if (!E.temControle(p.estoqueFisico)) continue;
+        const atual = Number(p.estoqueFisico), novo = Math.max(0, E.fix(atual - q));
+        t.update(s.ref, { estoqueFisico: novo, ativo: E.ativoDepois(p, novo) });
+        movs.push({ produtoId: id, nome: p.nome, unidade: p.unidade, tipo: 'venda', delta: E.fix(novo - atual), saldo: novo, custoUnit: p.custo, pedidoId: chave, obs: 'Pedido por mensagem', por: dec.email || dec.uid });
+      }
+      const total = V.paraReais(totalC), temItensAPesar = linhas.some((l) => l.aPesar);
+      const pedido = {
+        id: chave, tenantId: tid, userId: `equipe:${dec.uid}`, origem: 'mensagem', vendedor: dec.email || dec.uid,
+        nome, telefone: String(c.telefone || '').replace(/\D/g, '').slice(0, 13),
+        condominio: '', condominioId: '', formatoEndereco: 'livre', quadra: V.texto(c.endereco, 60), lote: '',
+        pag, troco: '', obs: V.texto(b.obs, 500), itens: linhas, total, clientTotal: total, temItensAPesar, cupom: null,
+        entrega: { taxa: 0, taxaCheia: 0, gratisAcima: 0, horario: V.texto(b.entrega, 60) },
+        status: temItensAPesar ? 'aguardando_pesagem' : 'pendente', data: new Date().toISOString(), entregaDia: hoje,
+      };
+      t.set(pedidoRef, Cofre.fecharCampos(pedido, tid));   // nome, telefone e endereço cifrados, como os da loja
+      E.registrarMovs(t, db, tid, movs, admin.firestore.FieldValue);
+      somarNoCaixa(t, tid, total, 1, hoje);
+      return { id: chave, total, itens: linhas.length, aPesar: linhas.filter((l) => l.aPesar).length };
+    });
+    return res.status(200).json({ sucesso: true, ...saida });
+  } catch (e) {
+    if (P.ehFalhaInterna(e)) { await P.avisarFalha(db, tid, 'O pedido por mensagem', e); return res.status(500).json({ error: 'Não consegui registrar o pedido agora. Tente de novo em instantes.' }); }
+    return res.status(400).json({ error: e.message || 'Não foi possível registrar o pedido.' });
   }
 }
 
@@ -256,6 +337,7 @@ module.exports = async function handler(req, res) {
   if (!T.temPapel(dec, tid, PODEM)) return res.status(403).json({ error: 'Sua conta não pode registrar vendas nesta loja.' });
   const acao = (req.body || {}).acao;
   if (acao === 'venda') return venda(req, res, { tid, dec });
+  if (acao === 'mensagem') return mensagem(req, res, { tid, dec });
   if (acao === 'pesagem') return pesagem(req, res, { tid, dec });
   if (acao === 'impressao') return impressao(req, res, { tid, dec });
   if (acao === 'ponte') return ponte(req, res, { tid, dec });

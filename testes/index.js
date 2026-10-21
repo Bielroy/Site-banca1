@@ -289,6 +289,61 @@ teste('preço por dia: o pedido cobra o preço do dia da ENTREGA (feira) ou de h
   r = await chamar(api, { headers: ip(), body: pedido({ feira: 'f-outro', itens: [{ id: 'tomate', qtd: 2, tipo: 'kg' }] }) });
   assert.strictEqual(r.corpo.pedido.total, 10, 'oferta: 2 kg × R$ 5');
 });
+teste('pedido por mensagem (WhatsApp colado): preço do cadastro, kg com peso fecha valor, kg em unidades fica a pesar e fecha na Pesagem', async () => {
+  const sem = sementeEstoque();
+  sem['produtos/manga'] = { nome: 'Manga palmer', preco: 9, unidade: 'kg', cat: 'frutas', ativo: true, pesoMedio: 500 };
+  const db = criarBancoP(sem); const api = carregarApi(raiz('api/pdv.js'), criarAdmin(db, TOKENS_P));
+  const chama = (body) => chamar(api, { headers: { Authorization: 'Bearer func-banca' }, body: { acao: 'mensagem', ...body } });
+  const chave = 'msg-' + Math.random().toString(36).slice(2, 12);
+  const corpo = { chave, pag: 'Dinheiro', cliente: { nome: 'Viviane', endereco: 'Qd10 Lt7', telefone: '(61) 99999-0000' }, entrega: '17:30 às 18h', obs: 'passo pegar',
+    itens: [{ id: 'tomate', qtd: 2, tipo: 'kg', preco: 0.01 }, { id: 'ovos', qtd: 2, tipo: 'un' }, { id: 'manga', qtd: 3, tipo: 'un' }] };
+  assert.strictEqual((await chama({ ...corpo, pag: 'Fiado' })).status, 400, 'forma de pagamento conhecida');
+  assert.strictEqual((await chama({ ...corpo, cliente: {} })).status, 400, 'precisa do nome');
+  assert.strictEqual((await chama({ ...corpo, itens: [{ id: 'ovos', qtd: 1, tipo: 'kg' }] })).status, 400, 'ovos não é por quilo');
+  const r = await chama(corpo);
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  const ped = db._dados.get(`pedidos/${chave}`);
+  assert.strictEqual(ped.total, 45.8, '2 kg × 8,90 (o preço do navegador não vale) + 2 × 14');
+  assert.strictEqual(ped.status, 'aguardando_pesagem'); assert.strictEqual(ped.origem, 'mensagem'); assert.strictEqual(ped.entregaDia, new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10));
+  assert.deepStrictEqual(ped.itens.map((i) => [i.id, i.tipo, i.qtd, i.aPesar, i.subtotal]), [['tomate', 'kg', 2, false, 17.8], ['ovos', 'un', 2, false, 28], ['manga', 'un', 3, true, 0]]);
+  assert.strictEqual(db._dados.get('produtos/tomate').estoqueFisico, 9, 'baixou o que tem valor fechado');
+  assert.strictEqual(db._dados.get('produtos/ovos').estoqueFisico, 8);
+  assert.strictEqual((await chama(corpo)).corpo.repetido, true, 'toque repetido não cria outro pedido');
+  // a manga fecha na Pesagem, como um pedido da loja
+  const pes = await chamar(api, { headers: { Authorization: 'Bearer func-banca' }, body: { acao: 'pesagem', pedidoId: chave, pesos: [{ i: 2, peso: 1.6 }] } });
+  assert.strictEqual(pes.status, 200, JSON.stringify(pes.corpo));
+  assert.strictEqual(db._dados.get(`pedidos/${chave}`).total, 60.2, '45,80 + 1,6 kg × 9');
+  assert.strictEqual(db._dados.get(`pedidos/${chave}`).status, 'preparando');
+  // quem não é da equipe não registra
+  const fora = await chamar(api, { headers: { Authorization: 'Bearer cliente' }, body: { acao: 'mensagem', ...corpo, chave: chave + 'x' } });
+  assert.strictEqual(fora.status, 403);
+});
+teste('pedido por mensagem: o texto do cliente acha o produto (erro de digitação, plural, palavra a mais) e marca as dúvidas', async () => {
+  const I = await import(raiz('js/impressao-lib.js')), W = await import(raiz('js/whats-produtos-lib.js'));
+  const P = (id, nome, preco, unidade, extra = {}) => ({ id, nome, preco, unidade, ativo: true, ...extra });
+  const produtos = [P('abacaxi', 'Abacaxi pérola', 8, 'un'), P('melao', 'Melão amarelo', 12, 'un'), P('mamao', 'Mamão papaia', 6.99, 'kg', { pesoMedio: 450 }),
+    P('banana', 'Banana prata', 7.99, 'kg'), P('banana-n', 'Banana nanica', 5.99, 'kg'), P('laranja-ilha', 'Laranja da ilha', 9.99, 'kg'), P('laranja', 'Laranja pera', 4.99, 'kg'),
+    P('manga', 'Manga palmer', 8.99, 'kg'), P('maracuja', 'Maracujá azedo', 11.99, 'kg'), P('batata', 'Batata inglesa', 5.99, 'kg'), P('batata-doce', 'Batata doce', 6.99, 'kg'),
+    P('alface-am', 'Alface americana', 4.5, 'un'), P('alface-cr', 'Alface crespa', 3.5, 'un'), P('pepino-jp', 'Pepino japonês', 9.99, 'kg'), P('maca', 'Maçã gala', 12.99, 'kg'), P('maca-verde', 'Maçã verde', 15.99, 'kg'),
+    P('hortela', 'Hortelã', 3, 'maço'), P('repolho-roxo', 'Repolho roxo', 7, 'un'), P('mandioca', 'Mandioca descascada', 9, 'pacote', { palavras: ['mandioca sem casca'] }), P('tomate', 'Tomate italiano', 8.99, 'kg', { dias: [1] }),
+    P('ovos', 'Ovos caipira (dúzia)', 14, 'un'), P('insumo', 'Banana para doce', 1, 'kg', { soInsumo: true })];
+  const viviane = '[21/10, 15:48] Viviane Qd 10 lt7 ATENA: 2 abacaxis; 1 melao doce;  3 mamao papaya; 10 bananas prata;;  4 laranjas da ilha  ( *_aquela docinha, usada para bebê, se não tiver não mandar_* ); 3 mangas p salada; ; 10 maracujas para suco;  3 kilos batata; 2 alfaces *americana* ;  5 pepinos japones;  4 maca vermelha e 2 verdes; hortela;\n[21/10, 15:49] Viviane Qd 10 lt7 ATENA: se possível organizar no início da feira, eu passo pegar por volta das 17:30/18 horas  - so me avisar\n[21/10, 15:51] Viviane Qd 10 lt7 ATENA: acrescentar: 1 repolho roxo;  1 pacote de mandioca sem casca;\ntomatw 500g\nmeia duzia de ovos\n2 kg de jaca';
+  const c = W.conferirPedido(I.linhasDoWhats(viviane), produtos, { dia: 3 });
+  const ver = (txt) => c.find((l) => l.texto.startsWith(txt));
+  const casos = [['2 abacaxis', 'abacaxi', 'ok'], ['1 melao doce', 'melao', 'ok'], ['3 mamao papaya', 'mamao', 'ok'], ['10 bananas prata', 'banana', 'ok'], ['4 laranjas da ilha', 'laranja-ilha', 'ok'],
+    ['3 mangas p salada', 'manga', 'ok'], ['10 maracujas', 'maracuja', 'ok'], ['2 alfaces', 'alface-am', 'ok'], ['5 pepinos', 'pepino-jp', 'ok'], ['hortela', 'hortela', 'ok'], ['1 repolho roxo', 'repolho-roxo', 'ok'], ['1 pacote de mandioca', 'mandioca', 'ok']];
+  for (const [txt, id, nivel] of casos) { const l = ver(txt); assert.ok(l, `faltou a linha "${txt}"`); assert.strictEqual(l.produto && l.produto.id, id, `"${txt}" → ${l.produto && l.produto.nome}`); assert.strictEqual(l.nivel, nivel, `"${txt}": ${l.avisos.join('; ')}`); }
+  assert.strictEqual(ver('3 kilos batata').nivel, 'duvida', 'batata inglesa ou doce: pergunta'); assert.deepStrictEqual(ver('3 kilos batata').item && [ver('3 kilos batata').item.tipo, ver('3 kilos batata').item.qtd], ['kg', 3]);
+  assert.strictEqual(ver('4 maca vermelha').nivel, 'duvida', 'dois itens numa linha');
+  assert.strictEqual(ver('se possível').nivel, 'recado', 'recado não é item');
+  assert.strictEqual(ver('tomatw').produto.id, 'tomate', 'erro de digitação'); assert.deepStrictEqual([ver('tomatw').item.tipo, ver('tomatw').item.qtd, ver('tomatw').item.valor], ['kg', 0.5, 4.5]);
+  assert.ok(ver('tomatw').avisos.includes('Não sai neste dia'), 'tomate só sai segunda');
+  assert.strictEqual(ver('meia duzia').nivel, 'duvida', 'meia dúzia de um produto vendido por dúzia');
+  assert.strictEqual(ver('2 kg de jaca').nivel, 'nada', 'produto que não existe');
+  assert.deepStrictEqual([ver('10 bananas').item.tipo, ver('10 bananas').item.aPesar], ['un', true], 'por quilo pedido em unidades: a pesar');
+  assert.ok(!c.some((l) => l.candidatos.some((x) => x.id === 'insumo')), 'ingrediente de receita não entra');
+  const soma = W.somaDaConferencia(c); assert.ok(soma.itens >= 14 && soma.aPesar >= 6, JSON.stringify(soma));
+});
 teste('preço por dia: o balcão cobra o preço de hoje', async () => {
   const hoje = new Date(Date.now() - 3 * 3600000).getUTCDay();
   const sem = sementeEstoque(); sem['produtos/ovos'] = { ...sem['produtos/ovos'], precosDia: { [hoje]: 11 } };
@@ -3607,7 +3662,7 @@ teste('impressora: aba própria no Menu, liberada para a equipe que imprime', as
   const todas = [...html.matchAll(/class="tab[^"]*" data-aba="([a-z]+)"/g)].map((m) => m[1]);
   for (const papel of ['proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque']) assert.ok(P.podeAbrir(papel, 'impressora', todas), papel);
   const admin = fs.readFileSync(raiz('js/admin.js'), 'utf8');
-  assert.ok(/impressora: \(\) => import\('\.\/admin-impressora\.js'\)/.test(admin) && /impressora: \(m\) => m\.abrirAbaImpressora\(\)/.test(admin));
+  assert.ok(/impressora: \(\) => import\('\.\/admin-impressora\.js'\)/.test(admin) && /impressora: \(m\) => m\.abrirAbaImpressora\(produtosAtuais\)/.test(admin));
 });
 
 teste('ponte: o Dockerfile leva as duas bibliotecas do painel que o servidor usa para montar o cupom', () => {
