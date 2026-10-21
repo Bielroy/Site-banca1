@@ -169,8 +169,23 @@ async function situacaoAsaas(s) {
     urlAviso: /^https:\/\//.test(base) ? `${base}/api/pagamento-asaas` : '', carteiras, comissao: Asaas.comissaoPct(),
   };
 }
+// Desligar: apaga a chave e, se o PagBank também não atende, desliga o "PIX automático" de todas as lojas.
+// Sem isso o cliente veria o botão "Pagar com PIX agora" e levaria um erro; assim ele só vê o copia e cola
+// da loja (código com o valor do pedido). Para voltar: salvar a chave de novo e ligar a opção em cada loja.
+async function desligarPixAutomaticoDasLojas() {
+  if (await Segredos.pagbank(db)) return 0;                          // o PagBank continua atendendo: nada a desligar
+  const ts = await db.collection('tenants').get();
+  const ids = [...new Set([T.TENANT_PADRAO, ...ts.docs.map((d) => d.id)])].filter(T.idValido);
+  let n = 0;
+  await Promise.all(ids.map(async (id) => {
+    const ref = T.docDe(db, id, 'loja/config'), snap = await ref.get();
+    if (snap.exists && snap.data().pixAutomatico === true) { await ref.set({ pixAutomatico: false }, { merge: true }); n++; }
+  }));
+  return n;
+}
 async function asaas(req, res) {
-  const b = req.body || {}, chave = String(b.chave || '').trim();
+  const b = req.body || {}, desligar = b.desligar === true, chave = desligar ? '' : String(b.chave || '').trim();
+  if (desligar && process.env.ASAAS_API_KEY) throw falha(400, 'A chave está no servidor (variável ASAAS_API_KEY): para desligar, apague-a lá.');
   if (chave && !Segredos.chaveAsaasValida(chave)) throw falha(400, 'Esta não parece uma chave do Asaas. Ela começa com $aact_ e não tem espaços.');
   const ref = db.collection('plataforma').doc('segredos'), atual = (await ref.get()).data() || {};
   const novo = { asaas: chave, asaasEm: new Date().toISOString(), asaasAmbiente: b.ambiente === 'producao' ? 'producao' : 'sandbox' };
@@ -178,7 +193,8 @@ async function asaas(req, res) {
   if (chave && (b.novoAviso === true || !Segredos.avisoAsaasValido(atual.asaasAviso))) novo.asaasAviso = crypto.randomBytes(30).toString('base64url');
   await ref.set(novo, { merge: true });
   Segredos._zerar();
-  return res.status(200).json({ sucesso: true, ligado: !!chave });
+  const lojasDesligadas = desligar ? await desligarPixAutomaticoDasLojas() : 0;
+  return res.status(200).json({ sucesso: true, ligado: !!chave, lojasDesligadas });
 }
 async function asaasCarteira(req, res) {
   const b = req.body || {}, id = String(b.id || ''), carteira = String(b.carteira || '').trim().toLowerCase();

@@ -3799,6 +3799,38 @@ teste('asaas: plataforma guarda a chave, cria o token do aviso e cadastra a cart
   } finally { if (antes === undefined) delete process.env.ASAAS_API_KEY; else process.env.ASAAS_API_KEY = antes; S._zerar(); }
 });
 
+teste('asaas: "Desligar" apaga a chave e desliga o PIX automático das lojas (some o botão que daria erro); com PagBank ligado, não mexe nas lojas', async () => {
+  const mk = () => criarBanco({
+    'tenants/bie': { nome: 'Bié', ativo: true }, 'tenants/bie/loja/config': { wpp: '5562999990000', pixAutomatico: true },
+    'loja/config': { wpp: '5562999990001', pixAutomatico: true }, 'tenants/lucia': { nome: 'Lúcia', ativo: true }, 'tenants/lucia/loja/config': { wpp: '5562999990002', pixAutomatico: false },
+    'plataforma/segredos': { asaas: CHAVE_ASAAS_T, asaasAviso: AVISO_ASAAS_T },
+  });
+  const tokens = { super: { uid: 'sup-1', plataforma: true }, dono: { uid: 'd-1', tenants: { bie: 'proprietario' } } };
+  const S = require(raiz('lib/segredos')); const antesA = process.env.ASAAS_API_KEY, antesP = process.env.PAGBANK_API_TOKEN; delete process.env.ASAAS_API_KEY; delete process.env.PAGBANK_API_TOKEN;
+  try {
+    let db = mk(); S._zerar();
+    let api = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, tokens, []));
+    const ch = (tk, body) => chamar(api, { headers: { authorization: `Bearer ${tk}` }, body });
+    assert.strictEqual((await ch('dono', { acao: 'asaas', desligar: true })).status, 403, 'só o dono da plataforma desliga');
+    const r = await ch('super', { acao: 'asaas', desligar: true });
+    assert.strictEqual(r.status, 200); assert.strictEqual(r.corpo.ligado, false); assert.strictEqual(r.corpo.lojasDesligadas, 2);
+    assert.strictEqual(db._dados.get('plataforma/segredos').asaas, '', 'a chave foi apagada');
+    assert.strictEqual(db._dados.get('tenants/bie/loja/config').pixAutomatico, false); assert.strictEqual(db._dados.get('loja/config').pixAutomatico, false);
+    assert.strictEqual(db._dados.get('tenants/bie/loja/config').wpp, '5562999990000', 'o resto da configuração fica como estava');
+    const l = (await ch('super', { acao: 'lojas' })).corpo; assert.strictEqual(l.asaas.ligado, false);
+    // chave no servidor (variável de ambiente): a tela não consegue apagar
+    process.env.ASAAS_API_KEY = CHAVE_ASAAS_T; S._zerar();
+    assert.strictEqual((await ch('super', { acao: 'asaas', desligar: true })).status, 400);
+    delete process.env.ASAAS_API_KEY;
+    // com o PagBank atendendo, as lojas continuam como estão
+    db = mk(); process.env.PAGBANK_API_TOKEN = 'token-pagbank-de-teste-1234567890'; S._zerar();
+    api = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, tokens, []));
+    const r2 = await chamar(api, { headers: { authorization: 'Bearer super' }, body: { acao: 'asaas', desligar: true } });
+    assert.strictEqual(r2.status, 200); assert.strictEqual(r2.corpo.lojasDesligadas, 0);
+    assert.strictEqual(db._dados.get('tenants/bie/loja/config').pixAutomatico, true);
+  } finally { if (antesA === undefined) delete process.env.ASAAS_API_KEY; else process.env.ASAAS_API_KEY = antesA; if (antesP === undefined) delete process.env.PAGBANK_API_TOKEN; else process.env.PAGBANK_API_TOKEN = antesP; S._zerar(); }
+});
+
 teste('cloudflare: o token do aviso do Asaas passa pela ponte até o servidor', async () => {
   const F = await import(raiz('functions/api/[[caminho]].js'));
   const antes = globalThis.fetch; let visto = null;

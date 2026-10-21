@@ -142,6 +142,7 @@ function secaoAsaas(d) {
     return `<section class="pf-chave"><div class="pf-chave-topo"><h3>PIX automático (Asaas)</h3><span class="pf-selo${a.ligado ? ' ok' : ''}">${a.ligado ? `Ligado · ${amb}` : 'Sem chave'}</span></div>
         <p>${a.ligado ? 'Com o Asaas ligado, o PIX de todas as lojas sai por ele (o PagBank fica de lado). A loja original recebe na conta da plataforma; cada outra banca recebe na carteira dela, cadastrada abaixo.' : 'Cole a chave da API da conta Asaas da plataforma (no Asaas: Integrações, Chaves de API). Comece com a chave do sandbox para testar sem dinheiro de verdade.'}</p>
         ${a.viaAmbiente ? '<p>A chave está no servidor (variável ASAAS_API_KEY): para trocar, mude lá.</p>' : `<div class="pf-form-linha"><input type="password" id="pf-asaas" autocomplete="off" spellcheck="false" maxlength="420" placeholder="Chave da API ($aact_...)" aria-label="Chave da API do Asaas"><button type="button" class="pf-bt pri" data-pf="salvar-asaas">Salvar</button></div>`}
+        ${a.ligado && !a.viaAmbiente ? '<div class="pf-asaas-desligar"><button type="button" class="pf-bt" data-pf="desligar-asaas">Desligar o Asaas</button><small>Apaga a chave e desliga o PIX automático das lojas. O cliente passa a pagar só pelo copia e cola da loja (com o valor do pedido).</small></div>' : ''}
         ${a.ligado ? `<div class="pf-asaas-aviso"><b>Cadastre o aviso de pagamento no Asaas</b><small>Integrações → Webhooks → Adicionar Webhook. Cole a URL e o token abaixo e marque os eventos de cobrança <b>PAYMENT_RECEIVED</b> e <b>PAYMENT_CONFIRMED</b>.</small>
             ${a.urlAviso ? copiar('URL', a.urlAviso) : '<small>Falta PUBLIC_BASE_URL no servidor para montar a URL.</small>'}
             ${a.avisoViaAmbiente ? '<small>Token: o que está na variável ASAAS_WEBHOOK_TOKEN do servidor.</small>' : a.aviso ? copiar('Token', a.aviso) : ''}</div>
@@ -400,6 +401,10 @@ async function agir(b) {
             const chave = $('pf-asaas').value.trim();
             if (!/^\$aact_\S{20,}$/.test(chave)) return showToast('A chave do Asaas começa com $aact_ e não tem espaços. Confira se copiou inteira.', true);
             return fazer({ acao: 'asaas', chave }, 'Chave do Asaas guardada. Agora cadastre o aviso de pagamento no Asaas (URL e token abaixo).');
+        }
+        case 'desligar-asaas': {
+            if (!await confirmar('Desligar o PIX automático?', 'A chave do Asaas será apagada e o PIX automático some de todas as lojas. O cliente continua pagando pelo copia e cola da loja. Para voltar, é só cadastrar a chave de novo.', { ok: 'Desligar', nao: 'Voltar' })) return;
+            return fazer({ acao: 'asaas', desligar: true }, 'Asaas desligado. As lojas voltaram ao PIX copia e cola.');
         }
         case 'salvar-carteira': {
             const linha = b.closest('[data-loja]'), carteira = linha.querySelector('[data-carteira]').value.trim();
