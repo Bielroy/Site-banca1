@@ -414,6 +414,44 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .pix-cola .btn-pix { margin: 4px 0; background: var(--forest); color: var(--sobre-primaria); border-color: var(--forest); font-weight: 700; }
 .pix-espera { margin: 10px 0; font-size: .86rem; color: var(--text-mid); }
 
+/* PIX pendente na tela de sucesso: cartão grande, logo abaixo do título */
+.pix-destaque { --pix: #1f9e91; position: relative; margin: 4px 0 16px; padding: 16px 16px 14px; text-align: left; border-radius: 18px; background: var(--superficie, #fff); border: 2px solid var(--pix); box-shadow: 0 8px 24px -12px rgba(31, 158, 145, .55); }
+.pix-d-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.pix-d-selo { display: inline-flex; align-items: center; gap: 6px; font-weight: 900; letter-spacing: .04em; color: var(--pix); font-size: 1rem; }
+.pix-d-selo svg { width: 22px; height: 22px; }
+.pix-d-status { padding: 5px 11px; border-radius: 999px; background: #fff3d6; color: #8a5a00; font-size: .8rem; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; animation: pixPulsa 2s ease-in-out infinite; }
+@keyframes pixPulsa { 50% { background: #ffe3a3; } }
+.pix-d-rot { margin: 0; font-size: .85rem; color: var(--text-mid); font-weight: 600; }
+.pix-d-total { margin: 0 0 10px; font-size: 2.3rem; line-height: 1.05; font-weight: 900; color: var(--text-dark, #1d1a22); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.pix-d-para { display: flex; flex-direction: column; gap: 2px; margin: 0 0 14px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--pix) 8%, var(--superficie, #fff)); font-size: .92rem; color: var(--text-mid); line-height: 1.35; word-break: break-word; }
+.pix-d-para b { color: var(--text-dark, #1d1a22); }
+.pix-d-para span { font-size: .86rem; }
+.btn-pix--grande { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 58px; margin: 0 0 14px; padding: 12px 16px; border: 0; border-radius: 14px; background: var(--pix); color: #fff; font-size: 1.1rem; font-weight: 800; cursor: pointer; transition: transform .15s ease, background .2s ease; }
+.btn-pix--grande svg { width: 22px; height: 22px; flex: none; }
+.btn-pix--grande:active { transform: scale(.97); }
+.btn-pix--grande.copiado { background: #15803d; }
+.pix-d-passos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.pix-d-passos li { display: flex; align-items: flex-start; gap: 10px; font-size: .9rem; line-height: 1.35; color: var(--text-mid); }
+.pix-d-passos li span { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: color-mix(in srgb, var(--pix) 15%, var(--superficie, #fff)); color: var(--pix); font-weight: 900; font-size: .82rem; }
+.pix-d-passos p { margin: 0; padding-top: 2px; }
+.pix-d-passos b { color: var(--text-dark, #1d1a22); }
+.pix-d-nota { margin: -4px 0 0; font-size: .85rem; color: var(--text-mid); line-height: 1.35; }
+.pix-d-qr { margin-top: 12px; border-top: 1px dashed color-mix(in srgb, var(--pix) 35%, transparent); padding-top: 10px; }
+.pix-d-qr summary { cursor: pointer; font-size: .86rem; font-weight: 700; color: var(--pix); list-style: none; }
+.pix-d-qr summary::-webkit-details-marker { display: none; }
+.pix-d-qr summary::before { content: '▸ '; }
+.pix-d-qr[open] summary::before { content: '▾ '; }
+.pix-d-qr-caixa { display: flex; justify-content: center; padding: 12px 0 2px; }
+.pix-d-qr-caixa svg { max-width: 100%; height: auto; border-radius: 10px; }
+/* com PIX pendente, o WhatsApp vira o passo 3 */
+.com-pix .modal-body { padding-top: 24px !important; }
+.com-pix .circulo-sucesso { width: 64px; height: 64px; margin-bottom: 10px; }
+.com-pix .circulo-sucesso svg { width: 32px; height: 32px; }
+.com-pix .title-success { font-size: 1.6rem; margin-bottom: 6px; }
+.com-pix #sucesso-texto { margin-bottom: 14px !important; font-size: .98rem !important; }
+.com-pix .sucesso-whatsapps .btn-wpp { font-size: 1rem; }
+@media (prefers-reduced-motion: reduce) { .pix-d-status { animation: none; } }
+
 /* campo obrigatório que ficou em branco: pisca a borda para a pessoa achar */
 .form-group .campo-faltando { border-color: var(--danger) !important; box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 22%, transparent) !important; }
 

@@ -1135,12 +1135,15 @@ const pintarBlocoTemperos = (grid) => {
 
 // Pedido com itens de mais de um atendimento (ex.: banca + artesanais) gera
 // um botão por número. Com um só número, abre direto como sempre foi.
-const mostrarLinksWhatsApp = (pedido) => {
+// pixPendente: há um PIX para pagar agora. Aí o WhatsApp NÃO abre sozinho (a pessoa sairia da tela sem ver o PIX):
+// primeiro paga, depois toca no botão e manda o pedido junto com o comprovante.
+const mostrarLinksWhatsApp = (pedido, { pixPendente = false } = {}) => {
     const links = (pedido.whatsapps && pedido.whatsapps.length) ? pedido.whatsapps : [{ nome: 'WhatsApp', url: pedido.whatsappMsg }];
     const area = document.getElementById('sucesso-whatsapps');
     const texto = document.getElementById('sucesso-texto');
+    const rotuloUnico = pixPendente ? 'Enviar pedido e comprovante no WhatsApp' : 'Abrir WhatsApp';
     if (area) {
-        area.innerHTML = links.map((l, i) => `<a class="btn-wpp" href="${escapeHTML(l.url)}" target="_blank" rel="noopener noreferrer">${links.length > 1 ? `Enviar para ${escapeHTML(l.nome)}` : 'Abrir WhatsApp'}${l.qtdItens && links.length > 1 ? ` <small>(${l.qtdItens} ${l.qtdItens === 1 ? 'item' : 'itens'})</small>` : ''}</a>`).join('');
+        area.innerHTML = links.map((l, i) => `<a class="btn-wpp" href="${escapeHTML(l.url)}" target="_blank" rel="noopener noreferrer">${links.length > 1 ? `Enviar para ${escapeHTML(l.nome)}` : rotuloUnico}${l.qtdItens && links.length > 1 ? ` <small>(${l.qtdItens} ${l.qtdItens === 1 ? 'item' : 'itens'})</small>` : ''}</a>`).join('');
         area.onclick = (e) => {
             const a = e.target.closest('.btn-wpp'); if (!a) return;
             a.classList.add('enviado');
@@ -1154,11 +1157,12 @@ const mostrarLinksWhatsApp = (pedido) => {
         ? `Seu pedido tem itens de ${links.length} atendimentos da banca. Toque nos ${links.length} botões, um de cada vez, para enviar tudo:`
         // iPhone: o navegador costuma barrar a abertura automática (ela acontece depois de o servidor responder,
         // e o iPhone só deixa abrir outro app no instante do toque). O texto pede o toque em vez de prometer.
+        : pixPendente ? 'Falta só o pagamento. Pague o PIX abaixo e depois mande o comprovante no WhatsApp.'
         : (ehIphone() ? 'Pedido recebido! Agora toque no botão verde para mandar a mensagem no WhatsApp.'
             : 'Vamos abrir o WhatsApp da banca com o seu pedido pronto. Se não abrir sozinho, toque no botão abaixo.');
-    if (area) area.classList.toggle('precisa-toque', ehIphone() && links.length === 1);
+    if (area) area.classList.toggle('precisa-toque', ehIphone() && links.length === 1 && !pixPendente);
     // só abre o que for mesmo um link do WhatsApp (o endereço vem do servidor; isto é a segunda conferência)
-    if (links.length === 1 && /^https:\/\/wa\.me\/\d{8,15}\?/.test(String(links[0].url))) window.open(links[0].url, '_blank', 'noopener');
+    if (links.length === 1 && !pixPendente &&/^https:\/\/wa\.me\/\d{8,15}\?/.test(String(links[0].url))) window.open(links[0].url, '_blank', 'noopener');
 };
 
 // PIX automático: a tela (js/pix-loja.js) só é baixada quando alguém vai pagar.
@@ -1173,11 +1177,31 @@ const pagarComPix = async (pedidoId, total) => {
 //  1. automático (PagBank): QR na tela e o pedido vira PAGO sozinho. Só com a conta ligada.
 //  2. copia e cola com a chave da loja: o código já sai com o valor; quem confere o pagamento é a loja.
 // Se o automático estiver ligado, ele vence. Pedido com item a pesar espera a balança (o valor ainda muda).
-const pixAutomaticoHtml = (pedido) => `<button type="button" class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Pagar ${fmt(pedido.total)} com PIX agora</button>`;
-const pixCopiaColaHtml = (pedido) => {
+const ICO_PIX = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.6c.6 0 1.2.2 1.7.7l3.1 3.1h-.4c-.8 0-1.5.3-2 .8L12.6 9a.9.9 0 0 1-1.2 0L9.6 7.2a2.8 2.8 0 0 0-2-.8h-.4l3.1-3.1c.5-.5 1.1-.7 1.7-.7zm6.2 5.2 2.5 2.5a2.4 2.4 0 0 1 0 3.4l-2.5 2.5h-1.8a1.4 1.4 0 0 1-1-.4L13.6 14a2.3 2.3 0 0 0-3.2 0l-1.8 1.8c-.3.3-.6.4-1 .4H5.8l-2.5-2.5a2.4 2.4 0 0 1 0-3.4l2.5-2.5h1.8c.4 0 .7.1 1 .4L10.4 10a2.3 2.3 0 0 0 3.2 0l1.8-1.8c.3-.3.6-.4 1-.4zM12 15.4c.2 0 .4.1.6.2l1.8 1.8c.5.5 1.2.8 2 .8h.4l-3.1 3.1a2.4 2.4 0 0 1-3.4 0l-3.1-3.1h.4c.8 0 1.5-.3 2-.8l1.8-1.8c.2-.1.4-.2.6-.2z"/></svg>';
+const ICO_COPIAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>';
+// Cartão grande da tela de sucesso: deixa claro que FALTA PAGAR, quanto, para quem e como.
+const pixCartao = (pedido, miolo) => `<section class="pix-destaque" aria-label="Pagamento PIX pendente">
+        <div class="pix-d-topo"><span class="pix-d-selo">${ICO_PIX}PIX</span><span class="pix-d-status">Falta pagar</span></div>
+        <p class="pix-d-rot">Valor a pagar</p>
+        <p class="pix-d-total">${fmt(pedido.total)}</p>
+        ${miolo}
+    </section>`;
+const pixAutomaticoHtml = (pedido, destaque) => destaque
+    ? pixCartao(pedido, `<button type="button" class="btn-pix btn-pix--grande" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">${ICO_PIX}<span>Pagar com PIX agora</span></button>
+        <p class="pix-d-nota">Abre o QR Code e o código copia e cola. A banca fica sabendo do pagamento na hora.</p>`)
+    : `<button type="button" class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Pagar ${fmt(pedido.total)} com PIX agora</button>`;
+const pixCopiaColaHtml = (pedido, destaque) => {
     if (!(Number(pedido.total) > 0)) return '';          // pedido de cortesia (cupom de 100%): nada a pagar
     const pix = STATE.config.pix, codigo = codigoPix(pix, pedido.total, pedido.id);
     if (!codigo) return '';
+    if (destaque) return pixCartao(pedido, `<p class="pix-d-para">Para <b>${escapeHTML(pix.nome)}</b><span>Chave ${escapeHTML(chaveBonita(pix))}</span></p>
+        <button type="button" class="btn-pix btn-pix--grande" data-action="copiar-pix" data-codigo="${escapeHTML(codigo)}">${ICO_COPIAR}<span>Copiar código PIX</span></button>
+        <ol class="pix-d-passos">
+            <li><span>1</span><p>Toque em <b>Copiar código PIX</b>.</p></li>
+            <li><span>2</span><p>No app do banco, escolha <b>PIX copia e cola</b> e cole. O valor já vem preenchido.</p></li>
+            <li><span>3</span><p>Depois de pagar, mande o <b>comprovante no WhatsApp</b> no botão verde abaixo.</p></li>
+        </ol>
+        <details class="pix-d-qr"><summary>Vai pagar por outro celular? Mostrar QR Code</summary><div class="pix-d-qr-caixa" data-codigo="${escapeHTML(codigo)}"></div></details>`);
     return `<div class="pix-cola">
         <b>Pague ${fmt(pedido.total)} com PIX</b>
         <span>Para ${escapeHTML(pix.nome)} · chave ${escapeHTML(chaveBonita(pix))}</span>
@@ -1185,19 +1209,32 @@ const pixCopiaColaHtml = (pedido) => {
         <small>Cole no aplicativo do seu banco, em "PIX copia e cola". O valor já vem preenchido. Depois, mande o comprovante no WhatsApp.</small>
     </div>`;
 };
-const pixDoPedidoHtml = (pedido) => {
+const pixDoPedidoHtml = (pedido, destaque = false) => {
     // outras lojas só conseguem ligar a opção quando a plataforma cadastra a carteira Asaas delas (o servidor confere de novo)
-    if (podePagarPix(STATE.config.pixAutomatico === true, pedido)) return pixAutomaticoHtml(pedido);
-    if (pixDaLojaValido(STATE.config.pix) && podePagarPix(true, pedido)) return pixCopiaColaHtml(pedido);
+    if (podePagarPix(STATE.config.pixAutomatico === true, pedido)) return pixAutomaticoHtml(pedido, destaque);
+    if (pixDaLojaValido(STATE.config.pix) && podePagarPix(true, pedido)) return pixCopiaColaHtml(pedido, destaque);
     if (pixDaLojaValido(STATE.config.pix) && String(pedido.pag || '').toUpperCase() === 'PIX' && pedido.temItensAPesar && pedido.status !== 'cancelado')
         return '<p class="pix-espera">O código PIX aparece aqui, em Meus pedidos, assim que a banca pesar os itens e fechar o valor.</p>';
     return '';
 };
+// Devolve true quando ficou um PIX para pagar agora: aí o cartão sobe para logo abaixo do título,
+// antes do botão do WhatsApp (pagar primeiro, mandar o comprovante depois).
 const oferecerPixNoSucesso = (pedido) => {
-    const area = document.getElementById('sucesso-pix'); if (!area) return;
-    const html = pixDoPedidoHtml(pedido);
+    const area = document.getElementById('sucesso-pix'); if (!area) return false;
+    const html = pixDoPedidoHtml(pedido, true), pendente = html.includes('pix-destaque');
     area.hidden = !html; area.innerHTML = html;
+    const antes = document.getElementById(pendente ? 'sucesso-whatsapps' : 'btn-lista-sucesso');
+    if (antes && antes.parentNode && area.nextElementSibling !== antes) antes.parentNode.insertBefore(area, antes);
+    document.getElementById('modal-sucesso')?.classList.toggle('com-pix', pendente);
+    return pendente;
 };
+// QR do código PIX (para pagar com outro celular): só é desenhado quando a pessoa abre.
+document.addEventListener('toggle', async (e) => {
+    const det = e.target; if (!(det instanceof HTMLDetailsElement) || !det.classList.contains('pix-d-qr') || !det.open) return;
+    const caixa = det.querySelector('.pix-d-qr-caixa'); if (!caixa || caixa.firstChild) return;
+    try { const { qrSvg } = await import('./cartaz-lib.js'); caixa.innerHTML = qrSvg(caixa.dataset.codigo || '', { tamanho: 220, cor: '#111' }) || '<p>Não deu para desenhar o QR. Use o botão de copiar.</p>'; }
+    catch (_) { caixa.textContent = 'Não deu para desenhar o QR. Use o botão de copiar.'; }
+}, true);
 const copiarPix = async (botao) => {
     const codigo = botao.dataset.codigo || '';
     let ok = false;
@@ -1206,7 +1243,8 @@ const copiarPix = async (botao) => {
         const t = document.createElement('textarea'); t.value = codigo; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;opacity:0;';
         document.body.appendChild(t); t.select(); try { ok = document.execCommand('copy'); } catch (__) { ok = false; } t.remove();
     }
-    if (ok) { botao.textContent = 'Código copiado'; showToast('Código PIX copiado. Agora cole no aplicativo do seu banco.'); setTimeout(() => { botao.textContent = 'Copiar código PIX'; }, 4000); }
+    const rotulo = botao.querySelector('span') || botao;
+    if (ok) { rotulo.textContent = 'Código copiado ✓'; botao.classList.add('copiado'); showToast('Código PIX copiado. Agora cole no aplicativo do seu banco.'); setTimeout(() => { rotulo.textContent = 'Copiar código PIX'; botao.classList.remove('copiado'); }, 4000); }
     else showToast('Não consegui copiar sozinho. Use a chave que aparece acima do botão.', true);
 };
 
@@ -2564,7 +2602,8 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
         } catch (e) { console.warn('[loja] pedido enviado, mas não consegui guardar no aparelho:', e && e.message); }
 
-        mostrarLinksWhatsApp(data.pedido);
+        const pixPendente = oferecerPixNoSucesso({ id: data.pedido.id, total: data.pedido.total, pag, status: 'pendente', temItensAPesar: itensFormatados.some(i => i.aPesar) });
+        mostrarLinksWhatsApp(data.pedido, { pixPendente });
         const dicaAcesso = document.getElementById('sucesso-dica-acesso'); if (dicaAcesso) dicaAcesso.hidden = !data.temConta;
         const sucEnt = document.getElementById('sucesso-entrega');
         if (sucEnt) {
@@ -2574,7 +2613,6 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             const textoSuc = retirada ? `🛍️ Retirada ${ondeRet}${futuro ? ` em ${textoDoDia(data.pedido.entregaDia)}` : ''}${horaRet ? `: ${horaRet}` : ''}.` : futuro ? `📅 Seu pedido é para ${textoDoDia(data.pedido.entregaDia)}.` : '';
             sucEnt.textContent = textoSuc; sucEnt.hidden = !textoSuc;
         }
-        oferecerPixNoSucesso({ id: data.pedido.id, total: data.pedido.total, pag, status: 'pendente', temItensAPesar: itensFormatados.some(i => i.aPesar) });
         closeModal('modal-checkout');
         oferecerListaNoSucesso(listaDoCarrinho(STATE.carrinho));
         setTimeout(() => openModal('modal-sucesso'), 300); 

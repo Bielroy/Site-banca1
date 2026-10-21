@@ -132,6 +132,38 @@ teste('pedido de ponta a ponta: põe na sacola, preenche a entrega, envia e vê 
   semErros(erros); await fechar();
 });
 
+teste('PIX no pedido: cartão grande "Falta pagar" acima do WhatsApp, copia o código, mostra o QR e não abre o WhatsApp sozinho', async () => {
+  const c = cenarioPadrao();
+  c.lojas.banca.config = { ...c.lojas.banca.config, pix: { tipo: 'celular', chave: '62991266509', nome: 'Rosiva Martins da Silva' } };
+  const { pagina, erros, fechar } = await abrir('/', c, { antes: () => { window.__abertos = []; window.open = (u) => { window.__abertos.push(String(u)); return null; }; } });
+  await pagina.context().grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
+  await abrirCheckoutComOvos(pagina);
+  const lista = pagina.locator('#checkout-endereco select:visible'); if (await lista.count()) await lista.first().selectOption({ index: 1 });
+  const campos = pagina.locator('#checkout-endereco input:visible');
+  for (let i = 0; i < await campos.count(); i++) await campos.nth(i).fill(['Jardins Florença', '12', '7'][i] || '1');
+  await pagina.fill('#cli-nome', 'Cliente PIX');
+  await pagina.click('#pag-chips .pag-chip[data-pag="PIX"]');
+  await pagina.click('#btn-enviar-pedido');
+  await pagina.waitForSelector('#sucesso-pix .pix-destaque', { timeout: 6000 });
+  if (process.env.PRINT_PIX) { await pagina.waitForTimeout(700); await pagina.screenshot({ path: process.env.PRINT_PIX }); }
+  // o cartão fica ANTES do botão do WhatsApp, e o botão vira o passo final
+  assert.ok(await pagina.evaluate(() => { const p = document.getElementById('sucesso-pix'), w = document.getElementById('sucesso-whatsapps'); return !!(p.compareDocumentPosition(w) & Node.DOCUMENT_POSITION_FOLLOWING); }), 'PIX acima do WhatsApp');
+  assert.match(await pagina.locator('.pix-d-total').innerText(), /R\$\s*14,00/);
+  assert.match(await pagina.locator('.pix-d-status').innerText(), /falta pagar/i);
+  assert.match(await pagina.locator('#sucesso-whatsapps .btn-wpp').innerText(), /comprovante/i);
+  assert.deepStrictEqual(await pagina.evaluate(() => window.__abertos), [], 'com PIX para pagar, o WhatsApp espera o toque');
+  // copiar
+  await pagina.click('.pix-destaque [data-action="copiar-pix"]');
+  await pagina.waitForFunction(() => /copiado/i.test(document.querySelector('.pix-destaque [data-action="copiar-pix"]').textContent), null, { timeout: 3000 });
+  // QR só quando abre
+  assert.strictEqual(await pagina.locator('.pix-d-qr-caixa svg').count(), 0);
+  await pagina.click('.pix-d-qr summary');
+  await pagina.waitForSelector('.pix-d-qr-caixa svg', { timeout: 3000 });
+  const largura = await pagina.evaluate(() => document.documentElement.scrollWidth);
+  assert.ok(largura <= 392, `a tela ficou mais larga que o celular (${largura}px)`);
+  semErros(erros); await fechar();
+});
+
 const abrirCheckoutComOvos = async (pagina) => {
   await cards(pagina).first().waitFor({ timeout: 8000 });
   await cards(pagina).filter({ hasText: 'Ovos' }).locator('[data-action="add"]').first().click();
