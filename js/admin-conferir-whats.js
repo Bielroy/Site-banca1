@@ -78,7 +78,7 @@ export function criarConferencia({ $, lerForm, depoisDeRegistrar }) {
         const pag = el.querySelector('#iconf-pag')?.value ?? pagDoTexto(d.pagamento), nome = el.querySelector('#iconf-nome')?.value ?? d.nome;
         const totalTxt = `${fmt(soma.fechado)}${soma.estimado ? ` + ≈ ${fmt(soma.estimado)} a pesar` : ''}${soma.semValor ? ` + ${soma.semValor} ${soma.semValor === 1 ? 'item' : 'itens'} para pesar` : ''}`;
         el.hidden = false;
-        el.innerHTML = `<div class="iconf-cab"><b>Conferir o pedido</b><span>${conta('ok')} certos${conta('duvida') ? ` · <em>${conta('duvida')} para conferir</em>` : ''}${recados ? ` · ${recados} recado${recados > 1 ? 's' : ''}` : ''}</span></div>
+        el.innerHTML = `<div class="iconf-cab"><b>Conferir o pedido</b><span><i class="iconf-chip ok">${conta('ok')} certos</i>${conta('duvida') ? `<i class="iconf-chip duv">${conta('duvida')} para conferir</i>` : ''}${recados ? `<i class="iconf-chip rec">${recados} recado${recados > 1 ? 's' : ''}</i>` : ''}</span></div>
             <p class="iconf-dica">Os produtos mais parecidos aparecem primeiro na lista. Troque o que estiver errado. "Não registrar" tira a linha.</p>
             <ol class="iconf-lista">${C.linhas.map(linhaHtml).join('')}</ol>
             <div class="iconf-rodape">
@@ -88,7 +88,7 @@ export function criarConferencia({ $, lerForm, depoisDeRegistrar }) {
                 </div>
                 <p class="iconf-total"><span>Total</span><b>${totalTxt}</b></p>
                 <div class="iconf-acoes"><button type="button" class="ipr-link" data-conf="cancelar">Agora não</button>
-                <button type="button" class="btn iconf-bt" data-conf="registrar"${soma.itens && !C.enviando ? '' : ' disabled'}>${C.enviando ? 'Registrando...' : `Registrar pedido (${soma.itens} ${soma.itens === 1 ? 'item' : 'itens'})`}</button></div>
+                <button type="button" class="btn iconf-bt" data-conf="registrar"${soma.itens && !C.enviando ? '' : ' disabled'}>${C.enviando ? 'Registrando...' : `Registrar ${soma.itens} ${soma.itens === 1 ? "item" : "itens"}`}</button></div>
             </div>`;
     }
     // troca de produto, quantidade ou medida: refaz a conta da linha (mesma do servidor)
