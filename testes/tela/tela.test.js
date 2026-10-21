@@ -1199,6 +1199,33 @@ teste('impressão automática "ao aceitar": pedido novo espera; o aceito sai; ma
   }
 });
 
+teste('pedido do WhatsApp: depois de imprimir e tocar em "Agora não", sair da tela e voltar encontra o campo limpo', async () => {
+  const ctx = await navegador.newContext({ ...CELULAR });
+  await ctx.addInitScript((c) => { window.__CENARIO = c; }, cenarioImpressao());
+  await ctx.addInitScript(impressoraFalsa, { modo: 'ponte', largura: 80, acentos: true, auto: 'manual', aparelho: 'ap-teste-08' });
+  await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  const p = await ctx.newPage(), errosP = []; p.on('pageerror', (e) => errosP.push(e.message));
+  await p.goto(servidor.base + '/admin.html');
+  await p.waitForTimeout(800);
+  await p.click('#btn-mais'); await p.click('#btn-impressora');
+  await p.locator('#ipr-itens').waitFor({ timeout: 6000 });
+  // antes de imprimir, o rascunho sobrevive a sair e voltar
+  await p.fill('#ipr-itens', '2 alfaces'); await p.fill('#ipr-nome', 'Rascunho');
+  await p.reload(); await p.waitForTimeout(800);
+  await p.click('#btn-mais'); await p.click('#btn-impressora');
+  await p.locator('#ipr-itens').waitFor({ timeout: 6000 });
+  assert.strictEqual(await p.locator('#ipr-itens').inputValue(), '2 alfaces', 'rascunho não impresso continua');
+  await p.click('#ipr-imprimir');
+  await p.locator('#ipr-conf .iconf-convite').waitFor({ timeout: 4000 });
+  await p.reload(); await p.waitForTimeout(800);
+  await p.click('#btn-mais'); await p.click('#btn-impressora');
+  await p.locator('#ipr-itens').waitFor({ timeout: 6000 });
+  assert.strictEqual(await p.locator('#ipr-itens').inputValue(), '', 'pedido que já saiu no papel não volta');
+  assert.strictEqual(await p.locator('#ipr-nome').inputValue(), '');
+  assert.deepStrictEqual(errosP, []);
+  await ctx.close();
+});
+
 teste('pedido do WhatsApp: imprime só o texto; depois "Conferir e registrar" casa com os produtos, registra e limpa; o próximo colado não junta com o anterior', async () => {
   const antes = servidor.chamadas.length;
   const ctx = await navegador.newContext({ ...CELULAR });

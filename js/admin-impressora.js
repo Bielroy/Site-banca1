@@ -175,7 +175,7 @@ async function imprimirAgora() {
             const d = dadosDoForm();
             if (!avulsoTemConteudo(d)) return;
             const ok = await mandar([pedidoAvulso(d, { loja: nomeLoja })], { copias: S.vias }, S.vias > 1 ? `${S.vias} vias enviadas para a impressora.` : 'Pedido enviado para a impressora.');
-            if (ok) { $('ipr-limpar').hidden = false; S.impresso = true; Conferir.oferecer(); }
+            if (ok) { $('ipr-limpar').hidden = false; S.impresso = true; guardarRascunho({ ...d, impresso: true }); Conferir.oferecer(); }
         }
     } finally { S.enviando = false; bt.textContent = antes; pintarPapel(); }
 }
@@ -203,7 +203,9 @@ async function imprimirFoto() {
 // ---------------------------------------------------------------- tela
 function montar() {
     const caixa = $('impressora-conteudo'); if (!caixa) return;
-    const r = lerRascunho(), v = (k) => escapeHTML(r[k] || '');
+    // Pedido que já saiu no papel não volta quando a pessoa sai da tela e entra de novo (mesmo sem tocar em "Limpar").
+    let r = lerRascunho(); if (r.impresso) { r = {}; guardarRascunho({}); }
+    const v = (k) => escapeHTML(r[k] || '');
     caixa.innerHTML = `
     <div class="ipr">
         <header class="ipr-status" id="ipr-status" role="status" aria-live="polite"></header>
