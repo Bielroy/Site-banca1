@@ -1186,7 +1186,8 @@ const pixCopiaColaHtml = (pedido) => {
     </div>`;
 };
 const pixDoPedidoHtml = (pedido) => {
-    if (ehLojaOriginal && podePagarPix(STATE.config.pixAutomatico === true, pedido)) return pixAutomaticoHtml(pedido);
+    // outras lojas só conseguem ligar a opção quando a plataforma cadastra a carteira Asaas delas (o servidor confere de novo)
+    if (podePagarPix(STATE.config.pixAutomatico === true, pedido)) return pixAutomaticoHtml(pedido);
     if (pixDaLojaValido(STATE.config.pix) && podePagarPix(true, pedido)) return pixCopiaColaHtml(pedido);
     if (pixDaLojaValido(STATE.config.pix) && String(pedido.pag || '').toUpperCase() === 'PIX' && pedido.temItensAPesar && pedido.status !== 'cancelado')
         return '<p class="pix-espera">O código PIX aparece aqui, em Meus pedidos, assim que a banca pesar os itens e fechar o valor.</p>';

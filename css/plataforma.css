@@ -96,6 +96,11 @@ body.pf-ocupado .pf-bt { pointer-events: none; opacity: .7; }
 .pf-chave-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .pf-chave h3 { margin: 0; font-family: 'Fraunces', serif; font-size: 1.15rem; color: var(--forest); }
 .pf-chave p { margin: 8px 0 10px; font-size: .9rem; color: var(--pf-apagado); line-height: 1.45; }
+.pf-asaas-aviso, .pf-asaas-carteiras { margin-top: 14px; padding: 12px; border: 1px solid var(--pf-linha); border-radius: 12px; display: flex; flex-direction: column; gap: 8px; }
+.pf-asaas-aviso > small, .pf-asaas-carteiras > small { font-size: .82rem; color: var(--pf-apagado); line-height: 1.4; }
+.pf-copiar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pf-copiar > span { flex: 0 0 100%; font-size: .8rem; font-weight: 700; }
+.pf-copiar input { flex: 1 1 0; min-width: 0; font-size: .85rem; padding: 8px 10px; border: 1px solid var(--pf-linha); border-radius: 8px; background: #fff; }
 .pf-selo { flex: none; padding: 4px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700; background: #f6dcd8; color: var(--pf-perigo); }
 .pf-selo.ok { background: #e3f1e7; color: #1f6b3b; }
 

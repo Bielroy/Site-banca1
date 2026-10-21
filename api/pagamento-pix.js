@@ -69,6 +69,7 @@ const aplicarCors = H.cors;
 const T = require('../lib/tenant');
 const P = require('../lib/prudencia');
 const PagBank = require('../lib/pagbank');
+const Asaas = require('../lib/asaas');
 const Avisos = require('../lib/avisos');
 const Cofre = require('../lib/cofre');
 // Quem da equipe gera PIX de um pedido: quem atende pedidos (não o estoque nem a produção).
@@ -99,6 +100,75 @@ async function conferir(res, tid, pedidoId, dec, token) {
   return res.status(200).json({ pago: !!(depois.pagamento && depois.pagamento.status === 'PAID') });
 }
 
+// ------------------------------------------------------------------ ASAAS
+// Mesmo caminho do PagBank (QR + copia e cola + "conferir"), pela conta Asaas da plataforma.
+// Outras lojas: a cobrança sai com split para a carteira da banca (lib/asaas.js).
+async function conferirAsaas(res, tid, pedidoId, dec, cfg) {
+  const snap = await T.tdoc(db, tid, 'pedidos', pedidoId).get();
+  if (!snap.exists) return res.status(404).json({ error: 'Pedido não encontrado.' });
+  const pedido = snap.data(), pg = pedido.pagamento || {};
+  if (pedido.userId !== dec.uid && !T.temPapel(dec, tid, EQUIPE_DO_PIX)) return res.status(404).json({ error: 'Pedido não encontrado.' });
+  if (pg.status === 'PAID') return res.status(200).json({ pago: true });
+  const ids = [...new Set([pg.orderId].concat(Array.isArray(pg.ordens) ? pg.ordens.slice().reverse() : []).filter((x) => typeof x === 'string' && Asaas.ID_COBRANCA.test(x)))].slice(0, 3);
+  for (const id of ids) {
+    const { cobranca } = await Asaas.consultarCobranca(cfg, id);
+    if (!cobranca || !Asaas.PAGOS.includes(cobranca.status)) continue;
+    const aviso = await Asaas.aplicarCobranca(db, cobranca);
+    if (aviso) {
+      try { await Avisos.avisarLoja(db, aviso.tid, { titulo: aviso.titulo, corpo: aviso.corpo, url: aviso.tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${aviso.tid}`, tag: `pix-${aviso.pedidoId}` }); }
+      catch (e) { console.error('[pix] aviso à equipe falhou:', e && e.message); }
+    }
+    break;
+  }
+  const depois = (await T.tdoc(db, tid, 'pedidos', pedidoId).get()).data() || {};
+  return res.status(200).json({ pago: !!(depois.pagamento && depois.pagamento.status === 'PAID') });
+}
+
+const respostaQr = (id, qr) => ({ sucesso: true, orderId: id, qr_code: qr.payload, qr_code_url: qr.imagem ? `data:image/png;base64,${qr.imagem}` : null });
+
+async function gerarAsaas(res, { tid, pedidoId, pedido, pedidoRef, cpf, email, cfg, carteira }) {
+  const pg0 = pedido.pagamento || {};
+  // QR ainda aberto deste pedido no Asaas: reaproveita (cliente reabriu a tela ou tocou 2 vezes)
+  if (pg0.provedor === 'asaas' && pg0.status === 'WAITING' && Asaas.ID_COBRANCA.test(String(pg0.orderId || ''))) {
+    const { cobranca } = await Asaas.consultarCobranca(cfg, pg0.orderId);
+    if (cobranca && cobranca.status === 'PENDING' && cobranca.deleted !== true && Math.round(Number(cobranca.value) * 100) === Math.round(Number(pg0.valorC))) {
+      const qr = await Asaas.qrDaCobranca(cfg, pg0.orderId);
+      if (qr) return res.status(200).json(respostaQr(pg0.orderId, qr));
+    }
+  }
+  const d = String(cpf || '').replace(/\D/g, '');
+  if (d.length !== 11) return res.status(400).json({ error: 'Informe o CPF de quem vai pagar (11 números). O banco exige para gerar o PIX.' });
+  const valor = Number(pedido.total || 0);
+  if (!Number.isFinite(valor) || valor <= 0 || valor > 100000) return res.status(400).json({ error: 'Pedido sem valor cobrável via PIX.' });
+  const valorC = paraCentavos(valor);
+
+  const criada = await Asaas.criarCobrancaPix(cfg, {
+    nome: Cofre.abrir(pedido.nome, tid, 'nome') || 'Cliente', cpf: d,
+    email: emailValido(email) ? email.trim().toLowerCase() : '',
+    valorC, referencia: `${tid}~${pedidoId}`, descricao: `Pedido ${pedidoId.slice(-6)}`, carteira,
+  });
+  if (!criada.id) {
+    console.error('[pix] Asaas recusou:', criada.status, criada.erro);
+    const cpfRuim = /cpf|cnpj/i.test(criada.erro || '');
+    return res.status(502).json({ error: cpfRuim ? 'O banco não aceitou este CPF. Confira os números.' : 'O banco não gerou o PIX agora. Tente de novo ou combine o pagamento pelo WhatsApp.' });
+  }
+  const qr = await Asaas.qrDaCobranca(cfg, criada.id);
+  if (!qr) return res.status(502).json({ error: 'O banco não devolveu o código PIX. Tente de novo ou combine pelo WhatsApp.' });
+
+  // mesmas regras da gravação do PagBank (transação relendo o pedido)
+  await db.runTransaction(async (t) => {
+    const atualSnap = await t.get(pedidoRef); if (!atualSnap.exists) return;
+    const atual = atualSnap.data(), pg = atual.pagamento || {};
+    if (pg.status === 'PAID') return;
+    const ordens = [...new Set([...(Array.isArray(pg.ordens) ? pg.ordens : []), pg.orderId, criada.id].filter((x) => typeof x === 'string' && x))].slice(-6);
+    t.update(pedidoRef, {
+      ...(atual.status === 'pendente' ? { status: 'aguardando_pagamento' } : {}),
+      pagamento: { provedor: 'asaas', orderId: criada.id, ordens, valorC, status: 'WAITING', criadoEm: new Date().toISOString(), ...(carteira ? { split: true } : {}) },
+    });
+  });
+  return res.status(200).json(respostaQr(criada.id, qr));
+}
+
 module.exports = async function handler(req, res) {
   aplicarCors(req, res, 'OPTIONS,POST');
   res.setHeader('Access-Control-Allow-Methods', 'OPTIONS,POST');
@@ -115,10 +185,15 @@ module.exports = async function handler(req, res) {
     try { ({ tid } = await T.resolverLoja(db, req)); }
     catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
 
-    // A conta do PagBank configurada no servidor é a da loja original. Gerar PIX para outra
-    // loja mandaria o dinheiro do cliente dela para a conta errada: fica bloqueado até cada
-    // loja ter as próprias credenciais.
-    if (tid !== T.TENANT_PADRAO) return res.status(400).json({ error: 'O PIX automático ainda não está disponível nesta loja. Combine o pagamento pelo WhatsApp.' });
+    // Com o Asaas configurado, o PIX sai por ele (a chave pode vir do ambiente ou da tela Plataforma).
+    // A conta do PagBank é a da loja original: gerar PIX para outra loja mandaria o dinheiro para a
+    // conta errada. Pelo Asaas, outra loja só gera PIX se tiver a CARTEIRA dela cadastrada (split).
+    const cfgAsaas = await Segredos.asaas(db);
+    let carteira = '';
+    if (tid !== T.TENANT_PADRAO) {
+      carteira = cfgAsaas ? await Segredos.carteiraAsaas(db, tid) : '';
+      if (!carteira) return res.status(400).json({ error: 'O PIX automático ainda não está disponível nesta loja. Combine o pagamento pelo WhatsApp.' });
+    }
 
     // Quem pede o QR precisa ser o dono do pedido ou alguém da equipe (antes bastava saber o número do pedido).
     let dec;
@@ -132,12 +207,12 @@ module.exports = async function handler(req, res) {
 
     // Desligado até a loja ter a conta do PagBank configurada E ligar a opção no painel.
     // A chave vem da Vercel ou da tela Plataforma (lib/segredos.js).
-    const TOKEN_PAGBANK = await Segredos.pagbank(db);
-    if (!TOKEN_PAGBANK) return res.status(503).json({ error: 'O PIX automático ainda não está ligado. Combine o pagamento pelo WhatsApp.' });
+    const TOKEN_PAGBANK = cfgAsaas ? '' : await Segredos.pagbank(db);
+    if (!cfgAsaas && !TOKEN_PAGBANK) return res.status(503).json({ error: 'O PIX automático ainda não está ligado. Combine o pagamento pelo WhatsApp.' });
     // "Conferir pagamento": a tela do PIX pergunta de tempos em tempos. Se o aviso do PagBank se perdeu,
     // consulta as ordens deste pedido direto no banco e grava do mesmo jeito que o aviso gravaria.
     // Não gera QR nem gasta a cota de QRs; vale mesmo se a loja desligou o PIX depois de gerar o código.
-    if ((req.body || {}).acao === 'conferir') return conferir(res, tid, pedidoId, dec, TOKEN_PAGBANK);
+    if ((req.body || {}).acao === 'conferir') return cfgAsaas ? conferirAsaas(res, tid, pedidoId, dec, cfgAsaas) : conferir(res, tid, pedidoId, dec, TOKEN_PAGBANK);
 
     const cfg = await T.docDe(db, tid, 'loja/config').get();
     if (!cfg.exists || cfg.data().pixAutomatico !== true) return res.status(503).json({ error: 'O PIX automático está desligado nesta loja. Combine o pagamento pelo WhatsApp.' });
@@ -158,6 +233,7 @@ module.exports = async function handler(req, res) {
     if (pedido.pagamento && pedido.pagamento.status === 'PAID') {
       return res.status(409).json({ error: 'Este pedido já foi pago.' });
     }
+    if (cfgAsaas) return gerarAsaas(res, { tid, pedidoId, pedido, pedidoRef, cpf, email, cfg: cfgAsaas, carteira });
 
     // Já existe um QR ainda válido pra esse pedido? Reaproveita (evita
     // gerar QR duplicado se o cliente reabrir o modal / clicar 2x).

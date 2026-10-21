@@ -3659,6 +3659,157 @@ teste('plataforma: liga e desliga campos do cadastro de produto por loja', async
   assert.ok(l.campos && l.campos.duracao, 'a tela recebe os nomes dos campos');
 });
 
+// ------------------------------------------------------------------ PIX pelo Asaas
+const CARTEIRA_T = '0b763922-aa88-4cbe-a567-e3fe8511fa06';
+const CHAVE_ASAAS_T = '$aact_hmlg_000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjAwMDA';
+const AVISO_ASAAS_T = 'aviso-do-asaas-com-mais-de-trinta-e-dois-caracteres';
+/** Asaas de mentira: guarda as chamadas e responde como a API (cliente, cobrança, QR, consulta). */
+function asaasFalso(estado = {}) {
+  const chamadas = [];
+  const fn = async (url, o = {}) => {
+    const u = String(url), corpo = o.body ? JSON.parse(o.body) : null;
+    chamadas.push({ url: u, metodo: o.method || 'GET', corpo, cab: o.headers || {} });
+    const resp = (status, dados) => ({ ok: status < 300, status, json: async () => dados });
+    if (estado.cair) return resp(503, {});
+    if (u.endsWith('/customers')) return resp(200, { id: 'cus_000001' });
+    if (u.endsWith('/payments') && o.method === 'POST') { if (estado.recusar) return resp(400, { errors: [{ description: 'O CPF informado é inválido.' }] }); return resp(200, { id: 'pay_000111' }); }
+    if (/\/payments\/pay_\w+\/pixQrCode$/.test(u)) return resp(200, { payload: '00020126580014br.gov.bcb.pix0136abc-copia-e-cola', encodedImage: 'iVBORw0KGgo=', expirationDate: '2027-01-01 23:59:59' });
+    const m = /\/payments\/(pay_\w+)$/.exec(u);
+    if (m) return estado.cobranca ? resp(200, { id: m[1], status: 'PENDING', value: 20, externalReference: 'banca~pedido-0001', ...estado.cobranca(m[1]) }) : resp(404, {});
+    return resp(404, {});
+  };
+  return { fn, chamadas };
+}
+const comAsaas = async (fn) => {
+  const S = require(raiz('lib/segredos')); S._zerar();
+  const antes = { k: process.env.ASAAS_API_KEY, w: process.env.ASAAS_WEBHOOK_TOKEN, p: process.env.PAGBANK_API_TOKEN, e: process.env.ASAAS_ESPERA_QR_MS, f: global.fetch };
+  process.env.ASAAS_API_KEY = CHAVE_ASAAS_T; process.env.ASAAS_WEBHOOK_TOKEN = AVISO_ASAAS_T; process.env.ASAAS_ESPERA_QR_MS = '1'; delete process.env.PAGBANK_API_TOKEN;
+  try { await fn(); } finally {
+    for (const [k, v] of [['ASAAS_API_KEY', antes.k], ['ASAAS_WEBHOOK_TOKEN', antes.w], ['PAGBANK_API_TOKEN', antes.p], ['ASAAS_ESPERA_QR_MS', antes.e]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    global.fetch = antes.f; S._zerar();
+  }
+};
+
+teste('asaas: ambiente pela chave e tradução da cobrança para as regras de sempre', () => {
+  const A = require(raiz('lib/asaas'));
+  assert.strictEqual(A.ambienteDaChave('$aact_hmlg_abc'), 'sandbox'); assert.strictEqual(A.ambienteDaChave('$aact_prod_abc'), 'producao');
+  assert.strictEqual(A.ambienteDaChave('$aact_YTU5', 'producao'), 'producao'); assert.strictEqual(A.ambienteDaChave('$aact_YTU5'), 'sandbox', 'na dúvida, teste (nunca cobra de verdade por engano)');
+  assert.deepStrictEqual(A.paraOrdem({ id: 'pay_1234', status: 'RECEIVED', value: 25.5, externalReference: 'bie~pedido-9' }), { id: 'pay_1234', reference_id: 'bie~pedido-9', charges: [{ status: 'PAID', amount: { value: 2550 } }] });
+  assert.strictEqual(A.paraOrdem({ id: 'pay_1234', status: 'CONFIRMED', value: 1 }).charges[0].status, 'PAID');
+  assert.strictEqual(A.paraOrdem({ id: 'pay_1234', status: 'PENDING', value: 1 }).charges[0].status, 'WAITING');
+  assert.strictEqual(A.paraOrdem({ id: 'pay_1234', status: 'REFUNDED', value: 1 }).charges[0].status, 'CANCELED');
+  assert.strictEqual(A.paraOrdem({ id: 'pay_1234', status: 'RECEIVED', value: 1, deleted: true }).charges[0].status, 'CANCELED', 'cobrança apagada nunca vira pago');
+  assert.ok(A.carteiraValida(CARTEIRA_T)); assert.ok(!A.carteiraValida('../x')); assert.ok(!A.carteiraValida(''));
+  const S = require(raiz('lib/segredos'));
+  assert.ok(S.chaveAsaasValida(CHAVE_ASAAS_T)); assert.ok(!S.chaveAsaasValida('aact_sem_cifrao_123456789012345')); assert.ok(!S.chaveAsaasValida('$aact_com espaço 12345678901234567890'));
+});
+
+teste('asaas: PIX da loja original e da banca com carteira (split), CPF obrigatório, loja sem carteira não gera', async () => {
+  await comAsaas(async () => {
+    const db = criarBancoP({ ...semente(), 'loja/config': { ...semente()['loja/config'], pixAutomatico: true }, 'pedidos/pedido-0001': { userId: 'c1', total: 20, status: 'pendente', nome: 'Ana' },
+      'tenants/espetinhos/loja/config': { pixAutomatico: true }, 'tenants/espetinhos/pedidos/pedido-0002': { userId: 'c1', total: 35.9, status: 'pendente', nome: 'Bia' } });
+    const F = asaasFalso(); global.fetch = F.fn;
+    process.env.PUBLIC_BASE_URL = 'https://www.exemplo.com.br';
+    const api = carregarApi(raiz('api/pagamento-pix.js'), criarAdmin(db, TOKENS_P));
+    const pix = (pedidoId, loja, extra = {}) => chamar(api, { headers: { Authorization: 'Bearer cliente', ...(loja ? { 'X-Loja': loja } : {}) }, body: { pedidoId, ...extra } });
+
+    assert.strictEqual((await pix('pedido-0001')).status, 400, 'sem CPF o Asaas não gera: pede antes de chamar');
+    assert.strictEqual(F.chamadas.length, 0);
+    const ok = await pix('pedido-0001', null, { cpf: '529.982.247-25' });
+    assert.strictEqual(ok.status, 200, JSON.stringify(ok.corpo));
+    assert.match(ok.corpo.qr_code, /copia-e-cola/); assert.ok(ok.corpo.qr_code_url.startsWith('data:image/png;base64,'));
+    const cob = F.chamadas.find((c) => c.url.endsWith('/payments') && c.metodo === 'POST');
+    assert.ok(F.chamadas[0].url.startsWith('https://api-sandbox.asaas.com/v3/'), 'chave de teste vai ao sandbox');
+    assert.strictEqual(F.chamadas[0].cab.access_token, CHAVE_ASAAS_T);
+    assert.strictEqual(cob.corpo.billingType, 'PIX'); assert.strictEqual(cob.corpo.value, 20); assert.strictEqual(cob.corpo.externalReference, 'banca~pedido-0001');
+    assert.ok(!cob.corpo.split, 'loja original: o dinheiro fica na conta da plataforma');
+    const pg = db._dados.get('pedidos/pedido-0001');
+    assert.strictEqual(pg.status, 'aguardando_pagamento'); assert.deepStrictEqual([pg.pagamento.provedor, pg.pagamento.orderId, pg.pagamento.valorC, pg.pagamento.status], ['asaas', 'pay_000111', 2000, 'WAITING']);
+
+    F.chamadas.length = 0;
+    assert.strictEqual((await pix('pedido-0002', 'espetinhos', { cpf: '52998224725' })).status, 400, 'banca sem carteira: o dinheiro não tem para onde ir');
+    assert.strictEqual(F.chamadas.length, 0);
+    db._dados.set('plataforma/segredos', { carteirasAsaas: { espetinhos: CARTEIRA_T } }); require(raiz('lib/segredos'))._zerar();
+    const b = await pix('pedido-0002', 'espetinhos', { cpf: '52998224725' });
+    assert.strictEqual(b.status, 200, JSON.stringify(b.corpo));
+    const cobB = F.chamadas.find((c) => c.url.endsWith('/payments') && c.metodo === 'POST');
+    assert.deepStrictEqual(cobB.corpo.split, [{ walletId: CARTEIRA_T, percentualValue: 100 }], 'a banca recebe 100% do líquido');
+    assert.strictEqual(cobB.corpo.externalReference, 'espetinhos~pedido-0002'); assert.strictEqual(cobB.corpo.value, 35.9);
+
+    F.chamadas.length = 0;
+    const recusa = asaasFalso({ recusar: true }); global.fetch = recusa.fn;
+    db._dados.set('pedidos/pedido-0003', { userId: 'c1', total: 12, status: 'pendente' });
+    const r = await pix('pedido-0003', null, { cpf: '52998224725' });
+    assert.strictEqual(r.status, 502); assert.match(r.corpo.error, /CPF/);
+  });
+});
+
+teste('asaas: aviso de pagamento só com o token certo; a situação vem da consulta e o pedido anda uma vez', async () => {
+  await comAsaas(async () => {
+    const db = criarBancoP({ ...semente(), 'pedidos/pedido-0001': { userId: 'c1', total: 20, status: 'aguardando_pagamento', nome: 'Ana', pagamento: { provedor: 'asaas', orderId: 'pay_000111', ordens: ['pay_000111'], valorC: 2000, status: 'WAITING' } } });
+    let situacao = 'PENDING';
+    const F = asaasFalso({ cobranca: () => ({ status: situacao }) }); global.fetch = F.fn;
+    const api = carregarApi(raiz('api/pagamento-asaas.js'), criarAdmin(db, TOKENS_P));
+    const aviso = (token, body) => chamar(api, { headers: token ? { 'asaas-access-token': token } : {}, body });
+    const ev = (evento = 'PAYMENT_RECEIVED', id = 'pay_000111') => ({ id: 'evt_1', event: evento, payment: { id, status: 'RECEIVED', value: 20 } });
+
+    assert.strictEqual((await aviso(null, ev())).status, 401); assert.strictEqual((await aviso('errado', ev())).status, 401);
+    assert.strictEqual(F.chamadas.length, 0, 'aviso falso nem consulta o Asaas');
+    assert.strictEqual((await aviso(AVISO_ASAAS_T, ev('PAYMENT_CREATED'))).status, 200);
+    assert.strictEqual(db._dados.get('pedidos/pedido-0001').pagamento.status, 'WAITING', 'o corpo do aviso diz RECEIVED, mas a consulta diz PENDING: não vira pago');
+    situacao = 'RECEIVED';
+    assert.strictEqual((await aviso(AVISO_ASAAS_T, ev())).status, 200);
+    const p = db._dados.get('pedidos/pedido-0001');
+    assert.strictEqual(p.pagamento.status, 'PAID'); assert.strictEqual(p.status, 'pendente', 'vai para a fila da loja'); assert.strictEqual(p.pagamento.valorPagoC, 2000);
+    assert.strictEqual((await aviso(AVISO_ASAAS_T, ev())).status, 200, 'aviso repetido é tranquilo');
+    assert.strictEqual((await aviso(AVISO_ASAAS_T, ev('PAYMENT_RECEIVED', 'pay_999999'))).status, 200, 'cobrança que não é nossa: nada a fazer, sem pedir reenvio');
+    global.fetch = asaasFalso({ cair: true }).fn;
+    assert.strictEqual((await aviso(AVISO_ASAAS_T, ev())).status, 503, 'Asaas fora do ar: pede para tentar de novo');
+    delete process.env.ASAAS_WEBHOOK_TOKEN; require(raiz('lib/segredos'))._zerar();
+    assert.strictEqual((await aviso(AVISO_ASAAS_T, ev())).status, 401, 'sem token configurado, recusa tudo (falha fechada)');
+  });
+});
+
+teste('asaas: plataforma guarda a chave, cria o token do aviso e cadastra a carteira de cada banca', async () => {
+  const db = criarBanco({ 'tenants/bie': { nome: 'Bié', ativo: true } });
+  const tokens = { super: { uid: 'sup-1', plataforma: true }, dono: { uid: 'd-1', tenants: { bie: 'proprietario' } } };
+  const api = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, tokens, []));
+  const ch = (tk, body) => chamar(api, { headers: { authorization: `Bearer ${tk}` }, body });
+  const S = require(raiz('lib/segredos')); S._zerar(); const antes = process.env.ASAAS_API_KEY; delete process.env.ASAAS_API_KEY;
+  try {
+    assert.strictEqual((await ch('dono', { acao: 'asaas', chave: CHAVE_ASAAS_T })).status, 403);
+    assert.strictEqual((await ch('super', { acao: 'asaas', chave: 'nao-e-chave' })).status, 400);
+    assert.strictEqual((await ch('super', { acao: 'asaas', chave: CHAVE_ASAAS_T })).status, 200);
+    const seg = db._dados.get('plataforma/segredos');
+    assert.strictEqual(seg.asaas, CHAVE_ASAAS_T); assert.ok(S.avisoAsaasValido(seg.asaasAviso), 'o token do aviso nasce com a chave');
+    const tokenAviso = seg.asaasAviso;
+    await ch('super', { acao: 'asaas', chave: CHAVE_ASAAS_T });
+    assert.strictEqual(db._dados.get('plataforma/segredos').asaasAviso, tokenAviso, 'trocar a chave não troca o token já cadastrado no Asaas');
+    assert.strictEqual((await ch('super', { acao: 'asaas-carteira', id: 'bie', carteira: 'x' })).status, 400);
+    assert.strictEqual((await ch('super', { acao: 'asaas-carteira', id: 'banca', carteira: CARTEIRA_T })).status, 400, 'a loja original recebe na conta da plataforma');
+    assert.strictEqual((await ch('super', { acao: 'asaas-carteira', id: 'bie', carteira: CARTEIRA_T.toUpperCase() })).status, 200);
+    assert.strictEqual(db._dados.get('plataforma/segredos').carteirasAsaas.bie, CARTEIRA_T); assert.strictEqual(db._dados.get('tenants/bie').pixAsaas, true);
+    assert.ok(!('carteirasAsaas' in db._dados.get('tenants/bie')), 'a carteira não vai para a ficha pública');
+    const l = (await ch('super', { acao: 'lojas' })).corpo;
+    assert.strictEqual(l.asaas.ligado, true); assert.strictEqual(l.asaas.ambiente, 'sandbox'); assert.strictEqual(l.asaas.aviso, tokenAviso); assert.strictEqual(l.asaas.carteiras.bie, CARTEIRA_T);
+    assert.ok(!JSON.stringify(l).includes(CHAVE_ASAAS_T), 'a chave nunca volta para a tela');
+    assert.strictEqual((await ch('super', { acao: 'asaas-carteira', id: 'bie', carteira: '' })).status, 200);
+    assert.ok(!('bie' in db._dados.get('plataforma/segredos').carteirasAsaas)); assert.strictEqual(db._dados.get('tenants/bie').pixAsaas, false);
+    assert.ok(S.avisoAsaasValido(db._dados.get('plataforma/segredos').asaasAviso), 'apagar carteira não mexe no resto dos segredos');
+  } finally { if (antes === undefined) delete process.env.ASAAS_API_KEY; else process.env.ASAAS_API_KEY = antes; S._zerar(); }
+});
+
+teste('cloudflare: o token do aviso do Asaas passa pela ponte até o servidor', async () => {
+  const F = await import(raiz('functions/api/[[caminho]].js'));
+  const antes = globalThis.fetch; let visto = null;
+  globalThis.fetch = async (url, o) => { visto = Object.fromEntries(o.headers); return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }); };
+  try {
+    const req = new Request('https://usebanca.com/api/pagamento-asaas', { method: 'POST', headers: { 'Content-Type': 'application/json', 'asaas-access-token': AVISO_ASAAS_T }, body: '{}' });
+    await F.onRequest({ request: req, env: { API_ORIGEM: 'https://api.exemplo.com', PROXY_SEGREDO: 's' }, params: { caminho: ['pagamento-asaas'] } });
+    assert.strictEqual(visto['asaas-access-token'], AVISO_ASAAS_T, 'sem ele, nenhum PIX do Asaas seria confirmado');
+  } finally { globalThis.fetch = antes; }
+});
+
 (async () => {
   let falhas = 0;
   for (const [nome, fn] of testes) {

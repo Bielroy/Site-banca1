@@ -23,7 +23,8 @@ export const CABECALHOS_DA_API = {
 // só estes cabeçalhos do visitante seguem para o servidor (conferido no código de api/ e lib/):
 //   authorization: login · x-loja: qual loja · cookie: a conta do cliente (lib/conta.js) · origin: de onde veio (CORS e links de e-mail)
 //   x-authenticity-token: a assinatura do aviso de pagamento do PagBank (api/pagamento-webhook.js): sem ela, nenhum PIX é confirmado
-const IDA = ['content-type', 'authorization', 'accept', 'accept-language', 'user-agent', 'x-loja', 'cookie', 'origin', 'x-authenticity-token'];
+//   asaas-access-token: o token do aviso de pagamento do Asaas (api/pagamento-asaas.js)
+const IDA = ['content-type', 'authorization', 'accept', 'accept-language', 'user-agent', 'x-loja', 'cookie', 'origin', 'x-authenticity-token', 'asaas-access-token'];
 // e só estes da resposta voltam (o Set-Cookie é tratado à parte, pode ser mais de um)
 const VOLTA = ['content-type', 'content-disposition', 'retry-after', 'cache-control', 'vary', 'content-security-policy',
   'access-control-allow-origin', 'access-control-allow-methods', 'access-control-allow-headers'];

@@ -134,9 +134,25 @@ function abaMensalidades() {
         </div></li>`; }).join('')}</ul>`;
 }
 
+// PIX pelo Asaas: chave da conta da plataforma, o aviso (webhook) para cadastrar lá e a carteira de cada banca.
+function secaoAsaas(d) {
+    const a = d.asaas || {}, amb = a.ambiente === 'producao' ? 'produção' : 'teste (sandbox)';
+    const copiar = (rotulo, valor) => `<div class="pf-copiar"><span>${rotulo}</span><input type="text" readonly value="${escapeHTML(valor)}" aria-label="${rotulo}"><button type="button" class="pf-bt mini" data-pf="copiar-texto" data-copiar="${escapeHTML(valor)}">Copiar</button></div>`;
+    const outras = (d.lojas || []).filter((l) => !l.original);
+    return `<section class="pf-chave"><div class="pf-chave-topo"><h3>PIX automático (Asaas)</h3><span class="pf-selo${a.ligado ? ' ok' : ''}">${a.ligado ? `Ligado · ${amb}` : 'Sem chave'}</span></div>
+        <p>${a.ligado ? 'Com o Asaas ligado, o PIX de todas as lojas sai por ele (o PagBank fica de lado). A loja original recebe na conta da plataforma; cada outra banca recebe na carteira dela, cadastrada abaixo.' : 'Cole a chave da API da conta Asaas da plataforma (no Asaas: Integrações, Chaves de API). Comece com a chave do sandbox para testar sem dinheiro de verdade.'}</p>
+        ${a.viaAmbiente ? '<p>A chave está no servidor (variável ASAAS_API_KEY): para trocar, mude lá.</p>' : `<div class="pf-form-linha"><input type="password" id="pf-asaas" autocomplete="off" spellcheck="false" maxlength="420" placeholder="Chave da API ($aact_...)" aria-label="Chave da API do Asaas"><button type="button" class="pf-bt pri" data-pf="salvar-asaas">Salvar</button></div>`}
+        ${a.ligado ? `<div class="pf-asaas-aviso"><b>Cadastre o aviso de pagamento no Asaas</b><small>Integrações → Webhooks → Adicionar Webhook. Cole a URL e o token abaixo e marque os eventos de cobrança <b>PAYMENT_RECEIVED</b> e <b>PAYMENT_CONFIRMED</b>.</small>
+            ${a.urlAviso ? copiar('URL', a.urlAviso) : '<small>Falta PUBLIC_BASE_URL no servidor para montar a URL.</small>'}
+            ${a.avisoViaAmbiente ? '<small>Token: o que está na variável ASAAS_WEBHOOK_TOKEN do servidor.</small>' : a.aviso ? copiar('Token', a.aviso) : ''}</div>
+        <div class="pf-asaas-carteiras"><b>Carteira de cada banca</b><small>O walletId da conta Asaas da banca (formato 0b763922-aa88-4cbe-a567-e3fe8511fa06). Sem carteira, a loja não mostra PIX automático.${a.comissao ? ` Comissão da plataforma: ${a.comissao}%.` : ''}</small>
+            ${outras.length ? outras.map((l) => `<div class="pf-copiar" data-loja="${escapeHTML(l.id)}"><span>${escapeHTML(l.nome)}</span><input type="text" data-carteira autocomplete="off" spellcheck="false" maxlength="40" value="${escapeHTML((a.carteiras || {})[l.id] || '')}" placeholder="walletId" aria-label="Carteira Asaas de ${escapeHTML(l.nome)}"><button type="button" class="pf-bt mini pri" data-pf="salvar-carteira">Salvar</button></div>`).join('') : '<small>Nenhuma outra loja ainda.</small>'}</div>` : ''}
+    </section>`;
+}
+
 function abaChaves() {
     const d = S.dados;
-    return `<section class="pf-chave"><div class="pf-chave-topo"><h3>PIX automático (PagBank)</h3><span class="pf-selo${d.pix ? ' ok' : ''}">${d.pix ? 'Chave guardada' : 'Sem chave'}</span></div>
+    return `${secaoAsaas(d)}<section class="pf-chave"><div class="pf-chave-topo"><h3>PIX automático (PagBank)</h3><span class="pf-selo${d.pix ? ' ok' : ''}">${d.pix ? 'Chave guardada' : 'Sem chave'}</span></div>
         <p>${d.pix ? 'Para trocar, cole o novo token. Para o PIX aparecer ao cliente, ligue também "PIX automático" nas Configurações do painel da loja.' : 'Cole o token da conta PagBank (no site do PagBank: Integrações, Token). Depois ligue "PIX automático" nas Configurações do painel da loja. Vale para a loja original.'}</p>
         <div class="pf-form-linha"><input type="password" id="pf-pagbank" autocomplete="off" spellcheck="false" maxlength="300" placeholder="Token do PagBank" aria-label="Token do PagBank"><button type="button" class="pf-bt pri" data-pf="salvar-pagbank">Salvar</button></div></section>
     <section class="pf-chave"><div class="pf-chave-topo"><h3>Fotos dos produtos (ImgBB)</h3><span class="pf-selo${d.fotos ? ' ok' : ''}">${d.fotos ? 'Envio automático ligado' : 'Desligado'}</span></div>
@@ -374,6 +390,21 @@ async function agir(b) {
             const foi = await fazer({ acao: 'assinatura', id, valor: valor === '' ? '' : String(valor), dia: diaN || null, obs: v('obs') }, valor === '' ? 'Mensalidade retirada.' : `Mensalidade de ${fmt(valor)} salva.`);
             if (!foi) { S.mensal[id] = guardado; render(); }
             return;
+        }
+        case 'copiar-texto': {
+            try { await navigator.clipboard.writeText(b.dataset.copiar || ''); showToast('Copiado.'); }
+            catch (_) { const campo = b.parentElement && b.parentElement.querySelector('input'); if (campo) { campo.focus(); campo.select(); } showToast('Não consegui copiar sozinho: o texto ficou selecionado, use Copiar do celular.', true); }
+            return;
+        }
+        case 'salvar-asaas': {
+            const chave = $('pf-asaas').value.trim();
+            if (!/^\$aact_\S{20,}$/.test(chave)) return showToast('A chave do Asaas começa com $aact_ e não tem espaços. Confira se copiou inteira.', true);
+            return fazer({ acao: 'asaas', chave }, 'Chave do Asaas guardada. Agora cadastre o aviso de pagamento no Asaas (URL e token abaixo).');
+        }
+        case 'salvar-carteira': {
+            const linha = b.closest('[data-loja]'), carteira = linha.querySelector('[data-carteira]').value.trim();
+            if (carteira && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(carteira)) return showToast('A carteira tem o formato 0b763922-aa88-4cbe-a567-e3fe8511fa06. Confira se copiou inteira.', true);
+            return fazer({ acao: 'asaas-carteira', id: linha.dataset.loja, carteira }, carteira ? 'Carteira guardada. O PIX desta banca vai direto para ela.' : 'Carteira apagada. Esta loja volta a não ter PIX automático.');
         }
         case 'salvar-pagbank': {
             const chave = $('pf-pagbank').value.trim();

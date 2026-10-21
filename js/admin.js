@@ -54,6 +54,9 @@ const abrirTela = async (nome) => {
     catch (e) { console.error(e); showToast('Não consegui abrir esta tela. Confira a internet e toque de novo.', true); }
 };
 import { iniciarCategoriasAdmin, abrirCategorias, chaveDaCategoria, nomeDaCategoria, normalizarWpp, ordemDasCategorias } from './admin-categorias.js';
+// PIX automático: a loja original (conta da plataforma) ou a banca que a plataforma ligou ao Asaas (carteira cadastrada)
+let pixAsaasDaFicha = false;
+const podePixAutomatico = () => ehLojaOriginal || pixAsaasDaFicha;
 // Miniatura do redutor falhou? Volta para a foto original (mesmo cuidado da loja).
 document.addEventListener('error', (e) => { const img = e.target; if (!(img instanceof HTMLImageElement) || !img.dataset.original) return; const o = img.dataset.original; delete img.dataset.original; if (img.getAttribute('src') !== o) img.src = o; }, true);
 
@@ -107,6 +110,7 @@ onAuthStateChanged(auth, async (user) => {
     let suspensa = false;
     let fichaLida = null;
     try { const f = await getDoc(fichaRef()); fichaLida = f.exists() ? f.data() : null; suspensa = f.exists() && f.data().ativo === false; modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; lerDiasSemFeira(f.exists() ? f.data() : null); } catch (_) { modulosDaLoja = null; }
+    pixAsaasDaFicha = !!(fichaLida && fichaLida.pixAsaas === true);
     try { aplicarCampos(fichaLida); } catch (e) { console.warn('[campos]', e); }   // campos do cadastro que a plataforma ligou nesta loja
     // LOJA BLOQUEADA pela plataforma (falta de pagamento): o painel não abre. Só a plataforma continua entrando.
     if (suspensa && papelAtual !== 'plataforma') { mostrarSuspensa(papelAtual === 'proprietario'); return; }
@@ -494,7 +498,7 @@ const iniciarRealTimeSync = () => {
             const chkPix = document.getElementById('config-pix'); if (chkPix) chkPix.checked = data.pixAutomatico === true;
             const px = data.pix || {}; [['config-pix-tipo', px.tipo || 'celular'], ['config-pix-chave', px.chave || ''], ['config-pix-nome', px.nome || ''], ['config-pix-cidade', px.cidade || '']].forEach(([id, v]) => { const el = document.getElementById(id); if (el) el.value = v; });
             const cid = document.getElementById('config-cidade'); if (cid && document.activeElement !== cid) cid.value = data.cidade || '';
-            const grupoPix = document.getElementById('grupo-pix'); if (grupoPix) grupoPix.hidden = !ehLojaOriginal;   // a conta do PagBank no servidor é a da loja original
+            const grupoPix = document.getElementById('grupo-pix'); if (grupoPix) grupoPix.hidden = !podePixAutomatico();   // loja original (conta da plataforma) ou banca com carteira Asaas
             document.getElementById('config-status-loja').value = data.lojaAberta === false ? "fechada" : "aberta";
             const diasSalvos = data.diasAbertos || [0, 1, 2, 3, 4, 5, 6];
             document.querySelectorAll('.chk-dia').forEach(chk => chk.checked = diasSalvos.includes(parseInt(chk.value)));
@@ -2884,7 +2888,7 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         if (diasAbertos.length === 0) throw new Error("Marque pelo menos um dia de abertura (ou feche a loja no disjuntor).");
 
         const condominios = lerCondominios();
-        const pixAutomatico = ehLojaOriginal && document.getElementById('config-pix')?.checked === true;
+        const pixAutomatico = podePixAutomatico() && document.getElementById('config-pix')?.checked === true;
         const taxa = Math.max(0, parseFloat(document.getElementById('config-taxa').value) || 0), gratisAcima = Math.max(0, parseFloat(document.getElementById('config-gratis').value) || 0);
         if (taxa > 500) throw new Error("Confira a taxa de entrega: o máximo é R$ 500.");
         const diasRet = Array.from(document.querySelectorAll('.chk-ret-dia:checked')).map((c) => Number(c.value));

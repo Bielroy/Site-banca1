@@ -59,6 +59,19 @@ O Docker roda `server/index.js`; o **Caddy** cuida do HTTPS de `api.usebanca.com
 - **Fim do período grátis da AWS (6 meses):** antes do fim, decida entre passar para o plano pago (alguns dólares por mês) ou mudar o servidor
   de lugar. O alerta de orçamento de US$ 5 avisa se começar a cobrar.
 
+## PIX pelo Asaas (conta da plataforma + carteira de cada banca)
+Quando a chave do Asaas está cadastrada, o PIX de todas as lojas sai por ele (o PagBank fica de lado; sem chave, nada muda).
+- **Chave:** tela Plataforma → aba Chaves → "PIX automático (Asaas)". Comece pela chave do **sandbox** (`$aact_hmlg_...`): o site
+  percebe pela chave se é teste ou produção. (Ou variável `ASAAS_API_KEY` no `~/segredos.env`.)
+- **Aviso de pagamento (webhook):** no Asaas, Integrações → Webhooks → Adicionar. URL `https://usebanca.com/api/pagamento-asaas`,
+  o **token** que a tela Plataforma mostra (botão Copiar) e os eventos de cobrança `PAYMENT_RECEIVED` e `PAYMENT_CONFIRMED`.
+  Sem esse token configurado aqui, todo aviso é recusado.
+- **Carteira de cada banca:** na mesma tela, o `walletId` da conta Asaas da banca. A cobrança sai com split de 100% do valor
+  líquido para ela (menos `ASAAS_COMISSAO_PCT`, se definida). Sem carteira, a loja não mostra PIX automático. A loja original
+  recebe na conta da plataforma.
+- Depois, em cada loja: painel → Configurações → ligar "PIX automático".
+- O servidor precisa estar atualizado (`atualizar-servidor.sh`) para as rotas novas existirem.
+
 <details><summary>Como era o plano antigo (Google Cloud Run), só para referência</summary>
 
 1. Abra https://console.cloud.google.com e entre com a mesma conta do Firebase. Escolha **o mesmo projeto** do Firebase da loja.
