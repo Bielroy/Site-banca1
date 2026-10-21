@@ -1209,9 +1209,12 @@ const pixCopiaColaHtml = (pedido, destaque) => {
         <small>Cole no aplicativo do seu banco, em "PIX copia e cola". O valor já vem preenchido. Depois, mande o comprovante no WhatsApp.</small>
     </div>`;
 };
+// "Pagamento só na entrega" (painel → Configurações → Pagamento): o site não mostra código PIX nem QR em lugar nenhum.
+const pagaNaEntrega = () => STATE.config && STATE.config.pagamentoNaEntrega === true;
 const pixDoPedidoHtml = (pedido, destaque = false) => {
+    if (pagaNaEntrega()) return '';
     // outras lojas só conseguem ligar a opção quando a plataforma cadastra a carteira Asaas delas (o servidor confere de novo)
-    if (podePagarPix(STATE.config.pixAutomatico === true, pedido)) return pixAutomaticoHtml(pedido, destaque);
+    if (podePagarPix(STATE.config.pixAutomatico === true, pedido)) return Number(pedido.total) > 0 ? pixAutomaticoHtml(pedido, destaque) : '';   // R$ 0,00 (cupom de 100%): nada a pagar
     if (pixDaLojaValido(STATE.config.pix) && podePagarPix(true, pedido)) return pixCopiaColaHtml(pedido, destaque);
     if (pixDaLojaValido(STATE.config.pix) && String(pedido.pag || '').toUpperCase() === 'PIX' && pedido.temItensAPesar && pedido.status !== 'cancelado')
         return '<p class="pix-espera">O código PIX aparece aqui, em Meus pedidos, assim que a banca pesar os itens e fechar o valor.</p>';
@@ -1274,8 +1277,25 @@ const pintarModo = () => {
     if (sub) sub.textContent = retirada ? 'Seus dados' : 'Dados da entrega';
     if (rotulo) rotulo.textContent = retirada ? 'Quando vai retirar? (opcional)' : 'Quando prefere receber? (opcional)';
     pintarHorariosDeEntrega();
+    pintarPagamentoDaLoja();
 };
 document.addEventListener('change', (e) => { if (e.target && e.target.name === 'cli-modo') pintarModo(); });
+
+// Com "pagamento só na entrega", os botões dizem que tudo é pago na hora de receber (ou de retirar).
+const pintarPagamentoDaLoja = () => {
+    const sel = document.getElementById('cli-pagamento'), nota = document.getElementById('pag-nota'); if (!sel) return;
+    const naEntrega = pagaNaEntrega(), quando = modoEscolhido() === 'retirada' ? 'na retirada' : 'na entrega';
+    const textos = { PIX: `PIX (${quando})`, 'Cartão': `Cartão (maquininha ${quando})`, Dinheiro: `Dinheiro (${quando})` };
+    [...sel.options].forEach((o) => {
+        if (!o.dataset.original) o.dataset.original = o.textContent;
+        const novo = naEntrega && textos[o.value] ? textos[o.value] : o.dataset.original;
+        if (o.textContent !== novo) o.textContent = novo;
+    });
+    if (nota) {
+        if (!nota.dataset.original) nota.dataset.original = nota.textContent;
+        nota.textContent = naEntrega ? `Nada é cobrado agora. Você paga ${modoEscolhido() === 'retirada' ? 'quando retirar' : 'quando receber o pedido'}: cartão na maquininha, PIX ou dinheiro.` : nota.dataset.original;
+    }
+};
 
 // Horário de entrega (ou de retirada): o campo só aparece se a loja cadastrou horários para o modo e o dia do pedido.
 const pintarHorariosDeEntrega = () => {
@@ -2461,6 +2481,9 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     contarFunil('sacola');
 });
 
+// Valor da sacola (itens exatos + estimativa dos a pesar), para saber se a troca de dia mudou o que a pessoa viu.
+const valorDaSacola = () => Math.round(STATE.carrinho.reduce((t, i) => t + (ehAPesar(i) ? (valorEstimado(i) || 0) : (subtotalDoItem(i) || 0)), 0) * 100) / 100;
+
 // COMANDA: o pedido do jeito que a banca vai receber, no alto da tela de envio. Ninguém pergunta "tem certeza?":
 // a quantidade grande à esquerda ("2 batatas", "1 kg", "4 pacotes") já deixa claro o que vai.
 const renderComanda = () => {
@@ -2545,13 +2568,19 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
         // o condomínio escolhido agora pode ser de uma feira desta banca. Se a feira mudou, os preços e a data
         // mudam junto: NÃO envia com um valor que a pessoa não viu. Atualiza a sacola e pede para conferir.
-        const feiraAntes = lerFeiraCliente();
+        // Antes a pessoa tinha de tocar em "Enviar" DUAS vezes sempre que isso acontecia. Agora: se o valor da sacola
+        // não mudou, segue direto; se mudou, uma pergunta clara mostra o dia e o total novo, e "Enviar assim" já envia.
+        const feiraAntes = lerFeiraCliente(), valorAntes = valorDaSacola();
         if (endereco.condominio) { try { await feiraPeloCondominio(endereco.condominio, perguntarFeira); } catch (_) { /* segue */ } }
         if (lerFeiraCliente() !== feiraAntes || (STATE.diaDoPreco != null && diaDoPreco() !== STATE.diaDoPreco)) {
-            document.dispatchEvent(new CustomEvent('feira-do-cliente')); pintarAvisoDeEntrega();
-            const ent = entregaDaFeira();
-            showToast(ent && !ent.hoje ? `Seu condomínio é atendido na feira de ${textoDoDia(ent.dia)}: os preços são os desse dia. Confira e toque em enviar de novo.` : 'Os preços foram atualizados. Confira e toque em enviar de novo.');
-            return;
+            document.dispatchEvent(new CustomEvent('feira-do-cliente')); pintarAvisoDeEntrega(); renderComanda();
+            const fora = STATE.carrinho.filter((i) => i.foraDoDia), valorDepois = valorDaSacola(), entF = entregaDaFeira();
+            if (fora.length || Math.abs(valorDepois - valorAntes) >= 0.01) {
+                const dia = entF && !entF.hoje ? textoDoDia(entF.dia) : nomeDoDiaDoPedido();
+                const ok = !fora.length && await customConfirm(`Seu pedido é para ${dia}`,
+                    `Os preços são os desse dia, então o total mudou de ${fmt(valorAntes)} para ${fmt(valorDepois)}. Quer enviar assim?`, { ok: 'Enviar assim', nao: 'Voltar e conferir' });
+                if (!ok) { if (fora.length) showToast(`${fora.map((i) => i.nome).join(', ')} não ${fora.length > 1 ? 'saem' : 'sai'} para ${dia}. Tire da sacola ou troque o dia.`, true); return; }
+            }
         }
         const ent = entregaDoPedido();
         { const fora = STATE.carrinho.filter((i) => i.foraDoDia); if (fora.length) { showToast(`${fora.map((i) => i.nome).join(', ')} não ${fora.length > 1 ? 'saem' : 'sai'} para ${nomeDoDiaDoPedido()}. Tire da sacola ou troque o dia.`, true); return; } }
@@ -2602,6 +2631,8 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
         } catch (e) { console.warn('[loja] pedido enviado, mas não consegui guardar no aparelho:', e && e.message); }
 
+        { const tit = document.querySelector('#modal-sucesso .title-success'); if (tit) tit.textContent = pagaNaEntrega() ? 'Pedido enviado!' : 'Pedido registrado!'; }
+        { const lp = document.getElementById('sucesso-pag'); if (lp) { lp.hidden = !pagaNaEntrega(); lp.textContent = pagaNaEntrega() ? `💳 Pagamento ${retirada ? 'na retirada' : 'na entrega'}${pag ? `: ${pag}` : ''}.` : ''; } }
         const pixPendente = oferecerPixNoSucesso({ id: data.pedido.id, total: data.pedido.total, pag, status: 'pendente', temItensAPesar: itensFormatados.some(i => i.aPesar) });
         mostrarLinksWhatsApp(data.pedido, { pixPendente });
         const dicaAcesso = document.getElementById('sucesso-dica-acesso'); if (dicaAcesso) dicaAcesso.hidden = !data.temConta;
@@ -2629,8 +2660,13 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         // refaz os preços e a data na tela e deixa a pessoa conferir antes de enviar de novo.
         if (err && err.dados && err.dados.codigo === 'dia-mudou') {
             if (Number.isFinite(err.dados.agora)) ACERTO_RELOGIO = err.dados.agora - Date.now();
-            document.dispatchEvent(new CustomEvent('feira-do-cliente')); pintarAvisoDeEntrega();
-            showToast(err.message, true);
+            document.dispatchEvent(new CustomEvent('feira-do-cliente')); pintarAvisoDeEntrega(); renderComanda();
+            if (!STATE.reenvioDoDia) {
+                STATE.reenvioDoDia = true;
+                const reenviar = await customConfirm('O dia do pedido mudou', `${err.message} O total agora é ${fmt(valorDaSacola())}. Quer enviar assim?`, { ok: 'Enviar assim', nao: 'Voltar e conferir' });
+                if (reenviar) setTimeout(() => { btn.click(); }, 0);
+                setTimeout(() => { STATE.reenvioDoDia = false; }, 5000);
+            } else showToast(err.message, true);
             return;
         }
         // Antes ia "Failed to fetch" cru, em inglês, para a tela da cliente

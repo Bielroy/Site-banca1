@@ -164,6 +164,62 @@ teste('PIX no pedido: cartão grande "Falta pagar" acima do WhatsApp, copia o c�
   semErros(erros); await fechar();
 });
 
+teste('pagamento só na entrega: sem PIX na tela, "Pedido enviado!", forma escolhida e WhatsApp abre sozinho', async () => {
+  const c = cenarioPadrao();
+  c.lojas.banca.config = { ...c.lojas.banca.config, pagamentoNaEntrega: true, pixAutomatico: true, pix: { tipo: 'celular', chave: '62991266509', nome: 'Rosiva Martins da Silva' } };
+  const { pagina, erros, fechar } = await abrir('/', c, { antes: () => { window.__abertos = []; window.open = (u) => { window.__abertos.push(String(u)); return null; }; } });
+  await abrirCheckoutComOvos(pagina);
+  assert.match(await pagina.locator('#pag-chips').innerText(), /maquininha na entrega/i);
+  assert.match(await pagina.locator('#pag-nota').innerText(), /quando receber o pedido/i);
+  const lista = pagina.locator('#checkout-endereco select:visible'); if (await lista.count()) await lista.first().selectOption({ index: 1 });
+  const campos = pagina.locator('#checkout-endereco input:visible');
+  for (let i = 0; i < await campos.count(); i++) await campos.nth(i).fill(['Jardins Florença', '12', '7'][i] || '1');
+  await pagina.fill('#cli-nome', 'Cliente Entrega');
+  await pagina.click('#pag-chips .pag-chip[data-pag="PIX"]');
+  await pagina.click('#btn-enviar-pedido');
+  await pagina.waitForSelector('#sucesso-whatsapps .btn-wpp', { timeout: 6000 });
+  assert.strictEqual(await pagina.locator('#modal-sucesso .title-success').innerText(), 'Pedido enviado!');
+  assert.strictEqual(await pagina.locator('#sucesso-pix').isVisible(), false, 'nada de PIX na tela');
+  assert.match(await pagina.locator('#sucesso-pag').innerText(), /Pagamento na entrega: PIX/);
+  assert.strictEqual(await pagina.evaluate(() => window.__abertos.length), 1, 'o WhatsApp abre sozinho, como antes');
+  semErros(erros); await fechar();
+});
+
+teste('pedido que passa para o dia da feira: com o mesmo valor, um toque em Enviar basta; com valor novo, pergunta uma vez e envia', async () => {
+  const dow = new Date(Date.now() - 3 * 3600000).getUTCDay(), futuro = (dow + 2) % 7;
+  const montar = (precoNoDia) => {
+    const k = cenarioPadrao();
+    k.feiras = { ...k.feiras, florenca: { ...k.feiras.florenca, dias: [futuro], condominios: ['Jardins Florença'] } };
+    if (precoNoDia) { const pr = { ...k.lojas.banca.produtos }; pr.ovos = { ...pr.ovos, precosDia: { [futuro]: precoNoDia } }; k.lojas.banca.produtos = pr; }
+    return k;
+  };
+  const preencherEEnviar = async (pagina) => {
+    const lista = pagina.locator('#checkout-endereco select:visible'); if (await lista.count()) await lista.first().selectOption({ index: 1 });
+    const campos = pagina.locator('#checkout-endereco input:visible');
+    for (let i = 0; i < await campos.count(); i++) await campos.nth(i).fill(['Jardins Florença', '12', '7'][i] || '1');
+    await pagina.fill('#cli-nome', 'Cliente Dia');
+    await pagina.click('#btn-enviar-pedido');
+  };
+  // 1) mesmo valor: um toque
+  let { pagina, erros, fechar } = await abrir('/', montar(0));
+  let antes = pedidosEnviados().length;
+  await abrirCheckoutComOvos(pagina); await preencherEEnviar(pagina);
+  await pagina.waitForSelector('#sucesso-whatsapps .btn-wpp', { timeout: 6000 });
+  assert.strictEqual(pedidosEnviados().length, antes + 1, 'enviou no primeiro toque');
+  semErros(erros); await fechar();
+  // 2) o preço do dia da feira é outro: pergunta com o total novo e "Enviar assim" já envia
+  ({ pagina, erros, fechar } = await abrir('/', montar(99)));
+  antes = pedidosEnviados().length;
+  await abrirCheckoutComOvos(pagina); await preencherEEnviar(pagina);
+  const pergunta = await pagina.waitForSelector('#overlay-confirm', { state: 'visible', timeout: 4000 }).then(() => true).catch(() => false);
+  assert.ok(pergunta, 'com o preço do dia diferente, a loja pergunta antes de enviar');
+  assert.match(await pagina.locator('#confirm-msg').innerText(), /99,00/);
+  await pagina.click('#btn-confirm-ok');
+  await pagina.waitForSelector('#sucesso-whatsapps .btn-wpp', { timeout: 6000 });
+  assert.strictEqual(pedidosEnviados().length, antes + 1, 'um pedido só, sem precisar achar o botão de novo');
+  semErros(erros); await fechar();
+});
+
 const abrirCheckoutComOvos = async (pagina) => {
   await cards(pagina).first().waitFor({ timeout: 8000 });
   await cards(pagina).filter({ hasText: 'Ovos' }).locator('[data-action="add"]').first().click();

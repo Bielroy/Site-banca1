@@ -476,3 +476,6 @@ button, a, input, select, textarea, label, summary, [data-action], .produto-card
 /* condomínio travado (cliente de uma feira): só quadra e lote se preenchem */
 .end-fixo { margin: 0 0 4px; padding: 10px 14px; border-radius: var(--radius-sm, 12px); background: var(--parchment, #f2ede3); color: var(--text-dark); font-size: .95rem; line-height: 1.4; }
 .end-fixo b { color: var(--primaria, var(--forest)); }
+/* "Pagamento só na entrega": a forma escolhida, na tela de sucesso */
+.sucesso-pag { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; background: #fdf3e2; color: #6b4300; font-weight: 700; line-height: 1.4; }
+.sucesso-pag[hidden] { display: none; }
