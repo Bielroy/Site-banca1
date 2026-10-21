@@ -110,15 +110,34 @@ export function etiquetaDeLote(r, { loja = '' } = {}) {
 // ---------------------------------------------------------------- pedido que chegou por mensagem (WhatsApp)
 // Emoji e figurinha não existem na térmica (sairiam como "?"): saem do texto antes de imprimir.
 const semEmoji = (s) => String(s == null ? '' : s).replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}\u{FE0E}\u{FE0F}\u{200D}\u{20E3}]/gu, '');
+// *negrito*, _itálico_ e ~riscado~ do WhatsApp: os sinais saem, a palavra fica.
+const FORMATO_WHATS = /(^|[\s(])[*_~]+|[*_~]+(?=[\s),.;:!?]|$)/g;
+// "acrescentar: 1 repolho" → "1 repolho" (o cliente mandou mais itens numa segunda mensagem)
+const PREFIXO_MAIS = /^(?:acrescentar|acrescenta|adicionar|adiciona|incluir|inclui|e mais|mais|tamb[eé]m)\s*:\s*/i;
+/** Separa os itens pelo ";" (o jeito comum de listar numa linha só), menos o que está entre parênteses. */
+function porPontoEVirgula(l) {
+    const out = []; let atual = '', fundo = 0;
+    for (const ch of l) {
+        if (ch === '(') fundo++; else if (ch === ')' && fundo > 0) fundo--;
+        if (ch === ';' && fundo === 0) { out.push(atual); atual = ''; } else atual += ch;
+    }
+    out.push(atual);
+    return out;
+}
 /**
  * Texto colado do WhatsApp → linhas limpas de itens.
- * Tira o carimbo "[12:30, 16/10/2026] Maria: " que o WhatsApp põe ao copiar, os emojis,
- * marcadores ("- ", "• ", "* ") e linhas vazias. No máximo 80 itens de 120 letras.
+ * Tira o carimbo "[12:30, 16/10/2026] Maria: " que o WhatsApp põe ao copiar, os emojis, a formatação
+ * (*negrito*, _itálico_), marcadores ("- ", "• ", "* ") e linhas vazias. Uma linha com vários itens
+ * separados por ";" vira um item por linha. NADA é cortado no meio: antes cada linha parava em 120 letras
+ * e o resto do pedido sumia do papel. No máximo 120 itens de 300 letras (o papel quebra a linha).
  */
 export function linhasDoWhats(texto) {
     return String(texto == null ? '' : texto).split(/\r?\n/)
-        .map((l) => semEmoji(l).replace(/^\s*\[[^\]]{3,40}\]\s*[^:]{1,40}:\s*/, '').replace(/^\s*(?:[-•*·–]|\d{1,2}[.)](?=\s))\s*/, ''))
-        .map((l) => limpo(l, 120)).filter(Boolean).slice(0, 80);
+        .map((l) => semEmoji(l).replace(/^\s*\[[^\]]{3,40}\]\s*[^:]{1,40}:\s*/, ''))
+        .flatMap(porPontoEVirgula)
+        .map((l) => l.replace(FORMATO_WHATS, '$1').replace(/^\s*(?:[-•*·–]|\d{1,2}[.)](?=\s))\s*/, '').replace(/^\s+/, '').replace(PREFIXO_MAIS, '')
+            .replace(/\(\s+/g, '(').replace(/\s+\)/g, ')'))
+        .map((l) => limpo(l, 300)).filter(Boolean).slice(0, 120);
 }
 /**
  * Papel de um pedido que chegou por mensagem e não está no sistema.

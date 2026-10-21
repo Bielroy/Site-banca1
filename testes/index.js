@@ -3558,7 +3558,13 @@ teste('impressora: pedido do WhatsApp sai limpo (sem carimbo, sem emoji), cabe n
   assert.strictEqual([...sujo].filter((x, i) => x === 0x1b && sujo[i + 1] === 0x40).length, 1, 'só o ESC @ do começo');
   assert.strictEqual(I.avulsoTemConteudo({ itens: '  \n 👍 ' }), false, 'só emoji não é pedido');
   assert.strictEqual(I.avulsoTemConteudo({ nome: 'Rosa' }), true);
-  assert.strictEqual(I.linhasDoWhats(Array.from({ length: 200 }, (_, i) => `item ${i}`).join('\n')).length, 80, 'no máximo 80 itens');
+  assert.strictEqual(I.linhasDoWhats(Array.from({ length: 200 }, (_, i) => `item ${i}`).join('\n')).length, 120, 'no máximo 120 itens');
+  // pedido de verdade (Viviane, 21/10): uma linha só, comprida, com ";". Antes o papel parava em "usada para bebê, se".
+  const viviane = '[21/10, 15:48] Viviane Qd 10 lt7 ATENA: 2 abacaxis; 1 melao doce;  3 mamao papaya; 10 bananas prata;;  4 laranjas da ilha  ( *_aquela docinha, usada para bebê, se não tiver não mandar_* ); 3 mangas p salada; ; 10 maracujas para suco;  3 kilos batata; 2 alfaces *americana* ;  5 pepinos japones;  4 maca vermelha e 2 verdes; hortela;\n[21/10, 15:49] Viviane Qd 10 lt7 ATENA: se possível organizar no início da feira, eu passo pegar por volta das 17:30/18 horas  - so me avisar\n[21/10, 15:51] Viviane Qd 10 lt7 ATENA: acrescentar: 1 repolho roxo;  1 pacote de mandioca sem casca;';
+  assert.deepStrictEqual(I.linhasDoWhats(viviane), ['2 abacaxis', '1 melao doce', '3 mamao papaya', '10 bananas prata', '4 laranjas da ilha (aquela docinha, usada para bebê, se não tiver não mandar)', '3 mangas p salada', '10 maracujas para suco', '3 kilos batata', '2 alfaces americana', '5 pepinos japones', '4 maca vermelha e 2 verdes', 'hortela',
+    'se possível organizar no início da feira, eu passo pegar por volta das 17:30/18 horas - so me avisar', '1 repolho roxo', '1 pacote de mandioca sem casca']);
+  const papelV = I.paraTexto(I.pedidoAvulso({ nome: 'Viviane Atenas', itens: viviane }), 48);
+  for (const pedaco of ['hortela', '10 maracujas para suco', 'mandioca sem casca']) assert.ok(papelV.includes(pedaco), `falta "${pedaco}" no papel:\n${papelV}`);
 });
 teste('impressora: foto vira preto e branco na largura da bobina, sem a sombra do papel, e o comando de imagem cabe na fila', async () => {
   const F = await import(raiz('js/foto-termica-lib.js')), R = await import(raiz('js/rotulo-lib.js'));
