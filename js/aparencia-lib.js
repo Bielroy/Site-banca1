@@ -29,6 +29,7 @@ export const OPCOES = {
     alinhamento: ['esquerda', 'centro'],
     logoFormato: ['redondo', 'quadrado'],
     botaoFormato: ['pilula', 'arredondado', 'quadrado'],
+    textoLado: ['tudo', 'esquerda'],                // nome, subtítulo e botões usam a largura toda, ou só o lado esquerdo
     botaoCab: ['contorno', 'vidro', 'solido'],      // botões "Onde entregar?" e "Meus pedidos" no cabeçalho
     card: ['borda', 'sombra', 'plano'],
     fundoEstilo: ['liso', 'papel', 'pontos', 'listras'],

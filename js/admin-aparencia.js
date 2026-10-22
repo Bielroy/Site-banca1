@@ -41,6 +41,7 @@ const ROTULOS = {
     alinhamento: { esquerda: 'À esquerda', centro: 'No centro' },
     logoFormato: { redondo: 'Redondo', quadrado: 'Quadrado' },
     botaoFormato: { pilula: 'Bem redondos', arredondado: 'Arredondados', quadrado: 'Quadrados' },
+    textoLado: { tudo: 'Largura toda (como era)', esquerda: 'Só o lado esquerdo (direita livre para a imagem)' },
     botaoCab: { contorno: 'Só contorno (como era)', vidro: 'Fundo escuro translúcido', solido: 'Fundo claro' },
     card: { borda: 'Com contorno', sombra: 'Com sombra', plano: 'Sem contorno' },
     etiqueta: { barbante: 'De feira, com barbante', limpa: 'Limpa', selo: 'Selo' },
@@ -177,6 +178,7 @@ function render() {
                 <div data-se="cabecalho=capa">${imagem('capa', 'Foto de capa', 'Foto deitada (mais larga que alta). Com a película, a cor principal fica por cima para o nome continuar legível.')}</div>
                 <div data-se="cabecalho=capa">${escolha('pelicula', 'Película sobre a capa', opcoesDe('pelicula'), 'Escolha "sem película" quando a própria imagem já tem uma área escura atrás do nome (capa desenhada, com cores fortes).')}</div>
                 <div class="form-group" data-se="cabecalho=capa"><label for="ap-pelicula-forca">Força da película: <span id="ap-pelicula-forca-valor"></span></label><input type="range" id="ap-pelicula-forca" data-num="peliculaForca" data-padrao="100" min="0" max="100" step="5"><small class="dica-campo">Menos força = a foto aparece mais. Só vale com película.</small></div>
+                ${escolha('textoLado', 'Onde ficam o texto e os botões', opcoesDe('textoLado'), 'Use "só o lado esquerdo" quando a capa tem um desenho ou emblema na direita: o texto e os botões não passam por cima dele.')}
                 ${escolha('botaoCab', 'Botões "Onde entregar?" e "Meus pedidos"', opcoesDe('botaoCab'), 'Se a foto ou a cor do cabeçalho deixa o contorno apagado, dê um fundo aos botões.')}
                 <div class="form-group" data-se="botaoCab!=contorno"><label for="ap-botao-fundo-forca">Opacidade do fundo dos botões: <span id="ap-botao-fundo-forca-valor"></span></label><input type="range" id="ap-botao-fundo-forca" data-num="botaoFundoForca" data-padrao="60" min="0" max="100" step="5"></div>
                 ${escolha('alinhamento', 'Nome da loja', opcoesDe('alinhamento'))}

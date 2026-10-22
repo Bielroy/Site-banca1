@@ -40,6 +40,11 @@
 .ap-arte-esconder .header-arte { display: none; }
 .ap-arte-esconder .header-acoes, .ap-arte-esconder .header-arte.plana ~ .header-inner .header-acoes { padding-right: 0; }
 
+/* texto e botões só no lado esquerdo: a direita da capa fica livre para o desenho ou emblema da imagem */
+.ap-textoLado-esquerda #header-principal .header-inner { padding-right: max(34%, var(--gutter-x, 16px)); }
+.ap-textoLado-esquerda .header-acoes, .ap-textoLado-esquerda .header-arte.plana ~ .header-inner .header-acoes { padding-right: 0; }
+.ap-textoLado-esquerda.ap-alinhamento-centro #header-principal .header-inner { padding-right: max(var(--gutter-x, 16px), env(safe-area-inset-right)); }
+
 /* nome no centro (o desenho sai, para não brigar com o texto) */
 .ap-alinhamento-centro .header-inner { text-align: center; }
 .ap-alinhamento-centro .header-logo { margin-left: auto; margin-right: auto; }

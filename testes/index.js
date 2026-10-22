@@ -3421,6 +3421,8 @@ teste('vitrine: seções coloridas por categoria (cor válida, até 8, fundo ime
   for (const ruim of [101, -1, 'abc', null, '', {}, NaN]) assert.strictEqual(Ap.temaSeguro({ peliculaForca: ruim, botaoFundoForca: ruim }, cfg).peliculaForca, undefined, 'força inválida some: ' + String(ruim));
   assert.strictEqual(Ap.temaSeguro({ botaoCab: 'vidro' }, cfg).botaoCab, 'vidro');
   assert.strictEqual(Ap.temaSeguro({ botaoCab: 'neon' }, cfg).botaoCab, undefined);
+  assert.strictEqual(Ap.temaSeguro({ textoLado: 'esquerda' }, cfg).textoLado, 'esquerda');
+  assert.strictEqual(Ap.temaSeguro({ textoLado: 'meio' }, cfg).textoLado, undefined);
 });
 teste('contato da loja: Instagram aceita @, link ou nome e guarda só o nome; WhatsApp com DDD; nada cadastrado = nada aparece', async () => {
   const K = await import(raiz('js/contato-lib.js'));
