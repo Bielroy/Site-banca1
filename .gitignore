@@ -22,3 +22,6 @@ ui-debug.log
 testes/regras/node_modules/
 testes/regras/package-lock.json
 .DS_Store
+
+# fotos dos testes no motor do iPhone (o GitHub guarda as dele)
+testes/tela/saida-iphone/
