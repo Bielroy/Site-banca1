@@ -46,6 +46,22 @@ export function telefoneBonito(n) {
 }
 
 /**
+ * "Falar com a loja": se o cliente já tem itens na sacola, a mensagem já vai com eles (a loja entende na hora do que se trata).
+ * Só fala de peso quando o item é vendido a peso. Sem itens, é o "Oi! Vim pela loja X." de sempre.
+ * itens = [{ nome, qtd, tipo, unidade }]
+ */
+export function saudacaoComSacola(nomeDaLoja, itens) {
+    const oi = nomeDaLoja ? `Oi! Vim pela loja ${String(nomeDaLoja).slice(0, 60)}.` : 'Oi! Vim pela loja.';
+    const lista = (Array.isArray(itens) ? itens : []).filter((i) => i && i.nome && Number(i.qtd) > 0).slice(0, 15);
+    if (!lista.length) return oi;
+    const linhas = lista.map((i) => {
+        const q = Number(i.qtd), qtd = i.tipo === 'kg' ? `${String(q).replace('.', ',')} kg` : `${String(q).replace('.', ',')}x`;
+        return `• ${qtd} ${String(i.nome).slice(0, 60)}`;
+    });
+    return `${oi} Estou montando um pedido e queria tirar uma dúvida:\n${linhas.join('\n')}`.slice(0, 900);
+}
+
+/**
  * O que a loja mostra ao cliente, já conferido (o que não passa some).
  * config = loja/config inteiro. Devolve { instagram, urlInstagram, whatsapp, urlWhatsapp } (vazios = não mostrar).
  */

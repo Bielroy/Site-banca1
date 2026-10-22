@@ -6,7 +6,7 @@ import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaL
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage, haVersaoNova, conferirVersaoAgora, recarregarFresco } from './utils.js';
 import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques, maisPedidos } from './ranking-loja.js';
-import { contatoDaLoja, telefoneBonito, linkWhatsapp, normalizarWhatsapp } from './contato-lib.js';
+import { contatoDaLoja, telefoneBonito, linkWhatsapp, normalizarWhatsapp, saudacaoComSacola } from './contato-lib.js';
 import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca, tintaSobre, botaoSobre } from './vitrine-lib.js';
 import { ARTES } from './arte-lib.js';
 import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_POTE } from './vitrine-arte.js';
@@ -1289,6 +1289,15 @@ document.addEventListener('change', (e) => { if (e.target && e.target.name === '
 // Formas que a loja aceita (Painel → Configurações → Pagamento). Sem a configuração, aceita as três, como sempre.
 const CHAVE_FORMA = { PIX: 'pix', 'Cartão': 'cartao', Dinheiro: 'dinheiro' };
 const formaAceita = (valor) => { const f = (STATE.config && STATE.config.formasPagamento) || {}; const k = CHAVE_FORMA[valor]; return !k || f[k] !== false; };
+// "Falar com a loja" (cabeçalho e rodapé): com itens na sacola, a mensagem já leva os itens; sem itens, é o "Oi" de sempre.
+document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('#header-redes a, #fale-loja a'); if (!a || !/^https:\/\/wa\.me\//.test(a.href)) return;
+    try {
+        const k = contatoDaLoja(STATE.config); if (!k.whatsapp) return;
+        a.href = linkWhatsapp(k.whatsapp, saudacaoComSacola((document.getElementById('header-nome')?.textContent || '').trim(), STATE.carrinho));
+    } catch (_) { /* fica o link de sempre */ }
+}, true);
+
 const pintarPagamentoDaLoja = () => {
     const sel = document.getElementById('cli-pagamento'), nota = document.getElementById('pag-nota'); if (!sel) return;
     // forma desligada some dos botões; se era a escolhida, passa para a primeira que sobrou

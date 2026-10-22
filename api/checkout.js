@@ -159,7 +159,9 @@ function montarTextoWhatsApp(pedido, numero) {
     const taxa = pedido.entrega && Number(pedido.entrega.taxa) > 0 ? Number(pedido.entrega.taxa) : 0;
     if (taxa) msg += `\n🛵 Entrega: ${fmtBRL(taxa)}`;
     else if (pedido.entrega && Number(pedido.entrega.taxaCheia) > 0) msg += `\n🛵 Entrega grátis`;
-    msg += `\n*${cupom || taxa ? 'Total' : 'Subtotal'} (itens já pesados): ${fmtBRL(pedido.total)}*`;
+    // "itens já pesados" só faz sentido quando há item a pesar no pedido; loja de unidades (pastel, açaí...) fala só "Total"
+    const comPesar = !!pedido.temItensAPesar;
+    msg += `\n*${cupom || taxa ? 'Total' : (comPesar ? 'Subtotal' : 'Total')}${comPesar ? ' (itens já pesados)' : ''}: ${fmtBRL(pedido.total)}*`;
   }
   if (pedido.temItensAPesar) {
     msg += `\n➕ _Os itens marcados com ⚖️ serão pesados e o valor final ajustado._`;

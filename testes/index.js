@@ -389,6 +389,22 @@ teste('feira: pedido fora do dia vai para a próxima feira (caixa do dia certo, 
   const n = N.normalizarPedidos([{ id: 'a', data: new Date().toISOString(), entregaDia: esperado, quadra: '1', lote: '1', itens: [{ id: 'tomate', qtd: 1, tipo: 'kg', unidade: 'kg' }] }]);
   assert.strictEqual(n.vendasDia.get('tomate').has(N.diaDeIso(esperado)), true);
 });
+teste('mensagem do pedido: loja de unidades não fala em "pesados"; com item a pesar, fala; "Falar com a loja" leva os itens da sacola', async () => {
+  const db = criarBanco(semente()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  const r = await chamar(api, { headers: ip(), body: pedido() });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  const msg = decodeURIComponent(String(r.corpo.pedido.whatsappMsg).split('?text=')[1] || '');
+  if (!r.corpo.pedido.temItensAPesar) { assert.ok(!/pesad|⚖️|balança/i.test(msg), 'pedido só de unidades não fala em peso: ' + msg); assert.match(msg, /\*Total: R\$/); }
+  // com fruta a pesar (manga em unidades vendida por quilo): fala de peso e do ajuste
+  const rp = await chamar(api, { headers: ip(), body: pedido({ itens: [{ id: 'tomate', qtd: 3, tipo: 'un' }] }) });
+  assert.strictEqual(rp.status, 200, JSON.stringify(rp.corpo));
+  const msgP = decodeURIComponent(String(rp.corpo.pedido.whatsappMsg).split('?text=')[1] || '');
+  assert.ok(/itens já pesados/.test(msgP) && /serão pesados/.test(msgP), 'com item a pesar a mensagem avisa: ' + msgP);
+  const K = await import(raiz('js/contato-lib.js'));
+  assert.strictEqual(K.saudacaoComSacola('Pastel Moe Coe', []), 'Oi! Vim pela loja Pastel Moe Coe.');
+  const t = K.saudacaoComSacola('Pastel Moe Coe', [{ nome: 'Pastel de carne', qtd: 2, tipo: 'un' }, { nome: 'Tomate', qtd: 1.5, tipo: 'kg' }]);
+  assert.match(t, /• 2x Pastel de carne/); assert.match(t, /• 1,5 kg Tomate/); assert.match(t, /^Oi! Vim pela loja Pastel Moe Coe\./);
+});
 teste('forma de pagamento desligada pela loja: o servidor recusa com aviso; as outras e "sem configuração" passam', async () => {
   const db = criarBanco(semente()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
   db._dados.set('loja/config', { ...db._dados.get('loja/config'), formasPagamento: { pix: true, cartao: false, dinheiro: true } });
