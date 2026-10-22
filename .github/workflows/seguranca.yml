@@ -30,6 +30,8 @@ jobs:
         with:
           node-version: 22
       - run: node testes/index.js
+      # teste de carga: pico de pedidos em 3 lojas, freios por endereço e da loja, toque repetido (banco de mentira)
+      - run: node testes/carga/carga.js
 
   build:
     name: Instalação travada e build do site

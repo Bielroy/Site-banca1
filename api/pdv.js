@@ -27,6 +27,10 @@
 //      celular, ver como estão, configurar a impressão automática deles, desligar, e mandar papel.
 //      Ligar e desligar celular: só proprietário e administrador.
 //
+//  POST { acao: 'catalogo', modo?: 'se-faltar' }
+//      O painel salvou produto (ou acabou de abrir): remonta a vitrine num documento só (lib/catalogo.js).
+//      Qualquer pessoa da equipe da loja pode pedir.
+//
 //  Quem pode: proprietário, administrador, funcionário e caixa DA LOJA.
 // =====================================================================
 const admin = require('firebase-admin');
@@ -38,6 +42,7 @@ const Avisos = require('../lib/avisos');
 const P = require('../lib/prudencia');
 const Imp = require('../lib/impressao');
 const Ponte = require('../lib/ponte');
+const Catalogo = require('../lib/catalogo');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -334,8 +339,14 @@ module.exports = async function handler(req, res) {
   catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
   // a pesagem de pedido da loja continua valendo mesmo com o Balcão desligado
   if ((req.body || {}).acao === 'venda' && !T.moduloAtivo(ficha, 'pdv')) return res.status(403).json({ error: 'O Balcão não está ligado nesta loja.' });
-  if (!T.temPapel(dec, tid, PODEM)) return res.status(403).json({ error: 'Sua conta não pode registrar vendas nesta loja.' });
   const acao = (req.body || {}).acao;
+  // O painel salvou produto: remonta a vitrine num documento só (lib/catalogo.js). Qualquer pessoa da equipe pode pedir.
+  if (acao === 'catalogo') {
+    if (!T.temPapel(dec, tid, T.PAPEIS)) return res.status(403).json({ error: 'Sua conta não é desta loja.' });
+    try { const r = await Catalogo.pedidoDoPainel(db, tid, (req.body || {}).modo === 'se-faltar' ? 'se-faltar' : 'tudo'); return res.status(200).json({ sucesso: true, resultado: r }); }
+    catch (e) { console.warn('[pdv] catálogo:', e && e.message); return res.status(503).json({ error: 'Não consegui atualizar a vitrine agora.' }); }
+  }
+  if (!T.temPapel(dec, tid, PODEM)) return res.status(403).json({ error: 'Sua conta não pode registrar vendas nesta loja.' });
   if (acao === 'venda') return venda(req, res, { tid, dec });
   if (acao === 'mensagem') return mensagem(req, res, { tid, dec });
   if (acao === 'pesagem') return pesagem(req, res, { tid, dec });

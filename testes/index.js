@@ -13,6 +13,7 @@ const teste = (nome, fn) => testes.push([nome, fn]);
 
 process.env.FIREBASE_PROJECT_ID = 'x'; process.env.FIREBASE_CLIENT_EMAIL = 'x'; process.env.FIREBASE_PRIVATE_KEY = 'x';
 process.env.CRON_SECRET = 'segredo-cron';
+process.env.CATALOGO_DESLIGADO = '1';   // a remontagem da vitrine em segundo plano fica parada; os testes dela ligam na mão
 
 // ---------- dados de exemplo: duas lojas com o MESMO id de produto e preços diferentes ----------
 const semente = () => ({
@@ -47,6 +48,129 @@ const pedido = (extra = {}) => ({ nome: 'Ana', quadra: '5', lote: '3', condomini
 let ipSeq = 0; const ip = () => ({ 'x-forwarded-for': `10.0.0.${++ipSeq}` });
 
 // ------------------------------------------------------------------ lojas e caminhos
+teste('vitrine num documento só: monta só o que aparece (sem campos de estoque), isola as lojas, remenda o que esgotou e não grava à toa', async () => {
+  const C = require(raiz('lib/catalogo.js'));
+  const db = criarBanco({
+    'produtos/tomate': { nome: 'Tomate', preco: 8.9, ativo: true, estoqueFisico: 3, estoqueMin: 1, prazoDias: 2, ultimaModificacao: 10 },
+    'produtos/alho': { nome: 'Alho', preco: 3, ativo: true, estoqueFisico: 1 },
+    'produtos/farinha': { nome: 'Farinha', preco: 5, ativo: true, soInsumo: true },
+    'produtos/velho': { nome: 'Desligado', preco: 1, ativo: false },
+    'tenants/outra/produtos/tomate': { nome: 'Tomate da OUTRA', preco: 99, ativo: true },
+  });
+  assert.strictEqual(await C.remontar(db, 'banca'), 'gravado');
+  const cat = db._dados.get('loja/catalogo');
+  assert.strictEqual(cat.v, 1); assert.ok(cat.geradoEm > 0 && cat.assinatura);
+  assert.deepStrictEqual(cat.produtos.map((p) => p.id), ['alho', 'tomate'], 'só ativo e que não é ingrediente, em ordem de id');
+  assert.strictEqual(cat.produtos[1].preco, 8.9);
+  for (const k of C.FORA) assert.ok(!(k in cat.produtos[1]), `campo de estoque ${k} fora do documento`);
+  assert.ok(!db._dados.has('tenants/outra/loja/catalogo'), 'a outra loja não ganhou nada');
+  assert.strictEqual(await C.remontar(db, 'outra'), 'gravado');
+  assert.deepStrictEqual(db._dados.get('tenants/outra/loja/catalogo').produtos.map((p) => p.nome), ['Tomate da OUTRA'], 'cada loja com a sua vitrine');
+  assert.deepStrictEqual(db._dados.get('loja/catalogo').produtos.map((p) => p.nome), ['Alho', 'Tomate'], 'e a original não mudou');
+  // nada mudou: não grava de novo (cada gravação faria todas as lojas abertas lerem de novo)
+  assert.strictEqual(await C.remontar(db, 'banca'), 'igual');
+  // venda que só mexe no saldo: o documento nem muda
+  db._dados.set('produtos/tomate', { ...db._dados.get('produtos/tomate'), estoqueFisico: 2 });
+  assert.strictEqual(await C.remendar(db, 'banca', ['tomate']), 'igual', 'saldo não vai para a vitrine');
+  // o alho esgotou (ativo: false): sai da vitrine; o geradoEm fica o mesmo (a loja continua pegando o resto pela folga)
+  const g0 = db._dados.get('loja/catalogo').geradoEm;
+  db._dados.set('produtos/alho', { ...db._dados.get('produtos/alho'), estoqueFisico: 0, ativo: false });
+  assert.strictEqual(await C.remendar(db, 'banca', ['alho']), 'gravado');
+  assert.deepStrictEqual(db._dados.get('loja/catalogo').produtos.map((p) => p.id), ['tomate']);
+  assert.strictEqual(db._dados.get('loja/catalogo').geradoEm, g0);
+  // voltou o estoque: entra de novo
+  db._dados.set('produtos/alho', { ...db._dados.get('produtos/alho'), estoqueFisico: 5, ativo: true });
+  await C.remendar(db, 'banca', ['alho']);
+  assert.deepStrictEqual(db._dados.get('loja/catalogo').produtos.map((p) => p.id), ['alho', 'tomate']);
+  // produto apagado no painel: a remontagem tira
+  db._dados.delete('produtos/alho');
+  await C.remontar(db, 'banca');
+  assert.deepStrictEqual(db._dados.get('loja/catalogo').produtos.map((p) => p.id), ['tomate']);
+  // documento sumiu ou é de outra versão: o remendo remonta tudo
+  db._dados.set('loja/catalogo', { v: 0 });
+  await C.remendar(db, 'banca', ['tomate']);
+  assert.strictEqual(db._dados.get('loja/catalogo').v, 1);
+  // catálogo enorme (passa de 900 KB): marca "grande" e a loja usa o jeito antigo
+  const enorme = criarBanco(Object.fromEntries(Array.from({ length: 400 }, (_, i) => [`produtos/p${String(i).padStart(3, '0')}`, { nome: 'P' + i, preco: 1, ativo: true, descricao: 'x'.repeat(2600) }])));
+  assert.strictEqual(await C.remontar(enorme, 'banca'), 'grande');
+  assert.strictEqual(enorme._dados.get('loja/catalogo').grande, true); assert.ok(!enorme._dados.get('loja/catalogo').produtos);
+});
+
+teste('vitrine num documento só: a fila junta pedidos seguidos e o painel pede pelo /api/pdv (só a equipe da própria loja)', async () => {
+  const C = require(raiz('lib/catalogo.js'));
+  const db = criarBanco({ 'produtos/tomate': { nome: 'Tomate', preco: 8.9, ativo: true }, 'tenants/outra': { nome: 'Outra', ativo: true }, 'tenants/outra/produtos/x': { nome: 'X', preco: 1, ativo: true } });
+  delete process.env.CATALOGO_DESLIGADO;
+  try {
+    C.agendar(db, 'banca', ['tomate'], 30); C.agendar(db, 'banca', ['tomate'], 30); C.agendar(db, 'banca', null, 30);
+    await new Promise((r) => setTimeout(r, 120));
+    while (C._filas.size) await Promise.all([...C._filas.values()]);
+    assert.deepStrictEqual(db._dados.get('loja/catalogo').produtos.map((p) => p.id), ['tomate'], 'três pedidos seguidos = uma remontagem');
+  } finally { process.env.CATALOGO_DESLIGADO = '1'; }
+  const adm = criarAdmin(db, { ...TOKENS_P, 'estoque-banca': { uid: 'u-est', tenants: { banca: 'estoque' } }, 'dono-outra': { uid: 'u-o', tenants: { outra: 'proprietario' } } });
+  const api = carregarApi(raiz('api/pdv.js'), adm);
+  db._dados.delete('loja/catalogo');
+  let r = await chamar(api, { headers: { Authorization: 'Bearer estoque-banca' }, body: { acao: 'catalogo' } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.ok(db._dados.has('loja/catalogo'), 'até quem só cuida do estoque pode pedir');
+  r = await chamar(api, { headers: { Authorization: 'Bearer dono-outra' }, body: { acao: 'catalogo' } });
+  assert.strictEqual(r.status, 403, 'dono de OUTRA loja não mexe na vitrine desta');
+  r = await chamar(api, { headers: { Authorization: 'Bearer dono-outra', 'X-Loja': 'outra' }, body: { acao: 'catalogo', modo: 'se-faltar' } });
+  assert.strictEqual(r.status, 200); assert.deepStrictEqual(db._dados.get('tenants/outra/loja/catalogo').produtos.map((p) => p.id), ['x']);
+  r = await chamar(api, { headers: { Authorization: 'Bearer dono-outra', 'X-Loja': 'outra' }, body: { acao: 'catalogo', modo: 'se-faltar' } });
+  assert.strictEqual(r.corpo.resultado, 'em-dia', 'documento novo: não remonta à toa');
+  r = await chamar(api, { headers: {}, body: { acao: 'catalogo' } });
+  assert.strictEqual(r.status, 401, 'sem login, nada');
+});
+
+teste('backup fora do Firebase: usa a cópia do dia que já existe (quase sem leitura), faz uma se estiver velha, separa as lojas e não leva segredo', async () => {
+  const P = require(raiz('lib/prudencia')), { fazerBackup } = require(raiz('server/backup.js'));
+  const db = criarBanco({ ...semente(), 'tenants/espetinhos': { nome: 'Espetinhos', ativo: true }, 'tenants/espetinhos/produtos/carne': { nome: 'Espeto', preco: 9, ativo: true },
+    'plataforma/segredos': { pagbank: 'token-secreto' }, 'feiras/f1': { nome: 'Feira Munique', lojas: [] } });
+  const agora = Date.UTC(2026, 9, 22, 7);
+  await P.copiar(db, 'banca', new Date(agora - 3 * 3600e3));                   // a rotina da noite já fez a da banca
+  const antes = [...db._dados.keys()].filter((k) => k.startsWith('backups/')).length;
+  const r = await fazerBackup(db, { agora, log: () => {} });
+  assert.deepStrictEqual(r.falhas, []);
+  assert.deepStrictEqual(Object.keys(r.lojas).sort(), ['banca', 'espetinhos']);
+  assert.ok(r.lojas.banca.colecoes.produtos.tomate, 'produto da banca');
+  assert.strictEqual(r.lojas.espetinhos.colecoes.produtos.carne.nome, 'Espeto', 'a dos espetinhos foi feita na hora (não tinha)');
+  assert.ok(!JSON.stringify(r.lojas.banca).includes('Espeto'), 'cada loja com os seus dados');
+  assert.ok(!JSON.stringify(r).includes('token-secreto'), 'segredo da plataforma não vai para o arquivo');
+  assert.strictEqual(r.feiras.f1.nome, 'Feira Munique');
+  const depois = [...db._dados.keys()].filter((k) => k.startsWith('backups/')).length;
+  assert.ok(depois > antes, 'fez a cópia que faltava'); 
+  // de novo, logo em seguida: não refaz nada (só lê as cópias prontas)
+  const r2 = await fazerBackup(db, { agora: agora + 60e3, log: () => {} });
+  assert.strictEqual([...db._dados.keys()].filter((k) => k.startsWith('backups/')).length, depois, 'não gastou leitura refazendo cópia');
+  assert.deepStrictEqual(Object.keys(r2.lojas).sort(), ['banca', 'espetinhos']);
+});
+
+teste('plano B do pedido: só falha do servidor (sem resposta, 5xx, 429) vai para o WhatsApp; o texto leva itens, endereço, pagamento e código', async () => {
+  const R = await import(raiz('js/pedido-reserva-lib.js'));
+  const err = (msg, status, extra) => Object.assign(new Error(msg), status ? { status } : {}, extra || {});
+  assert.strictEqual(R.falhaDoServidor(err('Failed to fetch')), 'rede');
+  assert.strictEqual(R.falhaDoServidor(err('Load failed')), 'rede', 'iPhone');
+  assert.strictEqual(R.falhaDoServidor(Object.assign(new Error('signal is aborted without reason'), { name: 'AbortError' })), 'rede', 'tempo esgotado');
+  assert.strictEqual(R.falhaDoServidor(err('📵 Sem conexão agora. Verifique a internet e tente de novo.')), 'rede');
+  assert.strictEqual(R.falhaDoServidor(err('x', 503)), 'servidor'); assert.strictEqual(R.falhaDoServidor(err('x', 500)), 'servidor');
+  assert.strictEqual(R.falhaDoServidor(err('A loja está recebendo pedidos demais agora.', 429)), 'servidor');
+  for (const st of [400, 401, 403, 404, 409, 422]) assert.strictEqual(R.falhaDoServidor(err('Este cupom já venceu.', st)), '', `${st}: o cliente resolve na tela`);
+  assert.strictEqual(R.falhaDoServidor(err('Esta é só a prévia', 0, { previa: true })), '', 'prévia nunca');
+  assert.strictEqual(R.falhaDoServidor(err('Batata está esgotada')), '', 'erro sem status e sem cara de rede');
+  assert.strictEqual(R.tentarDeNovo(err('x', 503)), true); assert.strictEqual(R.tentarDeNovo(err('Failed to fetch')), true);
+  assert.strictEqual(R.tentarDeNovo(err('x', 429)), false, 'fila cheia: não insiste');
+  assert.strictEqual(R.tentarDeNovo(Object.assign(new Error('aborted'), { name: 'AbortError' })), false, 'tempo esgotado: não espera mais 20 s');
+  assert.strictEqual(R.tentarDeNovo(err('x', 400)), false);
+  const t = R.textoPedidoReserva({ loja: 'Pastel & Açaí', codigo: 'AB12CD', nome: 'Viviane', telefone: '61999998888', modo: 'entrega', endereco: 'Jardins Florença — Quadra 10 • Lote 7',
+    dia: 'hoje (quarta)', horario: 'Tarde', pag: 'Dinheiro', troco: '50', obs: 'sem cebola\nobrigada',
+    itens: [{ nome: 'Pastel de carne', qtd: 2, tipo: 'un', subtotal: 16 }, { nome: 'Banana prata', qtd: 1.5, tipo: 'kg', subtotal: 10.35 }, { nome: 'Alface', qtd: 2, tipo: 'un', aPesar: true }, { nome: 'Açaí 500 ml', qtd: 1, tipo: 'un', subtotal: 18, adicionais: 'granola, leite em pó' }],
+    total: 44.35, aproximado: true });
+  for (const parte of ['*Pedido para Pastel & Açaí*', 'Código: AB12CD', '• 2 un Pastel de carne — R$ 16,00', '• 1,5 kg Banana prata — R$ 10,35', '• 2 un Alface — a pesar', '• 1 un Açaí 500 ml (granola, leite em pó) — R$ 18,00',
+    'Total estimado: ≈ R$ 44,35', 'Nome: Viviane', 'Telefone: 61999998888', 'Entrega: Jardins Florença — Quadra 10 • Lote 7', 'Para: hoje (quarta)', 'Horário: Tarde', 'Pagamento: Dinheiro (troco para 50)', 'Obs.: sem cebola obrigada'])
+    assert.ok(t.includes(parte), `faltou "${parte}"\n${t}`);
+  assert.match(R.textoPedidoReserva({ nome: 'Ana', modo: 'retirada', itens: [{ nome: 'Pão', qtd: 3, tipo: 'un', subtotal: 3.6 }], total: 3.6 }), /Vou retirar/);
+  assert.ok(R.textoPedidoReserva({ nome: 'x', itens: Array.from({ length: 300 }, (_, i) => ({ nome: 'P' + i, qtd: 1, tipo: 'un' })) }).split('\n').filter((l) => l.startsWith('•')).length === 120, 'no máximo 120 itens');
+});
+
 teste('convite do iPhone: só iPhone/iPad fora do modo app, para quem já pediu, sem insistir por 30 dias; Instagram/Facebook mandam abrir no Safari', async () => {
   const L = await import(raiz('js/instalar-lib.js'));
   const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1';
@@ -1843,14 +1967,14 @@ teste('atalhos: lista da semana, pedir de novo com o catálogo de hoje e convite
 
 teste('prudência: limite contado no banco, alerta de falha com intervalo e cópia de segurança diária', async () => {
   const P = require(raiz('lib/prudencia')), T = require(raiz('lib/tenant'));
-  // 1) LIMITE: 8 pedidos por conexão em 10 min; o 9º é barrado; outra conexão e outra loja não pagam por isso
+  // 1) LIMITE: 20 pedidos por conexão em 10 min (operadora põe muita gente no mesmo endereço); o 21º é barrado
   const db = criarBanco(semente()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
   // (a trava de rajada fica na memória e é zerada a cada envio: aqui o que se testa é a conta guardada no banco)
   const mandar = (ipTxt, extra) => { require(raiz('lib/http'))._usos.clear(); return chamar(api, { headers: { 'x-forwarded-for': ipTxt }, body: pedido(extra) }); };
-  for (let i = 0; i < 8; i++) assert.strictEqual((await mandar('200.1.1.1, 10.0.0.' + i)).status, 200, 'pedido ' + (i + 1));
+  for (let i = 0; i < 20; i++) assert.strictEqual((await mandar('200.1.1.1, 10.0.0.' + i)).status, 200, 'pedido ' + (i + 1));
   const nono = await mandar('200.1.1.1, 10.0.0.99'); assert.strictEqual(nono.status, 429); assert.ok(/Aguarde/.test(nono.corpo.error));
   assert.strictEqual((await mandar('200.2.2.2')).status, 200, 'outra conexão segue comprando');
-  assert.strictEqual([...db._dados.keys()].filter((k) => k.startsWith('pedidos/')).length, 9, 'o pedido barrado não foi gravado');
+  assert.strictEqual([...db._dados.keys()].filter((k) => k.startsWith('pedidos/')).length, 21, 'o pedido barrado não foi gravado');
   assert.ok([...db._dados.keys()].some((k) => k.startsWith('limites/pedido_')), 'a conta fica no banco');
   // a janela passa e a pessoa volta a comprar; a faxina apaga as contagens vencidas
   const depois = Date.now() + 601000;
@@ -1878,7 +2002,7 @@ teste('prudência: limite contado no banco, alerta de falha com intervalo e cóp
   // 3) CÓPIA: produtos, configuração e pedidos recentes; as mais velhas que 7 saem; a rotina diária faz sozinha
   const d2 = criarBanco({ ...semente(), 'pedidos/novo': { nome: 'Ana', total: 10, data: new Date().toISOString() }, 'pedidos/velho': { nome: 'Bia', total: 5, data: '2020-01-01T10:00:00.000Z' },
     'tenants/espetinhos': { nome: 'Espetinhos', ativo: true }, 'tenants/espetinhos/produtos/carne': { nome: 'Espeto', preco: 9, ativo: true } });
-  const ex = await P.exportar(d2, 'banca'); assert.ok(ex.colecoes.produtos.tomate, 'produto na cópia'); assert.ok(ex.colecoes.pedidos.novo && !ex.colecoes.pedidos.velho, 'pedidos: só os últimos 90 dias');
+  const ex = await P.exportar(d2, 'banca'); assert.ok(ex.colecoes.produtos.tomate, 'produto na cópia'); assert.ok(ex.colecoes.pedidos.novo && !ex.colecoes.pedidos.velho, 'pedidos: só os últimos 31 dias');
   assert.ok(!JSON.stringify(ex).includes('Espeto'), 'a cópia de uma loja não leva dado de outra');
   const exE = await P.exportar(d2, 'espetinhos'); assert.strictEqual(exE.colecoes.produtos.carne.nome, 'Espeto'); assert.strictEqual(exE.ficha.nome, 'Espetinhos');
   for (let i = 0; i < 9; i++) await P.copiar(d2, 'banca', new Date(Date.UTC(2026, 9, 1 + i, 8)));

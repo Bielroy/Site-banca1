@@ -57,6 +57,7 @@ async function semear() {
       por(cam(loja, 'loja/config'), { wpp: '5562999990000', lojaAberta: true });
       por(cam(loja, 'loja/comunicados'), { dias: [] });
       por(cam(loja, 'loja/avaliacoes'), { soma: 47, n: 10, media: 4.7 });
+      por(cam(loja, 'loja/catalogo'), { v: 1, geradoEm: 1, assinatura: 'x', n: 1, produtos: [{ id: 'p1', nome: 'Pão', preco: 5, ativo: true }] });
       por(cam(loja, 'loja/fotos'), { itens: [{ url: 'https://i.ibb.co/x/a.jpg', nome: 'foto-da-familia.jpg' }] });
       por(cam(loja, 'pedidos/ped-1'), { userId: 'cli-1', nome: 'Ana', telefone: '62999990000', quadra: '1', lote: '2', total: 20, status: 'pendente', itens: [] });
       por(cam(loja, 'pedidos/ped-2'), { userId: 'cli-2', nome: 'Bia', total: 30, status: 'preparando', itens: [] });
@@ -87,6 +88,7 @@ async function semear() {
     por(cam('loja-off', 'categorias/paes'), { chave: 'paes', nome: 'Pães', ordem: 1 });
     por(cam('loja-off', 'loja/config'), { wpp: '5562999990000', lojaAberta: true });
     por(cam('loja-off', 'loja/comunicados'), { dias: [] });
+    por(cam('loja-off', 'loja/catalogo'), { v: 1, geradoEm: 1, produtos: [] });
     por('feiras/feira-1', { nome: 'Feira', lojas: [{ id: 'loja-a', nome: 'Loja A' }, { id: 'loja-b', nome: 'Loja B' }] });
     por('plataforma/segredos', { pagbank: 'token-secreto', imgbb: 'chave-secreta' });
     por('assinaturas/loja-a', { valor: 59.9, dia: 10 });
@@ -145,6 +147,21 @@ teste('loja desligada pela plataforma não mostra catálogo nem configuração p
   // loja original sem ficha (como era antes da plataforma): continua no ar
   await env.withSecurityRulesDisabled(async (ctx) => { await deleteDoc(doc(ctx.firestore(), 'tenants/banca')); });
   await pode(getDocs(c(anonimo(), cam('banca', 'produtos')))); await pode(getDoc(d(anonimo(), cam('banca', 'loja/config'))));
+});
+
+teste('vitrine num documento só (loja/catalogo): todo mundo lê da loja no ar; só o SERVIDOR grava (nem o dono, nem a plataforma pelo navegador)', async () => {
+  for (const loja of ['banca', 'loja-a']) {
+    for (const v of [anonimo(), cliente(), de('loja-b', 'proprietario')]) await pode(getDoc(d(v, cam(loja, 'loja/catalogo'))));
+    for (const quem of [anonimo(), cliente(), de(loja, 'proprietario'), de(loja, 'administrador'), de(loja, 'funcionario'), de('loja-b', 'proprietario'), plataforma()]) {
+      await nega(setDoc(d(quem, cam(loja, 'loja/catalogo')), { v: 1, geradoEm: 2, produtos: [{ id: 'p1', nome: 'Pão', preco: 0.01, ativo: true }] }));
+      await nega(deleteDoc(d(quem, cam(loja, 'loja/catalogo'))));
+    }
+  }
+  // loja desligada: o catálogo some para o público como o resto da vitrine
+  for (const v of [anonimo(), cliente(), de('loja-a', 'proprietario')]) await nega(getDoc(d(v, cam('loja-off', 'loja/catalogo'))));
+  await pode(getDoc(d(de('loja-off', 'proprietario'), cam('loja-off', 'loja/catalogo'))));
+  // a loja pede "produtos mudados depois de" (consulta com where): continua liberada para o público
+  await pode(getDocs(query(c(anonimo(), cam('loja-a', 'produtos')), where('ultimaModificacao', '>', 0))));
 });
 
 teste('visitante sem login (e cliente com login anônimo) não grava NADA', async () => {

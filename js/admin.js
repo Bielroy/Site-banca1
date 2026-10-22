@@ -468,8 +468,11 @@ const iniciarRealTimeSync = () => {
         produtosBase = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }))
             .sort((a, b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
         juntarProdutos();
+        // este aparelho acabou de salvar produto: a vitrine num documento só (lib/catalogo.js) é remontada
+        if (snap.metadata && snap.metadata.hasPendingWrites) pedirCatalogo('tudo');
     }, (e) => mostrarErroConsulta(e, 'lista-produtos'));
     unsubscribes.push(unsubProd);
+    pedirCatalogo('se-faltar', 1500);   // painel abriu: se a vitrine da loja ainda não tem o documento (ou está velho), monta
 
     const unsubConfig = onSnapshot(tdoc("loja", "config"), (snap) => {
         if (snap.exists()) {
@@ -1487,6 +1490,22 @@ const montarMensagemCliente = () => {
 
     return L.join('\n');
 };
+
+// Vitrine num documento só (lib/catalogo.js): o painel avisa o servidor depois de salvar produto (junta vários
+// salvamentos seguidos num aviso só). Falhou? Tudo bem: a loja ainda pega a mudança sozinha pela leitura de reserva.
+let _catalogoTimer = null, _catalogoModo = '';
+function pedirCatalogo(modo = 'tudo', esperaMs = 4000) {
+    if (modo === 'tudo') _catalogoModo = 'tudo'; else if (!_catalogoModo) _catalogoModo = modo;
+    clearTimeout(_catalogoTimer);
+    _catalogoTimer = setTimeout(async () => {
+        const m = _catalogoModo || 'tudo'; _catalogoModo = '';
+        if (!navigator.onLine) return;
+        try {
+            const token = await auth.currentUser?.getIdToken(); if (!token) return;
+            await fetch('/api/pdv', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ acao: 'catalogo', modo: m }) });
+        } catch (_) { /* sem internet: a loja segue pela leitura de reserva */ }
+    }, esperaMs);
+}
 
 const finalizarEsteira = async (btn, enviarWhats) => {
     const textoOriginal = btn.textContent;

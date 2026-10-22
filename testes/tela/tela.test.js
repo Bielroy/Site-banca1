@@ -230,6 +230,59 @@ const abrirCheckoutComOvos = async (pagina) => {
 };
 const opcoesDe = (pagina, sel) => pagina.$$eval(`${sel} option`, (os) => os.map((o) => o.textContent.trim()));
 
+// ---------------------------------------------------------------- PLANO B: servidor fora do ar
+const preencherPedido = async (pagina, nome) => {
+  const lista = pagina.locator('#checkout-endereco select:visible'); if (await lista.count()) await lista.first().selectOption({ index: 1 });
+  const campos = pagina.locator('#checkout-endereco input:visible');
+  for (let i = 0; i < await campos.count(); i++) await campos.nth(i).fill(['Jardins Florença', '12', '7'][i] || '1');
+  await pagina.fill('#cli-nome', nome);
+};
+teste('plano B: servidor fora do ar (503) tenta de novo com a MESMA chave e, sem resposta, manda o pedido pronto no WhatsApp da banca', async () => {
+  const { pagina, erros, ctx, fechar } = await abrir('/');
+  const tentativas = [];
+  await ctx.route('**/api/checkout', (r) => { const c = JSON.parse(r.request().postData() || '{}'); if (c.acao) return r.continue(); tentativas.push(c.idempotencyKey); return r.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"fora do ar"}' }); });
+  await abrirCheckoutComOvos(pagina); await preencherPedido(pagina, 'Cliente Plano B');
+  await pagina.click('#btn-enviar-pedido');
+  await pagina.locator('#modal-reserva.aberto').waitFor({ timeout: 8000 });
+  assert.strictEqual(tentativas.length, 2, 'uma tentativa a mais, só uma');
+  assert.ok(tentativas[0] && tentativas[0] === tentativas[1], 'a mesma chave nas duas (o servidor nunca cria dois)');
+  const href = await pagina.getAttribute('#reserva-zap', 'href');
+  assert.ok(href.startsWith('https://wa.me/5562999990000?text='), href);
+  const texto = decodeURIComponent(href.split('?text=')[1]);
+  assert.match(texto, /Ovos/); assert.match(texto, /Cliente Plano B/); assert.match(texto, /Jardins Florença/); assert.match(texto, /não conseguiu registrar/);
+  assert.match(texto, new RegExp('Código: ' + tentativas[0].slice(-6).toUpperCase()));
+  assert.ok(await pagina.locator('#reserva-depois').isHidden(), '"Pronto, mandei" só depois de abrir o WhatsApp');
+  // "Tentar de novo pelo site" fecha e mantém a sacola
+  await pagina.click('#modal-reserva .reserva-site');
+  assert.ok(await pagina.locator('#modal-reserva').evaluate((el) => !el.classList.contains('aberto')));
+  assert.ok(Number(await pagina.locator('#qtd-flutuante').textContent()) >= 1, 'a sacola continua');
+  // de novo: abre o WhatsApp (sem sair da página no teste) e confirma
+  await pagina.click('#btn-enviar-pedido'); await pagina.locator('#modal-reserva.aberto').waitFor({ timeout: 8000 });
+  await pagina.evaluate(() => { const a = document.getElementById('reserva-zap'); a.addEventListener('click', (e) => e.preventDefault()); a.click(); });
+  await pagina.locator('#reserva-depois').waitFor({ state: 'visible', timeout: 2000 });
+  await pagina.click('[data-action="reserva-pronto"]');
+  await pagina.waitForFunction(() => !document.getElementById('modal-reserva').classList.contains('aberto') && Number((document.getElementById('qtd-flutuante') || {}).textContent || 0) === 0, null, { timeout: 3000 });
+  semErros(erros); await fechar();
+});
+
+teste('plano B: erro que o cliente resolve (400) NÃO vai para o WhatsApp; servidor que volta na segunda tentativa registra normal', async () => {
+  let { pagina, erros, ctx, fechar } = await abrir('/');
+  await ctx.route('**/api/checkout', (r) => { const c = JSON.parse(r.request().postData() || '{}'); if (c.acao) return r.continue(); return r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'Este cupom já venceu.' }) }); });
+  await abrirCheckoutComOvos(pagina); await preencherPedido(pagina, 'Cliente Cupom');
+  await pagina.click('#btn-enviar-pedido'); await pagina.waitForTimeout(800);
+  assert.ok(await pagina.locator('#modal-reserva').evaluate((el) => !el.classList.contains('aberto')), 'sem plano B');
+  assert.match(await pagina.locator('body').innerText(), /cupom já venceu/);
+  semErros(erros); await fechar();
+  ({ pagina, erros, ctx, fechar } = await abrir('/'));
+  let n = 0;
+  await ctx.route('**/api/checkout', (r) => { const c = JSON.parse(r.request().postData() || '{}'); if (c.acao) return r.continue(); n++; return n === 1 ? r.fulfill({ status: 502, contentType: 'application/json', body: '{}' }) : r.continue(); });
+  await abrirCheckoutComOvos(pagina); await preencherPedido(pagina, 'Cliente Volta');
+  await pagina.click('#btn-enviar-pedido');
+  await pagina.waitForSelector('#sucesso-whatsapps .btn-wpp', { timeout: 8000 });
+  assert.strictEqual(n, 2); assert.ok(await pagina.locator('#modal-reserva').evaluate((el) => !el.classList.contains('aberto')));
+  semErros(erros); await fechar();
+});
+
 teste('retirada na banca: sem a loja ligar, a escolha nem aparece; ligada, esconde o endereço, troca os horários e envia sem endereço', async () => {
   // loja que NÃO ligou a retirada: tudo como sempre foi
   let { pagina, erros, fechar } = await abrir('/');
@@ -502,6 +555,40 @@ teste('loja desligada pela plataforma avisa "fora do ar" e não mostra produto',
 
 // ---------------------------------------------------------------- VELOCIDADE / TELA ESTÁVEL
 const medirPulos = () => { window.__pulos = 0; new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__pulos += e.value; }).observe({ type: 'layout-shift', buffered: true }); };
+// ---------------------------------------------------------------- VITRINE NUM DOCUMENTO SÓ (lib/catalogo.js, js/catalogo-loja.js)
+teste('vitrine num documento só: a loja lê o catálogo + só os produtos mudados há pouco (não lê um por um); mudança recente do painel vale por cima', async () => {
+  const c = cenarioPadrao(), agora = Date.now(), b = c.lojas.banca;
+  const entrada = (id, d) => ({ id, ...d });
+  // o catálogo foi montado há 1 hora; depois disso o painel mudou o preço do tomate e desligou a alface
+  b.catalogo = { v: 1, geradoEm: agora - 3600e3, assinatura: 'teste', n: 4, produtos: [entrada('alface', b.produtos.alface), entrada('banana', b.produtos.banana), entrada('ovos', b.produtos.ovos), entrada('tomate', { ...b.produtos.tomate, preco: 9.9 })] };
+  b.produtos = { ...b.produtos, tomate: { ...b.produtos.tomate, preco: 12.5, ultimaModificacao: agora - 60e3 }, alface: { ...b.produtos.alface, ativo: false, ultimaModificacao: agora - 30e3 },
+    // está no banco mas NÃO no catálogo e não mudou há pouco: se aparecer, a loja leu os produtos um por um
+    fantasma: { nome: 'Só no banco', preco: 3, unidade: 'un', cat: 'outros', ativo: true, ultimaModificacao: agora - 86400e3 } };
+  const { pagina, erros, fechar } = await abrir('/', c);
+  await cards(pagina).first().waitFor({ timeout: 8000 }); await pagina.waitForTimeout(300);
+  const nomes = await visiveis(pagina);
+  assert.ok(!nomes.includes('Só no banco'), 'não leu a coleção inteira: ' + nomes.join(', '));
+  assert.ok(!nomes.includes('Alface crespa'), 'desligada há pouco pelo painel: some na hora');
+  assert.ok(nomes.includes('Banana prata') && nomes.includes('Ovos caipira (dúzia)'), nomes.join(', '));
+  assert.match(await cards(pagina).filter({ hasText: 'Tomate' }).first().innerText(), /12,50/, 'preço novo do painel, por cima do catálogo');
+  const ouvidos = await pagina.evaluate(() => window.__ouvidos || []);
+  assert.ok(ouvidos.includes('loja/catalogo'), 'leu o documento da vitrine');
+  assert.ok(!ouvidos.includes('produtos'), 'NÃO ouviu a coleção inteira: ' + ouvidos.join(' | '));
+  assert.ok(ouvidos.some((o) => o.startsWith('produtos?ultimaModificacao>')), 'ouviu só os mudados');
+  semErros(erros); await fechar();
+});
+
+teste('vitrine num documento só: sem catálogo, catálogo grande ou de outra versão, a loja volta sozinha a ler os produtos (nunca fica vazia)', async () => {
+  for (const [nome, cat] of [['sem catálogo', null], ['grande', { v: 1, grande: true, geradoEm: Date.now(), n: 5000 }], ['outra versão', { v: 99, geradoEm: Date.now(), produtos: [] }]]) {
+    const c = cenarioPadrao(); if (cat) c.lojas.banca.catalogo = cat;
+    const { pagina, erros, fechar } = await abrir('/', c);
+    await cards(pagina).first().waitFor({ timeout: 8000 });
+    assert.deepStrictEqual((await visiveis(pagina)).sort(), ['Alface crespa', 'Banana prata', 'Ovos caipira (dúzia)', 'Tomate italiano'], nome);
+    assert.ok((await pagina.evaluate(() => window.__ouvidos || [])).includes('produtos'), `${nome}: leu os produtos`);
+    semErros(erros); await fechar();
+  }
+});
+
 // ---------------------------------------------------------------- CONVITE DO IPHONE (pôr na tela de início)
 const UA_IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1';
 const UA_ANDROID = 'Mozilla/5.0 (Linux; Android 14; SM-A556E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36';

@@ -496,3 +496,19 @@ button, a, input, select, textarea, label, summary, [data-action], .produto-card
 .convite-acoes { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 14px; margin-top: 10px; }
 .convite-bt { flex: 1 1 auto; min-height: 42px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--forest); color: var(--sobre-primaria, #fff); font: inherit; font-weight: 700; cursor: pointer; }
 .convite-agora { min-height: 42px; padding: 0 6px; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; opacity: .7; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+/* ---------------------------------------------------------------- plano B: pedido pelo WhatsApp quando o servidor não responde */
+.modal-reserva { z-index: 1010; }
+.reserva-corpo { padding: 28px 22px 22px; text-align: center; }
+.reserva-ico { display: grid; place-items: center; width: 56px; height: 56px; margin: 0 auto 12px; border-radius: 50%; background: #e7f6ec; color: #128c4a; }
+.reserva-ico svg { width: 28px; height: 28px; }
+.reserva-tit { margin: 0 0 8px; font-size: 1.2rem; line-height: 1.25; }
+.reserva-txt { margin: 0 0 18px; color: var(--text-mid, #555); line-height: 1.5; }
+.reserva-zap { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; padding: 0 18px; border-radius: 999px; background: #1f9d55; color: #fff; font-weight: 800; font-size: 1.05rem; text-decoration: none; }
+.reserva-zap:active { transform: scale(.98); }
+.reserva-depois { margin-top: 14px; padding: 12px; border-radius: 14px; background: color-mix(in srgb, var(--forest) 6%, transparent); }
+.reserva-depois[hidden] { display: none; }
+.reserva-depois p { margin: 0 0 8px; font-size: .95rem; }
+.reserva-pronto { min-height: 46px; width: 100%; border: 0; border-radius: 999px; background: var(--forest); color: var(--sobre-primaria, #fff); font: inherit; font-weight: 700; cursor: pointer; }
+.reserva-site { margin-top: 12px; min-height: 44px; padding: 0 10px; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; opacity: .75; cursor: pointer; }
+.reserva-cod { margin: 10px 0 0; font-size: .85rem; opacity: .7; }

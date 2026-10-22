@@ -1,6 +1,7 @@
 import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
 import './texto-grande.js';   // a letra do aparelho (iPhone: Tamanho do Texto) vale no site
-import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc, signOut } from './firebase.js';
+import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc, signOut, query, where } from './firebase.js';
+import { ouvirVitrine } from './catalogo-loja.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja, EM_PREVIA } from './tenant.js';
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage, haVersaoNova, conferirVersaoAgora, recarregarFresco } from './utils.js';
 import { initIA } from './ia.js';
@@ -19,6 +20,7 @@ import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } 
 import { podePagarPix } from './pix-lib.js';
 import { lerEntrega, previaDaEntrega, horariosDoModo, opcoesDoDia } from './entrega-lib.js';
 import { ehIOS, navegadorIOS, deveConvidar } from './instalar-lib.js';
+import { falhaDoServidor, tentarDeNovo, textoPedidoReserva } from './pedido-reserva-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
 import { miniatura } from './foto-lib.js';
 // Foto pequena SEMPRE pelo redutor do próprio site (mesmo endereço da loja). Antes, a foto com miniatura do ImgBB
@@ -1405,12 +1407,15 @@ const iniciarRealTimeSync = () => {
     // a feira do cliente mudou (link, condomínio, conta) ou virou o dia: os preços mudam junto
     document.addEventListener('feira-do-cliente', aplicarCatalogo);
     setInterval(() => { if (diaDoPreco() !== _diaDoPrecoAplicado) aplicarCatalogo(); }, 60000);
-    const unsubProdutos = onSnapshot(tcol("produtos"), (snap) => {
+    // A vitrine vem de UM documento (loja/catalogo, montado pelo servidor) + os produtos que mudaram há pouco.
+    // Sem o documento (ou com qualquer problema), volta sozinha para o jeito antigo: ler os produtos um por um.
+    // (js/catalogo-loja.js; ingrediente de receita e produto desligado não vão para a vitrine)
+    const unsubProdutos = ouvirVitrine({ onSnapshot, query, where, docCatalogo: tdoc('loja', 'catalogo'), colProdutos: tcol('produtos') }, { forcarAntigo: EM_PREVIA, aoMudar: (lista) => {
         _produtosChegaram = true;
-        _produtosBrutos = snap.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter(p => p.ativo && !p.soInsumo);   // ingrediente de receita não vai para a vitrine
+        _produtosBrutos = lista;
         STATE.produtosTodos = _produtosBrutos;   // para saber se a loja tem produto de dia certo (mostra "Hoje | Amanhã")
         aplicarCatalogo();
-    }, (e) => {
+    }, aoErro: (e) => {
         console.warn('[loja] produtos:', e?.code || e);
         // o banco recusou: a plataforma desligou esta loja. Avisa, mesmo que houvesse vitrine guardada no aparelho.
         if (e && e.code === 'permission-denied') {
@@ -1419,7 +1424,7 @@ const iniciarRealTimeSync = () => {
         }
         if (STATE.lojaRenderizada) return;      // já tem vitrine na tela: mantém
         document.getElementById('lista-produtos').innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Não consegui carregar os produtos</p><span>Verifique a internet e tente de novo.</span><button class="btn btn-primary" style="margin-top:14px" data-action="recarregar">Tentar de novo</button></div>`;
-    });
+    } });
     unsubscribes.push(unsubProdutos);
     unsubscribes.push(iniciarCategorias(() => { _catsProntas = true; aplicarCatalogo(); }));
     setTimeout(() => { if (!_catsProntas) { _catsProntas = true; aplicarCatalogo(); } }, 2500);   // offline/sem resposta: segue sem categorias
@@ -1676,7 +1681,7 @@ const mensagemDeErroAmigavel = (erro) => {
 // fetch com aviso antecipado de offline e tempo limite
 const chamarApi = async (url, corpo, { comToken = false, limiteMs = 20000 } = {}) => {
     // Prévia da aparência (aba do painel): dá para montar o pedido, mas nada é enviado nem cancelado.
-    if (EM_PREVIA) throw new Error('Esta é só a prévia da aparência: aqui nenhum pedido é enviado.');
+    if (EM_PREVIA) throw Object.assign(new Error('Esta é só a prévia da aparência: aqui nenhum pedido é enviado.'), { previa: true });
     if (!navigator.onLine) throw new Error(MSG_SEM_CONEXAO);
 
     const cabecalhos = { 'Content-Type': 'application/json' };
@@ -2371,6 +2376,7 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'copiar-pix') { copiarPix(actionTarget); }
         else if (action === 'instalar') { instalarApp(); }
         else if (action === 'convite-fechar') { fecharConviteApp(); }
+        else if (action === 'reserva-pronto') { pedidoReservaMandado(); }
         else if (action === 'convite-copiar') { copiarLinkDaLoja(actionTarget); }
         else if (action === 'por-lista') { const l = lerListaSemana(); if (l) porNoPedido(l.itens); }
         else if (action === 'ver-lista') { verListaDaSemana(); }
@@ -2576,6 +2582,58 @@ document.addEventListener('change', (e) => {
     if (e.target && e.target.name === 'cli-troca') { try { localStorage.setItem(chave('banca_troca'), e.target.value); } catch (_) { /* sem memória */ } }
 });
 
+// Envia o pedido. Falha rápida do servidor (5xx, rede caindo) ganha UMA tentativa a mais, com a MESMA chave:
+// se a primeira chegou a gravar, o servidor reconhece a chave e devolve o mesmo pedido (nunca cria dois).
+const enviarPedidoAoServidor = async (payload) => {
+    try { return await chamarApi('/api/checkout', payload, { comToken: true }); }
+    catch (e) {
+        if (!tentarDeNovo(e)) throw e;
+        await new Promise((r) => setTimeout(r, 1500));
+        return chamarApi('/api/checkout', payload, { comToken: true });
+    }
+};
+
+// PLANO B: o servidor não respondeu (ou está fora do ar). A mensagem do pedido é montada aqui, no celular, e vai
+// pelo WhatsApp da banca. A sacola só esvazia quando a pessoa diz que mandou. Regras em js/pedido-reserva-lib.js.
+const ICO_ZAP_RESERVA = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3a.4.4 0 0 0 0-.4l-.8-1.9c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7a2.8 2.8 0 0 0 1.8-1.3 2.3 2.3 0 0 0 .2-1.3c-.1-.1-.2-.2-.5-.3z"/></svg>';
+function oferecerPedidoPeloWhatsApp(d) {
+    const k = contatoDaLoja(STATE.config), numero = k.whatsapp || normalizarWhatsapp(STATE.config.wpp);
+    const caixa = document.getElementById('reserva-corpo');
+    if (!numero || !caixa || !STATE.carrinho.length) return false;
+    let total = 0, aproximado = false;
+    const itens = STATE.carrinho.map((i) => {
+        const aPesar = i.tipo === 'un' && isFracionavel(i.unidade);
+        const sub = aPesar ? 0 : subtotalDoItem(i);
+        if (aPesar || i.tipo === 'kg') aproximado = true;
+        total += sub;
+        return { nome: i.nome, qtd: i.qtd, tipo: i.tipo, aPesar, subtotal: sub, adicionais: i.adicionais || '' };
+    });
+    const codigo = String(d.chave || '').slice(-6).toUpperCase();
+    const texto = textoPedidoReserva({ ...d, loja: (document.getElementById('header-nome')?.textContent || '').trim(), codigo, itens, total, aproximado });
+    const link = linkWhatsapp(numero, texto);
+    caixa.innerHTML = `
+        <div class="reserva-ico" aria-hidden="true">${ICO_ZAP_RESERVA}</div>
+        <h2 class="reserva-tit" id="reserva-titulo">O sistema da banca não respondeu</h2>
+        <p class="reserva-txt">Seu pedido não se perdeu. Mande pelo WhatsApp da banca: a mensagem já vai pronta, com os itens, o endereço e o pagamento.</p>
+        <a class="reserva-zap" id="reserva-zap" href="${escapeHTML(link)}" target="_blank" rel="noopener noreferrer">${ICO_ZAP_RESERVA}<span>Mandar o pedido no WhatsApp</span></a>
+        <div class="reserva-depois" id="reserva-depois" hidden>
+            <p>Mandou a mensagem? Então a banca já recebeu.</p>
+            <button type="button" class="reserva-pronto" data-action="reserva-pronto">Pronto, mandei</button>
+        </div>
+        <button type="button" class="reserva-site" data-fechar="modal-reserva">Tentar de novo pelo site</button>
+        ${codigo ? `<p class="reserva-cod">Código do pedido: <b>${escapeHTML(codigo)}</b></p>` : ''}`;
+    document.getElementById('reserva-zap').addEventListener('click', () => { const dp = document.getElementById('reserva-depois'); if (dp) dp.hidden = false; });
+    openModal('modal-reserva');
+    return true;
+}
+const pedidoReservaMandado = () => {
+    closeModal('modal-reserva'); closeModal('modal-checkout');
+    STATE.checkoutSessionId = null;
+    STATE.carrinho = []; dbStorage.set(chave('banca_cart'), { v: CART_VERSION, items: [] }); guardarNaConta();
+    renderCarrinhoCompleto();
+    showToast('Pedido mandado pelo WhatsApp. A banca confirma por lá.');
+};
+
 // Envio de Pedido com o novo formato de Unidades
 document.getElementById('btn-enviar-pedido').addEventListener('click', async (e) => {
     const btn = e.currentTarget; if (btn.disabled) return;
@@ -2650,7 +2708,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
         // comToken faz a requisição levar o token da sessão. É ele que permite
         // à cliente cancelar o pedido depois pela própria loja.
-        const data = await chamarApi('/api/checkout', payload, { comToken: true });
+        const data = await enviarPedidoAoServidor(payload);
 
         // O pedido JÁ FOI ACEITO. Guardar no aparelho é só conveniência: se falhar (memória cheia,
         // armazenamento bloqueado), a cliente não pode ver "erro" nem ficar com o pedido ainda aberto.
@@ -2716,6 +2774,12 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             } else showToast(err.message, true);
             return;
         }
+        // O servidor não respondeu ou está com problema: o pedido vai pelo WhatsApp da banca (plano B).
+        if (falhaDoServidor(err) && oferecerPedidoPeloWhatsApp({
+            chave: STATE.checkoutSessionId, nome, telefone, modo: retirada ? 'retirada' : 'entrega',
+            endereco: retirada ? '' : linhaEndereco({ ...endereco, modo: 'entrega' }), dia: nomeDoDiaDoPedido(),
+            horario: document.getElementById('cli-horario')?.value || '', pag, troco: trocoRaw, obs,
+        })) return;
         // Antes ia "Failed to fetch" cru, em inglês, para a tela da cliente
         showToast(mensagemDeErroAmigavel(err), true);
         // O servidor recusou e esta tela está desatualizada? Então o motivo pode ser a própria tela velha:

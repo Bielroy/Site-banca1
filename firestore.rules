@@ -107,7 +107,8 @@ service cloud.firestore {
         && textoAte(request.resource.data, 'atualizadoEm', 40);
     }
     // Documentos de `loja` que o CLIENTE precisa ler para comprar. O resto (banco de fotos etc.) é só de quem administra.
-    function lojaPublica(docId) { return docId in ['config', 'comunicados', 'avaliacoes']; }
+    // 'catalogo': a vitrine inteira num documento só, montada pelo SERVIDOR (lib/catalogo.js). Uma leitura por visita.
+    function lojaPublica(docId) { return docId in ['config', 'comunicados', 'avaliacoes', 'catalogo']; }
     // Loja NO AR: a plataforma não desligou (ficha.ativo != false). Loja bloqueada não mostra catálogo
     // nem configuração para o público; a equipe dela continua vendo tudo no painel.
     // (Loja sem ficha, como a original antes de ter uma, conta como no ar.)
@@ -151,7 +152,7 @@ service cloud.firestore {
       match /categorias/{id}  { allow read: if vitrine(tid); allow write: if gestor(tid); }
       match /loja/{docId} {
         allow read: if (lojaPublica(docId) && vitrine(tid)) || gestor(tid);
-        allow write: if gestor(tid) && docId != 'avaliacoes';      // a nota média das avaliações é do servidor
+        allow write: if gestor(tid) && !(docId in ['avaliacoes', 'catalogo']);      // nota média e catálogo: só o servidor grava
       }
       match /pedidos/{id} {
         // o cliente lê o PRÓPRIO pedido (o dono vem do login anônimo dele); quem atende lê os da loja
@@ -200,7 +201,7 @@ service cloud.firestore {
     match /categorias/{id}  { allow read: if vitrine('banca'); allow write: if gestor('banca'); }
     match /loja/{docId} {
       allow read: if (lojaPublica(docId) && vitrine('banca')) || gestor('banca');
-      allow write: if gestor('banca') && docId != 'avaliacoes';
+      allow write: if gestor('banca') && !(docId in ['avaliacoes', 'catalogo']);
     }
     match /pedidos/{id} {
       allow get: if atende('banca') || (logado() && resource.data.userId == request.auth.uid);
