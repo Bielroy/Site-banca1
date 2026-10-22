@@ -108,7 +108,11 @@
 .pl-com-lote .pl-extras { margin-bottom: 150px; }
 @media (max-width: 420px) { .pl-lote-acoes { grid-template-columns: 1fr 1fr; } .pl-lote-acoes .bt-pri { grid-column: 1 / -1; } }
 .pl-lista { background: #fff; border: 1.5px solid var(--linha-fina); border-radius: 16px; overflow: hidden; }
-.pl-item { display: flex; align-items: center; gap: 6px; padding-right: 12px; border-bottom: 1px solid #f1ece2; }
+.pl-item { display: flex; align-items: center; gap: 6px; padding-right: 12px; border-bottom: 1px solid #f1ece2;
+    /* catálogo grande (centenas de produtos): o navegador só desenha o que está na tela. Com 800 produtos a lista
+       levava ~20 s para aparecer num celular simples; assim, ~2 s */
+    content-visibility: auto; contain-intrinsic-size: auto 77px; }
+.pl-sem-foto { font-size: .68rem; font-weight: 600; color: var(--text-light); text-align: center; line-height: 1.1; padding: 0 4px; }
 .pl-item:last-child { border-bottom: 0; }
 .pl-abrir { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 10px 6px 10px 12px; border: 0; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .pl-abrir:hover, .pl-abrir:focus-visible { background: #faf7f1; }
