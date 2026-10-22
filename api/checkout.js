@@ -345,6 +345,9 @@ module.exports = async function handler(req, res) {
       // Cliente de feira: fora do dia da feira o pedido é aceito para o próximo dia de feira (o "fechar a loja" continua valendo).
       let entrega = null;
       if (configSnap.exists && configSnap.data().lojaAberta === false) throw new Error('A loja está fechada no momento.');
+      // Forma de pagamento que a loja desligou (ex.: maquininha quebrada): recusa com aviso claro (a tela já esconde)
+      { const formas = configCfg.formasPagamento || {}, k = { PIX: 'pix', 'Cartão': 'cartao', Dinheiro: 'dinheiro' }[pag];
+        if (k && formas[k] === false) throw new Error(`A loja não está aceitando ${pag === 'Cartão' ? 'cartão' : pag === 'PIX' ? 'PIX' : 'dinheiro'} agora. Escolha outra forma de pagamento e envie de novo.`); }
       if (feiraDoPedido) {
         entrega = Feira.proximaEntrega(feiraDoPedido, Date.now());
         if (!entrega) throw new Error('Esta feira está sem data marcada. Fale com a banca pelo WhatsApp.');

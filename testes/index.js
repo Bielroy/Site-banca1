@@ -389,6 +389,14 @@ teste('feira: pedido fora do dia vai para a próxima feira (caixa do dia certo, 
   const n = N.normalizarPedidos([{ id: 'a', data: new Date().toISOString(), entregaDia: esperado, quadra: '1', lote: '1', itens: [{ id: 'tomate', qtd: 1, tipo: 'kg', unidade: 'kg' }] }]);
   assert.strictEqual(n.vendasDia.get('tomate').has(N.diaDeIso(esperado)), true);
 });
+teste('forma de pagamento desligada pela loja: o servidor recusa com aviso; as outras e "sem configuração" passam', async () => {
+  const db = criarBanco(semente()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  db._dados.set('loja/config', { ...db._dados.get('loja/config'), formasPagamento: { pix: true, cartao: false, dinheiro: true } });
+  const r = await chamar(api, { headers: ip(), body: pedido({ pag: 'Cartão' }) });
+  assert.notStrictEqual(r.status, 200); assert.match(JSON.stringify(r.corpo), /não está aceitando cartão/);
+  const ok = await chamar(api, { headers: ip(), body: pedido({ pag: 'PIX' }) });
+  assert.strictEqual(ok.status, 200, JSON.stringify(ok.corpo));
+});
 teste('pedido sem feira: entrega é hoje (Brasília), como sempre', async () => {
   const db = criarBanco(semente()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
   const p = pedido(), r = await chamar(api, { headers: ip(), body: p });

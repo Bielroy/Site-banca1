@@ -1216,6 +1216,7 @@ const pixCopiaColaHtml = (pedido, destaque) => {
 const pagaNaEntrega = () => STATE.config && STATE.config.pagamentoNaEntrega === true;
 const pixDoPedidoHtml = (pedido, destaque = false) => {
     if (pagaNaEntrega()) return '';
+    if (STATE.config && STATE.config.formasPagamento && STATE.config.formasPagamento.pix === false) return '';   // a loja desligou o PIX
     // outras lojas só conseguem ligar a opção quando a plataforma cadastra a carteira Asaas delas (o servidor confere de novo)
     if (podePagarPix(STATE.config.pixAutomatico === true, pedido)) return Number(pedido.total) > 0 ? pixAutomaticoHtml(pedido, destaque) : '';   // R$ 0,00 (cupom de 100%): nada a pagar
     if (pixDaLojaValido(STATE.config.pix) && podePagarPix(true, pedido)) return pixCopiaColaHtml(pedido, destaque);
@@ -1285,8 +1286,16 @@ const pintarModo = () => {
 document.addEventListener('change', (e) => { if (e.target && e.target.name === 'cli-modo') pintarModo(); });
 
 // Com "pagamento só na entrega", os botões dizem que tudo é pago na hora de receber (ou de retirar).
+// Formas que a loja aceita (Painel → Configurações → Pagamento). Sem a configuração, aceita as três, como sempre.
+const CHAVE_FORMA = { PIX: 'pix', 'Cartão': 'cartao', Dinheiro: 'dinheiro' };
+const formaAceita = (valor) => { const f = (STATE.config && STATE.config.formasPagamento) || {}; const k = CHAVE_FORMA[valor]; return !k || f[k] !== false; };
 const pintarPagamentoDaLoja = () => {
     const sel = document.getElementById('cli-pagamento'), nota = document.getElementById('pag-nota'); if (!sel) return;
+    // forma desligada some dos botões; se era a escolhida, passa para a primeira que sobrou
+    let mudou = false;
+    [...sel.options].forEach((o) => { const fora = !formaAceita(o.value); if (o.hidden !== fora) { o.hidden = fora; o.disabled = fora; mudou = true; } });
+    if (!formaAceita(sel.value)) { const prim = [...sel.options].find((o) => !o.hidden); if (prim) { sel.value = prim.value; mudou = true; } }
+    if (mudou) sel.dispatchEvent(new Event('change', { bubbles: true }));
     const naEntrega = pagaNaEntrega(), quando = modoEscolhido() === 'retirada' ? 'na retirada' : 'na entrega';
     const textos = { PIX: `PIX (${quando})`, 'Cartão': `Cartão (maquininha ${quando})`, Dinheiro: `Dinheiro (${quando})` };
     [...sel.options].forEach((o) => {
@@ -1296,7 +1305,9 @@ const pintarPagamentoDaLoja = () => {
     });
     if (nota) {
         if (!nota.dataset.original) nota.dataset.original = nota.textContent;
-        nota.textContent = naEntrega ? `Nada é cobrado agora. Você paga ${modoEscolhido() === 'retirada' ? 'quando retirar' : 'quando receber o pedido'}: cartão na maquininha, PIX ou dinheiro.` : nota.dataset.original;
+        const aceitas = [['Cartão', 'cartão na maquininha'], ['PIX', 'PIX'], ['Dinheiro', 'dinheiro']].filter(([v]) => formaAceita(v)).map(([, t]) => t);
+        const lista = aceitas.length > 1 ? `${aceitas.slice(0, -1).join(', ')} ou ${aceitas[aceitas.length - 1]}` : (aceitas[0] || '');
+        nota.textContent = naEntrega ? `Nada é cobrado agora. Você paga ${modoEscolhido() === 'retirada' ? 'quando retirar' : 'quando receber o pedido'}${lista ? `: ${lista}` : ''}.` : nota.dataset.original;
     }
 };
 

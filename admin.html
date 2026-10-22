@@ -393,6 +393,13 @@
                 <details class="op-secao">
                     <summary><span><b>Pagamento</b><small>Pagar na entrega, chave PIX da loja e PIX automático</small></span></summary>
                     <div class="op-corpo">
+                <fieldset class="form-group" style="width: 100%; border: 0; padding: 0; margin: 0 0 14px;">
+                    <legend style="font-weight: 600; margin-bottom: 6px;">Formas de pagamento aceitas</legend>
+                    <label class="chk-linha" for="config-forma-pix"><input type="checkbox" id="config-forma-pix" checked> PIX</label>
+                    <label class="chk-linha" for="config-forma-cartao"><input type="checkbox" id="config-forma-cartao" checked> Cartão (maquininha)</label>
+                    <label class="chk-linha" for="config-forma-dinheiro"><input type="checkbox" id="config-forma-dinheiro" checked> Dinheiro</label>
+                    <small class="dica-campo" style="display:block;">Desmarcada, a forma some da tela de pagamento do cliente (ex.: maquininha sem bateria: desmarque "Cartão"). Toque em Salvar.</small>
+                </fieldset>
                 <div class="form-group" style="width: 100%;">
                     <label class="chk-linha" for="config-pag-entrega"><input type="checkbox" id="config-pag-entrega"> <i class="ic" data-i="pix"></i> Pagamento só na entrega (sem PIX pelo site)</label>
                     <small class="dica-campo" style="display:block;">Ligado: o cliente só escolhe como vai pagar (PIX, cartão na maquininha ou dinheiro) e paga quando receber o pedido ou na retirada. O site não mostra código PIX nem QR Code, e o pedido chega como enviado. A chave e o PIX automático abaixo ficam guardados, sem efeito, até você desligar esta opção.</small>

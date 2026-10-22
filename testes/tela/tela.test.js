@@ -164,6 +164,17 @@ teste('PIX no pedido: cartão grande "Falta pagar" acima do WhatsApp, copia o c�
   semErros(erros); await fechar();
 });
 
+teste('formas de pagamento: o cartão desligado some da tela e a nota só fala das outras', async () => {
+  const c = cenarioPadrao();
+  c.lojas.banca.config = { ...c.lojas.banca.config, pagamentoNaEntrega: true, formasPagamento: { pix: true, cartao: false, dinheiro: true } };
+  const { pagina, erros, fechar } = await abrir('/', c);
+  await abrirCheckoutComOvos(pagina);
+  const chips = await pagina.locator('#pag-chips .pag-chip').evaluateAll((l) => l.map((b) => b.dataset.pag));
+  assert.deepStrictEqual(chips, ['PIX', 'Dinheiro']);
+  assert.doesNotMatch(await pagina.locator('#pag-nota').innerText(), /cart/i);
+  semErros(erros); await fechar();
+});
+
 teste('pagamento só na entrega: sem PIX na tela, "Pedido enviado!", forma escolhida e WhatsApp abre sozinho', async () => {
   const c = cenarioPadrao();
   c.lojas.banca.config = { ...c.lojas.banca.config, pagamentoNaEntrega: true, pixAutomatico: true, pix: { tipo: 'celular', chave: '62991266509', nome: 'Rosiva Martins da Silva' } };
