@@ -54,11 +54,17 @@ if (!desligado && typeof window !== 'undefined' && !window.__errosSite) {
         if (!e || !e.message) return;
         avisarErro({ tipo: 'erro', msg: e.message, arquivo: e.filename, linha: e.lineno, coluna: e.colno, pilha: e.error && e.error.stack });
     });
+    // troca de página com animação (@view-transition no CSS): o aviso de animação cancelada fica tratado aqui
+    const calar = (e) => { const t = e && e.viewTransition; if (t) { for (const k of ['ready', 'finished', 'updateCallbackDone']) t[k] && t[k].catch(() => {}); } };
+    window.addEventListener('pageswap', calar); window.addEventListener('pagereveal', calar);
     window.addEventListener('unhandledrejection', (e) => {
         const r = e && e.reason;
         // falha de internet não é defeito do site
         const msg = r && r.message ? r.message : typeof r === 'string' ? r : '';
         if (!msg || /Failed to fetch|NetworkError|Load failed|network error|unavailable|offline/i.test(msg)) return;
+        // animação de troca de tela cancelada pelo navegador (girou o celular, tocou de novo no meio, voltou de outro
+        // app): o Chrome avisa como erro, mas a página abre normal. Não é defeito do site.
+        if ((r && r.name === 'AbortError' && /transition/i.test(msg)) || /^Transition was (aborted|skipped)/i.test(msg)) return;
         // o registro do aplicativo (service worker) é opcional: o navegador de alguns aparelhos ou de navegadores
         // embutidos recusa, e a loja funciona igual. Não é defeito do site, então não vai para a aba Erros.
         if (/ServiceWorker|serviceWorker|^Rejected$/i.test(msg) && /registerSW|sw\.js|serviceWorker/i.test(String(r && r.stack || msg) + ' ' + String(msg))) return;
