@@ -3415,6 +3415,12 @@ teste('vitrine: seções coloridas por categoria (cor válida, até 8, fundo ime
   const cfg = { padrao: { primaria: '#000000' }, cores: ['primaria'], fontesTitulo: {}, fontesTexto: {}, formatos: {} };
   assert.strictEqual(Ap.temaSeguro({ pelicula: 'nao' }, cfg).pelicula, 'nao');
   assert.strictEqual(Ap.temaSeguro({ pelicula: 'talvez' }, cfg).pelicula, undefined, 'valor fora da lista é descartado');
+  // força da película e fundo dos botões do cabeçalho: números de 0 a 100, o resto é descartado
+  assert.strictEqual(Ap.temaSeguro({ peliculaForca: 40.4, botaoFundoForca: 0 }, cfg).peliculaForca, 40);
+  assert.strictEqual(Ap.temaSeguro({ peliculaForca: 40.4, botaoFundoForca: 0 }, cfg).botaoFundoForca, 0, 'zero vale');
+  for (const ruim of [101, -1, 'abc', null, '', {}, NaN]) assert.strictEqual(Ap.temaSeguro({ peliculaForca: ruim, botaoFundoForca: ruim }, cfg).peliculaForca, undefined, 'força inválida some: ' + String(ruim));
+  assert.strictEqual(Ap.temaSeguro({ botaoCab: 'vidro' }, cfg).botaoCab, 'vidro');
+  assert.strictEqual(Ap.temaSeguro({ botaoCab: 'neon' }, cfg).botaoCab, undefined);
 });
 teste('contato da loja: Instagram aceita @, link ou nome e guarda só o nome; WhatsApp com DDD; nada cadastrado = nada aparece', async () => {
   const K = await import(raiz('js/contato-lib.js'));

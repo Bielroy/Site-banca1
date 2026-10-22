@@ -333,7 +333,8 @@ teste('aparência da loja: só nome de verdade, texto curto e cor no formato #rr
     await pode(setDoc(ficha, { nome: 'Banca do Zé', subtitulo: 'Na brasa', tema: { ...TEMA, primaria: '#B3261E', raio: 8, fotoFormato: 'alta', fotoEncaixe: 'inteira' }, atualizadoEm: 1 }, { merge: true }));
     for (const cor of [VENENO, 'red', '#fff', '#12345g', 'url(//x)', '#123456;x', 123456, null, ['#123456']]) await nega(setDoc(ficha, { tema: { primaria: cor } }, { merge: true }));
     for (const campo of ['secundaria', 'destaque', 'fundo', 'superficie', 'texto', 'sobrePrimaria']) await nega(setDoc(ficha, { tema: { [campo]: VENENO } }, { merge: true }));
-    await nega(setDoc(ficha, { tema: { raio: VENENO } }, { merge: true })); await nega(setDoc(ficha, { tema: { raio: 999 } }, { merge: true })); await nega(setDoc(ficha, { tema: { fonteTitulo: 'x'.repeat(41) } }, { merge: true }));
+    await nega(setDoc(ficha, { tema: { raio: VENENO } }, { merge: true })); await nega(setDoc(ficha, { tema: { raio: 999 } }, { merge: true }));
+    await pode(setDoc(ficha, { tema: { ...TEMA, peliculaForca: 40, botaoFundoForca: 70, botaoCab: 'vidro' } }, { merge: true })); await nega(setDoc(ficha, { tema: { peliculaForca: 101 } }, { merge: true })); await nega(setDoc(ficha, { tema: { botaoFundoForca: 'x' } }, { merge: true })); await nega(setDoc(ficha, { tema: { fonteTitulo: 'x'.repeat(41) } }, { merge: true }));
     await nega(setDoc(ficha, { tema: { fonteTexto: { x: 1 } } }, { merge: true })); await nega(updateDoc(ficha, { tema: VENENO })); await nega(updateDoc(ficha, { tema: [VENENO] }));
     // aparência nova: logo, capa, cor dos botões e os "jeitos" (cabeçalho, borda, cards...)
     const NOVO = { ...TEMA, botao: '#3DDC84', cabecalho: 'capa', borda: 'onda', arte: 'esconder', alinhamento: 'centro', logoFormato: 'quadrado', botaoFormato: 'quadrado', card: 'sombra', fundoEstilo: 'pontos', letra: 'grande', etiqueta: 'selo',

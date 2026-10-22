@@ -41,6 +41,7 @@ const ROTULOS = {
     alinhamento: { esquerda: 'À esquerda', centro: 'No centro' },
     logoFormato: { redondo: 'Redondo', quadrado: 'Quadrado' },
     botaoFormato: { pilula: 'Bem redondos', arredondado: 'Arredondados', quadrado: 'Quadrados' },
+    botaoCab: { contorno: 'Só contorno (como era)', vidro: 'Fundo escuro translúcido', solido: 'Fundo claro' },
     card: { borda: 'Com contorno', sombra: 'Com sombra', plano: 'Sem contorno' },
     etiqueta: { barbante: 'De feira, com barbante', limpa: 'Limpa', selo: 'Selo' },
     fundoEstilo: { liso: 'Liso', papel: 'Linho', pontos: 'Pontinhos', listras: 'Listras' },
@@ -175,6 +176,9 @@ function render() {
                 ${escolha('cabecalho', 'Fundo do cabeçalho', opcoesDe('cabecalho'))}
                 <div data-se="cabecalho=capa">${imagem('capa', 'Foto de capa', 'Foto deitada (mais larga que alta). Com a película, a cor principal fica por cima para o nome continuar legível.')}</div>
                 <div data-se="cabecalho=capa">${escolha('pelicula', 'Película sobre a capa', opcoesDe('pelicula'), 'Escolha "sem película" quando a própria imagem já tem uma área escura atrás do nome (capa desenhada, com cores fortes).')}</div>
+                <div class="form-group" data-se="cabecalho=capa"><label for="ap-pelicula-forca">Força da película: <span id="ap-pelicula-forca-valor"></span></label><input type="range" id="ap-pelicula-forca" data-num="peliculaForca" data-padrao="100" min="0" max="100" step="5"><small class="dica-campo">Menos força = a foto aparece mais. Só vale com película.</small></div>
+                ${escolha('botaoCab', 'Botões "Onde entregar?" e "Meus pedidos"', opcoesDe('botaoCab'), 'Se a foto ou a cor do cabeçalho deixa o contorno apagado, dê um fundo aos botões.')}
+                <div class="form-group" data-se="botaoCab!=contorno"><label for="ap-botao-fundo-forca">Opacidade do fundo dos botões: <span id="ap-botao-fundo-forca-valor"></span></label><input type="range" id="ap-botao-fundo-forca" data-num="botaoFundoForca" data-padrao="60" min="0" max="100" step="5"></div>
                 ${escolha('alinhamento', 'Nome da loja', opcoesDe('alinhamento'))}
                 ${escolha('arte', 'Desenho no canto', opcoesDe('arte'), 'O desenho do tipo de loja (caixote, pão, espeto...). Com o nome no centro, ele sai.')}
                 ${escolha('borda', 'Borda de baixo', opcoesDe('borda'))}`)}
@@ -223,9 +227,15 @@ function sincronizar() {
     raiz.querySelectorAll('select[data-fonte]').forEach((s) => { s.value = t[s.dataset.fonte]; });
     raiz.querySelectorAll('[data-amostra]').forEach((p) => { const k = p.dataset.amostra, nome = t[k]; carregarFonte(nome); p.style.fontFamily = (k === 'fonteTitulo' ? FONTES.titulo : FONTES.texto)[nome] || ''; });
     const raio = $('ap-raio'); if (raio) { raio.value = Number(t.raio) || 0; $('ap-raio-valor').textContent = `${Number(t.raio) || 0}px`; }
+    raiz.querySelectorAll('input[data-num]:not([data-num="raio"])').forEach((i) => {
+        const n = Number(t[i.dataset.num] ?? i.dataset.padrao); if (document.activeElement !== i) i.value = n;
+        const v = $(`${i.id}-valor`); if (v) v.textContent = `${n}%`;
+    });
     // partes que só aparecem com uma escolha (formato do logo só com logo; capa só com "Foto de capa")
     raiz.querySelectorAll('[data-se]').forEach((b) => {
-        const [k, v] = b.dataset.se.split('='); b.hidden = v === undefined ? !t[k] : (t[k] || '') !== v;
+        const [k0, v] = b.dataset.se.split('='), nega = k0.endsWith('!'), k = nega ? k0.slice(0, -1) : k0;
+        const atual = t[k] || (OPCOES[k] ? OPCOES[k][0] : '');
+        b.hidden = v === undefined ? !t[k] : (nega ? atual === v : atual !== v);
     });
     for (const tipo of ['logo', 'capa']) {
         const url = urlImagem(t[tipo]), mini = $(`ap-${tipo}-mini`); if (!mini) continue;
@@ -378,7 +388,7 @@ function ligar() {
         if (t.dataset.texto) mudar((s) => { s[t.dataset.texto] = t.value; }, true);
         else if (t.dataset.cor) mudar((s) => { s.tema[t.dataset.cor] = t.value; }, true);
         else if (t.dataset.hex) { const v = corDoTexto(t.value); if (v) { t.removeAttribute('aria-invalid'); mudar((s) => { s.tema[t.dataset.hex] = v; }, true); } else t.setAttribute('aria-invalid', String(t.value.trim() !== '')); }
-        else if (t.dataset.num === 'raio') mudar((s) => { s.tema.raio = Number(t.value); }, true);
+        else if (t.dataset.num) mudar((s) => { s.tema[t.dataset.num] = Number(t.value); }, true);
         else if (t.id === 'ap-gerar-cor') t.dataset.mexeu = '1';
     });
     raiz.addEventListener('change', (e) => {

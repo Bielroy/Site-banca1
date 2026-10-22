@@ -101,6 +101,8 @@ export function variaveisDoTema(tema) {
     if (FOTO_FORMATOS[t.fotoFormato]) v['--foto-proporcao'] = FOTO_FORMATOS[t.fotoFormato][1];
     if (t.fotoFormato === 'alta') v['--foto-hero'] = '1 / 1'; else if (t.fotoFormato === 'bem-alta') v['--foto-hero'] = '4 / 5';   // a foto grande, ao abrir o produto, acompanha
     if (t.fotoEncaixe === 'inteira') v['--foto-encaixe'] = 'contain';
+    if (Number.isFinite(Number(t.peliculaForca)) && t.peliculaForca !== null && t.peliculaForca !== '') v['--pelicula-forca'] = String(Math.min(100, Math.max(0, Number(t.peliculaForca))) / 100);
+    if (Number.isFinite(Number(t.botaoFundoForca)) && t.botaoFundoForca !== null && t.botaoFundoForca !== '') v['--botao-cab-pct'] = `${Math.min(100, Math.max(0, Number(t.botaoFundoForca)))}%`;
     if (RAIO_BOTAO[t.botaoFormato]) v['--raio-botao'] = RAIO_BOTAO[t.botaoFormato];
     // etiqueta: em tema escuro o "papel" claro continua claro (é um objeto), com tinta escura
     const classes = { 'com-cor-botao': !!bt };

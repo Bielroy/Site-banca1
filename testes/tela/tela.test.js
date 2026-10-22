@@ -971,6 +971,17 @@ teste('loja: seções coloridas (jeito "só a faixa") por categoria vêm antes d
   // capa sem película: o véu da cor principal some
   assert.ok(await pagina.evaluate(() => document.documentElement.classList.contains('ap-pelicula-nao') && document.documentElement.classList.contains('ap-cabecalho-capa')));
   assert.strictEqual(await pagina.evaluate(() => getComputedStyle(document.getElementById('header-principal'), '::before').backgroundImage), 'none', 'sem película');
+  // película com força regulável e botões do cabeçalho com fundo (vidro / claro) e opacidade
+  const estilo = (js) => pagina.evaluate(js);
+  await pagina.evaluate(() => { const r = document.documentElement; r.classList.remove('ap-pelicula-nao'); r.style.setProperty('--pelicula-forca', '0.4'); });
+  assert.strictEqual(await estilo(() => getComputedStyle(document.getElementById('header-principal'), '::before').opacity), '0.4', 'a força regula a película');
+  assert.strictEqual(await estilo(() => getComputedStyle(document.querySelector('.chip-header')).backgroundColor), 'rgba(0, 0, 0, 0)', 'por padrão o botão é só contorno');
+  await pagina.evaluate(() => { const r = document.documentElement; r.classList.add('ap-botaoCab-vidro'); r.style.setProperty('--botao-cab-pct', '50%'); });
+  await pagina.waitForTimeout(400);   // o botão tem transição de fundo
+  { const bg = await estilo(() => getComputedStyle(document.querySelector('.chip-header')).backgroundColor); assert.ok(/(rgba\(0, 0, 0, 0\.5\)|color\(srgb 0 0 0 \/ 0\.5\))/.test(bg), 'vidro: fundo escuro a 50%: ' + bg); }
+  await pagina.evaluate(() => { const r = document.documentElement; r.classList.remove('ap-botaoCab-vidro'); r.classList.add('ap-botaoCab-solido'); r.style.setProperty('--botao-cab-pct', '100%'); });
+  await pagina.waitForTimeout(400);
+  { const bg = await estilo(() => getComputedStyle(document.querySelector('.chip-header')).backgroundColor); assert.ok(/(rgb\(255, 255, 255\)|color\(srgb 1 1 1\))/.test(bg), 'claro: fundo cheio: ' + bg); }
   // com busca ou categoria escolhida, as faixas somem (só vale na vitrine inteira)
   await pagina.locator('#categorias .cat-btn[data-cat="acai"]').click();
   await pagina.waitForFunction(() => !document.querySelector('.bloco-secao'), null, { timeout: 3000 });

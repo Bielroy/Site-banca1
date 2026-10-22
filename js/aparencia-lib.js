@@ -29,6 +29,7 @@ export const OPCOES = {
     alinhamento: ['esquerda', 'centro'],
     logoFormato: ['redondo', 'quadrado'],
     botaoFormato: ['pilula', 'arredondado', 'quadrado'],
+    botaoCab: ['contorno', 'vidro', 'solido'],      // botões "Onde entregar?" e "Meus pedidos" no cabeçalho
     card: ['borda', 'sombra', 'plano'],
     fundoEstilo: ['liso', 'papel', 'pontos', 'listras'],
     letra: ['normal', 'grande'],
@@ -56,6 +57,8 @@ export function temaSeguro(bruto, cfg) {
     const raio = Number(t.raio);
     if (t.raio !== null && t.raio !== '' && Number.isFinite(raio) && raio >= 0 && raio <= 24) saida.raio = Math.round(raio);
     if (typeof t.fotoFormato === 'string' && Object.prototype.hasOwnProperty.call(cfg.formatos, t.fotoFormato)) saida.fotoFormato = t.fotoFormato;
+    // forças de 0 a 100 (%): quanto da película aparece sobre a capa e quanto o fundo dos botões do cabeçalho aparece
+    for (const k of ['peliculaForca', 'botaoFundoForca']) { const n = Number(t[k]); if (t[k] !== null && t[k] !== '' && t[k] !== undefined && Number.isFinite(n) && n >= 0 && n <= 100) saida[k] = Math.round(n); }
     for (const [k, lista] of Object.entries(OPCOES)) if (lista.includes(t[k])) saida[k] = t[k];
     for (const k of ['logo', 'capa']) { const u = urlImagem(t[k]); if (u) saida[k] = u; else delete saida[k]; }
     for (const k of Object.keys(saida)) if (saida[k] === undefined) delete saida[k];     // o banco recusa campo "indefinido"

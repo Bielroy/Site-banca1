@@ -75,10 +75,12 @@ service cloud.firestore {
         && textoAte(t, 'fonteTitulo', 40) && textoAte(t, 'fonteTexto', 40) && textoAte(t, 'etiqueta', 20)
         && textoAte(t, 'fotoFormato', 20) && textoAte(t, 'fotoEncaixe', 20)
         && textoAte(t, 'cabecalho', 20) && textoAte(t, 'pelicula', 20) && textoAte(t, 'borda', 20) && textoAte(t, 'arte', 20) && textoAte(t, 'alinhamento', 20)
-        && textoAte(t, 'logoFormato', 20) && textoAte(t, 'botaoFormato', 20) && textoAte(t, 'card', 20)
+        && textoAte(t, 'logoFormato', 20) && textoAte(t, 'botaoFormato', 20) && textoAte(t, 'botaoCab', 20) && textoAte(t, 'card', 20)
         && textoAte(t, 'fundoEstilo', 20) && textoAte(t, 'letra', 20)
         && urlOk(t, 'logo') && urlOk(t, 'capa')
-        && (!('raio' in t) || (t.raio is number && t.raio >= 0 && t.raio <= 40));
+        && (!('raio' in t) || (t.raio is number && t.raio >= 0 && t.raio <= 40))
+        && (!('peliculaForca' in t) || (t.peliculaForca is number && t.peliculaForca >= 0 && t.peliculaForca <= 100))
+        && (!('botaoFundoForca' in t) || (t.botaoFundoForca is number && t.botaoFundoForca >= 0 && t.botaoFundoForca <= 100));
     }
     function aparenciaOk(d) {
       return d.get('nome', '') is string && d.get('nome', '').size() >= 2 && d.get('nome', '').size() <= 60
