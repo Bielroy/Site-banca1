@@ -98,6 +98,8 @@ const REGRAS_ICONE = [
     // comida pronta primeiro: "Pastel de queijo" é pastel (não queijo), "Batata frita" é fritas (não raiz)
     ['cesta', /\bkit|cesta|combo/],
     ['copo', /suco|vitamina|smoothie/],
+    ['pasteldoce', /(pastel|pasteis) (de )?(doces?|chocolate|banana|goiabada|romeu|nutella|doce de leite|prestigio)|doces? de pastel/],
+    ['creme', /cremes?\b|cremosos?|mousse|chantilly/],
     ['pastel', /pastel|pasteis/],
     ['tigela', /acai|tigela|bowl/],
     ['salgado', /salgad|coxinha|empada|esfiha|esfirra|kibe|risole|enrolad|folhado|croquete|petisco/],

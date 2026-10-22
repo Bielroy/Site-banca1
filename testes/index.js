@@ -3061,6 +3061,10 @@ teste('vitrine: peso aproximado, ícone da categoria, quadros conferidos e lugar
   assert.strictEqual(V.iconeDaCategoria('Raízes'), 'raiz');
   assert.strictEqual(V.iconeDaCategoria('Temperos'), 'tempero');
   assert.strictEqual(V.iconeDaCategoria('Pães'), 'pao');
+  ['Pastéis Doces', 'Pastel doce', 'Pastéis de chocolate'].forEach((n) => assert.strictEqual(V.iconeDaCategoria(n), 'pasteldoce', n));
+  ['Cremes de frutas', 'Creme de morango', 'Mousses'].forEach((n) => assert.strictEqual(V.iconeDaCategoria(n), 'creme', n));
+  assert.strictEqual(V.iconeDaCategoria('Pastéis Salgados'), 'pastel');
+  { const A0 = await import(raiz('js/vitrine-arte.js')); assert.ok(A0.ARTE_CATEGORIA.pasteldoce && A0.ARTE_CATEGORIA.creme, 'os dois desenhos existem'); }
   assert.strictEqual(V.iconeDaCategoria('Ervas finas'), 'tempero');
   assert.strictEqual(V.iconeDaCategoria('Eletrônicos'), '');
   // comida pronta: o prato vence o ingrediente ("Pastel de queijo" é pastel, "Batata frita" é fritas)
