@@ -479,3 +479,20 @@ button, a, input, select, textarea, label, summary, [data-action], .produto-card
 /* "Pagamento só na entrega": a forma escolhida, na tela de sucesso */
 .sucesso-pag { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; background: #fdf3e2; color: #6b4300; font-weight: 700; line-height: 1.4; }
 .sucesso-pag[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- convite do iPhone: pôr a loja na tela de início
+   Cartão dentro da vitrine (não flutua): não cobre o carrinho nem as janelas. js/loja.js, pintarConviteApp. */
+.convite-app { margin: 4px 0 16px; padding: 14px 14px 12px; background: var(--warm-white); border: 1px solid color-mix(in srgb, var(--forest) 16%, transparent); border-radius: 18px; box-shadow: 0 2px 10px rgba(26, 58, 42, .06); color: var(--text-dark); }
+.convite-app[hidden] { display: none; }
+.convite-cab { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; }
+.convite-icone { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--forest); color: var(--sobre-primaria, #fff); }
+.convite-tit { margin: 0; font-size: 1rem; font-weight: 800; line-height: 1.25; }
+.convite-sub { margin: 2px 0 0; font-size: .88rem; line-height: 1.35; opacity: .78; }
+.convite-x { width: 32px; height: 32px; margin: -4px -4px 0 0; border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: 1.5rem; line-height: 1; opacity: .55; cursor: pointer; }
+.convite-x:hover, .convite-x:focus-visible { opacity: 1; background: color-mix(in srgb, var(--forest) 8%, transparent); }
+.convite-passo { margin: 10px 0 0; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--forest) 6%, transparent); font-size: .92rem; line-height: 1.45; }
+.convite-passo b { font-weight: 700; }
+.convite-ico { display: inline-block; vertical-align: -3px; color: #0a84ff; }
+.convite-acoes { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 14px; margin-top: 10px; }
+.convite-bt { flex: 1 1 auto; min-height: 42px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--forest); color: var(--sobre-primaria, #fff); font: inherit; font-weight: 700; cursor: pointer; }
+.convite-agora { min-height: 42px; padding: 0 6px; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; opacity: .7; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }

@@ -47,6 +47,29 @@ const pedido = (extra = {}) => ({ nome: 'Ana', quadra: '5', lote: '3', condomini
 let ipSeq = 0; const ip = () => ({ 'x-forwarded-for': `10.0.0.${++ipSeq}` });
 
 // ------------------------------------------------------------------ lojas e caminhos
+teste('convite do iPhone: só iPhone/iPad fora do modo app, para quem já pediu, sem insistir por 30 dias; Instagram/Facebook mandam abrir no Safari', async () => {
+  const L = await import(raiz('js/instalar-lib.js'));
+  const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1';
+  const ANDROID = 'Mozilla/5.0 (Linux; Android 14; SM-A556E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36';
+  const IPAD = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15';
+  assert.strictEqual(L.ehIOS(IPHONE), true); assert.strictEqual(L.ehIOS(ANDROID, 5), false, 'Android nunca');
+  assert.strictEqual(L.ehIOS(IPAD, 5), true, 'iPad novo (se diz Mac, mas tem toque)'); assert.strictEqual(L.ehIOS(IPAD, 0), false, 'Mac de verdade');
+  assert.strictEqual(L.navegadorIOS(IPHONE), 'safari');
+  assert.strictEqual(L.navegadorIOS(IPHONE.replace('Version/18.1', 'CriOS/131.0')), 'outro');
+  assert.strictEqual(L.navegadorIOS(IPHONE + ' Instagram 350.0.0'), 'embutido');
+  assert.strictEqual(L.navegadorIOS(IPHONE + ' [FBAN/FBIOS;FBAV/480.0]'), 'embutido');
+  const base = { ios: true, jaEhApp: false, emPrevia: false, emQuadro: false, pedidos: 1, fechadoEm: 0, agora: 1e12 };
+  assert.strictEqual(L.deveConvidar(base), true);
+  assert.strictEqual(L.deveConvidar({ ...base, ios: false }), false, 'Android: o botão do topo resolve');
+  assert.strictEqual(L.deveConvidar({ ...base, jaEhApp: true }), false, 'já está na tela de início');
+  assert.strictEqual(L.deveConvidar({ ...base, emPrevia: true }), false, 'prévia do painel');
+  assert.strictEqual(L.deveConvidar({ ...base, emQuadro: true }), false, 'dentro de outra página');
+  assert.strictEqual(L.deveConvidar({ ...base, pedidos: 0 }), false, 'primeira visita: deixa a pessoa comprar em paz');
+  assert.strictEqual(L.deveConvidar({ ...base, fechadoEm: 1e12 - 29 * 864e5 }), false, 'fechou há 29 dias');
+  assert.strictEqual(L.deveConvidar({ ...base, fechadoEm: 1e12 - 31 * 864e5 }), true, 'depois de 30 dias volta');
+  assert.strictEqual(L.deveConvidar({ ...base, fechadoEm: 'lixo' }), true, 'memória estragada não trava');
+});
+
 teste('loja original lê a raiz do banco; outra loja lê tenants/{id}', () => {
   const T = require(raiz('lib/tenant')); const db = criarBanco();
   assert.strictEqual(T.tdoc(db, 'banca', 'produtos', 'x').path, 'produtos/x');

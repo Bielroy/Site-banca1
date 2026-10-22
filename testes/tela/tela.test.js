@@ -502,6 +502,45 @@ teste('loja desligada pela plataforma avisa "fora do ar" e não mostra produto',
 
 // ---------------------------------------------------------------- VELOCIDADE / TELA ESTÁVEL
 const medirPulos = () => { window.__pulos = 0; new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__pulos += e.value; }).observe({ type: 'layout-shift', buffered: true }); };
+// ---------------------------------------------------------------- CONVITE DO IPHONE (pôr na tela de início)
+const UA_IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1';
+const UA_ANDROID = 'Mozilla/5.0 (Linux; Android 14; SM-A556E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36';
+const jaPediu = () => { try { if (!localStorage.getItem('banca_meus_pedidos')) localStorage.setItem('banca_meus_pedidos', JSON.stringify([{ id: 'p1', data: '2026-10-01T12:00:00Z', total: 20, itens: [] }])); } catch (_) {} };
+teste('convite do iPhone: aparece na vitrine para quem já pediu, "Agora não" some e não volta na próxima visita; não cobre o carrinho', async () => {
+  const { pagina, erros, ctx, fechar } = await abrir('/', cenarioPadrao(), { contexto: { userAgent: UA_IPHONE }, antes: jaPediu });
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  const conv = pagina.locator('#convite-app');
+  await conv.waitFor({ state: 'visible', timeout: 4000 });
+  const txt = await conv.innerText();
+  assert.match(txt, /Adicionar à Tela de Início/); assert.match(txt, /Compartilhar/);
+  assert.strictEqual(await conv.locator('[data-action="convite-copiar"]').count(), 0, 'no Safari não precisa copiar link');
+  if (process.env.PRINT_CONVITE) { await conv.screenshot({ path: process.env.PRINT_CONVITE }); await pagina.screenshot({ path: process.env.PRINT_CONVITE.replace('.png', '-tela.png') }); }
+  const largura = await pagina.evaluate(() => document.documentElement.scrollWidth);
+  assert.ok(largura <= 390, `passou da largura do celular (${largura}px)`);
+  assert.strictEqual(await conv.evaluate((el) => getComputedStyle(el).position), 'static', 'fica dentro da vitrine, não flutua por cima de nada');
+  await conv.locator('.convite-agora').click();
+  assert.ok(await conv.isHidden(), 'fechou');
+  const p2 = await ctx.newPage(); p2.on('pageerror', (e) => erros.push(e.message));
+  await p2.goto(servidor.base + '/'); await cards(p2).first().waitFor({ timeout: 8000 }); await p2.waitForTimeout(400);
+  assert.ok(await p2.locator('#convite-app').isHidden(), 'não insiste na próxima visita');
+  semErros(erros); await fechar();
+});
+
+teste('convite do iPhone: não aparece no Android, nem no iPhone de quem nunca pediu; no Instagram manda abrir no Safari com "Copiar link"', async () => {
+  for (const [nome, ua, antes, espera] of [['android', UA_ANDROID, jaPediu, 'nada'], ['iphone sem pedido', UA_IPHONE, null, 'nada'], ['instagram', UA_IPHONE + ' Instagram 350.0.0.0', jaPediu, 'copiar']]) {
+    const { pagina, erros, fechar } = await abrir('/', cenarioPadrao(), { contexto: { userAgent: ua }, ...(antes ? { antes } : {}) });
+    await cards(pagina).first().waitFor({ timeout: 8000 }); await pagina.waitForTimeout(400);
+    const conv = pagina.locator('#convite-app');
+    if (espera === 'nada') assert.ok(await conv.isHidden(), `${nome}: sem convite`);
+    else {
+      assert.ok(await conv.isVisible(), `${nome}: convite aparece`);
+      assert.match(await conv.innerText(), /Abrir no navegador/);
+      assert.strictEqual(await conv.locator('[data-action="convite-copiar"]').count(), 1, `${nome}: botão de copiar o link`);
+    }
+    semErros(erros); await fechar();
+  }
+});
+
 teste('a ordem personalizada que chega depois NÃO embaralha a vitrine; na próxima visita ela já abre na ordem', async () => {
   const { pagina, erros, ctx, fechar } = await abrir('/', cenarioPadrao(), { antes: medirPulos });
   await cards(pagina).first().waitFor({ timeout: 8000 });

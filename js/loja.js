@@ -18,6 +18,7 @@ import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
 import { podePagarPix } from './pix-lib.js';
 import { lerEntrega, previaDaEntrega, horariosDoModo, opcoesDoDia } from './entrega-lib.js';
+import { ehIOS, navegadorIOS, deveConvidar } from './instalar-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
 import { miniatura } from './foto-lib.js';
 // Foto pequena SEMPRE pelo redutor do próprio site (mesmo endereço da loja). Antes, a foto com miniatura do ImgBB
@@ -1961,6 +1962,50 @@ const instalarApp = async () => {
     if (ehIphone()) await customConfirm('Pôr a loja na tela inicial', 'No Safari, toque no botão Compartilhar (o quadrado com a seta para cima) e depois em "Adicionar à Tela de Início". A loja passa a abrir como um aplicativo.', { ok: 'Entendi', nao: 'Fechar' });
 };
 
+// CONVITE DO IPHONE: cartão na vitrine explicando como pôr a loja na tela inicial (o iPhone não deixa o site
+// abrir o convite sozinho). Só para quem já pediu aqui, fora do modo app e da prévia; fechou, some por 30 dias.
+// Regras em js/instalar-lib.js. O Android não passa por aqui: lá vale o botão "Instalar" do topo.
+const CONVITE_APP = 'banca_convite_app';
+const ICO_COMPARTILHAR = '<svg class="convite-ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Compartilhar" role="img"><path d="M12 15V3M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>';
+function pintarConviteApp() {
+    const caixa = document.getElementById('convite-app'); if (!caixa) return;
+    let fechadoEm = 0; try { fechadoEm = Number(localStorage.getItem(chave(CONVITE_APP))) || 0; } catch (_) { /* sem memória: trata como nunca fechado */ }
+    let emQuadro = false; try { emQuadro = window.self !== window.top; } catch (_) { emQuadro = true; }
+    const mostrar = deveConvidar({ ios: ehIOS(navigator.userAgent, navigator.maxTouchPoints), jaEhApp: jaEhApp(), emPrevia: EM_PREVIA, emQuadro, pedidos: lerLista('banca_meus_pedidos').length, fechadoEm });
+    if (!mostrar) { caixa.hidden = true; caixa.innerHTML = ''; return; }
+    const nav = navegadorIOS(navigator.userAgent);
+    const texto = nav === 'embutido'
+        ? 'Aberta por dentro de outro aplicativo, a loja não vai para a tela inicial. Toque nos três pontinhos e em <b>Abrir no navegador</b>, ou copie o link e cole no Safari.'
+        : nav === 'safari'
+            ? `Toque em <b>Compartilhar</b> ${ICO_COMPARTILHAR} (nos iPhones mais novos, ele fica dentro do botão <b>···</b>) e depois em <b>Adicionar à Tela de Início</b>.`
+            : `Toque em <b>Compartilhar</b> ${ICO_COMPARTILHAR} e depois em <b>Adicionar à Tela de Início</b>.`;
+    caixa.innerHTML = `
+        <div class="convite-cab"><span class="convite-icone" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/><path d="M12 7v6M9.5 10.5 12 13l2.5-2.5"/></svg></span>
+            <div><h2 class="convite-tit">Peça mais rápido da próxima vez</h2><p class="convite-sub">Ponha a loja na tela de início do iPhone. Ela abre como um aplicativo.</p></div>
+            <button type="button" class="convite-x" data-action="convite-fechar" aria-label="Fechar o convite">&times;</button></div>
+        <p class="convite-passo">${texto}</p>
+        <div class="convite-acoes">${nav === 'embutido' ? '<button type="button" class="convite-bt" data-action="convite-copiar"><span>Copiar link da loja</span></button>' : ''}
+            <button type="button" class="convite-agora" data-action="convite-fechar">Agora não</button></div>`;
+    caixa.dataset.nav = nav;
+    caixa.hidden = false;
+}
+pintarConviteApp();
+const fecharConviteApp = () => {
+    try { localStorage.setItem(chave(CONVITE_APP), String(Date.now())); } catch (_) { /* some só nesta visita */ }
+    const caixa = document.getElementById('convite-app'); if (caixa) { caixa.hidden = true; caixa.innerHTML = ''; }
+};
+const copiarLinkDaLoja = async (botao) => {
+    const link = location.href.split('#')[0];
+    let ok = false;
+    try { await navigator.clipboard.writeText(link); ok = true; }
+    catch (_) {
+        const t = document.createElement('textarea'); t.value = link; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;opacity:0;';
+        document.body.appendChild(t); t.select(); try { ok = document.execCommand('copy'); } catch (__) { ok = false; } t.remove();
+    }
+    if (ok) { const r = botao.querySelector('span') || botao; r.textContent = 'Link copiado ✓'; showToast('Link copiado. Abra o Safari e cole na barra de endereço.'); }
+    else showToast('Não consegui copiar. Toque nos três pontinhos e em Abrir no navegador.', true);
+};
+
 // "Indicar para um vizinho": abre o compartilhar do celular (WhatsApp, etc.) com um recado pronto e o link da loja.
 const indicarLoja = async () => {
     const nome = (document.getElementById('header-nome')?.textContent || 'a loja').trim(), url = location.href.split('#')[0];
@@ -2325,6 +2370,8 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'esquecer-dados') { esquecerDados(); }
         else if (action === 'copiar-pix') { copiarPix(actionTarget); }
         else if (action === 'instalar') { instalarApp(); }
+        else if (action === 'convite-fechar') { fecharConviteApp(); }
+        else if (action === 'convite-copiar') { copiarLinkDaLoja(actionTarget); }
         else if (action === 'por-lista') { const l = lerListaSemana(); if (l) porNoPedido(l.itens); }
         else if (action === 'ver-lista') { verListaDaSemana(); }
         else if (action === 'guardar-lista') { guardarListaDaSemana(); }

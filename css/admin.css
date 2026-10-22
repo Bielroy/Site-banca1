@@ -1,5 +1,5 @@
 /* Login Screen */
-#login-screen { height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--forest); padding: 20px; }
+#login-screen { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; background: var(--forest); padding: 20px; }
 .login-box { background: white; padding: 40px 30px; border-radius: 20px; width: 100%; max-width: 400px; box-shadow: var(--shadow-lg); }
 .login-box h2 { margin-bottom: 8px; color: var(--forest); text-align: center; font-size: 1.8rem; font-family: 'Fraunces', serif; }
 .login-sub { text-align: center; font-size: 0.95rem; color: var(--text-light); margin-bottom: 24px; }
