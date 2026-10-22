@@ -33,6 +33,33 @@ jobs:
       # teste de carga: pico de pedidos em 3 lojas, freios por endereço e da loja, toque repetido (banco de mentira)
       - run: node testes/carga/carga.js
 
+  dependencias:
+    name: Pacotes com falha conhecida (só avisa, não trava)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # Confere os pacotes que vão para o servidor e o site (sem os de desenvolvimento) contra a lista pública de falhas
+      # conhecidas. Falha NOVA de um pacote não deve derrubar a entrega do site: aparece como aviso amarelo.
+      - name: npm audit (alta e crítica)
+        run: |
+          set +e
+          npm audit --omit=dev --audit-level=high > auditoria.txt 2>&1
+          codigo=$?
+          cat auditoria.txt
+          if [ "$codigo" -ne 0 ]; then
+            msg=$(head -40 auditoria.txt | cut -c1-200 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::warning title=Pacotes com falha conhecida::$msg"
+          else
+            echo "::notice title=Pacotes::nenhuma falha alta ou crítica conhecida nos pacotes de produção."
+          fi
+          exit 0
+
   build:
     name: Instalação travada e build do site
     runs-on: ubuntu-latest
