@@ -145,7 +145,14 @@ produção, gestor), fechamento da feira, calendário.
 equipe, banco de fotos.
 
 **Só do servidor (ninguém lê pelo navegador):** chaves (`plataforma/segredos`, `plataforma/maquininha_*`), cópias de
-segurança, contadores de limite, trilha de auditoria, aparelhos que recebem aviso, uso da IA.
+segurança, contadores de limite, trilha de auditoria, aparelhos que recebem aviso, uso da IA, registro de erros do
+site (`erros_site`) e as marcas de "Corrigi" (`erros_estado`).
+
+**Registro de erros e defeitos de tela (aba Erros da Plataforma):** o navegador manda, sem login, o erro de código, o
+defeito no desenho da tela achado por `js/vigia-tela.js` (regra, lugar na página como seletor do CSS, tamanho da tela
+e da letra) e o aviso do botão "Algo estranho na tela?" (só opções fixas, sem campo de texto). Não vai foto da tela,
+endereço com parâmetros nem nada que o cliente digitou. Freio de 10 por minuto por endereço de internet; o mesmo
+defeito, no mesmo aparelho e na mesma versão do site, vai uma vez só. Apagado em 14 dias (marcas em 30).
 
 ## 7. Segredos
 
@@ -190,6 +197,9 @@ pedido, PIX de pedido cancelado, enxurrada de pedidos.
 - `testes/regras/regras.test.js`: as regras do banco e do armazenamento no **emulador oficial do Firebase**
   (leitura pública, cliente, isolamento, cada papel, status do pedido, aparência, fotos). O GitHub roda sozinho a
   cada mudança (`.github/workflows/seguranca.yml`).
+- `testes/tela/matriz.test.js` (matriz de telas): cada loja de teste em 320, 375, 390, 430 px e deitado, com a letra
+  em 100%, 150% e 200% e dados de pior caso, conferida pelas regras de `js/vigia-tela.js`. Fotos de cada tela e de cada
+  defeito ficam como artefato do GitHub por 7 dias (`fotos-matriz`).
 
 ## 11. O que este projeto NÃO tem (e por quê)
 

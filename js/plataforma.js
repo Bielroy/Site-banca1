@@ -168,20 +168,56 @@ async function carregarErros() {
     if (S.aba === 'erros') render();
 }
 const quando = (iso) => { try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); } catch (_) { return ''; } };
+// tipos: o que quebrou no código, defeito de desenho da tela (js/vigia-tela.js) e aviso do cliente ("Algo estranho na tela?")
+const TIPO_ERRO = { visual: ['Tela', 'tela'], relato: ['Cliente avisou', 'relato'], erro: ['Código', 'codigo'], promessa: ['Código', 'codigo'], recurso: ['Arquivo', 'codigo'] };
+const FILTROS_ERROS = [['abertos', 'Para olhar'], ['tela', 'Tela'], ['codigo', 'Código'], ['relato', 'Clientes'], ['corrigidos', 'Corrigidos']];
+const aberto = (e) => !e.corrigidoEm || e.voltou;
+const grupoDoErro = (e) => (TIPO_ERRO[e.tipo] || TIPO_ERRO.erro)[1];
+function errosDoFiltro(lista, f) {
+    if (f === 'corrigidos') return lista.filter((e) => !aberto(e));
+    const abertos = lista.filter(aberto);
+    return f === 'abertos' ? abertos : abertos.filter((e) => grupoDoErro(e) === f);
+}
 function abaErros() {
     const lista = S.erros;
-    const topo = `<div class="pf-topo-aba"><p>O que deu erro no celular dos clientes e da equipe nos últimos 7 dias. O mesmo erro no mesmo dia aparece uma vez, com o número de vezes. Lista vazia é bom sinal.</p><button type="button" class="pf-bt" data-pf="atualizar-erros">Atualizar</button></div>`;
+    const topo = `<div class="pf-topo-aba"><p>O que deu erro no celular dos clientes e da equipe nos últimos 7 dias: no código, no <b>desenho da tela</b> (preço cortado, botão coberto, foto quebrada, com o tamanho da tela e da letra) e o que os <b>clientes avisaram</b>. O mesmo erro aparece uma vez, com o número de vezes. Consertou? Toque em <b>Corrigi</b>: se acontecer de novo, ele volta para a lista.</p><button type="button" class="pf-bt" data-pf="atualizar-erros">Atualizar</button></div>`;
     if (lista === null || lista === undefined) return `${topo}<p class="config-sub">Carregando...</p>`;
     if (lista.falha) return `${topo}<div class="pf-vazio"><b>Não consegui abrir a lista.</b><p>${escapeHTML(lista.falha)}</p></div>`;
     if (!lista.length) return `${topo}<div class="pf-vazio"><b>Nenhum erro nos últimos 7 dias.</b><p>Quando algo quebrar no aparelho de alguém, aparece aqui.</p></div>`;
-    const total = lista.reduce((t, e) => t + (Number(e.vezes) || 0), 0);
-    return `${topo}<p class="pf-total"><b>${lista.length}</b> erro${lista.length > 1 ? 's' : ''} diferente${lista.length > 1 ? 's' : ''}, ${total} vez${total > 1 ? 'es' : ''} no total.</p>
-    <ul class="pf-lista pf-erros">${lista.map((e) => `<li class="pf-erro">
-        <div class="pf-erro-topo"><b>${escapeHTML(e.msg)}</b><span class="pf-selo">${Number(e.vezes) || 1}×</span></div>
-        <small>${escapeHTML(quando(e.ultimo))}${e.onde ? ` · ${escapeHTML(e.onde)}` : ''} · ${escapeHTML((e.paginas || [e.pagina]).join(', '))}</small>
+    const f = S.filtroErros || 'abertos';
+    const chips = `<div class="pf-filtros-erros" role="group" aria-label="Mostrar">${FILTROS_ERROS.map(([k, t]) => {
+        const n = errosDoFiltro(lista, k).length;
+        return `<button type="button" class="pf-filtro${k === f ? ' ativo' : ''}" data-pf="filtro-erros" data-filtro="${k}" aria-pressed="${k === f}">${t} <span>${n}</span></button>`;
+    }).join('')}</div>`;
+    const mostrar = errosDoFiltro(lista, f);
+    const total = mostrar.reduce((t, e) => t + (Number(e.vezes) || 0), 0);
+    const resumo = mostrar.length ? `<p class="pf-total"><b>${mostrar.length}</b> erro${mostrar.length > 1 ? 's' : ''} diferente${mostrar.length > 1 ? 's' : ''}, ${total} vez${total > 1 ? 'es' : ''} no total.</p>`
+        : `<div class="pf-vazio"><b>${f === 'corrigidos' ? 'Nada marcado como corrigido.' : 'Nada para olhar aqui.'}</b><p>${f === 'corrigidos' ? 'Quando você tocar em "Corrigi" num erro, ele vem para cá.' : 'Bom sinal.'}</p></div>`;
+    return `${topo}${chips}${resumo}
+    <ul class="pf-lista pf-erros">${mostrar.map((e) => {
+        const [rot, grupo] = TIPO_ERRO[e.tipo] || TIPO_ERRO.erro;
+        const dias = (e.dias || []).length;
+        return `<li class="pf-erro pf-erro--${grupo}${e.voltou ? ' voltou' : ''}">
+        <div class="pf-erro-topo"><span class="pf-tipo-erro pf-tipo-erro--${grupo}">${rot}</span><b>${escapeHTML(e.msg)}</b><span class="pf-selo">${Number(e.vezes) || 1}×</span></div>
+        ${e.voltou ? `<p class="pf-voltou">Voltou depois de corrigido (marcado em ${escapeHTML(quando(e.corrigidoEm))})</p>` : ''}
+        ${(e.telas || []).length ? `<small>Telas: ${escapeHTML(e.telas.join(' · '))}</small>` : ''}
+        <small>${escapeHTML(quando(e.ultimo))}${dias > 1 ? ` · em ${dias} dias` : ''}${e.onde ? ` · ${escapeHTML(e.onde)}` : ''} · ${escapeHTML((e.paginas || [e.pagina]).join(', '))}</small>
         <small>${escapeHTML((e.navegadores || []).join(', '))}${(e.lojas || []).length ? ` · lojas: ${escapeHTML(e.lojas.map((id) => (lojaPorId(id) || {}).nome || id).join(', '))}` : ''}</small>
-        ${e.pilha ? `<details><summary>Detalhe técnico</summary><pre>${escapeHTML(e.pilha)}</pre></details>` : ''}
-    </li>`).join('')}</ul>`;
+        ${e.pilha ? `<details><summary>${grupo === 'codigo' ? 'Detalhe técnico' : 'Onde e como'}</summary><pre>${escapeHTML(e.pilha)}</pre></details>` : ''}
+        <div class="pf-erro-acoes">${aberto(e)
+            ? `<button type="button" class="pf-bt mini" data-pf="erro-corrigi" data-ass="${escapeHTML(e.assinatura || '')}">Corrigi</button>`
+            : `<span class="pf-selo ok">Corrigido em ${escapeHTML(quando(e.corrigidoEm))}</span><button type="button" class="pf-bt mini" data-pf="erro-reabrir" data-ass="${escapeHTML(e.assinatura || '')}">Reabrir</button>`}</div>
+    </li>`;
+    }).join('')}</ul>`;
+}
+async function marcarErro(ass, estado) {
+    const e = (Array.isArray(S.erros) ? S.erros : []).find((x) => x.assinatura === ass); if (!e) return;
+    try {
+        const r = await api({ acao: 'erro-estado', assinatura: ass, estado });
+        if (estado === 'corrigido') { e.corrigidoEm = r.em || new Date().toISOString(); e.voltou = false; showToast('Marcado como corrigido. Se acontecer de novo, volta para a lista.'); }
+        else { delete e.corrigidoEm; delete e.voltou; showToast('Reaberto.'); }
+        render();
+    } catch (err) { showToast(err.message, true); }
 }
 
 // ---------------------------------------------------------------- folha (edição)
@@ -292,6 +328,9 @@ async function agir(b) {
     switch (a) {
         case 'fechar-folha': return fecharFolha(false);
         case 'atualizar-erros': return carregarErros();
+        case 'filtro-erros': S.filtroErros = b.dataset.filtro; return render();
+        case 'erro-corrigi': return marcarErro(b.dataset.ass, 'corrigido');
+        case 'erro-reabrir': return marcarErro(b.dataset.ass, 'aberto');
         case 'nova-feira': return abrirFolha('feira', '');
         case 'editar-feira': return abrirFolha('feira', b.dataset.feira);
         case 'nova-loja': return abrirFolha('nova-loja');

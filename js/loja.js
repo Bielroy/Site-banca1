@@ -1,5 +1,7 @@
 import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
 import './texto-grande.js';   // a letra do aparelho (iPhone: Tamanho do Texto) vale no site
+import { iniciarVigia } from './vigia-tela.js';   // confere se algo quebrou no desenho da tela (aba Erros da Plataforma)
+iniciarVigia();
 import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc, signOut, query, where } from './firebase.js';
 import { ouvirVitrine } from './catalogo-loja.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja, EM_PREVIA } from './tenant.js';
@@ -739,28 +741,31 @@ const etiquetaDeOferta = (p) => {
     const pm = Number(p.pesoMedio || 0), porUnidade = isFracionavel(p.unidade) && pm > 0 && !temDoisModos(p);
     return `<div class="etq-de">de <s>${fmt(porUnidade ? p.precoDe * pm / 1000 : p.precoDe)}</s> por</div>`;
 };
+// Preço da etiqueta: o "R$" pode ir para a linha de cima quando o card é estreito e a letra é grande
+// (o espaço normal do formato de moeda não deixa quebrar; a matriz de telas achou "R$ 1.234,56" cortado).
+const fmtEtq = (n) => fmt(n).replace(/\u00a0/, ' ');
 const etiquetaBase = (p) => {
     const frac = isFracionavel(p.unidade), pm = Number(p.pesoMedio || 0);
-    if (ehPacote(p)) return `<div class="etq-preco">${fmt(p.preco)} <small>o pacote</small></div>`;
+    if (ehPacote(p)) return `<div class="etq-preco">${fmtEtq(p.preco)} <small>o pacote</small></div>`;
     // produto montado com adicional pago: o preço do cartão é o de partida
-    if (temMontar(p) && (p.montar.grupos || []).some((g) => (g.opcoes || []).some((o) => Number(o.preco) > 0))) return `<div class="etq-de">a partir de</div><div class="etq-preco">${fmt(p.preco)}</div>`;
-    if (ehPote(p)) return `<div class="etq-preco">${fmt(p.preco)} <small>o potinho</small></div>`;
+    if (temMontar(p) && (p.montar.grupos || []).some((g) => (g.opcoes || []).some((o) => Number(o.preco) > 0))) return `<div class="etq-de">a partir de</div><div class="etq-preco">${fmtEtq(p.preco)}</div>`;
+    if (ehPote(p)) return `<div class="etq-preco">${fmtEtq(p.preco)} <small>o potinho</small></div>`;
     // por quilo com os dois botões: a etiqueta mostra o quilo; o preço da unidade vai escrito no botão dela
     if (temDoisModos(p)) {
         // com peso médio, o tamanho de 1 unidade ajuda a escolher sem fazer conta ("1 un. ≈ 450 g")
-        return `<div class="etq-preco">${fmt(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>
+        return `<div class="etq-preco">${fmtEtq(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>
                 <div class="etq-ref">${pm > 0 ? `${escapeHTML(pesoAproximado(pm))} cada · ${fmt(pm * p.preco / 1000)}` : 'pesado na hora'}</div>`;
     }
     if (frac && pm > 0) {
         // R$/kg sempre junto da estimativa (Decreto 5.903/2006: preço sem o cliente precisar calcular)
-        return `<div class="etq-preco">≈ ${fmt(p.preco * pm / 1000)} <small>a unidade</small></div>
+        return `<div class="etq-preco">≈ ${fmtEtq(p.preco * pm / 1000)} <small>a unidade</small></div>
                 <div class="etq-ref">${fmt(p.preco)}/kg · ${escapeHTML(pesoAproximado(pm))} cada · pesado na hora</div>`;
     }
     if (frac) {
-        return `<div class="etq-preco">${fmt(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>
+        return `<div class="etq-preco">${fmtEtq(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>
                 <div class="etq-ref">por unidade, pesamos na hora</div>`;
     }
-    return `<div class="etq-preco">${fmt(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>`;
+    return `<div class="etq-preco">${fmtEtq(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>`;
 };
 
 // Selos verdadeiros do produto (o dono marca no painel): "Chegou hoje" vale só hoje.

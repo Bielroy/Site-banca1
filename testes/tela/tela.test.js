@@ -747,6 +747,63 @@ teste('erro de código na loja é avisado ao servidor (sem os parâmetros do end
   await fechar();
 });
 
+teste('vigia da tela: loja sem defeito não manda nada; preço cortado vai para a aba Erros com o tamanho da tela, uma vez por aparelho', async () => {
+  const avisosDeTela = (desde) => servidor.chamadas.slice(desde).filter((c) => c.caminho === '/api/analytics' && c.corpo.acao === 'erro' && c.corpo.tipo === 'visual');
+  // 1) loja normal: o vigia roda (2,5 s depois da vitrine) e não acusa nada
+  let desde = servidor.chamadas.length;
+  let { pagina, erros, fechar } = await abrir('/', cenarioPadrao(), { antes: () => { window.__errosSiteTeste = true; } });
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForTimeout(3800);
+  assert.deepStrictEqual(avisosDeTela(desde).map((c) => c.corpo.msg), [], 'loja sem defeito: nenhum aviso de tela');
+  semErros(erros); await fechar();
+  // 2) preço do tomate espremido (defeito de propósito): vai UM aviso, com a tela e o lugar, sem dado do cliente
+  const quebrar = () => { window.__errosSiteTeste = true; document.addEventListener('DOMContentLoaded', () => { const st = document.createElement('style'); st.textContent = '.produto-card[data-id="tomate"] .etq-preco { width: 20px; overflow: hidden; white-space: nowrap; }'; document.head.appendChild(st); }); };
+  desde = servidor.chamadas.length;
+  ({ pagina, erros, fechar } = await abrir('/?tel=62999', cenarioPadrao(), { antes: quebrar }));
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForFunction(() => true); await pagina.waitForTimeout(3800);
+  const av = avisosDeTela(desde);
+  assert.ok(av.length >= 1, 'o defeito foi avisado');
+  const preco = av.find((c) => /etq-preco/.test(c.corpo.arquivo));
+  assert.ok(preco, 'aponta o preço: ' + av.map((c) => c.corpo.arquivo).join(' | '));
+  assert.match(preco.corpo.msg, /^Texto cortado ou vazando: .*preço/);
+  assert.strictEqual(preco.corpo.tela, '390px · letra 100%');
+  assert.match(preco.corpo.pilha, /ex\.: tomate/);
+  assert.ok(!JSON.stringify(preco.corpo).includes('62999'), 'nada do endereço');
+  // 3) o mesmo aparelho, de novo: não manda outra vez (já avisou nesta versão do site)
+  desde = servidor.chamadas.length;
+  await pagina.reload();
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForTimeout(3800);
+  assert.deepStrictEqual(avisosDeTela(desde).filter((c) => /etq-preco/.test(c.corpo.arquivo)).length, 0, 'não repete no mesmo aparelho');
+  semErros(erros); await fechar();
+});
+
+teste('"Algo estranho na tela?" no rodapé: opções fixas, manda o aviso com a tela e o que as regras acharam, e agradece', async () => {
+  const { pagina, erros, fechar } = await abrir('/', cenarioPadrao(), { antes: () => { window.__errosSiteTeste = true; } });
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  const desde = servidor.chamadas.length;
+  await pagina.locator('[data-relatar-tela]').scrollIntoViewIfNeeded();
+  await pagina.click('[data-relatar-tela]');
+  await pagina.waitForSelector('#relato-tela [data-relato-opcao]', { timeout: 3000 });
+  assert.strictEqual(await pagina.locator('#relato-tela textarea, #relato-tela input').count(), 0, 'sem campo de texto (nada que o cliente escreva vai junto)');
+  assert.strictEqual(await pagina.locator('#relato-tela [data-relato-opcao]').count(), 5);
+  await pagina.click('#relato-tela [data-relato-opcao="cortado"]');
+  await pagina.waitForSelector('.relato-obrigado', { timeout: 3000 });
+  assert.strictEqual(await pagina.locator('#relato-tela').count(), 0, 'a folha fecha');
+  await pagina.waitForTimeout(300);
+  const av = servidor.chamadas.slice(desde).find((c) => c.caminho === '/api/analytics' && c.corpo.tipo === 'relato');
+  assert.ok(av, 'o aviso chegou');
+  assert.strictEqual(av.corpo.msg, 'Cliente avisou: Alguma coisa aparece cortada');
+  assert.strictEqual(av.corpo.tela, '390px · letra 100%');
+  assert.match(av.corpo.pilha, /regras automáticas não acharam defeito|:/);
+  // Esc fecha sem mandar
+  await pagina.click('[data-relatar-tela]'); await pagina.waitForSelector('#relato-tela');
+  await pagina.keyboard.press('Escape');
+  assert.strictEqual(await pagina.locator('#relato-tela').count(), 0);
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- PLATAFORMA
 teste('plataforma: a aba Erros mostra os erros agrupados', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
@@ -754,6 +811,21 @@ teste('plataforma: a aba Erros mostra os erros agrupados', async () => {
   await pagina.waitForSelector('.pf-erro', { timeout: 8000 });
   const txt = await pagina.locator('.pf-erros').innerText();
   assert.ok(txt.includes("Cannot read properties of undefined") && txt.includes('3×') && txt.includes('Android · Chrome 129'));
+  // "Para olhar": o de código, o de tela (com o tamanho da tela) e o que VOLTOU depois de corrigido; o corrigido fica fora
+  assert.ok(txt.includes('Texto cortado ou vazando') && txt.includes('320px · letra 200%'), 'defeito de tela com a tela');
+  assert.ok(txt.includes('Voltou depois de corrigido'), 'o que voltou aparece marcado');
+  assert.ok(!txt.includes('Foto que não abriu'), 'o corrigido (que não voltou) não aparece em "Para olhar"');
+  await pagina.click('[data-pf="filtro-erros"][data-filtro="tela"]');
+  assert.strictEqual(await pagina.locator('.pf-erro').count(), 2, 'filtro Tela: os dois de tela abertos');
+  await pagina.click('[data-pf="filtro-erros"][data-filtro="corrigidos"]');
+  assert.ok((await pagina.locator('.pf-erros').innerText()).includes('Foto que não abriu'));
+  await pagina.click('[data-pf="filtro-erros"][data-filtro="abertos"]');
+  // Corrigi: chama a plataforma e o erro sai da lista
+  const desde = servidor.chamadas.length;
+  await pagina.locator('.pf-erro', { hasText: 'Texto cortado' }).locator('[data-pf="erro-corrigi"]').click();
+  await pagina.waitForFunction(() => !document.querySelector('.pf-erros').innerText.includes('Texto cortado'), null, { timeout: 3000 });
+  const marcou = servidor.chamadas.slice(desde).find((c) => c.caminho === '/api/plataforma' && c.corpo.acao === 'erro-estado');
+  assert.deepStrictEqual({ a: marcou.corpo.assinatura, e: marcou.corpo.estado }, { a: 'a'.repeat(20), e: 'corrigido' });
   semErros(erros); await fechar();
 });
 
@@ -1701,7 +1773,11 @@ teste('painel: "Vários de uma vez" cria os pastéis com o mesmo preço (preço 
     '/api/analytics': (c) => (c.acao === 'ranking' ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, nivel: 'popular', itens: ['ovos', 'banana', 'alface', 'tomate'].map((id, i) => ({ id, p: 0.9 - i * 0.2 })) }), 1500)) : {}),
     '/api/checkout': (c) => (c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),
     '/api/plataforma': (c) => (c.acao === 'situacao' ? { sucesso: true, temDono: true, souEu: true }
-      : c.acao === 'erros' ? { sucesso: true, erros: [{ id: 'e1', msg: "Cannot read properties of undefined (reading 'preco')", vezes: 3, ultimo: new Date().toISOString(), onde: '/assets/main-X.js:10:5', paginas: ['/'], navegadores: ['Android · Chrome 129'], lojas: ['banca'], pilha: 'at x' }] }
+      : c.acao === 'erros' ? { sucesso: true, erros: [{ id: 'e1', assinatura: 'e'.repeat(20), tipo: 'erro', msg: "Cannot read properties of undefined (reading 'preco')", vezes: 3, ultimo: new Date().toISOString(), onde: '/assets/main-X.js:10:5', paginas: ['/'], navegadores: ['Android · Chrome 129'], lojas: ['banca'], pilha: 'at x' },
+        { id: 'v1', assinatura: 'a'.repeat(20), tipo: 'visual', msg: 'Texto cortado ou vazando: faixa › card de produto › preço', vezes: 12, dias: ['2026-10-22', '2026-10-23'], telas: ['320px · letra 200%', '375px · letra 150%'], ultimo: new Date().toISOString(), onde: '.faixa-rolo .produto-card .etq-preco', paginas: ['/'], navegadores: ['iPhone · Safari 17'], lojas: ['banca'], pilha: 'cortado sem "..."' },
+        { id: 'v2', assinatura: 'b'.repeat(20), tipo: 'visual', msg: 'Tem algo por cima: botão Adicionar', vezes: 2, telas: ['390px · letra 100%'], ultimo: new Date().toISOString(), corrigidoEm: '2026-10-20T10:00:00.000Z', voltou: true, onde: '#lista-produtos .card-add', paginas: ['/'], navegadores: ['Android · Chrome 129'], lojas: ['banca'] },
+        { id: 'v3', assinatura: 'c'.repeat(20), tipo: 'visual', msg: 'Foto que não abriu: foto', vezes: 1, ultimo: '2026-10-19T10:00:00.000Z', corrigidoEm: '2026-10-20T10:00:00.000Z', voltou: false, onde: '#lista-produtos img', paginas: ['/'], navegadores: ['Android · Chrome 129'], lojas: ['banca'] }] }
+      : c.acao === 'erro-estado' ? { sucesso: true, estado: c.estado, em: new Date().toISOString() }
       : c.acao === 'lojas' ? { sucesso: true, lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', ativo: true, original: true, donos: ['dona@teste.com'], cor: '#1a3a2a', mes: { receita: 0, pedidos: 0 } }], feiras: [{ id: 'feira-do-bairro', nome: 'Feira do Bairro', dias: [2], lojas: ['banca'], condominiosIds: [] }, { id: 'feira-do-lago', nome: 'Feira do Lago', dias: [4], lojas: ['banca'], condominiosIds: [] }], condominios: [], pix: false, fotos: false } : {}),
   });
   navegador = await chromium.launch();

@@ -25,3 +25,4 @@ testes/regras/package-lock.json
 
 # fotos dos testes no motor do iPhone (o GitHub guarda as dele)
 testes/tela/saida-iphone/
+testes/tela/saida-matriz/

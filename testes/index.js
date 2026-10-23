@@ -2606,6 +2606,59 @@ teste('erros do site: o navegador avisa sem login, o mesmo erro do dia é somado
   assert.ok(!/erros_site/.test(require('fs').readFileSync(raiz('firestore.rules'), 'utf8')));
 });
 
+teste('erros do site: defeito de TELA e aviso do cliente entram com a tela, juntam por dias, e o dono marca "Corrigi" (volta se acontecer de novo)', async () => {
+  const E = require(raiz('lib/erros.js'));
+  // limpeza: "onde" é o lugar na página (seletor), a tela só no formato certo, sem endereço
+  const v = E.limparRelato({ tipo: 'visual', msg: 'Texto cortado ou vazando: faixa › card de produto › preço', arquivo: '.faixa-rolo .produto-card .etq-preco<script>', tela: '390px · letra 150%', pagina: '/?tel=62999', pilha: 'cortado sem "..."\nex.: tomate' }, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Version/17.5 Safari/604.1');
+  assert.strictEqual(v.tipo, 'visual'); assert.ok(v.onde.startsWith('.faixa-rolo .produto-card .etq-preco') && !v.onde.includes('<'), 'sem marcação no lugar'); assert.strictEqual(v.tela, '390px · letra 150%'); assert.strictEqual(v.pagina, '/');
+  assert.strictEqual(E.limparRelato({ tipo: 'visual', msg: 'x', tela: '390px; DROP' }, '').tela, '', 'tela fora do formato não entra');
+  assert.strictEqual(E.limparRelato({ tipo: 'erro', msg: 'x', tela: '390px · letra 100%' }, '').tela, '', 'erro de código não leva tela');
+  assert.strictEqual(E.limparRelato({ tipo: 'relato', msg: 'Cliente avisou: Uma coisa está por cima de outra', tela: '844px deitado · letra 100%' }, '').tela, '844px deitado · letra 100%');
+  assert.strictEqual(E.limparRelato({ tipo: 'inventado', msg: 'x' }, '').tipo, 'erro');
+  // chega pela API sem login, soma as telas no mesmo documento do dia
+  const db = criarBanco(semente()); const api = carregarApi(raiz('api/analytics.js'), criarAdmin(db, TOKENS));
+  const ua = (ip) => ({ 'user-agent': 'Mozilla/5.0 (Linux; Android 14) Chrome/129.0 Mobile', 'x-forwarded-for': ip });
+  const corpo = (tela) => ({ acao: 'erro', tipo: 'visual', msg: 'Texto cortado ou vazando: faixa › card de produto › preço', arquivo: '.faixa-rolo .produto-card .etq-preco', tela, loja: 'banca', pagina: '/' });
+  assert.strictEqual((await chamar(api, { headers: ua('10.1.0.1'), body: corpo('320px · letra 200%') })).status, 204);
+  assert.strictEqual((await chamar(api, { headers: ua('10.1.0.2'), body: corpo('375px · letra 150%') })).status, 204);
+  const docs = [...db._dados.entries()].filter(([k]) => k.startsWith('erros_site/'));
+  assert.strictEqual(docs.length, 1); assert.strictEqual(docs[0][1].vezes, 2); assert.deepStrictEqual(docs[0][1].telas, ['320px · letra 200%', '375px · letra 150%']);
+  // o mesmo defeito ONTEM (outro documento): a lista junta numa linha só, com os dois dias e a soma
+  const [id, d] = docs[0], ass = id.split('/')[1].split('_')[1];
+  const ontem = new Date(Date.now() - 27 * 3600000).toISOString().slice(0, 10);
+  db._dados.set(`erros_site/${ontem}_${ass}`, { ...d, dia: ontem, vezes: 5, primeiro: '2000-01-01T00:00:00.000Z', ultimo: '2000-01-01T00:00:01.000Z', telas: ['390px · letra 100%'] });
+  let lista = await E.listar(db, 7);
+  assert.strictEqual(lista.length, 1, 'mesmo defeito em dois dias = uma linha');
+  assert.strictEqual(lista[0].vezes, 7); assert.strictEqual(lista[0].dias.length, 2); assert.strictEqual(lista[0].assinatura, ass);
+  assert.ok(lista[0].telas.includes('390px · letra 100%') && lista[0].telas.includes('320px · letra 200%'));
+  assert.ok(!lista[0].corrigidoEm);
+  // Corrigi: pela API da plataforma (só a dona da plataforma)
+  const pf = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, TOKENS));
+  assert.strictEqual((await chamar(pf, { headers: { Authorization: 'Bearer dona-banca' }, body: { acao: 'erro-estado', assinatura: ass, estado: 'corrigido' } })).status, 403);
+  assert.strictEqual((await chamar(pf, { headers: { Authorization: 'Bearer plataforma' }, body: { acao: 'erro-estado', assinatura: 'nao-e-hex', estado: 'corrigido' } })).status, 400);
+  let r = await chamar(pf, { headers: { Authorization: 'Bearer plataforma' }, body: { acao: 'erro-estado', assinatura: ass, estado: 'corrigido' } });
+  assert.strictEqual(r.status, 200); assert.strictEqual(r.corpo.estado, 'corrigido');
+  lista = await E.listar(db, 7);
+  assert.ok(lista[0].corrigidoEm && lista[0].voltou === false, 'corrigido, e não voltou');
+  // aconteceu DE NOVO depois da marca: volta como "voltou"
+  await new Promise((ok) => setTimeout(ok, 5));
+  await chamar(api, { headers: ua('10.1.0.3'), body: corpo('390px · letra 100%') });
+  lista = await E.listar(db, 7);
+  assert.strictEqual(lista[0].voltou, true, 'voltou depois de corrigido');
+  // reabrir tira a marca
+  r = await chamar(pf, { headers: { Authorization: 'Bearer plataforma' }, body: { acao: 'erro-estado', assinatura: ass, estado: 'aberto' } });
+  assert.strictEqual(r.status, 200); assert.ok(!db._dados.has(`erros_estado/${ass}`));
+  // faxina: marca com mais de 30 dias sai
+  db._dados.set('erros_estado/' + 'f'.repeat(20), { estado: 'corrigido', em: '2000-01-01T00:00:00.000Z' });
+  await E.faxina(db); assert.ok(!db._dados.has('erros_estado/' + 'f'.repeat(20)));
+  // regras do banco: navegador nenhum toca nas marcas
+  assert.ok(!/erros_estado/.test(require('fs').readFileSync(raiz('firestore.rules'), 'utf8')));
+  // o vigia (js/vigia-tela.js) manda só o que limparRelato aceita: tipo, tela no formato, sem texto livre do cliente
+  const vigia = require('fs').readFileSync(raiz('js/vigia-tela.js'), 'utf8');
+  assert.ok(/tipo: 'visual'/.test(vigia) && /tipo: 'relato'/.test(vigia) && !/<textarea|<input/.test(vigia), 'relato sem campo de texto');
+  assert.ok(/import \{ iniciarVigia \} from '\.\/vigia-tela\.js'/.test(require('fs').readFileSync(raiz('js/loja.js'), 'utf8')), 'a loja liga o vigia');
+});
+
 teste('painel: item pedido por UNIDADE de produto de quilo mostra "un", não "kg"', async () => {
   // utils.js mexe na página ao carregar: uma página de mentira só para importar, e some depois
   const tinha = ['document', 'window', 'addEventListener'].filter((k) => k in globalThis);

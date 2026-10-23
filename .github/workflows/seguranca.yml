@@ -157,6 +157,44 @@ jobs:
           fi
           exit "$codigo"
 
+  matriz:
+    name: Matriz de telas (tamanhos de tela e de letra, dados de pior caso)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Instalar o navegador de teste (numa pasta à parte)
+        run: |
+          npm install --prefix testes/tela --no-audit --no-fund
+          npx --prefix testes/tela playwright install --with-deps chromium
+      - name: Abrir cada loja em 320, 375, 390, 430 e deitado, com a letra em 100%, 150% e 200%
+        run: |
+          set +e
+          node testes/tela/matriz.test.js > saida.txt 2>&1
+          codigo=$?
+          cat saida.txt
+          if [ "$codigo" -ne 0 ]; then
+            grep -A14 "FALHOU" saida.txt | cut -c1-300 > falhas.txt
+            [ -s falhas.txt ] || tail -30 saida.txt | cut -c1-300 > falhas.txt
+            msg=$(head -60 falhas.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Matriz de telas::$msg"
+          else
+            echo "::notice title=Matriz de telas::$(grep 'matriz de telas' saida.txt | tail -1)"
+          fi
+          exit "$codigo"
+      - name: Guardar as fotos de cada tela e de cada defeito (para conferir de olho)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fotos-matriz
+          path: testes/tela/saida-matriz/
+          retention-days: 7
+
   iphone:
     name: Loja no motor do iPhone (WebKit, o do Safari)
     # versão fixa do Ubuntu: o motor do Safari do teste precisa das bibliotecas desta versão
@@ -188,10 +226,28 @@ jobs:
             echo "::notice title=Motor do iPhone::$(grep 'motor do iPhone' saida.txt | tail -1)"
           fi
           exit "$codigo"
+      - name: Matriz de telas no motor do iPhone (curta)
+        if: always()
+        run: |
+          set +e
+          MOTOR=webkit MATRIZ=curta node testes/tela/matriz.test.js > saida-matriz.txt 2>&1
+          codigo=$?
+          cat saida-matriz.txt
+          if [ "$codigo" -ne 0 ]; then
+            grep -A14 "FALHOU" saida-matriz.txt | cut -c1-300 > falhas.txt
+            [ -s falhas.txt ] || tail -30 saida-matriz.txt | cut -c1-300 > falhas.txt
+            msg=$(head -60 falhas.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Matriz de telas no iPhone::$msg"
+          else
+            echo "::notice title=Matriz de telas no iPhone::$(grep 'matriz de telas' saida-matriz.txt | tail -1)"
+          fi
+          exit "$codigo"
       - name: Guardar as fotos de cada passo (para conferir de olho)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fotos-iphone
-          path: testes/tela/saida-iphone/
+          path: |
+            testes/tela/saida-iphone/
+            testes/tela/saida-matriz/
           retention-days: 7

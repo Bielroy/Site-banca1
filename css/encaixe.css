@@ -196,3 +196,28 @@ body.cat-imersiva .fale-loja h2, body.cat-imersiva .fale-loja p { color: var(--c
     .fale-loja ~ .site-rodape { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); }
 }
 .produto-card .etq-ref { font-size: .72rem; }
+
+/* ---------- 9. PREÇO E BOTÃO SEMPRE DENTRO DO CARD (achado pela matriz de telas, testes/tela/matriz.test.js) ----------
+   Com a letra em 150–200% o card estreito não cabia "R$ 1.234,56" nem "Adicionar": cortava no meio.
+   • o card da faixa que rola cresce com a letra (em rem), até a largura da tela;
+   • o preço e o "Adicionar" crescem com a letra até o card acabar (cqi = largura da parte de texto do card);
+     com a letra normal nada muda (o limite fica acima do tamanho de sempre);
+   • o "R$" pode ir para a linha de cima (js/loja.js, fmtEtq). */
+.faixa-rolo .produto-card { flex-basis: max(168px, 10.5rem); max-width: min(max(168px, 10.5rem), calc(100vw - 64px)); }
+@media (max-width: 600px) { .faixa-rolo .produto-card { flex-basis: max(152px, 9.5rem); max-width: min(max(152px, 9.5rem), calc(100vw - 64px)); } }
+.produto-card .produto-info { container: card-info / inline-size; }
+@supports (width: 1cqi) {
+    .produto-card .etq-preco { font-size: min(1.22rem, calc((100cqi - 34px) / 4.4)); }
+    .produto-card .card-add { font-size: min(.95rem, calc((100cqi - 22px) / 5.1)); }
+}
+.produto-card .etiqueta { max-width: 100%; box-sizing: border-box; }
+/* Letra MUITO grande em celular estreito (ex.: 320px com a letra do aparelho em 200% e a "letra grande" da loja):
+   foto ao lado deixava o texto numa tira e o botão virava "+ 1 unid...". Aqui a foto volta para cima e o texto usa o card todo.
+   (11rem de vitrine só acontece com letra grande: na letra normal são 176px, nenhum celular.) */
+@container vitrine (max-width: 11rem) {
+    html #lista-produtos.produtos-grid .produto-card { flex-direction: column; align-items: stretch; }
+    html #lista-produtos.produtos-grid .produto-card .produto-img-wrap { flex: none; align-self: stretch; width: auto; margin: 0; aspect-ratio: 4 / 3; }
+    html #lista-produtos.produtos-grid .produto-card .produto-info { padding-left: 12px; padding-right: 12px; }
+}
+/* texto só do lado esquerdo do cabeçalho (Aparência): com a letra grande, o desenho já some; os botões usam a largura toda */
+html.texto-grande.ap-textoLado-esquerda #header-principal .header-inner { padding-right: max(var(--gutter-x, 16px), env(safe-area-inset-right)); }

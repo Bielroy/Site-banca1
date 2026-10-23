@@ -40,6 +40,9 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .header-arte.plana { right: 12px; bottom: 14px;
     width: auto; aspect-ratio: 1; height: min(calc(100% - 28px), clamp(126px, 32vw, 200px)); }
 .header-arte.plana ~ .header-inner .header-acoes { padding-right: clamp(136px, 35vw, 216px); }
+/* celular estreito: o desenho some e os botões usam a largura toda. Valia só para o desenho da banca: com o desenho
+   "plano" das outras lojas a folga continuava e os botões viravam "Onde entr..." (achado pela matriz de telas) */
+@media (max-width: 340px) { .header-arte.plana ~ .header-inner .header-acoes { padding-right: 0; } }
 /* toldo listrado pendurado embaixo do cabeçalho (igual ao do painel); usa a cor principal da loja */
 .toldo-loja { height: 22px; background: repeating-linear-gradient(90deg, var(--forest) 0 22px, var(--toldo-claro, #f3ead8) 22px 44px);
     -webkit-mask: radial-gradient(circle 11px at 11px 11px, #000 98%, transparent) 0 0 / 22px 22px repeat-x, linear-gradient(#000, #000) 0 0 / 100% 11px no-repeat;

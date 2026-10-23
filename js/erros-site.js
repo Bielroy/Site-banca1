@@ -40,7 +40,8 @@ export function avisarErro(dados) {
     if (vistos.has(chave)) return;
     vistos.add(chave); enviados++;
     const corpo = JSON.stringify({ acao: 'erro', tipo: dados.tipo || 'erro', msg, arquivo: String(dados.arquivo || '').slice(0, 300), linha: dados.linha || 0, coluna: dados.coluna || 0,
-        pilha: String(dados.pilha || '').slice(0, 1500), pagina: location.pathname, loja: lojaAtual(), versao: versao() });
+        pilha: String(dados.pilha || '').slice(0, 1500), pagina: location.pathname, loja: lojaAtual(), versao: versao(),
+        ...(dados.tela ? { tela: String(dados.tela).slice(0, 40) } : {}) });   // defeito de tela (js/vigia-tela.js): "390px · letra 150%"
     try {
         // keepalive: o aviso chega mesmo se a pessoa fechar a página logo depois
         fetch('/api/analytics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: corpo, keepalive: true, credentials: 'same-origin' }).catch(() => { /* sem internet: deixa para lá */ });
