@@ -359,6 +359,27 @@ teste('painel: Configurações guarda a retirada na banca (ligada, horários e l
   semErros(erros); await fechar();
 });
 
+teste('painel: o Gerente liga e desliga PIX/cartão/dinheiro, mas não vê nem manda a chave PIX, o PIX automático e o WhatsApp dos pedidos', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'gerente', email: 'gerente@teste.com', isAnonymous: false, claims: { tenants: { banca: 'gerente' } } } });
+  cen.lojas.banca.config = { ...cen.lojas.banca.config, wpp: '5562999990000', pix: { tipo: 'celular', chave: '+5562988887777', nome: 'Dona Rosa', cidade: 'Goiania' }, formasPagamento: { pix: true, cartao: true, dinheiro: true } };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.locator('.tab[data-aba="config"]').click();
+  await pagina.evaluate(() => document.querySelectorAll('#aba-config details').forEach((d) => { d.open = true; }));
+  await pagina.waitForSelector('#config-forma-cartao', { state: 'visible', timeout: 8000 });
+  // a chave PIX, o PIX automático e o WhatsApp dos pedidos nem aparecem; as formas de pagamento sim
+  for (const id of ['#config-pix-chave', '#config-pix-nome', '#config-pix', '#config-wpp']) assert.strictEqual(await pagina.locator(id).isVisible(), false, `${id} escondido do gerente`);
+  for (const id of ['#config-forma-pix', '#config-forma-cartao', '#config-forma-dinheiro', '#config-pag-entrega']) assert.strictEqual(await pagina.locator(id).isVisible(), true, `${id} visível para o gerente`);
+  assert.ok(!(await pagina.locator('.tab[data-aba="equipe"]').isVisible()), 'gerente não vê a equipe');
+  // hoje não aceita cartão: desmarca e salva
+  await pagina.uncheck('#config-forma-cartao');
+  await pagina.click('#btn-salvar-config');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config' && g.dados && g.dados.formasPagamento), null, { timeout: 4000 });
+  const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config' && x.dados.formasPagamento).dados);
+  assert.deepStrictEqual(g.formasPagamento, { pix: true, cartao: false, dinheiro: true });
+  for (const k of ['pix', 'pixAutomatico', 'wpp']) assert.ok(!(k in g), `o gerente não manda "${k}" (o banco também recusaria)`);
+  semErros(erros); await fechar();
+});
+
 teste('painel: Configurações guarda o Instagram (link vira só o nome) e o WhatsApp para o cliente; Instagram errado não grava', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });

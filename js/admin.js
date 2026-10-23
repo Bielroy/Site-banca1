@@ -19,7 +19,7 @@ import './admin-instalar.js';
 import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar, bancasDaPessoa, mostrarSuspensa } from './admin-guard.js';
 import { htmlSimples, csvCampo } from './html-lib.js';
 import { carregarChave, abrirPedidos } from './cofre-lib.js';   // nome, telefone e endereço do cliente chegam cifrados do banco
-import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel } from './papeis-lib.js';
+import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel, mexeNaChavePix } from './papeis-lib.js';
 import { ico } from './icones-admin.js';          // também liga a troca das marcas <i class="ic"> pelos desenhos
 import { linhaEndereco } from './endereco.js';
 import { abrirPrevisao } from './admin-previsao.js';
@@ -197,12 +197,13 @@ const aplicarPapel = () => {
     const lp = document.getElementById('link-plataforma'); if (lp) lp.hidden = !(papelAtual === 'plataforma' || (papelAtual === 'proprietario' && ehLojaOriginal));
     document.querySelectorAll('.tab').forEach((t) => { t.hidden = !minhas.includes(t.dataset.aba); });
     const ba = document.getElementById('btn-avisos');   // quem não vê pedidos (produção, estoque) não recebe aviso de pedido
-    if (ba) { ba.hidden = !['plataforma', 'proprietario', 'administrador', 'funcionario', 'caixa'].includes(papelAtual); if (!ba.hidden) TELAS.avisos().then((m) => m.marcarBotaoDeAvisos()).catch(() => {}); }
+    if (ba) { ba.hidden = !['plataforma', 'proprietario', 'administrador', 'gerente', 'funcionario', 'caixa'].includes(papelAtual); if (!ba.hidden) TELAS.avisos().then((m) => m.marcarBotaoDeAvisos()).catch(() => {}); }
     document.body.classList.toggle('so-equipe', !gestor);
     if (['plataforma', 'proprietario'].includes(papelAtual)) import('./admin-maquininha.js').then((m) => m.iniciarMaquininha()).catch((e) => console.warn('[maquininha]', e && e.message));
     if (['plataforma', 'proprietario'].includes(papelAtual)) import('./admin-copia.js').then((m) => m.iniciarCopia()).catch((e) => console.warn('[copia]', e && e.message));
     const r = document.getElementById('papel-rotulo'); if (r) { r.textContent = rotuloDoPapel(papelAtual); r.hidden = papelAtual === 'proprietario'; }
     montarBarra(minhas);
+    document.body.classList.toggle('sem-chave-pix', !mexeNaChavePix(papelAtual));   // gerente: não vê nem troca chave PIX, PIX automático e WhatsApp dos pedidos
     document.querySelectorAll('.so-dono').forEach((el) => { el.hidden = !['plataforma', 'proprietario'].includes(papelAtual); });
     // título de grupo só aparece se sobrou alguma aba dele; quem tem poucas abas não precisa de grupos nem de menu
     const nav = document.querySelector('.tabs');
@@ -2906,11 +2907,12 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         const lojaAberta = document.getElementById('config-status-loja').value === "aberta";
         const diasAbertos = Array.from(document.querySelectorAll('.chk-dia:checked')).map(chk => parseInt(chk.value));
 
-        if (!wpp) throw new Error("Número de WhatsApp inválido. Digite com DDD, ex.: 62 99999-8888.");
+        const cuidaDoPix = mexeNaChavePix(papelAtual);   // o gerente não manda chave PIX, PIX automático nem WhatsApp: o banco também recusaria
+        if (cuidaDoPix && !wpp) throw new Error("Número de WhatsApp inválido. Digite com DDD, ex.: 62 99999-8888.");
         if (diasAbertos.length === 0) throw new Error("Marque pelo menos um dia de abertura (ou feche a loja no disjuntor).");
 
         const condominios = lerCondominios();
-        const pixAutomatico = podePixAutomatico() && document.getElementById('config-pix')?.checked === true;
+        const pixAutomatico = cuidaDoPix && podePixAutomatico() && document.getElementById('config-pix')?.checked === true;
         const pagamentoNaEntrega = document.getElementById('config-pag-entrega')?.checked === true;
         const formasPagamento = Object.fromEntries(['pix', 'cartao', 'dinheiro'].map((k) => [k, document.getElementById(`config-forma-${k}`)?.checked !== false]));
         if (!Object.values(formasPagamento).some(Boolean)) throw new Error('Deixe pelo menos uma forma de pagamento marcada (PIX, cartão ou dinheiro).');
@@ -2934,7 +2936,7 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         const pixTipo = document.getElementById('config-pix-tipo').value, pixBruta = document.getElementById('config-pix-chave').value.trim();
         const pixNome = document.getElementById('config-pix-nome').value.trim(), pixCidade = document.getElementById('config-pix-cidade').value.trim();
         let pix = null;
-        if (pixBruta) {
+        if (cuidaDoPix && pixBruta) {
             const chave = normalizarChave(pixTipo, pixBruta);
             if (!chave) throw new Error(`A chave PIX não confere com o tipo "${TIPOS_DE_CHAVE[pixTipo]}". Confira os números ou troque o tipo.`);
             if (pixNome.length < 2) throw new Error("Escreva o nome de quem recebe o PIX, como aparece no banco.");
@@ -2947,7 +2949,9 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         const wcBruto = document.getElementById('config-wpp-contato').value.trim(), wppContato = normalizarWhatsapp(wcBruto);
         if (wcBruto && !wppContato) throw new Error('Confira o WhatsApp para o cliente: com DDD, ex.: 62 99999-8888 (ou deixe vazio para usar o dos pedidos).');
         const contato = { instagram, whatsapp: wppContato, mostrarWpp: document.getElementById('config-mostrar-wpp').checked === true };
-        await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios, pixAutomatico, pagamentoNaEntrega, formasPagamento, entrega, pix, cidade, contato }, { merge: true });
+        const dados = { minimo, lojaAberta, diasAbertos, condominios, pagamentoNaEntrega, formasPagamento, entrega, cidade, contato };
+        if (cuidaDoPix) Object.assign(dados, { wpp, pixAutomatico, pix });       // gerente: estas três chaves nem vão no pacote
+        await setDoc(tdoc("loja", "config"), dados, { merge: true });
         agendaMexida = false;
         showToast("Configurações atualizadas!");
     } catch (err) {

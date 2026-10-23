@@ -25,7 +25,7 @@ const teste = (nome, fn) => testes.push([nome, fn]);
 const pode = (p) => assertSucceeds(p);
 const nega = (p) => assertFails(p);
 
-const PAPEIS = ['proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque'];
+const PAPEIS = ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa', 'producao', 'estoque'];
 const TEMA = { primaria: '#1a3a2a', secundaria: '#4a9467', destaque: '#c4773a', fundo: '#faf7f2', superficie: '#ffffff', texto: '#1a1a18', sobrePrimaria: '#ffffff', fonteTitulo: 'Fraunces', fonteTexto: 'Figtree', raio: 14, etiqueta: 'barbante' };
 const VENENO = '"><img src=x onerror=alert(document.domain)>';
 
@@ -228,7 +228,7 @@ teste('papel de uma loja escrito de jeito torto não vale em outra (mapa vazio, 
 
 // ====================================================================== PAPÉIS DENTRO DA PRÓPRIA LOJA
 teste('quem administra (proprietário, administrador) cuida do cadastro, mas não do que é do servidor nem da plataforma', async () => {
-  for (const loja of ['loja-a', 'banca']) for (const papel of ['proprietario', 'administrador']) {
+  for (const loja of ['loja-a', 'banca']) for (const papel of ['proprietario', 'administrador', 'gerente']) {
     const eu = de(loja, papel);
     await pode(setDoc(d(eu, cam(loja, 'produtos/novo')), { nome: 'Bolo', preco: 12, unidade: 'un', ativo: true })); await pode(updateDoc(d(eu, cam(loja, 'produtos/p1')), { preco: 6, nome: 'Pão francês' }));
     await pode(deleteDoc(d(eu, cam(loja, 'produtos/novo')))); await pode(setDoc(d(eu, cam(loja, 'categorias/doces')), { chave: 'doces', nome: 'Doces', ordem: 2, visivel: true }));
@@ -250,6 +250,33 @@ teste('quem administra (proprietário, administrador) cuida do cadastro, mas nã
   }
 });
 
+
+teste('gerente: liga e desliga as formas de pagamento, mas não troca a chave PIX, o PIX automático nem o WhatsApp dos pedidos', async () => {
+  for (const loja of ['loja-a', 'banca']) {
+    const ger = de(loja, 'gerente'), adm = de(loja, 'administrador'), cfg = cam(loja, 'loja/config');
+    // o que o gerente pode em loja/config
+    await pode(setDoc(d(ger, cfg), { formasPagamento: { pix: true, cartao: false, dinheiro: true } }, { merge: true }));
+    await pode(setDoc(d(ger, cfg), { pagamentoNaEntrega: true, minimo: 12, lojaAberta: false }, { merge: true }));
+    await pode(updateDoc(d(ger, cfg), { 'formasPagamento.cartao': true }));
+    // o que ele NÃO pode: onde o dinheiro cai e o WhatsApp que recebe os pedidos
+    await nega(setDoc(d(ger, cfg), { pix: { tipo: 'celular', chave: '+5562999990000', nome: 'Gerente', cidade: 'Goiania' } }, { merge: true }));
+    await nega(updateDoc(d(ger, cfg), { 'pix.chave': '+5562911112222' }));
+    await nega(setDoc(d(ger, cfg), { pixAutomatico: true }, { merge: true }));
+    await nega(setDoc(d(ger, cfg), { wpp: '5500000000000' }, { merge: true }));
+    await nega(deleteDoc(d(ger, cfg)));
+    // administrador continua mexendo em tudo isso
+    await pode(setDoc(d(adm, cfg), { pix: { tipo: 'celular', chave: '+5562999990000', nome: 'Dono', cidade: 'Goiania' }, pixAutomatico: false }, { merge: true }));
+    await pode(setDoc(d(adm, cfg), { wpp: '5562999990001' }, { merge: true }));
+    // o resto do painel é do gerente
+    await pode(setDoc(d(ger, cam(loja, 'produtos/novo-g')), { nome: 'Bolo', preco: 12, unidade: 'un', ativo: true }));
+    await pode(setDoc(d(ger, cam(loja, 'cupons/GER')), { ativo: true, percentual: 5 }));
+    // equipe, auditoria e segredos: nunca
+    await nega(setDoc(d(ger, cam(loja, 'equipe/eu')), { papel: 'proprietario' })); await nega(getDoc(d(ger, cam(loja, 'auditoria/a1'))));
+    await nega(getDoc(d(ger, 'plataforma/segredos'))); await nega(getDoc(d(ger, `plataforma/maquininha_${loja}`)));
+  }
+  // em outra loja ele não é ninguém
+  await nega(setDoc(d(de('loja-a', 'gerente'), cam('loja-b', 'loja/config')), { minimo: 1 }, { merge: true }));
+});
 teste('funcionário e caixa atendem pedidos, mas não mexem em cadastro, cupom, clientes nem números da loja', async () => {
   for (const loja of ['loja-a', 'banca']) for (const papel of ['funcionario', 'caixa']) {
     const eu = de(loja, papel);

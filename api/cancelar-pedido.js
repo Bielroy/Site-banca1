@@ -25,7 +25,7 @@ const admin = require('firebase-admin');
 
 const MINUTOS_PARA_CANCELAR = 5;
 const STATUS_CANCELAVEIS = ['pendente', 'aguardando_pesagem', 'aguardando_pagamento'];
-const PODEM_CANCELAR_NO_PAINEL = ['proprietario', 'administrador', 'funcionario', 'caixa'];
+const PODEM_CANCELAR_NO_PAINEL = ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa'];
 
 // ---------------------------------------------------------------------
 // CORS — lista de origens confiáveis

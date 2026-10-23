@@ -124,7 +124,7 @@ function pintarPonte() {
         <p class="config-sub">O celular da banca imprime até com a tela bloqueada. Este aparelho (e qualquer outro do painel) só manda o papel: o botão "Cupom", o teste e as etiquetas saem lá.</p>`;
 }
 // só o dono e o administrador ligam ou desligam celular (o servidor confere de novo)
-const podeLigar = () => ['proprietario', 'administrador', 'plataforma'].includes(papelAtual);
+const podeLigar = () => ['proprietario', 'administrador', 'gerente', 'plataforma'].includes(papelAtual);
 
 // ---------------------------------------------------------------- ajustes (aba "Ajustes" da tela Impressora)
 export function pintar() {

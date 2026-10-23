@@ -53,7 +53,7 @@ const boot = () => {
 const H = require('../lib/http');
 const Cofre = require('../lib/cofre');
 const cors = H.cors;            // origem (CORS): lista única em lib/http.js
-const PODEM = ['proprietario', 'administrador', 'funcionario', 'caixa'];
+const PODEM = ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa'];
 const PAGAMENTOS = ['PIX', 'Dinheiro', 'Cartão'];
 const inc = (n) => admin.firestore.FieldValue.increment(n);
 

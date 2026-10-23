@@ -63,23 +63,29 @@ chamada chega ──► qual loja? (endereço, cabeçalho X-Loja ou corpo) ─�
 
 ### Matriz de papéis
 
-| Ação | Plataforma | Proprietário | Administrador | Funcionário | Caixa | Produção | Estoque | Cliente |
-|---|---|---|---|---|---|---|---|---|
-| Ver a vitrine, fazer pedido | sim | sim | sim | sim | sim | sim | sim | sim |
-| Ver/cancelar/avaliar o **próprio** pedido | — | — | — | — | — | — | — | sim |
-| Ver pedidos da loja, avançar status | sim | sim | sim | sim | sim | não | não | não |
-| Cancelar pedido pelo painel, pesar, gerar PIX | sim | sim | sim | sim | sim | não | não | não |
-| Vender no balcão | sim | sim | sim | sim | sim | não | não | não |
-| Produtos, preço, categorias, configurações | sim | sim | sim | não | não | não | não | não |
-| Cupons, clientes (CRM), calendário (editar) | sim | sim | sim | não | não | não | não | não |
-| Balanço, previsão, copiloto, textos da IA | sim | sim | sim | não | não | não | não | não |
-| Entrada, perda, contagem e produção de estoque | sim | sim | sim | não | não | sim | sim | não |
-| Limites de estoque, custo e ficha técnica | sim | sim | sim | não | não | sim | sim | não |
-| Fechamento da feira | sim | sim | sim | sim | não | não | sim | não |
-| Enviar fotos | sim | sim | sim | não | não | não | não | não |
-| Aparência da loja (nome, cores) | sim | sim | sim | não | não | não | não | não |
-| Equipe, cópia de segurança, zerar, maquininha, registro de ações | sim | sim | não | não | não | não | não | não |
-| Ligar/bloquear loja, módulos, feira, chaves, dono de loja | sim | não | não | não | não | não | não | não |
+| Ação | Plataforma | Proprietário | Administrador | Gerente | Funcionário | Caixa | Produção | Estoque | Cliente |
+|---|---|---|---|---|---|---|---|---|---|
+| Ver a vitrine, fazer pedido | sim | sim | sim | sim | sim | sim | sim | sim | sim |
+| Ver/cancelar/avaliar o **próprio** pedido | — | — | — | — | — | — | — | — | sim |
+| Ver pedidos da loja, avançar status | sim | sim | sim | sim | sim | sim | não | não | não |
+| Cancelar pedido pelo painel, pesar, gerar PIX | sim | sim | sim | sim | sim | sim | não | não | não |
+| Vender no balcão | sim | sim | sim | sim | sim | sim | não | não | não |
+| Produtos, preço, categorias, configurações (menos o que está na linha abaixo) | sim | sim | sim | sim | não | não | não | não | não |
+| **Chave PIX, PIX automático, WhatsApp dos pedidos** | sim | sim | sim | **não** | não | não | não | não | não |
+| Cupons, clientes (CRM), calendário (editar) | sim | sim | sim | sim | não | não | não | não | não |
+| Balanço, previsão, copiloto, textos da IA | sim | sim | sim | sim | não | não | não | não | não |
+| Entrada, perda, contagem e produção de estoque | sim | sim | sim | sim | não | não | sim | sim | não |
+| Limites de estoque, custo e ficha técnica | sim | sim | sim | sim | não | não | sim | sim | não |
+| Fechamento da feira | sim | sim | sim | sim | sim | não | não | sim | não |
+| Enviar fotos | sim | sim | sim | sim | não | não | não | não | não |
+| Aparência da loja (nome, cores) | sim | sim | sim | sim | não | não | não | não | não |
+| Equipe, cópia de segurança, zerar, maquininha, registro de ações | sim | sim | não | não | não | não | não | não | não |
+| Ligar/bloquear loja, módulos, feira, chaves, dono de loja | sim | não | não | não | não | não | não | não | não |
+
+**Gerente**: é o administrador, só que não vê nem troca a chave PIX, o PIX automático nem o WhatsApp que recebe os pedidos
+(onde o dinheiro cai). Ele só liga e desliga PIX, cartão e dinheiro. A tela esconde esses campos; quem barra de verdade é
+`firestore.rules` (`gerenteSemDinheiro`, testado em `testes/regras`). Limites que continuam: a chave PIX é pública para o cliente
+poder pagar (então "ver" não protege nada; o que protege é não poder trocar), e o gerente ainda mexe em cupom e preço.
 
 Só o **servidor** faz: criar pedido, mudar valor ou itens, cancelar (devolve estoque), mexer no estoque físico,
 no caixa do dia, nas previsões, na equipe, na nota das avaliações e na trilha de auditoria.

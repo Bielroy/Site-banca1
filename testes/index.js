@@ -1647,6 +1647,11 @@ teste('papéis: cada um vê só as suas abas, e a tela não libera mais do que o
   const todas = ['produtos', 'pdv', 'estoque', 'compras', 'crm', 'copiloto', 'calendario', 'relatorios', 'balanco', 'fechamento', 'categorias', 'previsao', 'comunicados', 'cupons', 'aparencia', 'equipe', 'config'];
   assert.deepStrictEqual(P.abasDoPapel('proprietario', todas), todas);
   assert.ok(!P.abasDoPapel('administrador', todas).includes('equipe') && P.abasDoPapel('administrador', todas).length === todas.length - 1);
+  // gerente: tudo do administrador (menos equipe), mas a chave PIX e o WhatsApp dos pedidos são só de quem administra de verdade
+  assert.deepStrictEqual(P.abasDoPapel('gerente', todas), P.abasDoPapel('administrador', todas));
+  assert.ok(P.ehGestor('gerente') && !P.cuidaDaEquipe('gerente') && T.GESTORES.includes('gerente') && P.ATRIBUIVEIS.includes('gerente'));
+  for (const papel of ['plataforma', 'proprietario', 'administrador']) assert.ok(P.mexeNaChavePix(papel), papel);
+  for (const papel of ['gerente', 'funcionario', 'caixa', 'producao', 'estoque', 'inventado', null]) assert.ok(!P.mexeNaChavePix(papel), String(papel));
   assert.deepStrictEqual(P.abasDoPapel('caixa', todas), ['pdv', 'relatorios']);
   assert.deepStrictEqual(P.abasDoPapel('producao', todas), ['estoque', 'calendario']);
   assert.deepStrictEqual(P.abasDoPapel('estoque', todas), ['estoque', 'compras', 'fechamento', 'calendario']);
@@ -1679,6 +1684,14 @@ teste('equipe: só o proprietário dá papel, só na própria loja, e nunca o de
   // conta que ainda não existe é criada (a pessoa entra depois pelo link do e-mail)
   const n = await ch('dono', { acao: 'definir', email: 'nova@x.com', papel: 'producao' }); assert.strictEqual(n.status, 200);
   assert.deepStrictEqual(usuarios.find((u) => u.email === 'nova@x.com').customClaims, { tenants: { espetinhos: 'producao' } });
+  // gerente: o dono pode dar; o gerente em si não mexe na equipe nem nas credenciais da maquininha
+  const g = await ch('dono', { acao: 'definir', email: 'gerente@x.com', papel: 'gerente' }); assert.strictEqual(g.status, 200, JSON.stringify(g.corpo));
+  assert.deepStrictEqual(usuarios.find((u) => u.email === 'gerente@x.com').customClaims, { tenants: { espetinhos: 'gerente' } });
+  tokens.ger = { uid: 'ger-1', tenants: { espetinhos: 'gerente' } };
+  assert.strictEqual((await ch('ger', { acao: 'listar' })).status, 403, 'gerente não mexe na equipe');
+  assert.strictEqual((await ch('ger', { acao: 'definir', email: 'z@x.com', papel: 'administrador' })).status, 403, 'gerente não se promove nem promove ninguém');
+  assert.strictEqual((await ch('ger', { acao: 'maquininha-salvar', estabelecimento: '123456', token: 'tok-da-maquininha-0001' })).status, 403, 'gerente não mexe nas credenciais da maquininha');
+  assert.strictEqual((await ch('dono', { acao: 'remover', uid: usuarios.find((u) => u.email === 'gerente@x.com').uid })).status, 200);
   assert.deepStrictEqual((await ch('dono', { acao: 'listar' })).corpo.equipe.map((m) => `${m.email}:${m.papel}`), ['joao@x.com:caixa', 'nova@x.com:producao']);
   assert.ok(db._dados.has('tenants/espetinhos/equipe/joao-conta-1') && !db._dados.has('equipe/joao-conta-1'), 'a lista fica dentro da loja');
   // tira o acesso: some desta loja, continua na outra, e é obrigada a entrar de novo

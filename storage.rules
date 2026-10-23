@@ -22,7 +22,7 @@ service firebase.storage {
         : (request.auth.token.get('tenants', {}).get(tid, '') is string && request.auth.token.get('tenants', {}).get(tid, '') != '' ? request.auth.token.get('tenants', {}).get(tid, '')
           : (tid == 'banca' && request.auth.token.get('admin', false) == true ? 'proprietario' : ''));
     }
-    function gestor(tid) { return plataforma() || papel(tid) in ['proprietario', 'administrador']; }
+    function gestor(tid) { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'gerente']; }
     function fotoOk(arquivo) {
       return request.resource.size > 0 && request.resource.size < 2 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp)')

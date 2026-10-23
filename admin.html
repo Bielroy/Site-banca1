@@ -311,7 +311,7 @@
                     <summary><span><b>Atendimento</b><small>WhatsApp, Instagram e pedido mínimo</small></span></summary>
                     <div class="op-corpo">
                 <div class="grid-2" style="width: 100%;">
-                    <div class="form-group">
+                    <div class="form-group so-chave-pix">
                         <label for="config-wpp">WhatsApp da loja</label>
                         <input type="tel" id="config-wpp" placeholder="62 99999-8888" inputmode="tel">
                         <small class="dica-campo">Recebe todos os pedidos. Tem outro WhatsApp para parte dos produtos (artesanais, molhos...)? <button type="button" data-ir-aba="categorias">Cadastre na aba <i class="ic" data-i="etiqueta"></i> Categorias</button></small>
@@ -404,7 +404,7 @@
                     <label class="chk-linha" for="config-pag-entrega"><input type="checkbox" id="config-pag-entrega"> <i class="ic" data-i="pix"></i> Pagamento só na entrega (sem PIX pelo site)</label>
                     <small class="dica-campo" style="display:block;">Ligado: o cliente só escolhe como vai pagar (PIX, cartão na maquininha ou dinheiro) e paga quando receber o pedido ou na retirada. O site não mostra código PIX nem QR Code, e o pedido chega como enviado. A chave e o PIX automático abaixo ficam guardados, sem efeito, até você desligar esta opção.</small>
                 </div>
-                <div class="form-group" style="width: 100%;">
+                <div class="form-group so-chave-pix" style="width: 100%;">
                     <label for="config-pix-chave"><i class="ic" data-i="pix"></i> Chave PIX da loja (copia e cola no pedido)</label>
                     <div class="pix-chave-linha">
                         <select id="config-pix-tipo" aria-label="Tipo de chave"><option value="celular">Celular</option><option value="cpf">CPF</option><option value="cnpj">CNPJ</option><option value="email">E-mail</option><option value="aleatoria">Chave aleatória</option></select>
@@ -417,7 +417,7 @@
                     <small class="dica-campo" style="display:block;">Com a chave preenchida, quem escolhe PIX recebe um código pronto com o valor do pedido: copia, cola no banco e paga. O dinheiro cai direto na sua conta. O site não confirma o pagamento sozinho: confira pelo extrato ou pelo comprovante. Para desligar, apague a chave.</small>
                 </div>
 
-                <div class="form-group" id="grupo-pix" style="width: 100%;">
+                <div class="form-group so-chave-pix" id="grupo-pix" style="width: 100%;">
                     <label class="chk-linha" for="config-pix"><input type="checkbox" id="config-pix"> <i class="ic" data-i="pix"></i> PIX automático (QR Code na tela do cliente)</label>
                     <small class="dica-campo" style="display:block;">O cliente paga na hora e o pedido aparece como PAGO sozinho. Precisa do pagamento online ligado pela plataforma (Asaas ou PagBank); sem ele, esta opção não faz efeito e o PIX continua combinado pelo WhatsApp. Pedido com item a pesar só libera o PIX depois da pesagem.</small>
                 </div>

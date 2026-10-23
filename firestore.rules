@@ -35,10 +35,20 @@ service cloud.firestore {
         : (mapaDePapeis() is map && mapaDePapeis().get(tid, '') is string && mapaDePapeis().get(tid, '') != '' ? mapaDePapeis().get(tid, '')
           : (tid == 'banca' && request.auth.token.get('admin', false) == true ? 'proprietario' : ''));
     }
-    function gestor(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador']; }
-    function equipe(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque']; }
+    function gestor(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'gerente']; }
+    // gestor COMPLETO: o gerente mexe em tudo, menos onde o dinheiro cai (chave PIX, PIX automático) e no WhatsApp que recebe os pedidos
+    function gestorTotal(tid) { return plataforma() || papel(tid) in ['proprietario', 'administrador']; }
+    // o que o gerente NÃO pode alterar em loja/config (só vale se o documento já existe: ele não cria a configuração)
+    function gerenteSemDinheiro() {
+      return resource != null && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pix', 'pixAutomatico', 'wpp']);
+    }
+    function podeGravarLoja(tid, docId) {
+      return (gestorTotal(tid) || (gestor(tid) && (docId != 'config' || gerenteSemDinheiro())))
+        && !(docId in ['avaliacoes', 'catalogo']);       // nota média e catálogo: só o servidor grava
+    }
+    function equipe(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa', 'producao', 'estoque']; }
     // quem ATENDE pedidos (vê nome, telefone e endereço de cliente): estoque e produção ficam de fora
-    function atende(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'funcionario', 'caixa']; }
+    function atende(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa']; }
     function cuidaDeEstoque(tid) { return gestor(tid) || papel(tid) in ['estoque', 'producao']; }
     // quem faz o fechamento da feira (o que sobrou / o que faltou)
     function fechaFeira(tid) { return gestor(tid) || papel(tid) in ['funcionario', 'estoque']; }
@@ -154,7 +164,7 @@ service cloud.firestore {
       match /categorias/{id}  { allow read: if vitrine(tid); allow write: if gestor(tid); }
       match /loja/{docId} {
         allow read: if (lojaPublica(docId) && vitrine(tid)) || gestor(tid);
-        allow write: if gestor(tid) && !(docId in ['avaliacoes', 'catalogo']);      // nota média e catálogo: só o servidor grava
+        allow write: if podeGravarLoja(tid, docId);
       }
       match /pedidos/{id} {
         // o cliente lê o PRÓPRIO pedido (o dono vem do login anônimo dele); quem atende lê os da loja
@@ -203,7 +213,7 @@ service cloud.firestore {
     match /categorias/{id}  { allow read: if vitrine('banca'); allow write: if gestor('banca'); }
     match /loja/{docId} {
       allow read: if (lojaPublica(docId) && vitrine('banca')) || gestor('banca');
-      allow write: if gestor('banca') && !(docId in ['avaliacoes', 'catalogo']);
+      allow write: if podeGravarLoja('banca', docId);
     }
     match /pedidos/{id} {
       allow get: if atende('banca') || (logado() && resource.data.userId == request.auth.uid);

@@ -73,7 +73,7 @@ const Asaas = require('../lib/asaas');
 const Avisos = require('../lib/avisos');
 const Cofre = require('../lib/cofre');
 // Quem da equipe gera PIX de um pedido: quem atende pedidos (não o estoque nem a produção).
-const EQUIPE_DO_PIX = ['proprietario', 'administrador', 'funcionario', 'caixa'];
+const EQUIPE_DO_PIX = ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa'];
 const emailValido = (e) => typeof e === 'string' && e.length <= 120 && /^[^\s@<>"']{1,64}@[^\s@<>"']{1,100}\.[a-z]{2,}$/i.test(e);
 // chamada ao banco com prazo: sem isto, o PagBank lento prendia a função até a Vercel derrubar
 const comPrazo = (url, opcoes = {}, ms = 15000) => fetch(url, { ...opcoes, signal: AbortSignal.timeout(ms) });

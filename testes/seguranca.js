@@ -16,7 +16,7 @@ const fs = require('fs');
 
 module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chamar, carregarApi }) {
   // ------------------------------------------------------------------ cenário: duas lojas, todos os papéis
-  const PAPEIS = ['proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque'];
+  const PAPEIS = ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa', 'producao', 'estoque'];
   const TOK = { plataforma: { uid: 'plat', email: 'dono@plataforma', email_verified: true, plataforma: true }, cliente: { uid: 'cli-1' }, 'cliente-2': { uid: 'cli-2' } };
   for (const p of PAPEIS) {
     TOK[`a-${p}`] = { uid: `a-${p}`, email: `${p}@loja-a`, email_verified: true, tenants: { 'loja-a': p } };
@@ -118,10 +118,10 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
   teste('SEGURANÇA · papéis: cada papel faz só o que é dele dentro da PRÓPRIA loja (matriz de permissões)', async () => {
     // operação → papéis que PODEM (a plataforma pode tudo)
     const MATRIZ = [
-      ['api/analytics.js', { acao: 'painel' }, ['proprietario', 'administrador']],
-      ['api/pdv.js', { acao: 'venda', itens: [{ id: 'p1', qtd: 1 }], pag: 'PIX', chave: 'venda-0000009' }, ['proprietario', 'administrador', 'funcionario', 'caixa']],
-      ['api/estoque.js', { acao: 'movimentar', produtoId: 'p1', tipo: 'compra', qtd: 5, chave: 'mov-00000009' }, ['proprietario', 'administrador', 'estoque', 'producao']],
-      ['api/foto.js', { acao: 'estado' }, ['proprietario', 'administrador']],
+      ['api/analytics.js', { acao: 'painel' }, ['proprietario', 'administrador', 'gerente']],
+      ['api/pdv.js', { acao: 'venda', itens: [{ id: 'p1', qtd: 1 }], pag: 'PIX', chave: 'venda-0000009' }, ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa']],
+      ['api/estoque.js', { acao: 'movimentar', produtoId: 'p1', tipo: 'compra', qtd: 5, chave: 'mov-00000009' }, ['proprietario', 'administrador', 'gerente', 'estoque', 'producao']],
+      ['api/foto.js', { acao: 'estado' }, ['proprietario', 'administrador', 'gerente']],
       ['api/equipe.js', { acao: 'listar' }, ['proprietario']],
       ['api/equipe.js', { acao: 'definir', email: 'nova@x.com', papel: 'caixa' }, ['proprietario']],
       ['api/equipe.js', { acao: 'copia-estado' }, ['proprietario']],
@@ -143,7 +143,7 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
       for (const papel of PAPEIS) {
         const db = criarBanco(base()); const api = carregarApi(raiz('api/assistente.js'), criarAdmin(db, TOK, [])); zerarFreios();
         const r = await chamar(api, { headers: { ...ip(), Authorization: `Bearer a-${papel}`, 'X-Loja': 'loja-a' }, body: { action: 'gerar_descricao', produtoInfo: { nome: 'Pão', cat: 'paes' } } });
-        assert.strictEqual(r.status, ['proprietario', 'administrador'].includes(papel) ? 200 : 403, `IA do painel como ${papel}: ${r.status}`);
+        assert.strictEqual(r.status, ['proprietario', 'administrador', 'gerente'].includes(papel) ? 200 : 403, `IA do painel como ${papel}: ${r.status}`);
       }
     });
   });

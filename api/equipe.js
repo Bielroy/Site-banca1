@@ -6,7 +6,7 @@
 //  POST { acao: 'auditoria' }                últimas ações registradas na loja (só proprietário)
 //  POST { acao: 'minha-assinatura' }          a mensalidade desta banca (definida pela plataforma)
 //  POST { acao: 'listar' }
-//  POST { acao: 'definir', email, papel }   papel: administrador | funcionario | caixa | producao | estoque
+//  POST { acao: 'definir', email, papel }   papel: administrador | gerente | funcionario | caixa | producao | estoque
 //  POST { acao: 'remover', uid }
 //  POST { acao: 'maquininha-estado' } / { acao: 'maquininha-salvar', estabelecimento, token } / { acao: 'maquininha-buscar', dia? }
 //                                                              vendas da maquininha PagBank (ver lib/maquininha.js)
@@ -44,7 +44,7 @@ const boot = () => {
 const H = require('../lib/http');
 const cors = H.cors;            // origem (CORS): lista única em lib/http.js
 const crypto = require('crypto');
-const ATRIBUIVEIS = ['administrador', 'funcionario', 'caixa', 'producao', 'estoque'];
+const ATRIBUIVEIS = ['administrador', 'gerente', 'funcionario', 'caixa', 'producao', 'estoque'];
 const quemE = (dec) => dec.email || dec.uid;
 const anotar = (req, tid, dec, acao, detalhe) => P.registrar(db, tid, { acao, quem: quemE(dec), uid: dec.uid, detalhe, ip: H.ipDe(req) });
 
@@ -227,7 +227,7 @@ module.exports = async function handler(req, res) {
   // Avisos de pedido novo neste aparelho: qualquer pessoa da equipe que vê os pedidos pode ligar o seu.
   const acaoAviso = (req.body || {}).acao;
   if (acaoAviso === 'aviso-ligar' || acaoAviso === 'aviso-desligar' || acaoAviso === 'aviso-teste') {
-    if (!T.temPapel(dec, tid, ['proprietario', 'administrador', 'funcionario', 'caixa'])) return res.status(403).json({ error: 'Sua conta não recebe avisos de pedido nesta loja.' });
+    if (!T.temPapel(dec, tid, ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa'])) return res.status(403).json({ error: 'Sua conta não recebe avisos de pedido nesta loja.' });
     try {
       if (!A.ligado()) return res.status(503).json({ error: 'Os avisos ainda não estão ligados no servidor.' });
       if (acaoAviso === 'aviso-ligar') await A.ligar(db, tid, dec, (req.body || {}).assinatura);
@@ -239,7 +239,7 @@ module.exports = async function handler(req, res) {
   // CHAVE DOS DADOS DO CLIENTE (lib/cofre.js): só quem atende (os mesmos papéis que leem pedidos nas regras do banco).
   // O login foi conferido com "encerrado?" (verifyIdToken com true): quem saiu da equipe não recebe mais a chave.
   if ((req.body || {}).acao === 'chave-dados') {
-    if (!T.temPapel(dec, tid, ['proprietario', 'administrador', 'funcionario', 'caixa'])) return res.status(403).json({ error: 'Sua conta não vê os dados dos clientes desta loja.' });
+    if (!T.temPapel(dec, tid, ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa'])) return res.status(403).json({ error: 'Sua conta não vê os dados dos clientes desta loja.' });
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({ sucesso: true, ligado: Cofre.ligado(), chave: Cofre.chaveParaPainel(tid) });
   }
