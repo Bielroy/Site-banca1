@@ -221,3 +221,5 @@ body.cat-imersiva .fale-loja h2, body.cat-imersiva .fale-loja p { color: var(--c
 }
 /* texto só do lado esquerdo do cabeçalho (Aparência): com a letra grande, o desenho já some; os botões usam a largura toda */
 html.texto-grande.ap-textoLado-esquerda #header-principal .header-inner { padding-right: max(var(--gutter-x, 16px), env(safe-area-inset-right)); }
+/* e no celular estreito (o desenho já some em 340px): com a "letra grande" da loja, "Onde entregar?" virava "Onde entr..." */
+@media (max-width: 340px) { html.ap-textoLado-esquerda #header-principal .header-inner { padding-right: max(var(--gutter-x, 16px), env(safe-area-inset-right)); } }

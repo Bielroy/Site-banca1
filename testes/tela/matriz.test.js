@@ -246,7 +246,7 @@ teste('o vigia acha defeito feito de propósito: rolagem lateral, preço cortado
         #lista-produtos .produto-card[data-id="tomate"] .etq-preco { width: 22px; overflow: hidden; white-space: nowrap; }
         #lista-produtos .produto-card[data-id="banana"], #lista-produtos .produto-card[data-id="banana"] .produto-img-wrap { overflow: visible !important; contain: none !important; content-visibility: visible !important; }
         #lista-produtos .produto-card[data-id="banana"] .produto-img-wrap img { position: absolute; width: 600px !important; height: 600px !important; max-width: none !important; z-index: 50; }
-        #busca-input { width: 700px !important; min-width: 700px !important; max-width: none !important; }`;
+`;
       document.head.appendChild(s);
       document.querySelector('#lista-produtos .produto-card[data-id="alface"]').scrollIntoView({ block: 'center' });
     });
@@ -263,7 +263,12 @@ teste('o vigia acha defeito feito de propósito: rolagem lateral, preço cortado
     const achou = await pagina.evaluate(() => window.__vigiaTela.verificarTela());
     const regras = new Set(achou.map((p) => p.regra));
     for (const r of ['texto-cortado', 'coberto', 'sai-do-card', 'foto-quebrada']) assert.ok(regras.has(r), `devia acusar ${r}; achou: ${achou.map(texto).join(' | ')}`);
-    assert.ok(regras.has('rolagem-lateral') || regras.has('fora-da-tela'), `devia acusar a página larga; achou: ${achou.map(texto).join(' | ')}`);
+    // por último, a página mais larga que a tela (no celular o navegador "afasta" a página e as medidas mudam: vai separado)
+    const larga = await pagina.evaluate(() => {
+      const st = document.createElement('style'); st.textContent = '#busca-input { width: 700px !important; min-width: 700px !important; max-width: none !important; }'; document.head.appendChild(st);
+      return new Promise((ok) => setTimeout(() => ok(window.__vigiaTela.verificarTela().map((p) => p.regra)), 300));
+    });
+    assert.ok(larga.includes('rolagem-lateral') || larga.includes('fora-da-tela'), `devia acusar a página larga; achou: ${larga.join(', ')}`);
     const preco = achou.find((p) => p.regra === 'texto-cortado');
     assert.ok(/preço/.test(preco.nome) && preco.exemplos.includes('tomate'), `diz que é o preço do tomate: ${texto(preco)}`);
     assert.ok(achou.find((p) => p.regra === 'foto-quebrada').exemplos.includes('quebrada'));
