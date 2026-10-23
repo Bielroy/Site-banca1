@@ -394,25 +394,47 @@ export async function iniciarTema() {
         }
     } catch (_) { /* sem cache */ }
     try {
+        // SEM FILA: antes era ficha → (espera) → feiras → (espera) → ficha de cada banca da feira → (espera) → tela.
+        // Agora: se o aparelho já conhece a loja, as feiras dela são pedidas JUNTO com a ficha; e a ficha das outras
+        // bancas (só confere nome/cor/bloqueio da faixa) não segura mais a tela: a faixa aparece com a cópia que a feira
+        // guarda e se acerta sozinha quando a conferência chega.
+        const lerFeira = (id) => getDoc(doc(db, 'feiras', id)).then((f) => (f.exists() ? { ...f.data(), id } : null)).catch(() => null);
+        const pedidas = new Map();
+        const pedir = (id) => { if (!pedidas.has(id)) pedidas.set(id, lerFeira(id)); return pedidas.get(id); };
+        feirasDaFicha(guardada && guardada.ficha).forEach(pedir);          // adiantadas (podem não servir: só gasta uma leitura)
         const s = await getDoc(fichaRef());
         const ficha = s.exists() ? s.data() : null;
         // a loja pode estar em várias feiras: lê todas (com o id) e mostra a do cliente (ou a de hoje)
-        const feirasCruas = (await Promise.all(feirasDaFicha(ficha).map((id) => getDoc(doc(db, 'feiras', id)).then((f) => (f.exists() ? { ...f.data(), id } : null)).catch(() => null)))).filter(Boolean);
+        const feirasCruas = (await Promise.all(feirasDaFicha(ficha).map(pedir))).filter(Boolean);
         // a feira guarda uma CÓPIA do nome e da cor de cada banca: confere a ficha de verdade (banca bloqueada some,
         // nome e cor novos aparecem). Sem resposta da ficha, fica a cópia.
         const ids = [...new Set(feirasCruas.flatMap((f) => (f.lojas || []).map((l) => l && l.id)).filter((x) => /^[a-z0-9][a-z0-9-]{1,39}$/.test(x || '') && x !== TENANT))].slice(0, 24);
-        const vivas = new Map(await Promise.all(ids.map((id) => getDoc(doc(db, 'tenants', id)).then((f) => [id, f.exists() ? f.data() : null]).catch(() => [id, undefined]))));
-        if (ficha) vivas.set(TENANT, ficha);
-        const feiras = feirasCruas.map((f) => ({ ...f, lojas: (f.lojas || []).filter((l) => { const v = vivas.get(l && l.id); return !(v && v.ativo === false); })
-            .map((l) => { const v = vivas.get(l.id); return v ? { ...l, nome: v.nome || l.nome, cor: (v.tema && v.tema.primaria) || l.cor } : l; }) }));
-        if (entrando && await irParaBancaDaFeira(doLink, feiras)) return null;
+        const conferir = Promise.all(ids.map((id) => getDoc(doc(db, 'tenants', id)).then((f) => [id, f.exists() ? f.data() : null]).catch(() => [id, undefined])));
+        const comVivas = (lista) => {
+            const vivas = new Map(lista);
+            if (ficha) vivas.set(TENANT, ficha);
+            return feirasCruas.map((f) => ({ ...f, lojas: (f.lojas || []).filter((l) => { const v = vivas.get(l && l.id); return !(v && v.ativo === false); })
+                .map((l) => { const v = vivas.get(l.id); return v ? { ...l, nome: v.nome || l.nome, cor: (v.tema && v.tema.primaria) || l.cor } : l; }) }));
+        };
+        const guardar = (feiras) => { try { localStorage.setItem(K, JSON.stringify({ v: 3, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, feiras: ficha.feiras || null, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feiras })); } catch (_) { /* cheio */ } };
+        // veio pelo link da feira: escolher a banca precisa saber quem está bloqueada (aqui ainda espera a conferência)
+        if (entrando && await irParaBancaDaFeira(doLink, comVivas(await conferir))) return null;
         if (!ficha) ligarFontesDaBanca();                    // sem ficha: o visual (e as letras) de sempre
         FICHA_GRAVADA = ficha;
         if (ficha || FICHA_PREVIA) aplicarFicha({ ...(ficha || {}), ...(FICHA_PREVIA || {}) });
-        FEIRAS_DA_LOJA = feiras;
-        montarFeira(feiras);
+        // a faixa já com o que o aparelho sabia de bloqueio (cópia guardada): banca que já estava bloqueada não "pisca"
+        const jaSabia = new Map((guardada && Array.isArray(guardada.feiras) ? guardada.feiras : []).flatMap((f) => (f && f.lojas) || []).map((l) => [l && l.id, l]));
+        const semBloqueadaConhecida = (feiras) => feiras.map((f) => ({ ...f, lojas: (f.lojas || []).filter((l) => !ids.includes(l && l.id) || jaSabia.size === 0 || jaSabia.has(l.id)) }));
+        FEIRAS_DA_LOJA = semBloqueadaConhecida(comVivas([]));
+        montarFeira(FEIRAS_DA_LOJA);
         avisarTemaPronto();
-        try { localStorage.setItem(K, JSON.stringify({ v: 3, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, feiras: ficha.feiras || null, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feiras })); } catch (_) { /* cheio */ }
+        guardar(FEIRAS_DA_LOJA);
+        // conferência das outras bancas em segundo plano: só redesenha a faixa se algo mudou
+        conferir.then((lista) => {
+            const feiras = comVivas(lista);
+            if (JSON.stringify(feiras) === JSON.stringify(FEIRAS_DA_LOJA)) return;
+            FEIRAS_DA_LOJA = feiras; montarFeira(feiras); guardar(feiras);
+        }).catch(() => { /* fica a cópia */ });
         return ficha;
     } catch (e) { console.warn('[tema] usando o visual guardado:', e && e.code); if (!guardada) ligarFontesDaBanca(); avisarTemaPronto(); return null; }
 }

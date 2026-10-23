@@ -117,6 +117,10 @@ Quando a chave do Asaas está cadastrada, o PIX de todas as lojas sai por ele (o
    Falta (quando a Vercel sair de vez): `.github/workflows/velocidade.yml` e a origem fixa de `lib/http.js`.
 5. **Fotos menores:** em Cloudflare → `usebanca.com` → *Images → Transformations*, ligue para a zona. Sem isso as fotos vêm no tamanho
    original (mais lentas). No endereço `*.pages.dev` o Cloudflare não guarda cópia das fotos: teste a velocidade no domínio próprio.
+   Plano grátis: 5.000 transformações únicas por mês (cada foto em cada tamanho conta uma vez). Passou disso, a loja usa a foto original.
+6. **Functions só onde precisa:** o build escreve `dist/_routes.json` (lib/cloudflare-arquivos.js). Só `/`, `/index.html`, `/api/*` e
+   `/_vercel/image` passam pelas Functions; o resto (código, estilos, ícones) é estático, grátis e ilimitado. Sem esse arquivo, cada
+   abertura de loja gastava ~75 das 100 mil Functions por dia do plano grátis. Conferir: Workers e Pages → projeto → Métricas.
 
 ## Parte 4 — Rotina da noite
 GitHub → repositório → *Settings → Secrets and variables → Actions → New repository secret*:

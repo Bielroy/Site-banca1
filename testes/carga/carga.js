@@ -9,7 +9,8 @@
 //  com um atraso imitando o Firestore, então o número mede o NOSSO código e a fila do servidor,
 //  não a velocidade do Google. Confere:
 //    1) pico de pedidos em 3 lojas ao mesmo tempo: nenhum erro, nenhum pedido perdido, tempo de resposta;
-//    2) muitos clientes atrás do MESMO endereço (operadora/feira): quantos passam antes do freio;
+//    2) muitos clientes atrás do MESMO endereço (operadora/feira): quantos passam antes do freio; feira com 3 bancas
+//       no mesmo Wi-Fi (ninguém barrado); rajada do mesmo endereço;
 //    3) o fusível da loja (pedidos demais em 10 min) segura sem derrubar as outras lojas;
 //    4) toque repetido no botão (mesma chave) não cria pedido em dobro.
 // =====================================================================
@@ -89,16 +90,42 @@ const pedidosNoBanco = (db) => [...db._dados.keys()].filter((k) => /(^|\/)pedido
     assert.strictEqual(pedidosNoBanco(db), total, 'nenhum pedido perdido');
     srv.close();
   }
-  // 2) MESMO ENDEREÇO DE INTERNET (operadora/feira): 25 clientes diferentes, um depois do outro, na mesma loja
+  // 2) MESMO ENDEREÇO DE INTERNET (operadora/feira): 70 clientes diferentes, um depois do outro, na mesma loja
   {
     const { srv, porta } = await subir();
     const st = [];
-    for (let i = 0; i < 25; i++) { zerarMemoria(); st.push((await postar(porta, pedido(1000 + i), '189.40.10.10', 'pastel')).status); }
+    for (let i = 0; i < 70; i++) { zerarMemoria(); st.push((await postar(porta, pedido(1000 + i), '189.40.10.10', 'pastel')).status); }
     const ok = st.filter((s) => s === 200).length;
-    relatorio.push(`2) 25 clientes atrás do MESMO endereço na mesma loja em poucos minutos: ${ok} passaram, ${25 - ok} receberam "aguarde" (e a loja oferece o WhatsApp a eles).`);
-    assert.strictEqual(ok, 20); assert.ok(st.slice(20).every((s) => s === 429));
+    relatorio.push(`2) 70 clientes atrás do MESMO endereço na mesma loja em poucos minutos: ${ok} passaram, ${70 - ok} receberam "aguarde" (e a loja oferece o WhatsApp a eles).`);
+    assert.strictEqual(ok, 60); assert.ok(st.slice(60).every((s) => s === 429));
     // o mesmo endereço em OUTRA loja continua comprando
     zerarMemoria(); assert.strictEqual((await postar(porta, pedido(2000), '189.40.10.10', 'acai')).status, 200, 'outra loja não paga pelo freio desta');
+    srv.close();
+  }
+  // 2b) FEIRA COM 3 BANCAS NO MESMO WI-FI: 20 clientes por banca em 10 min (60 no total), saindo em rajadas de 10 juntos
+  //     (todo mundo apertando "enviar" no mesmo minuto). Ninguém pode ser barrado.
+  {
+    const { db, srv, porta } = await subir();
+    const st = [];
+    for (let r = 0; r < 6; r++) {
+      zerarMemoria();       // cada rajada vem uns minutos depois da outra (a janela de 10 s da rajada já passou)
+      const rs = await Promise.all(Array.from({ length: 10 }, (_, k) => { const i = 4000 + r * 10 + k; return postar(porta, pedido(i), '177.200.1.1', LOJAS[i % 3]); }));
+      rs.forEach((x) => st.push(x.status));
+    }
+    const ok = st.filter((s) => s === 200).length;
+    relatorio.push(`2b) Feira com 3 bancas no MESMO Wi-Fi: 60 clientes (20 por banca) em rajadas de 10 → ${ok} passaram, ${60 - ok} barrados.`);
+    assert.strictEqual(ok, 60, 'nenhum cliente da feira barrado: ' + st.join(','));
+    assert.strictEqual(pedidosNoBanco(db), 60);
+    srv.close();
+  }
+  // 2c) RAJADA do mesmo endereço (sem esperar): 15 passam juntos, o 16º espera uns segundos
+  {
+    const { srv, porta } = await subir();
+    zerarMemoria();
+    const rs = await Promise.all(Array.from({ length: 16 }, (_, k) => postar(porta, pedido(4500 + k), '177.201.1.1', 'banca')));
+    const ok = rs.filter((x) => x.status === 200).length;
+    relatorio.push(`2c) Rajada de 16 pedidos do mesmo endereço no mesmo segundo: ${ok} passaram, ${16 - ok} receberam "aguarde alguns segundos".`);
+    assert.strictEqual(ok, 15);
     srv.close();
   }
   // 3) FUSÍVEL DA LOJA: 160 pedidos de clientes diferentes em 10 min numa loja só

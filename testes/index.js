@@ -1991,14 +1991,14 @@ teste('atalhos: lista da semana, pedir de novo com o catálogo de hoje e convite
 
 teste('prudência: limite contado no banco, alerta de falha com intervalo e cópia de segurança diária', async () => {
   const P = require(raiz('lib/prudencia')), T = require(raiz('lib/tenant'));
-  // 1) LIMITE: 20 pedidos por conexão em 10 min (operadora põe muita gente no mesmo endereço); o 21º é barrado
+  // 1) LIMITE: 60 pedidos por conexão em 10 min (operadora e Wi-Fi da feira põem muita gente no mesmo endereço); o 61º é barrado
   const db = criarBanco(semente()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
   // (a trava de rajada fica na memória e é zerada a cada envio: aqui o que se testa é a conta guardada no banco)
   const mandar = (ipTxt, extra) => { require(raiz('lib/http'))._usos.clear(); return chamar(api, { headers: { 'x-forwarded-for': ipTxt }, body: pedido(extra) }); };
-  for (let i = 0; i < 20; i++) assert.strictEqual((await mandar('200.1.1.1, 10.0.0.' + i)).status, 200, 'pedido ' + (i + 1));
+  for (let i = 0; i < 60; i++) assert.strictEqual((await mandar('200.1.1.1, 10.0.0.' + i)).status, 200, 'pedido ' + (i + 1));
   const nono = await mandar('200.1.1.1, 10.0.0.99'); assert.strictEqual(nono.status, 429); assert.ok(/Aguarde/.test(nono.corpo.error));
   assert.strictEqual((await mandar('200.2.2.2')).status, 200, 'outra conexão segue comprando');
-  assert.strictEqual([...db._dados.keys()].filter((k) => k.startsWith('pedidos/')).length, 21, 'o pedido barrado não foi gravado');
+  assert.strictEqual([...db._dados.keys()].filter((k) => k.startsWith('pedidos/')).length, 61, 'o pedido barrado não foi gravado');
   assert.ok([...db._dados.keys()].some((k) => k.startsWith('limites/pedido_')), 'a conta fica no banco');
   // a janela passa e a pessoa volta a comprar; a faxina apaga as contagens vencidas
   const depois = Date.now() + 601000;
@@ -4243,4 +4243,30 @@ teste('link de outra loja no WhatsApp: o cartão leva o nome e a capa da loja, n
   assert.strictEqual(M.fichaParaCartao({ fields: { nome: { stringValue: 'X' }, ativo: { booleanValue: false } } }), null, 'loja desligada');
   assert.strictEqual(M.fichaParaCartao({ fields: { nome: { stringValue: 'Y' }, tema: { mapValue: { fields: { capa: { stringValue: 'javascript:alert(1)' } } } } } }).imagem, '', 'só foto https');
   assert.strictEqual(M.fichaParaCartao({ fields: { nome: { stringValue: 'Loja <b>"Z"' } } }).nome, 'Loja b Z', 'sem marcação');
+});
+
+teste('velocidade: estilos da loja num arquivo só e arquivos estáticos fora das Functions do Cloudflare', async () => {
+  const fs = require('fs');
+  const html = fs.readFileSync(raiz('index.html'), 'utf8');
+  const links = [...html.matchAll(/<link rel="stylesheet" href="\.\/css\/([^"]+)">/g)].map((m) => m[1]);
+  assert.deepStrictEqual(links, ['loja-tudo.css'], 'a loja pede UM arquivo de estilo (antes eram 14 segurando a primeira tela)');
+  const tudo = fs.readFileSync(raiz('css/loja-tudo.css'), 'utf8');
+  const partes = [...tudo.matchAll(/@import '\.\/([^']+)';/g)].map((m) => m[1]);
+  assert.ok(partes.length >= 14, 'os 14 estilos da loja continuam entrando');
+  for (const p of partes) assert.ok(fs.existsSync(raiz('css/' + p)), `css/${p} existe`);
+  assert.ok(partes.indexOf('loja.css') < partes.indexOf('produto-modal.css') && partes.indexOf('produto-modal.css') < partes.indexOf('visual.css'), 'a ordem de antes vale (o que vem depois vence)');
+  assert.ok(!/^[^@\/\s*]/m.test(tudo.replace(/\/\*[\s\S]*?\*\//g, '')), 'só @import no arquivo (regra antes de @import é ignorada pelo navegador)');
+  // _routes.json: só a página da loja, a API e o redutor de fotos passam pelas Functions
+  const C = require(raiz('lib/cloudflare-arquivos'));
+  const r = JSON.parse(C.gerarRotas());
+  assert.strictEqual(r.version, 1); assert.deepStrictEqual(r.include, ['/', '/index.html', '/api/*', '/_vercel/image']); assert.deepStrictEqual(r.exclude, []);
+  assert.ok(r.include.length + r.exclude.length <= 100 && r.include.every((x) => x.length <= 100), 'dentro dos limites do Cloudflare');
+  // toda função em functions/ tem rota (função sem rota nunca roda)
+  const funcoes = [];
+  const andar = (d) => { for (const n of fs.readdirSync(d)) { const c = path.join(d, n); if (fs.statSync(c).isDirectory()) andar(c); else funcoes.push(path.relative(raiz('functions'), c)); } };
+  andar(raiz('functions'));
+  const rotaDe = { '_middleware.js': '/', '_vercel/image.js': '/_vercel/image', 'api/[[caminho]].js': '/api/*' };
+  for (const f of funcoes) assert.ok(rotaDe[f] && r.include.includes(rotaDe[f]), `functions/${f} precisa de rota no _routes.json (lib/cloudflare-arquivos.js)`);
+  // o passo do build escreve o arquivo
+  assert.ok(/_routes\.json/.test(fs.readFileSync(raiz('scripts/cloudflare-arquivos.js'), 'utf8')));
 });

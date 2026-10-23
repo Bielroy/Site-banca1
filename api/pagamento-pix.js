@@ -180,7 +180,10 @@ module.exports = async function handler(req, res) {
     bootFirebase();
     const { pedidoId, cpf, email } = req.body || {};
     if (typeof pedidoId !== 'string' || !/^[\w-]{6,80}$/.test(pedidoId)) return res.status(400).json({ error: 'pedidoId é obrigatório.' });
-    if (H.passouNaMemoria(`pix:${H.ipDe(req)}`, 10, 60000)) return res.status(429).json({ error: 'Muitas tentativas seguidas. Aguarde um minuto.' });
+    // Rajada por conexão (memória). Era 10 por minuto, e conta também o "já pagou?" que a tela do PIX pergunta a cada 30 s:
+    // na feira, com todo mundo no MESMO Wi-Fi, 4 ou 5 clientes esperando o PIX ao mesmo tempo já barravam o próximo.
+    // O limite que segura abuso de verdade é o de baixo (6 códigos em 10 min por pessoa, 300 por dia na loja, no banco).
+    if (H.passouNaMemoria(`pix:${H.ipDe(req)}`, 40, 60000)) return res.status(429).json({ error: 'Muitas tentativas seguidas. Aguarde um minuto.' });
     let tid;
     try { ({ tid } = await T.resolverLoja(db, req)); }
     catch (e) { return res.status(e.status || 400).json({ error: e.message }); }

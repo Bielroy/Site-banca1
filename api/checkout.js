@@ -218,8 +218,9 @@ module.exports = async function handler(req, res) {
   // Primeira barreira, de memória (barata): rajada da mesma conexão. O toque repetido no botão não cria pedido
   // em dobro de qualquer jeito (a chave do pedido garante); isto só segura quem dispara dezenas por segundo.
   // O limite que vale para todas as cópias do servidor vem logo abaixo, contado no banco.
-  // (6 em 10 s: na feira, vários clientes podem sair pelo MESMO endereço de internet da operadora)
-  if (H.passouNaMemoria(`pedido:${ip}`, 6, 10000)) return res.status(429).json({ error: 'Aguarde alguns segundos antes de enviar outro pedido.' });
+  // (15 em 10 s: na feira, vários clientes saem pelo MESMO endereço de internet — Wi-Fi da feira, CGNAT da operadora —
+  //  e com 3 bancas juntas a fila do "enviar" pode ter uns 10 de uma vez. Era 6. Robô que dispara dezenas por segundo para aqui.)
+  if (H.passouNaMemoria(`pedido:${ip}`, 15, 10000)) return res.status(429).json({ error: 'Aguarde alguns segundos antes de enviar outro pedido.' });
 
   try { bootFirebase(); }
   catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
@@ -230,12 +231,13 @@ module.exports = async function handler(req, res) {
   catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
 
   // Limite de verdade: contado no banco (vale para todas as cópias do servidor e não zera sozinho).
-  // 20 pedidos em 10 minutos, por conexão. Era 8: operadora de celular põe muita gente atrás do MESMO endereço
-  // (e na feira, de pastel em pastel, isso enche rápido). Quem quer encher a loja de pedido falso esbarra no
-  // fusível da loja logo abaixo. E quem for barrado aqui não fica sem comprar: a loja oferece o WhatsApp (plano B).
+  // 60 pedidos em 10 minutos, por conexão, em cada loja. Era 20 (e antes 8): operadora de celular e Wi-Fi da feira põem
+  // muita gente atrás do MESMO endereço, e 20 clientes numa banca em 10 min já batia no limite. 60 = 1 pedido a cada 10 s
+  // do mesmo endereço, sem parar, por 10 min. Quem quer encher a loja de pedido falso esbarra no fusível da loja logo
+  // abaixo. E quem for barrado aqui não fica sem comprar: a loja oferece o WhatsApp (plano B).
   // (CHECKOUT_POR_CONEXAO muda o número.)
   const conexao = ip || 'desconhecida';
-  const porConexao = Number(process.env.CHECKOUT_POR_CONEXAO) > 0 ? Number(process.env.CHECKOUT_POR_CONEXAO) : 20;
+  const porConexao = Number(process.env.CHECKOUT_POR_CONEXAO) > 0 ? Number(process.env.CHECKOUT_POR_CONEXAO) : 60;
   if (!(await P.limitar(db, 'pedido', `${tid}|${conexao}`, porConexao, 600))) return res.status(429).json({ error: 'Muitos pedidos seguidos desta conexão. Aguarde alguns minutos e tente de novo.' });
   // Fusível da LOJA INTEIRA: nenhuma banca de bairro recebe 150 pedidos em 10 minutos. Se chegar a isso, é ataque
   // vindo de muitas conexões ao mesmo tempo, e o freio por conexão não pega. (CHECKOUT_TETO_LOJA muda o número.)

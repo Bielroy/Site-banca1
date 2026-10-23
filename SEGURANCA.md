@@ -110,7 +110,7 @@ loja "x"                 ──► tenants/x/:     produtos/ pedidos/ loja/ ...
 
 | Endereço | Precisa de login? | Quem pode | Freios |
 |---|---|---|---|
-| `POST /api/checkout` | não (cliente) | qualquer pessoa | rajada por conexão (6 em 10 s); 20 pedidos/10 min por conexão (`CHECKOUT_POR_CONEXAO`); teto da loja (150/10 min); formato de tudo o que vira nome de documento |
+| `POST /api/checkout` | não (cliente) | qualquer pessoa | rajada por conexão (15 em 10 s); 60 pedidos/10 min por conexão (`CHECKOUT_POR_CONEXAO`); teto da loja (150/10 min); formato de tudo o que vira nome de documento |
 | `POST /api/cancelar-pedido` (cancelar, avaliar) | sim | dono do pedido (5 min) ou quem atende | 10/10 min por pessoa; devolução única |
 | `POST /api/pagamento-pix` | sim | dono do pedido ou quem atende | 6/10 min por pessoa; 300/dia na loja; não volta status |
 | `POST /api/pagamento-webhook` | não (PagBank) | quem tem a assinatura do banco | corpo com teto; reconsulta a ordem; confere ordem, valor e status |

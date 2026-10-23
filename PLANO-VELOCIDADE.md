@@ -1,6 +1,11 @@
-# Plano de velocidade (proposto em 23/10/2026 — NADA disso foi aplicado ainda)
+# Plano de velocidade (proposto e começado em 23/10/2026)
 
-Fica aqui até o dono confirmar. Quando vier a lista final, junta com os outros pedidos e só então começa.
+**Aplicado em 23/10/2026:** estilos da loja num arquivo só (`css/loja-tudo.css`); `_routes.json` (estáticos fora das Functions);
+tema sem a fila de consultas (feira junto com a ficha quando o aparelho já conhece a loja; ficha das outras bancas em segundo plano);
+freios de pedido (rajada 15/10 s, 60 por conexão em 10 min) e do PIX (40/min por conexão).
+**Decidido NÃO fazer:** baixar o `networkTimeoutSeconds` do service worker — aumenta a chance de abrir uma página guardada antiga
+que aponta para arquivos de uma versão que não existe mais; ganho pequeno.
+O resto abaixo continua como proposta.
 Medições feitas num Chromium com rede e celular simulados (`scratchpad/perf`, não está no projeto): são relativas, não o site de verdade.
 
 ## Números medidos (tempo até a vitrine aparecer, mediana de 5)
@@ -43,7 +48,7 @@ Fluidez depois de aberta (celular 4x mais lento): 80 produtos = rolagem em ~60 f
 
 ---
 
-# Pedidos simultâneos (analisado em 23/10/2026 — NADA aplicado ainda)
+# Pedidos simultâneos (analisado e aplicado em 23/10/2026 — falta atualizar o servidor da AWS)
 
 ## O que o teste de carga mostrou (`node testes/carga/carga.js`, banco de mentira com 40 ms por consulta)
 - 360 pedidos em 3 lojas, 60 ao mesmo tempo: 0 erros, nenhum pedido perdido, 117 pedidos/s, resposta típica 0,4–0,5 s.
@@ -54,15 +59,16 @@ Fluidez depois de aberta (celular 4x mais lento): 80 produtos = rolagem em ~60 f
 ## Os freios que podem barrar cliente de verdade (api/checkout.js, server/index.js)
 | Freio | Hoje | Onde muda |
 |---|---|---|
-| Rajada por conexão (memória) | 6 pedidos em 10 s | código: `H.passouNaMemoria('pedido:...', 6, 10000)` |
-| Por conexão (banco), por loja | 20 pedidos em 10 min | variável `CHECKOUT_POR_CONEXAO` no `~/segredos.env` do servidor |
+| Rajada por conexão (memória) | 6 pedidos em 10 s → **15** | código: `H.passouNaMemoria('pedido:...', 6, 10000)` |
+| Por conexão (banco), por loja | 20 pedidos em 10 min → **60** (padrão no código) | variável `CHECKOUT_POR_CONEXAO` no `~/segredos.env` do servidor |
 | Fusível da loja inteira | 150 pedidos em 10 min | variável `CHECKOUT_TETO_LOJA` |
 | Servidor, qualquer chamada /api | 600 por minuto por conexão | variável `LIMITE_POR_MINUTO` |
 "Conexão" = endereço de internet público: quem está no mesmo Wi-Fi ou na mesma operadora (CGNAT) conta junto.
 
 ## Recomendação
-- `CHECKOUT_POR_CONEXAO` 20 → 60 (só variável + `atualizar-servidor.sh`, sem código).
-- Rajada por conexão 6 → 15 em 10 s (1 linha + teste).
+- Feito: padrão 60 no código (a variável `CHECKOUT_POR_CONEXAO` ainda manda, se existir no `~/segredos.env`: confira que não está com 20).
+- Feito: PIX automático, rajada por conexão 10 → 40 por minuto (contava também o "já pagou?" a cada 30 s).
+- Feito: rajada por conexão 6 → 15 em 10 s. Teste de carga novo: feira com 3 bancas no mesmo Wi-Fi, 60 clientes em rajadas de 10, ninguém barrado.
 - Manter o fusível da loja em 150 (já é 7x o movimento de 20 por 10 min e 2,5x o pior caso de 60) e `LIMITE_POR_MINUTO` em 600.
 - A capacidade do servidor não é o problema (um servidor só, Node, ~117 pedidos/s no teste).
 
