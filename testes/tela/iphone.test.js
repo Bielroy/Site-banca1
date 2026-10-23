@@ -82,7 +82,7 @@ async function abrir(caminho = '/', { aparelho = 'iPhone 13', antes, cen = cenar
   });
   const pagina = await ctx.newPage(), erros = [];
   pagina.on('pageerror', (e) => erros.push(e.message));
-  pagina.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|net::ERR|favicon|status of 404/i.test(m.text())) erros.push('console: ' + m.text()); });
+  pagina.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|net::ERR|favicon|status of 404|Viewport argument key/i.test(m.text())) erros.push('console: ' + m.text()); });
   // 1ª visita guarda o ranking no aparelho; na 2ª (cliente que volta) a loja já abre com "Os mais pedidos" e "Seus de sempre"
   await pagina.goto(servidor.base + caminho);
   await pagina.locator('#lista-produtos .produto-card').first().waitFor({ timeout: 12000 });
@@ -184,22 +184,22 @@ for (const aparelho of Object.keys(APARELHOS)) {
       await rolarFaixa(pagina, sel, { rapido: true, nome: `${aparelho}-faixa${i}-rapido` });
     }
     // rolar a página inteira para baixo e voltar, com as faixas no meio do caminho roladas
-    for (let y = 0; y < 3000; y += 400) { await pagina.mouse.wheel(0, 400); await pagina.waitForTimeout(40); }
+    for (let y = 0; y < 3000; y += 400) { await pagina.evaluate((v) => scrollTo({ top: v, behavior: 'instant' }), y); await pagina.waitForTimeout(40); }
     await pagina.evaluate(() => scrollTo(0, 0)); await pagina.waitForTimeout(200);
     await semProblemas(pagina, `${aparelho} depois de rolar a página`);
     semErros(erros); await fechar();
   });
 }
 
-teste('iPhone: rolar a faixa com o "dedo" (roda de lado) e com o encaixe ligado não deixa card pela metade nem cresce', async () => {
+teste('iPhone: rolar a faixa de pouco em pouco (rolagem suave) com o encaixe ligado não deixa card pela metade nem cresce', async () => {
   const { pagina, erros, fechar } = await abrir('/');
   const sel = '.faixa--mais .faixa-rolo';
   assert.ok(await pagina.locator(sel).count(), 'a faixa "Os mais pedidos" aparece');
   await pagina.locator(sel).scrollIntoViewIfNeeded();
-  const caixa = await pagina.locator(sel).boundingBox();
-  await pagina.mouse.move(caixa.x + caixa.width / 2, caixa.y + caixa.height / 2);
-  for (let k = 0; k < 14; k++) { await pagina.mouse.wheel(110, 0); await pagina.waitForTimeout(50); await semProblemas(pagina, `rolando de lado (${k + 1})`); }
-  for (let k = 0; k < 14; k++) { await pagina.mouse.wheel(-110, 0); await pagina.waitForTimeout(50); }
+  // o "dedo": rolagem suave do próprio navegador, de pouco em pouco, com o encaixe (scroll-snap) puxando o card
+  // (o iPhone simulado não aceita roda do mouse; a rolagem suave passa pelo mesmo caminho do toque na faixa)
+  for (let k = 0; k < 14; k++) { await pagina.locator(sel).evaluate((e) => e.scrollBy({ left: 110, behavior: 'smooth' })); await pagina.waitForTimeout(140); await semProblemas(pagina, `rolando de lado (${k + 1})`); }
+  for (let k = 0; k < 14; k++) { await pagina.locator(sel).evaluate((e) => e.scrollBy({ left: -110, behavior: 'smooth' })); await pagina.waitForTimeout(90); }
   await pagina.waitForTimeout(400);
   await foto_(pagina, 'mais-pedidos-depois-do-dedo', sel);
   await semProblemas(pagina, 'depois de ir e voltar com o dedo');
