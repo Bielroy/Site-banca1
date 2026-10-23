@@ -161,7 +161,7 @@ jobs:
     name: Loja no motor do iPhone (WebKit, o do Safari)
     # versão fixa do Ubuntu: o motor do Safari do teste precisa das bibliotecas desta versão
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
         with:

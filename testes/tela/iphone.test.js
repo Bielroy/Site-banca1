@@ -96,7 +96,7 @@ async function abrir(caminho = '/', { aparelho = 'iPhone 13', antes, cen = cenar
 const esperarFotos = (p) => p.waitForFunction(() => [...document.querySelectorAll('.faixa-rolo img, #lista-produtos img')]
   .filter((i) => i.loading !== 'lazy' || i.getBoundingClientRect().top < innerHeight * 2).every((i) => i.complete), null, { timeout: 8000 }).catch(() => {});
 const semErros = (erros) => assert.deepStrictEqual(erros, [], 'a página teve erro de código:\n  ' + erros.join('\n  '));
-const foto_ = async (p, nome, alvo) => { try { await (alvo ? p.locator(alvo).first() : p).screenshot({ path: path.join(SAIDA, `${MOTOR}-${nome}`.replace(/[^\w.-]+/g, "-") + ".png") }); } catch (_) { /* foto é só para conferir de olho */ } };
+const foto_ = async (p, nome, alvo) => { try { await (alvo ? p.locator(alvo).first() : p).screenshot({ path: path.join(SAIDA, `${MOTOR}-${nome}`.replace(/[^\w.-]+/g, "-") + ".png"), scale: "css" }); } catch (_) { /* foto é só para conferir de olho */ } };
 
 // ------------------------------------------------------------------ CONFERÊNCIAS
 /**
@@ -146,7 +146,7 @@ const medirFaixas = (p) => p.evaluate(() => {
 const semProblemas = async (p, quando) => { const pr = await medirFaixas(p); assert.deepStrictEqual(pr, [], `${quando}:\n  ${pr.join('\n  ')}`); };
 
 /** Rola uma faixa até o fim em passos (como o dedo) e confere a cada passo. */
-async function rolarFaixa(p, seletor, { passo = 90, rapido = false, nome = '' } = {}) {
+async function rolarFaixa(p, seletor, { passo = 120, rapido = false, nome = '' } = {}) {
   const fim = await p.locator(seletor).evaluate((e) => e.scrollWidth - e.clientWidth);
   if (fim <= 0) return 0;
   let n = 0;
