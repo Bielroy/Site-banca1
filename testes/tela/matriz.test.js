@@ -243,9 +243,10 @@ teste('o vigia acha defeito feito de propósito: rolagem lateral, preço cortado
     await pagina.evaluate(() => {
       const s = document.createElement('style');
       s.textContent = `
+        #lista-produtos > .produto-card { content-visibility: visible !important; }   /* todos medidos, perto ou longe da tela */
         #lista-produtos .produto-card[data-id="tomate"] .etq-preco { width: 22px; overflow: hidden; white-space: nowrap; }
         #lista-produtos .produto-card[data-id="banana"], #lista-produtos .produto-card[data-id="banana"] .produto-img-wrap { overflow: visible !important; contain: none !important; content-visibility: visible !important; }
-        #lista-produtos .produto-card[data-id="banana"] .produto-img-wrap img { position: absolute; width: 600px !important; height: 600px !important; max-width: none !important; z-index: 50; }
+        #lista-produtos .produto-card[data-id="banana"] .produto-img-wrap img { position: absolute; left: 0; top: 0; width: 100% !important; height: 900px !important; max-height: none !important; z-index: 50; }
 `;
       document.head.appendChild(s);
       document.querySelector('#lista-produtos .produto-card[data-id="alface"]').scrollIntoView({ block: 'center' });
