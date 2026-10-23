@@ -39,7 +39,7 @@ function criarBanco(inicial = {}) {
           if (op === 'array-contains') return Array.isArray(x) && x.includes(valor);
           if (op === 'array-contains-any') return Array.isArray(x) && x.some((v) => valor.includes(v));
           if (op === 'in') return valor.includes(x);
-          return op === '>=' ? x >= valor : op === '<=' ? x <= valor : op === '<' ? x < valor : op === '==' ? x === valor : true;
+          return op === '>' ? x > valor : op === '>=' ? x >= valor : op === '<=' ? x <= valor : op === '<' ? x < valor : op === '==' ? x === valor : true;
         }));
         return { docs, size: docs.length, empty: !docs.length };
       },

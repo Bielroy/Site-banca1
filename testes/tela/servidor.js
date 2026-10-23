@@ -34,6 +34,10 @@ function ler(p) {
   if (!f) return null;
   if (resto === 'loja/config') return f.config || { lojaAberta: true, diasAbertos: [0,1,2,3,4,5,6], minimo: 0, wpp: '5562999990000' };
   if (resto === 'loja/catalogo') return f.catalogo || null;      // vitrine num documento só (lib/catalogo.js)
+  if (resto === 'loja/painel') return f.painel || null;          // painel num documento só
+  if (resto === 'loja/custos') return f.custosDoc || null;
+  if (resto === 'loja/comunicados') return f.comunicados || null;
+  if (resto === 'loja/avaliacoes') return f.avaliacoes || null;
   if (resto.startsWith('loja/')) return null;
   return null;
 }
@@ -59,7 +63,7 @@ export const onSnapshot = (ref, ...resto) => { if (resto[0] && typeof resto[0] =
   if (ehVitrine(ref.path) && bloqueada(loja) && conta.isAnonymous) { if (erro) erro(negado()); return; }
   if (ref.tipo === 'doc') cb(snapDoc(ler(ref.path), ref.path.split('/').pop())); else cb(snapLista(lista(ref.path)));
 }, 20 + (atrasoDe(ref.path) || 0)); return nada; };
-export const getDoc = async (ref) => { await esperar(atrasoDe(ref.path)); const { loja } = lojaDe(ref.path); if (ehVitrine(ref.path) && bloqueada(loja) && conta.isAnonymous) throw negado(); return snapDoc(ler(ref.path), ref.path.split('/').pop()); };
+export const getDoc = async (ref) => { (window.__lidos = window.__lidos || []).push(ref.path); await esperar(atrasoDe(ref.path)); const { loja } = lojaDe(ref.path); if (ehVitrine(ref.path) && bloqueada(loja) && conta.isAnonymous) throw negado(); return snapDoc(ler(ref.path), ref.path.split('/').pop()); };
 export const getDocs = async (ref) => snapLista(lista((ref && ref.path) || ''));
 export const setDoc = async (ref, dados) => { (window.__gravados = window.__gravados || []).push({ path: ref.path, dados }); };
 export const deleteDoc = async () => {}, addDoc = async () => ({ id: 'novo' }), updateDoc = async () => {};

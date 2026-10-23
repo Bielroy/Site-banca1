@@ -32,7 +32,7 @@ const fotoPequena = (p, largura) => miniatura(p.fotoMini || p.foto, largura);
 import { emOferta, desconto, ofertasDe, precoDoDia } from './oferta-lib.js';
 import { codigoPix, pixDaLojaValido, chaveBonita } from './pix-chave-lib.js';
 import { listaValida, listaDoCarrinho, separar, mesmoConjunto, podeConvidarAvaliar, nomeDoDia, textoDaNota } from './atalhos-lib.js';
-import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias, nomeDaCategoria } from './categorias-loja.js';
+import { iniciarCategorias, definirCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias, nomeDaCategoria } from './categorias-loja.js';
 import { vendeNoDia, textoDosDias, diaBR, aceitaAmanha, NOMES_DIA } from './dias-lib.js';
 import { textoDeBusca, combinaBusca } from './busca-lib.js';
 import { ligarVerFoto } from './ver-foto.js';
@@ -1388,11 +1388,16 @@ const iniciarRealTimeSync = () => {
     }, (e) => console.warn('[loja] config:', e?.code || e));
     unsubscribes.push(unsubConfig);
 
-    // Nota da loja no cabeçalho (só com 5 avaliações ou mais). Uma leitura só, sem ficar ouvindo.
-    getDoc(tdoc('loja', 'avaliacoes')).then((s) => {
-        const el = document.getElementById('header-avaliacao'), txt = s.exists() ? textoDaNota(s.data()) : '';
+    // Nota da loja no cabeçalho (só com 5 avaliações ou mais). Vem junto no documento da vitrine; sem ele, uma leitura só.
+    const pintarNota = (dados) => {
+        const el = document.getElementById('header-avaliacao'), txt = dados ? textoDaNota(dados) : '';
         if (el && txt) { el.textContent = '★ ' + txt; el.hidden = false; }
-    }).catch(() => { /* sem nota não muda nada */ });
+    };
+    let _notaDoBanco = false;
+    const lerNotaDoBanco = () => {
+        if (_notaDoBanco) return; _notaDoBanco = true;
+        getDoc(tdoc('loja', 'avaliacoes')).then((s) => pintarNota(s.exists() ? s.data() : null)).catch(() => { /* sem nota não muda nada */ });
+    };
 
     // [PATCH 3] Só reconstrói o grid quando o catálogo realmente muda (evita reflows/lag)
     let _assinaturaProdutos = '';
@@ -1436,7 +1441,20 @@ const iniciarRealTimeSync = () => {
     // A vitrine vem de UM documento (loja/catalogo, montado pelo servidor) + os produtos que mudaram há pouco.
     // Sem o documento (ou com qualquer problema), volta sozinha para o jeito antigo: ler os produtos um por um.
     // (js/catalogo-loja.js; ingrediente de receita e produto desligado não vão para a vitrine)
-    const unsubProdutos = ouvirVitrine({ onSnapshot, query, where, docCatalogo: tdoc('loja', 'catalogo'), colProdutos: tcol('produtos') }, { forcarAntigo: EM_PREVIA, aoMudar: (lista) => {
+    // Categorias, aviso do dia e nota vêm JUNTO no documento da vitrine (antes: 1 leitura por categoria a cada visita).
+    // Documento de antes, ou jeito antigo: cada um é lido do banco, como sempre foi. Depois de ler do banco, fica no banco.
+    let _catsDoBanco = false;
+    const lerCategoriasDoBanco = () => {
+        if (_catsDoBanco) return; _catsDoBanco = true;
+        unsubscribes.push(iniciarCategorias(() => { _catsProntas = true; aplicarCatalogo(); }));
+    };
+    const usarExtras = (ex) => {
+        if (!ex) { lerCategoriasDoBanco(); lerNotaDoBanco(); lerComunicadoDoBanco(); return; }
+        if (!_catsDoBanco) { definirCategorias(ex.categorias); _catsProntas = true; }
+        if (!_notaDoBanco) pintarNota(ex.avaliacoes);
+        usarComunicado(ex.comunicados);
+    };
+    const unsubProdutos = ouvirVitrine({ onSnapshot, query, where, docCatalogo: tdoc('loja', 'catalogo'), colProdutos: tcol('produtos') }, { forcarAntigo: EM_PREVIA, aoExtras: usarExtras, aoMudar: (lista) => {
         _produtosChegaram = true;
         _produtosBrutos = lista;
         STATE.produtosTodos = _produtosBrutos;   // para saber se a loja tem produto de dia certo (mostra "Hoje | Amanhã")
@@ -1452,7 +1470,6 @@ const iniciarRealTimeSync = () => {
         document.getElementById('lista-produtos').innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Não consegui carregar os produtos</p><span>Verifique a internet e tente de novo.</span><button class="btn btn-primary" style="margin-top:14px" data-action="recarregar">Tentar de novo</button></div>`;
     } });
     unsubscribes.push(unsubProdutos);
-    unsubscribes.push(iniciarCategorias(() => { _catsProntas = true; aplicarCatalogo(); }));
     setTimeout(() => { if (!_catsProntas) { _catsProntas = true; aplicarCatalogo(); } }, 2500);   // offline/sem resposta: segue sem categorias
 };
 
@@ -2851,37 +2868,51 @@ if (!navigator.onLine) document.getElementById('banner-offline')?.classList.add(
 // COMUNICADO DA LOJA — aviso fixo ou mensagem do dia da semana,
 // configurado pelo painel admin (loja/comunicados).
 // =====================================================================
-const iniciarComunicados = () => {
+// Pinta o aviso (dados de loja/comunicados; null = nenhum).
+const pintarComunicado = (dados) => {
     const alvo = document.getElementById('banner-comunicado');
     if (!alvo) return;
-    onSnapshot(tdoc("loja", "comunicados"), (snap) => {
-        if (!snap.exists()) { alvo.classList.remove('visivel'); return; }
-        const dados = snap.data();
+    if (!dados) { alvo.classList.remove('visivel'); return; }
 
-        // Um aviso pode ter data de validade. Depois dela, some sozinho —
-        // assim uma oferta "de hoje" não fica no ar semana que vem porque
-        // ninguém lembrou de desligar.
-        const noPrazo = (bloco) => {
-            if (!bloco?.validoAte) return true;          // sem validade = vale sempre
-            // A data chega como "2026-07-24" (só o dia). Interpretada crua, ela
-            // vira meia-noite em UTC — que no Brasil é 21h do dia ANTERIOR, e o
-            // aviso sumiria um dia antes do combinado. Por isso fixamos o fim
-            // do dia no horário de Brasília.
-            const limite = new Date(`${bloco.validoAte}T23:59:59-03:00`);
-            if (isNaN(limite)) return true;
-            return new Date() <= limite;
-        };
+    // Um aviso pode ter data de validade. Depois dela, some sozinho —
+    // assim uma oferta "de hoje" não fica no ar semana que vem porque
+    // ninguém lembrou de desligar.
+    const noPrazo = (bloco) => {
+        if (!bloco?.validoAte) return true;          // sem validade = vale sempre
+        // A data chega como "2026-07-24" (só o dia). Interpretada crua, ela
+        // vira meia-noite em UTC — que no Brasil é 21h do dia ANTERIOR, e o
+        // aviso sumiria um dia antes do combinado. Por isso fixamos o fim
+        // do dia no horário de Brasília.
+        const limite = new Date(`${bloco.validoAte}T23:59:59-03:00`);
+        if (isNaN(limite)) return true;
+        return new Date() <= limite;
+    };
 
-        // O aviso fixo tem prioridade sobre a mensagem do dia
-        const doDia = dados.dias?.[String(new Date().getDay())];
-        const fixoVale = dados.fixo?.ativo && dados.fixo?.texto && noPrazo(dados.fixo);
-        const diaVale  = doDia?.ativo && doDia?.texto && noPrazo(doDia);
-        const escolhido = fixoVale ? dados.fixo.texto : (diaVale ? doDia.texto : '');
-        if (escolhido) { alvo.textContent = escolhido; alvo.classList.add('visivel'); }
-        else { alvo.classList.remove('visivel'); }
-    }, (e) => console.warn('[loja] comunicados:', e?.code || e));
-    // NÃO vai para "unsubscribes": aquela lista é desligada logo no primeiro
-    // carregamento (antes do login anônimo) e o aviso nunca aparecia na 1ª visita.
+    // O aviso fixo tem prioridade sobre a mensagem do dia
+    const doDia = dados.dias?.[String(new Date().getDay())];
+    const fixoVale = dados.fixo?.ativo && dados.fixo?.texto && noPrazo(dados.fixo);
+    const diaVale  = doDia?.ativo && doDia?.texto && noPrazo(doDia);
+    const escolhido = fixoVale ? dados.fixo.texto : (diaVale ? doDia.texto : '');
+    if (escolhido) { alvo.textContent = escolhido; alvo.classList.add('visivel'); }
+    else { alvo.classList.remove('visivel'); }
+};
+// O aviso vem junto no documento da vitrine (usarComunicado). Sem ele, ouve loja/comunicados como antes.
+// NÃO vai para "unsubscribes": aquela lista é desligada logo no primeiro
+// carregamento (antes do login anônimo) e o aviso nunca aparecia na 1ª visita.
+let _comunicadoDoBanco = false, _comunicadoDecidido = false;
+function lerComunicadoDoBanco() {
+    _comunicadoDecidido = true;
+    if (_comunicadoDoBanco) return; _comunicadoDoBanco = true;
+    onSnapshot(tdoc("loja", "comunicados"), (snap) => pintarComunicado(snap.exists() ? snap.data() : null),
+        (e) => console.warn('[loja] comunicados:', e?.code || e));
+}
+function usarComunicado(dados) {
+    _comunicadoDecidido = true;
+    if (!_comunicadoDoBanco) pintarComunicado(dados);
+}
+const iniciarComunicados = () => {
+    // a vitrine não respondeu nada em 8 s (página sem vitrine, erro): lê o aviso direto, como antes
+    setTimeout(() => { if (!_comunicadoDecidido) lerComunicadoDoBanco(); }, 8000);
 };
 
 iniciarComunicados();

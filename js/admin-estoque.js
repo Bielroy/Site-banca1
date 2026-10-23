@@ -10,6 +10,8 @@
 // =====================================================================
 import { auth, getDoc, getDocs, query, where, orderBy, limit, setDoc } from './firebase.js';
 import { tcol, tdoc } from './tenant.js';
+import { pedirCatalogo } from './pedir-catalogo.js';
+import { marcarProdutoLocal, marcarCustoLocal } from './painel-catalogo.js';
 import { lerPainel } from './painel-cache.js';
 import { sobrasPereciveis } from './alertas-lib.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal } from './utils.js';
@@ -185,8 +187,14 @@ async function gravar() {
             if (min !== null && ideal !== null && ideal < min) throw new Error('O ideal precisa ser maior ou igual ao mínimo.');
             if (max !== null && ideal !== null && max < ideal) throw new Error('O máximo precisa ser maior ou igual ao ideal.');
             b.disabled = true;
-            await setDoc(tdoc('produtos', a.p.id), { estoqueMin: min, estoqueIdeal: ideal, estoqueMax: max, prazoDias }, { merge: true });
-            if (custo !== (a.p.custo ?? null)) await setDoc(tdoc('produtos_custos', a.p.id), { custo }, { merge: true });      // custo é privado
+            const limites = { estoqueMin: min, estoqueIdeal: ideal, estoqueMax: max, prazoDias };
+            await setDoc(tdoc('produtos', a.p.id), limites, { merge: true });
+            // limites não mexem em ultimaModificacao (a regra só deixa o estoque mexer neles): marca aqui e o servidor remenda o painel
+            marcarProdutoLocal(a.p.id, limites); pedirCatalogo('mudou', [a.p.id]);
+            if (custo !== (a.p.custo ?? null)) {
+                await setDoc(tdoc('produtos_custos', a.p.id), { custo }, { merge: true });      // custo é privado
+                marcarCustoLocal(a.p.id, { custo }); pedirCatalogo('custos', [a.p.id]);
+            }
             showToast('Limites gravados.');
         } else {
             const corpo = { acao: 'movimentar', produtoId: a.p.id, tipo: a.tipo, chave: a.chave, obs: $('es-obs')?.value || '' };
@@ -281,7 +289,9 @@ async function gravarFicha(a, b) {
             if (f.validadeDias !== null && !(f.validadeDias > 0 && f.validadeDias <= 3650)) throw new Error('A validade precisa ser em dias (1 a 3650).');
         }
         b.disabled = true;
-        await setDoc(tdoc('produtos_custos', a.p.id), { ficha: vazia ? null : { rende: f.rende, validadeDias: f.validadeDias, itens: f.itens } }, { merge: true });   // ficha é privada
+        const ficha = vazia ? null : { rende: f.rende, validadeDias: f.validadeDias, itens: f.itens };
+        await setDoc(tdoc('produtos_custos', a.p.id), { ficha }, { merge: true });   // ficha é privada
+        marcarCustoLocal(a.p.id, { ficha }); pedirCatalogo('custos', [a.p.id]);
         showToast(vazia ? 'Ficha removida.' : 'Ficha gravada.');
         closeModal('modal-estoque'); if (history.state && history.state.modal === 'modal-estoque') history.back();
     } catch (e) { showToast(e.message || 'Não consegui gravar a ficha.', true); }

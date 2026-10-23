@@ -34,7 +34,11 @@ export function juntarVitrine(base, mudados) {
  * aoMudar(lista, modo) recebe os produtos que aparecem; aoErro(e) recebe o erro do jeito antigo
  * (o único que decide "loja fora do ar"). Devolve a função que para tudo.
  */
-export function ouvirVitrine(fb, { aoMudar, aoErro, forcarAntigo = false, aoTrocarModo } = {}) {
+/** Categorias, aviso do dia e nota que vêm junto no documento (null = documento de antes, ou jeito antigo: leia você mesmo). */
+export const extrasDoCatalogo = (c) => (c && Array.isArray(c.categorias)
+    ? { categorias: c.categorias, comunicados: c.comunicados || null, avaliacoes: c.avaliacoes || null } : null);
+
+export function ouvirVitrine(fb, { aoMudar, aoErro, forcarAntigo = false, aoTrocarModo, aoExtras } = {}) {
     let modo = 'catalogo', cancelado = false, base = null, mudados = [], limite = null;
     const paradas = [];
     let pararMudados = null, relogioDoc = null;
@@ -46,6 +50,7 @@ export function ouvirVitrine(fb, { aoMudar, aoErro, forcarAntigo = false, aoTroc
         if (pararMudados) { pararMudados(); pararMudados = null; }
         while (paradas.length) { try { paradas.pop()(); } catch (_) { /* já parado */ } }
         if (aoTrocarModo) aoTrocarModo('antigo', motivo);
+        if (aoExtras) aoExtras(null);          // categorias, aviso e nota: a loja lê cada um como antes
         paradas.push(fb.onSnapshot(fb.colProdutos, (snap) => {
             aoMudar(snap.docs.map((d) => ({ ...d.data(), id: d.id })).filter(vaiParaVitrine), 'antigo');
         }, (e) => aoErro && aoErro(e)));
@@ -79,6 +84,7 @@ export function ouvirVitrine(fb, { aoMudar, aoErro, forcarAntigo = false, aoTroc
         }
         clearTimeout(relogioDoc);
         base = c.produtos;
+        if (aoExtras) aoExtras(extrasDoCatalogo(c));    // antes de desenhar: as abas já saem com as categorias
         ouvirMudados(Number(c.geradoEm) - MARGEM_MS);
         desenhar();
     }, () => antigo('erro-catalogo')));      // regra ainda não publicada, por exemplo: o jeito antigo resolve

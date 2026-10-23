@@ -11,6 +11,7 @@
 import { db, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch } from './firebase.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { escapeHTML, showToast, customConfirm } from './utils.js';
+import { pedirCatalogo } from './pedir-catalogo.js';
 
 const S = { cats: [], numeros: [], padrao: '', getProdutos: () => [], configPronta: false, erro: '' };
 let desligar = [];          // assinaturas em tempo real ativas
@@ -309,6 +310,8 @@ export const iniciarCategoriasAdmin = (getProdutos) => {
         S.cats = snap.docs.map((d) => ({ ...d.data(), id: d.id }))
             .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
         S.erro = '';
+        // este aparelho mexeu nas categorias: a vitrine (que leva as categorias junto) é atualizada pelo servidor
+        if (snap.metadata && snap.metadata.hasPendingWrites) pedirCatalogo('extras');
         render();
         try { document.dispatchEvent(new CustomEvent('categorias:mudou')); } catch (_) { /* navegador antigo */ }
     }, (e) => { console.error('categorias:', e); S.erro = (e && e.code) || 'erro'; render(true); });

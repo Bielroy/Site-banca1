@@ -44,8 +44,11 @@ service cloud.firestore {
     }
     function podeGravarLoja(tid, docId) {
       return (gestorTotal(tid) || (gestor(tid) && (docId != 'config' || gerenteSemDinheiro())))
-        && !(docId in ['avaliacoes', 'catalogo']);       // nota média e catálogo: só o servidor grava
+        && !(docId in ['avaliacoes', 'catalogo', 'painel', 'custos']);       // nota média e documentos montados (lib/catalogo.js): só o servidor grava
     }
+    // Documentos montados pelo servidor para o PAINEL ler de uma vez (lib/catalogo.js), em vez de produto por produto:
+    // 'painel' = todos os produtos (os mesmos que a coleção produtos já mostra) → equipe; 'custos' = custo e ficha → quem cuida de estoque.
+    function painelLe(tid, docId) { return (docId == 'painel' && equipe(tid)) || (docId == 'custos' && cuidaDeEstoque(tid)); }
     function equipe(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa', 'producao', 'estoque']; }
     // quem ATENDE pedidos (vê nome, telefone e endereço de cliente): estoque e produção ficam de fora
     function atende(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa']; }
@@ -163,7 +166,7 @@ service cloud.firestore {
       }
       match /categorias/{id}  { allow read: if vitrine(tid); allow write: if gestor(tid); }
       match /loja/{docId} {
-        allow read: if (lojaPublica(docId) && vitrine(tid)) || gestor(tid);
+        allow read: if (lojaPublica(docId) && vitrine(tid)) || (gestor(tid) && docId != 'custos') || painelLe(tid, docId);
         allow write: if podeGravarLoja(tid, docId);
       }
       match /pedidos/{id} {
@@ -212,7 +215,7 @@ service cloud.firestore {
     }
     match /categorias/{id}  { allow read: if vitrine('banca'); allow write: if gestor('banca'); }
     match /loja/{docId} {
-      allow read: if (lojaPublica(docId) && vitrine('banca')) || gestor('banca');
+      allow read: if (lojaPublica(docId) && vitrine('banca')) || (gestor('banca') && docId != 'custos') || painelLe('banca', docId);
       allow write: if podeGravarLoja('banca', docId);
     }
     match /pedidos/{id} {

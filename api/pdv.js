@@ -27,7 +27,7 @@
 //      celular, ver como estão, configurar a impressão automática deles, desligar, e mandar papel.
 //      Ligar e desligar celular: só proprietário e administrador.
 //
-//  POST { acao: 'catalogo', modo?: 'se-faltar' }
+//  POST { acao: 'catalogo', modo?: 'tudo' | 'se-faltar' | 'mudou' | 'custos' | 'extras', ids?: [produtoId] }
 //      O painel salvou produto (ou acabou de abrir): remonta a vitrine num documento só (lib/catalogo.js).
 //      Qualquer pessoa da equipe da loja pode pedir.
 //
@@ -343,7 +343,8 @@ module.exports = async function handler(req, res) {
   // O painel salvou produto: remonta a vitrine num documento só (lib/catalogo.js). Qualquer pessoa da equipe pode pedir.
   if (acao === 'catalogo') {
     if (!T.temPapel(dec, tid, T.PAPEIS)) return res.status(403).json({ error: 'Sua conta não é desta loja.' });
-    try { const r = await Catalogo.pedidoDoPainel(db, tid, (req.body || {}).modo === 'se-faltar' ? 'se-faltar' : 'tudo'); return res.status(200).json({ sucesso: true, resultado: r }); }
+    const b = req.body || {}, modo = Catalogo.MODOS.includes(b.modo) ? b.modo : 'tudo';
+    try { const r = await Catalogo.pedidoDoPainel(db, tid, modo, b.ids); return res.status(200).json({ sucesso: true, resultado: r }); }
     catch (e) { console.warn('[pdv] catálogo:', e && e.message); return res.status(503).json({ error: 'Não consegui atualizar a vitrine agora.' }); }
   }
   if (!T.temPapel(dec, tid, PODEM)) return res.status(403).json({ error: 'Sua conta não pode registrar vendas nesta loja.' });

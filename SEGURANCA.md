@@ -88,7 +88,8 @@ chamada chega ──► qual loja? (endereço, cabeçalho X-Loja ou corpo) ─�
 poder pagar (então "ver" não protege nada; o que protege é não poder trocar), e o gerente ainda mexe em cupom e preço.
 
 Só o **servidor** faz: criar pedido, mudar valor ou itens, cancelar (devolve estoque), mexer no estoque físico,
-no caixa do dia, nas previsões, na equipe, na nota das avaliações e na trilha de auditoria.
+no caixa do dia, nas previsões, na equipe, na nota das avaliações, na trilha de auditoria e nos documentos montados
+(`loja/catalogo` público, `loja/painel` para a equipe, `loja/custos` só para quem cuida de estoque; ver `lib/catalogo.js`).
 
 ### Status do pedido (máquina de estados)
 

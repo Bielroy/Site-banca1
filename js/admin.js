@@ -53,6 +53,8 @@ const abrirTela = async (nome) => {
     try { ABRIR[nome](await TELAS[nome]()); }
     catch (e) { console.error(e); showToast('Não consegui abrir esta tela. Confira a internet e toque de novo.', true); }
 };
+import { pedirCatalogo, produtoSalvo } from './pedir-catalogo.js';   // avisa o servidor para remendar vitrine/painel (lib/catalogo.js)
+import { ouvirProdutosPainel, ouvirCustosPainel, guardarEscutas, marcarApagadoLocal } from './painel-catalogo.js';
 import { iniciarCategoriasAdmin, abrirCategorias, chaveDaCategoria, nomeDaCategoria, normalizarWpp, ordemDasCategorias } from './admin-categorias.js';
 // PIX automático: a loja original (conta da plataforma) ou a banca que a plataforma ligou ao Asaas (carteira cadastrada)
 let pixAsaasDaFicha = false;
@@ -462,18 +464,25 @@ const iniciarRealTimeSync = () => {
         ['estoque', 'compras', 'pdv'].forEach((n) => { if (abaAberta(n)) abrirTela(n); });
         if (abaAberta('impressora')) import('./admin-impressora.js').then((m) => m.definirProdutosImpressora(produtosAtuais)).catch(() => { /* tela ainda não carregou */ });
     };
-    if (cuidaDeEstoque(papelAtual)) unsubscribes.push(onSnapshot(tcol("produtos_custos"), (snap) => {
-        custosPorId = new Map(snap.docs.map(d => [d.id, d.data()])); juntarProdutos();
-    }, (e) => console.warn('[painel] custos:', e?.code || e)));
-    const unsubProd = onSnapshot(tcol("produtos"), (snap) => {
-        produtosBase = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }))
-            .sort((a, b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
-        juntarProdutos();
-        // este aparelho acabou de salvar produto: a vitrine num documento só (lib/catalogo.js) é remontada
-        if (snap.metadata && snap.metadata.hasPendingWrites) pedirCatalogo('tudo');
-    }, (e) => mostrarErroConsulta(e, 'lista-produtos'));
-    unsubscribes.push(unsubProd);
-    pedirCatalogo('se-faltar', 1500);   // painel abriu: se a vitrine da loja ainda não tem o documento (ou está velho), monta
+    // Produtos e custos vêm de UM documento cada (loja/painel e loja/custos, montados pelo servidor), mais o que
+    // mudou há pouco. Sem documento (ou sem permissão), volta sozinho para ler um por um (js/painel-catalogo.js).
+    const escutaCustos = cuidaDeEstoque(papelAtual) ? ouvirCustosPainel({ onSnapshot, docCustos: tdoc('loja', 'custos'), colCustos: tcol('produtos_custos') }, {
+        aoMudar: (mapa) => { custosPorId = mapa; juntarProdutos(); },
+        aoErro: (e) => console.warn('[painel] custos:', e?.code || e),
+    }) : null;
+    if (escutaCustos) unsubscribes.push(escutaCustos);
+    const escutaProdutos = ouvirProdutosPainel({ onSnapshot, query, where, docPainel: tdoc('loja', 'painel'), colProdutos: tcol('produtos') }, {
+        aoMudar: (lista) => {
+            produtosBase = lista.sort((a, b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
+            juntarProdutos();
+        },
+        aoErro: (e) => mostrarErroConsulta(e, 'lista-produtos'),
+        // este aparelho acabou de salvar produto: o servidor remenda a vitrine e o painel (só esses produtos)
+        aoPendentes: (ids) => (ids.length ? pedirCatalogo('mudou', ids) : pedirCatalogo('tudo')),
+    });
+    unsubscribes.push(escutaProdutos);
+    guardarEscutas(escutaProdutos, escutaCustos);
+    pedirCatalogo('se-faltar', null, 1500);   // painel abriu: se a vitrine da loja ainda não tem o documento (ou está velho), monta
 
     const unsubConfig = onSnapshot(tdoc("loja", "config"), (snap) => {
         if (snap.exists()) {
@@ -534,10 +543,16 @@ const iniciarRealTimeSync = () => {
     TELAS.impressaoAuto().then((m) => {
         impAuto = m; m.iniciar();
         if (filaRecebida) m.aoMudarPedidos(pedidosGerais);
-        const qCancelados = query(tcol("pedidos"), where("status", "==", "cancelado"), orderBy("data", "desc"), limit(15));
-        unsubscribes.push(onSnapshot(qCancelados, async (snap) => {
-            try { m.aoMudarCancelados(await abrirPedidos(snap.docs.map((d) => ({ ...d.data(), id: d.id })))); } catch (e) { console.warn('[impressao-auto] cancelados', e); }
-        }, (e) => console.warn('[impressao-auto] cancelados sem índice: o aviso de cancelado fica desligado', e)));
+        // os cancelados (15 leituras ao abrir) só interessam a quem imprime sozinho: ouve quando a automática liga
+        const ouvirCancelados = () => {
+            const qCancelados = query(tcol("pedidos"), where("status", "==", "cancelado"), orderBy("data", "desc"), limit(15));
+            unsubscribes.push(onSnapshot(qCancelados, async (snap) => {
+                try { m.aoMudarCancelados(await abrirPedidos(snap.docs.map((d) => ({ ...d.data(), id: d.id })))); } catch (e) { console.warn('[impressao-auto] cancelados', e); }
+            }, (e) => console.warn('[impressao-auto] cancelados sem índice: o aviso de cancelado fica desligado', e)));
+        };
+        const ligada = () => { try { return typeof m.ativo !== 'function' || m.ativo(); } catch (_) { return true; } };
+        if (ligada()) ouvirCancelados();
+        else { const vigia = setInterval(() => { if (!auth.currentUser) return clearInterval(vigia); if (ligada()) { clearInterval(vigia); ouvirCancelados(); } }, 20000); }
     }).catch((e) => console.error('[impressao-auto]', e));
 
     // ATENÇÃO: esta consulta combina "where in" + "orderBy", o que exige um
@@ -795,6 +810,7 @@ async function aplicarLote(acao, bt) {
             mud.slice(i, i + 400).forEach(({ id, dados }) => lote.set(tdoc('produtos', id), dados, { merge: true }));
             await lote.commit();
         }
+        mud.forEach(({ id, dados }) => produtoSalvo(id, dados));    // painel já mostra; servidor remenda só esses
         const q = mud.length === 1 ? '1 produto' : `${mud.length} produtos`;
         if (acao === 'preco') plSel.precoTexto = '';
         showToast(acao === 'preco' ? `${q} agora por ${fmt(preco)}.` : acao === 'chegou' ? `${q} na loja com "Chegou hoje" até o fim do dia.` : acao === 'loja' ? `${q} de volta na loja.` : `${q} fora da loja.`);
@@ -1493,22 +1509,6 @@ const montarMensagemCliente = () => {
     return L.join('\n');
 };
 
-// Vitrine num documento só (lib/catalogo.js): o painel avisa o servidor depois de salvar produto (junta vários
-// salvamentos seguidos num aviso só). Falhou? Tudo bem: a loja ainda pega a mudança sozinha pela leitura de reserva.
-let _catalogoTimer = null, _catalogoModo = '';
-function pedirCatalogo(modo = 'tudo', esperaMs = 4000) {
-    if (modo === 'tudo') _catalogoModo = 'tudo'; else if (!_catalogoModo) _catalogoModo = modo;
-    clearTimeout(_catalogoTimer);
-    _catalogoTimer = setTimeout(async () => {
-        const m = _catalogoModo || 'tudo'; _catalogoModo = '';
-        if (!navigator.onLine) return;
-        try {
-            const token = await auth.currentUser?.getIdToken(); if (!token) return;
-            await fetch('/api/pdv', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ acao: 'catalogo', modo: m }) });
-        } catch (_) { /* sem internet: a loja segue pela leitura de reserva */ }
-    }, esperaMs);
-}
-
 const finalizarEsteira = async (btn, enviarWhats) => {
     const textoOriginal = btn.textContent;
     btn.disabled = true; btn.textContent = 'Salvando...';
@@ -1636,7 +1636,8 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'chegou-hoje') {      // selo "Chegou hoje": vale só no dia; amanhã some sozinho
             const id = target.dataset.id, p = produtosAtuais.find(x => x.id === id); if (!p) return;
             const marcar = p.chegouEm !== hojeDaLoja();
-            await setDoc(tdoc("produtos", id), { chegouEm: marcar ? hojeDaLoja() : null, ultimaModificacao: Date.now() }, { merge: true });
+            const mud = { chegouEm: marcar ? hojeDaLoja() : null, ultimaModificacao: Date.now() };
+            await setDoc(tdoc("produtos", id), mud, { merge: true }); produtoSalvo(id, mud);
             showToast(marcar ? `${p.nome}: "Chegou hoje" na loja até o fim do dia.` : `${p.nome}: selo tirado.`);
         }
         else if (action === 'toggle-estoque') {
@@ -1646,7 +1647,8 @@ document.body.addEventListener('click', async (e) => {
                 const confirmado = await customConfirm("Tirar da loja?", "Os clientes não vão ver este produto até você tocar em Voltar a vender.");
                 if (!confirmado) return;
             }
-            await setDoc(tdoc("produtos", id), { ativo: novoStatus, ultimaModificacao: Date.now() }, { merge: true });
+            const mud = { ativo: novoStatus, ultimaModificacao: Date.now() };
+            await setDoc(tdoc("produtos", id), mud, { merge: true }); produtoSalvo(id, mud);
             showToast(novoStatus ? "Produto de volta na loja." : "Produto fora da loja.");
         }
 
@@ -1918,6 +1920,7 @@ const salvarProduto = async (outro = false) => {
         if (estoqueFinal === null && estoqueAntes !== null && mexeuNoEstoque) pData.estoqueFisico = null;
 
         await setDoc(tdoc("produtos", id), pData, { merge: true });
+        produtoSalvo(id, pData);
         if (estoqueFinal !== null && mexeuNoEstoque && estoqueFinal !== estoqueAntes) {
             try { await (await TELAS.estoque()).contarEstoque(id, estoqueFinal, 'Alterado no cadastro do produto'); }
             catch (e) { throw new Error(`Produto guardado, mas o estoque não mudou: ${e.message}`); }
@@ -1949,7 +1952,9 @@ document.getElementById('btn-varias-fotos')?.addEventListener('click', async () 
 
 document.getElementById('btn-excluir-produto').addEventListener('click', async () => {
     if (await customConfirm("Apagar este produto?", "Ele some da loja e do painel. Não dá para desfazer.", { ok: "Apagar", nao: "Não apagar" })) {
-        await deleteDoc(tdoc("produtos", document.getElementById('edit-id').value));
+        const idApagado = document.getElementById('edit-id').value;
+        await deleteDoc(tdoc("produtos", idApagado));
+        marcarApagadoLocal(idApagado); pedirCatalogo('tudo');       // some já daqui; o servidor tira da vitrine e do painel
         closeModal('modal-produto'); showToast("Produto apagado.");
     }
 });
@@ -2612,6 +2617,7 @@ const salvarComunicados = async () => {
             validoAte: document.getElementById('com-fixo-validade')?.value || ''
         };
         await setDoc(tdoc('loja', 'comunicados'), { dias, fixo, atualizadoEm: Date.now() }, { merge: true });
+        pedirCatalogo('extras', null, 1500);        // a vitrine leva o aviso junto (lib/catalogo.js)
         showToast('Comunicados atualizados!');
     } catch (e) {
         showToast('Erro ao salvar comunicados.', true);

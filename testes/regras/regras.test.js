@@ -251,6 +251,17 @@ teste('quem administra (proprietário, administrador) cuida do cadastro, mas nã
 });
 
 
+teste('documentos montados (vitrine/painel/custos): só o servidor grava; painel para a equipe, custos para quem cuida de estoque', async () => {
+  for (const loja of ['loja-a', 'banca']) {
+    const painel = cam(loja, 'loja/painel'), custos = cam(loja, 'loja/custos'), cat = cam(loja, 'loja/catalogo');
+    for (const papel of ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa', 'producao', 'estoque']) await pode(getDoc(d(de(loja, papel), painel)));
+    for (const papel of ['proprietario', 'administrador', 'gerente', 'producao', 'estoque']) await pode(getDoc(d(de(loja, papel), custos)));
+    for (const papel of ['funcionario', 'caixa']) await nega(getDoc(d(de(loja, papel), custos)));
+    for (const v of [anonimo(), cliente(), de('loja-b', 'proprietario')]) { await nega(getDoc(d(v, painel))); await nega(getDoc(d(v, custos))); }
+    for (const papel of ['proprietario', 'administrador', 'gerente']) for (const alvo of [painel, custos, cat]) await nega(setDoc(d(de(loja, papel), alvo), { v: 1, produtos: [] }));
+  }
+});
+
 teste('gerente: liga e desliga as formas de pagamento, mas não troca a chave PIX, o PIX automático nem o WhatsApp dos pedidos', async () => {
   for (const loja of ['loja-a', 'banca']) {
     const ger = de(loja, 'gerente'), adm = de(loja, 'administrador'), cfg = cam(loja, 'loja/config');

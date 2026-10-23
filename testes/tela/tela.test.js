@@ -621,6 +621,75 @@ teste('vitrine num documento só: sem catálogo, catálogo grande ou de outra ve
   }
 });
 
+teste('vitrine num documento só: categorias, aviso do dia e nota vêm junto no catálogo (a loja não lê cada um separado)', async () => {
+  const c = cenarioPadrao(), b = c.lojas.banca, agora = Date.now();
+  const entrada = (id, d) => ({ id, ...d });
+  // o banco tem categorias com outro nome: se aparecerem, a loja leu a coleção em vez do catálogo
+  b.categorias = [{ chave: 'frutas', nome: 'ERRADO', ordem: 1 }];
+  b.catalogo = { v: 1, geradoEm: agora - 60e3, assinatura: 't', n: 4,
+    produtos: ['alface', 'banana', 'ovos', 'tomate'].map((id) => entrada(id, b.produtos[id])),
+    categorias: [{ id: 'frutas', chave: 'frutas', nome: 'Frutas do pé', ordem: 1 }, { id: 'legumes', chave: 'legumes', nome: 'Legumes', ordem: 2 }, { id: 'verduras', chave: 'verduras', nome: 'Verduras', ordem: 3 }, { id: 'outros', chave: 'outros', nome: 'Outros', ordem: 4 }],
+    comunicados: { fixo: { ativo: true, texto: 'Hoje tem pamonha fresquinha' }, dias: {} },
+    avaliacoes: { soma: 48, n: 10, media: 4.8 } };
+  const { pagina, erros, fechar } = await abrir('/', c);
+  await cards(pagina).first().waitFor({ timeout: 8000 }); await pagina.waitForTimeout(400);
+  assert.match(await pagina.locator('#categorias').innerText(), /Frutas do pé/i, 'nome da categoria veio do catálogo');
+  assert.ok(!/ERRADO/.test(await pagina.locator('#categorias').innerText()));
+  await pagina.locator('#banner-comunicado.visivel').waitFor({ timeout: 4000 });
+  assert.match(await pagina.locator('#banner-comunicado').innerText(), /pamonha/);
+  assert.match(await pagina.locator('#header-avaliacao').innerText(), /4,8|4\.8/);
+  const ouvidos = await pagina.evaluate(() => window.__ouvidos || []), lidos = await pagina.evaluate(() => window.__lidos || []);
+  assert.ok(!ouvidos.includes('categorias'), 'não ouviu a coleção de categorias: ' + ouvidos.join(' | '));
+  assert.ok(!ouvidos.includes('loja/comunicados'), 'não ouviu o aviso separado');
+  assert.ok(!lidos.includes('loja/avaliacoes'), 'não leu a nota separada');
+  semErros(erros); await fechar();
+});
+
+teste('vitrine num documento só: catálogo de antes (sem categorias junto) faz a loja ler categorias, aviso e nota como sempre', async () => {
+  const c = cenarioPadrao(), b = c.lojas.banca;
+  b.catalogo = { v: 1, geradoEm: Date.now() - 60e3, assinatura: 't', n: 4, produtos: ['alface', 'banana', 'ovos', 'tomate'].map((id) => ({ id, ...b.produtos[id] })) };
+  b.comunicados = { fixo: { ativo: true, texto: 'Aviso lido do banco' }, dias: {} };
+  const { pagina, erros, fechar } = await abrir('/', c);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.locator('#banner-comunicado.visivel').waitFor({ timeout: 4000 });
+  assert.match(await pagina.locator('#banner-comunicado').innerText(), /lido do banco/);
+  assert.match(await pagina.locator('#categorias').innerText(), /Legumes/i);
+  const ouvidos = await pagina.evaluate(() => window.__ouvidos || []);
+  assert.ok(ouvidos.includes('categorias') && ouvidos.includes('loja/comunicados'), ouvidos.join(' | '));
+  semErros(erros); await fechar();
+});
+
+teste('painel num documento só: abre os produtos e os custos do documento (não lê um por um); produto salvo há pouco vale por cima', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const b = cen.lojas.banca, agora = Date.now();
+  b.painel = { v: 1, geradoEm: agora - 3600e3, assinatura: 't', n: 3, produtos: [
+    { id: 'tomate', ...b.produtos.tomate, estoqueFisico: 7 }, { id: 'banana', ...b.produtos.banana }, { id: 'escondido', ...b.produtos.escondido } ] };
+  b.custosDoc = { v: 1, geradoEm: agora - 3600e3, custos: { tomate: { custo: 4.2, ficha: null } } };
+  // depois do documento, o painel mudou o nome da banana; e há um produto que só existe no banco (se aparecer, leu um por um)
+  b.produtos = { ...b.produtos, banana: { ...b.produtos.banana, nome: 'Banana nanica', ultimaModificacao: agora - 60e3 },
+    fantasma: { nome: 'Só no banco', preco: 3, unidade: 'un', cat: 'outros', ativo: true, ultimaModificacao: agora - 86400e3 } };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForFunction(() => /Tomate italiano/.test(document.getElementById('lista-produtos')?.innerText || ''), null, { timeout: 8000 });
+  const txt = await pagina.locator('#lista-produtos').innerText();
+  assert.ok(/Banana nanica/.test(txt), 'mudança recente vale por cima do documento');
+  assert.ok(/Produto desligado/.test(txt), 'o painel mostra também os desligados');
+  assert.ok(!/Só no banco/.test(txt), 'não leu a coleção inteira');
+  const ouvidos = await pagina.evaluate(() => window.__ouvidos || []);
+  assert.ok(ouvidos.includes('loja/painel') && ouvidos.includes('loja/custos'), ouvidos.join(' | '));
+  assert.ok(!ouvidos.includes('produtos') && !ouvidos.includes('produtos_custos'), 'NÃO ouviu as coleções inteiras: ' + ouvidos.join(' | '));
+  assert.ok(ouvidos.some((o) => o.startsWith('produtos?ultimaModificacao>')), 'ouviu só os mudados');
+  semErros(erros); await fechar();
+});
+
+teste('painel num documento só: sem documento (ou caixa antes das regras novas) o painel lê os produtos como antes', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForFunction(() => /Tomate italiano/.test(document.getElementById('lista-produtos')?.innerText || ''), null, { timeout: 8000 });
+  const ouvidos = await pagina.evaluate(() => window.__ouvidos || []);
+  assert.ok(ouvidos.includes('produtos') && ouvidos.includes('produtos_custos'), ouvidos.join(' | '));
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- CONVITE DO IPHONE (pôr na tela de início)
 const UA_IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1';
 const UA_ANDROID = 'Mozilla/5.0 (Linux; Android 14; SM-A556E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36';

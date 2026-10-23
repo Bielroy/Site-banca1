@@ -30,6 +30,12 @@ export const iniciarCategorias = (aoMudar) => onSnapshot(
     () => { categorias = []; aoMudar(); }   // sem permissão/offline: a loja segue com as categorias dos produtos
 );
 
+/** Categorias que vieram prontas no documento da vitrine (loja/catalogo): mesma ordem que a leitura do banco. */
+export const definirCategorias = (lista) => {
+    categorias = (Array.isArray(lista) ? lista : []).filter((c) => c && c.chave)
+        .slice().sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+};
+
 const achar = (cat) => categorias.find((c) => norm(c.chave) === norm(cat));
 
 /** Padroniza p.cat com a chave cadastrada e tira os produtos de categorias ocultas. */

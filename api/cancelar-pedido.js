@@ -96,6 +96,7 @@ async function avaliar(req, res, { tid, uid, pedidoId, peloCracha }) {
       t.set(resumoRef, { soma, n, media: Math.round((soma / n) * 10) / 10, em: new Date().toISOString() }, { merge: true });
       return { nome: Cofre.abrir(pedido.nome, tid, 'nome') || 'Cliente' };
     });
+    try { require('../lib/catalogo').extrasMudaram(db, tid, 5000); } catch (_) { /* a nota nova entra na próxima atualização da vitrine */ }
     if (nota <= 3) await Avisos.avisarLoja(db, tid, { titulo: `Avaliação ${nota} de 5`, corpo: `${saida.nome}${texto ? ': ' + texto.slice(0, 90) : ' não ficou satisfeita com o pedido.'}`, url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `avaliacao-${pedidoId}` });
     return res.status(200).json({ sucesso: true });
   } catch (e) { return res.status(400).json({ error: e.message || 'Não foi possível guardar a avaliação.' }); }

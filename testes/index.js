@@ -121,6 +121,98 @@ teste('vitrine num documento só: a fila junta pedidos seguidos e o painel pede 
   assert.strictEqual(r.status, 401, 'sem login, nada');
 });
 
+teste('painel e vitrine num documento só: painel leva todos os produtos (com estoque), custos à parte, vitrine leva categorias/aviso/nota', async () => {
+  const C = require(raiz('lib/catalogo.js'));
+  const db = criarBanco({
+    'produtos/tomate': { nome: 'Tomate', preco: 8.9, ativo: true, estoqueFisico: 3, estoqueMin: 1, ultimaModificacao: 10 },
+    'produtos/velho': { nome: 'Desligado', preco: 1, ativo: false },
+    'produtos/farinha': { nome: 'Farinha', preco: 5, ativo: true, soInsumo: true, estoqueFisico: 20 },
+    'produtos_custos/tomate': { custo: 4.2, ficha: null },
+    'categorias/legumes': { chave: 'legumes', nome: 'Legumes', ordem: 1 },
+    'loja/comunicados': { fixo: { ativo: true, texto: 'Oi' }, dias: {} },
+    'loja/avaliacoes': { soma: 9, n: 2, media: 4.5 },
+  });
+  assert.strictEqual(await C.remontar(db, 'banca'), 'gravado');
+  const painel = db._dados.get('loja/painel'), custos = db._dados.get('loja/custos'), cat = db._dados.get('loja/catalogo');
+  assert.deepStrictEqual(painel.produtos.map((p) => p.id), ['farinha', 'tomate', 'velho'], 'painel: todos, até desligado e ingrediente');
+  assert.strictEqual(painel.produtos.find((p) => p.id === 'tomate').estoqueFisico, 3, 'painel leva o estoque');
+  assert.deepStrictEqual(custos.custos, { tomate: { custo: 4.2, ficha: null } });
+  assert.ok(!JSON.stringify(cat).includes('4.2') && !JSON.stringify(painel).includes('"custo"'), 'custo não vaza para vitrine nem painel');
+  assert.deepStrictEqual(cat.categorias.map((c) => c.nome), ['Legumes']); assert.strictEqual(cat.comunicados.fixo.texto, 'Oi'); assert.strictEqual(cat.avaliacoes.media, 4.5);
+  // venda: só o saldo muda → painel remendado, vitrine igual, geradoEm mantido
+  const g0 = painel.geradoEm;
+  db._dados.set('produtos/tomate', { ...db._dados.get('produtos/tomate'), estoqueFisico: 2 });
+  assert.strictEqual(await C.remendar(db, 'banca', ['tomate']), 'igual', 'vitrine não muda com saldo');
+  assert.strictEqual(db._dados.get('loja/painel').produtos.find((p) => p.id === 'tomate').estoqueFisico, 2, 'painel mostra o saldo novo');
+  assert.strictEqual(db._dados.get('loja/painel').geradoEm, g0);
+  // compra muda o custo: com o aviso de custos, o documento de custos é remendado
+  db._dados.set('produtos_custos/tomate', { custo: 5 });
+  await C.atualizar(db, 'banca', { ids: ['tomate'], custos: true });
+  assert.strictEqual(db._dados.get('loja/custos').custos.tomate.custo, 5);
+  // categoria renomeada: 'extras' atualiza a vitrine sem reler os produtos
+  db._dados.set('categorias/legumes', { chave: 'legumes', nome: 'Legumes frescos', ordem: 1 });
+  db._dados.set('produtos/velho', { nome: 'Desligado', preco: 1, ativo: true });     // mudou sem aviso e sem ultimaModificacao
+  await C.atualizar(db, 'banca', { extras: true });
+  assert.deepStrictEqual(db._dados.get('loja/catalogo').categorias.map((c) => c.nome), ['Legumes frescos']);
+  assert.ok(!db._dados.get('loja/catalogo').produtos.some((p) => p.id === 'velho'), 'extras não relê produto nenhum');
+  // documento com mais de 20 min: lê só os produtos com ultimaModificacao recente (não a loja inteira) e avança o geradoEm
+  for (const n of ['catalogo', 'painel']) db._dados.set(`loja/${n}`, { ...db._dados.get(`loja/${n}`), geradoEm: Date.now() - 30 * 60000 });
+  db._dados.set('produtos/tomate', { ...db._dados.get('produtos/tomate'), preco: 9.5, ultimaModificacao: Date.now() - 60000 });
+  await C.remendar(db, 'banca', ['farinha']);
+  const cat2 = db._dados.get('loja/catalogo');
+  assert.strictEqual(cat2.produtos.find((p) => p.id === 'tomate').preco, 9.5, 'pegou o mudado há pouco');
+  assert.ok(!cat2.produtos.some((p) => p.id === 'velho'), 'não releu a loja inteira (o que mudou sem ultimaModificacao fica para a remontagem)');
+  assert.ok(Date.now() - cat2.geradoEm < 5000, 'geradoEm avançou');
+  // a remontagem inteira (painel apagou produto, ou a cada 6 h) pega tudo
+  await C.pedidoDoPainel(db, 'banca', 'tudo');
+  assert.ok(db._dados.get('loja/catalogo').produtos.some((p) => p.id === 'velho'));
+  // 'mudou' com ids: só esses
+  db._dados.set('produtos/tomate', { ...db._dados.get('produtos/tomate'), preco: 7 });
+  await C.pedidoDoPainel(db, 'banca', 'mudou', ['tomate', '../maldade']);
+  assert.strictEqual(db._dados.get('loja/catalogo').produtos.find((p) => p.id === 'tomate').preco, 7);
+  // servidor religado (outro db = memória nova): a primeira atualização é inteira (pendência perdida no religar)
+  const db2 = criarBanco(Object.fromEntries(db._dados));
+  db2._dados.set('produtos/velho', { nome: 'Desligado', preco: 1, ativo: false });
+  await C.remendar(db2, 'banca', ['tomate']);
+  assert.ok(!db2._dados.get('loja/catalogo').produtos.some((p) => p.id === 'velho'), 'religou: remontou tudo');
+  // a cópia de segurança não leva os documentos montados
+  const P = require(raiz('lib/prudencia'));
+  const copia = await P.exportar(db, 'banca');
+  assert.ok(!('catalogo' in copia.colecoes.loja) && !('painel' in copia.colecoes.loja) && !('custos' in copia.colecoes.loja) && 'comunicados' in copia.colecoes.loja);
+});
+
+teste('painel num documento só (tela): mudados por cima, marca local até o servidor remendar, apagado some, sem documento lê um por um', async () => {
+  const M = await import(raiz('js/painel-catalogo.js'));
+  const ouvintes = new Map();
+  const fb = {
+    docPainel: { path: 'loja/painel' }, colProdutos: { path: 'produtos' },
+    query: (c, w) => ({ path: c.path + '?mudados', w }), where: (...a) => a,
+    onSnapshot: (ref, ok, erro) => { ouvintes.set(ref.path, { ok, erro }); return () => ouvintes.delete(ref.path); },
+  };
+  const snapDoc = (d) => ({ exists: () => !!d, data: () => d, metadata: { fromCache: false } });
+  const snapLista = (docs, pend = []) => ({ docs: docs.map((d) => ({ id: d.id, data: () => d })), metadata: { hasPendingWrites: pend.length > 0 }, docChanges: () => pend.map((id) => ({ type: 'modified', doc: { id, metadata: { hasPendingWrites: true } } })) });
+  let ultima = null, modo = null, pendentes = [];
+  const parar = M.ouvirProdutosPainel(fb, { aoMudar: (l, m) => { ultima = l; modo = m; }, aoPendentes: (ids) => pendentes.push(ids) });
+  ouvintes.get('loja/painel').ok(snapDoc({ v: 1, geradoEm: 1e6, produtos: [{ id: 'a', nome: 'A', estoqueMin: 1 }, { id: 'b', nome: 'B' }] }));
+  assert.deepStrictEqual(ultima.map((p) => p.nome), ['A', 'B']); assert.strictEqual(modo, 'painel');
+  assert.ok(ouvintes.has('produtos?mudados'), 'ouve os mudados');
+  ouvintes.get('produtos?mudados').ok(snapLista([{ id: 'b', nome: 'B novo' }], ['b']));
+  assert.deepStrictEqual(ultima.map((p) => p.nome), ['A', 'B novo']); assert.deepStrictEqual(pendentes, [['b']], 'salvo aqui: avisa o servidor com o id');
+  parar.marcar('a', { estoqueMin: 5 });
+  assert.strictEqual(ultima.find((p) => p.id === 'a').estoqueMin, 5, 'limite salvo aqui aparece já');
+  ouvintes.get('loja/painel').ok(snapDoc({ v: 1, geradoEm: 1e6, produtos: [{ id: 'a', nome: 'A', estoqueMin: 1 }, { id: 'b', nome: 'B' }] }));
+  assert.strictEqual(ultima.find((p) => p.id === 'a').estoqueMin, 5, 'documento ainda velho (venda chegou antes): a marca segura');
+  ouvintes.get('loja/painel').ok(snapDoc({ v: 1, geradoEm: 1e6, produtos: [{ id: 'a', nome: 'A', estoqueMin: 5 }, { id: 'b', nome: 'B' }] }));
+  parar.apagar('a');
+  assert.deepStrictEqual(ultima.map((p) => p.id), ['b'], 'apagado aqui some já');
+  // documento grande / sem permissão: jeito antigo (coleção inteira)
+  ouvintes.get('loja/painel').erro(Object.assign(new Error('x'), { code: 'permission-denied' }));
+  assert.ok(ouvintes.has('produtos') && !ouvintes.has('loja/painel'), 'trocou para a coleção inteira');
+  ouvintes.get('produtos').ok(snapLista([{ id: 'a', nome: 'A' }, { id: 'c', nome: 'C' }]));
+  assert.strictEqual(modo, 'antigo');
+  parar();
+});
+
 teste('backup fora do Firebase: usa a cópia do dia que já existe (quase sem leitura), faz uma se estiver velha, separa as lojas e não leva segredo', async () => {
   const P = require(raiz('lib/prudencia')), { fazerBackup } = require(raiz('server/backup.js'));
   const db = criarBanco({ ...semente(), 'tenants/espetinhos': { nome: 'Espetinhos', ativo: true }, 'tenants/espetinhos/produtos/carne': { nome: 'Espeto', preco: 9, ativo: true },
