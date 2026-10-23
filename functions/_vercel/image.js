@@ -24,6 +24,25 @@ export const siteDeFotoValido = (u) => {
   return SITES_DE_FOTO.some((s) => (s.host ? h === s.host : h.endsWith(s.sufixo) && h.length > s.sufixo.length)) ? x : null;
 };
 
+const GRANDE = 350 * 1024;          // miniatura de 384/828 px nunca passa disso; acima, a foto veio sem reduzir
+/** A foto veio do tamanho original e pesada? (sem o aviso "reduzida" do Cloudflare e grande, ou de tamanho desconhecido) */
+export const precisaDeReserva = (r) => {
+  if (/internal=ok/i.test(r.headers.get('cf-resized') || '')) return false;
+  const n = Number(r.headers.get('content-length'));
+  return !(n > 0) || n > GRANDE;
+};
+/** Miniatura pelo wsrv.nl (redutor público e gratuito). Só para os mesmos sites de foto. null = não deu. */
+export async function reduzirPorFora(url, largura) {
+  try {
+    const r = await fetch(`https://wsrv.nl/?url=${encodeURIComponent(url)}&w=${largura}&q=75&output=webp&we`, { redirect: 'follow', cf: { cacheEverything: true, cacheTtl: UM_MES } });
+    const tipo = r.headers.get('content-type') || '';
+    if (!r.ok || !/^image\//i.test(tipo)) return null;
+    const n = Number(r.headers.get('content-length'));
+    if (n > MAX_BYTES) return null;
+    return r;
+  } catch (_) { return null; }
+}
+
 const recusa = (status, msg) => new Response(msg, { status, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
 
 export async function onRequestGet({ request }) {
@@ -41,9 +60,17 @@ export async function onRequestGet({ request }) {
   try {
     r = await fetch(foto.href, { redirect: 'follow', cf: { image: { width: largura, quality: 75, format: 'webp', fit: 'scale-down' }, cacheEverything: true, cacheTtl: UM_MES } });
   } catch (_) { return recusa(502, 'Não consegui buscar a foto.'); }
-  const tipo = r.headers.get('content-type') || '';
+  let tipo = r.headers.get('content-type') || '';
   if (!r.ok || !/^image\//i.test(tipo)) return recusa(r.ok ? 415 : 502, 'A foto não está disponível.');
   if (Number(r.headers.get('content-length')) > MAX_BYTES) return recusa(413, 'Foto grande demais.');
+  // O Cloudflare NÃO reduziu (zona sem "Images → Transformations") e a foto é grande: foto cadastrada por link
+  // chega com milhares de pixels. No iPhone, várias dessas na vitrine (faixas + lista) estouram a memória de
+  // desenho do Safari, e ele passa a pintar a foto esticada por cima dos vizinhos (o "tomate que cobriu a faixa").
+  // Então pede a miniatura a um redutor público (wsrv.nl, servidor para servidor). Falhou? Fica a original, como antes.
+  if (precisaDeReserva(r)) {
+    const reserva = await reduzirPorFora(foto.href, largura);
+    if (reserva) { try { await r.body?.cancel(); } catch (_) { /* nada a cancelar */ } r = reserva; tipo = reserva.headers.get('content-type') || tipo; }
+  }
 
   const saida = new Response(r.body, { status: 200, headers: { 'Content-Type': tipo, 'Cache-Control': `public, max-age=${UM_MES}, immutable`, 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin' } });
   if (cache) { try { await cache.put(chaveCache, saida.clone()); } catch (_) { /* sem cache: só a próxima busca é mais lenta */ } }

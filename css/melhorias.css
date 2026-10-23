@@ -151,7 +151,7 @@ main.layout { min-height: 100vh; }
 .ia-digitando span:nth-child(3) { animation-delay: .3s; }
 
 /* sugestões = etiquetinhas de preço de feira com pílula − 1 + */
-.ia-sugestoes { display: flex; gap: 10px; overflow-x: auto; padding: 10px 14px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; background: var(--superficie); border-top: 1px dashed #e0d5bd; scrollbar-width: none; }
+.ia-sugestoes { display: flex; gap: 10px; overflow-x: auto; padding: 10px 14px; scroll-snap-type: x proximity; overscroll-behavior-x: contain; background: var(--superficie); border-top: 1px dashed #e0d5bd; scrollbar-width: none; }
 .ia-sugestoes:empty { display: none; }
 .ia-sugestoes::-webkit-scrollbar { display: none; }
 .ia-pill {

@@ -29,7 +29,7 @@
 .btn-voz.gravando { background: #fee2e2; border-color: var(--danger); animation: pulsoGravacao 1.5s infinite; }
 @keyframes pulsoGravacao { 0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); } 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); } }
 
-.categorias { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.categorias { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; overscroll-behavior-x: contain; }
 .categorias::-webkit-scrollbar { display: none; }
 .cat-btn { flex-shrink: 0; padding: 10px 20px; border-radius: 30px; border: 1.5px solid var(--linha); background: var(--superficie); font-weight: 600; font-size: 0.85rem; color: var(--text-light); cursor: pointer; transition: var(--transition); text-transform: capitalize; }
 .cat-btn:hover, .cat-btn.active { border-color: var(--forest); color: var(--sobre-primaria); background: var(--forest); }
@@ -43,7 +43,10 @@
 .produto-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-md); border-color: var(--sage); }
 
 .produto-img-wrap { width: 100%; aspect-ratio: var(--foto-proporcao, 1); background: var(--foam); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
-.produto-img-wrap img { width: 100%; height: 100%; object-fit: var(--foto-encaixe, cover); transition: transform 0.5s ease; }
+.produto-img-wrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: var(--foto-encaixe, cover); transition: transform 0.5s ease; }
+/* a foto fica POR CIMA da caixa (fora do fluxo): o tamanho dela, grande ou pequena, chegando ou não, nunca mexe no card.
+   Navegador antigo sem aspect-ratio (iPhone com iOS 14): a foto volta para o fluxo e dá a altura da caixa. */
+@supports not (aspect-ratio: 1 / 1) { .produto-img-wrap img { position: static; height: auto; } }
 .produto-card:hover .produto-img-wrap img { transform: scale(1.05); }
 
 .btn-fav { position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.9); border: none; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; font-size: 1.1rem; box-shadow: var(--shadow-sm); transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2); backdrop-filter: blur(4px); }

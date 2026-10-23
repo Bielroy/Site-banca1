@@ -342,6 +342,7 @@ const voarParaPedido = (card) => {
     ], { duration: 560, easing: 'cubic-bezier(.4,0,.2,1)' });
     const chegou = () => { v.remove(); alvo.classList.remove('pulo'); void alvo.getBoundingClientRect(); alvo.classList.add('pulo'); };
     anim.onfinish = chegou; anim.oncancel = () => v.remove();
+    setTimeout(() => v.remove(), 1500);      // garantia: se o navegador não avisar o fim da animação (iPhone em segundo plano, aba trocada), a foto não fica solta na tela
 };
 
 const precoLinhaHtml = (item) => {

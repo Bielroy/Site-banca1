@@ -40,7 +40,7 @@
 /* produto solto sobre a cor: sem a caixa do cartão, foto arredondada, texto e botão na tinta da seção */
 #lista-produtos .produto-card--imersivo, #lista-produtos .produto-card--imersivo.na-sacola { background: transparent; border-color: transparent; box-shadow: none; color: var(--sec-tinta); }
 @media (hover: hover) { #lista-produtos .produto-card--imersivo:hover { background: color-mix(in srgb, var(--sec-tinta) 7%, transparent); border-color: transparent; box-shadow: none; } }
-#lista-produtos .produto-card--imersivo .produto-img-wrap { margin: 0; border-radius: calc(var(--raio-card, 16px) + 2px); background: color-mix(in srgb, var(--sec-tinta) 14%, var(--sec-cor)); box-shadow: 0 6px 16px color-mix(in srgb, #000 18%, transparent); }
+#lista-produtos .produto-card--imersivo .produto-img-wrap { --foto-margem: 0px; margin: 0; border-radius: calc(var(--raio-card, 16px) + 2px); background: color-mix(in srgb, var(--sec-tinta) 14%, var(--sec-cor)); box-shadow: 0 6px 16px color-mix(in srgb, #000 18%, transparent); }
 #lista-produtos .produto-card--imersivo .produto-img-placeholder { background: color-mix(in srgb, var(--sec-tinta) 14%, var(--sec-cor)); }
 #lista-produtos .produto-card--imersivo .produto-info { padding: 10px 2px 4px; }
 #lista-produtos .produto-card--imersivo .produto-nome { color: var(--sec-tinta); }

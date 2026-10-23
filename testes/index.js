@@ -2928,6 +2928,20 @@ teste('cloudflare: o redutor de fotos só aceita os sites e as larguras do verce
     assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 128)).status, 415, 'só devolve imagem');
     globalThis.fetch = async () => new Response('x', { status: 404 });
     assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 128)).status, 502);
+    // o Cloudflare não reduziu e a foto é GRANDE (foto por link): pede a miniatura ao wsrv.nl e devolve ela
+    const pedidos = [];
+    globalThis.fetch = async (u) => { pedidos.push(String(u)); return /wsrv\.nl/.test(u) ? new Response('PEQ', { status: 200, headers: { 'Content-Type': 'image/webp', 'Content-Length': '3' } })
+      : new Response('GRANDE', { status: 200, headers: { 'Content-Type': 'image/jpeg', 'Content-Length': String(3 * 1024 * 1024) } }); };
+    const red = await pedir('https://i.ibb.co/abc/grande.jpg', 384);
+    assert.strictEqual(red.status, 200); assert.strictEqual(await red.text(), 'PEQ', 'devolve a miniatura do redutor reserva');
+    assert.ok(pedidos[1].startsWith('https://wsrv.nl/?url=' + encodeURIComponent('https://i.ibb.co/abc/grande.jpg') + '&w=384'), pedidos.join(' '));
+    // reduzida pelo próprio Cloudflare (aviso cf-resized): não pede a ninguém
+    pedidos.length = 0;
+    globalThis.fetch = async (u) => { pedidos.push(String(u)); return new Response('CF', { status: 200, headers: { 'Content-Type': 'image/webp', 'cf-resized': 'internal=ok/- q=0 n=12', 'Content-Length': String(400 * 1024) } }); };
+    assert.strictEqual(await (await pedir('https://i.ibb.co/abc/x.jpg', 828)).text(), 'CF'); assert.strictEqual(pedidos.length, 1);
+    // o reserva caiu: fica a original, como antes
+    globalThis.fetch = async (u) => (/wsrv\.nl/.test(u) ? new Response('erro', { status: 502 }) : new Response('ORIG', { status: 200, headers: { 'Content-Type': 'image/jpeg', 'Content-Length': String(2 * 1024 * 1024) } }));
+    assert.strictEqual(await (await pedir('https://i.ibb.co/abc/y.jpg', 384)).text(), 'ORIG');
   } finally { globalThis.fetch = antes; }
 });
 
