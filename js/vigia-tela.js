@@ -45,11 +45,13 @@ const NOMES = { 'produto-card': 'card de produto', 'produto-nome': 'nome', 'etq-
     'btn-fav': 'coração', 'produto-img-wrap': 'foto', 'cat-btn': 'botão de categoria', 'faixa-rolo': 'faixa', 'header-principal': 'cabeçalho', 'lista-produtos': 'vitrine', 'site-rodape': 'rodapé', 'modo-btn': 'botão de jeito de comprar' };
 
 const T = 1.5;   // folga em px (arredondamento do navegador)
-/** Largura da tela do aparelho. No celular, quando algo passa da borda, o navegador "afasta" a página e innerWidth cresce
- *  junto (390 vira 772): por isso vale a largura da tela (screen), deitada ou em pé. No computador, a da janela. */
+/** Largura da tela. No CELULAR (toque), quando algo passa da borda o navegador "afasta" a página e innerWidth cresce junto
+ *  (390 vira 772): por isso vale a largura da tela do aparelho (screen), deitada ou em pé. No COMPUTADOR vale a janela:
+ *  a "tela do aparelho" não manda nada ali, e escâneres e testadores de site rodam com tela de mentira (800×600) e janela maior. */
 export function larguraDaTela() {
+    const toque = (navigator.maxTouchPoints || 0) > 0 && matchMedia('(pointer: coarse)').matches;
     const sw = (window.screen && screen.width) || 0, sh = (window.screen && screen.height) || 0;
-    if (!sw || !sh) return innerWidth;
+    if (!toque || !sw || !sh) return innerWidth;
     const deitado = matchMedia('(orientation: landscape)').matches;
     return Math.min(innerWidth, deitado ? Math.max(sw, sh) : Math.min(sw, sh));
 }

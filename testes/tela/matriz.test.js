@@ -40,8 +40,12 @@ const TELAS = {
   390: { width: 390, height: 844 },
   430: { width: 430, height: 932 },
   deitado: { width: 844, height: 390 },
+  // janela de computador pequena (800×600): é o tamanho de escâner, pré-visualização e navegador de PC encolhido
+  janela800: { width: 800, height: 600, pc: true },
+  w700: { width: 700, height: 500, pc: true }, w740: { width: 740, height: 450, pc: true }, w768: { width: 768, height: 500, pc: true }, w783: { width: 783, height: 450, pc: true },
+  w800b: { width: 800, height: 450, pc: true }, w817: { width: 817, height: 450, pc: true }, w860: { width: 860, height: 450, pc: true }, w900: { width: 900, height: 500, pc: true }, w1000: { width: 1000, height: 600, pc: true }, w1100: { width: 1100, height: 600, pc: true }, w1280: { width: 1280, height: 720, pc: true },
 };
-const NOMES_TELA = CURTA ? ['320', '390', 'deitado'] : Object.keys(TELAS);
+const NOMES_TELA = process.env.SO_TELAS ? process.env.SO_TELAS.split(',') : CURTA ? ['320', '390', 'deitado', 'janela800'] : Object.keys(TELAS);
 const LETRAS = CURTA ? [1, 2] : [1, 1.5, 2];
 
 // ------------------------------------------------------------------ dados de pior caso
@@ -118,14 +122,24 @@ const testes = [];
 const teste = (nome, fn) => testes.push([nome, fn]);
 let navegador, servidor;
 
-async function abrir(caminho, { tela, letra = 1, cen }) {
-  const vp = TELAS[tela];
-  const opcoes = { viewport: vp, deviceScaleFactor: 2, hasTouch: true, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' };
-  if (MOTOR !== 'firefox') opcoes.isMobile = true;
-  if (MOTOR === 'webkit') opcoes.userAgent = UA_IPHONE;
+async function abrir(caminho, { tela, letra = 1, cen, antes }) {
+  const { pc, ...vp } = TELAS[tela];
+  const opcoes = { viewport: vp, deviceScaleFactor: pc ? 1 : 2, hasTouch: !pc, locale: 'pt-BR', timezoneId: 'America/Sao_Paulo' };
+  if (MOTOR !== 'firefox' && !pc) opcoes.isMobile = true;
+  if (MOTOR === 'webkit' && !pc) opcoes.userAgent = UA_IPHONE;
   const ctx = await navegador.newContext(opcoes);
   await ctx.addInitScript((c) => { window.__CENARIO = c; }, cen);
+  if (antes) await ctx.addInitScript(antes);
   await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  // VELHO=1: navegador antigo (Firefox 109, Windows 7). Tira do CSS o que ele não entende — :has, color-mix, container queries,
+  // content-visibility, @property, text-wrap — do mesmo jeito que ele faz: a regra/declaração que ele não entende é ignorada.
+  if (process.env.VELHO) await ctx.route(/\.css(\?.*)?$/, async (r) => {
+    const resp = await r.fetch(); let css = await resp.text();
+    css = css.replace(/color-mix\(/g, 'x-color-mix(').replace(/:has\(/g, ':x-has(').replace(/@container/g, '@x-container').replace(/container-type\s*:/g, 'x-container-type:')
+      .replace(/(^|[;{\s])container\s*:/g, '$1x-container:').replace(/content-visibility\s*:/g, 'x-content-visibility:').replace(/text-wrap\s*:/g, 'x-text-wrap:')
+      .replace(/@property/g, '@x-property').replace(/(\d)cqi/g, '$1xcqi').replace(/:focus-visible/g, ':focus-visible');
+    return r.fulfill({ response: resp, body: css });
+  });
   await ctx.route(/img\.exemplo\.test\/([\w.]+)/, (r) => {
     const nome = r.request().url().match(/img\.exemplo\.test\/([\w.]+)/)[1];
     if (SVG[nome]) return r.fulfill({ contentType: 'image/svg+xml', body: SVG[nome] });
@@ -212,7 +226,7 @@ for (const [nomeCen, fazer] of Object.entries(CENARIOS)) {
   for (const tela of NOMES_TELA) {
     teste(`${nomeCen} · tela ${tela}`, async () => {
       const falhas = [];
-      for (const letra of tela === 'deitado' ? [1] : LETRAS) {
+      for (const letra of tela === 'deitado' || TELAS[tela].pc ? [1] : LETRAS) {
         const { pagina, erros, fechar } = await abrir(CAMINHO[nomeCen] || '/', { tela, letra, cen: fazer() });
         try {
           const ctxTela = await pagina.evaluate(() => window.__vigiaTela.telaAtual());
@@ -231,6 +245,23 @@ for (const [nomeCen, fazer] of Object.entries(CENARIOS)) {
     });
   }
 }
+
+// ------------------------------------------------------------------ navegador automático: tela do aparelho de mentira
+// Escâneres e testadores de site rodam com "tela do aparelho" 800×600 e janela maior (1280×720). O vigia usava a tela do aparelho
+// como largura e acusava tudo que passava de 800px ("saiu pela borda", "página mais larga"). No computador vale a janela.
+teste('o vigia no computador usa a janela, não a "tela do aparelho" (navegador automático com tela de 800×600 e janela de 1280)', async () => {
+  const falsa = () => { for (const [k, v] of [['width', 800], ['height', 600], ['availWidth', 800], ['availHeight', 600]]) Object.defineProperty(window.screen, k, { get: () => v }); };
+  for (const cen of ['pior caso', 'loja fechada']) {
+    const { pagina, erros, fechar } = await abrir('/', { tela: 'w1280', cen: CENARIOS[cen](), antes: falsa });
+    try {
+      assert.strictEqual(await pagina.evaluate(() => screen.width), 800, 'a tela do aparelho é mesmo de mentira');
+      assert.strictEqual(await pagina.evaluate(() => window.__vigiaTela.larguraDaTela()), 1280, 'no computador vale a janela');
+      const achou = await pagina.evaluate(() => window.__vigiaTela.verificarTela());
+      assert.deepStrictEqual(achou.map(texto), [], `${cen}: acusou defeito que não existe`);
+      semErros(erros);
+    } finally { await fechar(); }
+  }
+});
 
 // ------------------------------------------------------------------ o vigia acha defeito de propósito
 // (se as regras pararem de enxergar, a matriz passaria sem conferir nada)
@@ -282,7 +313,8 @@ teste('o vigia acha defeito feito de propósito: rolagem lateral, preço cortado
     '/api/analytics': (c) => (c.acao === 'ranking' ? { sucesso: true, nivel: 'recorrente', maisPedidos: MAIS,
       itens: MAIS.map((id, i) => ({ id, p: 0.9 - i * 0.05, motivo: i < 4 ? 'Você sempre leva' : '' })) } : {}),
   });
-  navegador = await pw[MOTOR].launch();
+  // barras de rolagem de verdade (como no Windows): sem isto o navegador de teste as esconde e a janela de PC fica mais larga do que é
+  navegador = await pw[MOTOR].launch(MOTOR === 'chromium' ? { ignoreDefaultArgs: ['--hide-scrollbars'] } : {});
   console.log(`Motor: ${MOTOR} ${navegador.version()} · matriz ${CURTA ? 'curta' : 'inteira'} (${NOMES_TELA.join(', ')} · letra ${LETRAS.map((l) => l * 100 + '%').join(', ')})`);
   let falhas = 0;
   const lista = testes.filter(([n]) => !process.env.SO_TESTE || new RegExp(process.env.SO_TESTE).test(n));
