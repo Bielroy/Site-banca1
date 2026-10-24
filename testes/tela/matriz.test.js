@@ -109,8 +109,14 @@ const CENARIOS = {
     c.lojas.banca.ficha = { ...c.lojas.banca.ficha, tema: { primaria: '#2e4a7a', etiqueta: 'limpa', cabecalho: 'capa', capa: foto('banana.jpg'), logo: foto('tomate.jpg'), logoFormato: 'quadrado', alinhamento: 'centro', botaoCab: 'vidro', card: 'plano', borda: 'reta', arte: 'esconder' } };
     return c;
   },
+  // cliente que volta com endereço salvo de condomínio de nome comprido (o botão do topo mostra o endereço inteiro: apareceu "..." no iPhone)
+  'endereço salvo comprido': () => { const c = cenarioPadrao(); c.lojas.banca.produtos = PIOR; c.lojas.banca.categorias = CATS_PIOR; return c; },
 };
 const CAMINHO = { 'muitos produtos e feira grande': '/?feira=florenca&entrar=1', 'outra loja com tema': '/?loja=paes-da-lucia' };
+// o que roda no aparelho antes da loja abrir (por cenário)
+const ANTES = {
+  'endereço salvo comprido': () => localStorage.setItem('banca_endereco', JSON.stringify({ modo: 'entrega', condominio: 'Residencial Jardins do Bosque Encantado', formato: 'rua', quadra: 'Alameda das Palmeiras Imperiais', lote: '1234' })),
+};
 
 // fotos de formato estranho: desenhadas na hora (SVG), sem arquivo no projeto
 const SVG = {
@@ -222,12 +228,12 @@ const nomeArq = (s) => s.replace(/[^\w.-]+/g, '-');
 
 // ------------------------------------------------------------------ a matriz
 for (const [nomeCen, fazer] of Object.entries(CENARIOS)) {
-  if (CURTA && !['pior caso', 'muitos produtos e feira grande', 'aparência: etiqueta selo, texto à esquerda, letra grande da loja'].includes(nomeCen)) continue;
+  if (CURTA && !['pior caso', 'muitos produtos e feira grande', 'aparência: etiqueta selo, texto à esquerda, letra grande da loja', 'endereço salvo comprido'].includes(nomeCen)) continue;
   for (const tela of NOMES_TELA) {
     teste(`${nomeCen} · tela ${tela}`, async () => {
       const falhas = [];
       for (const letra of tela === 'deitado' || TELAS[tela].pc ? [1] : LETRAS) {
-        const { pagina, erros, fechar } = await abrir(CAMINHO[nomeCen] || '/', { tela, letra, cen: fazer() });
+        const { pagina, erros, fechar } = await abrir(CAMINHO[nomeCen] || '/', { tela, letra, cen: fazer(), antes: ANTES[nomeCen] });
         try {
           const ctxTela = await pagina.evaluate(() => window.__vigiaTela.telaAtual());
           await pagina.screenshot({ path: path.join(SAIDA, nomeArq(`${MOTOR}-${nomeCen}-${tela}-letra${letra * 100}.jpg`)), type: 'jpeg', quality: 60, scale: 'css' }).catch(() => {});

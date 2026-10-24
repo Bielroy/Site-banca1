@@ -114,6 +114,10 @@ a, button, [data-action] { touch-action: manipulation; }
 
 /* ---------- 5. CABEÇALHO: botões que não cortam o texto à toa ---------- */
 .chip-header span { min-width: 0; }
+/* o botão do endereço mostra o que o cliente digitou ("Residencial Jardins do Bosque, Alameda das Palmeiras, nº 1234"):
+   não cabe numa linha no celular, então quebra em duas em vez de virar "Residencial Jar..." (achado no iPhone, 393px) */
+#btn-endereco { height: auto; text-align: left; }
+#btn-endereco span { white-space: normal; line-height: 1.2; overflow-wrap: anywhere; }
 .header-acoes { align-items: center; }
 /* Instagram e WhatsApp da loja: dois botões redondos */
 .header-redes { display: inline-flex; gap: 8px; }
