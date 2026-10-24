@@ -7,7 +7,7 @@ name: Testes de segurança
 
 on:
   push:
-    branches: [main]
+    branches: [main, rota-cloudflare]
   pull_request:
 
 permissions:
@@ -30,6 +30,35 @@ jobs:
         with:
           node-version: 22
       - run: node testes/index.js
+      # teste de carga: pico de pedidos em 3 lojas, freios por endereço e da loja, toque repetido (banco de mentira)
+      - run: node testes/carga/carga.js
+
+  dependencias:
+    name: Pacotes com falha conhecida (só avisa, não trava)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # Confere os pacotes que vão para o servidor e o site (sem os de desenvolvimento) contra a lista pública de falhas
+      # conhecidas. Falha NOVA de um pacote não deve derrubar a entrega do site: aparece como aviso amarelo.
+      - name: npm audit (alta e crítica)
+        run: |
+          set +e
+          npm audit --omit=dev --audit-level=high > auditoria.txt 2>&1
+          codigo=$?
+          cat auditoria.txt
+          if [ "$codigo" -ne 0 ]; then
+            msg=$(head -40 auditoria.txt | cut -c1-200 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::warning title=Pacotes com falha conhecida::$msg"
+          else
+            echo "::notice title=Pacotes::nenhuma falha alta ou crítica conhecida nos pacotes de produção."
+          fi
+          exit 0
 
   build:
     name: Instalação travada e build do site
@@ -45,6 +74,17 @@ jobs:
       # npm ci instala EXATAMENTE as versões do package-lock.json (falha se ele e o package.json não baterem)
       - run: npm ci --no-audit --no-fund
       - run: npm run build
+      # os arquivos do Cloudflare Pages (_headers e _redirects) saem do vercel.json em cima do site de verdade
+      - name: Arquivos do Cloudflare Pages
+        run: |
+          node scripts/cloudflare-arquivos.js
+          test -s dist/_headers && test -s dist/_redirects
+          grep -q "frame-ancestors 'none'" dist/_headers && grep -q "frame-ancestors 'self'" dist/_headers
+          grep -q '^/feira/:id ' dist/_redirects && test -s dist/previa.html
+          test "$(grep -c '^/' dist/_headers)" -lt 100
+          # tudo que o _headers nomeia sem "*" existe no build (ou é uma página que o Cloudflare serve sem o .html)
+          for f in sw.js registerSW.js push-sw.js manifest.webmanifest admin.webmanifest og-image.png robots.txt sitemap.xml admin.html plataforma.html feira.html privacidade.html index.html; do test -f "dist/$f" || { echo "faltou dist/$f"; exit 1; }; done
+          ls dist/workbox-*.js dist/icon-*.png > /dev/null
 
   regras:
     name: Regras do banco no emulador do Firebase
@@ -116,3 +156,98 @@ jobs:
             echo "::notice title=Testes de tela::$(grep 'testes de tela passaram' saida.txt | tail -1)"
           fi
           exit "$codigo"
+
+  matriz:
+    name: Matriz de telas (tamanhos de tela e de letra, dados de pior caso)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Instalar o navegador de teste (numa pasta à parte)
+        run: |
+          npm install --prefix testes/tela --no-audit --no-fund
+          npx --prefix testes/tela playwright install --with-deps chromium
+      - name: Abrir cada loja em 320, 375, 390, 430 e deitado, com a letra em 100%, 150% e 200%
+        run: |
+          set +e
+          node testes/tela/matriz.test.js > saida.txt 2>&1
+          codigo=$?
+          cat saida.txt
+          if [ "$codigo" -ne 0 ]; then
+            grep -A14 "FALHOU" saida.txt | cut -c1-300 > falhas.txt
+            [ -s falhas.txt ] || tail -30 saida.txt | cut -c1-300 > falhas.txt
+            msg=$(head -60 falhas.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Matriz de telas::$msg"
+          else
+            echo "::notice title=Matriz de telas::$(grep 'matriz de telas' saida.txt | tail -1)"
+          fi
+          exit "$codigo"
+      - name: Guardar as fotos de cada tela e de cada defeito (para conferir de olho)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fotos-matriz
+          path: testes/tela/saida-matriz/
+          retention-days: 7
+
+  iphone:
+    name: Loja no motor do iPhone (WebKit, o do Safari)
+    # versão fixa do Ubuntu: o motor do Safari do teste precisa das bibliotecas desta versão
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Instalar o motor do iPhone (WebKit)
+        run: |
+          npm install --prefix testes/tela --no-audit --no-fund
+          npx --prefix testes/tela playwright install --with-deps webkit
+      - name: Rolar as faixas, tocar no +, virar a tela e aumentar a letra no "iPhone"
+        run: |
+          set +e
+          node testes/tela/iphone.test.js > saida.txt 2>&1
+          codigo=$?
+          cat saida.txt
+          if [ "$codigo" -ne 0 ]; then
+            grep -A8 "FALHOU" saida.txt | grep -v "\[2m" | cut -c1-260 > falhas.txt
+            [ -s falhas.txt ] || tail -30 saida.txt | cut -c1-260 > falhas.txt
+            msg=$(head -60 falhas.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Motor do iPhone::$msg"
+          else
+            echo "::notice title=Motor do iPhone::$(grep 'motor do iPhone' saida.txt | tail -1)"
+          fi
+          exit "$codigo"
+      - name: Matriz de telas no motor do iPhone (curta)
+        if: always()
+        run: |
+          set +e
+          MOTOR=webkit MATRIZ=curta node testes/tela/matriz.test.js > saida-matriz.txt 2>&1
+          codigo=$?
+          cat saida-matriz.txt
+          if [ "$codigo" -ne 0 ]; then
+            grep -A14 "FALHOU" saida-matriz.txt | cut -c1-300 > falhas.txt
+            [ -s falhas.txt ] || tail -30 saida-matriz.txt | cut -c1-300 > falhas.txt
+            msg=$(head -60 falhas.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Matriz de telas no iPhone::$msg"
+          else
+            echo "::notice title=Matriz de telas no iPhone::$(grep 'matriz de telas' saida-matriz.txt | tail -1)"
+          fi
+          exit "$codigo"
+      - name: Guardar as fotos de cada passo (para conferir de olho)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fotos-iphone
+          path: |
+            testes/tela/saida-iphone/
+            testes/tela/saida-matriz/
+          retention-days: 7

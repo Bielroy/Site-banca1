@@ -231,3 +231,91 @@ body.so-equipe #aba-relatorios .relatorios-header, body.so-equipe #aba-relatorio
 .crm-pedidos span { min-width: 0; } .crm-pedidos small { display: block; font-size: .78rem; color: var(--text-light); overflow-wrap: anywhere; } .crm-pedidos li > b { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .crm-gerar { width: 100%; min-height: 46px; padding: 10px 16px; margin-bottom: 8px; } a.crm-zap { display: flex; align-items: center; justify-content: center; text-decoration: none; }
 .crm-ok { font-weight: 700; color: var(--forest); margin-bottom: 10px; }
+/* avisos da aba Compras: previsão do tempo e etileno (js/dicas-compra-lib.js) */
+.cp-clima { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; background: var(--parchment); border-left: 4px solid #0e7490; }
+.cp-clima ul { margin: 6px 0 0; padding-left: 18px; } .cp-clima li { margin: 4px 0; font-size: .9rem; } .cp-clima small { display: block; margin-top: 6px; font-size: .78rem; color: var(--text-light); }
+.cp-etileno { margin: 14px 0; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--parchment); }
+.cp-etileno summary { cursor: pointer; font-weight: 600; } .cp-etileno p { margin: 8px 0 0; font-size: .9rem; }
+/* alertas da aba Estoque e lucro de hoje (js/alertas-lib.js) */
+/* o aviso do topo (não o cartão de produto "abaixo do mínimo", que também leva es-alerta) */
+.es-alerta:not(.es-item) { margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; background: var(--parchment); }
+.es-alerta-sobra { border-left: 4px solid #b45309; } .es-alerta-falta { border-left: 4px solid #b91c1c; }
+.es-alerta summary { cursor: pointer; } .es-alerta ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.es-alerta li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,.06); font-size: .9rem; }
+.es-alerta li small, .es-alerta > small { display: block; font-size: .78rem; color: var(--text-light); } .es-alerta > small { margin-top: 6px; }
+.mg-hoje { margin: 16px 0; padding: 12px 14px; border-radius: 12px; background: var(--parchment); border-left: 4px solid #2f7a4f; }
+.mg-hoje h4 small { font-weight: 400; color: var(--text-light); font-size: .8rem; } .mg-hoje ul { list-style: none; padding: 0; margin: 6px 0; }
+.mg-hoje li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,.06); font-size: .9rem; } .mg-hoje li small { display: block; font-size: .78rem; color: var(--text-light); }
+.pv2-juntos { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 10px; font-size: .85rem; }
+.pv2-juntos button { padding: 6px 10px; border-radius: 999px; border: 1.5px solid #2f7a4f; background: transparent; color: #2f7a4f; font-weight: 600; }
+.mg-kits { border-left-color: #6d28d9; } .mg-sim { border-left-color: #0e7490; }
+.mg-sim select { width: 100%; padding: 10px 12px; margin: 6px 0; border-radius: var(--radius-sm); border: 1.5px solid #e0dcd4; font-size: 16px; background: #fff; }
+.mg-sim-melhor { background: rgba(47,122,79,.10); border-radius: 8px; padding-left: 6px !important; padding-right: 6px !important; }
+.mg-sim li small { display: inline; margin-left: 4px; } .mg-sim li span small:last-child { display: block; margin-left: 0; }
+
+/* ---------- impressão automática (js/impressao-auto.js) ---------- */
+.imp-auto { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin: 0 0 14px; padding: 10px 14px; border-radius: 14px; font-size: .92rem; line-height: 1.35; border: 1.5px solid var(--sage); background: var(--foam); color: var(--forest); }
+.imp-auto > .ic, .imp-auto > svg.ic { width: 1.4em; height: 1.4em; flex: none; }
+.imp-auto > span { flex: 1 1 200px; min-width: 0; }
+.imp-auto button { min-height: 44px; padding: 8px 14px; border-radius: 12px; border: 0; background: var(--forest); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.imp-auto button.sec { background: #fff; color: var(--forest); border: 1.5px solid var(--sage); }
+.imp-auto button:disabled { opacity: .6; }
+.imp-auto.alerta { background: var(--warning-light); border-color: #f0c96a; color: #6b4300; }
+.imp-auto.alerta button:not(.sec) { background: #8a5300; }
+.imp-auto.erro { background: var(--danger-light); border-color: #f2b8b5; color: #8f1d17; }
+.imp-auto.erro button { background: #b3261e; }
+.imp-auto[hidden] { display: none; }
+.ped-impresso { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 12px; background: var(--foam); color: var(--forest); font-weight: 700; font-size: .72rem; }
+.ped-impresso.fila { background: var(--warning-light); color: #6b4300; }
+.imp-auto-modos { margin-top: 0; }
+
+/* ---------- celular da banca, app Ponte (js/admin-impressao.js) ---------- */
+.imp-passos { margin: 0 0 14px; padding-left: 22px; display: grid; gap: 12px; }
+.imp-passos li { line-height: 1.45; }
+.imp-passos li a, .imp-passos li button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; margin-top: 8px; padding: 8px 16px; border-radius: 12px; text-decoration: none; }
+.imp-passos small { display: block; font-size: .82rem; color: var(--text-mid); margin-top: 4px; }
+.imp-codigo { display: grid; justify-items: center; gap: 6px; margin: 0 0 14px; padding: 16px; border-radius: 14px; border: 2px dashed var(--sage); background: var(--foam); text-align: center; }
+.imp-codigo b { font-size: 2rem; letter-spacing: .14em; font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--forest); }
+.imp-codigo small { color: var(--text-mid); }
+.imp-codigo a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 16px; border-radius: 12px; text-decoration: none; }
+.imp-ponte-card { margin: 0 0 14px; padding: 12px 14px; border-radius: 14px; border: 1.5px solid #e0dcd4; background: #fff; }
+.imp-ponte-card header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 6px; }
+.imp-ponte-card fieldset legend { font-weight: 700; font-size: .9rem; margin-bottom: 6px; }
+.imp-ponte-st { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700; background: var(--foam); color: var(--forest); }
+.imp-ponte-st.erro { background: var(--danger-light); color: #8f1d17; }
+.imp-horario { border: 1px solid var(--linha, rgba(0,0,0,.1)); border-radius: 12px; padding: 10px 12px 12px; margin: 12px 0; }
+.imp-horario legend { padding: 0 6px; font-weight: 700; font-size: .9rem; }
+.imp-horario input[type="time"] { width: 100%; min-height: 44px; }
+.imp-horario > small { display: block; line-height: 1.45; }
+.imp-ponte-card .btn-texto { min-height: 44px; padding: 8px 4px; border: 0; background: transparent; color: var(--forest); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.imp-ponte-card .btn-texto-perigo { min-height: 44px; padding: 8px 4px; border: 0; background: transparent; color: #b3261e; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.imp-ponte-card .aviso-limite button { margin-left: 6px; min-height: 40px; }
+
+/* ---- layout mais leve ---- */
+/* balcão: a foto ajuda a achar o produto de relance */
+.pv2-foto { flex: none; width: 44px; height: 44px; border-radius: 10px; overflow: hidden; background: var(--foam); }
+.pv2-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pv2-foto:empty { background: var(--parchment) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b8ad97' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M4 10h16l-1.6 9a2 2 0 0 1-2 1.6H7.6a2 2 0 0 1-2-1.6z'/%3E%3Cpath d='M8 10l3-6M16 10l-3-6'/%3E%3C/svg%3E") center / 22px no-repeat; }
+.pv2-linha { padding-left: 8px; }
+#pv2-cats { margin-top: -4px; }
+/* estoque: botões numa faixa só, mais baixos; o cartão fica menor */
+.es-item { padding: 12px 12px 12px 14px; }
+.es-acoes { gap: 6px; margin-top: 8px; }
+.es-acoes button { flex: 1 1 0; min-width: 64px; min-height: 40px; padding: 6px 6px; font-size: .82rem; }
+
+/* Regras de horário da entrega por condomínio e dia (Configurações > Entrega e retirada) */
+/* Caixa de texto do painel só estica para baixo: puxar a alça para o lado alargava o cartão inteiro no celular. */
+textarea { resize: vertical; max-width: 100%; }
+/* O cartão nunca passa da largura da tela: a coluna do grid pode encolher (minmax(0,1fr)) e nenhum campo impõe a largura dele. */
+.regra-entrega { margin-top: 10px; padding: 12px; border: 1px solid #e0dcd4; border-radius: 12px; background: var(--parchment, #faf7f0); display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; }
+.regra-entrega > * { min-width: 0; max-width: 100%; }
+.regra-entrega .regra-topo { display: flex; align-items: center; gap: 8px; }
+.regra-entrega .regra-topo select { flex: 1 1 0; width: 0; min-width: 0; min-height: 44px; }
+.regra-entrega .btn-texto { flex: none; min-height: 44px; padding: 8px 6px; border: 0; background: transparent; color: #b3261e; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.regra-entrega textarea, .regra-entrega input[type="text"] { display: block; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.regra-entrega textarea { min-height: 76px; resize: vertical; }
+.regra-entrega .chk-linha { min-width: 0; }
+.regra-entrega .agenda-dica { margin: 0; font-size: .85rem; line-height: 1.35; color: #6b6558; overflow-wrap: anywhere; }
+.regra-entrega.com-erro { border-color: #b3261e; box-shadow: 0 0 0 2px rgba(179, 38, 30, .18); }
+.regra-entrega.com-erro .agenda-dica { color: #b3261e; font-weight: 700; }
+#agenda-entrega { min-width: 0; max-width: 100%; }

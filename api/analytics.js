@@ -31,6 +31,8 @@ const H = require('../lib/http');
 const aplicarCors = H.cors;
 
 // rate limit leve por uid (em memória; suficiente p/ evitar martelar o Firestore)
+const ETAPAS_FUNIL = ['visita', 'adicionou', 'sacola', 'pedido'];
+const isoDeDiaBr = (ts) => new Date(ts - 3 * 3600000).toISOString().slice(0, 10);   // dia no Brasil (UTC−3)
 const ultimo = new Map();
 const limitar = (chave, ms) => {
   const agora = Date.now();
@@ -125,6 +127,19 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ sucesso: true, geradoEm: g && g.meta ? g.meta.geradoEm : null, ...out });
     }
 
+    // FUNIL DA VITRINE: cada aparelho conta UMA vez por dia em cada etapa (visita, pôs na sacola,
+    // abriu o fechamento, mandou o pedido). Só número por dia, sem nome, uid ou endereço guardados.
+    // O painel compara a semana com a anterior (antes e depois de mudar a vitrine).
+    if (acao === 'funil') {
+      const etapa = String(corpo.etapa || '');
+      if (!ETAPAS_FUNIL.includes(etapa)) return res.status(400).json({ sucesso: false, error: 'Etapa desconhecida.' });
+      // repetido no mesmo aparelho, ou muita chamada do mesmo endereço: responde ok e não conta (não vale insistir)
+      if (H.passouNaMemoria(`funil:${tid}:${H.ipDe(req)}`, 30, 600000) || !limitar(`f:${tid}:${dec.uid}:${etapa}`, 6 * 3600000)) return res.status(200).json({ sucesso: true, contado: false });
+      const dia = isoDeDiaBr(Date.now());
+      await db.collection('analytics').doc(`funil-${dia.slice(0, 7)}`).set({ dias: { [dia.slice(8)]: { [etapa]: admin.firestore.FieldValue.increment(1) } } }, { merge: true });
+      return res.status(200).json({ sucesso: true, contado: true });
+    }
+
     // ------------------------- ADMIN -------------------------
     if (!ehAdmin) return res.status(403).json({ sucesso: false, error: 'Acesso restrito ao administrador.' });
 
@@ -132,9 +147,12 @@ module.exports = async function handler(req, res) {
       let p = await Store.lerPainel(db), atualizou = false;
       // aba Clientes: se chegou pedido depois do último cálculo, recalcula antes de responder.
       // Vale o mesmo limite do botão "recalcular"; passou do limite, devolve o cálculo que já existe.
-      if (corpo.atualizar === true && await Store.temPedidoNovo(db, p && p.meta && p.meta.geradoEm)
+      // Também recalcula quando o cálculo guardado veio de um servidor SEM o cofre (a reserva antiga da Vercel):
+      // ele conta cada pedido como um cliente diferente. Aqui o servidor certo refaz com os pedidos abertos.
+      const semCofre = !!(p && p.calculoSemCofre);
+      if (corpo.atualizar === true && (semCofre || await Store.temPedidoNovo(db, p && p.meta && p.meta.geradoEm))
           && limitar('recalc:' + tid, 8000) && await P.limitar(banco, 'recalcular', tid, 20, 3600)) {
-        const r = await Store.recalcular(db, {});
+        const r = await Store.recalcular(db, semCofre ? { forcar: true } : {});
         if (!r.pulado) { p = await Store.lerPainel(db); atualizou = true; }
       }
       return res.status(200).json({ sucesso: true, vazio: !p, atualizou, ...(p || {}) });

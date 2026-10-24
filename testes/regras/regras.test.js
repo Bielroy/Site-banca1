@@ -25,7 +25,7 @@ const teste = (nome, fn) => testes.push([nome, fn]);
 const pode = (p) => assertSucceeds(p);
 const nega = (p) => assertFails(p);
 
-const PAPEIS = ['proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque'];
+const PAPEIS = ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa', 'producao', 'estoque'];
 const TEMA = { primaria: '#1a3a2a', secundaria: '#4a9467', destaque: '#c4773a', fundo: '#faf7f2', superficie: '#ffffff', texto: '#1a1a18', sobrePrimaria: '#ffffff', fonteTitulo: 'Fraunces', fonteTexto: 'Figtree', raio: 14, etiqueta: 'barbante' };
 const VENENO = '"><img src=x onerror=alert(document.domain)>';
 
@@ -57,6 +57,7 @@ async function semear() {
       por(cam(loja, 'loja/config'), { wpp: '5562999990000', lojaAberta: true });
       por(cam(loja, 'loja/comunicados'), { dias: [] });
       por(cam(loja, 'loja/avaliacoes'), { soma: 47, n: 10, media: 4.7 });
+      por(cam(loja, 'loja/catalogo'), { v: 1, geradoEm: 1, assinatura: 'x', n: 1, produtos: [{ id: 'p1', nome: 'Pão', preco: 5, ativo: true }] });
       por(cam(loja, 'loja/fotos'), { itens: [{ url: 'https://i.ibb.co/x/a.jpg', nome: 'foto-da-familia.jpg' }] });
       por(cam(loja, 'pedidos/ped-1'), { userId: 'cli-1', nome: 'Ana', telefone: '62999990000', quadra: '1', lote: '2', total: 20, status: 'pendente', itens: [] });
       por(cam(loja, 'pedidos/ped-2'), { userId: 'cli-2', nome: 'Bia', total: 30, status: 'preparando', itens: [] });
@@ -87,6 +88,7 @@ async function semear() {
     por(cam('loja-off', 'categorias/paes'), { chave: 'paes', nome: 'Pães', ordem: 1 });
     por(cam('loja-off', 'loja/config'), { wpp: '5562999990000', lojaAberta: true });
     por(cam('loja-off', 'loja/comunicados'), { dias: [] });
+    por(cam('loja-off', 'loja/catalogo'), { v: 1, geradoEm: 1, produtos: [] });
     por('feiras/feira-1', { nome: 'Feira', lojas: [{ id: 'loja-a', nome: 'Loja A' }, { id: 'loja-b', nome: 'Loja B' }] });
     por('plataforma/segredos', { pagbank: 'token-secreto', imgbb: 'chave-secreta' });
     por('assinaturas/loja-a', { valor: 59.9, dia: 10 });
@@ -145,6 +147,21 @@ teste('loja desligada pela plataforma não mostra catálogo nem configuração p
   // loja original sem ficha (como era antes da plataforma): continua no ar
   await env.withSecurityRulesDisabled(async (ctx) => { await deleteDoc(doc(ctx.firestore(), 'tenants/banca')); });
   await pode(getDocs(c(anonimo(), cam('banca', 'produtos')))); await pode(getDoc(d(anonimo(), cam('banca', 'loja/config'))));
+});
+
+teste('vitrine num documento só (loja/catalogo): todo mundo lê da loja no ar; só o SERVIDOR grava (nem o dono, nem a plataforma pelo navegador)', async () => {
+  for (const loja of ['banca', 'loja-a']) {
+    for (const v of [anonimo(), cliente(), de('loja-b', 'proprietario')]) await pode(getDoc(d(v, cam(loja, 'loja/catalogo'))));
+    for (const quem of [anonimo(), cliente(), de(loja, 'proprietario'), de(loja, 'administrador'), de(loja, 'funcionario'), de('loja-b', 'proprietario'), plataforma()]) {
+      await nega(setDoc(d(quem, cam(loja, 'loja/catalogo')), { v: 1, geradoEm: 2, produtos: [{ id: 'p1', nome: 'Pão', preco: 0.01, ativo: true }] }));
+      await nega(deleteDoc(d(quem, cam(loja, 'loja/catalogo'))));
+    }
+  }
+  // loja desligada: o catálogo some para o público como o resto da vitrine
+  for (const v of [anonimo(), cliente(), de('loja-a', 'proprietario')]) await nega(getDoc(d(v, cam('loja-off', 'loja/catalogo'))));
+  await pode(getDoc(d(de('loja-off', 'proprietario'), cam('loja-off', 'loja/catalogo'))));
+  // a loja pede "produtos mudados depois de" (consulta com where): continua liberada para o público
+  await pode(getDocs(query(c(anonimo(), cam('loja-a', 'produtos')), where('ultimaModificacao', '>', 0))));
 });
 
 teste('visitante sem login (e cliente com login anônimo) não grava NADA', async () => {
@@ -211,7 +228,7 @@ teste('papel de uma loja escrito de jeito torto não vale em outra (mapa vazio, 
 
 // ====================================================================== PAPÉIS DENTRO DA PRÓPRIA LOJA
 teste('quem administra (proprietário, administrador) cuida do cadastro, mas não do que é do servidor nem da plataforma', async () => {
-  for (const loja of ['loja-a', 'banca']) for (const papel of ['proprietario', 'administrador']) {
+  for (const loja of ['loja-a', 'banca']) for (const papel of ['proprietario', 'administrador', 'gerente']) {
     const eu = de(loja, papel);
     await pode(setDoc(d(eu, cam(loja, 'produtos/novo')), { nome: 'Bolo', preco: 12, unidade: 'un', ativo: true })); await pode(updateDoc(d(eu, cam(loja, 'produtos/p1')), { preco: 6, nome: 'Pão francês' }));
     await pode(deleteDoc(d(eu, cam(loja, 'produtos/novo')))); await pode(setDoc(d(eu, cam(loja, 'categorias/doces')), { chave: 'doces', nome: 'Doces', ordem: 2, visivel: true }));
@@ -233,6 +250,44 @@ teste('quem administra (proprietário, administrador) cuida do cadastro, mas nã
   }
 });
 
+
+teste('documentos montados (vitrine/painel/custos): só o servidor grava; painel para a equipe, custos para quem cuida de estoque', async () => {
+  for (const loja of ['loja-a', 'banca']) {
+    const painel = cam(loja, 'loja/painel'), custos = cam(loja, 'loja/custos'), cat = cam(loja, 'loja/catalogo');
+    for (const papel of ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa', 'producao', 'estoque']) await pode(getDoc(d(de(loja, papel), painel)));
+    for (const papel of ['proprietario', 'administrador', 'gerente', 'producao', 'estoque']) await pode(getDoc(d(de(loja, papel), custos)));
+    for (const papel of ['funcionario', 'caixa']) await nega(getDoc(d(de(loja, papel), custos)));
+    for (const v of [anonimo(), cliente(), de('loja-b', 'proprietario')]) { await nega(getDoc(d(v, painel))); await nega(getDoc(d(v, custos))); }
+    for (const papel of ['proprietario', 'administrador', 'gerente']) for (const alvo of [painel, custos, cat]) await nega(setDoc(d(de(loja, papel), alvo), { v: 1, produtos: [] }));
+  }
+});
+
+teste('gerente: liga e desliga as formas de pagamento, mas não troca a chave PIX, o PIX automático nem o WhatsApp dos pedidos', async () => {
+  for (const loja of ['loja-a', 'banca']) {
+    const ger = de(loja, 'gerente'), adm = de(loja, 'administrador'), cfg = cam(loja, 'loja/config');
+    // o que o gerente pode em loja/config
+    await pode(setDoc(d(ger, cfg), { formasPagamento: { pix: true, cartao: false, dinheiro: true } }, { merge: true }));
+    await pode(setDoc(d(ger, cfg), { pagamentoNaEntrega: true, minimo: 12, lojaAberta: false }, { merge: true }));
+    await pode(updateDoc(d(ger, cfg), { 'formasPagamento.cartao': true }));
+    // o que ele NÃO pode: onde o dinheiro cai e o WhatsApp que recebe os pedidos
+    await nega(setDoc(d(ger, cfg), { pix: { tipo: 'celular', chave: '+5562999990000', nome: 'Gerente', cidade: 'Goiania' } }, { merge: true }));
+    await nega(updateDoc(d(ger, cfg), { 'pix.chave': '+5562911112222' }));
+    await nega(setDoc(d(ger, cfg), { pixAutomatico: true }, { merge: true }));
+    await nega(setDoc(d(ger, cfg), { wpp: '5500000000000' }, { merge: true }));
+    await nega(deleteDoc(d(ger, cfg)));
+    // administrador continua mexendo em tudo isso
+    await pode(setDoc(d(adm, cfg), { pix: { tipo: 'celular', chave: '+5562999990000', nome: 'Dono', cidade: 'Goiania' }, pixAutomatico: false }, { merge: true }));
+    await pode(setDoc(d(adm, cfg), { wpp: '5562999990001' }, { merge: true }));
+    // o resto do painel é do gerente
+    await pode(setDoc(d(ger, cam(loja, 'produtos/novo-g')), { nome: 'Bolo', preco: 12, unidade: 'un', ativo: true }));
+    await pode(setDoc(d(ger, cam(loja, 'cupons/GER')), { ativo: true, percentual: 5 }));
+    // equipe, auditoria e segredos: nunca
+    await nega(setDoc(d(ger, cam(loja, 'equipe/eu')), { papel: 'proprietario' })); await nega(getDoc(d(ger, cam(loja, 'auditoria/a1'))));
+    await nega(getDoc(d(ger, 'plataforma/segredos'))); await nega(getDoc(d(ger, `plataforma/maquininha_${loja}`)));
+  }
+  // em outra loja ele não é ninguém
+  await nega(setDoc(d(de('loja-a', 'gerente'), cam('loja-b', 'loja/config')), { minimo: 1 }, { merge: true }));
+});
 teste('funcionário e caixa atendem pedidos, mas não mexem em cadastro, cupom, clientes nem números da loja', async () => {
   for (const loja of ['loja-a', 'banca']) for (const papel of ['funcionario', 'caixa']) {
     const eu = de(loja, papel);
@@ -316,7 +371,8 @@ teste('aparência da loja: só nome de verdade, texto curto e cor no formato #rr
     await pode(setDoc(ficha, { nome: 'Banca do Zé', subtitulo: 'Na brasa', tema: { ...TEMA, primaria: '#B3261E', raio: 8, fotoFormato: 'alta', fotoEncaixe: 'inteira' }, atualizadoEm: 1 }, { merge: true }));
     for (const cor of [VENENO, 'red', '#fff', '#12345g', 'url(//x)', '#123456;x', 123456, null, ['#123456']]) await nega(setDoc(ficha, { tema: { primaria: cor } }, { merge: true }));
     for (const campo of ['secundaria', 'destaque', 'fundo', 'superficie', 'texto', 'sobrePrimaria']) await nega(setDoc(ficha, { tema: { [campo]: VENENO } }, { merge: true }));
-    await nega(setDoc(ficha, { tema: { raio: VENENO } }, { merge: true })); await nega(setDoc(ficha, { tema: { raio: 999 } }, { merge: true })); await nega(setDoc(ficha, { tema: { fonteTitulo: 'x'.repeat(41) } }, { merge: true }));
+    await nega(setDoc(ficha, { tema: { raio: VENENO } }, { merge: true })); await nega(setDoc(ficha, { tema: { raio: 999 } }, { merge: true }));
+    await pode(setDoc(ficha, { tema: { ...TEMA, peliculaForca: 40, botaoFundoForca: 70, botaoCab: 'vidro' } }, { merge: true })); await nega(setDoc(ficha, { tema: { peliculaForca: 101 } }, { merge: true })); await nega(setDoc(ficha, { tema: { botaoFundoForca: 'x' } }, { merge: true })); await nega(setDoc(ficha, { tema: { fonteTitulo: 'x'.repeat(41) } }, { merge: true }));
     await nega(setDoc(ficha, { tema: { fonteTexto: { x: 1 } } }, { merge: true })); await nega(updateDoc(ficha, { tema: VENENO })); await nega(updateDoc(ficha, { tema: [VENENO] }));
     // aparência nova: logo, capa, cor dos botões e os "jeitos" (cabeçalho, borda, cards...)
     const NOVO = { ...TEMA, botao: '#3DDC84', cabecalho: 'capa', borda: 'onda', arte: 'esconder', alinhamento: 'centro', logoFormato: 'quadrado', botaoFormato: 'quadrado', card: 'sombra', fundoEstilo: 'pontos', letra: 'grande', etiqueta: 'selo',

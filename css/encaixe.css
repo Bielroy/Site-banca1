@@ -1,0 +1,229 @@
+/* =====================================================================
+   css/encaixe.css — A LOJA ENCAIXADA EM QUALQUER TELA E TAMANHO DE LETRA
+   (vem por último no index.html: ajusta o que os outros arquivos deixaram rígido)
+
+   • iPhone: área segura (notch, ilha, barra de baixo, celular deitado), sem o
+     "aumenta a letra sozinho" do Safari ao virar a tela, campos sem zoom.
+   • Letra grande (Ajustes → Tela → Tamanho do Texto, Android "fonte grande",
+     zoom do navegador): tudo é medido em rem, então cresce junto; as colunas de
+     produtos diminuem sozinhas quando não cabem e, numa coluna só, o produto
+     vira "foto ao lado do texto". js/texto-grande.js liga a classe .texto-grande.
+   • Computador e tablet: tudo na mesma largura e alinhado, mais colunas de
+     produtos com cartões de tamanho certo, e a sacola sempre à mão.
+   ===================================================================== */
+
+/* ---------- 1. BASE: letra que respeita o aparelho ---------- */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; font-size: calc(100% * var(--escala-texto, 1)); }
+html.ap-letra-grande { font-size: calc(112.5% * var(--escala-texto, 1)); }
+/* campos e botões acompanham a letra da página (antes eram 16px fixos); nunca menos de 16px, senão o iPhone dá zoom */
+button, input, select, textarea { font-size: max(16px, 1rem); }
+.busca-input, .qtd-input, .md-qtd-input, .form-group input, .form-group select, .form-group textarea { font-size: max(16px, 1rem); }
+img, svg, video { max-width: 100%; }
+.produto-nome, .modal-head h2, .bloco-secao h2 span, .faixa-sempre h2, #header-nome { overflow-wrap: anywhere; hyphens: auto; }
+
+/* ---------- 2. iPHONE: área segura (celular deitado com notch/ilha) ---------- */
+@supports (padding: max(0px)) {
+    .header-inner, .controles-inner, .layout, .site-rodape, .fale-loja {
+        padding-left: max(var(--gutter-x, 16px), env(safe-area-inset-left));
+        padding-right: max(var(--gutter-x, 16px), env(safe-area-inset-right));
+    }
+}
+:root { --gutter-x: 16px; }
+@media (min-width: 601px) { :root { --gutter-x: 24px; } }
+@media (min-width: 1025px) { :root { --gutter-x: 32px; } }
+/* o fundo da seção imersiva acompanha a margem do lado (inclusive com notch) */
+@media (max-width: 600px) { .fundo-secao { left: calc(-1 * max(var(--gutter-x), env(safe-area-inset-left))); right: calc(-1 * max(var(--gutter-x), env(safe-area-inset-right))); } }
+/* barra "Ver pedido" e sacola não ficam embaixo da barrinha do iPhone nem do notch deitado */
+@media (max-width: 600px) {
+    .btn-flutuante-carrinho { margin-left: env(safe-area-inset-left); margin-right: env(safe-area-inset-right); }
+    .carrinho { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+}
+/* iPhone com o app na tela inicial (barra de status transparente): o topo da loja passa por trás do relógio,
+   o texto desce o tamanho da área segura, e a barra de busca, quando gruda no alto, para logo abaixo dela.
+   Uma faixa fixa na cor da loja cobre a área do relógio enquanto a página rola. (No navegador, a área é 0: nada muda.) */
+.header-inner { padding-top: calc(26px + env(safe-area-inset-top, 0px)); }
+.controles { top: env(safe-area-inset-top, 0px); }
+body::before { content: ""; position: fixed; z-index: 1002; left: 0; right: 0; top: 0; height: env(safe-area-inset-top, 0px); background: var(--cat-cor, var(--forest)); pointer-events: none; }
+.feira-lojas { padding-top: calc(10px + env(safe-area-inset-top, 0px)); }
+.feira-lojas:not([hidden]) ~ #header-principal .header-inner { padding-top: 26px; }   /* com a faixa da feira no alto, ela é que desce */
+/* toque: nada de atraso de 300 ms nem seleção azul piscando */
+a, button, [data-action] { touch-action: manipulation; }
+
+/* ---------- 3. GRADE DE PRODUTOS: colunas pela largura do cartão (em rem) ---------- */
+/* celular: 2 colunas; com letra grande que não cabe, 1 coluna (e o cartão deita, ver abaixo) */
+#lista-produtos { container: vitrine / inline-size; --card-min: 9.4rem; gap: .75rem; }
+.produtos-grid#lista-produtos { grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min)), 1fr)); }
+@media (min-width: 601px) { #lista-produtos { --card-min: 11.5rem; gap: 1rem; } }
+@media (min-width: 1025px) { #lista-produtos { --card-min: 10.75rem; gap: 1.1rem; } }
+
+/* CELULAR ESTREITO COM LETRA NORMAL (iPhone com "Zoom da Tela: Ampliado", iPhone SE/mini): a tela tem 320px e o
+   cartão de 9,4rem não cabia duas vezes: a cliente via um produto por linha. Aqui o cartão fica um pouco mais estreito
+   e continuam DUAS colunas. Com a letra grande ligada (.texto-grande) segue uma coluna, que é para ler melhor. */
+@media (max-width: 359px) { html:not(.texto-grande) #lista-produtos { --card-min: 8.4rem; gap: .6rem; } }
+
+/* UMA coluna só (letra bem grande, ou celular muito estreito): foto à esquerda, nome/preço/botão à direita.
+   A largura em que vira uma coluna depende do cartão: 2 × 9,4rem + espaço; no celular estreito com letra normal, 2 × 8,4rem + espaço. */
+@media not all and (max-width: 359px) {
+    @container vitrine (max-width: 19.55rem) {
+        .produtos-grid .produto-card { flex-direction: row; align-items: stretch; }
+        .produtos-grid .produto-card .produto-img-wrap { flex: 0 0 38%; align-self: flex-start; margin: 8px 0 8px 8px; aspect-ratio: 1; }
+        .produtos-grid .produto-card .produto-info { flex: 1 1 auto; min-width: 0; justify-content: center; }
+        .produtos-grid .produto-card .produto-nome { min-height: 0; -webkit-line-clamp: 3; line-clamp: 3; }
+        #lista-produtos .produto-card--imersivo .produto-img-wrap { margin: 4px 0; }
+        #lista-produtos .produto-card--imersivo .produto-info { padding: 4px 0 4px 12px; }
+    }
+}
+@media (max-width: 359px) {
+    @container vitrine (max-width: 19.55rem) {
+        html.texto-grande .produtos-grid .produto-card { flex-direction: row; align-items: stretch; }
+        html.texto-grande .produtos-grid .produto-card .produto-img-wrap { flex: 0 0 38%; align-self: flex-start; margin: 8px 0 8px 8px; aspect-ratio: 1; }
+        html.texto-grande .produtos-grid .produto-card .produto-info { flex: 1 1 auto; min-width: 0; justify-content: center; }
+        html.texto-grande .produtos-grid .produto-card .produto-nome { min-height: 0; -webkit-line-clamp: 3; line-clamp: 3; }
+        html.texto-grande #lista-produtos .produto-card--imersivo .produto-img-wrap { margin: 4px 0; }
+        html.texto-grande #lista-produtos .produto-card--imersivo .produto-info { padding: 4px 0 4px 12px; }
+    }
+    @container vitrine (max-width: 17.4rem) {
+        html:not(.texto-grande) .produtos-grid .produto-card { flex-direction: row; align-items: stretch; }
+        html:not(.texto-grande) .produtos-grid .produto-card .produto-img-wrap { flex: 0 0 38%; align-self: flex-start; margin: 8px 0 8px 8px; aspect-ratio: 1; }
+        html:not(.texto-grande) .produtos-grid .produto-card .produto-info { flex: 1 1 auto; min-width: 0; justify-content: center; }
+        html:not(.texto-grande) .produtos-grid .produto-card .produto-nome { min-height: 0; -webkit-line-clamp: 3; line-clamp: 3; }
+        html:not(.texto-grande) #lista-produtos .produto-card--imersivo .produto-img-wrap { margin: 4px 0; }
+        html:not(.texto-grande) #lista-produtos .produto-card--imersivo .produto-info { padding: 4px 0 4px 12px; }
+    }
+}
+
+/* ---------- 4. LETRA GRANDE (js/texto-grande.js) ---------- */
+/* o desenho do cabeçalho sai do caminho e os botões do topo usam a largura toda, quebrando a linha se precisar */
+.texto-grande .header-arte { display: none; }
+.texto-grande .header-acoes, .texto-grande .header-arte.plana ~ .header-inner .header-acoes { padding-right: 0; }
+.texto-grande .chip-header { height: auto; padding-top: 10px; padding-bottom: 10px; }
+.texto-grande .chip-header span { white-space: normal; text-align: left; line-height: 1.2; }
+.texto-grande .cat-btn { white-space: nowrap; }
+.texto-grande .etq-preco small { display: block; white-space: normal; margin-top: 2px; }
+.texto-grande .modo-btn b, .texto-grande .modo-btn small { white-space: normal; }
+.texto-grande .modo-btn { border-radius: 22px; }
+.texto-grande .card-acao:not(.dupla) { height: auto; min-height: 46px; }
+.texto-grande .card-add { position: static; width: 100%; min-height: 46px; padding: 8px 10px; line-height: 1.15; }
+.texto-grande .toast { white-space: normal; width: max-content; max-width: calc(100vw - 32px); }
+.texto-grande .modal { max-height: calc(100dvh - 16px); }
+.texto-grande .lista-semana-card, .texto-grande .upsell-box { flex-wrap: wrap; }
+.texto-grande .lista-semana-txt, .texto-grande .upsell-texto { flex: 1 1 calc(100% - 60px); }
+.texto-grande .lista-semana-card > button, .texto-grande .upsell-box > button { flex: 1 1 100%; }
+.texto-grande .upsell-texto b { white-space: normal; }
+.texto-grande .carrinho-item { flex-wrap: wrap; }
+
+/* ---------- 5. CABEÇALHO: botões que não cortam o texto à toa ---------- */
+.chip-header span { min-width: 0; }
+/* o botão do endereço mostra o que o cliente digitou ("Residencial Jardins do Bosque, Alameda das Palmeiras, nº 1234"):
+   não cabe numa linha no celular, então quebra em duas em vez de virar "Residencial Jar..." (achado no iPhone, 393px) */
+#btn-endereco { height: auto; text-align: left; }
+#btn-endereco span { white-space: normal; line-height: 1.2; overflow-wrap: anywhere; }
+.header-acoes { align-items: center; }
+/* Instagram e WhatsApp da loja: dois botões redondos */
+.header-redes { display: inline-flex; gap: 8px; }
+.header-redes[hidden] { display: none; }
+.chip-rede { width: 44px; height: 44px; padding: 0; justify-content: center; flex: none; }
+.chip-rede .ico { width: 21px; height: 21px; }
+
+/* ---------- 6. "FALE COM A LOJA" (fim da página) ---------- */
+.fale-loja { max-width: 1260px; margin: 34px auto 0; box-sizing: border-box; text-align: center; }
+.fale-loja[hidden] { display: none; }
+.fale-loja h2 { margin: 0; font-family: var(--fonte-titulo); font-size: 1.35rem; font-weight: 750; color: var(--forest-texto, var(--forest)); }
+.fale-loja p { margin: 6px auto 14px; color: var(--text-mid); font-size: .95rem; max-width: 40ch; }
+.fale-loja-bts { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.fale-bt {
+    display: inline-flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 20px 10px 14px; border-radius: 999px;
+    text-decoration: none; text-align: left; flex: 1 1 15rem; max-width: 22rem;
+    background: var(--superficie, #fff); color: var(--text-dark); border: 1.5px solid var(--linha);
+    transition: transform .12s ease, border-color .2s ease;
+}
+.fale-bt:active { transform: scale(.97); }
+@media (hover: hover) { .fale-bt:hover { border-color: var(--forest); } }
+.fale-bt .ico { width: 30px; height: 30px; flex: none; padding: 7px; border-radius: 50%; box-sizing: content-box; color: #fff; }
+.fale-bt--zap .ico { background: #1f9d55; }
+.fale-bt--insta .ico { background: linear-gradient(45deg, #f2a03d, #d6336c 55%, #7b3fbf); }
+.fale-bt span { display: flex; flex-direction: column; min-width: 0; }
+.fale-bt b { font-size: 1rem; }
+.fale-bt small { font-size: .85rem; color: var(--text-mid); overflow-wrap: anywhere; }
+body.cat-imersiva .fale-loja h2, body.cat-imersiva .fale-loja p { color: var(--cat-tinta); }
+.fale-loja + .site-rodape { margin-top: 24px; }
+
+/* ---------- 7. COMPUTADOR E TABLET ---------- */
+/* topo, busca, produtos e rodapé na MESMA largura e alinhados pela mesma margem */
+.header-inner, .controles-inner, .layout { max-width: 1260px; box-sizing: border-box; }
+@media (min-width: 1025px) {
+    .layout { gap: 32px; }
+    .carrinho { flex: 0 0 340px; top: 150px; }
+    .controles-inner { flex-direction: row; align-items: center; gap: 16px; }
+    .controles-inner .busca-wrap { flex: 0 0 min(360px, 34%); }
+    .controles-inner .categorias { flex: 1 1 auto; min-width: 0; }
+    .bloco-secao h2 { font-size: 1.6rem; }
+}
+@media (min-width: 1600px) {
+    .header-inner, .controles-inner, .layout, .fale-loja { max-width: 1440px; }
+    #lista-produtos { --card-min: 11rem; }
+}
+/* tablet em pé e computador pequeno: produtos e sacola lado a lado a partir de 860px */
+@media (min-width: 860px) and (max-width: 1024px) {
+    .layout { flex-direction: row; }
+    .carrinho { position: sticky; top: 140px; flex: 0 0 300px; width: auto; max-height: calc(100vh - 160px); margin-top: 0; }
+}
+/* tablet estreito (601–859): a sacola fica embaixo dos produtos; um botão flutuante leva até ela */
+@media (min-width: 601px) and (max-width: 859px) {
+    .btn-flutuante-carrinho:not(.vazio) {
+        display: flex; align-items: center; justify-content: center; gap: 10px; position: fixed; z-index: 900;
+        left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+        min-width: 280px; padding: 14px 28px; border: 0; border-radius: 999px; cursor: pointer;
+        background: var(--forest); color: var(--sobre-primaria); font-weight: 700; font-size: 1.02rem; box-shadow: var(--shadow-lg);
+    }
+    .btn-flutuante-carrinho .barra-linha { display: flex; align-items: center; gap: 10px; }
+    .site-rodape { margin-bottom: 90px; }
+}
+/* mouse: foco visível para quem navega pelo teclado */
+:focus-visible { outline: 3px solid color-mix(in srgb, var(--manga, #e9a862) 85%, #000); outline-offset: 2px; }
+
+/* ---------- 8. AJUSTES DE DESENHO (menos informação por cartão, nada por cima dos produtos) ---------- */
+/* cartão de produto por quilo: o preço da unidade já está escrito na linha pequena; os botões ficam só "+ 1 unidade" e "+ 1 kg" */
+.produto-card .card-acao .modo-btn:not(.trocar) small { display: none; }
+.produto-card .card-acao .modo-btn:not(.trocar) { min-height: 40px; }
+/* Ajudante no cabeçalho (era o botão "AJUDA" fixo por cima dos produtos) */
+.chip-header.btn-ajudante { width: 44px; padding: 0; justify-content: center; flex: none; }
+.chip-header.btn-ajudante .ico { width: 24px; height: 24px; }
+.sem-ia .btn-ajudante { display: none; }
+.btn-ajudante.pulse-anim { color: #fff; }
+/* a barra "Ver pedido" ocupa a largura toda: o espaço da direita era do antigo botão Ajuda, que foi para o cabeçalho */
+@media (max-width: 600px) { .btn-flutuante-carrinho, .sem-ia .btn-flutuante-carrinho { left: 16px; right: 16px; } }
+/* "Fale com a loja" logo depois dos produtos (o espaço de baixo era reservado à barra do pedido, que cobre o rodapé, não esta parte) */
+@media (max-width: 600px) {
+    .layout:has(~ .fale-loja:not([hidden])) { padding-bottom: 8px; }
+    .fale-loja { margin-top: 20px; }
+    .fale-loja ~ .site-rodape { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); }
+}
+.produto-card .etq-ref { font-size: .72rem; }
+
+/* ---------- 9. PREÇO E BOTÃO SEMPRE DENTRO DO CARD (achado pela matriz de telas, testes/tela/matriz.test.js) ----------
+   Com a letra em 150–200% o card estreito não cabia "R$ 1.234,56" nem "Adicionar": cortava no meio.
+   • o card da faixa que rola cresce com a letra (em rem), até a largura da tela;
+   • o preço e o "Adicionar" crescem com a letra até o card acabar (cqi = largura da parte de texto do card);
+     com a letra normal nada muda (o limite fica acima do tamanho de sempre);
+   • o "R$" pode ir para a linha de cima (js/loja.js, fmtEtq). */
+.faixa-rolo .produto-card { flex-basis: max(168px, 10.5rem); max-width: min(max(168px, 10.5rem), calc(100vw - 64px)); }
+@media (max-width: 600px) { .faixa-rolo .produto-card { flex-basis: max(152px, 9.5rem); max-width: min(max(152px, 9.5rem), calc(100vw - 64px)); } }
+.produto-card .produto-info { container: card-info / inline-size; }
+@supports (width: 1cqi) {
+    .produto-card .etq-preco { font-size: min(1.22rem, calc((100cqi - 34px) / 4.4)); }
+    .produto-card .card-add { font-size: min(.95rem, calc((100cqi - 22px) / 5.1)); }
+}
+.produto-card .etiqueta { max-width: 100%; box-sizing: border-box; }
+/* Letra MUITO grande em celular estreito (ex.: 320px com a letra do aparelho em 200% e a "letra grande" da loja):
+   foto ao lado deixava o texto numa tira e o botão virava "+ 1 unid...". Aqui a foto volta para cima e o texto usa o card todo.
+   (11rem de vitrine só acontece com letra grande: na letra normal são 176px, nenhum celular.) */
+@container vitrine (max-width: 11rem) {
+    html #lista-produtos.produtos-grid .produto-card { flex-direction: column; align-items: stretch; }
+    html #lista-produtos.produtos-grid .produto-card .produto-img-wrap { flex: none; align-self: stretch; width: auto; margin: 0; aspect-ratio: 4 / 3; }
+    html #lista-produtos.produtos-grid .produto-card .produto-info { padding-left: 12px; padding-right: 12px; }
+}
+/* texto só do lado esquerdo do cabeçalho (Aparência): com a letra grande, o desenho já some; os botões usam a largura toda */
+html.texto-grande.ap-textoLado-esquerda #header-principal .header-inner { padding-right: max(var(--gutter-x, 16px), env(safe-area-inset-right)); }
+/* e no celular estreito (o desenho já some em 340px): com a "letra grande" da loja, "Onde entregar?" virava "Onde entr..." */
+@media (max-width: 340px) { html.ap-textoLado-esquerda #header-principal .header-inner { padding-right: max(var(--gutter-x, 16px), env(safe-area-inset-right)); } }

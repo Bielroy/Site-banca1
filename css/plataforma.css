@@ -96,6 +96,11 @@ body.pf-ocupado .pf-bt { pointer-events: none; opacity: .7; }
 .pf-chave-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .pf-chave h3 { margin: 0; font-family: 'Fraunces', serif; font-size: 1.15rem; color: var(--forest); }
 .pf-chave p { margin: 8px 0 10px; font-size: .9rem; color: var(--pf-apagado); line-height: 1.45; }
+.pf-asaas-aviso, .pf-asaas-carteiras { margin-top: 14px; padding: 12px; border: 1px solid var(--pf-linha); border-radius: 12px; display: flex; flex-direction: column; gap: 8px; }
+.pf-asaas-aviso > small, .pf-asaas-carteiras > small { font-size: .82rem; color: var(--pf-apagado); line-height: 1.4; }
+.pf-copiar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pf-copiar > span { flex: 0 0 100%; font-size: .8rem; font-weight: 700; }
+.pf-copiar input { flex: 1 1 0; min-width: 0; font-size: .85rem; padding: 8px 10px; border: 1px solid var(--pf-linha); border-radius: 8px; background: #fff; }
 .pf-selo { flex: none; padding: 4px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700; background: #f6dcd8; color: var(--pf-perigo); }
 .pf-selo.ok { background: #e3f1e7; color: #1f6b3b; }
 
@@ -154,3 +159,20 @@ body.pf-ocupado .pf-bt { pointer-events: none; opacity: .7; }
 .pf-erro small { color: var(--pf-apagado); font-size: .8rem; word-break: break-word; }
 .pf-erro details summary { cursor: pointer; font-size: .8rem; color: var(--pf-apagado); }
 .pf-erro pre { white-space: pre-wrap; word-break: break-all; font-size: .74rem; background: var(--pf-papel); padding: 8px 10px; border-radius: 10px; margin: 6px 0 0; max-height: 220px; overflow: auto; }
+.pf-asaas-desligar { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.pf-asaas-desligar > small { font-size: .82rem; color: var(--pf-apagado); line-height: 1.4; }
+.pf-asaas-desligar .pf-bt { color: #b42318; border-color: #f0b8b2; }
+/* aba Erros: filtros, tipo do erro e "Corrigi" */
+.pf-filtros-erros { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.pf-filtro { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--pf-linha); background: #fff; color: var(--forest); font: 700 .86rem/1 'Figtree', sans-serif; cursor: pointer; }
+.pf-filtro span { min-width: 22px; padding: 3px 6px; border-radius: 999px; background: var(--pf-papel); font-size: .76rem; text-align: center; }
+.pf-filtro.ativo { background: var(--forest); border-color: var(--forest); color: #fff; }
+.pf-filtro.ativo span { background: rgba(255, 255, 255, .2); }
+.pf-erro-topo { align-items: center; }
+.pf-erro-topo b { flex: 1 1 auto; min-width: 0; }
+.pf-tipo-erro { flex: none; padding: 3px 8px; border-radius: 6px; font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; background: #ece7dd; color: #5a4a2a; }
+.pf-tipo-erro--tela { background: #e2ecf7; color: #1d4f86; }
+.pf-tipo-erro--relato { background: #f5e6f3; color: #7a2a6e; }
+.pf-voltou { margin: 0; font-size: .82rem; font-weight: 700; color: var(--pf-perigo); }
+.pf-erro.voltou { box-shadow: inset 3px 0 0 var(--pf-perigo); padding-left: 10px; }
+.pf-erro-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }

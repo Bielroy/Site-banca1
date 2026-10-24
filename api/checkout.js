@@ -108,7 +108,11 @@ const P = require('../lib/prudencia');
 const Entrega = require('../lib/entrega');
 const E = require('../lib/estoque');
 const Conta = require('../lib/conta');
+const Cofre = require('../lib/cofre');
 const Feira = require('../lib/feira');
+const Pac = require('../lib/pacote');   // pacote fechado e promoção "4 por R$ 10" (mesma conta de js/pacote-lib.js)
+const Montar = require('../lib/montar');   // montar pedido: complementos e adicionais (mesma conta de js/montar-lib.js)
+const Dias = require('../lib/dias');   // produto por dia da semana e pedido para amanhã (mesma conta de js/dias-lib.js)
 
 function montarTextoWhatsApp(pedido, numero) {
   const dividido = pedido.parte && pedido.parte.de > 1;
@@ -119,11 +123,12 @@ function montarTextoWhatsApp(pedido, numero) {
 
   let msg = dividido ? `*NOVO PEDIDO — parte ${pedido.parte.n} de ${pedido.parte.de}*\n` : `*NOVO PEDIDO*\n`;
   msg += `👤 ${pedido.nome}\n`;
-  msg += `📍 ${linhaEndereco(pedido)}\n`;
+  msg += `📍 ${linhaEndereco(pedido)}${pedido.modo === 'retirada' && pedido.retiradaLocal ? ` (${pedido.retiradaLocal})` : ''}\n`;
   // pedido feito fora do dia da feira: vai para o próximo dia de feira
-  if (pedido.feiraId && pedido.entregaDia && pedido.paraHoje === false) msg += `📅 Para: *${Feira.textoDoDia(pedido.entregaDia)}*\n`;
-  if (pedido.entrega && pedido.entrega.horario) msg += `🕒 Entrega: ${pedido.entrega.horario}\n`;
-  else if (pedido.entrega && pedido.entrega.horarioACombinar) msg += `🕒 Entrega: horário a combinar\n`;
+  if (pedido.entregaDia && pedido.paraHoje === false) msg += `📅 Para: *${Feira.textoDoDia(pedido.entregaDia)}*\n`;
+  const rotuloHora = pedido.modo === 'retirada' ? 'Retirada' : 'Entrega';
+  if (pedido.entrega && pedido.entrega.horario) msg += `🕒 ${rotuloHora}: ${pedido.entrega.horario}\n`;
+  else if (pedido.entrega && pedido.entrega.horarioACombinar) msg += `🕒 ${rotuloHora}: horário a combinar\n`;
   msg += `💳 Pagamento: ${pedido.pag || 'A combinar'}\n`;
   // Pedido dividido: troco e cupom aparecem UMA vez (na 1ª parte), para dois
   // atendimentos não darem o mesmo troco nem o mesmo desconto.
@@ -134,8 +139,12 @@ function montarTextoWhatsApp(pedido, numero) {
     if (i.aPesar) {
       msg += `• ${i.qtd} un de ${i.nome}  ⚖️ _(a pesar na balança)_\n`;
     } else {
-      const rotulo = isFracionavel(i.unidade) ? `${String(i.qtd).replace('.', ',')} ${i.unidade}` : `${i.qtd}x`;
-      msg += `• ${rotulo} ${i.nome} — ${fmtBRL(i.subtotal)}\n`;
+      // pacote fechado vai escrito por extenso: a banca separa o PACOTE, não a unidade solta
+      const rotulo = isFracionavel(i.unidade) ? `${String(i.qtd).replace('.', ',')} ${i.unidade}`
+        : i.pacote ? `${i.qtd} ${i.qtd === 1 ? 'pacote' : 'pacotes'}${i.pesoPacote ? ` de ${i.pesoPacote}` : ''} de` : `${i.qtd}x`;
+      const promo = i.promo ? ` _(promoção ${i.promo.qtd} por ${fmtBRL(i.promo.preco)})_` : '';
+      msg += `• ${rotulo} ${i.nome} — ${fmtBRL(i.subtotal)}${promo}\n`;
+      if (i.adicionais) msg += `   ↳ ${i.adicionais}\n`;   // montar pedido: o que o cliente escolheu
     }
   });
 
@@ -150,7 +159,9 @@ function montarTextoWhatsApp(pedido, numero) {
     const taxa = pedido.entrega && Number(pedido.entrega.taxa) > 0 ? Number(pedido.entrega.taxa) : 0;
     if (taxa) msg += `\n🛵 Entrega: ${fmtBRL(taxa)}`;
     else if (pedido.entrega && Number(pedido.entrega.taxaCheia) > 0) msg += `\n🛵 Entrega grátis`;
-    msg += `\n*${cupom || taxa ? 'Total' : 'Subtotal'} (itens já pesados): ${fmtBRL(pedido.total)}*`;
+    // "itens já pesados" só faz sentido quando há item a pesar no pedido; loja de unidades (pastel, açaí...) fala só "Total"
+    const comPesar = !!pedido.temItensAPesar;
+    msg += `\n*${cupom || taxa ? 'Total' : (comPesar ? 'Subtotal' : 'Total')}${comPesar ? ' (itens já pesados)' : ''}: ${fmtBRL(pedido.total)}*`;
   }
   if (pedido.temItensAPesar) {
     msg += `\n➕ _Os itens marcados com ⚖️ serão pesados e o valor final ajustado._`;
@@ -207,7 +218,9 @@ module.exports = async function handler(req, res) {
   // Primeira barreira, de memória (barata): rajada da mesma conexão. O toque repetido no botão não cria pedido
   // em dobro de qualquer jeito (a chave do pedido garante); isto só segura quem dispara dezenas por segundo.
   // O limite que vale para todas as cópias do servidor vem logo abaixo, contado no banco.
-  if (H.passouNaMemoria(`pedido:${ip}`, 4, 10000)) return res.status(429).json({ error: 'Aguarde alguns segundos antes de enviar outro pedido.' });
+  // (15 em 10 s: na feira, vários clientes saem pelo MESMO endereço de internet — Wi-Fi da feira, CGNAT da operadora —
+  //  e com 3 bancas juntas a fila do "enviar" pode ter uns 10 de uma vez. Era 6. Robô que dispara dezenas por segundo para aqui.)
+  if (H.passouNaMemoria(`pedido:${ip}`, 15, 10000)) return res.status(429).json({ error: 'Aguarde alguns segundos antes de enviar outro pedido.' });
 
   try { bootFirebase(); }
   catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
@@ -218,9 +231,14 @@ module.exports = async function handler(req, res) {
   catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
 
   // Limite de verdade: contado no banco (vale para todas as cópias do servidor e não zera sozinho).
-  // 8 pedidos em 10 minutos, por conexão, é folga de sobra para uma família e pouco para quem quer encher a loja de pedido falso.
+  // 60 pedidos em 10 minutos, por conexão, em cada loja. Era 20 (e antes 8): operadora de celular e Wi-Fi da feira põem
+  // muita gente atrás do MESMO endereço, e 20 clientes numa banca em 10 min já batia no limite. 60 = 1 pedido a cada 10 s
+  // do mesmo endereço, sem parar, por 10 min. Quem quer encher a loja de pedido falso esbarra no fusível da loja logo
+  // abaixo. E quem for barrado aqui não fica sem comprar: a loja oferece o WhatsApp (plano B).
+  // (CHECKOUT_POR_CONEXAO muda o número.)
   const conexao = ip || 'desconhecida';
-  if (!(await P.limitar(db, 'pedido', `${tid}|${conexao}`, 8, 600))) return res.status(429).json({ error: 'Muitos pedidos seguidos desta conexão. Aguarde alguns minutos e tente de novo.' });
+  const porConexao = Number(process.env.CHECKOUT_POR_CONEXAO) > 0 ? Number(process.env.CHECKOUT_POR_CONEXAO) : 60;
+  if (!(await P.limitar(db, 'pedido', `${tid}|${conexao}`, porConexao, 600))) return res.status(429).json({ error: 'Muitos pedidos seguidos desta conexão. Aguarde alguns minutos e tente de novo.' });
   // Fusível da LOJA INTEIRA: nenhuma banca de bairro recebe 150 pedidos em 10 minutos. Se chegar a isso, é ataque
   // vindo de muitas conexões ao mesmo tempo, e o freio por conexão não pega. (CHECKOUT_TETO_LOJA muda o número.)
   const tetoLoja = Number(process.env.CHECKOUT_TETO_LOJA) > 0 ? Number(process.env.CHECKOUT_TETO_LOJA) : 150;
@@ -257,7 +275,9 @@ module.exports = async function handler(req, res) {
   // Validação de entrada
   // Nota: userId NÃO é lido do corpo de propósito — ver donoVerificado acima.
   let { nome, quadra, lote, telefone, pag, troco, obs, cupom, itens, idempotencyKey, condominio, condominioId, formatoEndereco, aceitaOfertas } = req.body || {};
-  if (!idempotencyKey || !nome || !quadra || !lote || !Array.isArray(itens) || itens.length === 0) {
+  // RETIRADA NA BANCA: o cliente busca, então não tem condomínio, quadra nem lote. Só o nome é exigido.
+  const querRetirada = !!req.body && req.body.modo === 'retirada';
+  if (!idempotencyKey || !nome || (!querRetirada && (!quadra || !lote)) || !Array.isArray(itens) || itens.length === 0) {
     return res.status(400).json({ error: 'Dados do pedido incompletos.' });
   }
   if (itens.length > 100) return res.status(400).json({ error: 'Pedido excede o limite de itens.' });
@@ -292,12 +312,14 @@ module.exports = async function handler(req, res) {
   pag    = sanitizeString(pag, 30);
   troco  = sanitizeString(troco, 40);
   obs    = sanitizeString(obs, 300);
+  if (querRetirada) { quadra = ''; lote = ''; condominio = ''; condominioId = ''; formatoEndereco = 'ql'; }   // nada de endereço de um pedido que será buscado
 
   // CONTA DO CLIENTE: de onde pode vir a conta deste pedido (crachá ou login deste aparelho). Ver lib/conta.js.
   const achado = await Conta.localizar(db, tid, req, donoVerificado);
   let codigoConta = '';
   // FEIRA do cliente (link da feira ou condomínio). Só vale se ESTA loja estiver nela; senão o pedido segue como sempre.
   // Ela decide PARA QUANDO é o pedido (hoje, ou o próximo dia de feira).
+  // A feira vale para entrega E para retirada: a agenda da banca diz o que cada dia de cada feira tem.
   const feiraDoPedido = await Feira.daLoja(db, tid, req.body && req.body.feira);
 
   try {
@@ -314,7 +336,7 @@ module.exports = async function handler(req, res) {
 
       // Idempotência: pedido já criado -> retorna o mesmo resultado
       if (pedidoSnap.exists) {
-        const d = pedidoSnap.data();
+        const d = Cofre.abrirCampos(pedidoSnap.data(), tid);   // nome e endereço vêm cifrados do banco (lib/cofre.js)
         // A mesma chave vinda de OUTRA pessoa (ou batendo numa venda do balcão) não recebe os dados do pedido de volta.
         if (d.origem === 'balcao' || (d.userId && d.userId !== 'anonimo' && d.userId !== donoVerificado)) throw Object.assign(new Error('Não consegui identificar este pedido. Atualize a página e tente de novo.'), { status: 409 });
         codigoConta = await Conta.codigoDoReenvio(t, db, tid, d, achado, donoVerificado);
@@ -327,9 +349,17 @@ module.exports = async function handler(req, res) {
       // Cliente de feira: fora do dia da feira o pedido é aceito para o próximo dia de feira (o "fechar a loja" continua valendo).
       let entrega = null;
       if (configSnap.exists && configSnap.data().lojaAberta === false) throw new Error('A loja está fechada no momento.');
+      // Forma de pagamento que a loja desligou (ex.: maquininha quebrada): recusa com aviso claro (a tela já esconde)
+      { const formas = configCfg.formasPagamento || {}, k = { PIX: 'pix', 'Cartão': 'cartao', Dinheiro: 'dinheiro' }[pag];
+        if (k && formas[k] === false) throw new Error(`A loja não está aceitando ${pag === 'Cartão' ? 'cartão' : pag === 'PIX' ? 'PIX' : 'dinheiro'} agora. Escolha outra forma de pagamento e envie de novo.`); }
       if (feiraDoPedido) {
         entrega = Feira.proximaEntrega(feiraDoPedido, Date.now());
         if (!entrega) throw new Error('Esta feira está sem data marcada. Fale com a banca pelo WhatsApp.');
+      } else if (req.body && req.body.paraAmanha === true) {
+        // "Para quando? Amanhã": vale se a loja não desligou e amanhã é dia de abrir. Preço, vitrine e caixa são os de amanhã.
+        if (!Dias.amanhaPermitido(configSnap.exists ? configSnap.data() : {}, Date.now())) throw new Error('A loja não está aceitando pedido para amanhã. Escolha "Hoje" e envie de novo.');
+        const a = Dias.diaBR(Date.now(), 1);
+        entrega = { dia: a.dia, dow: a.dow, hoje: false, amanha: true };
       } else if (configSnap.exists) {
         const diasAbertos = configSnap.data().diasAbertos || [0, 1, 2, 3, 4, 5, 6];
         if (!diasAbertos.includes(agoraBrasilia().getUTCDay())) throw new Error('A loja não abre hoje.');
@@ -346,11 +376,23 @@ module.exports = async function handler(req, res) {
           { codigo: 'dia-mudou', status: 409, entregaDia: entrega ? entrega.dia : Feira.hojeBR(), diaPreco: diaDoPreco });
       }
 
-      // O mesmo produto duas vezes no pedido baixaria o estoque só pela última linha
+      // ENTREGA OU RETIRADA, conforme a agenda DESTA banca para a feira do cliente no dia do pedido (ou a regra geral, sem feira).
+      // O modo pedido tem de existir naquele dia: nunca vira o outro em silêncio.
+      const cfgEntrega = Entrega.lerConfig(configCfg);
+      const ctxHorario = { feira: feiraDoPedido ? feiraDoPedido.id : '', dow: diaDoPreco };
+      const escolha = Entrega.modoDoPedido(cfgEntrega, req.body && req.body.modo, ctxHorario);
+      if (escolha.erro) throw new Error(escolha.erro);
+      const modoPedido = escolha.modo, retirada = modoPedido === 'retirada';
+      if (!retirada && (!quadra || !lote)) throw new Error('Preencha o endereço da entrega.');
+
+      // O mesmo item duas vezes no pedido é erro da sacola. Produto MONTADO pode vir em várias linhas, uma por
+      // jeito de montar (um açaí com granola e outro com Nutella): a linha é o produto + as escolhas.
       const idsVistos = new Set();
       for (const i of itens) {
-        if (idsVistos.has(i.id)) throw new Error('Há um produto repetido no pedido. Atualize a página e monte o carrinho de novo.');
-        idsVistos.add(i.id);
+        const ops = Montar.limparOpcoes(i.opcoes);
+        const chaveLinha = `${i.id}~${Object.keys(ops).sort().map((g) => `${g}:${ops[g].slice().sort().join(',')}`).join('|')}`;
+        if (idsVistos.has(chaveLinha)) throw new Error('Há um produto repetido no pedido. Atualize a página e monte o carrinho de novo.');
+        idsVistos.add(chaveLinha);
       }
 
       const prodSnaps = await Promise.all(itens.map((i) => t.get(T.docDe(db, tid, `produtos/${i.id}`))));
@@ -362,8 +404,10 @@ module.exports = async function handler(req, res) {
 
       // ---- Cálculo (ainda sem escrever) ----
       let totalExatoCentavos = 0;
+      const linhasPromo = [];   // itens com promoção por quantidade; a conta é feita junto, depois do laço
       const itensValidados = [];
       const estoqueUpdates = [];
+      const baixas = new Map();   // estoque por PRODUTO (o mesmo açaí em duas linhas baixa as duas juntas)
 
       itens.forEach((item, idx) => {
         const snap = prodSnaps[idx];
@@ -371,6 +415,8 @@ module.exports = async function handler(req, res) {
         const p = snap.data();
         if (p.ativo === false) throw new Error(`"${p.nome}" está esgotado.`);
         if (p.soInsumo === true) throw new Error(`"${p.nome}" não está à venda.`);   // só ingrediente de ficha técnica
+        // produto de dia certo (alface só na quarta): tem de sair no dia da ENTREGA
+        if (!Dias.vendeNoDia(p, diaDoPreco)) throw new Error(`"${p.nome}" não sai ${entrega && entrega.amanha ? 'amanhã' : entrega && !entrega.hoje ? `em ${Feira.textoDoDia(entrega.dia)}` : 'hoje'} (só ${Dias.textoDosDias(p.dias)}). Tire da sacola e envie de novo.`);
 
         // Produto sem preço (ou com preço que não é número) não é vendido: antes isso virava "NaN" no total do
         // pedido e ESTRAGAVA o caixa do dia e o total geral da loja, que são somas.
@@ -403,21 +449,50 @@ module.exports = async function handler(req, res) {
             precoOriginal: p.preco, unidade: p.unidade || 'un', subtotal: 0,
           });
         } else {
-          const subC = Math.round(paraCentavos(p.preco) * qtd);
-          totalExatoCentavos += subC;
+          // MONTAR PEDIDO: as escolhas são conferidas contra o cadastro de AGORA e o preço de cada uma vem daqui (lib/montar.js).
+          const montar = Montar.montarDoProduto(p);
+          const escolha = montar ? Montar.conferirEscolha(montar, item.opcoes) : null;
+          if (escolha && !escolha.ok) throw new Error(`"${p.nome}": ${escolha.erro}`);
+          const precoUnit = escolha ? Montar.precoMontado(p.preco, escolha.extraC) : p.preco;
+          // PROMOÇÃO POR QUANTIDADE ("4 por R$ 10"): só no que não vai à balança, com o preço do dia. A conta é daqui, nunca do navegador.
+          // Pacotes com a MESMA promoção se juntam (2 de batata + 2 de cenoura = 4): a conta fecha depois do laço.
+          // Produto montado não entra em promoção por quantidade (cada um sai de um jeito).
+          const promo = fracionavel || montar ? null : Pac.promoDe(p, p.preco);
+          const subC = Math.round(paraCentavos(precoUnit) * qtd);
+          if (promo) linhasPromo.push({ idx: itensValidados.length, preco: p.preco, qtd, promo, chave: Pac.chavePromo({ ...p, id: item.id }, promo) });
+          else totalExatoCentavos += subC;
           itensValidados.push({
             id: item.id, nome: p.nome, cat: p.cat || '', qtd, tipo, aPesar: false,
-            preco: p.preco, precoOriginal: p.preco, unidade: p.unidade || 'un',
+            preco: precoUnit, precoOriginal: precoUnit, unidade: p.unidade || 'un',
             subtotal: paraFlutuante(subC),
+            ...(Pac.ehPacote(p) ? { pacote: true, ...(typeof p.pesoPacote === 'string' && p.pesoPacote.trim() ? { pesoPacote: p.pesoPacote.replace(/[<>]/g, '').trim().slice(0, 16) } : {}) } : {}),
+            // o que o cliente escolheu: texto para a banca ler (painel, cupom, WhatsApp) e os ids para "pedir de novo"
+            ...(escolha && escolha.escolhas.length ? { adicionais: Montar.textoDaEscolha(escolha.escolhas), escolhas: escolha.escolhas, opcoes: escolha.opcoes, precoBase: p.preco } : {}),
           });
-          // Baixa de estoque só para itens de valor fechado
+          // Baixa de estoque só para itens de valor fechado (somada por produto, depois do laço)
           if (p.estoqueFisico !== null && p.estoqueFisico !== undefined && p.estoqueFisico !== '') {
-            const novo = fixFloat(Number(p.estoqueFisico) - qtd);
-            if (novo < 0) throw new Error(`"${p.nome}" não tem estoque suficiente.`);
-            estoqueUpdates.push([snap.ref, { estoqueFisico: novo, ativo: novo > 0 }, { produtoId: item.id, nome: p.nome, unidade: p.unidade, delta: -qtd, saldo: novo, custoUnit: p.custo }]);
+            const b = baixas.get(item.id) || { ref: snap.ref, p, qtd: 0 };
+            b.qtd = fixFloat(b.qtd + qtd); baixas.set(item.id, b);
           }
         }
       });
+
+      for (const [produtoId, b] of baixas) {
+        const novo = fixFloat(Number(b.p.estoqueFisico) - b.qtd);
+        if (novo < 0) throw new Error(`"${b.p.nome}" não tem estoque suficiente.`);
+        estoqueUpdates.push([b.ref, { estoqueFisico: novo, ativo: novo > 0 }, { produtoId, nome: b.p.nome, unidade: b.p.unidade, delta: -b.qtd, saldo: novo, custoUnit: b.p.custo }]);
+      }
+
+      // ---- Promoção por quantidade (junta os pacotes com a mesma promoção) ----
+      if (linhasPromo.length) {
+        const conta = Pac.contaDaPromo(linhasPromo);
+        linhasPromo.forEach((l, k) => {
+          const it = itensValidados[l.idx], r = conta.itens[k];
+          it.subtotal = paraFlutuante(r.sub);
+          totalExatoCentavos += r.sub;
+          if (r.naPromo > 0) it.promo = { qtd: l.promo.qtd, preco: l.promo.preco };
+        });
+      }
 
       // ---- Cupom ----
       // CORRIGIDO: antes existia um cupom fixo no código ('IA-DESCONTO-10')
@@ -470,11 +545,11 @@ module.exports = async function handler(req, res) {
       // ---- Entrega: taxa (grátis acima de um valor) e horário escolhido ----
       // A taxa é calculada aqui, com a configuração da loja: o navegador só mostra a prévia.
       // Com item a pesar, o valor ainda sobe na balança: a pesagem reavalia a entrega grátis.
-      const cfgEntrega = Entrega.lerConfig(configCfg);
-      const horarioEntrega = Entrega.horarioValido(cfgEntrega, req.body && req.body.horarioEntrega);
+      // horários: os do modo, da feira do cliente e do dia do pedido
+      const horarioEntrega = Entrega.horarioValido(cfgEntrega, req.body && req.body.horarioEntrega, modoPedido, ctxHorario);
       // cupom de 100% (família, cortesia): o pedido sai de graça, entrega incluída
       const cortesia = !!cupomAplicado && cupomAplicado.percentual >= 100;
-      const taxaEntregaC = cortesia ? 0 : Entrega.taxaC(cfgEntrega, totalExatoCentavos);
+      const taxaEntregaC = cortesia || retirada ? 0 : Entrega.taxaC(cfgEntrega, totalExatoCentavos);   // retirada: sem taxa
       totalExatoCentavos += taxaEntregaC;
 
       const totalExato = paraFlutuante(totalExatoCentavos);
@@ -498,12 +573,15 @@ module.exports = async function handler(req, res) {
         ...(cupomAplicado && cupomAplicado.especial ? { foraDaPrevisao: true } : {}),   // cupom especial (família, cortesia): o motor de previsão ignora este pedido
         cupom: cupomAplicado ? { codigo: cupomAplicado.codigo, desconto: cupomAplicado.desconto, ...(cupomAplicado.percentual ? { percentual: cupomAplicado.percentual } : {}) } : null,
         // taxa cobrada agora + a regra do dia do pedido (a pesagem usa para reavaliar a entrega grátis)
-        entrega: { taxa: paraFlutuante(taxaEntregaC), taxaCheia: paraFlutuante(cfgEntrega.taxaC), gratisAcima: paraFlutuante(cfgEntrega.gratisAcimaC), horario: horarioEntrega, ...(Entrega.horarioACombinar(cfgEntrega, horarioEntrega) ? { horarioACombinar: true } : {}) },
+        // (retirada: taxa e regra zeradas, para a pesagem não cobrar entrega de quem busca na banca)
+        entrega: { taxa: paraFlutuante(taxaEntregaC), taxaCheia: retirada ? 0 : paraFlutuante(cfgEntrega.taxaC), gratisAcima: retirada ? 0 : paraFlutuante(cfgEntrega.gratisAcimaC), horario: horarioEntrega, ...(Entrega.horarioACombinar(cfgEntrega, horarioEntrega, modoPedido, ctxHorario) ? { horarioACombinar: true } : {}) },
+        ...(retirada ? { modo: 'retirada', retiradaLocal: escolha.local || '' } : {}),
         status: temItensAPesar ? 'aguardando_pesagem' : 'pendente',
         data: new Date().toISOString(),
         // PARA QUANDO é o pedido. Caixa do dia, fechamento e previsão contam por esta data.
         entregaDia: entrega ? entrega.dia : Feira.hojeBR(),
-        ...(entrega ? { feiraId: feiraDoPedido.id, paraHoje: entrega.hoje } : {}),
+        ...(entrega && feiraDoPedido ? { feiraId: feiraDoPedido.id, paraHoje: entrega.hoje } : {}),
+        ...(entrega && entrega.amanha ? { paraHoje: false, paraAmanha: true } : {}),
         origem: 'whatsapp',
       };
 
@@ -514,7 +592,7 @@ module.exports = async function handler(req, res) {
       if (cupomAplicado) {
         t.update(cupomAplicado.ref, { usos: admin.firestore.FieldValue.increment(1) });
       }
-      t.set(pedidoRef, dadosPedido);
+      t.set(pedidoRef, Cofre.fecharCampos(dadosPedido, tid));   // nome, telefone, endereço e observação vão cifrados
       conta.escrever(t, dadosPedido); codigoConta = conta.codigo;
       t.set(T.docDe(db, tid, 'analytics/dashboard'), {
         receitaTotal: admin.firestore.FieldValue.increment(totalExato),

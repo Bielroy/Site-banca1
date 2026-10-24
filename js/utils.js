@@ -48,6 +48,11 @@ export const formatarQtdRelatorio = (qtd, und) => {
 // peso, depois de pesado: "3 un (1,2 kg)". Antes aparecia "3 kg", como se fosse peso.
 export const qtdDoItem = (item) => {
   const i = item || {};
+  // pacote fechado (js/pacote-lib.js): "4 pacotes" / "1 pacote de 500 g", para a banca separar o pacote e não a unidade solta
+  if (i.pacote === true && !isFracionavel(i.unidade)) {
+    const n = Math.round(soNumero(i.qtd)), peso = String(i.pesoPacote || '').replace(/[<>]/g, '').slice(0, 16);
+    return `${n} ${n === 1 ? 'pacote' : 'pacotes'}${peso ? ` de ${escapeHTML(peso)}` : ''}`;
+  }
   if (i.tipo === 'un' || i.aPesar === true) {
     const n = Math.round(soNumero(i.qtd));
     const peso = soNumero(i.pesoFinal);

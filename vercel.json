@@ -147,7 +147,8 @@
   "images": {
     "sizes": [
       128,
-      384
+      384,
+      828
     ],
     "remotePatterns": [
       {
@@ -183,6 +184,10 @@
     {
       "source": "/previa",
       "destination": "/index.html"
+    },
+    {
+      "source": "/admin-plataforma",
+      "destination": "/plataforma.html"
     }
   ],
   "redirects": [

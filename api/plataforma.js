@@ -5,11 +5,13 @@
 //  POST { acao: 'situacao' }                                a plataforma já tem dono? (a tela usa para não oferecer "Assumir")
 //  POST { acao: 'lojas' }                                   lista lojas, feiras e o movimento do mês
 //  POST { acao: 'erros' }                                   erros do site nos últimos 7 dias (lib/erros.js)
+//  POST { acao: 'erro-estado', assinatura, estado }          marca um erro como corrigido ('corrigido') ou reabre ('aberto')
 //  POST { acao: 'criar-loja', id, nome, modelo, tipoNome?, emailDono? }   (modelo = aparência inicial; tipoNome = tipo escrito à mão)
 //  POST { acao: 'imgbb', chave }                               liga (ou desliga, com chave vazia) o envio de fotos ao ImgBB
 //  POST { acao: 'tipo', id, tipo }                              muda o tipo de negócio de uma loja
 //  POST { acao: 'ativo', id, ativo }                        bloquear / liberar
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
+//  POST { acao: 'campos', id, campos: { duracao: false, ... } }   campos do cadastro de produto (lib/campos.js)
 //  POST { acao: 'proprietario', id, email, remover? }
 //  POST { acao: 'condominio', id?, nome, formato, remover? }  cadastro de condomínios da plataforma
 //  POST { acao: 'assinatura', id, valor, dia, obs }        mensalidade da banca (valor vazio = tira)
@@ -21,7 +23,9 @@
 const admin = require('firebase-admin');
 const T = require('../lib/tenant');
 const { MODELOS, MODULOS } = require('../lib/modelos');
+const { CAMPOS_PRODUTO } = require('../lib/campos');
 const Segredos = require('../lib/segredos');
+const Asaas = require('../lib/asaas');
 const P = require('../lib/prudencia');
 const crypto = require('crypto');
 const Feira = require('../lib/feira');
@@ -76,14 +80,14 @@ async function lojas(res) {
   const lista = await Promise.all(ids.map(async (id) => {
     const f = fichas.get(id), [mes, donos] = await Promise.all([movimentoDoMes(id), donosDe(id)]);
     const modulos = {}; Object.keys(MODULOS).forEach((m) => { modulos[m] = m === 'ia' && id !== T.TENANT_PADRAO ? !!(f.modulos && f.modulos.ia === true) : T.moduloAtivo(f, m); });
-    return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, mes, donos, assinatura: assinaturas.get(id) || null };
+    return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, campos: camposMarcados(f), mes, donos, assinatura: assinaturas.get(id) || null };
   }));
   const condominios = await Cond.garantir(db, T);   // sem o cadastro, a tela não abre (senão salvar uma feira apagaria os condomínios dela)
   const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, condominiosIds: Cond.idsDaFeira(condominios, d.data()), dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira) }));
   const seg = await db.collection('plataforma').doc('segredos').get();
   const fotos = /^[a-f0-9]{32}$/i.test(String(process.env.IMGBB_API_KEY || (seg.exists && seg.data().imgbb) || ''));
   const pix = !!process.env.PAGBANK_API_TOKEN || Segredos.tokenPagbankValido(seg.exists && seg.data().pagbank);
-  return res.status(200).json({ sucesso: true, lojas: lista, feiras, condominios, modelos: Object.keys(MODELOS), modulos: MODULOS, mes: mesAtual(), fotos, pix });
+  return res.status(200).json({ sucesso: true, lojas: lista, feiras, condominios, modelos: Object.keys(MODELOS), modulos: MODULOS, campos: CAMPOS_PRODUTO, mes: mesAtual(), fotos, pix, asaas: await situacaoAsaas(seg.exists ? seg.data() : {}) });
 }
 
 async function definirDono(id, email, remover) {
@@ -151,6 +155,63 @@ async function pagbank(req, res) {
   Segredos._zerar();
   return res.status(200).json({ sucesso: true, ligado: !!chave });
 }
+// ---------------------------------------------------------------- Asaas (PIX com carteira por banca)
+// A chave fica em plataforma/segredos (a tela só sabe SE existe). O token do aviso é criado aqui e
+// mostrado SÓ nesta tela (do dono da plataforma), para colar no cadastro do webhook no Asaas.
+async function situacaoAsaas(s) {
+  const cfg = await Segredos.asaas(db);
+  const carteiras = {};
+  for (const [tid, w] of Object.entries(s.carteirasAsaas || {})) if (T.idValido(tid) && Asaas.carteiraValida(w)) carteiras[tid] = w;
+  const base = String(process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
+  return {
+    ligado: !!cfg, ambiente: cfg ? cfg.ambiente : '', viaAmbiente: !!process.env.ASAAS_API_KEY,
+    aviso: process.env.ASAAS_WEBHOOK_TOKEN ? '' : (Segredos.avisoAsaasValido(s.asaasAviso) ? s.asaasAviso : ''),
+    avisoViaAmbiente: !!process.env.ASAAS_WEBHOOK_TOKEN,
+    urlAviso: /^https:\/\//.test(base) ? `${base}/api/pagamento-asaas` : '', carteiras, comissao: Asaas.comissaoPct(),
+  };
+}
+// Desligar: apaga a chave e, se o PagBank também não atende, desliga o "PIX automático" de todas as lojas.
+// Sem isso o cliente veria o botão "Pagar com PIX agora" e levaria um erro; assim ele só vê o copia e cola
+// da loja (código com o valor do pedido). Para voltar: salvar a chave de novo e ligar a opção em cada loja.
+async function desligarPixAutomaticoDasLojas() {
+  if (await Segredos.pagbank(db)) return 0;                          // o PagBank continua atendendo: nada a desligar
+  const ts = await db.collection('tenants').get();
+  const ids = [...new Set([T.TENANT_PADRAO, ...ts.docs.map((d) => d.id)])].filter(T.idValido);
+  let n = 0;
+  await Promise.all(ids.map(async (id) => {
+    const ref = T.docDe(db, id, 'loja/config'), snap = await ref.get();
+    if (snap.exists && snap.data().pixAutomatico === true) { await ref.set({ pixAutomatico: false }, { merge: true }); n++; }
+  }));
+  return n;
+}
+async function asaas(req, res) {
+  const b = req.body || {}, desligar = b.desligar === true, chave = desligar ? '' : String(b.chave || '').trim();
+  if (desligar && process.env.ASAAS_API_KEY) throw falha(400, 'A chave está no servidor (variável ASAAS_API_KEY): para desligar, apague-a lá.');
+  if (chave && !Segredos.chaveAsaasValida(chave)) throw falha(400, 'Esta não parece uma chave do Asaas. Ela começa com $aact_ e não tem espaços.');
+  const ref = db.collection('plataforma').doc('segredos'), atual = (await ref.get()).data() || {};
+  const novo = { asaas: chave, asaasEm: new Date().toISOString(), asaasAmbiente: b.ambiente === 'producao' ? 'producao' : 'sandbox' };
+  // o token do aviso nasce junto com a chave (ou quando pedem um novo) e não muda ao trocar a chave
+  if (chave && (b.novoAviso === true || !Segredos.avisoAsaasValido(atual.asaasAviso))) novo.asaasAviso = crypto.randomBytes(30).toString('base64url');
+  await ref.set(novo, { merge: true });
+  Segredos._zerar();
+  const lojasDesligadas = desligar ? await desligarPixAutomaticoDasLojas() : 0;
+  return res.status(200).json({ sucesso: true, ligado: !!chave, lojasDesligadas });
+}
+async function asaasCarteira(req, res) {
+  const b = req.body || {}, id = String(b.id || ''), carteira = String(b.carteira || '').trim().toLowerCase();
+  await exigirLoja(id);
+  if (id === T.TENANT_PADRAO) throw falha(400, 'A loja original recebe na conta da plataforma: não precisa de carteira.');
+  if (carteira && !Asaas.carteiraValida(carteira)) throw falha(400, 'A carteira (walletId) tem o formato 0b763922-aa88-4cbe-a567-e3fe8511fa06. Confira se copiou inteira.');
+  // o mapa inteiro é regravado (com merge, uma carteira apagada continuaria lá dentro)
+  const ref = db.collection('plataforma').doc('segredos'), atual = (await ref.get()).data() || {};
+  const mapa = { ...(atual.carteirasAsaas || {}) };
+  if (carteira) mapa[id] = carteira; else delete mapa[id];
+  await ref.set({ ...atual, carteirasAsaas: mapa });
+  // na ficha pública só vai o SIM/NÃO (o painel da loja libera a opção "PIX automático"); a carteira não
+  await fichaRef(id).set({ pixAsaas: !!carteira }, { merge: true });
+  Segredos._zerar();
+  return res.status(200).json({ sucesso: true, ligado: !!carteira });
+}
 async function modulos(req, res) {
   const id = String((req.body || {}).id || ''), f = await exigirLoja(id), pedido = (req.body || {}).modulos;
   if (!pedido || typeof pedido !== 'object') throw falha(400, 'Nada para mudar.');
@@ -159,6 +220,21 @@ async function modulos(req, res) {
   await fichaRef(id).set({ ...base(f), modulos: novo }, { merge: true });
   T._cacheFichas.delete(id);
   return res.status(200).json({ sucesso: true, modulos: novo });
+}
+// só o que a plataforma MARCOU (true/false); o que falta segue o tipo de negócio (js/cadastro-lib.js)
+function camposMarcados(f) {
+  const c = f && f.campos && typeof f.campos === 'object' ? f.campos : {}, r = {};
+  Object.keys(CAMPOS_PRODUTO).forEach((k) => { if (typeof c[k] === 'boolean') r[k] = c[k]; });
+  return r;
+}
+async function campos(req, res) {
+  const id = String((req.body || {}).id || ''), f = await exigirLoja(id), pedido = (req.body || {}).campos;
+  if (!pedido || typeof pedido !== 'object' || Array.isArray(pedido)) throw falha(400, 'Nada para mudar.');
+  const novo = camposMarcados(f);
+  for (const [k, v] of Object.entries(pedido)) { if (!CAMPOS_PRODUTO[k] || typeof v !== 'boolean') throw falha(400, 'Campo desconhecido.'); novo[k] = v; }
+  await fichaRef(id).set({ ...base(f), campos: novo }, { merge: true });
+  T._cacheFichas.delete(id);
+  return res.status(200).json({ sucesso: true, campos: novo });
 }
 async function proprietario(req, res) {
   const b = req.body || {}, id = String(b.id || ''), email = String(b.email || '').trim().toLowerCase(); await exigirLoja(id);
@@ -302,21 +378,23 @@ module.exports = async function handler(req, res) {
   // outra conta dona da loja original ainda conseguiria assumir. Ao usar a tela, o registro passa a existir.
   try { await db.runTransaction(async (t) => { const r = db.collection('plataforma').doc('dono'), s = await t.get(r); if (!s.exists) t.set(r, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() }); }); }
   catch (e) { console.error('[plataforma] dono', e && e.message); }
-  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
+  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), 'erro-estado': async () => res.status(200).json({ sucesso: true, ...(await Erros.marcarEstado(db, req.body, dec.email || dec.uid)) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), campos: () => campos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), asaas: () => asaas(req, res), 'asaas-carteira': () => asaasCarteira(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
   const nomeAcao = typeof (req.body || {}).acao === 'string' ? (req.body || {}).acao : '';
   const fn = Object.prototype.hasOwnProperty.call(acoes, nomeAcao) ? acoes[nomeAcao] : null;
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });
   // Tudo o que MUDA alguma coisa fica na trilha (auditoria_plataforma). Chave e token nunca entram no registro: só "gravou" ou "apagou".
   if (nomeAcao !== 'lojas' && nomeAcao !== 'auditoria' && nomeAcao !== 'erros') {
     const b = req.body || {}, alvo = String(b.id || b.fid || '').slice(0, 40);
-    const detalhe = nomeAcao === 'imgbb' || nomeAcao === 'pagbank' ? (String(b.chave || '').trim() ? 'chave gravada' : 'chave apagada')
+    const detalhe = nomeAcao === 'imgbb' || nomeAcao === 'pagbank' || nomeAcao === 'asaas' ? (String(b.chave || '').trim() ? 'chave gravada' : 'chave apagada')
+      : nomeAcao === 'asaas-carteira' ? `carteira de ${String(b.id || '').slice(0, 40)} ${String(b.carteira || '').trim() ? 'gravada' : 'apagada'}`
       : nomeAcao === 'proprietario' ? `${alvo}: ${b.remover === true ? 'tirou' : 'definiu'} ${String(b.email || '').slice(0, 80)}`
       : nomeAcao === 'ativo' ? `${alvo}: ${b.ativo === true ? 'liberou' : 'bloqueou'}`
       : nomeAcao === 'criar-loja' ? `${alvo} (${String(b.emailDono || 'sem dono').slice(0, 80)})`
       : nomeAcao === 'condominio' ? `${b.remover === true ? 'tirou' : b.id ? 'mudou' : 'cadastrou'} ${String(b.nome || b.id || '').slice(0, 60)}`
+      : nomeAcao === 'erro-estado' ? `${String(b.assinatura || '').slice(0, 20)} ${b.estado === 'aberto' ? 'reaberto' : 'corrigido'}`
       : nomeAcao === 'assinatura' ? `${alvo}: ${String(b.valor == null ? '' : b.valor).trim() === '' ? 'sem mensalidade' : `R$ ${String(b.valor).slice(0, 12)}`}` : alvo;
     await anotar(`plataforma-${nomeAcao}`, detalhe);
-    if (['proprietario', 'pagbank', 'ativo'].includes(nomeAcao)) await P.alertar(db, T.TENANT_PADRAO, `plataforma-${nomeAcao}`, { titulo: 'Plataforma alterada', corpo: `${dec.email || 'O dono da plataforma'} mudou: ${nomeAcao} (${detalhe}).`, url: '/plataforma.html' });
+    if (['proprietario', 'pagbank', 'asaas', 'asaas-carteira', 'ativo'].includes(nomeAcao)) await P.alertar(db, T.TENANT_PADRAO, `plataforma-${nomeAcao}`, { titulo: 'Plataforma alterada', corpo: `${dec.email || 'O dono da plataforma'} mudou: ${nomeAcao} (${detalhe}).`, url: '/admin-plataforma' });
   }
   try { return await fn(); }
   catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[plataforma]', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }

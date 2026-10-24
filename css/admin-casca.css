@@ -57,13 +57,62 @@
 .pl-topo { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
 .pl-topo input[type=search] { flex: 1; min-width: 0; min-height: 46px; padding: 0 16px; border: 1.5px solid #e0dcd4; border-radius: 12px; background: #fff; font-size: 16px; }
 .pl-topo .bt { flex: none; white-space: nowrap; }
+/* celular: a busca ganha a linha inteira (antes ficava espremida ao lado dos botões) */
+@media (max-width: 560px) { .pl-topo { flex-wrap: wrap; } .pl-topo input[type=search] { flex: 1 1 100%; } .pl-topo .bt { flex: 1 1 0; justify-content: center; } }
 .pl-filtros { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 10px; margin: 0 -16px; padding-left: 16px; padding-right: 16px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .pl-filtros::-webkit-scrollbar { display: none; }
 .pl-filtro { flex: none; min-height: 38px; padding: 0 12px 0 14px; border-radius: 999px; border: 1.5px solid #e0dcd4; background: #fff; color: var(--text-mid); font-weight: 700; font-size: .86rem; line-height: 1; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
 .pl-filtro i { font-style: normal; font-weight: 700; font-size: .76rem; min-width: 22px; padding: 3px 6px; border-radius: 999px; background: var(--parchment); color: var(--text-mid); text-align: center; }
 .pl-filtro.on { background: var(--forest); border-color: var(--forest); color: #fff; } .pl-filtro.on i { background: rgba(255, 255, 255, .2); color: #fff; }
+/* categorias (Temperos, Verduras, Folhas...): a primeira escolha, com o desenho de cada uma */
+.pl-cats { display: flex; gap: 8px; overflow-x: auto; padding: 2px 16px 10px; margin: 0 -16px; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-padding: 0 16px; }
+.pl-cats[hidden] { display: none; }
+.pl-cats::-webkit-scrollbar { display: none; }
+@media (min-width: 900px) { .pl-cats { flex-wrap: wrap; overflow: visible; } }
+.pl-cat { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 12px 0 8px; border-radius: 14px; border: 1.5px solid #e0dcd4; background: #fff;
+    color: var(--text-dark); font-weight: 700; font-size: .92rem; line-height: 1.1; font-family: inherit; cursor: pointer; transition: border-color .15s, background .15s; }
+.pl-cat-ico { flex: none; width: 32px; height: 32px; border-radius: 10px; background: var(--parchment); display: grid; place-items: center; }
+.pl-cat-ico .arte-cat { width: 24px; height: 24px; }
+.pl-cat i { font-style: normal; font-size: .76rem; min-width: 22px; padding: 3px 6px; border-radius: 999px; background: var(--parchment); color: var(--text-mid); text-align: center; }
+.pl-cat.on { border-color: var(--forest); background: var(--verde-claro); color: var(--forest); box-shadow: inset 0 0 0 1px var(--forest); }
+.pl-cat.on .pl-cat-ico { background: #fff; }
+.pl-cat.on i { background: var(--forest); color: #fff; }
+@media (hover: hover) { .pl-cat:hover { border-color: var(--sage, #9db8a6); } }
+.pl-cat:focus-visible, .pl-filtro:focus-visible { outline: 3px solid var(--manga, #f2b33d); outline-offset: 1px; }
+/* o que está na lista agora + "Selecionar vários" */
+.pl-cabeca { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin: 2px 2px 8px; min-height: 40px; }
+.pl-cabeca:empty { display: none; }
+.pl-cabeca b { font-family: var(--fonte-titulo, 'Fraunces', serif); font-size: 1.08rem; color: var(--forest); }
+.pl-cabeca span { font-size: .86rem; color: var(--text-mid); }
+.pl-cabeca-bt { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1.5px solid #d9d3c6; background: #fff;
+    color: var(--forest); font-weight: 700; font-size: .86rem; font-family: inherit; cursor: pointer; }
+.pl-cabeca-bt .ic { width: 1.05rem; height: 1.05rem; }
+/* marcando vários: a linha inteira marca e desmarca */
+.pl-marca { flex: none; width: 26px; height: 26px; border-radius: 8px; border: 2px solid #c9c2b4; background: #fff; display: grid; place-items: center; transition: background .12s, border-color .12s; }
+.pl-item.marcado { background: var(--verde-claro); }
+.pl-item.marcado .pl-marca { background: var(--forest); border-color: var(--forest); }
+.pl-item.marcado .pl-marca::after { content: ''; width: 7px; height: 13px; margin-top: -3px; border: solid #fff; border-width: 0 3px 3px 0; transform: rotate(45deg); }
+.pl-item.marcando .pl-abrir { padding-right: 12px; }
+.pl-lote { position: fixed; z-index: 30; left: 12px; right: 12px; bottom: calc(var(--barra-h, 0px) + 10px); max-width: 680px; margin: 0 auto; padding: 12px 14px 14px; border-radius: 18px;
+    background: var(--forest); color: #fff; box-shadow: 0 10px 30px rgba(26, 58, 42, .3); display: grid; gap: 10px; }
+.pl-lote[hidden] { display: none; }
+.pl-lote-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pl-lote-topo b { font-size: 1rem; }
+.pl-lote-sair { min-height: 40px; padding: 0 12px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, .12); color: #fff; font-weight: 700; font-size: .88rem; font-family: inherit; cursor: pointer; }
+.pl-lote-acoes { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 8px; }
+.pl-lote-acoes .bt { min-height: 48px; padding: 0 8px; justify-content: center; display: inline-flex; align-items: center; gap: 6px; font-size: .9rem; white-space: nowrap; }
+.pl-lote-acoes .bt .ic { width: 1.1rem; height: 1.1rem; }
+.pl-lote-acoes .bt-pri { background: #fff; color: var(--forest); border-color: #fff; }
+.pl-lote-acoes .bt-sec { background: transparent; color: #fff; border: 1.5px solid rgba(255, 255, 255, .45); }
+.pl-lote-acoes .bt:disabled { opacity: .45; cursor: not-allowed; }
+.pl-com-lote .pl-extras { margin-bottom: 150px; }
+@media (max-width: 420px) { .pl-lote-acoes { grid-template-columns: 1fr 1fr; } .pl-lote-acoes .bt-pri { grid-column: 1 / -1; } }
 .pl-lista { background: #fff; border: 1.5px solid var(--linha-fina); border-radius: 16px; overflow: hidden; }
-.pl-item { display: flex; align-items: center; gap: 6px; padding-right: 12px; border-bottom: 1px solid #f1ece2; }
+.pl-item { display: flex; align-items: center; gap: 6px; padding-right: 12px; border-bottom: 1px solid #f1ece2;
+    /* catálogo grande (centenas de produtos): o navegador só desenha o que está na tela. Com 800 produtos a lista
+       levava ~20 s para aparecer num celular simples; assim, ~2 s */
+    content-visibility: auto; contain-intrinsic-size: auto 77px; }
+.pl-sem-foto { font-size: .68rem; font-weight: 600; color: var(--text-light); text-align: center; line-height: 1.1; padding: 0 4px; }
 .pl-item:last-child { border-bottom: 0; }
 .pl-abrir { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 10px 6px 10px 12px; border: 0; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .pl-abrir:hover, .pl-abrir:focus-visible { background: #faf7f1; }
@@ -240,3 +289,16 @@ body.so-equipe #ped-mais { display: none; }
 .eq-assin b { font-size: 1.15rem; color: var(--forest); }
 .eq-assin small { color: var(--text-mid); }
 .pd-campo input.invalido { border-color: #c0392b; background: #fdecea; }
+
+/* o topo já mostra o nome da tela: o mesmo título dentro dela sai (js/admin.js, marcarTituloRepetido) */
+#dashboard .titulo-repete { display: none; }
+/* "Dias da semana": abas Preço do dia | O que sai no dia (js/admin-precos-dia.js) */
+.pd-modos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 4px; border-radius: 14px; background: var(--parchment); margin-bottom: 10px; }
+.pd-modo { min-height: 42px; border: 0; border-radius: 10px; background: none; font: inherit; font-weight: 700; color: var(--text-mid); cursor: pointer; }
+.pd-modo.on { background: #fff; color: var(--forest); box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.pd-sai { cursor: pointer; }
+.pd-sai.nao .pd-nome b { color: var(--text-light, #8a8478); text-decoration: line-through; }
+.pd-chave { width: 46px; height: 28px; flex: none; appearance: none; -webkit-appearance: none; border-radius: 999px; background: #d9d3c6; position: relative; cursor: pointer; transition: background .2s ease; margin: 0; }
+.pd-chave::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s ease; }
+.pd-chave:checked { background: var(--forest); }
+.pd-chave:checked::after { transform: translateX(18px); }

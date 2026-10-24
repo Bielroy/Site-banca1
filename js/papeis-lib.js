@@ -8,21 +8,24 @@
 export const PAPEIS = {
     proprietario:  ['Proprietário', 'Tudo, inclusive a equipe.'],
     administrador: ['Administrador', 'Tudo, menos mexer na equipe.'],
-    funcionario:   ['Funcionário', 'Pedidos, balcão, fechamento da feira e calendário.'],
-    caixa:         ['Caixa', 'Só o balcão e a fila de pedidos.'],
-    producao:      ['Produção', 'Estoque (produzir, perdas, fichas) e calendário.'],
-    estoque:       ['Estoque', 'Estoque, compras, fechamento da feira e calendário.'],
+    gerente:       ['Gerente', 'Tudo, menos a chave PIX, o PIX automático, o WhatsApp dos pedidos e a equipe. Pode ligar e desligar PIX, cartão e dinheiro.'],
+    funcionario:   ['Funcionário', 'Pedidos, balcão, fechamento da feira, calendário e impressora.'],
+    caixa:         ['Caixa', 'O balcão, a fila de pedidos e a impressora.'],
+    producao:      ['Produção', 'Estoque (produzir, perdas, fichas), calendário e impressora.'],
+    estoque:       ['Estoque', 'Estoque, compras, fechamento da feira, calendário e impressora.'],
 };
 /** Papéis que o proprietário pode dar pelo painel (proprietário só a plataforma define). */
-export const ATRIBUIVEIS = ['administrador', 'funcionario', 'caixa', 'producao', 'estoque'];
+export const ATRIBUIVEIS = ['administrador', 'gerente', 'funcionario', 'caixa', 'producao', 'estoque'];
 
 const ABAS_DA_EQUIPE = {
-    funcionario: ['relatorios', 'pdv', 'fechamento', 'calendario'],
-    caixa:       ['pdv', 'relatorios'],
-    producao:    ['estoque', 'calendario'],
-    estoque:     ['estoque', 'compras', 'fechamento', 'calendario'],
+    funcionario: ['relatorios', 'pdv', 'fechamento', 'calendario', 'impressora'],
+    caixa:       ['pdv', 'relatorios', 'impressora'],
+    producao:    ['estoque', 'calendario', 'impressora'],
+    estoque:     ['estoque', 'compras', 'fechamento', 'calendario', 'impressora'],
 };
-export const ehGestor = (papel) => ['plataforma', 'proprietario', 'administrador'].includes(papel);
+export const ehGestor = (papel) => ['plataforma', 'proprietario', 'administrador', 'gerente'].includes(papel);
+/** Quem pode ver e trocar a chave PIX (onde o dinheiro cai) e o WhatsApp que recebe os pedidos. O gerente só liga/desliga as formas de pagamento. */
+export const mexeNaChavePix = (papel) => ['plataforma', 'proprietario', 'administrador'].includes(papel);
 export const cuidaDaEquipe = (papel) => papel === 'plataforma' || papel === 'proprietario';
 export const cuidaDeEstoque = (papel) => ehGestor(papel) || papel === 'estoque' || papel === 'producao';
 

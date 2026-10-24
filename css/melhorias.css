@@ -17,6 +17,9 @@
 /* Card fora da tela não é desenhado até chegar perto (o navegador guarda o tamanho depois da 1ª vez).
    Com catálogo grande, a vitrine abria com o celular travado desenhando centenas de cards invisíveis. */
 #lista-produtos > .produto-card { content-visibility: auto; contain-intrinsic-size: auto 330px; }
+/* iPhone/iPad (todo navegador de iPhone usa o motor do Safari): o "não desenha o que está fora da tela" do Safari
+   deixava cards em BRANCO (só a borda e o selo, sem foto, nome e preço), pior com zoom e letra grande. Lá fica desligado. */
+@supports (-webkit-touch-callout: none) { #lista-produtos > .produto-card { content-visibility: visible; contain-intrinsic-size: none; } }
 /* Montagem por baixo da tela de entrada: invisível (não conta como "pulo" de tela). js/melhorias-ui.js tira a classe. */
 body.montando > :not(#splash-feira):not(script) { visibility: hidden; }
 /* O rodapé começa abaixo da tela: antes ele aparecia no meio da página vazia e era empurrado quando a vitrine chegava. */
@@ -99,6 +102,7 @@ main.layout { min-height: 100vh; }
     transition: transform .2s ease, box-shadow .2s ease;
 }
 .ia-fab:active { transform: scale(.92); }
+.em-previa .ia-fab { display: none; }       /* na prévia do painel (Aparência) o botão ficava cortado na borda da janelinha */
 .ia-fab-rotulo { font-size: .66rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; margin-top: -2px; }
 
 .ia-modal { max-width: 450px; height: 78dvh; background: var(--cream); }
@@ -147,7 +151,7 @@ main.layout { min-height: 100vh; }
 .ia-digitando span:nth-child(3) { animation-delay: .3s; }
 
 /* sugestões = etiquetinhas de preço de feira com pílula − 1 + */
-.ia-sugestoes { display: flex; gap: 10px; overflow-x: auto; padding: 10px 14px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; background: var(--superficie); border-top: 1px dashed #e0d5bd; scrollbar-width: none; }
+.ia-sugestoes { display: flex; gap: 10px; overflow-x: auto; padding: 10px 14px; scroll-snap-type: x proximity; overscroll-behavior-x: contain; background: var(--superficie); border-top: 1px dashed #e0d5bd; scrollbar-width: none; }
 .ia-sugestoes:empty { display: none; }
 .ia-sugestoes::-webkit-scrollbar { display: none; }
 .ia-pill {

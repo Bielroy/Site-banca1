@@ -32,6 +32,11 @@
     <link rel="stylesheet" href="./css/admin-estoque.css">
     <link rel="stylesheet" href="./css/admin-icones.css">
     <link rel="stylesheet" href="./css/admin-casca.css">
+    <link rel="stylesheet" href="./css/admin-vitrine.css">
+    <link rel="stylesheet" href="./css/admin-rotulos.css">
+    <link rel="stylesheet" href="./css/admin-impressora.css">
+    <link rel="stylesheet" href="./css/admin-cadastro.css">
+    <link rel="stylesheet" href="./css/admin-montar.css">
 </head>
 <body>
 
@@ -65,7 +70,7 @@
             </div>
             <div class="menu-mais" id="menu-mais" hidden>
                 <div class="menu-bancas" id="menu-bancas" hidden></div>
-                <a id="link-plataforma" href="./plataforma.html" hidden>Plataforma (todas as lojas)</a>
+                <a id="link-plataforma" href="./admin-plataforma" hidden>Plataforma (todas as lojas)</a>
                 <button type="button" id="btn-instalar-painel" hidden>Instalar o painel no celular</button>
                 <button type="button" id="btn-impressora"><i class="ic" data-i="impressora"></i> Impressora</button>
                 <button type="button" id="btn-logout"><i class="ic" data-i="sair"></i> Sair</button>
@@ -80,6 +85,7 @@
                 <button class="tab" data-aba="pdv"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="pdv"></i></span><span class="tab-txt">Balcão</span></button>
                 <button class="tab" data-aba="fechamento"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="fechamento"></i></span><span class="tab-txt">Fechamento</span></button>
                 <button class="tab" data-aba="calendario"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="calendario"></i></span><span class="tab-txt">Calendário</span></button>
+                <button class="tab" data-aba="impressora"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="impressora"></i></span><span class="tab-txt">Impressora</span></button>
                 <span class="tabs-grupo">Produtos</span>
                 <button class="tab active" data-aba="produtos"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="produtos"></i></span><span class="tab-txt">Produtos</span></button>
                 <button class="tab" data-aba="categorias"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="categorias"></i></span><span class="tab-txt">Categorias</span></button>
@@ -105,13 +111,18 @@
         <section id="aba-produtos" class="aba-content active">
             <div class="pl-topo">
                 <input type="search" id="admin-busca-input" placeholder="Buscar produto..." aria-label="Buscar produto ou categoria">
+                <button class="bt bt-sec pl-rotulos" data-action="rotulos" title="Imprimir rótulos adesivos com a imagem que você quiser"><i class="ic" data-i="etiqueta"></i> Rótulos</button>
+                <button class="bt bt-sec pl-varios" data-action="varios-produtos" title="Criar vários produtos com o mesmo preço, unidade e categoria">+ Vários de uma vez</button>
                 <button class="bt bt-pri" data-action="novo-produto">+ Novo produto</button>
             </div>
+            <div class="pl-cats" id="pl-cats" role="group" aria-label="Categoria" hidden></div>
             <div class="pl-filtros" id="pl-filtros" role="group" aria-label="Mostrar"></div>
+            <div class="pl-cabeca" id="pl-cabeca"></div>
             <div id="lista-produtos" class="pl-lista">Carregando os produtos...</div>
+            <div class="pl-lote" id="pl-lote" role="region" aria-label="Produtos marcados" hidden></div>
             <div class="pl-extras">
                 <button class="bt bt-sec" id="btn-varias-fotos">Enviar várias fotos</button>
-                <button class="bt bt-sec" id="btn-precos-dia">Preço por dia da semana</button>
+                <button class="bt bt-sec" id="btn-precos-dia">Dias da semana (preço e o que sai)</button>
                 <span id="kit-ia-lugar"></span>
             </div>
         </section>
@@ -138,6 +149,10 @@
 
         <section id="aba-calendario" class="aba-content">
             <div id="calendario-conteudo"></div>
+        </section>
+
+        <section id="aba-impressora" class="aba-content">
+            <div id="impressora-conteudo"></div>
         </section>
 
         <section id="aba-estoque" class="aba-content">
@@ -258,6 +273,8 @@
 
         <section id="aba-aparencia" class="aba-content">
             <div id="aparencia-conteudo"></div>
+            <!-- Vitrine: quadros, "quem escolhe seu pedido", nome do selo e números (js/admin-vitrine.js) -->
+            <div id="vitrine-conteudo"></div>
         </section>
 
         <section id="aba-config" class="aba-content">
@@ -291,21 +308,36 @@
                     </div>
                 </details>
                 <details class="op-secao">
-                    <summary><span><b>Atendimento</b><small>WhatsApp da loja e pedido mínimo</small></span></summary>
+                    <summary><span><b>Atendimento</b><small>WhatsApp, Instagram e pedido mínimo</small></span></summary>
                     <div class="op-corpo">
                 <div class="grid-2" style="width: 100%;">
-                    <div class="form-group">
+                    <div class="form-group so-chave-pix">
                         <label for="config-wpp">WhatsApp da loja</label>
                         <input type="tel" id="config-wpp" placeholder="62 99999-8888" inputmode="tel">
                         <small class="dica-campo">Recebe todos os pedidos. Tem outro WhatsApp para parte dos produtos (artesanais, molhos...)? <button type="button" data-ir-aba="categorias">Cadastre na aba <i class="ic" data-i="etiqueta"></i> Categorias</button></small>
                     </div>
                     <div class="form-group"><label for="config-minimo"><i class="ic" data-i="moedas"></i> Pedido mínimo (R$)</label><input type="number" id="config-minimo" step="0.5"></div>
                 </div>
+                <fieldset class="contato-loja">
+                    <legend>Redes da loja (aparecem para o cliente)</legend>
+                    <div class="grid-2" style="width: 100%;">
+                        <div class="form-group">
+                            <label for="config-instagram">Instagram da loja</label>
+                            <input type="text" id="config-instagram" placeholder="@sualoja" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url">
+                            <small class="dica-campo">Pode colar o link do perfil ou escrever o @. Vazio = não aparece.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-wpp-contato">WhatsApp para o cliente falar com a loja</label>
+                            <input type="tel" id="config-wpp-contato" placeholder="Vazio = o mesmo dos pedidos" inputmode="tel">
+                            <label class="contato-check"><input type="checkbox" id="config-mostrar-wpp"> Mostrar o botão do WhatsApp na loja</label>
+                        </div>
+                    </div>
+                </fieldset>
 
                     </div>
                 </details>
                 <details class="op-secao">
-                    <summary><span><b>Entrega</b><small>Taxa, entrega grátis e horários</small></span></summary>
+                    <summary><span><b>Entrega e retirada</b><small>Taxa, entrega grátis, horários e retirada na banca</small></span></summary>
                     <div class="op-corpo">
                 <div class="grid-2" style="width: 100%;">
                     <div class="form-group"><label for="config-taxa"><i class="ic" data-i="entrega"></i> Taxa de entrega (R$)</label><input type="number" id="config-taxa" min="0" step="0.5" inputmode="decimal" placeholder="0"><small class="dica-campo">Zero = não cobra entrega.</small></div>
@@ -313,8 +345,29 @@
                 </div>
                 <div class="form-group" style="width: 100%;">
                     <label for="config-horarios"><i class="ic" data-i="espera"></i> Horários de entrega</label>
+                    <small class="dica-campo" style="display:block;margin-bottom:6px;">Valem para quem não é de feira, e para o cliente de feira num dia que não está na agenda abaixo.</small>
                     <textarea id="config-horarios" rows="3" placeholder="Manhã (8h às 12h)&#10;Tarde (14h às 18h)"></textarea>
                     <small class="dica-campo">Um por linha, até 8. O cliente escolhe um ao fechar o pedido. Em branco = a loja não pergunta.</small>
+                </div>
+                <div class="form-group" style="width: 100%;">
+                    <label class="chk-linha" for="config-retirada-ativa"><input type="checkbox" id="config-retirada-ativa"> <i class="ic" data-i="caixa"></i> Aceitar retirada na banca (clientes sem feira)</label>
+                    <small class="dica-campo" style="display:block;">Liga a opção "Retirar na banca" para quem NÃO é de feira. Quem retira não informa endereço e não paga taxa de entrega. A retirada de quem é de feira fica na agenda das feiras, logo abaixo.</small>
+                </div>
+                <div class="form-group" style="width: 100%;" id="grupo-retirada">
+                    <label><i class="ic" data-i="calendario"></i> Dias em que a retirada funciona</label>
+                    <div class="dias-semana" id="retirada-dias"><label class="dia-label"><input type="checkbox" value="0" class="chk-ret-dia"> Dom</label><label class="dia-label"><input type="checkbox" value="1" class="chk-ret-dia"> Seg</label><label class="dia-label"><input type="checkbox" value="2" class="chk-ret-dia"> Ter</label><label class="dia-label"><input type="checkbox" value="3" class="chk-ret-dia"> Qua</label><label class="dia-label"><input type="checkbox" value="4" class="chk-ret-dia"> Qui</label><label class="dia-label"><input type="checkbox" value="5" class="chk-ret-dia"> Sex</label><label class="dia-label"><input type="checkbox" value="6" class="chk-ret-dia"> Sáb</label></div>
+                    <small class="dica-campo">Desmarque os dias em que ninguém está na banca (ex.: dia de feira fora). Nesses dias o cliente só vê entrega.</small>
+                    <label for="config-retirada-horarios" style="margin-top:12px;display:block;"><i class="ic" data-i="espera"></i> Horários de retirada</label>
+                    <textarea id="config-retirada-horarios" rows="3" placeholder="Das 7h às 11h&#10;Das 15h às 18h"></textarea>
+                    <small class="dica-campo">Um por linha, até 8. O cliente escolhe um ao fechar o pedido. Em branco = a loja não pergunta (retirada a combinar).</small>
+                    <label for="config-retirada-local" style="margin-top:10px;display:block;">Onde retirar (opcional)</label>
+                    <input type="text" id="config-retirada-local" maxlength="80" placeholder="Ex.: na banca, ao lado da portaria">
+                </div>
+                <div class="form-group" style="width: 100%;" id="grupo-agenda">
+                    <label><i class="ic" data-i="calendario"></i> Agenda das feiras: entrega e retirada em cada dia</label>
+                    <small class="dica-campo" style="display:block;">Uma linha para cada dia de cada feira (condomínio). Ex.: Madri na quarta: só entrega, de manhã. Madri na sexta: entrega e retirada na feira. O cliente só vê o que está na linha da feira DELE no dia do pedido. Dia de feira sem linha: só entrega, com os horários de cima. Cada banca tem a sua agenda: as outras bancas da feira não veem nem mudam a sua.</small>
+                    <div id="agenda-entrega"></div>
+                    <button type="button" class="btn-outline" id="btn-add-agenda" style="margin-top:8px;">+ Adicionar dia de feira</button>
                 </div>
 
                     </div>
@@ -338,9 +391,20 @@
                     </div>
                 </details>
                 <details class="op-secao">
-                    <summary><span><b>Pagamento por PIX</b><small>Chave da loja e PIX automático</small></span></summary>
+                    <summary><span><b>Pagamento</b><small>Pagar na entrega, chave PIX da loja e PIX automático</small></span></summary>
                     <div class="op-corpo">
+                <fieldset class="form-group" style="width: 100%; border: 0; padding: 0; margin: 0 0 14px;">
+                    <legend style="font-weight: 600; margin-bottom: 6px;">Formas de pagamento aceitas</legend>
+                    <label class="chk-linha" for="config-forma-pix"><input type="checkbox" id="config-forma-pix" checked> PIX</label>
+                    <label class="chk-linha" for="config-forma-cartao"><input type="checkbox" id="config-forma-cartao" checked> Cartão (maquininha)</label>
+                    <label class="chk-linha" for="config-forma-dinheiro"><input type="checkbox" id="config-forma-dinheiro" checked> Dinheiro</label>
+                    <small class="dica-campo" style="display:block;">Desmarcada, a forma some da tela de pagamento do cliente (ex.: maquininha sem bateria: desmarque "Cartão"). Toque em Salvar.</small>
+                </fieldset>
                 <div class="form-group" style="width: 100%;">
+                    <label class="chk-linha" for="config-pag-entrega"><input type="checkbox" id="config-pag-entrega"> <i class="ic" data-i="pix"></i> Pagamento só na entrega (sem PIX pelo site)</label>
+                    <small class="dica-campo" style="display:block;">Ligado: o cliente só escolhe como vai pagar (PIX, cartão na maquininha ou dinheiro) e paga quando receber o pedido ou na retirada. O site não mostra código PIX nem QR Code, e o pedido chega como enviado. A chave e o PIX automático abaixo ficam guardados, sem efeito, até você desligar esta opção.</small>
+                </div>
+                <div class="form-group so-chave-pix" style="width: 100%;">
                     <label for="config-pix-chave"><i class="ic" data-i="pix"></i> Chave PIX da loja (copia e cola no pedido)</label>
                     <div class="pix-chave-linha">
                         <select id="config-pix-tipo" aria-label="Tipo de chave"><option value="celular">Celular</option><option value="cpf">CPF</option><option value="cnpj">CNPJ</option><option value="email">E-mail</option><option value="aleatoria">Chave aleatória</option></select>
@@ -353,9 +417,9 @@
                     <small class="dica-campo" style="display:block;">Com a chave preenchida, quem escolhe PIX recebe um código pronto com o valor do pedido: copia, cola no banco e paga. O dinheiro cai direto na sua conta. O site não confirma o pagamento sozinho: confira pelo extrato ou pelo comprovante. Para desligar, apague a chave.</small>
                 </div>
 
-                <div class="form-group" id="grupo-pix" style="width: 100%;">
+                <div class="form-group so-chave-pix" id="grupo-pix" style="width: 100%;">
                     <label class="chk-linha" for="config-pix"><input type="checkbox" id="config-pix"> <i class="ic" data-i="pix"></i> PIX automático (QR Code na tela do cliente)</label>
-                    <small class="dica-campo" style="display:block;">O cliente paga na hora e o pedido aparece como PAGO sozinho. Precisa de uma conta PagBank ligada ao site; sem ela, esta opção não faz efeito e o PIX continua combinado pelo WhatsApp. Pedido com item a pesar só libera o PIX depois da pesagem.</small>
+                    <small class="dica-campo" style="display:block;">O cliente paga na hora e o pedido aparece como PAGO sozinho. Precisa do pagamento online ligado pela plataforma (Asaas ou PagBank); sem ele, esta opção não faz efeito e o PIX continua combinado pelo WhatsApp. Pedido com item a pesar só libera o PIX depois da pesagem.</small>
                 </div>
 
                     </div>
@@ -382,7 +446,7 @@
                 <!-- Cópia de segurança: aparece só para o proprietário (js/admin-copia.js) -->
                 <div class="copia-box" id="copia-box" hidden>
                     <h4>Cópia de segurança</h4>
-                    <p class="config-sub">Todo dia, de madrugada, o sistema guarda uma cópia dos produtos, das configurações e dos pedidos dos últimos 90 dias. Baixe uma de vez em quando e guarde fora do site.</p>
+                    <p class="config-sub">Todo dia, de madrugada, o sistema guarda uma cópia dos produtos, das configurações e dos pedidos dos últimos 31 dias. Baixe uma de vez em quando e guarde fora do site.</p>
                     <p class="config-sub" id="copia-estado">Conferindo a última cópia...</p>
                     <button type="button" class="btn-outline" id="btn-baixar-copia">Baixar cópia agora</button>
                     <div class="copia-restaurar" id="copia-restaurar" hidden>
@@ -410,44 +474,106 @@
             </header>
             <div class="modal-body">
                 <input type="hidden" id="edit-id">
-                <div class="form-group">
-                    <label for="edit-foto">Foto</label>
-                    <div id="preview-foto-wrapper" style="width:100%; height:160px; border-radius:12px; overflow:hidden; background:var(--parchment); margin-bottom:12px;"></div>
-                    <input type="file" id="edit-foto" accept="image/*">
-                    <p class="ou-divisor">OU</p>
-                    <input type="url" id="edit-foto-url" placeholder="Ou cole aqui o link de uma foto">
-                    <button type="button" class="btn-outline btn-banco-fotos" id="btn-banco-fotos">Escolher do banco de fotos</button>
+                <!-- O ESSENCIAL primeiro: nome, preço, unidade, categoria e foto. O resto fica em "Mais opções";
+                     a plataforma escolhe, por loja, quais desses aparecem (js/cadastro-lib.js). -->
+                <p class="prod-repetindo" id="prod-repetindo" hidden></p>
+                <div class="form-group"><label for="edit-nome">Nome do produto</label><input type="text" id="edit-nome" autocomplete="off" enterkeyhint="done" placeholder="Ex.: Pastel de carne"></div>
+                <div class="form-group prod-preco">
+                    <label for="edit-preco">Preço (R$)</label>
+                    <input type="number" id="edit-preco" step="0.10" inputmode="decimal" placeholder="0,00">
                 </div>
-                <div class="form-group"><label for="edit-nome">Nome do produto</label><input type="text" id="edit-nome"></div>
                 <div class="form-group">
+                    <span class="prod-rot" id="rot-unidade">Vendido por</span>
+                    <div class="prod-chips" id="unidade-chips" role="radiogroup" aria-labelledby="rot-unidade"></div>
+                    <select id="edit-unidade" class="sr-only" tabindex="-1" aria-hidden="true">
+                        <option value="kg">Quilo (kg)</option>
+                        <option value="un">Unidade (un)</option>
+                        <option value="maço">Maço</option>
+                        <option value="bdj">Bandeja</option>
+                        <option value="kit">Kit / Cesta</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <span class="prod-rot" id="rot-cat">Categoria (aba da loja)</span>
+                    <div class="prod-chips prod-chips-cat" id="cat-chips" role="radiogroup" aria-labelledby="rot-cat"></div>
+                    <input type="text" id="edit-cat" autocomplete="off" placeholder="Ou digite uma categoria nova" aria-label="Categoria">
+                </div>
+                <!-- DIAS QUE SAI (js/admin-dias.js): alface só na quarta e no sábado. Todos marcados = todo dia. -->
+                <div class="form-group prod-dias" data-campo="dias">
+                    <span class="prod-rot" id="rot-dias">Sai em quais dias?</span>
+                    <div class="prod-dias-chips" id="dias-chips" role="group" aria-labelledby="rot-dias"></div>
+                    <small class="dica-campo" id="dias-previa">Todos marcados: sai todo dia.</small>
+                </div>
+                <div class="form-group prod-foto">
+                    <span class="prod-rot">Foto</span>
+                    <div class="prod-foto-linha">
+                        <div id="preview-foto-wrapper" class="prod-foto-previa"></div>
+                        <div class="prod-foto-bts">
+                            <label class="btn-outline prod-foto-bt" for="edit-foto"><i class="ic" data-i="camera"></i> Tirar ou escolher foto</label>
+                            <input type="file" id="edit-foto" accept="image/*" class="sr-only">
+                            <button type="button" class="btn-outline btn-banco-fotos" id="btn-banco-fotos">Escolher do banco de fotos</button>
+                        </div>
+                    </div>
+                    <input type="url" id="edit-foto-url" placeholder="Ou cole aqui o link de uma foto">
+                    <details class="guia-foto">
+                        <summary>Como tirar uma foto que dá vontade de comprar</summary>
+                        <ol>
+                            <li><b>Luz de janela</b>, de lado. Sem flash e sem sol direto.</li>
+                            <li><b>Sempre o mesmo fundo</b>: uma tábua clara, um pano creme ou o próprio caixote.</li>
+                            <li><b>Sempre o mesmo jeito</b>: celular inclinado (meio de lado) ou bem de cima, foto quadrada, o produto ocupando quase tudo.</li>
+                            <li><b>Mostre como vai ser entregue</b>: o maço, a bandeja, 1 unidade ao lado da mão para dar ideia do tamanho.</li>
+                            <li>Tire 3 e fique com a mais nítida. Pode clarear no próprio celular, mas <b>não mude a cor nem esconda defeito</b>: a foto é uma promessa.</li>
+                        </ol>
+                        <small>Foto do produto de verdade vende mais que foto da internet ou feita por IA, e evita reclamação de "veio diferente".</small>
+                    </details>
+                </div>
+
+                <details class="prod-mais" id="prod-mais">
+                    <summary><b>Mais opções</b> <small id="prod-mais-resumo"></small></summary>
+                    <div class="form-group" data-campo="palavras">
+                        <label for="edit-palavras">Outras palavras para achar na busca (opcional)</label>
+                        <input type="text" id="edit-palavras" maxlength="300" autocomplete="off" placeholder="Ex.: salada, verdinha, pé de alface">
+                        <small class="dica-campo" id="palavras-previa">Separe por vírgula. O cliente que digitar uma delas acha este produto.</small>
+                    </div>
+                    <div class="form-group" data-campo="oferta">
                     <label for="edit-preco-de">Oferta: preço antigo, que aparece riscado (opcional)</label>
                     <input type="number" id="edit-preco-de" step="0.10" inputmode="decimal" placeholder="Deixe vazio se não é oferta">
                     <small class="dica-campo">Se for maior que o preço de venda, o produto ganha o selo de oferta e entra na faixa "Ofertas de hoje". Para encerrar a oferta, apague este campo.</small>
                 </div>
-                <div class="grid-2">
-                    <div class="form-group"><label for="edit-preco">Preço (R$)</label><input type="number" id="edit-preco" step="0.10" inputmode="decimal"></div>
-                    <div class="form-group">
-                        <label for="edit-unidade">Vendido por</label>
-                        <select id="edit-unidade">
-                            <option value="kg">Quilo (kg)</option>
-                            <option value="un">Unidade (un)</option>
-                            <option value="maço">Maço</option>
-                            <option value="bdj">Bandeja</option>
-                            <option value="kit">Kit / Cesta</option>
-                        </select>
+                    <div id="lugar-estoque" data-campo="estoque"></div>
+                    <!-- PACOTE FECHADO e PROMOÇÃO POR QUANTIDADE (js/pacote-lib.js). Só para o que NÃO vai à balança. -->
+                <fieldset class="form-group pacote-campos" id="grupo-pacote" data-campo="pacote">
+                    <legend class="sr-only">Pacote e promoção</legend>
+                    <label class="pacote-liga"><input type="checkbox" id="edit-pacote">
+                        <span class="pacote-liga-txt"><span class="pacote-ico" data-arte="pacote"></span><b>É pacote fechado</b>
+                        <small>Vai para o bloco "Pacotes prontos" da loja, com o cartão de papel pardo e o botão "+ 1 pacote". Não vai para a balança.</small></span></label>
+                    <div class="form-group" id="grupo-peso-pacote" hidden>
+                        <label for="edit-peso-pacote">Peso escrito no pacote (opcional)</label>
+                        <input type="text" id="edit-peso-pacote" maxlength="16" placeholder="Ex.: 500 g · em branco aparece só PACOTE" autocomplete="off">
                     </div>
-                </div>
+                    <div class="form-group promo-grupo">
+                        <label>Promoção por quantidade (opcional)</label>
+                        <div class="grid-2">
+                            <input type="number" id="edit-promo-qtd" min="2" max="50" step="1" inputmode="numeric" placeholder="Leve quantos? Ex.: 4" aria-label="Leve quantos">
+                            <input type="text" id="edit-promo-preco" inputmode="decimal" placeholder="Por R$ Ex.: 10,00" aria-label="Pelo preço de">
+                        </div>
+                        <small class="dica-campo" id="promo-previa">Ex.: leve 4 por R$ 10,00. Quem levar 4 paga R$ 10; o que passar volta ao preço normal. Em branco: sem promoção.</small>
+                    </div>
+                </fieldset>
 
-                <!-- NOVO: peso médio por unidade. Alimenta a estimativa de preço
+                    <!-- NOVO: peso médio por unidade. Alimenta a estimativa de preço
                      que o cliente vê ao pedir "5 batatas" na loja. Só aparece
                      quando a métrica de venda é por peso. -->
-                <div class="form-group" id="form-group-peso-medio" style="display:none; background:var(--foam); padding:14px; border-radius:var(--radius-sm);">
+                <div class="form-group" id="form-group-peso-medio" data-campo="pesoMedio" style="display:none; background:var(--foam); padding:14px; border-radius:var(--radius-sm);">
                     <label for="edit-peso-medio"><i class="ic" data-i="balanca"></i> Peso médio de 1 unidade (em gramas)</label>
                     <input type="number" id="edit-peso-medio" min="1" step="1" placeholder="Ex: 150 (uma batata média)" inputmode="numeric">
                     <small style="color:var(--text-mid); font-size:0.78rem; display:block; margin-top:6px; line-height:1.5;">
                         Preenchendo isto, quem pedir "5 unidades" vê uma <b>estimativa de preço</b> na loja
                         (ex.: 5 batatas ≈ 0,75 kg ≈ R$ 4,50). Em branco, o cliente vê apenas o aviso de pesagem.
                     </small>
+                    <label for="edit-nome-un" style="margin-top:14px;">Como chamar 1 unidade (opcional)</label>
+                    <input type="text" id="edit-nome-un" maxlength="30" placeholder="Ex.: batata · ou pão/pães" autocomplete="off">
+                    <small class="dica-campo" id="nome-un-previa">Na loja e na sacola aparece "2 batatas" em vez de "2 unidades".</small>
                     <div id="grupo-mostrar-primeiro">
                     <label for="edit-mostrar-primeiro" style="margin-top:14px;">Na loja, mostrar primeiro</label>
                     <select id="edit-mostrar-primeiro">
@@ -461,13 +587,24 @@
                     </div>
                 </div>
 
-                <div class="form-group">
+                    <div id="lugar-descricao" data-campo="descricao"></div>
+
+                    <!-- Selos na loja (js/vitrine-lib.js). Só o que for verdade: o selo é uma promessa para o cliente. -->
+                <fieldset class="form-group selos-produto" data-campo="selos">
+                    <legend>Selos na loja (opcional)</legend>
+                    <label class="chk-linha"><input type="checkbox" id="edit-selo-chegou"> <span><b>Chegou hoje</b> <small>vale só hoje; amanhã some sozinho</small></span></label>
+                    <label class="chk-linha"><input type="checkbox" id="edit-selo-estacao"> <span><b>Da estação</b> <small>está na safra</small></span></label>
+                    <label class="chk-linha"><input type="checkbox" id="edit-selo-escolha"> <span><b>Escolha da casa</b> <small>o que vocês recomendam (o nome do selo muda em Aparência → Vitrine)</small></span></label>
+                    <small class="dica-campo">Cada selo coloca o produto numa faixa no topo da loja ("Chegou hoje", "Da estação"). No dia a dia, o botão <b>hoje</b> na lista de produtos marca o "Chegou hoje" num toque.</small>
+                </fieldset>
+
+                    <div class="form-group" data-campo="insumo">
                     <label class="chk-linha"><input type="checkbox" id="edit-so-insumo"> Só ingrediente (não aparece na loja)</label>
                     <small class="dica-campo">Para o que entra em receitas e não é vendido: azeite, sal, embalagem. O preço pode ficar em branco.</small>
                 </div>
 
-                <!-- Usado pela aba Previsão para decidir a folga da compra de cada produto -->
-                <div class="form-group">
+                    <!-- Usado pela aba Previsão para decidir a folga da compra de cada produto -->
+                <div class="form-group" data-campo="duracao">
                     <label for="edit-duracao">Quanto tempo dura na banca</label>
                     <select id="edit-duracao">
                         <option value="curta">Pouco: estraga em 1 ou 2 dias (folhas, ervas, morango)</option>
@@ -477,30 +614,40 @@
                     <small class="dica-campo">A sugestão de compra da aba Previsão usa isto: o que estraga rápido recebe menos folga, para sobrar menos.</small>
                 </div>
 
-                <div class="form-group">
-                    <label for="edit-cat">Categoria (aba da loja)</label>
-                    <input type="text" id="edit-cat" autocomplete="off" placeholder="Toque para escolher ou digite uma nova">
-                    <small class="dica-campo">As categorias são criadas e ordenadas na aba <i class="ic" data-i="etiqueta"></i> Categorias.</small>
+                    <!-- Rótulo adesivo personalizado deste produto (js/admin-rotulos.js). Só com o produto já salvo. -->
+                <div class="form-group" id="grupo-rotulo-produto" data-campo="rotulo" hidden>
+                    <button type="button" class="btn-outline btn-rotulo-produto" data-action="rotulo-do-produto"><i class="ic" data-i="etiqueta"></i> Rótulo adesivo deste produto</button>
+                    <small class="dica-campo">Monte o adesivo com a imagem que quiser (foto, desenho, logo) e imprima quantos precisar.</small>
                 </div>
+                </details>
+
+                <!-- MONTAR PEDIDO (js/admin-montar.js): complementos, adicionais, "escolha 1"... O cliente escolhe antes de pôr na sacola. -->
+                <details class="prod-mais prod-montar" id="prod-montar" data-campo="montar">
+                    <summary><b>Montar pedido</b> <small id="montar-resumo">açaí com complementos, pastel com adicionais...</small></summary>
+                    <div id="montar-corpo"></div>
+                </details>
             </div>
             <footer class="modal-footer" style="display: flex; flex-direction: column; gap: 10px;">
                 <button class="bt bt-pri" id="btn-salvar-produto">Salvar produto</button>
+                <button type="button" class="bt bt-sec" id="btn-salvar-outro" hidden><i class="ic" data-i="mais"></i> Salvar e criar outro igual</button>
+                <button type="button" class="bt bt-sec" id="btn-duplicar" hidden>Criar outro parecido</button>
                 <button type="button" class="bt bt-sec" id="btn-post-ia" data-action="gerar-post" hidden><i class="ic" data-i="faisca"></i> Texto de divulgação com IA</button>
                 <button class="bt bt-perigo" id="btn-excluir-produto"><i class="ic" data-i="lixeira"></i> Apagar produto</button>
             </footer>
         </div>
     </div>
 
-    <!-- Modal Compartilhado Custom Confirm -->
+    
+<!-- Modal Compartilhado Custom Confirm -->
     <div class="modal-overlay" id="modal-precos-dia">
         <div class="modal">
             <header class="modal-head">
-                <h2>Preço por dia da semana</h2>
+                <h2>Dias da semana</h2>
                 <button class="btn-fechar" data-fechar="modal-precos-dia" aria-label="Fechar">&times;</button>
             </header>
             <div class="modal-body" id="pd-corpo"></div>
             <footer class="modal-footer pd-rodape">
-                <button type="button" class="bt bt-pri" id="pd-salvar">Salvar os preços</button>
+                <button type="button" class="bt bt-pri" id="pd-salvar">Salvar</button>
             </footer>
         </div>
     </div>

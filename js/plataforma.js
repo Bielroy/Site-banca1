@@ -14,6 +14,7 @@ import { auth, onAuthStateChanged } from './firebase.js';
 import { urlDaLoja } from './tenant.js';
 import { escapeHTML, fmt, showToast, customConfirm } from './utils.js';
 import { sugerirId, idValido, totais, diasDaFeira, textoDoDia, proximaEntrega, normCond } from './plataforma-lib.js';
+import { CAMPOS_PRODUTO, camposDaLoja } from './cadastro-lib.js';
 const diasEmTexto = (dias) => diasDaFeira(dias);
 import './icones-admin.js';
 
@@ -22,7 +23,7 @@ const lerAba = () => { try { const a = localStorage.getItem('pf_aba'); return AB
 const S = { dados: null, aba: lerAba(), busca: { lojas: '', condominios: '' }, folha: null, rascunho: null, ocupado: false, editandoCond: '', mensal: {}, confirmando: 0 };
 const el = () => document.getElementById('pf-conteudo');
 const $ = (id) => document.getElementById(id);
-const NOMES_MODELO = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', jantinha: 'Jantinha', padaria: 'Padaria', acai: 'Açaí', mercadinho: 'Mercadinho', doceria: 'Doceria' };
+const NOMES_MODELO = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', jantinha: 'Jantinha', padaria: 'Padaria', acai: 'Açaí', pastelacai: 'Pastel e açaí', mercadinho: 'Mercadinho', doceria: 'Doceria' };
 const FORMATOS = { ql: 'Quadra e lote', rua: 'Rua e número', livre: 'Endereço escrito' };
 const LETRAS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'], NOMES_DIA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const corOk = (c) => (/^#[0-9a-fA-F]{6}$/.test(String(c || '')) ? c : '#1a3a2a');
@@ -60,6 +61,8 @@ const ponto = (cor) => `<i class="pf-ponto" style="background:${corOk(cor)}" ari
 
 // ---------------------------------------------------------------- abas
 function render() {
+    // a aba pode ser tocada antes de a lista da plataforma chegar (ou se ela falhar): mostra "carregando", não quebra
+    if (!S.dados) { el().innerHTML = '<p class="pf-vazio">Carregando a plataforma...</p>'; return; }
     const d = S.dados, t = totais(d.lojas), mensal = d.lojas.reduce((s, l) => s + (l.assinatura ? l.assinatura.valor : 0), 0);
     $('pf-resumo').textContent = `${t.ativas} de ${t.lojas} lojas ativas, ${fmt(t.receita)} vendidos e ${t.pedidos} pedidos neste mês${mensal ? `, ${fmt(mensal)} em mensalidades` : ''}.`;
     const abas = $('pf-abas'); abas.hidden = false;
@@ -82,7 +85,7 @@ function abaFeiras() {
             <p class="pf-feira-bancas">${bancas.map((l) => `<span>${ponto(l.cor)}${escapeHTML(l.nome)}</span>`).join('')}</p>
             <p class="pf-feira-conds">${conds ? `${conds} condomínio${conds > 1 ? 's' : ''}: ${escapeHTML(d.condominios.filter((c) => f.condominiosIds.includes(c.id)).map((c) => c.nome).join(', '))}` : 'Nenhum condomínio.'}</p>
             ${alertas.length ? `<ul class="pf-alertas">${alertas.map((a) => `<li>${escapeHTML(a)}</li>`).join('')}</ul>` : ''}
-            <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="copiar-link" data-feira="${escapeHTML(f.id)}">Copiar link</button><button type="button" class="pf-bt pri" data-pf="editar-feira" data-feira="${escapeHTML(f.id)}">Editar</button></div>
+            <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="copiar-link" data-feira="${escapeHTML(f.id)}">Copiar link</button><button type="button" class="pf-bt" data-pf="cartaz-feira" data-feira="${escapeHTML(f.id)}">Cartaz com QR</button><button type="button" class="pf-bt pri" data-pf="editar-feira" data-feira="${escapeHTML(f.id)}">Editar</button></div>
         </article>`;
     }).join('');
     return `<div class="pf-topo-aba"><p>Cada feira tem os seus dias, as suas bancas e os condomínios que atende. Quem abre o link da feira vê só as bancas dela.</p><button type="button" class="pf-bt pri" data-pf="nova-feira">Nova feira</button></div>
@@ -131,9 +134,26 @@ function abaMensalidades() {
         </div></li>`; }).join('')}</ul>`;
 }
 
+// PIX pelo Asaas: chave da conta da plataforma, o aviso (webhook) para cadastrar lá e a carteira de cada banca.
+function secaoAsaas(d) {
+    const a = d.asaas || {}, amb = a.ambiente === 'producao' ? 'produção' : 'teste (sandbox)';
+    const copiar = (rotulo, valor) => `<div class="pf-copiar"><span>${rotulo}</span><input type="text" readonly value="${escapeHTML(valor)}" aria-label="${rotulo}"><button type="button" class="pf-bt mini" data-pf="copiar-texto" data-copiar="${escapeHTML(valor)}">Copiar</button></div>`;
+    const outras = (d.lojas || []).filter((l) => !l.original);
+    return `<section class="pf-chave"><div class="pf-chave-topo"><h3>PIX automático (Asaas)</h3><span class="pf-selo${a.ligado ? ' ok' : ''}">${a.ligado ? `Ligado · ${amb}` : 'Sem chave'}</span></div>
+        <p>${a.ligado ? 'Com o Asaas ligado, o PIX de todas as lojas sai por ele (o PagBank fica de lado). A loja original recebe na conta da plataforma; cada outra banca recebe na carteira dela, cadastrada abaixo.' : 'Cole a chave da API da conta Asaas da plataforma (no Asaas: Integrações, Chaves de API). Comece com a chave do sandbox para testar sem dinheiro de verdade.'}</p>
+        ${a.viaAmbiente ? '<p>A chave está no servidor (variável ASAAS_API_KEY): para trocar, mude lá.</p>' : `<div class="pf-form-linha"><input type="password" id="pf-asaas" autocomplete="off" spellcheck="false" maxlength="420" placeholder="Chave da API ($aact_...)" aria-label="Chave da API do Asaas"><button type="button" class="pf-bt pri" data-pf="salvar-asaas">Salvar</button></div>`}
+        ${a.ligado && !a.viaAmbiente ? '<div class="pf-asaas-desligar"><button type="button" class="pf-bt" data-pf="desligar-asaas">Desligar o Asaas</button><small>Apaga a chave e desliga o PIX automático das lojas. O cliente passa a pagar só pelo copia e cola da loja (com o valor do pedido).</small></div>' : ''}
+        ${a.ligado ? `<div class="pf-asaas-aviso"><b>Cadastre o aviso de pagamento no Asaas</b><small>Integrações → Webhooks → Adicionar Webhook. Cole a URL e o token abaixo e marque os eventos de cobrança <b>PAYMENT_RECEIVED</b> e <b>PAYMENT_CONFIRMED</b>.</small>
+            ${a.urlAviso ? copiar('URL', a.urlAviso) : '<small>Falta PUBLIC_BASE_URL no servidor para montar a URL.</small>'}
+            ${a.avisoViaAmbiente ? '<small>Token: o que está na variável ASAAS_WEBHOOK_TOKEN do servidor.</small>' : a.aviso ? copiar('Token', a.aviso) : ''}</div>
+        <div class="pf-asaas-carteiras"><b>Carteira de cada banca</b><small>O walletId da conta Asaas da banca (formato 0b763922-aa88-4cbe-a567-e3fe8511fa06). Sem carteira, a loja não mostra PIX automático.${a.comissao ? ` Comissão da plataforma: ${a.comissao}%.` : ''}</small>
+            ${outras.length ? outras.map((l) => `<div class="pf-copiar" data-loja="${escapeHTML(l.id)}"><span>${escapeHTML(l.nome)}</span><input type="text" data-carteira autocomplete="off" spellcheck="false" maxlength="40" value="${escapeHTML((a.carteiras || {})[l.id] || '')}" placeholder="walletId" aria-label="Carteira Asaas de ${escapeHTML(l.nome)}"><button type="button" class="pf-bt mini pri" data-pf="salvar-carteira">Salvar</button></div>`).join('') : '<small>Nenhuma outra loja ainda.</small>'}</div>` : ''}
+    </section>`;
+}
+
 function abaChaves() {
     const d = S.dados;
-    return `<section class="pf-chave"><div class="pf-chave-topo"><h3>PIX automático (PagBank)</h3><span class="pf-selo${d.pix ? ' ok' : ''}">${d.pix ? 'Chave guardada' : 'Sem chave'}</span></div>
+    return `${secaoAsaas(d)}<section class="pf-chave"><div class="pf-chave-topo"><h3>PIX automático (PagBank)</h3><span class="pf-selo${d.pix ? ' ok' : ''}">${d.pix ? 'Chave guardada' : 'Sem chave'}</span></div>
         <p>${d.pix ? 'Para trocar, cole o novo token. Para o PIX aparecer ao cliente, ligue também "PIX automático" nas Configurações do painel da loja.' : 'Cole o token da conta PagBank (no site do PagBank: Integrações, Token). Depois ligue "PIX automático" nas Configurações do painel da loja. Vale para a loja original.'}</p>
         <div class="pf-form-linha"><input type="password" id="pf-pagbank" autocomplete="off" spellcheck="false" maxlength="300" placeholder="Token do PagBank" aria-label="Token do PagBank"><button type="button" class="pf-bt pri" data-pf="salvar-pagbank">Salvar</button></div></section>
     <section class="pf-chave"><div class="pf-chave-topo"><h3>Fotos dos produtos (ImgBB)</h3><span class="pf-selo${d.fotos ? ' ok' : ''}">${d.fotos ? 'Envio automático ligado' : 'Desligado'}</span></div>
@@ -148,20 +168,56 @@ async function carregarErros() {
     if (S.aba === 'erros') render();
 }
 const quando = (iso) => { try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); } catch (_) { return ''; } };
+// tipos: o que quebrou no código, defeito de desenho da tela (js/vigia-tela.js) e aviso do cliente ("Algo estranho na tela?")
+const TIPO_ERRO = { visual: ['Tela', 'tela'], relato: ['Cliente avisou', 'relato'], erro: ['Código', 'codigo'], promessa: ['Código', 'codigo'], recurso: ['Arquivo', 'codigo'] };
+const FILTROS_ERROS = [['abertos', 'Para olhar'], ['tela', 'Tela'], ['codigo', 'Código'], ['relato', 'Clientes'], ['corrigidos', 'Corrigidos']];
+const aberto = (e) => !e.corrigidoEm || e.voltou;
+const grupoDoErro = (e) => (TIPO_ERRO[e.tipo] || TIPO_ERRO.erro)[1];
+function errosDoFiltro(lista, f) {
+    if (f === 'corrigidos') return lista.filter((e) => !aberto(e));
+    const abertos = lista.filter(aberto);
+    return f === 'abertos' ? abertos : abertos.filter((e) => grupoDoErro(e) === f);
+}
 function abaErros() {
     const lista = S.erros;
-    const topo = `<div class="pf-topo-aba"><p>O que deu erro no celular dos clientes e da equipe nos últimos 7 dias. O mesmo erro no mesmo dia aparece uma vez, com o número de vezes. Lista vazia é bom sinal.</p><button type="button" class="pf-bt" data-pf="atualizar-erros">Atualizar</button></div>`;
+    const topo = `<div class="pf-topo-aba"><p>O que deu erro no celular dos clientes e da equipe nos últimos 7 dias: no código, no <b>desenho da tela</b> (preço cortado, botão coberto, foto quebrada, com o tamanho da tela e da letra) e o que os <b>clientes avisaram</b>. O mesmo erro aparece uma vez, com o número de vezes. Consertou? Toque em <b>Corrigi</b>: se acontecer de novo, ele volta para a lista.</p><button type="button" class="pf-bt" data-pf="atualizar-erros">Atualizar</button></div>`;
     if (lista === null || lista === undefined) return `${topo}<p class="config-sub">Carregando...</p>`;
     if (lista.falha) return `${topo}<div class="pf-vazio"><b>Não consegui abrir a lista.</b><p>${escapeHTML(lista.falha)}</p></div>`;
     if (!lista.length) return `${topo}<div class="pf-vazio"><b>Nenhum erro nos últimos 7 dias.</b><p>Quando algo quebrar no aparelho de alguém, aparece aqui.</p></div>`;
-    const total = lista.reduce((t, e) => t + (Number(e.vezes) || 0), 0);
-    return `${topo}<p class="pf-total"><b>${lista.length}</b> erro${lista.length > 1 ? 's' : ''} diferente${lista.length > 1 ? 's' : ''}, ${total} vez${total > 1 ? 'es' : ''} no total.</p>
-    <ul class="pf-lista pf-erros">${lista.map((e) => `<li class="pf-erro">
-        <div class="pf-erro-topo"><b>${escapeHTML(e.msg)}</b><span class="pf-selo">${Number(e.vezes) || 1}×</span></div>
-        <small>${escapeHTML(quando(e.ultimo))}${e.onde ? ` · ${escapeHTML(e.onde)}` : ''} · ${escapeHTML((e.paginas || [e.pagina]).join(', '))}</small>
+    const f = S.filtroErros || 'abertos';
+    const chips = `<div class="pf-filtros-erros" role="group" aria-label="Mostrar">${FILTROS_ERROS.map(([k, t]) => {
+        const n = errosDoFiltro(lista, k).length;
+        return `<button type="button" class="pf-filtro${k === f ? ' ativo' : ''}" data-pf="filtro-erros" data-filtro="${k}" aria-pressed="${k === f}">${t} <span>${n}</span></button>`;
+    }).join('')}</div>`;
+    const mostrar = errosDoFiltro(lista, f);
+    const total = mostrar.reduce((t, e) => t + (Number(e.vezes) || 0), 0);
+    const resumo = mostrar.length ? `<p class="pf-total"><b>${mostrar.length}</b> erro${mostrar.length > 1 ? 's' : ''} diferente${mostrar.length > 1 ? 's' : ''}, ${total} vez${total > 1 ? 'es' : ''} no total.</p>`
+        : `<div class="pf-vazio"><b>${f === 'corrigidos' ? 'Nada marcado como corrigido.' : 'Nada para olhar aqui.'}</b><p>${f === 'corrigidos' ? 'Quando você tocar em "Corrigi" num erro, ele vem para cá.' : 'Bom sinal.'}</p></div>`;
+    return `${topo}${chips}${resumo}
+    <ul class="pf-lista pf-erros">${mostrar.map((e) => {
+        const [rot, grupo] = TIPO_ERRO[e.tipo] || TIPO_ERRO.erro;
+        const dias = (e.dias || []).length;
+        return `<li class="pf-erro pf-erro--${grupo}${e.voltou ? ' voltou' : ''}">
+        <div class="pf-erro-topo"><span class="pf-tipo-erro pf-tipo-erro--${grupo}">${rot}</span><b>${escapeHTML(e.msg)}</b><span class="pf-selo">${Number(e.vezes) || 1}×</span></div>
+        ${e.voltou ? `<p class="pf-voltou">Voltou depois de corrigido (marcado em ${escapeHTML(quando(e.corrigidoEm))})</p>` : ''}
+        ${(e.telas || []).length ? `<small>Telas: ${escapeHTML(e.telas.join(' · '))}</small>` : ''}
+        <small>${escapeHTML(quando(e.ultimo))}${dias > 1 ? ` · em ${dias} dias` : ''}${e.onde ? ` · ${escapeHTML(e.onde)}` : ''} · ${escapeHTML((e.paginas || [e.pagina]).join(', '))}</small>
         <small>${escapeHTML((e.navegadores || []).join(', '))}${(e.lojas || []).length ? ` · lojas: ${escapeHTML(e.lojas.map((id) => (lojaPorId(id) || {}).nome || id).join(', '))}` : ''}</small>
-        ${e.pilha ? `<details><summary>Detalhe técnico</summary><pre>${escapeHTML(e.pilha)}</pre></details>` : ''}
-    </li>`).join('')}</ul>`;
+        ${e.pilha ? `<details><summary>${grupo === 'codigo' ? 'Detalhe técnico' : 'Onde e como'}</summary><pre>${escapeHTML(e.pilha)}</pre></details>` : ''}
+        <div class="pf-erro-acoes">${aberto(e)
+            ? `<button type="button" class="pf-bt mini" data-pf="erro-corrigi" data-ass="${escapeHTML(e.assinatura || '')}">Corrigi</button>`
+            : `<span class="pf-selo ok">Corrigido em ${escapeHTML(quando(e.corrigidoEm))}</span><button type="button" class="pf-bt mini" data-pf="erro-reabrir" data-ass="${escapeHTML(e.assinatura || '')}">Reabrir</button>`}</div>
+    </li>`;
+    }).join('')}</ul>`;
+}
+async function marcarErro(ass, estado) {
+    const e = (Array.isArray(S.erros) ? S.erros : []).find((x) => x.assinatura === ass); if (!e) return;
+    try {
+        const r = await api({ acao: 'erro-estado', assinatura: ass, estado });
+        if (estado === 'corrigido') { e.corrigidoEm = r.em || new Date().toISOString(); e.voltou = false; showToast('Marcado como corrigido. Se acontecer de novo, volta para a lista.'); }
+        else { delete e.corrigidoEm; delete e.voltou; showToast('Reaberto.'); }
+        render();
+    } catch (err) { showToast(err.message, true); }
 }
 
 // ---------------------------------------------------------------- folha (edição)
@@ -223,13 +279,15 @@ function folhaLoja(l) {
     const corpo = `
     <section class="pf-sec pf-loja-cab">${ponto(l.cor)}<div><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.id)}${l.original ? ', loja original' : ''}</small></div><span class="pf-selo${l.ativo ? ' ok' : ' bloq'}">${l.ativo ? 'Ativa' : 'Bloqueada'}</span></section>
     <section class="pf-sec"><p class="pf-mes">${l.mes ? `Neste mês: <b>${fmt(l.mes.receita)}</b> em <b>${l.mes.pedidos}</b> pedidos.` : 'Sem leitura do movimento deste mês.'}${l.assinatura ? ` Mensalidade: <b>${fmt(l.assinatura.valor)}</b>${l.assinatura.dia ? `, dia ${l.assinatura.dia}` : ''}.` : ' Sem mensalidade (defina na aba Mensalidades).'}</p>
-        <div class="pf-linha-bts"><a class="pf-bt" href="${urlDaLoja(l.id, './')}" target="_blank" rel="noopener">Ver a loja</a><a class="pf-bt" href="${urlDaLoja(l.id, './admin.html')}" target="_blank" rel="noopener">Abrir o painel</a></div></section>
+        <div class="pf-linha-bts"><a class="pf-bt" href="${urlDaLoja(l.id, './')}" target="_blank" rel="noopener">Ver a loja</a><a class="pf-bt" href="${urlDaLoja(l.id, '/admin')}">Abrir o painel</a></div></section>
     <section class="pf-sec"><span class="pf-rot">Proprietários</span>
         ${l.donos.length ? `<ul class="pf-donos">${l.donos.map((e) => `<li><span>${escapeHTML(e)}</span><button type="button" class="pf-bt mini" data-pf="tirar-dono" data-email="${escapeHTML(e)}" aria-label="Tirar ${escapeHTML(e)}">Tirar</button></li>`).join('')}</ul>` : `<p class="pf-dica">${l.original ? 'A conta antiga da banca continua valendo. Novos proprietários aparecem aqui.' : 'Ninguém ainda. Sem proprietário, ninguém abre o painel desta loja.'}</p>`}
         <div class="pf-form-linha"><input type="email" id="pf-l-dono" inputmode="email" autocomplete="off" placeholder="E-mail do proprietário" aria-label="E-mail do novo proprietário"><button type="button" class="pf-bt" data-pf="dar-dono">Adicionar</button></div></section>
     ${l.original ? '' : `<section class="pf-sec"><label class="pf-rot" for="pf-l-tipo">Tipo de negócio</label><div class="pf-form-linha"><input type="text" id="pf-l-tipo" maxlength="30" autocomplete="off" value="${escapeHTML(NOMES_MODELO[l.tipo] || l.tipo || '')}" placeholder="Ex.: Padaria"><button type="button" class="pf-bt" data-pf="mudar-tipo">Salvar</button></div></section>`}
     <section class="pf-sec"><span class="pf-rot">Módulos ligados</span><small class="pf-dica">Muda na hora, ao tocar.</small>
         <div class="pf-toggles">${Object.entries(S.dados.modulos).map(([k, rot]) => `<label><input type="checkbox" data-pf-modulo="${k}"${l.modulos[k] ? ' checked' : ''}> ${escapeHTML(rot)}</label>`).join('')}</div></section>
+    <section class="pf-sec"><span class="pf-rot">Campos no cadastro de produto</span><small class="pf-dica">O que esta loja vê ao criar ou editar um produto. Nome, preço, unidade, categoria e foto sempre aparecem. Muda na hora, ao tocar.</small>
+        <div class="pf-toggles">${(() => { const lig = camposDaLoja({ tipo: l.tipo, campos: l.campos || {} }, l.original); return Object.entries(S.dados.campos || CAMPOS_PRODUTO).map(([k, rot]) => `<label><input type="checkbox" data-pf-campo="${k}"${lig[k] ? ' checked' : ''}> ${escapeHTML(rot)}</label>`).join(''); })()}</div></section>
     <section class="pf-sec"><span class="pf-rot">Feiras</span>${fs.length ? `<ul class="pf-mini-lista">${fs.map((f) => `<li>${escapeHTML(f.nome)}<small>${escapeHTML(diasEmTexto(f.dias))}</small></li>`).join('')}</ul>` : '<p class="pf-dica">Não está em nenhuma feira.</p>'}<small class="pf-dica">Para colocar ou tirar de uma feira, use a aba Feiras.</small></section>
     <section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt${l.ativo ? ' perigo' : ' pri'}" data-pf="${l.ativo ? 'bloquear' : 'liberar'}">${l.ativo ? 'Bloquear a loja' : 'Liberar a loja'}</button><small class="pf-dica">Bloqueada, a loja para de receber pedidos e some das feiras, e o painel dela fecha com o aviso "Sua assinatura foi interrompida por falta de pagamento. Pague e volte a usar", mostrando a mensalidade. Nada se perde: ao liberar, tudo volta.</small></section>`;
     return [l.nome, corpo, '<button type="button" class="pf-bt" data-pf="fechar-folha">Fechar</button>'];
@@ -270,10 +328,22 @@ async function agir(b) {
     switch (a) {
         case 'fechar-folha': return fecharFolha(false);
         case 'atualizar-erros': return carregarErros();
+        case 'filtro-erros': S.filtroErros = b.dataset.filtro; return render();
+        case 'erro-corrigi': return marcarErro(b.dataset.ass, 'corrigido');
+        case 'erro-reabrir': return marcarErro(b.dataset.ass, 'aberto');
         case 'nova-feira': return abrirFolha('feira', '');
         case 'editar-feira': return abrirFolha('feira', b.dataset.feira);
         case 'nova-loja': return abrirFolha('nova-loja');
         case 'abrir-loja': return abrirFolha('loja', b.dataset.loja);
+        case 'cartaz-feira': {       // cartaz A4 "Agora temos aplicativo" com o QR DESTA feira (js/cartaz-lib.js)
+            const f = S.dados.feiras.find((x) => x.id === b.dataset.feira); if (!f) return;
+            try {
+                const [{ cartazHtml }, { imprimirPagina }] = await Promise.all([import('./cartaz-lib.js'), import('./impressao.js')]);
+                await imprimirPagina(cartazHtml({ feira: f, link: linkDaFeira(f.id) }));
+                showToast('Cartaz pronto. Para guardar, escolha "Salvar como PDF".');
+            } catch (e) { showToast((e && e.message) || 'Não consegui montar o cartaz.', true); }
+            return;
+        }
         case 'copiar-link': {
             try { await navigator.clipboard.writeText(linkDaFeira(b.dataset.feira)); showToast('Link da feira copiado.'); }
             catch (_) { showToast('Não consegui copiar. Segure o dedo no link para copiar.', true); }
@@ -361,6 +431,25 @@ async function agir(b) {
             if (!foi) { S.mensal[id] = guardado; render(); }
             return;
         }
+        case 'copiar-texto': {
+            try { await navigator.clipboard.writeText(b.dataset.copiar || ''); showToast('Copiado.'); }
+            catch (_) { const campo = b.parentElement && b.parentElement.querySelector('input'); if (campo) { campo.focus(); campo.select(); } showToast('Não consegui copiar sozinho: o texto ficou selecionado, use Copiar do celular.', true); }
+            return;
+        }
+        case 'salvar-asaas': {
+            const chave = $('pf-asaas').value.trim();
+            if (!/^\$aact_\S{20,}$/.test(chave)) return showToast('A chave do Asaas começa com $aact_ e não tem espaços. Confira se copiou inteira.', true);
+            return fazer({ acao: 'asaas', chave }, 'Chave do Asaas guardada. Agora cadastre o aviso de pagamento no Asaas (URL e token abaixo).');
+        }
+        case 'desligar-asaas': {
+            if (!await confirmar('Desligar o PIX automático?', 'A chave do Asaas será apagada e o PIX automático some de todas as lojas. O cliente continua pagando pelo copia e cola da loja. Para voltar, é só cadastrar a chave de novo.', { ok: 'Desligar', nao: 'Voltar' })) return;
+            return fazer({ acao: 'asaas', desligar: true }, 'Asaas desligado. As lojas voltaram ao PIX copia e cola.');
+        }
+        case 'salvar-carteira': {
+            const linha = b.closest('[data-loja]'), carteira = linha.querySelector('[data-carteira]').value.trim();
+            if (carteira && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(carteira)) return showToast('A carteira tem o formato 0b763922-aa88-4cbe-a567-e3fe8511fa06. Confira se copiou inteira.', true);
+            return fazer({ acao: 'asaas-carteira', id: linha.dataset.loja, carteira }, carteira ? 'Carteira guardada. O PIX desta banca vai direto para ela.' : 'Carteira apagada. Esta loja volta a não ter PIX automático.');
+        }
         case 'salvar-pagbank': {
             const chave = $('pf-pagbank').value.trim();
             if (chave.length < 20 || /\s/.test(chave)) return showToast('O token do PagBank é longo e não tem espaços. Confira se copiou inteiro.', true);
@@ -435,6 +524,11 @@ function ligar() {
         if (t.id === 'pf-f-limite' && S.rascunho) { S.rascunho.horaLimite = t.value; marcarMudanca(); return; }
         if (t.dataset.pfFLoja && S.rascunho) { if (t.checked) S.rascunho.lojas.add(t.dataset.pfFLoja); else S.rascunho.lojas.delete(t.dataset.pfFLoja); $('pf-f-n-lojas').textContent = S.rascunho.lojas.size; marcarMudanca(); return; }
         if (t.dataset.pfFCond && S.rascunho) { if (t.checked) S.rascunho.conds.add(t.dataset.pfFCond); else S.rascunho.conds.delete(t.dataset.pfFCond); $('pf-f-n-conds').textContent = S.rascunho.conds.size; marcarMudanca(); return; }
+        if (t.dataset.pfCampo && S.folha && S.folha.tipo === 'loja') {
+            const k = t.dataset.pfCampo, nome = (S.dados.campos || CAMPOS_PRODUTO)[k];
+            if (!(await fazer({ acao: 'campos', id: S.folha.id, campos: { [k]: t.checked } }, `${nome}: ${t.checked ? 'aparece' : 'escondido'} no cadastro.`))) t.checked = !t.checked;
+            return;
+        }
         if (t.dataset.pfModulo && S.folha && S.folha.tipo === 'loja') {
             const nome = S.dados.modulos[t.dataset.pfModulo];
             if (!(await fazer({ acao: 'modulos', id: S.folha.id, modulos: { [t.dataset.pfModulo]: t.checked } }, `${nome}: ${t.checked ? 'ligado' : 'desligado'}.`))) t.checked = !t.checked;

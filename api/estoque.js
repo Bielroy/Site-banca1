@@ -26,7 +26,7 @@ const H = require('../lib/http');
 const cors = H.cors;            // origem (CORS): lista única em lib/http.js
 
 const texto = (v, max) => String(v == null ? '' : v).normalize('NFC').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
-const PODEM = ['proprietario', 'administrador', 'estoque', 'producao'];
+const PODEM = ['proprietario', 'administrador', 'gerente', 'estoque', 'producao'];
 
 // freio por pessoa: no máximo 40 movimentações por minuto
 const passou = (uid) => H.passouNaMemoria(`estoque:${uid}`, 40, 60000);
