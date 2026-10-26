@@ -99,6 +99,16 @@ function rolaDeLado(el) {
     return null;
 }
 const fixoOuGrudado = (el) => { for (let e = el; e && e !== document.documentElement; e = e.parentElement) { const p = estilo(e).position; if (p === 'fixed' || p === 'sticky') return e; } return null; };
+/** Colado na tela AGORA: fixo, ou "sticky" que já grudou no topo. Um bloco "sticky" ainda no lugar normal é conteúdo comum que rola
+ *  (a barra "Ver pedido" fixa por cima dele, numa tela curta, não é defeito: ele gruda no topo assim que a página rola). */
+const coladoAgora = (el) => {
+    for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
+        const s = estilo(e);
+        if (s.position === 'fixed') return e;
+        if (s.position === 'sticky') { const t = parseFloat(s.top); if (Number.isFinite(t) && Math.abs(e.getBoundingClientRect().top - t) <= 1.5) return e; }
+    }
+    return null;
+};
 
 /** Área do elemento que dá para ver: a tela cortada por todo ancestral que esconde o que passa (overflow). */
 function areaVisivel(el, { tela = true } = {}) {
@@ -226,7 +236,7 @@ export function verificarTela() {
                 if (x < a.left + 1 || x > a.right - 1 || y < a.top + 1 || y > a.bottom - 1) continue;   // fora do que dá para ver
                 const em = document.elementFromPoint(x, y);
                 if (!em || el.contains(em) || em.contains(el)) continue;
-                if (fixoOuGrudado(em) && !fixoOuGrudado(el)) continue;                                // cabeçalho, sacola flutuante, aviso
+                if (fixoOuGrudado(em) && !coladoAgora(el)) continue;                                  // cabeçalho, sacola flutuante, aviso (por cima do que ainda rola)
                 if (em.closest('.toast, .voa, [class*="voando"], [class*="fly"]')) continue;          // animação passageira
                 coberto = em; break;
             }

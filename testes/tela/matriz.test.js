@@ -269,6 +269,27 @@ teste('o vigia no computador usa a janela, não a "tela do aparelho" (navegador 
   }
 });
 
+// ------------------------------------------------------------------ a barra "Ver pedido" por cima do que ainda não grudou no topo
+// iPhone 375px com a barra de baixo do Safari (tela curta) e itens na sacola: a barra fixa cobre a fileira de categorias enquanto ela está
+// no lugar normal (a página rola e ela gruda no topo). Isso não é defeito: o vigia acusava "Tem algo por cima: botão de categoria".
+teste('a barra fixa da sacola por cima das categorias ainda não coladas no topo não é defeito (375px, tela de 450px de altura)', async () => {
+  const { pagina, erros, fechar } = await abrir('/', { tela: '375', cen: CENARIOS['pior caso']() });
+  try {
+    await pagina.setViewportSize({ width: 375, height: 450 });
+    await pagina.locator('#lista-produtos .produto-card[data-id="alface"] .card-add').click();
+    await pagina.waitForSelector('#btn-carrinho-mobile:not(.vazio)', { timeout: 5000 });
+    await pagina.evaluate(() => window.scrollTo(0, 0)); await pagina.waitForTimeout(300);
+    const cobre = await pagina.evaluate(() => {
+      const barra = document.querySelector('#btn-carrinho-mobile').getBoundingClientRect();
+      return [...document.querySelectorAll('#categorias .cat-btn')].filter((b) => { const r = b.getBoundingClientRect(); return r.bottom > barra.top && r.top < barra.bottom && r.right > barra.left && r.left < barra.right; }).length;
+    });
+    assert.ok(cobre > 0, 'o cenário do teste precisa ter a barra por cima das categorias (ajuste a altura da tela)');
+    const achou = await pagina.evaluate(() => window.__vigiaTela.verificarTela());
+    assert.deepStrictEqual(achou.filter((p) => p.regra === 'coberto').map(texto), [], 'a barra fixa por cima de conteúdo que rola não é defeito');
+    semErros(erros);
+  } finally { await fechar(); }
+});
+
 // ------------------------------------------------------------------ o vigia acha defeito de propósito
 // (se as regras pararem de enxergar, a matriz passaria sem conferir nada)
 teste('o vigia acha defeito feito de propósito: rolagem lateral, preço cortado, botão coberto, foto quebrada, foto fora do card', async () => {
