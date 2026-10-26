@@ -725,6 +725,21 @@ teste('plataforma: lista leve para trocar de loja (só fichas, sem dados de dinh
   assert.strictEqual((await pf('plataforma', { acao: 'proprietario', id: 'espetinhos', email: 'novo@dono.com' })).status, 200);
   r = await pf('plataforma', { acao: 'lojas' }); assert.ok(r.corpo.lojas.find((l) => l.id === 'espetinhos').donos.includes('novo@dono.com'), 'novo proprietário aparece logo');
 });
+teste('plataforma: várias pessoas abrindo a lista ao mesmo tempo (cache frio) não repetem as leituras de cada loja', async () => {
+  const sem = { ...semente() }; for (let i = 0; i < 12; i++) sem[`tenants/loja-${i}`] = { nome: `Loja ${i}`, ativo: true };
+  const db = criarBanco(sem);
+  const lidas = { tenants: 0, resumos: 0, equipe: 0 }; const colecao = db.collection.bind(db);
+  db.collection = (n) => { const c = colecao(n); const get = c.get && c.get.bind(c); if (get && n in lidas) c.get = async () => { lidas[n]++; return get(); }; return c; };
+  const api = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, TOKENS));
+  const pf = (body) => chamar(api, { headers: { Authorization: 'Bearer plataforma' }, body });
+  const leves = await Promise.all([1, 2, 3, 4, 5].map(() => pf({ acao: 'lojas-leve' })));
+  assert.ok(leves.every((r) => r.status === 200 && r.corpo.lojas.length >= 13), 'todas recebem a lista');
+  assert.strictEqual(lidas.tenants, 1, 'cinco pedidos juntos leem as fichas uma vez só');
+  const antes = { ...lidas };
+  const cheias = await Promise.all([1, 2, 3, 4, 5].map(() => pf({ acao: 'lojas' })));
+  assert.ok(cheias.every((r) => r.status === 200), JSON.stringify(cheias.map((r) => r.status)));
+  assert.ok(lidas.equipe - antes.equipe <= 13 && lidas.resumos - antes.resumos <= 13, `movimento e donos lidos uma vez por loja (equipe ${lidas.equipe - antes.equipe}, resumos ${lidas.resumos - antes.resumos})`);
+});
 teste('plataforma: cadastro de condomínios nasce do que já existe; a feira marca do cadastro; renomear atualiza a feira; não tira o que está em uso', async () => {
   const sem = { ...semente(), 'loja/config': { ...semente()['loja/config'], condominios: [{ id: 'a', nome: 'Jardins Munique', formato: 'ql' }, { id: 'b', nome: 'Parque', formato: 'rua', ativo: false }] },
     'feiras/f-velha': { nome: 'Velha', dias: [3], condominios: ['JARDINS munique', 'Vila Nova'], lojas: [{ id: 'banca' }] } };

@@ -63,10 +63,14 @@ const mesAtual = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0,
 // (e a cada botão tocado). Ficam guardados por 90 s na memória deste servidor; trocar o proprietário limpa o dono.
 const TTL_LISTA_MS = 90 * 1000;
 const guardados = { mov: new Map(), donos: new Map(), leve: null };
+// Se duas telas pedem a mesma loja ao mesmo tempo (várias pessoas abrindo a Plataforma), a segunda espera a
+// leitura da primeira em vez de repetir (com muitas lojas, isso evitava centenas de leituras em dobro).
 const doCache = (mapa, id, ler) => {
   const g = mapa.get(id);
-  if (g && Date.now() - g.em < TTL_LISTA_MS) return Promise.resolve(g.v);
-  return ler().then((v) => { mapa.set(id, { em: Date.now(), v }); return v; });
+  if (g && (g.p || Date.now() - g.em < TTL_LISTA_MS)) return g.p || Promise.resolve(g.v);
+  const p = ler().then((v) => { mapa.set(id, { em: Date.now(), v }); return v; }, (e) => { mapa.delete(id); throw e; });
+  mapa.set(id, { p, em: 0 });
+  return p;
 };
 async function movimentoDoMes(id) { return doCache(guardados.mov, id, () => movimentoDoMesLido(id)); }
 async function movimentoDoMesLido(id) {
@@ -107,6 +111,13 @@ async function lojas(res) {
 async function lojasLeve(res) {
   const g = guardados.leve;
   if (!g || Date.now() - g.em > 60 * 1000) {
+    if (!guardados.leveEmCurso) guardados.leveEmCurso = lerLeve().finally(() => { guardados.leveEmCurso = null; });
+    await guardados.leveEmCurso;
+  }
+  return res.status(200).json({ sucesso: true, lojas: guardados.leve.lista });
+}
+async function lerLeve() {
+  {
     const ts = await db.collection('tenants').get();
     const fichas = new Map(ts.docs.map((d) => [d.id, d.data()]));
     if (!fichas.has(T.TENANT_PADRAO)) fichas.set(T.TENANT_PADRAO, { nome: NOME_ORIGINAL, ativo: true });
@@ -114,7 +125,6 @@ async function lojasLeve(res) {
       .map((id) => { const f = fichas.get(id); return { id, nome: texto(f.nome || id, 60), tipo: texto(f.tipo, 30), ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, cor: /^#[0-9a-fA-F]{6}$/.test(String(f.tema && f.tema.primaria)) ? f.tema.primaria : '#1a3a2a' }; });
     guardados.leve = { em: Date.now(), lista };
   }
-  return res.status(200).json({ sucesso: true, lojas: guardados.leve.lista });
 }
 
 async function definirDono(id, email, remover) {

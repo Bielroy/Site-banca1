@@ -359,6 +359,18 @@ teste('painel: Configurações guarda a retirada na banca (ligada, horários e l
   semErros(erros); await fechar();
 });
 
+teste('painel: aba Clientes mostra a lista guardada na hora e só depois traz o recálculo (não espera a conferência de pedido novo)', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  const t0 = Date.now();
+  await pagina.locator('.tab[data-aba="crm"]').click();
+  await pagina.waitForSelector('.crm-item', { timeout: 1500 });
+  assert.ok(Date.now() - t0 < 1800, 'a lista guardada tem de aparecer sem esperar o recálculo de 2 s');
+  assert.strictEqual(await pagina.locator('.crm-item').count(), 1, 'primeiro vem o que já estava guardado');
+  await pagina.waitForFunction(() => document.querySelectorAll('.crm-item').length === 2, null, { timeout: 6000 });   // depois chega o cálculo novo
+  semErros(erros); await fechar();
+});
+
 teste('painel: o Gerente liga e desliga PIX/cartão/dinheiro, mas não vê nem manda a chave PIX, o PIX automático e o WhatsApp dos pedidos', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'gerente', email: 'gerente@teste.com', isAnonymous: false, claims: { tenants: { banca: 'gerente' } } } });
   cen.lojas.banca.config = { ...cen.lojas.banca.config, wpp: '5562999990000', pix: { tipo: 'celular', chave: '+5562988887777', nome: 'Dona Rosa', cidade: 'Goiania' }, formasPagamento: { pix: true, cartao: true, dinheiro: true } };
@@ -1925,7 +1937,11 @@ teste('painel: "Vários de uma vez" cria os pastéis com o mesmo preço (preço 
     // pesagem (de mentira): devolve o pedido pesado como o api/pdv.js de verdade
     '/api/pdv': (c) => (c.acao === 'impressao' ? { sucesso: true, ok: true } : c.acao === 'ponte' ? ponteFalsa(c) : c.acao === 'mensagem' ? { sucesso: true, id: c.chave, total: 24.3, itens: c.itens.length, aPesar: c.itens.filter((i) => i.id === 'banana' && i.tipo === 'un').length } : c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
     // ranking (de mentira) da banca, ao contrário da ordem do cadastro, chegando 1,5 s depois
-    '/api/analytics': (c) => (c.acao === 'ranking' ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, nivel: 'popular', itens: ['ovos', 'banana', 'alface', 'tomate'].map((id, i) => ({ id, p: 0.9 - i * 0.2 })) }), 1500)) : {}),
+    '/api/analytics': (c) => (c.acao === 'painel' ? (c.atualizar
+        // com "atualizar" o servidor confere pedido novo e recalcula: demora 2 s e traz 1 cliente a mais
+        ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, meta: { geradoEm: '2026-10-26T15:00:00.000Z' }, indiceClientes: [{ id: 'c1', nome: 'Ana Lima', condominio: 'Alfa', quadra: '1', lote: '2', n: 2, ult: '2026-10-20', pri: '2026-09-01', gasto: 50 }, { id: 'c2', nome: 'Bruno Reis', condominio: 'Alfa', quadra: '3', lote: '4', n: 1, ult: '2026-10-25', pri: '2026-10-25', gasto: 20 }] }), 2000))
+        : { sucesso: true, meta: { geradoEm: '2026-10-26T10:00:00.000Z' }, indiceClientes: [{ id: 'c1', nome: 'Ana Lima', condominio: 'Alfa', quadra: '1', lote: '2', n: 2, ult: '2026-10-20', pri: '2026-09-01', gasto: 50 }] })
+      : c.acao === 'ranking' ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, nivel: 'popular', itens: ['ovos', 'banana', 'alface', 'tomate'].map((id, i) => ({ id, p: 0.9 - i * 0.2 })) }), 1500)) : {}),
     '/api/checkout': (c) => (c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),
     '/api/plataforma': (c) => (c.acao === 'situacao' ? { sucesso: true, temDono: true, souEu: true }
       : c.acao === 'erros' ? { sucesso: true, erros: [{ id: 'e1', assinatura: 'e'.repeat(20), tipo: 'erro', msg: "Cannot read properties of undefined (reading 'preco')", vezes: 3, ultimo: new Date().toISOString(), onde: '/assets/main-X.js:10:5', paginas: ['/'], navegadores: ['Android · Chrome 129'], lojas: ['banca'], pilha: 'at x' },
