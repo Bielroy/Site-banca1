@@ -375,6 +375,34 @@ teste('loja com cards escuros em página clara: nome e preço do produto continu
   semErros(erros); await fechar();
 });
 
+teste('loja com card escuro e SEM cor de texto escolhida (vale a padrão, escura): o nome do produto continua legível', async () => {
+  const cen = cenarioPadrao();
+  cen.lojas.banca.ficha.tema = { primaria: '#1a1a1a', destaque: '#f0b94a', fundo: '#fff6e4', superficie: '#1c1f22', botao: '#fbe27a', etiqueta: 'selo' };
+  const { pagina, erros, fechar } = await abrir('/', cen);
+  await cards(pagina).first().waitFor({ timeout: 8000 }); await pagina.waitForTimeout(500);
+  const c = await pagina.evaluate(() => {
+    const lum = (rgb) => rgb.match(/[\d.]+/g).slice(0, 3).map(Number).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
+    const card = document.querySelector('#lista-produtos .produto-card'), a = lum(getComputedStyle(card.querySelector('.produto-nome')).color), b = lum(getComputedStyle(card).backgroundColor);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  });
+  assert.ok(c >= 4.5, `nome ilegível sobre o card (contraste ${c.toFixed(1)})`);
+  semErros(erros); await fechar();
+});
+
+teste('rede de segurança: mesmo que o card escureça por fora do tema, a tela mede e deixa o nome legível', async () => {
+  const { pagina, erros, fechar } = await abrir('/');
+  await cards(pagina).first().waitFor({ timeout: 8000 }); await pagina.waitForTimeout(500);
+  // simula uma cor que brigou (ex.: um estilo novo): card escuro, texto escuro
+  const mudou = await pagina.evaluate(async () => {
+    document.documentElement.style.setProperty('--warm-white', '#1c1f22'); document.documentElement.style.setProperty('--superficie', '#1c1f22');
+    const m = await import('/js/melhorias-ui.js'); return m.conferirContrasteDosCards();
+  });
+  assert.strictEqual(mudou, true, 'a conferência percebeu o card ilegível');
+  const cor = await pagina.evaluate(() => getComputedStyle(document.querySelector('#lista-produtos .produto-card .produto-nome')).color);
+  assert.strictEqual(cor, 'rgb(245, 245, 242)', 'nome fica claro sobre o card escuro');
+  semErros(erros); await fechar();
+});
+
 teste('painel: aba Clientes mostra a lista guardada na hora e só depois traz o recálculo (não espera a conferência de pedido novo)', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });

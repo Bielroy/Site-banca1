@@ -189,8 +189,10 @@ export function avisosDeContraste(t) {
     if (!t) return av;
     if (ok('primaria') && ok('sobrePrimaria') && contraste(t.primaria, t.sobrePrimaria) < 4.5) av.push({ campo: 'sobrePrimaria', texto: 'O texto do cabeçalho e dos botões está difícil de ler sobre a cor principal.' });
     if (ok('botao') && contraste(t.botao, legivelSobre(t.botao)) < 4.5) av.push({ campo: 'botao', texto: 'A cor dos botões não deixa ler bem o texto deles.' });
-    if (ok('superficie') && ok('texto') && contraste(t.superficie, t.texto) < 4.5) av.push({ campo: 'texto', texto: 'O texto está com pouco contraste sobre o fundo dos cards.' });
-    if (ok('fundo') && ok('texto') && contraste(t.fundo, t.texto) < 4.5) av.push({ campo: 'texto', texto: 'O texto está com pouco contraste sobre o fundo da página.' });
+    // sem cor escolhida, vale a padrão do site (texto quase preto, card branco, página creme)
+    const tx = ok('texto') ? t.texto : '#1a1a18', sup = ok('superficie') ? t.superficie : '#ffffff', fd = ok('fundo') ? t.fundo : '#faf7f2';
+    if ((ok('superficie') || ok('texto')) && contraste(sup, tx) < 4.5) av.push({ campo: 'texto', texto: 'O texto está com pouco contraste sobre o fundo dos cards.' });
+    if ((ok('fundo') || ok('texto')) && contraste(fd, tx) < 4.5) av.push({ campo: 'texto', texto: 'O texto está com pouco contraste sobre o fundo da página.' });
     return av.filter((a, i) => av.findIndex((b) => b.campo === a.campo) === i);
 }
 
@@ -199,6 +201,11 @@ export function ajustarContraste(t, campo) {
     const n = { ...t };
     if (campo === 'sobrePrimaria' && corValida(n.primaria)) n.sobrePrimaria = legivelSobre(n.primaria);
     else if (campo === 'botao' && corValida(n.botao)) n.botao = corLegivel(n.botao, [legivelSobre(n.botao)]);
-    else if (campo === 'texto' && corValida(n.texto)) n.texto = corLegivel(n.texto, [n.superficie, n.fundo]);
+    else if (campo === 'texto') {
+        const sup = corValida(n.superficie) ? n.superficie : '#ffffff', fd = corValida(n.fundo) ? n.fundo : '#faf7f2', tx = corValida(n.texto) ? n.texto : '#1a1a18';
+        // card escuro em página clara (ou o contrário): nenhuma cor lê bem nos dois. O texto acerta a PÁGINA;
+        // os cards ganham a cor deles sozinhos (js/tema.js, ap-card-contraste).
+        n.texto = legivelSobre(sup) !== legivelSobre(fd) ? corLegivel(tx, [fd]) : corLegivel(tx, [sup, fd]);
+    }
     return n;
 }

@@ -725,6 +725,15 @@ teste('plataforma: lista leve para trocar de loja (só fichas, sem dados de dinh
   assert.strictEqual((await pf('plataforma', { acao: 'proprietario', id: 'espetinhos', email: 'novo@dono.com' })).status, 200);
   r = await pf('plataforma', { acao: 'lojas' }); assert.ok(r.corpo.lojas.find((l) => l.id === 'espetinhos').donos.includes('novo@dono.com'), 'novo proprietário aparece logo');
 });
+teste('aparência: card escuro sem cor de texto escolhida avisa no painel, e "ajustar sozinho" acerta a página (os cards se viram sozinhos)', async () => {
+  const A = await import(raiz('js/aparencia-lib.js'));
+  const t = { primaria: '#1a1a1a', fundo: '#fff6e4', superficie: '#1c1f22' };          // sem "texto": vale o quase preto padrão
+  const av = A.avisosDeContraste(t);
+  assert.ok(av.some((a) => a.campo === 'texto'), 'o painel avisa que o texto some no card: ' + JSON.stringify(av));
+  const n = A.ajustarContraste(t, 'texto');
+  assert.ok(A.contraste(n.texto, n.fundo) >= 4.5, `texto legível na página (${n.texto})`);
+  assert.ok(A.contraste('#ffffff', '#1a1a18') > 4.5 && A.avisosDeContraste({ primaria: '#1a3a2a' }).every((a) => a.campo !== 'texto'), 'tema comum (sem cores de fundo) não ganha aviso falso');
+});
 teste('plataforma: várias pessoas abrindo a lista ao mesmo tempo (cache frio) não repetem as leituras de cada loja', async () => {
   const sem = { ...semente() }; for (let i = 0; i < 12; i++) sem[`tenants/loja-${i}`] = { nome: `Loja ${i}`, ativo: true };
   const db = criarBanco(sem);

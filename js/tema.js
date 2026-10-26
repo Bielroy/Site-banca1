@@ -111,7 +111,8 @@ export function variaveisDoTema(tema) {
     // CARD ESCURO EM PÁGINA CLARA (ou o contrário): o texto é um só para a página e para os cards. Se ele não lê bem
     // sobre o card, o nome do produto some. Aí os cards ganham a própria cor de texto, legível sobre a superfície deles.
     classes['ap-card-contraste'] = false;
-    if (sup && tx && contraste(sup, tx) < 4.5) {
+    const txEf = tx || '#1a1a18';                           // sem cor de texto escolhida, vale a padrão (css/variables.css)
+    if (sup && contraste(sup, txEf) < 4.5) {
         const lt = legivelSobre(sup, '#f5f5f2', '#1a1a18');
         v['--tc-dark'] = lt; v['--tc-mid'] = mix(lt, 78, sup); v['--tc-light'] = mix(lt, 62, sup); v['--tc-linha'] = mix(lt, 18, sup);
         v['--tc-forest'] = p ? corLegivel(p, [sup]) : lt;
