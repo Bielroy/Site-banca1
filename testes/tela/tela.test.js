@@ -1892,6 +1892,40 @@ const cenarioAcai = () => {
   return cen;
 };
 
+teste('ajudante da pastelaria: fala do jeito da loja e a sugestão "Montar assim" abre a tela de montar já marcada', async () => {
+  const cen = cenarioPadrao();
+  cen.lojas.moecoe = { ficha: { nome: 'Pastel Moe Coe', ativo: true, tipo: 'Pastelaria', modulos: { ia: true } }, categorias: [{ chave: 'pasteis', nome: 'Pastéis', ordem: 1 }],
+    produtos: { pc: { nome: 'Pastel', preco: 10, unidade: 'un', cat: 'pasteis', ativo: true, montar: { grupos: [
+      { id: 'sabor', nome: 'Sabor', min: 1, max: 1, opcoes: [{ id: 'carne', nome: 'Carne', preco: 0 }, { id: 'frango', nome: 'Frango', preco: 0 }] },
+      { id: 'adicionais', nome: 'Adicionais', min: 0, max: 2, opcoes: [{ id: 'catupiry', nome: 'Catupiry', preco: 2 }, { id: 'milho', nome: 'Milho', preco: 1 }] }] } } } };
+  const { pagina, erros, ctx, fechar } = await abrir('/?loja=moecoe', cen);
+  let pedidoIA = null;
+  await ctx.route('**/api/assistente', (r) => { pedidoIA = JSON.parse(r.request().postData() || '{}'); r.fulfill({ status: 200, contentType: 'text/event-stream',
+    body: 'data: {"text":"Boa! Pastel de frango com catupiry fica ótimo."}\n\ndata: {"text":"\\n[MONTAR:pc|sabor=frango|adicionais=catupiry,inventado]"}\n\ndata: [DONE]\n\n' }); });
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForFunction(() => !document.body.classList.contains('sem-ia') && /Pastel Moe Coe/.test(document.querySelector('#modal-ia-chat .ia-topo-sub').textContent), null, { timeout: 5000 });
+  const saudacao = await pagina.locator('#chat-ia-corpo .ia-msg--bot p').first().innerText();
+  assert.ok(/Pastel Moe Coe/.test(saudacao) && /montar/.test(saudacao) && !/fresquinh|cozinhar/.test(saudacao), saudacao);
+  assert.ok(!/Vinagrete/.test(await pagina.locator('#chat-ia-corpo .ia-etiquetas').innerText()), 'nada de receita de hortifruti');
+  await pagina.click('#btn-ia-flutuante');
+  await pagina.waitForSelector('#modal-ia-chat.aberto', { timeout: 3000 });
+  await pagina.fill('#input-ia-mensagem', 'quero um pastel de frango');
+  await pagina.click('#btn-ia-enviar');
+  const pilula = pagina.locator('#ia-sugestoes-container .ia-pill--montar');
+  await pilula.waitFor({ timeout: 4000 });
+  assert.match(await pilula.innerText(), /Frango, Catupiry[\s\S]*Montar assim/);
+  assert.ok(!/MONTAR/.test(await pagina.locator('#chat-ia-corpo').innerText()), 'a marcação não aparece na conversa');
+  assert.strictEqual(pedidoIA.action, 'chat_stream');
+  await pilula.locator('[data-action="montar"]').click();
+  await pagina.waitForSelector('#modal-montar.aberto', { timeout: 3000 });
+  const marcadas = await pagina.$$eval('#modal-montar .mt-op.on', (bs) => bs.map((b) => b.dataset.o).sort());
+  assert.deepStrictEqual(marcadas, ['catupiry', 'frango'], 'abre com a combinação sugerida (e só com opções que existem)');
+  await pagina.click('#mt-ok');
+  await pagina.waitForFunction(() => !document.querySelector('#modal-montar.aberto'), null, { timeout: 3000 });
+  await pagina.waitForFunction(() => /12,00/.test(document.body.innerText), null, { timeout: 3000 });
+  semErros(erros); await fechar();
+});
+
 teste('montar pedido: o açaí abre a tela de montar, obrigatório segura o botão, grátis e pagos somam certo, duas montagens viram duas linhas e o pedido leva as escolhas', async () => {
   const { pagina, erros, fechar } = await abrir('/', cenarioAcai());
   const card = pagina.locator('#lista-produtos .produto-card[data-id="a"]');

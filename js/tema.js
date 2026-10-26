@@ -14,6 +14,7 @@ import { feiraDoDia, feirasDaFicha, feiraDoCliente, feirasDoCondominio, feiraDoE
 import { lerFeiraCliente, gravarFeiraCliente, gravarUltimaBanca, lerUltimaBanca } from './feira-cliente.js';
 import { TENANT, fichaRef, chave, urlDaLoja, ehLojaOriginal, EM_PREVIA } from './tenant.js';
 import { ARTES, arteDoTipo } from './arte-lib.js';
+import { textosDoAjudante, aplicarTextosDoAjudante } from './ajudante-lib.js';
 import { OPCOES, urlImagem, corLegivel, legivelSobre, FONTES, MODELOS, NOMES_MODELOS, FOTO_FORMATOS, linkDaFonte } from './aparencia-lib.js';
 // As listas moraram aqui por muito tempo; quem já importava daqui continua funcionando.
 export { FONTES, MODELOS, NOMES_MODELOS, FOTO_FORMATOS };
@@ -188,12 +189,14 @@ function aplicarFicha(ficha, completa = true) {
         document.title = ficha.subtitulo ? `${nome} | ${ficha.subtitulo}` : nome;
         document.querySelectorAll('[data-nome-loja]').forEach((el) => { el.textContent = nome; });
         const nota = document.getElementById('header-nota'); if (nota) { nota.textContent = typeof ficha.nota === 'string' ? ficha.nota : ''; nota.hidden = !nota.textContent; }
+        // O Ajudante fala do jeito desta loja (pastelaria: escolher e montar; espetinho: quanto pedir...)
+        if (completa) aplicarTextosDoAjudante(textosDoAjudante(ficha, nome));
     }
     escrever('header-sub', ficha.subtitulo);
     const busca = document.getElementById('busca-input');
     if (busca && (ficha.busca || !ehLojaOriginal)) busca.placeholder = ficha.busca || 'Buscar produto...';
     // MÓDULOS: cada loja liga só o que usa (ficha.modulos = { ia: true, ... }).
-    // O Ajudante foi escrito para hortifruti, então nas outras lojas começa desligado.
+    // Nas outras lojas o Ajudante começa desligado: a plataforma liga por loja (módulo 'ia').
     if (completa) document.body.classList.toggle('sem-ia', !moduloLigado(ficha, 'ia'));
     if (ficha.nota !== undefined) { const n = document.getElementById('header-nota'); if (n) { n.textContent = ficha.nota || ''; n.hidden = !ficha.nota; } }
 }

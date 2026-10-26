@@ -161,6 +161,9 @@ main.layout { min-height: 100vh; }
 /* mais de uma sugestão: a última fica cortada de propósito, mostrando que dá para arrastar */
 .ia-sugestoes.tem-mais .ia-pill { max-width: 74vw; }
 .ia-pill-nome { font-size: .84rem; font-weight: 700; color: var(--text-dark); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* pílula de montar (pastel, açaí...): nome e, embaixo, a combinação sugerida */
+.ia-pill--montar .ia-pill-nome { max-width: 170px; }
+.ia-pill-nome small { display: block; font-size: .74rem; font-weight: 600; color: var(--text-mid); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ia-pill-add, .ia-pill-qtd { border-radius: 999px; }
 .ia-pill-add { border: 0; background: var(--forest); color: var(--sobre-primaria); font-weight: 800; font-size: .84rem; min-height: 44px; padding: 8px 16px; cursor: pointer; white-space: nowrap; transition: transform .15s ease; }
 .ia-pill-add:active { transform: scale(.94); }

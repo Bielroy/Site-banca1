@@ -39,8 +39,9 @@ import { ligarVerFoto } from './ver-foto.js';
 import { temDoisModos, modoPreferido, limparMemoria, botoesDoCard, textoNoPedido, proximaQtd } from './modo-lib.js';
 import { juntarPedidos, perfilParaAparelho, unirFavs, unirModo, sacolaParaGuardar, sacolaVale } from './conta-lib.js';
 import { buscarConta, agendarGuardar, marcarConta, sairDaConta } from './conta-loja.js';
-import { temMontar, remontar, linhaMontada, chaveDaLinha } from './montar-lib.js';
+import { temMontar, remontar, linhaMontada, chaveDaLinha, limparOpcoes } from './montar-lib.js';
 import { abrirMontar } from './montar-loja.js';
+import { dicaDoAjudante } from './ajudante-lib.js';
 import './checkout-teclado.js';   // tela de envio com o teclado aberto: campos, botão e pagamento em botões
 ligarVerFoto();   // tocar na foto da janela do produto abre ela inteira
 
@@ -72,7 +73,7 @@ const resetInatividadeTimer = () => {
     clearTimeout(inatividadeTimer);
     if (STATE.carrinho.length > 0 && !document.getElementById('modal-checkout')?.classList.contains('aberto') && !document.getElementById('modal-ia-chat')?.classList.contains('aberto')) {
         inatividadeTimer = setTimeout(() => {
-            showToast("🧺 Quer uma ideia de receita com o que já está no pedido? Toque no Ajudante.", false);
+            showToast(`🧺 ${dicaDoAjudante()}`, false);
             const btnIA = document.getElementById('btn-ia-flutuante');
             if(btnIA) { btnIA.classList.add('pulse-anim'); setTimeout(() => btnIA.classList.remove('pulse-anim'), 10000); }
         }, 180000); 
@@ -253,10 +254,10 @@ const pintarBotaoMontar = (area, p) => {
     area.innerHTML = `<button type="button" class="card-add card-add--montar" data-action="montar" data-id="${escapeHTML(p.id)}" aria-label="${n ? `Montar outro ${nome}` : `Montar ${nome}`}">
         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M4 12h7M4 17h5M17 10v8M13 14h8"/></svg><span>${n ? 'Mais um' : 'Montar o seu'}</span>${n ? `<b class="montar-n">${n}</b>` : ''}</button>`;
 };
-const abrirMontarDoProduto = (id, linhaChave = null) => {
+const abrirMontarDoProduto = (id, linhaChave = null, inicial = null) => {
     const p = produtoPorId(id); if (!p) return;
     const linha = linhaChave ? STATE.carrinho.find((x) => chaveDaLinha(x) === linhaChave) : null;
-    abrirMontar({ produto: p, linha, fmt, foto: p.foto ? fotoPequena(p, 828) : '', rotuloBotao: STATE.config.textoBotao || 'Pôr na sacola', aoConfirmar: porMontadoNaSacola });
+    abrirMontar({ produto: p, linha, inicial: linha ? null : inicial, fmt, foto: p.foto ? fotoPequena(p, 828) : '', rotuloBotao: STATE.config.textoBotao || 'Pôr na sacola', aoConfirmar: porMontadoNaSacola });
 };
 /** O cliente terminou de montar: entra na sacola (ou troca a linha que estava sendo alterada). Igual + igual = soma. */
 const porMontadoNaSacola = (p, conferido, qtd, antiga) => {
@@ -2272,7 +2273,11 @@ document.body.addEventListener('click', async (e) => {
         const action = actionTarget.dataset.action; const id = actionTarget.dataset.id;
         if(action === 'add' || action === 'inc' || action === 'dec' || action === 'fav' || action === 'trocar' || action === 'montar') e.stopPropagation();
         // MONTAR PEDIDO: abre a tela de montar (de novo, ou para alterar uma linha da sacola); + e − da linha montada
-        if (action === 'montar') { abrirMontarDoProduto(id, actionTarget.dataset.linha || null); return; }
+        if (action === 'montar') {
+            // data-opcoes: combinação sugerida pelo Ajudante ({ grupoId: [opcaoId] }); só ids válidos passam
+            let inicial = null; try { inicial = actionTarget.dataset.opcoes ? limparOpcoes(JSON.parse(actionTarget.dataset.opcoes)) : null; } catch (_) { inicial = null; }
+            abrirMontarDoProduto(id, actionTarget.dataset.linha || null, inicial); return;
+        }
         if ((action === 'inc' || action === 'dec') && actionTarget.dataset.linha) { mudarLinhaMontada(actionTarget.dataset.linha, action === 'inc' ? 1 : -1); return; }
         if (action === 'detalhe' && temMontar(produtoPorId(id) || {})) { abrirMontarDoProduto(id); return; }
 

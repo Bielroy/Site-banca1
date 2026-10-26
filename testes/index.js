@@ -1650,6 +1650,40 @@ teste('chat público: loja sem o módulo de IA não gasta a cota; entradas grand
     assert.strictEqual(db._dados.get([...db._dados.keys()].find((k) => k.startsWith('tenants/comia/uso_ia/'))).chat, 1, 'uso contado por loja');
   } finally { global.fetch = fetchReal; }
 });
+teste('ajudante por loja: a pastelaria ganha voz própria e o catálogo com as opções de montar; a Banca continua igual', async () => {
+  const A = require(raiz('lib/ajudante.js'));
+  const J = await import(raiz('js/ajudante-lib.js'));
+  assert.deepStrictEqual(A.GRUPOS, J.GRUPOS, 'o mapa de tipos é igual no servidor e na tela');
+  const pastel = { id: 'pastel-carne', nome: 'Pastel de carne', cat: 'Pastéis', preco: 10, unidade: 'un', ativo: true, montar: { grupos: [
+    { id: 'sabor', nome: 'Sabor', min: 1, max: 1, opcoes: [{ id: 'carne', nome: 'Carne', preco: 0 }, { id: 'frango', nome: 'Frango', preco: 0 }, { id: 'velho', nome: 'Sabor velho', preco: 0, ativo: false }] },
+    { id: 'adicionais', nome: 'Adicionais', min: 0, max: 3, gratis: 1, opcoes: [{ id: 'catupiry', nome: 'Catupiry', preco: 2 }] }] } };
+  const banco = criarBancoP({ ...semente(), 'tenants/moecoe': { nome: 'Pastel Moe Coe', tipo: 'Pastelaria', ativo: true, modulos: { ia: true } }, 'tenants/moecoe/produtos/pastel-carne': pastel });
+  process.env.GEMINI_API_KEY = 'chave-de-teste';
+  const enviados = [], fetchReal = global.fetch;
+  global.fetch = async (url, o) => { enviados.push(JSON.parse(o.body)); return new Response('data: {"candidates":[{"content":{"parts":[{"text":"oi"}]}}]}\n\n', { status: 200 }); };
+  try {
+    const api = carregarApi(raiz('api/assistente.js'), criarAdmin(banco, TOKENS));
+    const conversar = (loja) => new Promise((resolve, reject) => {
+      const res = { _status: 200, setHeader() {}, status(c) { this._status = c; return this; }, json(j) { resolve({ status: this._status, corpo: j }); return this; }, writeHead(c) { this._status = c; }, write() {}, end() { resolve({ status: this._status }); } };
+      Promise.resolve(api({ method: 'POST', headers: { 'x-forwarded-for': '5.5.5.' + Math.floor(Math.random() * 250), ...(loja ? { 'X-Loja': loja } : {}) }, body: { action: 'chat_stream', mensagemCliente: 'quero um pastel' }, query: {}, socket: {} }, res)).catch(reject);
+    });
+    assert.strictEqual((await conversar('moecoe')).status, 200);
+    const t = JSON.stringify(enviados[enviados.length - 1]);
+    assert.ok(t.includes('Pastel Moe Coe') && t.includes('montar o pedido'), 'fala como a pastelaria');
+    assert.ok(!t.includes('hortifruti') && !t.includes('Banca Adair'), 'nada da Banca na pastelaria');
+    assert.ok(t.includes('sabor[Sabor](escolha 1, obrigatório): carne=Carne; frango=Frango') && t.includes('catupiry=Catupiry +R$2.00') && t.includes('1 sem custo'), 'as opções de montar vão por id, com a regra');
+    assert.ok(!t.includes('Sabor velho'), 'opção desligada não aparece');
+    assert.ok(t.includes('[MONTAR:'), 'a IA sabe sugerir a combinação');
+    assert.strictEqual((await conversar(null)).status, 200);
+    const b = JSON.stringify(enviados[enviados.length - 1]);
+    assert.ok(b.includes('Banca Adair e Pedrina') && b.includes('hortifruti') && b.includes('receitas'), 'a Banca continua com a voz dela');
+    assert.ok(!b.includes('[MONTAR:'), 'sem produto de montar, sem a regra de montar');
+  } finally { global.fetch = fetchReal; }
+  const tx = J.textosDoAjudante({ tipo: 'Pastelaria' }, 'Pastel Moe Coe');
+  assert.ok(tx.saudacao.includes('Pastel Moe Coe') && /montar/.test(tx.saudacao) && !/cozinhar|fresquinh/.test(tx.saudacao + tx.campo));
+  assert.strictEqual(J.textosDoAjudante({}, 'X', true).titulo, 'Ajudante da Banca');
+  assert.strictEqual(J.grupoDoTipo('Espetinhos do Zé'), 'refeicao'); assert.strictEqual(J.grupoDoTipo('Loja de presentes'), 'geral');
+});
 teste('chat: modelo lotado (503) ou sem rede passa direto para o próximo da fila, sem fazer o cliente esperar', async () => {
   const db = criarBancoP(semente());
   process.env.GEMINI_API_KEY = 'chave-de-teste';

@@ -151,11 +151,13 @@ function fechar() {
     if (history.state && history.state.modal === ID) history.back();
 }
 
-export function abrirMontar({ produto, linha = null, fmt, foto = '', rotuloBotao = 'Pôr na sacola', aoConfirmar }) {
+// inicial = { grupoId: [opcaoId...] }: escolhas já marcadas ao abrir (o Ajudante sugeriu a combinação). O cliente confere e muda.
+export function abrirMontar({ produto, linha = null, inicial = null, fmt, foto = '', rotuloBotao = 'Pôr na sacola', aoConfirmar }) {
     const montar = montarDoProduto(produto); if (!montar) return false;
     montarModal();
     const escolhas = new Map(montar.grupos.map((g) => [g.id, []]));
-    if (linha && linha.opcoes) for (const g of montar.grupos) escolhas.set(g.id, (linha.opcoes[g.id] || []).filter((id) => g.opcoes.some((o) => o.id === id && o.ativo)).slice(0, g.max));
+    const marcadas = linha && linha.opcoes ? linha.opcoes : (inicial && typeof inicial === 'object' ? inicial : null);
+    if (marcadas) for (const g of montar.grupos) escolhas.set(g.id, (Array.isArray(marcadas[g.id]) ? marcadas[g.id] : []).filter((id) => g.opcoes.some((o) => o.id === id && o.ativo)).slice(0, g.max));
     // escolha única obrigatória com uma opção só: já vem marcada
     for (const g of montar.grupos) { const vivas = g.opcoes.filter((o) => o.ativo); if (g.min === 1 && g.max === 1 && vivas.length === 1 && !escolhas.get(g.id).length) escolhas.set(g.id, [vivas[0].id]); }
     atual = { p: produto, montar, escolhas, qtd: linha ? Math.max(1, Math.round(Number(linha.qtd) || 1)) : 1, linha, fmt, aoConfirmar, rotulo: rotuloBotao };
