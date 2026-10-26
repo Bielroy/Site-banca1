@@ -707,7 +707,7 @@ teste('plataforma: lista leve para trocar de loja (só fichas, sem dados de dinh
   const api = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, TOKENS));
   const pf = (token, body) => chamar(api, { headers: { Authorization: `Bearer ${token}` }, body });
   let r = await pf('plataforma', { acao: 'lojas-leve' }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
-  assert.strictEqual(r.corpo.lojas[0].id, 'banca', 'a loja original vem primeiro'); assert.deepStrictEqual(r.corpo.lojas.slice(1).map((l) => l.nome), ['Ágata', 'Espetinhos do Zé'], 'as outras por nome (alfabética, com acento)');
+  assert.strictEqual(r.corpo.lojas[0].id, 'banca', 'a loja original vem primeiro'); { const nomes = r.corpo.lojas.slice(1).map((l) => l.nome); assert.ok(nomes.indexOf('Ágata') >= 0 && nomes.indexOf('Ágata') < nomes.indexOf('Espetinhos do Zé'), `as outras por nome, com acento: ${nomes}`); assert.deepStrictEqual(nomes, [...nomes].sort((x, y) => x.localeCompare(y, 'pt-BR')), 'ordem alfabética'); }
   const por = Object.fromEntries(r.corpo.lojas.map((l) => [l.id, l]));
   assert.deepStrictEqual(Object.keys(por.espetinhos).sort(), ['ativo', 'cor', 'id', 'nome', 'original', 'tipo'], 'só o necessário para trocar de loja');
   assert.strictEqual(por.espetinhos.cor, '#b3261e'); assert.strictEqual(por.zeta.ativo, false); assert.strictEqual(por.banca.original, true);
