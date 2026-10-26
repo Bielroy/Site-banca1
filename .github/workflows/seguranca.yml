@@ -128,7 +128,7 @@ jobs:
 
   tela:
     name: Testes de tela (navegador de verdade)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # versão fixa: o "latest" virou Ubuntu 26 e a instalação do navegador de teste (--with-deps) falha nele
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
@@ -159,7 +159,7 @@ jobs:
 
   matriz:
     name: Matriz de telas (tamanhos de tela e de letra, dados de pior caso)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # versão fixa: o "latest" virou Ubuntu 26 e a instalação do navegador de teste (--with-deps) falha nele
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
