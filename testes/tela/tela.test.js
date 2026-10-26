@@ -359,6 +359,22 @@ teste('painel: Configurações guarda a retirada na banca (ligada, horários e l
   semErros(erros); await fechar();
 });
 
+teste('loja com cards escuros em página clara: nome e preço do produto continuam legíveis sobre o card', async () => {
+  const cen = cenarioPadrao();
+  cen.lojas.banca.ficha.tema = { primaria: '#1a1a1a', secundaria: '#f0b94a', destaque: '#f0b94a', fundo: '#fff6e4', superficie: '#1c1f22', texto: '#1a1a18', sobrePrimaria: '#ffffff', botao: '#fbe27a', etiqueta: 'selo' };
+  const { pagina, erros, fechar } = await abrir('/', cen);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  const r = await pagina.evaluate(() => {
+    const lum = (rgb) => { const [r, g, b] = rgb.match(/[\d.]+/g).slice(0, 3).map(Number).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const cr = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+    const card = document.querySelector('#lista-produtos .produto-card'), cs = (el) => getComputedStyle(el);
+    return { nome: cr(cs(card.querySelector('.produto-nome')).color, cs(card).backgroundColor), preco: cr(cs(card.querySelector('.etq-preco')).color, cs(card.querySelector('.etiqueta, .etq-preco').closest('.etiqueta') || card).backgroundColor) };
+  });
+  assert.ok(r.nome >= 4.5, `o nome do produto ficou ilegível sobre o card (contraste ${r.nome.toFixed(1)})`);
+  assert.ok(r.preco >= 4.5, `o preço ficou ilegível (contraste ${r.preco.toFixed(1)})`);
+  semErros(erros); await fechar();
+});
+
 teste('painel: aba Clientes mostra a lista guardada na hora e só depois traz o recálculo (não espera a conferência de pedido novo)', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });

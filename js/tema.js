@@ -15,7 +15,7 @@ import { lerFeiraCliente, gravarFeiraCliente, gravarUltimaBanca, lerUltimaBanca 
 import { TENANT, fichaRef, chave, urlDaLoja, ehLojaOriginal, EM_PREVIA } from './tenant.js';
 import { ARTES, arteDoTipo } from './arte-lib.js';
 import { textosDoAjudante, aplicarTextosDoAjudante } from './ajudante-lib.js';
-import { OPCOES, urlImagem, corLegivel, legivelSobre, FONTES, MODELOS, NOMES_MODELOS, FOTO_FORMATOS, linkDaFonte } from './aparencia-lib.js';
+import { OPCOES, urlImagem, corLegivel, legivelSobre, contraste, FONTES, MODELOS, NOMES_MODELOS, FOTO_FORMATOS, linkDaFonte } from './aparencia-lib.js';
 // As listas moraram aqui por muito tempo; quem já importava daqui continua funcionando.
 export { FONTES, MODELOS, NOMES_MODELOS, FOTO_FORMATOS };
 
@@ -108,6 +108,15 @@ export function variaveisDoTema(tema) {
     // etiqueta: em tema escuro o "papel" claro continua claro (é um objeto), com tinta escura
     const classes = { 'com-cor-botao': !!bt };
     for (const [k, val, classe] of CLASSES_OPCOES) classes[classe] = t[k] === val;
+    // CARD ESCURO EM PÁGINA CLARA (ou o contrário): o texto é um só para a página e para os cards. Se ele não lê bem
+    // sobre o card, o nome do produto some. Aí os cards ganham a própria cor de texto, legível sobre a superfície deles.
+    classes['ap-card-contraste'] = false;
+    if (sup && tx && contraste(sup, tx) < 4.5) {
+        const lt = legivelSobre(sup, '#f5f5f2', '#1a1a18');
+        v['--tc-dark'] = lt; v['--tc-mid'] = mix(lt, 78, sup); v['--tc-light'] = mix(lt, 62, sup); v['--tc-linha'] = mix(lt, 18, sup);
+        v['--tc-forest'] = p ? corLegivel(p, [sup]) : lt;
+        classes['ap-card-contraste'] = true;
+    }
     // capa só vale com uma foto de verdade; sem ela, o cabeçalho fica na cor lisa
     if (t.cabecalho === 'capa' && !urlImagem(t.capa)) classes['ap-cabecalho-capa'] = false;
     return { variaveis: v, classes };

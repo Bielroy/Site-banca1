@@ -261,3 +261,6 @@ main.layout { min-height: 100vh; }
 /* ---------- entrega ---------- */
 .linha-entrega { font-size: .88rem; color: var(--text-mid); margin: 0 0 8px; line-height: 1.35; }
 .linha-entrega.gratis { color: var(--success, #166534); font-weight: 700; }
+
+/* Tema com card escuro em página clara (ou o contrário): o card usa a cor de texto própria, legível sobre ele (js/tema.js). */
+.ap-card-contraste .produto-card { --text-dark: var(--tc-dark); --text-mid: var(--tc-mid); --text-light: var(--tc-light); --linha: var(--tc-linha); --forest-texto: var(--tc-forest); color: var(--tc-dark); }
