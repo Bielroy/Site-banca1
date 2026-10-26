@@ -67,6 +67,10 @@ body.pf-ocupado .pf-bt { pointer-events: none; opacity: .7; }
 .pf-lista { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--pf-linha); }
 .pf-lista > li { border-bottom: 1px solid var(--pf-linha); }
 .pf-nada { padding: 18px 4px; color: var(--pf-apagado); }
+/* uma loja por linha: tocar na linha abre a ficha; o botão "Painel" abre direto o painel dela (um toque) */
+.pf-linha-wrap { display: flex; align-items: center; gap: 8px; }
+.pf-linha-wrap > .pf-linha { flex: 1; min-width: 0; width: auto; }
+.pf-painel { flex: none; min-height: 44px; min-width: 64px; }
 .pf-linha { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 4px; border: 0; background: none; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .pf-linha:hover { background: rgba(26, 58, 42, .03); }
 .pf-linha.bloq .pf-linha-txt b { color: var(--pf-apagado); text-decoration: line-through; }

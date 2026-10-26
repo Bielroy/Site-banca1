@@ -919,6 +919,71 @@ teste('plataforma: a aba Erros mostra os erros agrupados', async () => {
   semErros(erros); await fechar();
 });
 
+const lojasDaPlataforma = (n) => Array.from({ length: n }, (_, i) => ({ id: i ? `loja-${i}` : 'banca', nome: i ? `Loja ${i}` : 'Banca Adair e Pedrina', tipo: i % 2 ? 'Pastelaria' : 'Hortifruti', ativo: i !== 3, original: !i, cor: '#1a3a2a' }));
+teste('plataforma: as lojas da última vez aparecem na hora com "Painel" de um toque; ligar um módulo não relê a plataforma inteira', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
+  const guardadas = lojasDaPlataforma(4);
+  const { pagina, ctx, erros, fechar } = await abrir('/plataforma.html', cen, { antes: `try { localStorage.setItem('pf_aba', 'lojas'); localStorage.setItem('pf_lojas_leve_v1', JSON.stringify({ em: Date.now(), lojas: ${JSON.stringify(guardadas)} })); } catch (_) {}` });
+  const chamadas = [];
+  await ctx.route('**/api/plataforma', async (r) => {
+    const corpo = JSON.parse(r.request().postData() || '{}'); chamadas.push(corpo.acao);
+    if (corpo.acao === 'lojas') { await new Promise((ok) => setTimeout(ok, 2500)); return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ sucesso: true, lojas: guardadas.map((l) => ({ ...l, donos: ['a@b.com'], modulos: { ia: false, pdv: true }, campos: {}, mes: { receita: 10, pedidos: 1 } })), feiras: [], condominios: [], modelos: ['hortifruti'], modulos: { ia: 'Ajudante de IA na loja', pdv: 'Balcão' }, campos: {}, pix: false, fotos: false }) }); }
+    return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ sucesso: true }) });
+  });
+  await pagina.reload();
+  // ANTES de a lista completa chegar (2,5 s): as 4 lojas já estão na tela, cada uma com o link direto do painel
+  await pagina.waitForSelector('.pf-painel', { timeout: 1800 });
+  assert.strictEqual(await pagina.locator('.pf-painel').count(), 4);
+  assert.match(await pagina.locator('.pf-painel').nth(1).getAttribute('href'), /\/admin\?loja=loja-1$/);
+  assert.ok(await pagina.locator('.pf-painel').first().getAttribute('href').then((h) => !/loja=/.test(h)), 'a loja original abre sem ?loja=');
+  // depois: os números chegam e o botão continua lá
+  await pagina.waitForSelector('.pf-linha-num', { timeout: 6000 });
+  assert.strictEqual(await pagina.locator('.pf-painel').count(), 4);
+  // abre a ficha e liga um módulo: grava (acao modulos) e NÃO relê a plataforma
+  await pagina.click('[data-pf="abrir-loja"][data-loja="loja-1"]');
+  await pagina.waitForSelector('[data-pf-modulo="ia"]', { timeout: 3000 });
+  const antes = chamadas.filter((x) => x === 'lojas').length;
+  await pagina.check('[data-pf-modulo="ia"]');
+  await pagina.waitForFunction(() => document.querySelector('[data-pf-modulo="ia"]').checked, null, { timeout: 2000 });
+  await pagina.waitForTimeout(400);
+  assert.ok(chamadas.includes('modulos'), 'o servidor foi avisado');
+  assert.strictEqual(chamadas.filter((x) => x === 'lojas').length, antes, 'sem reler a lista inteira');
+  assert.ok(await pagina.locator('[data-pf-modulo="ia"]').isChecked(), 'o interruptor fica ligado');
+  semErros(erros); await fechar();
+});
+teste('painel: o dono da plataforma troca de loja pelo menu "Trocar de loja", com busca, e a lista guardada aparece na hora', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
+  const todas = lojasDaPlataforma(9);
+  const { pagina, ctx, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false }, antes: `try { localStorage.setItem('pf_lojas_leve_v1', JSON.stringify({ em: Date.now(), lojas: ${JSON.stringify(todas.slice(0, 3))} })); } catch (_) {}` });
+  let leves = 0;
+  await ctx.route('**/api/plataforma', async (r) => {
+    const corpo = JSON.parse(r.request().postData() || '{}');
+    if (corpo.acao === 'lojas-leve') { leves++; await new Promise((ok) => setTimeout(ok, 1200)); return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ sucesso: true, lojas: todas }) }); }
+    return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ sucesso: true }) });
+  });
+  await pagina.reload();
+  await pagina.waitForSelector('#topo-trocar:not([hidden])', { timeout: 8000 });
+  assert.match(await pagina.locator('#topo-trocar').innerText(), /Trocar de loja/);
+  await pagina.click('#topo-trocar');
+  // a lista guardada (3 lojas) já está ali; a nova (9) chega depois
+  assert.strictEqual(await pagina.locator('.menu-bancas-lista a').count(), 3);
+  await pagina.waitForFunction(() => document.querySelectorAll('.menu-bancas-lista a').length === 9, null, { timeout: 5000 });
+  assert.ok(leves >= 1 && leves <= 2, `a lista leve foi pedida (${leves}x, contando a abertura antes do reload)`);
+  assert.ok(await pagina.locator('.menu-bancas-busca').isVisible(), 'com muitas lojas aparece a busca');
+  // tocar na busca não fecha o menu; digitar filtra
+  await pagina.click('.menu-bancas-busca');
+  assert.ok(await pagina.locator('#menu-mais').isVisible(), 'o menu continua aberto');
+  await pagina.fill('.menu-bancas-busca', 'loja 5');
+  assert.deepStrictEqual(await pagina.locator('.menu-bancas-lista a').allInnerTexts(), ['Loja 5'].map((t) => t));
+  assert.match(await pagina.locator('.menu-bancas-lista a').first().getAttribute('href'), /loja=loja-5$/);
+  await pagina.fill('.menu-bancas-busca', 'zzz');
+  assert.match(await pagina.locator('.menu-bancas-lista').innerText(), /Nenhuma loja/);
+  await pagina.fill('.menu-bancas-busca', '');
+  assert.ok((await pagina.locator('.menu-bancas-lista a[aria-current]').innerText()).includes('Banca Adair'), 'a loja aberta fica marcada');
+  assert.ok((await pagina.locator('.menu-bancas-lista').innerText()).includes('(bloqueada)'), 'loja bloqueada aparece marcada');
+  semErros(erros); await fechar();
+});
+
 teste('plataforma: "Cartaz com QR" de cada feira manda para a impressão o cartaz com o link DAQUELA feira', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
   const { pagina, erros, fechar } = await abrir('/plataforma.html', cen, { antes: () => { try { localStorage.setItem('pf_aba', 'feiras'); } catch (_) { /* segue */ } } });

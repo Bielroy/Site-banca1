@@ -53,6 +53,7 @@ const abrirTela = async (nome) => {
     try { ABRIR[nome](await TELAS[nome]()); }
     catch (e) { console.error(e); showToast('Não consegui abrir esta tela. Confira a internet e toque de novo.', true); }
 };
+import { listaGuardada, buscarLista, filtrarLojas } from './lojas-rapido.js';   // trocar de loja (dono da plataforma)
 import { pedirCatalogo, produtoSalvo } from './pedir-catalogo.js';   // avisa o servidor para remendar vitrine/painel (lib/catalogo.js)
 import { ouvirProdutosPainel, ouvirCustosPainel, guardarEscutas, marcarApagadoLocal } from './painel-catalogo.js';
 import { iniciarCategoriasAdmin, abrirCategorias, chaveDaCategoria, nomeDaCategoria, normalizarWpp, ordemDasCategorias } from './admin-categorias.js';
@@ -118,7 +119,7 @@ onAuthStateChanged(auth, async (user) => {
     if (suspensa && papelAtual !== 'plataforma') { mostrarSuspensa(papelAtual === 'proprietario'); return; }
     { const tl = document.getElementById('topo-loja'); if (tl) tl.textContent = nomeDaLoja; }
     aplicarPapel();
-    montarTrocaDeBanca();
+    if (papelAtual === 'plataforma') montarTrocaDaPlataforma(); else montarTrocaDeBanca();
     if (ehGestor(papelAtual)) iniciarIAFeaturesDOM();
     iniciarRealTimeSync();
 });
@@ -280,6 +281,29 @@ function lerDiasSemFeira(ficha) {
         const listDiv = document.getElementById('lista-historico');
         if (listDiv && pedidosGerais.length) listDiv.innerHTML = renderHtmlPedidos(pedidosGerais);
     }).catch(() => {}));
+}
+
+// TROCAR DE LOJA (dono da plataforma): todas as lojas num toque, com busca. A última lista fica guardada no aparelho
+// e aparece na hora, enquanto a nova chega (js/lojas-rapido.js). Cada loja abre direto no painel dela.
+let trocaDaPlataformaPronta = false;
+function montarTrocaDaPlataforma() {
+    const caixa = document.getElementById('menu-bancas'), botao = document.getElementById('topo-trocar');
+    if (!caixa || trocaDaPlataformaPronta) return;       // o painel pode reentrar (login renovado): monta e busca a lista uma vez só
+    trocaDaPlataformaPronta = true;
+    let lojas = listaGuardada(), termo = '';
+    const pintar = () => {
+        const vistas = filtrarLojas(lojas, termo);
+        const lista = caixa.querySelector('.menu-bancas-lista');
+        if (lista) lista.innerHTML = vistas.map((l) => `<a href="${escapeHTML(urlDaLoja(l.id, location.pathname))}"${l.id === TENANT ? ' aria-current="true"' : ''}>${escapeHTML(l.nome)}${l.ativo ? '' : ' <small>(bloqueada)</small>'}</a>`).join('') || '<span class="menu-bancas-vazio">Nenhuma loja com esse nome.</span>';
+        const busca = caixa.querySelector('.menu-bancas-busca'); if (busca) busca.hidden = lojas.length < 7;
+    };
+    caixa.innerHTML = `<span class="menu-bancas-tit">Trocar de loja</span><input type="search" class="menu-bancas-busca" placeholder="Buscar loja" aria-label="Buscar loja" autocomplete="off" hidden><div class="menu-bancas-lista"></div>`;
+    // o menu fecha ao tocar nele: tocar na busca não pode fechar
+    caixa.querySelector('.menu-bancas-busca').addEventListener('click', (e) => e.stopPropagation());
+    caixa.querySelector('.menu-bancas-busca').addEventListener('input', (e) => { termo = e.target.value; pintar(); });
+    caixa.hidden = false; pintar();
+    if (botao) { botao.textContent = 'Trocar de loja'; botao.hidden = false; botao.onclick = (e) => { e.stopPropagation(); document.getElementById('btn-mais')?.click(); }; }
+    buscarLista().then((nova) => { lojas = nova; pintar(); }).catch((e) => console.warn('[trocar de loja]', e && e.message));
 }
 
 // TROCAR DE BANCA: quem cuida de mais de uma banca (dono de dois pontos) escolhe qual abrir.

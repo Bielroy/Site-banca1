@@ -4,6 +4,7 @@
 //
 //  POST { acao: 'situacao' }                                a plataforma já tem dono? (a tela usa para não oferecer "Assumir")
 //  POST { acao: 'lojas' }                                   lista lojas, feiras e o movimento do mês
+//  POST { acao: 'lojas-leve' }                              só nome, tipo e cor de cada loja (rápido; é a lista de "trocar de loja" do painel)
 //  POST { acao: 'erros' }                                   erros do site nos últimos 7 dias (lib/erros.js)
 //  POST { acao: 'erro-estado', assinatura, estado }          marca um erro como corrigido ('corrigido') ou reabre ('aberto')
 //  POST { acao: 'criar-loja', id, nome, modelo, tipoNome?, emailDono? }   (modelo = aparência inicial; tipoNome = tipo escrito à mão)
@@ -42,6 +43,7 @@ const boot = () => {
 const H = require('../lib/http');
 const cors = H.cors;            // origem (CORS): lista única em lib/http.js
 const NOME_ORIGINAL = 'Banca Adair e Pedrina', MAX_LOJAS = 200;
+const donoRegistrado = new Set();
 const falha = (status, msg) => Object.assign(new Error(msg), { status });
 const texto = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const emailValido = (e) => /^[^\s@]{1,64}@[^\s@]{1,180}\.[a-z]{2,}$/i.test(e);
@@ -57,7 +59,17 @@ async function exigirLoja(id) {
 const base = (f) => (f._nova ? { nome: NOME_ORIGINAL, ativo: true } : {});
 const mesAtual = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 7);
 
-async function movimentoDoMes(id) {
+// Movimento do mês e donos de cada loja mudam devagar e custam 2 leituras por loja a cada abertura da tela
+// (e a cada botão tocado). Ficam guardados por 90 s na memória deste servidor; trocar o proprietário limpa o dono.
+const TTL_LISTA_MS = 90 * 1000;
+const guardados = { mov: new Map(), donos: new Map(), leve: null };
+const doCache = (mapa, id, ler) => {
+  const g = mapa.get(id);
+  if (g && Date.now() - g.em < TTL_LISTA_MS) return Promise.resolve(g.v);
+  return ler().then((v) => { mapa.set(id, { em: Date.now(), v }); return v; });
+};
+async function movimentoDoMes(id) { return doCache(guardados.mov, id, () => movimentoDoMesLido(id)); }
+async function movimentoDoMesLido(id) {
   try {
     const mes = mesAtual();
     const s = await T.tcol(db, id, 'resumos').where(admin.firestore.FieldPath.documentId(), '>=', `${mes}-01`).get();
@@ -66,7 +78,8 @@ async function movimentoDoMes(id) {
     return { receita: Math.round(receita * 100) / 100, pedidos };
   } catch (_) { return null; }
 }
-async function donosDe(id) {
+async function donosDe(id) { return doCache(guardados.donos, id, () => donosLidos(id)); }
+async function donosLidos(id) {
   try { const s = await T.tcol(db, id, 'equipe').get(); return s.docs.filter((d) => d.data().papel === 'proprietario').map((d) => d.data().email).filter(Boolean).sort(); }
   catch (_) { return []; }
 }
@@ -90,6 +103,20 @@ async function lojas(res) {
   return res.status(200).json({ sucesso: true, lojas: lista, feiras, condominios, modelos: Object.keys(MODELOS), modulos: MODULOS, campos: CAMPOS_PRODUTO, mes: mesAtual(), fotos, pix, asaas: await situacaoAsaas(seg.exists ? seg.data() : {}) });
 }
 
+// LISTA LEVE (trocar de loja): só as fichas, sem movimento do mês nem donos. 1 leitura por loja, guardada por 60 s.
+async function lojasLeve(res) {
+  const g = guardados.leve;
+  if (!g || Date.now() - g.em > 60 * 1000) {
+    const ts = await db.collection('tenants').get();
+    const fichas = new Map(ts.docs.map((d) => [d.id, d.data()]));
+    if (!fichas.has(T.TENANT_PADRAO)) fichas.set(T.TENANT_PADRAO, { nome: NOME_ORIGINAL, ativo: true });
+    const lista = [...fichas.keys()].filter(T.idValido).sort((a, b) => (a === T.TENANT_PADRAO ? -1 : b === T.TENANT_PADRAO ? 1 : String(fichas.get(a).nome || a).localeCompare(String(fichas.get(b).nome || b), 'pt-BR'))).slice(0, MAX_LOJAS)
+      .map((id) => { const f = fichas.get(id); return { id, nome: texto(f.nome || id, 60), tipo: texto(f.tipo, 30), ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, cor: /^#[0-9a-fA-F]{6}$/.test(String(f.tema && f.tema.primaria)) ? f.tema.primaria : '#1a3a2a' }; });
+    guardados.leve = { em: Date.now(), lista };
+  }
+  return res.status(200).json({ sucesso: true, lojas: guardados.leve.lista });
+}
+
 async function definirDono(id, email, remover) {
   let u;
   try { u = await admin.auth().getUserByEmail(email); }
@@ -104,6 +131,7 @@ async function definirDono(id, email, remover) {
   const ref = T.tdoc(db, id, 'equipe', u.uid);
   if (remover) { await ref.delete(); try { await admin.auth().revokeRefreshTokens(u.uid); } catch (_) { /* o papel já saiu */ } }
   else await ref.set({ email, papel: 'proprietario', em: new Date().toISOString(), por: 'plataforma' });
+  guardados.donos.delete(id);                   // a lista de donos desta loja volta a ser lida na próxima abertura
 }
 
 async function criarLoja(req, res) {
@@ -376,14 +404,18 @@ module.exports = async function handler(req, res) {
   if (dec.plataforma !== true) return res.status(403).json({ error: 'Área restrita ao dono da plataforma.' });
   // Dono que ganhou o acesso pelo terminal (sem passar pelo botão) não tinha o registro em plataforma/dono, e aí
   // outra conta dona da loja original ainda conseguiria assumir. Ao usar a tela, o registro passa a existir.
-  try { await db.runTransaction(async (t) => { const r = db.collection('plataforma').doc('dono'), s = await t.get(r); if (!s.exists) t.set(r, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() }); }); }
-  catch (e) { console.error('[plataforma] dono', e && e.message); }
-  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), 'erro-estado': async () => res.status(200).json({ sucesso: true, ...(await Erros.marcarEstado(db, req.body, dec.email || dec.uid)) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), campos: () => campos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), asaas: () => asaas(req, res), 'asaas-carteira': () => asaasCarteira(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
+  // (uma vez por conta e por cópia do servidor: antes era uma transação a cada toque na tela)
+  if (!donoRegistrado.has(dec.uid)) {
+    try { await db.runTransaction(async (t) => { const r = db.collection('plataforma').doc('dono'), s = await t.get(r); if (!s.exists) t.set(r, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() }); }); donoRegistrado.add(dec.uid); }
+    catch (e) { console.error('[plataforma] dono', e && e.message); }
+  }
+  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), 'erro-estado': async () => res.status(200).json({ sucesso: true, ...(await Erros.marcarEstado(db, req.body, dec.email || dec.uid)) }), lojas: () => lojas(res), 'lojas-leve': () => lojasLeve(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), campos: () => campos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), asaas: () => asaas(req, res), 'asaas-carteira': () => asaasCarteira(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
   const nomeAcao = typeof (req.body || {}).acao === 'string' ? (req.body || {}).acao : '';
   const fn = Object.prototype.hasOwnProperty.call(acoes, nomeAcao) ? acoes[nomeAcao] : null;
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });
   // Tudo o que MUDA alguma coisa fica na trilha (auditoria_plataforma). Chave e token nunca entram no registro: só "gravou" ou "apagou".
-  if (nomeAcao !== 'lojas' && nomeAcao !== 'auditoria' && nomeAcao !== 'erros') {
+  if (!['lojas', 'lojas-leve', 'auditoria', 'erros'].includes(nomeAcao)) {
+    guardados.leve = null; guardados.mov.clear();          // mexeu em alguma coisa: as listas guardadas são lidas de novo
     const b = req.body || {}, alvo = String(b.id || b.fid || '').slice(0, 40);
     const detalhe = nomeAcao === 'imgbb' || nomeAcao === 'pagbank' || nomeAcao === 'asaas' ? (String(b.chave || '').trim() ? 'chave gravada' : 'chave apagada')
       : nomeAcao === 'asaas-carteira' ? `carteira de ${String(b.id || '').slice(0, 40)} ${String(b.carteira || '').trim() ? 'gravada' : 'apagada'}`
@@ -398,4 +430,5 @@ module.exports = async function handler(req, res) {
   }
   try { return await fn(); }
   catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[plataforma]', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
+  finally { if (!['lojas', 'lojas-leve', 'auditoria', 'erros'].includes(nomeAcao)) { guardados.leve = null; guardados.mov.clear(); } }   // depois de mudar algo, de novo (uma leitura no meio não pode guardar o antigo)
 };

@@ -261,6 +261,14 @@ body.so-equipe #ped-mais { display: none; }
 .menu-bancas-tit { padding: 8px 12px 4px; font-size: .74rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: .04em; }
 .menu-bancas a { display: flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 10px; color: var(--text-dark); font-weight: 600; text-decoration: none; }
 .menu-bancas a:hover, .menu-bancas a:focus-visible { background: var(--parchment); }
+.menu-bancas a[aria-current] { background: var(--parchment); color: var(--forest); }
+.menu-bancas a[aria-current]::after { content: 'aberta'; margin-left: auto; font-size: .72rem; font-weight: 700; color: var(--text-light); }
+.menu-bancas a small { font-weight: 600; color: var(--text-light); margin-left: 4px; }
+/* dono da plataforma: muitas lojas → lista rola e tem busca */
+.menu-bancas-lista { display: grid; max-height: min(52vh, 360px); overflow-y: auto; overscroll-behavior: contain; }
+.menu-bancas-busca { margin: 2px 8px 6px; min-height: 40px; padding: 6px 12px; border: 1.5px solid var(--linha-fina); border-radius: 10px; font-size: 16px; line-height: 1.2; font-family: inherit; background: #fff; color: inherit; }
+.menu-bancas-busca[hidden] { display: none; }
+.menu-bancas-vazio { padding: 10px 12px; color: var(--text-light); font-size: .88rem; }
 /* pedido para outro dia (cliente da feira) e feira cancelada nesse dia */
 .ped-para-dia { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: #e0f2fe; color: #0c4a6e; font-size: .86rem; font-weight: 700; }
 .ped-para-dia.cancelada { background: #fdecea; color: #8a1c1c; }

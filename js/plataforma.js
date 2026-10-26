@@ -15,6 +15,7 @@ import { urlDaLoja } from './tenant.js';
 import { escapeHTML, fmt, showToast, customConfirm } from './utils.js';
 import { sugerirId, idValido, totais, diasDaFeira, textoDoDia, proximaEntrega, normCond } from './plataforma-lib.js';
 import { CAMPOS_PRODUTO, camposDaLoja } from './cadastro-lib.js';
+import { listaGuardada, guardarDaPlataforma } from './lojas-rapido.js';
 const diasEmTexto = (dias) => diasDaFeira(dias);
 import './icones-admin.js';
 
@@ -62,7 +63,14 @@ const ponto = (cor) => `<i class="pf-ponto" style="background:${corOk(cor)}" ari
 // ---------------------------------------------------------------- abas
 function render() {
     // a aba pode ser tocada antes de a lista da plataforma chegar (ou se ela falhar): mostra "carregando", não quebra
-    if (!S.dados) { el().innerHTML = '<p class="pf-vazio">Carregando a plataforma...</p>'; return; }
+    if (!S.dados) {
+        // a lista completa leva alguns segundos (lê o movimento de cada loja): enquanto isso, as lojas da última vez, já com link para o painel
+        const guardadas = S.aba === 'lojas' ? listaGuardada() : [];
+        el().innerHTML = guardadas.length
+            ? `<p class="config-sub" role="status">Atualizando os números...</p><ul class="pf-lista">${guardadas.map((l) => `<li class="pf-linha-wrap"><span class="pf-linha${l.ativo ? '' : ' bloq'}">${ponto(l.cor)}<span class="pf-linha-txt"><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.original ? 'Loja original' : NOMES_MODELO[l.tipo] || l.tipo || 'Loja')}${l.ativo ? '' : ', bloqueada'}</small></span></span><a class="pf-bt mini pf-painel" href="${escapeHTML(urlDaLoja(l.id, '/admin'))}">Painel</a></li>`).join('')}</ul>`
+            : '<p class="pf-vazio">Carregando a plataforma...</p>';
+        return;
+    }
     const d = S.dados, t = totais(d.lojas), mensal = d.lojas.reduce((s, l) => s + (l.assinatura ? l.assinatura.valor : 0), 0);
     $('pf-resumo').textContent = `${t.ativas} de ${t.lojas} lojas ativas, ${fmt(t.receita)} vendidos e ${t.pedidos} pedidos neste mês${mensal ? `, ${fmt(mensal)} em mensalidades` : ''}.`;
     const abas = $('pf-abas'); abas.hidden = false;
@@ -96,10 +104,10 @@ function abaLojas() {
     const d = S.dados, termo = normCond(S.busca.lojas);
     const lojas = d.lojas.filter((l) => !termo || normCond(`${l.nome} ${l.id}`).includes(termo));
     return `<div class="pf-topo-aba"><input type="search" class="pf-busca" data-busca="lojas" placeholder="Buscar loja" value="${escapeHTML(S.busca.lojas)}" aria-label="Buscar loja"><button type="button" class="pf-bt pri" data-pf="nova-loja">Nova loja</button></div>
-    <ul class="pf-lista">${lojas.map((l) => `<li><button type="button" class="pf-linha${l.ativo ? '' : ' bloq'}" data-pf="abrir-loja" data-loja="${escapeHTML(l.id)}">
+    <ul class="pf-lista">${lojas.map((l) => `<li class="pf-linha-wrap"><button type="button" class="pf-linha${l.ativo ? '' : ' bloq'}" data-pf="abrir-loja" data-loja="${escapeHTML(l.id)}">
         ${ponto(l.cor)}<span class="pf-linha-txt"><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.original ? 'Loja original' : NOMES_MODELO[l.tipo] || l.tipo || 'Loja')}${feirasDaLoja(l.id).length ? `, em ${feirasDaLoja(l.id).length} feira${feirasDaLoja(l.id).length > 1 ? 's' : ''}` : ''}${l.donos.length ? '' : ', sem proprietário'}</small></span>
         <span class="pf-linha-num"><b>${l.mes ? fmt(l.mes.receita) : '–'}</b><small>${l.ativo ? `${l.mes ? l.mes.pedidos : 0} pedidos no mês` : 'Bloqueada'}</small></span>
-    </button></li>`).join('') || '<li class="pf-nada">Nenhuma loja com esse nome.</li>'}</ul>`;
+    </button><a class="pf-bt mini pf-painel" href="${escapeHTML(urlDaLoja(l.id, '/admin'))}" aria-label="Abrir o painel de ${escapeHTML(l.nome)}">Painel</a></li>`).join('') || '<li class="pf-nada">Nenhuma loja com esse nome.</li>'}</ul>`;
 }
 
 function abaCondominios() {
@@ -307,12 +315,14 @@ function folhaNovaLoja() {
 }
 
 // ---------------------------------------------------------------- dados
-async function carregar() { S.dados = await api({ acao: 'lojas' }); render(); }
-async function fazer(corpo, ok, { manterFolha = false } = {}) {
+async function carregar() { S.dados = await api({ acao: 'lojas' }); guardarDaPlataforma(S.dados.lojas); render(); }
+async function fazer(corpo, ok, { manterFolha = false, aplicar = null } = {}) {
     if (S.ocupado) return false; S.ocupado = true;
     document.body.classList.add('pf-ocupado');
     try {
         await api(corpo); if (ok) showToast(ok);
+        // interruptor de módulo/campo: o servidor já gravou; muda só esta loja na tela, sem reler a plataforma inteira (era o que demorava)
+        if (aplicar && S.dados) { aplicar(S.dados); render(); if (S.folha) pintarFolha(); return true; }
         await carregar();
         if (S.folha && manterFolha) pintarFolha(); else if (S.folha && S.folha.tipo === 'loja') pintarFolha();
         return true;
@@ -526,12 +536,14 @@ function ligar() {
         if (t.dataset.pfFCond && S.rascunho) { if (t.checked) S.rascunho.conds.add(t.dataset.pfFCond); else S.rascunho.conds.delete(t.dataset.pfFCond); $('pf-f-n-conds').textContent = S.rascunho.conds.size; marcarMudanca(); return; }
         if (t.dataset.pfCampo && S.folha && S.folha.tipo === 'loja') {
             const k = t.dataset.pfCampo, nome = (S.dados.campos || CAMPOS_PRODUTO)[k];
-            if (!(await fazer({ acao: 'campos', id: S.folha.id, campos: { [k]: t.checked } }, `${nome}: ${t.checked ? 'aparece' : 'escondido'} no cadastro.`))) t.checked = !t.checked;
+            const loja = lojaPorId(S.folha.id), ligado = t.checked;
+            if (!(await fazer({ acao: 'campos', id: S.folha.id, campos: { [k]: ligado } }, `${nome}: ${ligado ? 'aparece' : 'escondido'} no cadastro.`, { aplicar: () => { if (loja) loja.campos = { ...(loja.campos || {}), [k]: ligado }; } }))) t.checked = !t.checked;
             return;
         }
         if (t.dataset.pfModulo && S.folha && S.folha.tipo === 'loja') {
             const nome = S.dados.modulos[t.dataset.pfModulo];
-            if (!(await fazer({ acao: 'modulos', id: S.folha.id, modulos: { [t.dataset.pfModulo]: t.checked } }, `${nome}: ${t.checked ? 'ligado' : 'desligado'}.`))) t.checked = !t.checked;
+            const loja = lojaPorId(S.folha.id), k = t.dataset.pfModulo, ligado = t.checked;
+            if (!(await fazer({ acao: 'modulos', id: S.folha.id, modulos: { [k]: ligado } }, `${nome}: ${ligado ? 'ligado' : 'desligado'}.`, { aplicar: () => { if (loja) loja.modulos = { ...(loja.modulos || {}), [k]: ligado }; } }))) t.checked = !t.checked;
         }
     });
 }
@@ -540,7 +552,11 @@ let ligado = false;
 onAuthStateChanged(auth, async (user) => {
     if (!user) return aviso('Entre primeiro pelo painel.', 'Depois de entrar com o seu e-mail, volte para esta página.', 'Ir para o painel');
     try {
-        const { claims } = await user.getIdTokenResult(true);
+        // Usa a conta que já está no aparelho (instantâneo). Só vai à rede se ela ainda não diz "plataforma"
+        // (acabou de assumir, ou o acesso foi dado há pouco).
+        let { claims } = await user.getIdTokenResult();
+        if (claims.plataforma !== true) ({ claims } = await user.getIdTokenResult(true));
+        if (claims.plataforma === true && !S.dados) render();           // as lojas da última vez já aparecem, enquanto a lista nova chega
         if (claims.plataforma !== true) {
             const donoDaOriginal = claims.admin === true || (claims.tenants && claims.tenants.banca === 'proprietario');
             if (!donoDaOriginal) return aviso('Área do dono da plataforma.', 'Esta conta cuida de uma loja, não da plataforma.', 'Voltar ao painel');

@@ -700,6 +700,31 @@ teste('motor: feira sem dia marcado não faz o motor prever venda em dia que a b
   const doms = (r.meta.hz.prox7 || []).filter((iso) => new Date(`${iso}T12:00:00Z`).getUTCDay() === 0);
   assert.strictEqual(doms.length, 0, 'domingo continua fechado'); assert.ok((r.meta.hz.prox7 || []).some((iso) => new Date(`${iso}T12:00:00Z`).getUTCDay() === 6), 'sábado (dia marcado da feira) abre');
 });
+teste('plataforma: lista leve para trocar de loja (só fichas, sem dados de dinheiro), com cache que não deixa dado velho depois de mudar algo', async () => {
+  const db = criarBanco({ ...semente(), 'tenants/espetinhos': { nome: 'Espetinhos do Zé', tipo: 'espetinhos', ativo: true, tema: { primaria: '#b3261e' } }, 'tenants/zeta': { nome: 'Ágata', ativo: false } });
+  let lidas = 0; const colecao = db.collection.bind(db);
+  db.collection = (n) => { const c = colecao(n); const get = c.get && c.get.bind(c); if (get && /^(tenants|resumos)$/.test(n)) c.get = async () => { lidas++; return get(); }; return c; };
+  const api = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, TOKENS));
+  const pf = (token, body) => chamar(api, { headers: { Authorization: `Bearer ${token}` }, body });
+  let r = await pf('plataforma', { acao: 'lojas-leve' }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(r.corpo.lojas[0].id, 'banca', 'a loja original vem primeiro'); assert.deepStrictEqual(r.corpo.lojas.slice(1).map((l) => l.nome), ['Ágata', 'Espetinhos do Zé'], 'as outras por nome (alfabética, com acento)');
+  const por = Object.fromEntries(r.corpo.lojas.map((l) => [l.id, l]));
+  assert.deepStrictEqual(Object.keys(por.espetinhos).sort(), ['ativo', 'cor', 'id', 'nome', 'original', 'tipo'], 'só o necessário para trocar de loja');
+  assert.strictEqual(por.espetinhos.cor, '#b3261e'); assert.strictEqual(por.zeta.ativo, false); assert.strictEqual(por.banca.original, true);
+  assert.ok(!JSON.stringify(r.corpo).includes('donos') && !JSON.stringify(r.corpo).includes('receita'), 'nada de dinheiro nem e-mail');
+  // quem não é da plataforma não vê a lista
+  assert.strictEqual((await pf('dono-espetinhos', { acao: 'lojas-leve' })).status, 403); assert.strictEqual((await pf('', { acao: 'lojas-leve' })).status, 401);
+  // segunda chamada: vem da memória (nenhuma leitura de fichas)
+  const antes = lidas; r = await pf('plataforma', { acao: 'lojas-leve' }); assert.strictEqual(lidas, antes, 'lista guardada, sem ler o banco de novo');
+  // mudou algo (bloquear): a lista é lida de novo e mostra a mudança
+  assert.strictEqual((await pf('plataforma', { acao: 'ativo', id: 'espetinhos', ativo: false })).status, 200);
+  r = await pf('plataforma', { acao: 'lojas-leve' }); assert.strictEqual(r.corpo.lojas.find((l) => l.id === 'espetinhos').ativo, false, 'sem dado velho depois de mudar');
+  // a lista completa: o movimento e os donos também ficam guardados por um tempo, e trocar o proprietário aparece na hora
+  await pf('plataforma', { acao: 'lojas' });
+  const lidasMov = lidas; await pf('plataforma', { acao: 'lojas' }); assert.ok(lidas - lidasMov <= 1, 'o movimento de cada loja não é lido de novo a cada abertura');
+  assert.strictEqual((await pf('plataforma', { acao: 'proprietario', id: 'espetinhos', email: 'novo@dono.com' })).status, 200);
+  r = await pf('plataforma', { acao: 'lojas' }); assert.ok(r.corpo.lojas.find((l) => l.id === 'espetinhos').donos.includes('novo@dono.com'), 'novo proprietário aparece logo');
+});
 teste('plataforma: cadastro de condomínios nasce do que já existe; a feira marca do cadastro; renomear atualiza a feira; não tira o que está em uso', async () => {
   const sem = { ...semente(), 'loja/config': { ...semente()['loja/config'], condominios: [{ id: 'a', nome: 'Jardins Munique', formato: 'ql' }, { id: 'b', nome: 'Parque', formato: 'rua', ativo: false }] },
     'feiras/f-velha': { nome: 'Velha', dias: [3], condominios: ['JARDINS munique', 'Vila Nova'], lojas: [{ id: 'banca' }] } };
