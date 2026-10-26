@@ -1059,7 +1059,7 @@ teste('temperos: cantinho no fim (depois dos pacotes), "+ 1 potinho", sacola com
 
 teste('pacotes: no painel, peso do pacote em branco é aceito e promoção mais cara é recusada', async () => {
   const cen = cenarioPacotes(); cen.conta = { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } };
-  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false, hasTouch: false } });
   await pagina.locator('[data-action="editar-produto"][data-id="cb"]').first().click({ timeout: 8000 });
   await pagina.waitForFunction(() => document.activeElement && document.activeElement.id === 'edit-nome', null, { timeout: 3000 });   // a janela põe o foco no nome logo depois de abrir
   assert.ok(await pagina.locator('#edit-pacote').isChecked());
@@ -1779,7 +1779,7 @@ const cenarioPastelaria = () => {
 const gravadosDe = (pagina, re) => pagina.evaluate((r) => (window.__gravados || []).filter((g) => new RegExp(r).test(g.path)).map((g) => g.dados), re.source);
 
 teste('painel: produto novo já vem na categoria aberta e na unidade dela; "Salvar e criar outro igual" e Enter só trocam o nome; campo desligado pela plataforma some', async () => {
-  const { pagina, erros, fechar } = await abrir('/admin.html', cenarioPastelaria(), { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cenarioPastelaria(), { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false, hasTouch: false } });
   await pagina.locator('#pl-cats [data-pl-cat="pasteis"]').click({ timeout: 8000 });
   await pagina.locator('[data-action="novo-produto"]').click();
   await pagina.waitForFunction(() => document.activeElement && document.activeElement.id === 'edit-nome', null, { timeout: 3000 });
@@ -1940,6 +1940,36 @@ teste('montar pedido: o açaí abre a tela de montar, obrigatório segura o bot�
   const itens = pedidosEnviados().pop().corpo.itens;
   assert.deepStrictEqual(itens.map((i) => [i.id, i.qtd, i.opcoes]), [['a', 2, { tam: ['cho'], comp: ['gra', 'ban', 'nut'] }], ['a', 2, { tam: ['mor'] }]]);
   semErros(erros); await fechar();
+});
+
+teste('teclado: no celular, "Editar" produto não abre o teclado sozinho (só ao tocar no campo); fechar não reabre; no computador o cursor vai para o 1º campo', async () => {
+  const digitando = (p) => p.evaluate(() => { const a = document.activeElement; return !!a && a.matches('input:not([type=checkbox]):not([type=radio]):not([type=hidden]), textarea'); });
+  // celular
+  const cel = await abrir('/admin.html', cenarioPastelaria(), { contexto: CELULAR });
+  try {
+    await cel.pagina.locator('#pl-cats [data-pl-cat="acai"]').click({ timeout: 8000 });
+    await cel.pagina.locator('[data-action="editar-produto"][data-id="a"]').first().click();
+    await cel.pagina.waitForSelector('#modal-produto.aberto', { timeout: 3000 });
+    await cel.pagina.waitForTimeout(250);
+    assert.strictEqual(await digitando(cel.pagina), false, 'abriu a janela com o cursor num campo (o teclado subiria sozinho)');
+    assert.ok(await cel.pagina.evaluate(() => document.getElementById('modal-produto').contains(document.activeElement)), 'o foco fica dentro da janela');
+    await cel.pagina.locator('#edit-nome').tap();
+    assert.strictEqual(await digitando(cel.pagina), true, 'tocando no campo, o teclado abre');
+    await cel.pagina.locator('[data-fechar="modal-produto"]').first().tap();
+    await cel.pagina.waitForTimeout(250);
+    assert.strictEqual(await digitando(cel.pagina), false, 'fechar a janela não põe o cursor num campo');
+    semErros(cel.erros);
+  } finally { await cel.fechar(); }
+  // computador (mouse, sem tela de toque): segue indo direto para o 1º campo
+  const pc = await abrir('/admin.html', cenarioPastelaria(), { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false, hasTouch: false } });
+  try {
+    await pc.pagina.locator('#pl-cats [data-pl-cat="acai"]').click({ timeout: 8000 });
+    await pc.pagina.locator('[data-action="editar-produto"][data-id="a"]').first().click();
+    await pc.pagina.waitForSelector('#modal-produto.aberto', { timeout: 3000 });
+    await pc.pagina.waitForTimeout(250);
+    assert.strictEqual(await digitando(pc.pagina), true, 'no computador o cursor vai para o 1º campo');
+    semErros(pc.erros);
+  } finally { await pc.fechar(); }
 });
 
 teste('montar pedido no painel: modelo de açaí, ajusta, salva no produto; "Escolhe 1" e opção que acabou ficam gravadas', async () => {

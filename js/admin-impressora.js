@@ -11,7 +11,7 @@
 //                        celular da banca (js/admin-impressao.js, que também tem os atalhos).
 //  Em cima, a faixa diz se a impressora está pronta. Ao lado, o papel mostra como vai sair.
 // =====================================================================
-import { escapeHTML, showToast } from './utils.js';
+import { escapeHTML, showToast, focarCampo } from './utils.js';
 import { lerConfig, CAMINHOS, conectada, imprimirNaTermica, imprimirPagina } from './impressao.js';
 import { pedidoAvulso, avulsoTemConteudo, compor, colunasDe } from './impressao-lib.js';
 import { paraCinza, rasterEscPos } from './rotulo-lib.js';
@@ -320,7 +320,7 @@ function ligar() {
     $('ipr-limpar').addEventListener('click', () => {
         CAMPOS.forEach((k) => { const el = $(`ipr-${k}`); if (el) el.value = ''; });
         S.impresso = false; Conferir.fechar();
-        guardarRascunho({}); $('ipr-limpar').hidden = true; pintarPapel(); $('ipr-itens').focus();
+        guardarRascunho({}); $('ipr-limpar').hidden = true; pintarPapel(); focarCampo($('ipr-itens'));
     });
     for (const id of ['ipr-camera', 'ipr-galeria']) $(id).addEventListener('change', (e) => { abrirFoto(e.target.files && e.target.files[0]); e.target.value = ''; });
     $('ipr-foto-trocar').addEventListener('click', () => { S.foto = null; S.pontos = null; pintarFoto(); });

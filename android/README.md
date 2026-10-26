@@ -15,6 +15,15 @@ O celular que fica perto da impressora térmica e imprime os pedidos sozinho, **
 3. O app manda os bytes para a impressora (Bluetooth clássico ou BLE) e, na pergunta seguinte, conta o que saiu.
    A fila no servidor garante que nada sai duas vezes, nem com o painel imprimindo junto.
 
+## Dois ou mais celulares na mesma impressora
+
+- A impressora Bluetooth aceita um celular por vez. O celular que imprimiu por último é o "dono": ele tem 5 s
+  para pegar o papel novo. Se não pegar (saiu, caiu, sem Bluetooth), qualquer outro celular pega sozinho.
+- Impressora falhou num celular: ele deixa de ser dono na hora e o outro assume sem esperar.
+- Ao parar (desligado no app, fora do horário), o app avisa a loja (`op: 'soltar'`): conta o que já saiu (não sai
+  de novo no outro celular) e solta o que estava reservado para ele (o outro pega na hora, sem esperar 90 s).
+- Impressora ocupada com o outro celular: tenta de novo em 7 s (o outro solta a impressora 5 s depois do último papel).
+
 ## Bateria
 
 - Esperando, o celular pode dormir: a trava de "acordado" só liga para imprimir (com prazo).

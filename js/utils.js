@@ -101,11 +101,38 @@ const SELETOR_FOCAVEL = [
   'select:not([disabled])', 'textarea:not([disabled])', '[tabindex]:not([tabindex="-1"])'
 ].join(', ');
 
+// ---------------------------------------------------------------------
+// TECLADO DO CELULAR: só abre quando a pessoa toca no campo.
+// Antes, abrir uma janela (ex.: "Editar" produto no painel) punha o cursor sozinho no 1º campo e o
+// teclado subia por cima da tela antes de a pessoa escolher o que mudar. No celular e no tablet a
+// janela recebe o foco (o leitor de tela anuncia e o Tab continua preso nela), sem abrir o teclado.
+// No computador continua indo direto para o 1º campo (lá não tem teclado na tela).
+// ---------------------------------------------------------------------
+export const tecladoNaTela = () => {
+  // dedo como jeito principal, ou tela de toque sem nenhum mouse (notebook com tela de toque e mouse conta como computador)
+  try { return matchMedia('(pointer: coarse)').matches || ((navigator.maxTouchPoints || 0) > 0 && !matchMedia('(any-pointer: fine)').matches); } catch (_) { return false; }
+};
+const DIGITAVEL = 'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=reset]):not([type=range]):not([type=color]):not([type=file]), textarea, [contenteditable=""], [contenteditable="true"]';
+/** Põe o cursor no campo só quando isso não abre teclado na tela (computador). Devolve true se focou. */
+export const focarCampo = (el, { selecionar = false } = {}) => {
+  if (!el || typeof el.focus !== 'function') return false;
+  if (tecladoNaTela() && el.matches && el.matches(DIGITAVEL)) return false;
+  el.focus({ preventScroll: true });
+  if (selecionar && typeof el.select === 'function') try { el.select(); } catch (_) { /* campo sem seleção */ }
+  return true;
+};
+
 const focarPrimeiroElemento = (modal) => {
   const alvo = modal.querySelector(
     'input:not([type=hidden]), select, textarea, button:not(.btn-fechar)'
   ) || modal.querySelector('[data-fechar], .btn-fechar');
-  if (alvo) setTimeout(() => alvo.focus({ preventScroll: true }), 60);
+  if (!alvo) return;
+  setTimeout(() => {
+    if (focarCampo(alvo)) return;
+    // celular: foco na própria janela, sem abrir o teclado
+    if (!modal.hasAttribute('tabindex')) { modal.setAttribute('tabindex', '-1'); modal.style.outline = 'none'; }
+    modal.focus({ preventScroll: true });
+  }, 60);
 };
 
 // ---------------------------------------------------------------------
@@ -181,8 +208,9 @@ export const closeModal = (id) => {
   modal.setAttribute('aria-hidden', 'true');
   modal.setAttribute('aria-modal', 'false');
   soltarRolagem();
+  // volta para onde estava; se era um campo (a busca, por ex.), no celular não reabre o teclado
   if (ultimoFocado && typeof ultimoFocado.focus === 'function') {
-    ultimoFocado.focus({ preventScroll: true });
+    if (!focarCampo(ultimoFocado) && document.activeElement && modal.contains(document.activeElement)) document.activeElement.blur();
     ultimoFocado = null;
   }
 };
@@ -252,7 +280,7 @@ export const customConfirm = (title, msg, rotulos = {}) => {
       cancelBtn.removeEventListener('click', onCancel);
       overlay.removeEventListener('click', onOverlay);
       document.removeEventListener('keydown', onKey);
-      if (focoAnterior && typeof focoAnterior.focus === 'function') focoAnterior.focus({ preventScroll: true });
+      if (focoAnterior && typeof focoAnterior.focus === 'function' && !focarCampo(focoAnterior) && overlay.contains(document.activeElement)) document.activeElement.blur();
     };
 
     okBtn.addEventListener('click', onOk);

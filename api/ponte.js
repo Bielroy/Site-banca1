@@ -6,7 +6,9 @@
 //      Troca o código de 8 letras gerado no painel pelo token deste celular.
 //  POST { op: 'aguardar', espera, pausa, feitos, impressora, app }     (Authorization: Bearer pb1....)
 //      Conta o que saiu no papel e espera (até 45 s) por papel novo para imprimir.
-//  POST { op: 'sair' }                                                (Authorization: Bearer pb1....)
+//  POST { op: 'soltar', feitos }                                     (Authorization: Bearer pb1....)
+//      O app vai parar: conta o que saiu e solta o que estava reservado para ele (outro celular pega na hora).
+//  POST { op: 'sair' }                                              (Authorization: Bearer pb1....)
 //      O próprio celular se desliga da loja.
 // =====================================================================
 const admin = require('firebase-admin');
@@ -51,6 +53,7 @@ module.exports = async function handler(req, res) {
       if (fechou) return undefined;
       return res.status(200).json({ sucesso: true, ...r });
     }
+    if (b.op === 'soltar') return res.status(200).json({ sucesso: true, ...(await P.soltar(db, tk.tid, ponte, b)) });
     if (b.op === 'sair') { await P.remover(db, tk.tid, tk.id); return res.status(200).json({ sucesso: true }); }
     return res.status(400).json({ error: 'Ação desconhecida.' });
   } catch (e) {

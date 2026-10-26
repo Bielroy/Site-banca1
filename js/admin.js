@@ -5,7 +5,7 @@ import { getDoc, auth, db, onAuthStateChanged, sendSignInLinkToEmail, isSignInWi
 import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
-import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm } from './utils.js';
+import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm, focarCampo } from './utils.js';
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
 import { hojeDaLoja, iconeDaCategoria } from './vitrine-lib.js';
@@ -1079,7 +1079,7 @@ function abrirProdutoNovo() {
     $p('modal-titulo').textContent = 'Novo produto';
     // com uma categoria aberta na lista ("Pastéis"), o produto novo já nasce nela
     if (adminCategoria !== TODAS) { $p('edit-cat').value = nomeDaCategoria(adminCategoria); pintarCategorias(); aoMudarCategoria(); }
-    openModal('modal-produto');   // a janela já põe o foco no nome (o primeiro campo)
+    openModal('modal-produto');   // no computador a janela já põe o foco no nome; no celular o teclado só abre ao tocar
 }
 
 const injetarEstoqueUI = () => {
@@ -1273,9 +1273,9 @@ const renderItemAtual = () => {
 
         campo.addEventListener('input', atualizar);
         corpo.querySelectorAll('.pk-atalho').forEach(b => {
-            b.addEventListener('click', () => { campo.value = b.dataset.peso; atualizar(); campo.focus(); });
+            b.addEventListener('click', () => { campo.value = b.dataset.peso; atualizar(); focarCampo(campo); });
         });
-        setTimeout(() => campo.focus(), 120);
+        setTimeout(() => focarCampo(campo), 120);      // no celular o teclado só abre quando tocar no campo
 
     } else {
         // Item de valor fechado (unidade, maço, bandeja): calcula sozinho

@@ -3931,6 +3931,65 @@ teste('ponte (escuta ao vivo): parado, o servidor segura a resposta e acorda o c
   assert.ok(leituras - antes <= 20, `poucas leituras parado (${leituras - antes})`);
   P._fontes.get('banca').parar();
 });
+teste('ponte (dois celulares): quem está com a impressora tem a vez; se ele some, o outro assume sozinho; ao parar, solta o que reservou', async () => {
+  const P = require(raiz('lib/ponte'));
+  const db = criarBancoP(sementeEstoque());
+  const novaPonte = async () => { const tk = P.novoToken('banca'), p = { id: tk.id, hash: tk.hash, cfg: { auto: 'chegada' }, ignorar: [] }; await db.collection('pontes').doc(tk.id).set(p); return p; };
+  const A = await novaPonte(), B = await novaPonte();
+  const pedido = (id) => db.collection('pedidos').doc(id).set({ nome: 'Ana', status: 'pendente', total: 5, data: new Date().toISOString(), itens: [] });
+  P._donos.clear();
+
+  // A imprime o 1º pedido: vira o "dono" da impressora
+  await pedido('ped-dois0001');
+  const r1 = await P.aguardar(db, 'banca', A, { espera: 0 });
+  assert.deepStrictEqual(r1.trabalhos.map((t) => t.chave), ['p:ped-dois0001:inicial']);
+  await P.aguardar(db, 'banca', A, { espera: 0, feitos: [{ chave: 'p:ped-dois0001:inicial', ok: true }] });
+  assert.strictEqual(P._donos.get('banca').id, A.id);
+
+  // pedido novo: B não pega na hora (a impressora está com A, e A está vivo)...
+  await pedido('ped-dois0002');
+  const rb = await P.aguardar(db, 'banca', B, { espera: 1 });
+  assert.deepStrictEqual(rb.trabalhos, [], 'B espera a vez do dono');
+  // ...e A pega
+  const ra = await P.aguardar(db, 'banca', A, { espera: 0 });
+  assert.deepStrictEqual(ra.trabalhos.map((t) => t.chave), ['p:ped-dois0002:inicial']);
+  await P.aguardar(db, 'banca', A, { espera: 0, feitos: [{ chave: 'p:ped-dois0002:inicial', ok: true }] });
+
+  // A some (não chama mais): B assume o pedido seguinte sozinho, depois da vez do dono
+  await pedido('ped-dois0003');
+  const t0 = Date.now();
+  const rb2 = await P.aguardar(db, 'banca', B, { espera: 12 });
+  const levou = Date.now() - t0;
+  assert.deepStrictEqual(rb2.trabalhos.map((t) => t.chave), ['p:ped-dois0003:inicial'], 'B assumiu');
+  assert.ok(levou >= P.DONO_PRIMEIRO_MS - 300 && levou < P.DONO_PRIMEIRO_MS + 3000, `assumiu em ${levou} ms`);
+
+  // a impressora de A falhou: ele deixa de ser dono na hora e B pega sem esperar
+  await P.aguardar(db, 'banca', B, { espera: 0, feitos: [{ chave: 'p:ped-dois0003:inicial', ok: true }] });
+  P._donos.set('banca', { id: A.id, em: Date.now() });
+  await P.aguardar(db, 'banca', A, { espera: 0, pausa: true, feitos: [{ chave: 'p:ped-dois0002:inicial', ok: false }] });
+  assert.ok(!P._donos.has('banca') || P._donos.get('banca').id !== A.id, 'falhou: não é mais dono');
+  await pedido('ped-dois0004');
+  const t1 = Date.now();
+  const rb3 = await P.aguardar(db, 'banca', B, { espera: 5 });
+  assert.deepStrictEqual(rb3.trabalhos.map((t) => t.chave), ['p:ped-dois0004:inicial']);
+  assert.ok(Date.now() - t1 < 2000, 'sem dono vivo, ninguém espera');
+
+  // B recebeu dois papéis, imprimiu um e vai parar (desligado no app): conta o que saiu e solta o resto, para A pegar NA HORA (antes: 90 s)
+  await pedido('ped-dois0005');
+  const rb4 = await P.aguardar(db, 'banca', B, { espera: 0 });
+  assert.deepStrictEqual(rb4.trabalhos.map((t) => t.chave).sort(), ['p:ped-dois0004:inicial', 'p:ped-dois0005:inicial']);
+  const s = await P.soltar(db, 'banca', B, { feitos: [{ chave: 'p:ped-dois0004:inicial', ok: true }] });
+  assert.strictEqual(s.soltos, 1);
+  assert.strictEqual(db._dados.get('pedidos/ped-dois0004').impressao.estado, 'impresso', 'o que saiu foi contado (não sai de novo no outro celular)');
+  assert.ok(!P._donos.has('banca'), 'quem parou não é dono');
+  const ra2 = await P.aguardar(db, 'banca', A, { espera: 0 });
+  assert.deepStrictEqual(ra2.trabalhos.map((t) => t.chave), ['p:ped-dois0005:inicial'], 'A pegou na hora o que B soltou');
+  // e o app avisa a loja quando para (op 'soltar')
+  const kt = require('fs').readFileSync(raiz('android/app/src/main/java/com/usebanca/ponte/PonteService.kt'), 'utf8');
+  assert.ok(/avisarQueParou\(\)/.test(kt) && kt.includes('put("op", "soltar")'));
+  assert.ok(require('fs').readFileSync(raiz('api/ponte.js'), 'utf8').includes("b.op === 'soltar'"));
+  P._donos.clear();
+});
 const P0 = () => ({ ...require(raiz('lib/ponte')).CFG_PADRAO });
 
 teste('ponte (cofre): o que o painel manda imprimir fica cifrado no banco e o cupom sai aberto', async () => {

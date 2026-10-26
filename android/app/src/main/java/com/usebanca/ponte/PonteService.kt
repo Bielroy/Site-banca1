@@ -133,6 +133,7 @@ class PonteService : Service() {
         geracao++
         servidor.cancelar()
         fio?.interrupt()
+        avisarQueParou()
         pararDeOuvirRede()
         try { soltador.shutdownNow() } catch (_: Exception) { }
         fecharSemTravar()
@@ -145,6 +146,22 @@ class PonteService : Service() {
         }
         estadoOk = false
         super.onDestroy()
+    }
+
+    /**
+     * O app vai parar (desligado no app, fora do horário, celular desligando): conta à loja o que já saiu no papel
+     * e solta o que estava reservado para este celular. Sem isso, o outro celular da banca esperava 90 s para pegar
+     * e podia imprimir de novo um pedido que já tinha saído aqui. Sem internet: o que saiu vai na próxima conversa.
+     */
+    private fun avisarQueParou() {
+        if (!cfg.pareado) return
+        val feitos = cfg.feitos()
+        Thread({
+            try {
+                Servidor(cfg).chamar(JSONObject().put("op", "soltar").put("feitos", feitos), true, 8000)
+                cfg.tirarFeitos(feitos)
+            } catch (_: Exception) { }
+        }, "avisar-parou").start()
     }
 
     private fun entrarEmPrimeiroPlano(): Boolean = try {
@@ -374,12 +391,13 @@ class PonteService : Service() {
 
     /**
      * Impressora não respondeu (desligada, sem papel ou ocupada com outro celular da banca):
-     * 15 s, 30 s e depois de minuto em minuto. Antes ia até 5 min, e o segundo celular demorava
-     * para assumir quando o primeiro saía. Só tenta de novo se tiver papel na fila, então gasta pouco.
+     * 7 s, 15 s, 30 s e depois de minuto em minuto. A 1ª é curta porque o outro celular solta a
+     * impressora 5 s depois do último papel (SOLTAR_MS). Só tenta de novo se tiver papel na fila.
      */
     private fun atrasoImpressora(n: Int): Long = when (n) {
-        1 -> 15_000L
-        2 -> 30_000L
+        1 -> SOLTAR_MS + 2_000L
+        2 -> 15_000L
+        3 -> 30_000L
         else -> 60_000L
     }
 
