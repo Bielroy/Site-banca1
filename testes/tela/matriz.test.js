@@ -276,13 +276,10 @@ teste('a barra fixa da sacola por cima das categorias ainda não coladas no topo
   const { pagina, erros, fechar } = await abrir('/', { tela: '375', cen: CENARIOS['pior caso']() });
   try {
     await pagina.setViewportSize({ width: 375, height: 450 });
-    // o toque pode chegar antes de a página ligar os botões (navegador lento, como o WebKit do CI): repete até a sacola encher
-    let cheia = false;
-    for (let i = 0; i < 4 && !cheia; i++) {
-      await pagina.locator('#lista-produtos .produto-card[data-id="alface"] .card-add').click();
-      cheia = await pagina.locator('#btn-carrinho-mobile:not(.vazio)').waitFor({ state: 'visible', timeout: 2500 }).then(() => true, () => false);
-    }
-    assert.ok(cheia, 'a sacola não encheu depois de tocar em Adicionar');
+    // O toque dos testes, no WebKit, às vezes cai no card (abre o detalhe do produto) porque a tela de 450px rola com a barra do topo.
+    // O que importa aqui é o produto estar na sacola, então aciona o botão "Adicionar" direto, sem depender de onde o dedo cai.
+    await pagina.locator('#lista-produtos .produto-card[data-id="alface"] .card-add').evaluate((b) => b.click());
+    await pagina.waitForSelector('#btn-carrinho-mobile:not(.vazio)', { timeout: 5000 });
     await pagina.evaluate(() => window.scrollTo(0, 0)); await pagina.waitForTimeout(300);
     const cobre = await pagina.evaluate(() => {
       const barra = document.querySelector('#btn-carrinho-mobile').getBoundingClientRect();
