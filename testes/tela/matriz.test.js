@@ -46,7 +46,7 @@ const TELAS = {
   w700: { width: 700, height: 500, pc: true }, w740: { width: 740, height: 450, pc: true }, w768: { width: 768, height: 500, pc: true }, w783: { width: 783, height: 450, pc: true },
   w800b: { width: 800, height: 450, pc: true }, w817: { width: 817, height: 450, pc: true }, w860: { width: 860, height: 450, pc: true }, w900: { width: 900, height: 500, pc: true }, w1000: { width: 1000, height: 600, pc: true }, w1100: { width: 1100, height: 600, pc: true }, w1280: { width: 1280, height: 720, pc: true },
 };
-const NOMES_TELA = process.env.SO_TELAS ? process.env.SO_TELAS.split(',') : CURTA ? ['320', '390', 'deitado', 'janela800'] : Object.keys(TELAS);
+const NOMES_TELA = process.env.SO_TELAS ? process.env.SO_TELAS.split(',') : CURTA ? ['320', '390', 'deitado', 'janela800'] : Object.keys(TELAS).filter((t) => t !== '440');   // 440 só no teste do Safari 26 (a matriz inteira passava de 20 min)
 const LETRAS = CURTA ? [1, 2] : [1, 1.5, 2];
 
 // ------------------------------------------------------------------ dados de pior caso
