@@ -39,6 +39,7 @@ const TELAS = {
   375: { width: 375, height: 667 },
   390: { width: 390, height: 844 },
   430: { width: 430, height: 932 },
+  440: { width: 440, height: 956 },   // iPhone Pro Max
   deitado: { width: 844, height: 390 },
   // janela de computador pequena (800×600): é o tamanho de escâner, pré-visualização e navegador de PC encolhido
   janela800: { width: 800, height: 600, pc: true },
@@ -269,6 +270,35 @@ teste('o vigia no computador usa a janela, não a "tela do aparelho" (navegador 
   }
 });
 
+// ------------------------------------------------------------------ Safari 26: tela do aparelho "de mentira" no celular
+// O Safari 26 do iPhone informa uma tela menor que a real (privacidade): um iPhone de 440px dizia 414px. O vigia usava esse número
+// e acusava o cabeçalho, a faixa da feira e a barra "Ver pedido", que ocupam a largura certinho ("saiu pela borda", "mais larga").
+teste('o vigia no celular usa a largura da página, não a "tela do aparelho" que o Safari 26 informa menor (440px dizendo 414)', async () => {
+  const falsa = () => { for (const [k, v] of [['width', 414], ['height', 896], ['availWidth', 414], ['availHeight', 896]]) Object.defineProperty(window.screen, k, { get: () => v }); };
+  const { pagina, erros, fechar } = await abrir('/', { tela: '440', cen: CENARIOS['pior caso'](), antes: falsa });
+  try {
+    await pagina.locator('#lista-produtos .produto-card[data-id="alface"] .card-add').evaluate((b) => b.click());
+    await pagina.waitForSelector('#btn-carrinho-mobile:not(.vazio)', { timeout: 5000 });
+    assert.strictEqual(await pagina.evaluate(() => screen.width), 414, 'a tela do aparelho é mesmo de mentira');
+    assert.strictEqual(await pagina.evaluate(() => window.__vigiaTela.larguraDaTela()), 440, 'vale a largura em que a página é desenhada');
+    const achou = (await pagina.evaluate(() => window.__vigiaTela.verificarTela())).filter((p) => p.regra === 'fora-da-tela' || p.regra === 'rolagem-lateral');
+    assert.deepStrictEqual(achou.map(texto), [], 'acusou defeito que não existe');
+    semErros(erros);
+  } finally { await fechar(); }
+});
+// e o vigia continua achando o que passa de verdade da borda nessa mesma tela
+teste('com a tela de mentira, algo que passa de verdade da borda ainda é acusado', async () => {
+  const falsa = () => { for (const [k, v] of [['width', 414], ['height', 896]]) Object.defineProperty(window.screen, k, { get: () => v }); };
+  const { pagina, fechar } = await abrir('/', { tela: '440', cen: CENARIOS['pior caso'](), antes: falsa });
+  try {
+    const regras = await pagina.evaluate(() => {
+      const st = document.createElement('style'); st.textContent = '#busca-input { width: 700px !important; min-width: 700px !important; max-width: none !important; }'; document.head.appendChild(st);
+      return new Promise((ok) => setTimeout(() => ok(window.__vigiaTela.verificarTela().map((p) => p.regra)), 300));
+    });
+    assert.ok(regras.includes('rolagem-lateral') || regras.includes('fora-da-tela'), 'devia acusar: ' + regras.join(', '));
+  } finally { await fechar(); }
+});
+
 // ------------------------------------------------------------------ a barra "Ver pedido" por cima do que ainda não grudou no topo
 // iPhone 375px com a barra de baixo do Safari (tela curta) e itens na sacola: a barra fixa cobre a fileira de categorias enquanto ela está
 // no lugar normal (a página rola e ela gruda no topo). Isso não é defeito: o vigia acusava "Tem algo por cima: botão de categoria".
@@ -281,6 +311,13 @@ teste('a barra fixa da sacola por cima das categorias ainda não coladas no topo
     await pagina.locator('#lista-produtos .produto-card[data-id="alface"] .card-add').evaluate((b) => b.click());
     await pagina.waitForSelector('#btn-carrinho-mobile:not(.vazio)', { timeout: 5000 });
     await pagina.evaluate(() => window.scrollTo(0, 0)); await pagina.waitForTimeout(300);
+    // a altura do topo muda com o dia e a hora (aviso de loja fechada, feira do dia): acerta a altura da tela para a barra
+    // de baixo cair bem no meio da fileira de categorias, em vez de depender de um número fixo
+    const ajuste = await pagina.evaluate(() => {
+      const barra = document.querySelector('#btn-carrinho-mobile').getBoundingClientRect(), cat = document.querySelector('#categorias .cat-btn').getBoundingClientRect();
+      return Math.round(barra.top - (cat.top + cat.bottom) / 2);
+    });
+    if (ajuste) { await pagina.setViewportSize({ width: 375, height: Math.max(300, 450 - ajuste) }); await pagina.evaluate(() => window.scrollTo(0, 0)); await pagina.waitForTimeout(300); }
     const cobre = await pagina.evaluate(() => {
       const barra = document.querySelector('#btn-carrinho-mobile').getBoundingClientRect();
       return [...document.querySelectorAll('#categorias .cat-btn')].filter((b) => { const r = b.getBoundingClientRect(); return r.bottom > barra.top && r.top < barra.bottom && r.right > barra.left && r.left < barra.right; }).length;

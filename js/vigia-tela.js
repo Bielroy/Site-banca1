@@ -50,8 +50,14 @@ const T = 1.5;   // folga em px (arredondamento do navegador)
  *  a "tela do aparelho" não manda nada ali, e escâneres e testadores de site rodam com tela de mentira (800×600) e janela maior. */
 export function larguraDaTela() {
     const toque = (navigator.maxTouchPoints || 0) > 0 && matchMedia('(pointer: coarse)').matches;
+    if (!toque) return innerWidth;
+    // A largura em que a página é DESENHADA (a do <meta viewport>): não cresce quando algo passa da borda, ao contrário de innerWidth.
+    // Antes valia a "tela do aparelho" (screen), mas o Safari 26 do iPhone mente nela para proteger a privacidade
+    // (um iPhone de 440px dizia 414px) e o vigia acusava o cabeçalho e a faixa, que ocupam a tela certinho.
+    const cw = document.documentElement.clientWidth || 0;
+    if (cw > 0) return Math.min(innerWidth, cw);
     const sw = (window.screen && screen.width) || 0, sh = (window.screen && screen.height) || 0;
-    if (!toque || !sw || !sh) return innerWidth;
+    if (!sw || !sh) return innerWidth;
     const deitado = matchMedia('(orientation: landscape)').matches;
     return Math.min(innerWidth, deitado ? Math.max(sw, sh) : Math.min(sw, sh));
 }
