@@ -140,8 +140,17 @@ jobs:
       - name: Instalar o navegador de teste (numa pasta à parte)
         run: |
           npm install --prefix testes/tela --no-audit --no-fund
-          # a instalação às vezes trava no GitHub (já ficou 40 min parada): até 3 tentativas de no máximo 8 min cada
-          for n in 1 2 3; do timeout 480 npx --prefix testes/tela playwright install --with-deps chromium && break; echo "instalação travou ou falhou (tentativa $n)"; [ "$n" = 3 ] && exit 1; done
+          # a instalação às vezes trava no GitHub (normal: 35 s; já ficou 40 min parada, presa no apt-get): até 3 tentativas
+          # de no máximo 10 min. Entre uma e outra, solta o apt que ficou preso (senão a tentativa seguinte esbarra na trava dele).
+          for n in 1 2 3; do
+            timeout -k 20 600 npx --prefix testes/tela playwright install --with-deps chromium && break
+            echo "::warning::instalação do chromium travou ou falhou (tentativa $n)"
+            [ "$n" = 3 ] && exit 1
+            sudo pkill -9 -f 'apt-get|dpkg' || true
+            sudo rm -f /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock
+            sudo dpkg --configure -a || true
+            sleep 5
+          done
       - name: Abrir o site no celular simulado e fazer o que o cliente faz
         run: |
           set +e
@@ -172,8 +181,17 @@ jobs:
       - name: Instalar o navegador de teste (numa pasta à parte)
         run: |
           npm install --prefix testes/tela --no-audit --no-fund
-          # a instalação às vezes trava no GitHub (já ficou 40 min parada): até 3 tentativas de no máximo 8 min cada
-          for n in 1 2 3; do timeout 480 npx --prefix testes/tela playwright install --with-deps chromium && break; echo "instalação travou ou falhou (tentativa $n)"; [ "$n" = 3 ] && exit 1; done
+          # a instalação às vezes trava no GitHub (normal: 35 s; já ficou 40 min parada, presa no apt-get): até 3 tentativas
+          # de no máximo 10 min. Entre uma e outra, solta o apt que ficou preso (senão a tentativa seguinte esbarra na trava dele).
+          for n in 1 2 3; do
+            timeout -k 20 600 npx --prefix testes/tela playwright install --with-deps chromium && break
+            echo "::warning::instalação do chromium travou ou falhou (tentativa $n)"
+            [ "$n" = 3 ] && exit 1
+            sudo pkill -9 -f 'apt-get|dpkg' || true
+            sudo rm -f /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock
+            sudo dpkg --configure -a || true
+            sleep 5
+          done
       - name: Abrir cada loja em 320, 375, 390, 430 e deitado, com a letra em 100%, 150% e 200%
         run: |
           set +e
@@ -212,8 +230,17 @@ jobs:
       - name: Instalar o motor do iPhone (WebKit)
         run: |
           npm install --prefix testes/tela --no-audit --no-fund
-          # a instalação às vezes trava no GitHub (já ficou 40 min parada): até 3 tentativas de no máximo 8 min cada
-          for n in 1 2 3; do timeout 480 npx --prefix testes/tela playwright install --with-deps webkit && break; echo "instalação travou ou falhou (tentativa $n)"; [ "$n" = 3 ] && exit 1; done
+          # a instalação às vezes trava no GitHub (normal: 35 s; já ficou 40 min parada, presa no apt-get): até 3 tentativas
+          # de no máximo 10 min. Entre uma e outra, solta o apt que ficou preso (senão a tentativa seguinte esbarra na trava dele).
+          for n in 1 2 3; do
+            timeout -k 20 600 npx --prefix testes/tela playwright install --with-deps webkit && break
+            echo "::warning::instalação do webkit travou ou falhou (tentativa $n)"
+            [ "$n" = 3 ] && exit 1
+            sudo pkill -9 -f 'apt-get|dpkg' || true
+            sudo rm -f /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock
+            sudo dpkg --configure -a || true
+            sleep 5
+          done
       - name: Rolar as faixas, tocar no +, virar a tela e aumentar a letra no "iPhone"
         run: |
           set +e
