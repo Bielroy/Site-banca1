@@ -263,10 +263,16 @@ main.layout { min-height: 100vh; }
 .linha-entrega.gratis { color: var(--success, #166534); font-weight: 700; }
 
 /* Tema com card escuro em página clara (ou o contrário): o card usa a cor de texto própria, legível sobre ele (js/tema.js). */
-.ap-card-contraste .produto-card,
 /* as janelas (produto, montar, sacola, checkout...) usam o mesmo fundo dos cards: a mesma tinta legível vale nelas */
-.ap-card-contraste .modal { --text-dark: var(--tc-dark); --text-mid: var(--tc-mid); --text-light: var(--tc-light); --linha: var(--tc-linha); --forest-texto: var(--tc-forest); color: var(--tc-dark);
-  /* os "papéis" claros de dentro da janela (caixa da quantidade, do total, faixas) viram um tom do próprio fundo */
-  --foam: color-mix(in srgb, var(--tc-dark) 9%, var(--superficie)); --parchment: color-mix(in srgb, var(--tc-dark) 6%, var(--superficie)); --warm-white: color-mix(in srgb, var(--tc-dark) 4%, var(--superficie)); }
+.ap-card-contraste .produto-card,
+.ap-card-contraste .modal { --text-dark: var(--tc-dark); --text-mid: var(--tc-mid); --text-light: var(--tc-light); --linha: var(--tc-linha); --forest-texto: var(--tc-forest); color: var(--tc-dark); }
+/* Card de SEÇÃO COLORIDA no jeito "faixa" (css/secoes.css): o fundo dele é sempre CLARO (a cor da seção misturada com branco),
+   então a tinta é escura, mesmo quando o tema tem card escuro (a tinta clara do tema deixava o nome invisível). */
+.ap-card-contraste .produto-card--secao { --text-dark: #1a1a18; --text-mid: color-mix(in srgb, #1a1a18 78%, #fff); --text-light: color-mix(in srgb, #1a1a18 62%, #fff); --linha: color-mix(in srgb, #1a1a18 18%, #fff); --forest-texto: #1a1a18; color: #1a1a18;
+  /* a etiqueta do preço, o ilhós etc. se pintam com a "superfície": aqui ela é o próprio fundo claro do card */
+  --superficie: color-mix(in srgb, var(--sec-cor) 14%, #fff); --warm-white: var(--superficie); }
+/* os "papéis" claros de dentro da JANELA (caixa da quantidade, do total, faixas) viram um tom do próprio fundo.
+   Só na janela: no card, --warm-white é o fundo do próprio card e não pode ser recalculado. */
+.ap-card-contraste .modal { --foam: color-mix(in srgb, var(--tc-dark) 9%, var(--superficie)); --parchment: color-mix(in srgb, var(--tc-dark) 6%, var(--superficie)); --warm-white: color-mix(in srgb, var(--tc-dark) 4%, var(--superficie)); }
 /* botões redondos claros por cima da foto (fechar, etiqueta da categoria): tinta escura sempre */
 .ap-card-contraste .modal .btn-fechar, .ap-card-contraste .modal .md-tag, .ap-card-contraste .modal .mt-fechar { color: #1a1a18; }

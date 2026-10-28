@@ -2168,6 +2168,27 @@ teste('tema de card escuro em página clara: as janelas do produto e do montar f
   semErros(erros); await fechar();
 });
 
+teste('tema de card escuro + seção colorida no jeito "faixa": o nome do produto (card claro da seção) continua legível', async () => {
+  const c = cenarioPadrao();
+  const prod = (nome, cat, preco = 15) => ({ nome, preco, unidade: 'un', cat, ativo: true });
+  c.lojas.cremes = { ficha: { nome: 'Cremes e Sucos', ativo: true, tipo: 'Açaí', tema: { primaria: '#1c201f', destaque: '#ffde59', fundo: '#fbf4e2', superficie: '#1c1d1f', texto: '#1c201f', botao: '#fbe27a', etiqueta: 'selo' } },
+    produtos: { c1: prod('Creme de açaí', 'cremes'), c2: prod('Creme de abacaxi com hortelã', 'cremes'), s1: prod('Suco de laranja', 'sucos') },
+    categorias: [{ chave: 'cremes', nome: 'Cremes', ordem: 1 }, { chave: 'sucos', nome: 'Sucos', ordem: 2 }],
+    config: { lojaAberta: true, diasAbertos: [0, 1, 2, 3, 4, 5, 6], minimo: 0, wpp: '5562999990000', vitrine: { secoes: [
+      { cat: 'cremes', titulo: 'Cremes', texto: 'Gelados.', cor: '#f3a6b5', icone: 'tigela', estilo: 'faixa' }] } } };
+  const { pagina, erros, fechar } = await abrir('/?loja=cremes', c);
+  await cards(pagina).first().waitFor({ timeout: 8000 }); await pagina.waitForTimeout(700);
+  const r = await pagina.evaluate(() => ({ cls: document.documentElement.classList.contains('ap-card-contraste') }));
+  if (process.env.FOTO) await pagina.screenshot({ path: '/tmp/moe/secao.png' });
+  assert.ok(r.cls, 'o tema de card escuro ligou a tinta própria dos cards');
+  // nome, preço e "a unidade" de TODOS os cards (o botão "Adicionar" tem degradê e é medido à parte)
+  for (const sel of ['.produto-card--secao', '.produto-card[data-id="s1"]']) {
+    const ruins = (await textosIlegiveis(pagina, sel)).filter((x) => !/Adicionar/.test(x));
+    assert.ok(!ruins.length, `texto ilegível em ${sel}: ${ruins.join(' | ')}`);
+  }
+  semErros(erros); await fechar();
+});
+
 teste('ajudante da pastelaria: fala do jeito da loja e a sugestão "Montar assim" abre a tela de montar já marcada', async () => {
   const cen = cenarioPadrao();
   cen.lojas.moecoe = { ficha: { nome: 'Pastel Moe Coe', ativo: true, tipo: 'Pastelaria', modulos: { ia: true } }, categorias: [{ chave: 'pasteis', nome: 'Pastéis', ordem: 1 }],
