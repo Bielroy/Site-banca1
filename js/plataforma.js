@@ -12,6 +12,7 @@
 import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
 import { auth, onAuthStateChanged, getDoc, doc, db } from './firebase.js';
 import { urlDaLoja } from './tenant.js';
+import { contatoDaLoja } from './contato-lib.js';
 import { escapeHTML, fmt, showToast, customConfirm } from './utils.js';
 import { sugerirId, idValido, totais, diasDaFeira, textoDoDia, proximaEntrega, normCond } from './plataforma-lib.js';
 import { CAMPOS_PRODUTO, camposDaLoja } from './cadastro-lib.js';
@@ -57,6 +58,8 @@ function semanaHtml(dias, editavel) {
 }
 const lojaPorId = (id) => (S.dados.lojas || []).find((l) => l.id === id);
 const feirasDaLoja = (id) => (S.dados.feiras || []).filter((f) => f.lojas.includes(id));
+/** O que vai na pílula do alto do cartaz da loja: as feiras onde ela está (a pessoa pode trocar o texto). */
+const localDoCartaz = (id) => [...new Set(feirasDaLoja(id).flatMap((f) => (f.condominios && f.condominios.length ? f.condominios : [f.nome])).filter(Boolean))].slice(0, 3).join(' · ');
 const feirasDoCond = (cid) => (S.dados.feiras || []).filter((f) => (f.condominiosIds || []).includes(cid));
 const ponto = (cor) => `<i class="pf-ponto" style="background:${corOk(cor)}" aria-hidden="true"></i>`;
 
@@ -288,8 +291,10 @@ function folhaLoja(l) {
     <section class="pf-sec pf-loja-cab">${ponto(l.cor)}<div><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.id)}${l.original ? ', loja original' : ''}</small></div><span class="pf-selo${l.ativo ? ' ok' : ' bloq'}">${l.ativo ? 'Ativa' : 'Bloqueada'}</span></section>
     <section class="pf-sec"><p class="pf-mes">${l.mes ? `Neste mês: <b>${fmt(l.mes.receita)}</b> em <b>${l.mes.pedidos}</b> pedidos.` : 'Sem leitura do movimento deste mês.'}${l.assinatura ? ` Mensalidade: <b>${fmt(l.assinatura.valor)}</b>${l.assinatura.dia ? `, dia ${l.assinatura.dia}` : ''}.` : ' Sem mensalidade (defina na aba Mensalidades).'}</p>
         <div class="pf-linha-bts"><a class="pf-bt" href="${urlDaLoja(l.id, './')}" target="_blank" rel="noopener">Ver a loja</a><a class="pf-bt" href="${urlDaLoja(l.id, '/admin')}">Abrir o painel</a></div>
+        <label class="pf-rot" for="pf-cartaz-local">Local que aparece no topo do cartaz</label>
+        <div class="pf-form-linha"><input type="text" id="pf-cartaz-local" maxlength="50" autocomplete="off" value="${escapeHTML(localDoCartaz(l.id))}" placeholder="Ex.: Feira do Atena"></div>
         <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="cartaz-loja" data-loja="${escapeHTML(l.id)}">Cartaz com QR e fitinha NFC</button></div>
-        <small class="pf-dica">Cartaz A4 nas cores, na logo e com a foto de capa da loja (Aparência), com o QR que abre esta loja e o passo a passo da fitinha.</small></section>
+        <small class="pf-dica">Cartaz A4 nas cores, na logo e com a foto de capa da loja (Aparência), com o QR que abre esta loja, o passo a passo da fitinha e o WhatsApp e Instagram da loja (Configurações).</small></section>
     <section class="pf-sec"><span class="pf-rot">Proprietários</span>
         ${l.donos.length ? `<ul class="pf-donos">${l.donos.map((e) => `<li><span>${escapeHTML(e)}</span><button type="button" class="pf-bt mini" data-pf="tirar-dono" data-email="${escapeHTML(e)}" aria-label="Tirar ${escapeHTML(e)}">Tirar</button></li>`).join('')}</ul>` : `<p class="pf-dica">${l.original ? 'A conta antiga da banca continua valendo. Novos proprietários aparecem aqui.' : 'Ninguém ainda. Sem proprietário, ninguém abre o painel desta loja.'}</p>`}
         <div class="pf-form-linha"><input type="email" id="pf-l-dono" inputmode="email" autocomplete="off" placeholder="E-mail do proprietário" aria-label="E-mail do novo proprietário"><button type="button" class="pf-bt" data-pf="dar-dono">Adicionar</button></div></section>
@@ -360,10 +365,12 @@ async function agir(b) {
             const l = lojaPorId(b.dataset.loja); if (!l) return;
             try {
                 let ficha = {}; try { const sn = await getDoc(doc(db, 'tenants', l.id)); if (sn.exists()) ficha = sn.data() || {}; } catch (_) { /* sem a ficha: sai com as cores padrão */ }
-                const conds = [...new Set(feirasDaLoja(l.id).flatMap((f) => (f.condominios && f.condominios.length ? f.condominios : [f.nome])).filter(Boolean))];
+                const campoLocal = document.getElementById('pf-cartaz-local'), local = (campoLocal ? campoLocal.value : localDoCartaz(l.id)).trim();
+                let config = {}; try { const sn = await getDoc(doc(db, 'tenants', l.id, 'loja', 'config')); if (sn.exists()) config = sn.data() || {}; } catch (_) { /* sem contato: o cartaz sai sem a faixa */ }
+                const ct = contatoDaLoja(config, l.nome);
                 const link = new URL(urlDaLoja(l.id, '/'), location.href).href;
                 const [{ cartazLojaHtml }, { imprimirPagina }] = await Promise.all([import('./cartaz-lib.js'), import('./impressao.js')]);
-                await imprimirPagina(cartazLojaHtml({ loja: { nome: ficha.nome || l.nome, subtitulo: ficha.subtitulo || '', tema: ficha.tema || {} }, condominios: conds, link }));
+                await imprimirPagina(cartazLojaHtml({ loja: { nome: ficha.nome || l.nome, subtitulo: ficha.subtitulo || '', tema: ficha.tema || {}, whatsapp: ct.whatsapp, instagram: ct.instagram }, condominios: local ? [local] : [], link }));
                 showToast('Cartaz pronto. Para guardar, escolha "Salvar como PDF".');
             } catch (e) { showToast((e && e.message) || 'Não consegui montar o cartaz.', true); }
             return;

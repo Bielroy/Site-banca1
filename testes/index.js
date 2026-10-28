@@ -747,7 +747,12 @@ teste('cartaz da loja: cores vêm do tema, texto escapado, só imagem https, sem
   assert.ok(html.includes('src="https://x.test/l.png"'), 'logo https entra');
   assert.ok(html.includes('QR Code: usebanca.com/?loja=moe-coe'), 'o QR é o da loja');
   assert.ok(html.includes('parte de trás') && html.includes('Segure parado') && html.includes('NFC ligado'), 'passo a passo da fitinha');
-  assert.ok(html.includes('class="foto vazio"'), 'sem foto de capa válida, sai o quadro com a logo, sem imagem quebrada');
+  assert.ok(html.includes('class="ft vazio"'), 'sem foto de capa válida, sai o quadro com a logo, sem imagem quebrada');
+  assert.ok(!html.includes('class="contato"'), 'sem WhatsApp nem Instagram, sai sem a faixa de contato');
+  const comContato = C.cartazLojaHtml({ loja: { nome: 'Moe', whatsapp: '5561999990000', instagram: 'pastel.moe', tema: { capa: 'https://x.test/c.jpg', logo: 'https://x.test/l.png' } }, condominios: ['Feira do Atena'], link: 'https://usebanca.com/?loja=moe-coe' });
+  assert.ok(comContato.includes('(61) 99999-0000') && comContato.includes('@pastel.moe') && comContato.includes('Feira do Atena'), 'contato e local aparecem');
+  assert.ok(comContato.includes('class="polaroid"') && comContato.includes('class="logo"'), 'foto em polaroid e logo em selo');
+  assert.ok(!C.cartazLojaHtml({ loja: { nome: 'Moe', instagram: '"><script>x</script>' }, link: 'https://usebanca.com/?loja=moe-coe' }).includes('<script'), 'instagram inválido não entra');
 });
 teste('plataforma: várias pessoas abrindo a lista ao mesmo tempo (cache frio) não repetem as leituras de cada loja', async () => {
   const sem = { ...semente() }; for (let i = 0; i < 12; i++) sem[`tenants/loja-${i}`] = { nome: `Loja ${i}`, ativo: true };
