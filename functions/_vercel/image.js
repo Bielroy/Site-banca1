@@ -16,6 +16,11 @@ export const SITES_DE_FOTO = [
 ];
 const MAX_BYTES = 8 * 1024 * 1024;
 const UM_MES = 2678400;
+// Quanto tempo a miniatura (e a busca da foto) fica guardada. Antes era 1 mês "para sempre": quando o ImgBB falhou por
+// algumas horas e devolveu a imagem de erro ("imgbb.com service unavailable"), ela ficou guardada no Cloudflare e no
+// celular de cada cliente por 30 dias. Agora são poucos dias, e o que parece imagem de erro nem é guardado.
+const GUARDAR = 3 * 86400;
+const MUITO_PEQUENA = 2048;         // miniatura de verdade de uma foto nunca é menor que isso; imagem de erro com texto, sim
 
 export const siteDeFotoValido = (u) => {
   let x; try { x = new URL(u); } catch (_) { return null; }
@@ -34,7 +39,7 @@ export const precisaDeReserva = (r) => {
 /** Miniatura pelo wsrv.nl (redutor público e gratuito). Só para os mesmos sites de foto. null = não deu. */
 export async function reduzirPorFora(url, largura) {
   try {
-    const r = await fetch(`https://wsrv.nl/?url=${encodeURIComponent(url)}&w=${largura}&q=75&output=webp&we`, { redirect: 'follow', cf: { cacheEverything: true, cacheTtl: UM_MES } });
+    const r = await fetch(`https://wsrv.nl/?url=${encodeURIComponent(url)}&w=${largura}&q=75&output=webp&we`, { redirect: 'follow', cf: { cacheEverything: true, cacheTtl: GUARDAR } });
     const tipo = r.headers.get('content-type') || '';
     if (!r.ok || !/^image\//i.test(tipo)) return null;
     const n = Number(r.headers.get('content-length'));
@@ -53,12 +58,12 @@ export async function onRequestGet({ request }) {
   if (!LARGURAS.includes(largura)) return recusa(400, 'Largura não permitida.');
 
   const cache = typeof caches !== 'undefined' ? caches.default : null;
-  const chaveCache = new Request(`${new URL(request.url).origin}/_vercel/image?url=${encodeURIComponent(foto.href)}&w=${largura}`);
+  const chaveCache = new Request(`${new URL(request.url).origin}/_vercel/image?v=3&url=${encodeURIComponent(foto.href)}&w=${largura}`);
   if (cache) { const guardada = await cache.match(chaveCache); if (guardada) return guardada; }
 
   let r;
   try {
-    r = await fetch(foto.href, { redirect: 'follow', cf: { image: { width: largura, quality: 75, format: 'webp', fit: 'scale-down' }, cacheEverything: true, cacheTtl: UM_MES } });
+    r = await fetch(foto.href, { redirect: 'follow', cf: { image: { width: largura, quality: 75, format: 'webp', fit: 'scale-down' }, cacheEverything: true, cacheTtl: GUARDAR } });
   } catch (_) { return recusa(502, 'Não consegui buscar a foto.'); }
   let tipo = r.headers.get('content-type') || '';
   if (!r.ok || !/^image\//i.test(tipo)) return recusa(r.ok ? 415 : 502, 'A foto não está disponível.');
@@ -72,7 +77,10 @@ export async function onRequestGet({ request }) {
     if (reserva) { try { await r.body?.cancel(); } catch (_) { /* nada a cancelar */ } r = reserva; tipo = reserva.headers.get('content-type') || tipo; }
   }
 
-  const saida = new Response(r.body, { status: 200, headers: { 'Content-Type': tipo, 'Cache-Control': `public, max-age=${UM_MES}, immutable`, 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin' } });
+  // imagem minúscula = quase certamente a imagem de erro do ImgBB: não serve, não guarda; a loja cai na foto original
+  const tamanho = Number(r.headers.get('content-length'));
+  if (tamanho > 0 && tamanho < MUITO_PEQUENA) { try { await r.body?.cancel(); } catch (_) { /* nada */ } return recusa(502, 'A foto não está disponível agora.'); }
+  const saida = new Response(r.body, { status: 200, headers: { 'Content-Type': tipo, 'Cache-Control': `public, max-age=${GUARDAR}`, 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin' } });
   if (cache) { try { await cache.put(chaveCache, saida.clone()); } catch (_) { /* sem cache: só a próxima busca é mais lenta */ } }
   return saida;
 }

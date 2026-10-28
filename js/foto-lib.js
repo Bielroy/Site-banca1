@@ -37,5 +37,5 @@ export function miniatura(url, largura = 384, host = (typeof location !== 'undef
     let deOnde = ''; try { deOnde = new URL(u).hostname.toLowerCase(); } catch (_) { return u; }
     if (!hostAceito(deOnde)) return u;                             // guardada em outro lugar: aparece no tamanho original
     const w = LARGURAS.includes(largura) ? largura : 384;
-    return `/_vercel/image?url=${encodeURIComponent(u)}&w=${w}&q=75`;
+    return `/_vercel/image?url=${encodeURIComponent(u)}&w=${w}&q=75&v=3`;       // v=3: mudou o número, as miniaturas de erro guardadas antes deixam de valer
 }

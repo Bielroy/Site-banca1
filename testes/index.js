@@ -2303,7 +2303,7 @@ teste('fotos: miniatura só para link https em produção, nas larguras que a Ve
   for (const fora of ['https://fotos.exemplo.com/a/tomate.jpg', 'https://ibb.co.site-do-mal.com/a.jpg', 'https://site-do-mal.com/i.ibb.co/a.jpg', 'https://xibb.co/a.jpg']) assert.strictEqual(F.miniatura(fora, 384, 'site-banca1.vercel.app'), fora, 'foto guardada em outro lugar aparece no tamanho original: ' + fora);
   assert.ok(F.miniatura('https://firebasestorage.googleapis.com/v0/b/x/o/a.webp?alt=media', 384, 'site-banca1.vercel.app').startsWith('/_vercel/image?url='));
   const u = 'https://i.ibb.co/a/tomate.jpg?x=1&y=2';
-  assert.strictEqual(F.miniatura(u, 384, 'site-banca1.vercel.app'), '/_vercel/image?url=' + encodeURIComponent(u) + '&w=384&q=75');
+  assert.strictEqual(F.miniatura(u, 384, 'site-banca1.vercel.app'), '/_vercel/image?url=' + encodeURIComponent(u) + '&w=384&q=75&v=3');
   assert.ok(F.miniatura(u, 128, 'www.loja.com.br').includes('&w=128&'));
   assert.ok(F.miniatura(u, 999, 'www.loja.com.br').includes('&w=384&'), 'largura fora da lista cai na padrão');
   for (const host of ['localhost', '127.0.0.1', '192.168.0.10', '']) assert.strictEqual(F.miniatura(u, 384, host), u, host);
@@ -3185,18 +3185,21 @@ teste('cloudflare: o redutor de fotos só aceita os sites e as larguras do verce
   const antes = globalThis.fetch; let chamadas = 0;
   const pedir = (u, w) => I.onRequestGet({ request: new Request(`https://loja.exemplo.com/_vercel/image?url=${encodeURIComponent(u)}&w=${w}&q=75`) });
   try {
-    globalThis.fetch = async (u, o) => { chamadas++; return new Response('IMG', { status: 200, headers: { 'Content-Type': 'image/webp', 'Content-Length': '3' } }); };
+    globalThis.fetch = async (u, o) => { chamadas++; return new Response('IMG', { status: 200, headers: { 'Content-Type': 'image/webp', 'Content-Length': '9000' } }); };
     const ok = await pedir('https://i.ibb.co/abc/foto.jpg', 128);
-    assert.strictEqual(ok.status, 200); assert.strictEqual(ok.headers.get('content-type'), 'image/webp'); assert.ok(/max-age=2678400/.test(ok.headers.get('cache-control')));
+    assert.strictEqual(ok.status, 200); assert.strictEqual(ok.headers.get('content-type'), 'image/webp'); assert.ok(/max-age=259200/.test(ok.headers.get('cache-control')) && !/immutable/.test(ok.headers.get('cache-control')));
     assert.strictEqual((await pedir('https://exemplo.com/x.jpg', 128)).status, 400); assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 999)).status, 400);
     assert.strictEqual(chamadas, 1, 'pedido recusado não busca nada');
     globalThis.fetch = async () => new Response('<html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
     assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 128)).status, 415, 'só devolve imagem');
     globalThis.fetch = async () => new Response('x', { status: 404 });
     assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 128)).status, 502);
+    // imagem de erro do ImgBB ("service unavailable") é minúscula: não é devolvida nem guardada (a loja cai na foto original)
+    globalThis.fetch = async () => new Response('ERRO', { status: 200, headers: { 'Content-Type': 'image/png', 'Content-Length': '900' } });
+    assert.strictEqual((await pedir('https://i.ibb.co/erro/foto.jpg', 828)).status, 502, 'imagem de erro minúscula é recusada');
     // o Cloudflare não reduziu e a foto é GRANDE (foto por link): pede a miniatura ao wsrv.nl e devolve ela
     const pedidos = [];
-    globalThis.fetch = async (u) => { pedidos.push(String(u)); return /wsrv\.nl/.test(u) ? new Response('PEQ', { status: 200, headers: { 'Content-Type': 'image/webp', 'Content-Length': '3' } })
+    globalThis.fetch = async (u) => { pedidos.push(String(u)); return /wsrv\.nl/.test(u) ? new Response('PEQ', { status: 200, headers: { 'Content-Type': 'image/webp', 'Content-Length': '9000' } })
       : new Response('GRANDE', { status: 200, headers: { 'Content-Type': 'image/jpeg', 'Content-Length': String(3 * 1024 * 1024) } }); };
     const red = await pedir('https://i.ibb.co/abc/grande.jpg', 384);
     assert.strictEqual(red.status, 200); assert.strictEqual(await red.text(), 'PEQ', 'devolve a miniatura do redutor reserva');
