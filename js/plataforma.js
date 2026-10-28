@@ -10,7 +10,7 @@
 //  no login. Esta tela não protege nada sozinha: sem esse login, o servidor recusa.
 // =====================================================================
 import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
-import { auth, onAuthStateChanged } from './firebase.js';
+import { auth, onAuthStateChanged, getDoc, doc, db } from './firebase.js';
 import { urlDaLoja } from './tenant.js';
 import { escapeHTML, fmt, showToast, customConfirm } from './utils.js';
 import { sugerirId, idValido, totais, diasDaFeira, textoDoDia, proximaEntrega, normCond } from './plataforma-lib.js';
@@ -287,7 +287,9 @@ function folhaLoja(l) {
     const corpo = `
     <section class="pf-sec pf-loja-cab">${ponto(l.cor)}<div><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.id)}${l.original ? ', loja original' : ''}</small></div><span class="pf-selo${l.ativo ? ' ok' : ' bloq'}">${l.ativo ? 'Ativa' : 'Bloqueada'}</span></section>
     <section class="pf-sec"><p class="pf-mes">${l.mes ? `Neste mês: <b>${fmt(l.mes.receita)}</b> em <b>${l.mes.pedidos}</b> pedidos.` : 'Sem leitura do movimento deste mês.'}${l.assinatura ? ` Mensalidade: <b>${fmt(l.assinatura.valor)}</b>${l.assinatura.dia ? `, dia ${l.assinatura.dia}` : ''}.` : ' Sem mensalidade (defina na aba Mensalidades).'}</p>
-        <div class="pf-linha-bts"><a class="pf-bt" href="${urlDaLoja(l.id, './')}" target="_blank" rel="noopener">Ver a loja</a><a class="pf-bt" href="${urlDaLoja(l.id, '/admin')}">Abrir o painel</a></div></section>
+        <div class="pf-linha-bts"><a class="pf-bt" href="${urlDaLoja(l.id, './')}" target="_blank" rel="noopener">Ver a loja</a><a class="pf-bt" href="${urlDaLoja(l.id, '/admin')}">Abrir o painel</a></div>
+        <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="cartaz-loja" data-loja="${escapeHTML(l.id)}">Cartaz com QR e fitinha NFC</button></div>
+        <small class="pf-dica">Cartaz A4 nas cores, na logo e com a foto de capa da loja (Aparência), com o QR que abre esta loja e o passo a passo da fitinha.</small></section>
     <section class="pf-sec"><span class="pf-rot">Proprietários</span>
         ${l.donos.length ? `<ul class="pf-donos">${l.donos.map((e) => `<li><span>${escapeHTML(e)}</span><button type="button" class="pf-bt mini" data-pf="tirar-dono" data-email="${escapeHTML(e)}" aria-label="Tirar ${escapeHTML(e)}">Tirar</button></li>`).join('')}</ul>` : `<p class="pf-dica">${l.original ? 'A conta antiga da banca continua valendo. Novos proprietários aparecem aqui.' : 'Ninguém ainda. Sem proprietário, ninguém abre o painel desta loja.'}</p>`}
         <div class="pf-form-linha"><input type="email" id="pf-l-dono" inputmode="email" autocomplete="off" placeholder="E-mail do proprietário" aria-label="E-mail do novo proprietário"><button type="button" class="pf-bt" data-pf="dar-dono">Adicionar</button></div></section>
@@ -350,6 +352,18 @@ async function agir(b) {
             try {
                 const [{ cartazHtml }, { imprimirPagina }] = await Promise.all([import('./cartaz-lib.js'), import('./impressao.js')]);
                 await imprimirPagina(cartazHtml({ feira: f, link: linkDaFeira(f.id) }));
+                showToast('Cartaz pronto. Para guardar, escolha "Salvar como PDF".');
+            } catch (e) { showToast((e && e.message) || 'Não consegui montar o cartaz.', true); }
+            return;
+        }
+        case 'cartaz-loja': {        // cartaz A4 desta LOJA: cores, logo e foto dela, QR que abre a loja, fitinha NFC explicada (js/cartaz-lib.js)
+            const l = lojaPorId(b.dataset.loja); if (!l) return;
+            try {
+                let ficha = {}; try { const sn = await getDoc(doc(db, 'tenants', l.id)); if (sn.exists()) ficha = sn.data() || {}; } catch (_) { /* sem a ficha: sai com as cores padrão */ }
+                const conds = [...new Set(feirasDaLoja(l.id).flatMap((f) => (f.condominios && f.condominios.length ? f.condominios : [f.nome])).filter(Boolean))];
+                const link = new URL(urlDaLoja(l.id, '/'), location.href).href;
+                const [{ cartazLojaHtml }, { imprimirPagina }] = await Promise.all([import('./cartaz-lib.js'), import('./impressao.js')]);
+                await imprimirPagina(cartazLojaHtml({ loja: { nome: ficha.nome || l.nome, subtitulo: ficha.subtitulo || '', tema: ficha.tema || {} }, condominios: conds, link }));
                 showToast('Cartaz pronto. Para guardar, escolha "Salvar como PDF".');
             } catch (e) { showToast((e && e.message) || 'Não consegui montar o cartaz.', true); }
             return;

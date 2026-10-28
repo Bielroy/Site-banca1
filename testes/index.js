@@ -734,6 +734,21 @@ teste('aparência: card escuro sem cor de texto escolhida avisa no painel, e "aj
   assert.ok(A.contraste(n.texto, n.fundo) >= 4.5, `texto legível na página (${n.texto})`);
   assert.ok(A.contraste('#ffffff', '#1a1a18') > 4.5 && A.avisosDeContraste({ primaria: '#1a3a2a' }).every((a) => a.campo !== 'texto'), 'tema comum (sem cores de fundo) não ganha aviso falso');
 });
+teste('cartaz da loja: cores vêm do tema, texto escapado, só imagem https, sem script, com o passo a passo da fitinha NFC', async () => {
+  const C = await import(raiz('js/cartaz-lib.js'));
+  const p = C.paletaDoCartaz({ primaria: '#1c201f', destaque: '#ffde59', fundo: '#fbf4e2' });
+  assert.deepStrictEqual([p.escuro, p.destaque, p.claro], ['#1c201f', '#ffde59', '#fbf4e2'], 'preto, amarelo e creme da loja');
+  assert.strictEqual(p.sobreDestaque, '#1a1a18', 'texto escuro sobre o amarelo');
+  const sem = C.paletaDoCartaz({}); assert.ok(sem.escuro && sem.destaque && sem.claro, 'loja sem tema também tem cartaz');
+  const fraco = C.paletaDoCartaz({ primaria: '#1c201f', destaque: '#2a2a2a' }); assert.notStrictEqual(fraco.destaque, '#2a2a2a', 'destaque que não lê sobre o fundo é trocado');
+  const html = C.cartazLojaHtml({ loja: { nome: 'Pastel <b>Moe</b> & Coe', subtitulo: '"desde" 1968', tema: { primaria: '#1c201f', destaque: '#ffde59', logo: 'https://x.test/l.png', capa: 'javascript:alert(1)' } }, condominios: ['Jardins <i>Florença</i>'], link: 'https://usebanca.com/?loja=moe-coe' });
+  assert.ok(!html.includes('<b>Moe</b>') && html.includes('&lt;b&gt;Moe&lt;/b&gt;') && !html.includes('<i>Florença</i>'), 'texto da loja escapado');
+  assert.ok(!/<script/i.test(html) && !html.includes('javascript:'), 'sem script e sem endereço de imagem perigoso');
+  assert.ok(html.includes('src="https://x.test/l.png"'), 'logo https entra');
+  assert.ok(html.includes('QR Code: usebanca.com/?loja=moe-coe'), 'o QR é o da loja');
+  assert.ok(html.includes('parte de trás') && html.includes('Segure parado') && html.includes('NFC ligado'), 'passo a passo da fitinha');
+  assert.ok(html.includes('class="foto vazio"'), 'sem foto de capa válida, sai o quadro com a logo, sem imagem quebrada');
+});
 teste('plataforma: várias pessoas abrindo a lista ao mesmo tempo (cache frio) não repetem as leituras de cada loja', async () => {
   const sem = { ...semente() }; for (let i = 0; i < 12; i++) sem[`tenants/loja-${i}`] = { nome: `Loja ${i}`, ativo: true };
   const db = criarBanco(sem);

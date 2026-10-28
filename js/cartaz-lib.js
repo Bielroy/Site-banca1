@@ -7,6 +7,7 @@
 //  A página sai pronta para a tela de imprimir (ou "Salvar como PDF"): A4, sem script, sem arquivo de fora.
 // =====================================================================
 import { qrDe, qrCaminho } from './qr-lib.js';
+import { urlImagem, contraste, ehEscura } from './aparencia-lib.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -106,6 +107,128 @@ ${passo(3, 'Envie o pedido.', 'Abra a sacola, confira e mande. A banca confirma 
 <div class="rodape">
 <div class="qr">${qrSvg(link, { tamanho: 176 }).replace('<svg ', '<svg class="codigo" ')}<div><b>Aponte a câmera aqui</b><small>ou digite<br>${esc(linkCurto(link)).replace(/([/-])/g, '$1<wbr>')}</small></div></div>
 <div class="nfc"><div class="anel">${NFC}</div>Encoste o celular aqui</div>
+</div>
+</div></div></body></html>`;
+}
+
+
+// =====================================================================
+//  CARTAZ DA LOJA (um por banca, nas cores, na logo e na foto DELA)
+//  Plataforma → Lojas → (abrir a loja) → "Cartaz com QR e fitinha NFC".
+//  Mostra: o nome e a logo da loja, a foto da loja (a "capa" da Aparência: o food truck, a banca...), o condomínio,
+//  o QR Code que abre ESTA loja e um quadro grande de como usar a fitinha NFC (onde encostar o celular).
+// =====================================================================
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const hex = (v) => (HEX.test(String(v)) ? String(v).toLowerCase() : '');
+const tintaSobreCor = (c) => (contraste(c, '#ffffff') >= contraste(c, '#1a1a18') ? '#ffffff' : '#1a1a18');
+
+/** As cores do cartaz a partir do tema da loja: fundo escuro, cor de destaque que lê bem sobre ele e painel claro. */
+export function paletaDoCartaz(tema) {
+    const t = tema || {};
+    const escuro = [t.primaria, t.texto, t.fundo, t.superficie].map(hex).find((c) => c && ehEscura(c)) || '#1a1a18';
+    const destaque = [t.destaque, t.botao, t.secundaria, t.primaria].map(hex).find((c) => c && contraste(c, escuro) >= 4) || '#f2b33d';
+    const claro = [t.fundo, t.superficie].map(hex).find((c) => c && !ehEscura(c) && contraste(c, '#1a1a18') >= 10) || '#faf7f2';
+    return { escuro, destaque, claro, sobreDestaque: tintaSobreCor(destaque), tinta: '#1a1a18' };
+}
+
+const PIN = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="currentColor"/></svg>';
+
+/** Desenho: a parte de trás do celular indo ao encontro da fitinha (a câmera fica no alto), com as ondinhas do NFC. */
+const CELULAR_NA_FITINHA = (cor, claro) => `<svg viewBox="0 0 108 120" width="100%" height="100%" aria-hidden="true">
+<g transform="rotate(-12 44 62)"><rect x="18" y="12" width="52" height="92" rx="10" fill="${claro}" stroke="${cor}" stroke-width="2.6"/><rect x="24" y="18" width="17" height="17" rx="5" fill="${cor}" opacity=".92"/><circle cx="32.5" cy="26.5" r="3.4" fill="${claro}"/><circle cx="46" cy="22" r="1.8" fill="${cor}"/></g>
+<g stroke="${cor}" stroke-width="3" stroke-linecap="round" fill="none"><path d="M78 48a16 16 0 0 1 0 24"/><path d="M86 40a28 28 0 0 1 0 40"/><path d="M94 32a40 40 0 0 1 0 56"/></g></svg>`;
+
+const NFC_ICONE = (cor) => `<svg viewBox="0 0 24 24" fill="none" stroke="${cor}" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 8.5a5.5 5.5 0 0 1 0 7"/><path d="M9.5 6a9 9 0 0 1 0 12"/><path d="M13 3.5a12.5 12.5 0 0 1 0 17"/><circle cx="3.5" cy="12" r="1" fill="${cor}" stroke="none"/></svg>`;
+const ini = (nome) => (String(nome).trim().split(/\s+/).map((p) => p[0]).join('').slice(0, 2) || '?').toUpperCase();
+
+/**
+ * Página completa do cartaz de UMA LOJA.
+ *   loja = { nome, subtitulo?, tema? (cores, logo, capa) }  ·  condominios = ['Jardins Florença', ...]  ·  link = endereço da loja.
+ */
+export function cartazLojaHtml({ loja, condominios = [], link }) {
+    const l = loja || {}, nome = String(l.nome || '').trim().slice(0, 60) || 'Loja';
+    const P = paletaDoCartaz(l.tema), logo = urlImagem(l.tema && l.tema.logo), foto = urlImagem(l.tema && l.tema.capa);
+    const conds = (condominios || []).map((c) => String(c || '').trim()).filter(Boolean).slice(0, 3);
+    const sub = String(l.subtitulo || '').trim().slice(0, 90);
+    const selo = logo ? `<img class="logo" src="${esc(logo)}" alt="">` : `<div class="logo mono">${esc(ini(nome))}</div>`;
+    const quadro = foto ? `<div class="foto"><img src="${esc(foto)}" alt=""></div>` : `<div class="foto vazio">${logo ? `<img src="${esc(logo)}" alt="" style="width:100%;height:100%;object-fit:contain">` : `<span>${esc(ini(nome))}</span>`}</div>`;
+    return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Cartaz ${esc(nome)}</title>
+<style>
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+html, body { margin: 0; padding: 0; background: #fff; }
+body { width: 210mm; height: 297mm; overflow: hidden; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+.pg { position: relative; width: 210mm; height: 297mm; overflow: hidden; background: ${P.escuro}; color: #fff; }
+.bola { position: absolute; border-radius: 50%; background: rgba(255,255,255,.06); }
+.topo { position: absolute; left: 15mm; top: 11mm; width: 112mm; }
+.marca { display: flex; align-items: center; gap: 4mm; }
+.logo { width: 22mm; height: 22mm; border-radius: 50%; object-fit: cover; flex: none; background: ${P.escuro}; border: .6mm solid ${P.destaque}; }
+.logo.mono { display: flex; align-items: center; justify-content: center; font: 800 9mm Georgia, serif; color: ${P.destaque}; }
+.marca b { font-size: 6.2mm; line-height: 1.12; font-weight: 800; letter-spacing: .1mm; color: ${P.destaque}; text-transform: uppercase; }
+h1 { margin: 5mm 0 0; font-family: Georgia, "Times New Roman", serif; font-weight: 900; font-size: 16mm; line-height: 1; letter-spacing: -.3mm; color: #fff; }
+h1 span { color: ${P.destaque}; }
+.sub { margin: 4mm 0 0; font-size: 5.2mm; line-height: 1.3; font-weight: 600; color: rgba(255,255,255,.88); }
+.onde { margin-top: 4mm; display: inline-flex; align-items: center; gap: 2mm; background: ${P.destaque}; color: ${P.sobreDestaque}; border-radius: 99mm; padding: 2mm 5mm 2mm 3mm; font-size: 5mm; font-weight: 800; max-width: 112mm; }
+.onde svg { flex: none; }
+.foto { position: absolute; right: 13mm; top: 14mm; width: 70mm; height: 70mm; border-radius: 6mm; overflow: hidden; border: 1.4mm solid ${P.destaque}; transform: rotate(3deg); box-shadow: 0 3mm 8mm rgba(0,0,0,.45); background: ${P.escuro}; }
+.foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.foto.vazio { display: flex; align-items: center; justify-content: center; font: 800 26mm Georgia, serif; color: ${P.destaque}; padding: 6mm; }
+.painel { position: absolute; left: 0; right: 0; top: 113mm; bottom: 0; background: ${P.claro}; color: ${P.tinta}; border-radius: 11mm 11mm 0 0; overflow: hidden; }
+.toldo { height: 4mm; background: repeating-linear-gradient(90deg, ${P.escuro} 0 7.4mm, ${P.claro} 7.4mm 14.8mm); }
+.passos { padding: 5mm 15mm 0; display: flex; flex-direction: column; gap: 3mm; }
+.titulo-passos { font-size: 4.4mm; font-weight: 800; letter-spacing: .5mm; text-transform: uppercase; color: ${P.escuro}; opacity: .75; }
+.passo { display: flex; align-items: center; gap: 4mm; }
+.num { flex: none; width: 11mm; height: 11mm; border-radius: 50%; background: ${P.escuro}; color: ${P.destaque}; font-weight: 800; font-size: 6.4mm; display: flex; align-items: center; justify-content: center; font-family: Georgia, serif; }
+.txt { font-size: 4.8mm; line-height: 1.18; }
+.txt b { display: block; font-size: 5.6mm; }
+.rodape { position: absolute; left: 12mm; right: 12mm; bottom: 8mm; height: 105mm; display: flex; gap: 5mm; }
+.qr { flex: none; width: 70mm; background: #fff; border: .5mm solid rgba(0,0,0,.15); border-radius: 6mm; padding: 4mm; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.5mm; text-align: center; }
+.qr svg.codigo { width: 52mm; height: 52mm; }
+.qr b { display: block; font-family: Georgia, serif; font-size: 6.4mm; line-height: 1.1; }
+.qr small { display: block; font-size: 3.7mm; color: #3b3b36; overflow-wrap: anywhere; }
+.nfc { flex: 1; background: ${P.escuro}; color: #fff; border-radius: 6mm; padding: 4.2mm 5mm; display: flex; flex-direction: column; gap: 2.4mm; }
+.nfc h2 { margin: 0; font-family: Georgia, serif; font-size: 6.8mm; line-height: 1.05; color: ${P.destaque}; }
+.nfc-fluxo { display: flex; align-items: center; gap: 3mm; }
+.nfc-fluxo .cel { flex: none; width: 31mm; height: 34mm; }
+.nfc-fluxo .seta { flex: none; font: 800 8mm Georgia, serif; color: ${P.destaque}; }
+.nfc .anel { flex: none; width: 31mm; height: 31mm; border: .8mm dashed ${P.destaque}; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.nfc .anel svg { width: 19mm; height: 19mm; }
+.nfc-fluxo p { margin: 0; font-size: 3.7mm; line-height: 1.25; color: rgba(255,255,255,.85); }
+.nfc ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 1.6mm; font-size: 3.9mm; line-height: 1.18; }
+.nfc li { display: flex; gap: 2.4mm; align-items: flex-start; }
+.nfc li i { flex: none; width: 5.6mm; height: 5.6mm; border-radius: 50%; background: ${P.destaque}; color: ${P.sobreDestaque}; font: 800 3.6mm/5.6mm Georgia, serif; text-align: center; font-style: normal; margin-top: .2mm; }
+.nfc li b { color: ${P.destaque}; }
+.nfc .nota { margin-top: auto; font-size: 3.4mm; line-height: 1.25; color: rgba(255,255,255,.75); border-top: .3mm solid rgba(255,255,255,.22); padding-top: 2mm; }
+</style></head><body><div class="pg">
+<div class="bola" style="width:70mm;height:70mm;left:-26mm;top:78mm"></div>
+<div class="bola" style="width:34mm;height:34mm;left:108mm;top:-12mm"></div>
+<div class="topo">
+<div class="marca">${selo}<b>${esc(nome)}</b></div>
+<h1>Peça pelo <span>celular!</span></h1>
+<p class="sub">${esc(sub || 'Escolha, monte o seu pedido e a gente prepara.')}</p>
+${conds.length ? `<div class="onde">${PIN}<span>${esc('Atendemos: ' + conds.join(' · '))}</span></div>` : ''}
+</div>
+${quadro}
+<div class="painel"><div class="toldo"></div>
+<div class="passos">
+<div class="titulo-passos">É fácil, são 3 passos</div>
+${passo(1, 'Abra a loja.', 'Aponte a câmera para o QR ou encoste o celular na fitinha.')}
+${passo(2, 'Escolha.', 'Toque em <b style="display:inline;font-size:inherit">Adicionar</b> no que você quer levar.')}
+${passo(3, 'Envie o pedido.', 'Abra a sacola, confira e mande. A gente confirma com você.')}
+</div>
+<div class="rodape">
+<div class="qr">${qrSvg(link, { tamanho: 176, cor: P.escuro }).replace('<svg ', '<svg class="codigo" ')}<div><b>Aponte a câmera aqui</b><small>ou digite ${esc(linkCurto(link)).replace(/([/-])/g, '$1<wbr>')}</small></div></div>
+<div class="nfc">
+<h2>Encoste o celular aqui</h2>
+<div class="nfc-fluxo"><div class="cel">${CELULAR_NA_FITINHA(P.destaque, P.escuro)}</div><span class="seta">&rarr;</span><div class="anel">${NFC_ICONE(P.destaque)}</div><p>O círculo é a fitinha NFC.</p></div>
+<ol>
+<li><i>1</i><span><b>Destrave</b> o celular. No Android, deixe o <b>NFC ligado</b>.</span></li>
+<li><i>2</i><span>Encoste a <b>parte de trás</b> do celular, perto da câmera, no círculo.</span></li>
+<li><i>3</i><span><b>Segure parado</b> por 2 segundos, até vibrar ou aparecer um aviso.</span></li>
+<li><i>4</i><span><b>Toque no aviso</b> na tela e a loja abre.</span></li>
+</ol>
+<div class="nota">iPhone XS ou mais novo e quase todo Android têm NFC. Se o seu não ler, use o QR Code ao lado.</div>
+</div>
 </div>
 </div></div></body></html>`;
 }

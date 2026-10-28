@@ -1054,6 +1054,26 @@ teste('plataforma: "Cartaz com QR" de cada feira manda para a impressão o carta
   semErros(erros); await fechar();
 });
 
+teste('plataforma: "Cartaz com QR e fitinha NFC" da loja usa o nome, as cores, a logo e a foto DELA, o QR dela e explica a fitinha', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
+  cen.lojas.banca.ficha = { ...cen.lojas.banca.ficha, nome: 'Pastel Moe Coe', subtitulo: 'Pastel e caldo de cana, desde 1968', tema: { primaria: '#1c201f', destaque: '#ffde59', botao: '#ffde59', fundo: '#fbf4e2', texto: '#1c201f', logo: 'https://img.exemplo.test/logo.png', capa: 'https://img.exemplo.test/truck.jpg' } };
+  const { pagina, erros, fechar } = await abrir('/plataforma.html', cen, { antes: () => { try { localStorage.setItem('pf_aba', 'lojas'); } catch (_) { /* segue */ } } });
+  await pagina.waitForSelector('[data-pf="abrir-loja"]', { timeout: 8000 });
+  await pagina.evaluate(() => { window.print = () => {}; new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.tagName === 'IFRAME' && n.srcdoc) window.__cartaz = n.srcdoc; }))).observe(document.body, { childList: true }); });
+  await pagina.click('[data-pf="abrir-loja"][data-loja="banca"]');
+  await pagina.waitForSelector('[data-pf="cartaz-loja"]', { timeout: 5000 });
+  await pagina.click('[data-pf="cartaz-loja"]');
+  await pagina.waitForFunction(() => !!window.__cartaz, null, { timeout: 5000 });
+  const html = await pagina.evaluate(() => window.__cartaz);
+  assert.ok(html.includes('Pastel Moe Coe') && html.includes('desde 1968'), 'nome e frase da loja');
+  assert.ok(html.includes('#ffde59') && html.includes('#1c201f'), 'as cores da loja (amarelo e preto)');
+  assert.ok(html.includes('src="https://img.exemplo.test/logo.png"') && html.includes('src="https://img.exemplo.test/truck.jpg"'), 'a logo e a foto (food truck) da loja');
+  assert.ok(/aria-label="QR Code: [^"]*"/.test(html) && html.includes('<path fill="#1c201f" d="M'), 'QR desenhado na cor da loja');
+  assert.ok(html.includes('Feira do Bairro') && html.includes('Feira do Lago'), 'mostra onde a loja atende (feira/condomínio)');
+  assert.ok(html.includes('parte de trás') && html.includes('NFC'), 'explica como encostar o celular na fitinha');
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- PACOTES
 const cenarioPacotes = () => {
   const cen = cenarioPadrao();
@@ -1993,7 +2013,7 @@ teste('painel: "Vários de uma vez" cria os pastéis com o mesmo preço (preço 
         { id: 'v2', assinatura: 'b'.repeat(20), tipo: 'visual', msg: 'Tem algo por cima: botão Adicionar', vezes: 2, telas: ['390px · letra 100%'], ultimo: new Date().toISOString(), corrigidoEm: '2026-10-20T10:00:00.000Z', voltou: true, onde: '#lista-produtos .card-add', paginas: ['/'], navegadores: ['Android · Chrome 129'], lojas: ['banca'] },
         { id: 'v3', assinatura: 'c'.repeat(20), tipo: 'visual', msg: 'Foto que não abriu: foto', vezes: 1, ultimo: '2026-10-19T10:00:00.000Z', corrigidoEm: '2026-10-20T10:00:00.000Z', voltou: false, onde: '#lista-produtos img', paginas: ['/'], navegadores: ['Android · Chrome 129'], lojas: ['banca'] }] }
       : c.acao === 'erro-estado' ? { sucesso: true, estado: c.estado, em: new Date().toISOString() }
-      : c.acao === 'lojas' ? { sucesso: true, lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', ativo: true, original: true, donos: ['dona@teste.com'], cor: '#1a3a2a', mes: { receita: 0, pedidos: 0 } }], feiras: [{ id: 'feira-do-bairro', nome: 'Feira do Bairro', dias: [2], lojas: ['banca'], condominiosIds: [] }, { id: 'feira-do-lago', nome: 'Feira do Lago', dias: [4], lojas: ['banca'], condominiosIds: [] }], condominios: [], pix: false, fotos: false } : {}),
+      : c.acao === 'lojas' ? { sucesso: true, lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', ativo: true, original: true, donos: ['dona@teste.com'], cor: '#1a3a2a', modulos: {}, campos: {}, mes: { receita: 0, pedidos: 0 } }], modulos: {}, campos: {}, feiras: [{ id: 'feira-do-bairro', nome: 'Feira do Bairro', dias: [2], lojas: ['banca'], condominiosIds: [] }, { id: 'feira-do-lago', nome: 'Feira do Lago', dias: [4], lojas: ['banca'], condominiosIds: [] }], condominios: [], pix: false, fotos: false } : {}),
   });
   navegador = await chromium.launch();
   let falhas = 0;
