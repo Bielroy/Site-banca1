@@ -293,6 +293,8 @@ function folhaLoja(l) {
         <div class="pf-linha-bts"><a class="pf-bt" href="${urlDaLoja(l.id, './')}" target="_blank" rel="noopener">Ver a loja</a><a class="pf-bt" href="${urlDaLoja(l.id, '/admin')}">Abrir o painel</a></div>
         <label class="pf-rot" for="pf-cartaz-local">Local que aparece no topo do cartaz</label>
         <div class="pf-form-linha"><input type="text" id="pf-cartaz-local" maxlength="50" autocomplete="off" value="${escapeHTML(localDoCartaz(l.id))}" placeholder="Ex.: Feira do Atena"></div>
+        <label class="pf-rot" for="pf-cartaz-dest">Para onde o QR e a fitinha levam</label>
+        <div class="pf-form-linha"><select id="pf-cartaz-dest" aria-label="Destino do QR">${feirasDaLoja(l.id).map((f) => `<option value="${escapeHTML(f.id)}">Feira: ${escapeHTML(f.nome)} (todas as lojas da feira)</option>`).join('')}<option value="">Só a loja ${escapeHTML(l.nome)}</option></select></div>
         <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="cartaz-loja" data-loja="${escapeHTML(l.id)}">Cartaz com QR e fitinha NFC</button></div>
         <small class="pf-dica">Cartaz A4 nas cores, na logo e com a foto de capa da loja (Aparência), com o QR que abre esta loja, o passo a passo da fitinha e o WhatsApp e Instagram da loja (Configurações).</small></section>
     <section class="pf-sec"><span class="pf-rot">Proprietários</span>
@@ -368,7 +370,8 @@ async function agir(b) {
                 const campoLocal = document.getElementById('pf-cartaz-local'), local = (campoLocal ? campoLocal.value : localDoCartaz(l.id)).trim();
                 let config = {}; try { const sn = await getDoc(doc(db, 'tenants', l.id, 'loja', 'config')); if (sn.exists()) config = sn.data() || {}; } catch (_) { /* sem contato: o cartaz sai sem a faixa */ }
                 const ct = contatoDaLoja(config, l.nome);
-                const link = new URL(urlDaLoja(l.id, '/'), location.href).href;
+                const dest = document.getElementById('pf-cartaz-dest'), fid = dest ? dest.value : '';
+                const link = fid ? linkDaFeira(fid) : new URL(urlDaLoja(l.id, '/'), location.href).href;
                 const [{ cartazLojaHtml }, { imprimirPagina }] = await Promise.all([import('./cartaz-lib.js'), import('./impressao.js')]);
                 await imprimirPagina(cartazLojaHtml({ loja: { nome: ficha.nome || l.nome, subtitulo: ficha.subtitulo || '', tema: ficha.tema || {}, whatsapp: ct.whatsapp, instagram: ct.instagram }, condominios: local ? [local] : [], link }));
                 showToast('Cartaz pronto. Para guardar, escolha "Salvar como PDF".');
