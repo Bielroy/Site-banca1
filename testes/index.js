@@ -751,7 +751,12 @@ teste('cartaz da loja: cores vêm do tema, texto escapado, só imagem https, sem
   assert.ok(!html.includes('class="contato"'), 'sem WhatsApp nem Instagram, sai sem a faixa de contato');
   const comContato = C.cartazLojaHtml({ loja: { nome: 'Moe', whatsapp: '5561999990000', instagram: 'pastel.moe', tema: { capa: 'https://x.test/c.jpg', logo: 'https://x.test/l.png' } }, condominios: ['Feira do Atena'], link: 'https://usebanca.com/?loja=moe-coe' });
   assert.ok(comContato.includes('(61) 99999-0000') && comContato.includes('@pastel.moe') && comContato.includes('Feira do Atena'), 'contato e local aparecem');
-  assert.ok(comContato.includes('class="polaroid"') && comContato.includes('class="logo"'), 'foto em polaroid e logo em selo');
+  assert.ok(comContato.includes('class="polaroid com-selo"') && comContato.includes('class="logo"'), 'foto em polaroid e logo em selo');
+  assert.ok(C.imagemDoCartaz('data:image/jpeg;base64,AAAA') && C.imagemDoCartaz('https://x.test/a.png'), 'foto do celular (data:) e https entram');
+  assert.ok(!C.imagemDoCartaz('data:image/svg+xml;base64,AAAA') && !C.imagemDoCartaz('javascript:alert(1)') && !C.imagemDoCartaz('data:image/png;base64,AA"><script>') && !C.imagemDoCartaz('http://x.test/a.png'), 'svg, script e http ficam de fora');
+  const semLogo = C.cartazLojaHtml({ loja: { nome: 'Moe', tema: { capa: 'https://x.test/c.jpg' } }, link: 'https://usebanca.com/?loja=moe' });
+  assert.ok(!semLogo.includes('class="logo') && semLogo.includes('src="https://x.test/c.jpg"'), 'com foto e sem logo: sem selo de iniciais por cima');
+  assert.ok(C.cartazLojaHtml({ loja: { nome: 'Moe', legenda: 'Food truck' }, link: 'https://usebanca.com/?loja=moe' }).includes('Food truck'), 'legenda da foto editável');
   assert.ok(!C.cartazLojaHtml({ loja: { nome: 'Moe', instagram: '"><script>x</script>' }, link: 'https://usebanca.com/?loja=moe-coe' }).includes('<script'), 'instagram inválido não entra');
 });
 teste('plataforma: várias pessoas abrindo a lista ao mesmo tempo (cache frio) não repetem as leituras de cada loja', async () => {

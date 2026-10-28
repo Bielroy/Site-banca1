@@ -834,6 +834,13 @@ teste('link da feira abre direto na banca, com a faixa das bancas no topo, e lem
   await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 6000 });
   semErros(erros); await fechar();
 });
+teste('cartaz de uma banca: /?loja=banca&feira=id cai NESSA banca (não na primeira da feira), com o selo da feira', async () => {
+  const { pagina, erros, fechar } = await abrir('/?loja=paes-da-lucia&feira=florenca');
+  await pagina.waitForSelector('#selo-feira', { timeout: 6000 });
+  assert.strictEqual((await pagina.locator('#selo-feira').innerText()).trim(), 'Feira Florença');
+  assert.ok(/paes-da-lucia/.test(pagina.url()), 'continua na banca do cartaz');
+  semErros(erros); await fechar();
+});
 teste('loja aberta pelo endereço normal (sem link de feira) não mostra selo de feira', async () => {
   const { pagina, erros, fechar } = await abrir('/');
   await cards(pagina).first().waitFor({ timeout: 8000 });
@@ -1054,23 +1061,45 @@ teste('plataforma: "Cartaz com QR" de cada feira manda para a impressão o carta
   semErros(erros); await fechar();
 });
 
-teste('plataforma: "Cartaz com QR e fitinha NFC" da loja usa o nome, as cores, a logo e a foto DELA, o QR dela e explica a fitinha', async () => {
+teste('plataforma: "Montar cartaz" da loja: um por feira, o QR abre a LOJA dentro da feira, tudo editável (textos, WhatsApp, Instagram, logo e foto) com prévia', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
   cen.lojas.banca.ficha = { ...cen.lojas.banca.ficha, nome: 'Pastel Moe Coe', subtitulo: 'Pastel e caldo de cana, desde 1968', tema: { primaria: '#1c201f', destaque: '#ffde59', botao: '#ffde59', fundo: '#fbf4e2', texto: '#1c201f', logo: 'https://img.exemplo.test/logo.png', capa: 'https://img.exemplo.test/truck.jpg' } };
   const { pagina, erros, fechar } = await abrir('/plataforma.html', cen, { antes: () => { try { localStorage.setItem('pf_aba', 'lojas'); } catch (_) { /* segue */ } } });
   await pagina.waitForSelector('[data-pf="abrir-loja"]', { timeout: 8000 });
   await pagina.evaluate(() => { window.print = () => {}; new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.tagName === 'IFRAME' && n.srcdoc) window.__cartaz = n.srcdoc; }))).observe(document.body, { childList: true }); });
   await pagina.click('[data-pf="abrir-loja"][data-loja="banca"]');
-  await pagina.waitForSelector('[data-pf="cartaz-loja"]', { timeout: 5000 });
-  await pagina.click('[data-pf="cartaz-loja"][data-feira="feira-do-bairro"]');
-  await pagina.waitForFunction(() => !!window.__cartaz, null, { timeout: 5000 });
-  const html = await pagina.evaluate(() => window.__cartaz);
+  await pagina.click('[data-pf="cartaz-abrir"]');
+  await pagina.waitForSelector('#pf-cz-previa iframe[srcdoc]', { timeout: 6000 });
+  const previa = () => pagina.evaluate(() => document.querySelector('#pf-cz-previa iframe').srcdoc);
+  let html = await previa();
   assert.ok(html.includes('Pastel Moe Coe') && html.includes('desde 1968'), 'nome e frase da loja');
-  assert.ok(html.includes('#ffde59') && html.includes('#1c201f'), 'as cores da loja (amarelo e preto)');
-  assert.ok(html.includes('src="https://img.exemplo.test/logo.png"') && html.includes('src="https://img.exemplo.test/truck.jpg"'), 'a logo e a foto (food truck) da loja');
-  assert.ok(/aria-label="QR Code: [^"]*"/.test(html) && html.includes('<path fill="#1c201f" d="M'), 'QR desenhado na cor da loja');
-  assert.ok(html.includes('Feira do Bairro') && !html.includes('Feira do Lago') && html.includes('feira-do-bairro'), 'um cartaz por feira: o da Feira do Bairro leva ao link dela');
-  assert.ok(html.includes('parte de trás') && html.includes('NFC'), 'explica como encostar o celular na fitinha');
+  assert.ok(html.includes('#ffde59') && html.includes('#1c201f'), 'as cores da loja');
+  assert.ok(html.includes('src="https://img.exemplo.test/logo.png"') && html.includes('src="https://img.exemplo.test/truck.jpg"'), 'a logo e a foto da loja');
+  assert.ok(html.includes('Feira do Bairro') && !html.includes('Feira do Lago'), 'começa na primeira feira, com o nome dela no topo');
+  const qr = (html.match(/aria-label="QR Code: ([^"]*)"/) || [])[1] || '';
+  assert.ok(qr.includes('feira=feira-do-bairro') && !qr.includes('/feira/'), 'o QR abre a LOJA (endereço da loja + ?feira=), não a tela da feira que cai na primeira banca: ' + qr);
+  assert.ok(html.includes('(62) 99999-0000'), 'o WhatsApp da loja já vem');
+  // edita: texto do topo, WhatsApp e Instagram
+  await pagina.fill('#pf-cz-local', 'Feira Atenas');
+  await pagina.fill('#pf-cz-insta', '@pastel moe');
+  await pagina.waitForFunction(() => document.getElementById('pf-cz-aviso-insta').textContent.includes('Confira'), null, { timeout: 3000 });
+  await pagina.fill('#pf-cz-insta', '@pastelmoecoe');
+  await pagina.fill('#pf-cz-wpp', '61 98888-7777');
+  await pagina.waitForFunction(() => { const h = document.querySelector('#pf-cz-previa iframe').srcdoc; return h.includes('Feira Atenas') && h.includes('@pastelmoecoe') && h.includes('(61) 98888-7777'); }, null, { timeout: 4000 });
+  // foto do celular (só nesta página)
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==', 'base64');
+  await pagina.setInputFiles('[data-pf-cartaz-img="foto"]', { name: 'truck.png', mimeType: 'image/png', buffer: png });
+  await pagina.waitForFunction(() => document.querySelector('#pf-cz-previa iframe').srcdoc.includes('src="data:image/jpeg;base64,'), null, { timeout: 4000 });
+  // outra feira: link e topo trocam; os textos da primeira ficam guardados
+  await pagina.selectOption('#pf-cz-feira', 'feira-do-lago');
+  await pagina.waitForFunction(() => { const h = document.querySelector('#pf-cz-previa iframe').srcdoc; return h.includes('Feira do Lago') && h.includes('feira=feira-do-lago'); }, null, { timeout: 4000 });
+  await pagina.selectOption('#pf-cz-feira', 'feira-do-bairro');
+  await pagina.waitForFunction(() => document.querySelector('#pf-cz-previa iframe').srcdoc.includes('Feira Atenas'), null, { timeout: 4000 });
+  await pagina.click('[data-pf="cartaz-imprimir"]');
+  await pagina.waitForFunction(() => !!window.__cartaz, null, { timeout: 5000 });
+  html = await pagina.evaluate(() => window.__cartaz);
+  assert.ok(html.includes('Feira Atenas') && html.includes('@pastelmoecoe') && html.includes('parte de trás'), 'imprime o que foi editado, com a fitinha explicada');
+  assert.ok(!/<script/i.test(html), 'sem script na página do cartaz');
   semErros(erros); await fechar();
 });
 

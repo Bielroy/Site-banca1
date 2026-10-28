@@ -180,3 +180,15 @@ body.pf-ocupado .pf-bt { pointer-events: none; opacity: .7; }
 .pf-voltou { margin: 0; font-size: .82rem; font-weight: 700; color: var(--pf-perigo); }
 .pf-erro.voltou { box-shadow: inset 3px 0 0 var(--pf-perigo); padding-left: 10px; }
 .pf-erro-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+
+/* ---- editor do cartaz da loja (js/cartaz-editor.js) */
+.pf-cz-previa { position: relative; width: 100%; aspect-ratio: 210 / 297; overflow: hidden; border-radius: 10px; border: 1px solid var(--pf-linha); background: #fff; box-shadow: 0 4px 14px rgba(20, 35, 26, .12); }
+.pf-cz-previa iframe { position: absolute; left: 0; top: 0; width: 794px; height: 1123px; border: 0; transform-origin: 0 0; pointer-events: none; }
+.pf-cz-img { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+.pf-cz-mini { flex: none; width: 64px; height: 64px; border-radius: 10px; overflow: hidden; background: #eee8dc; display: flex; align-items: center; justify-content: center; font-size: .75rem; color: #6b6b63; }
+.pf-cz-mini.redonda { border-radius: 50%; }
+.pf-cz-mini img { width: 100%; height: 100%; object-fit: cover; }
+.pf-cz-aviso { color: #b3261e; }
+.pf-cz-aviso:empty { display: none; }
+label.pf-bt { cursor: pointer; }
+.pf-folha code { overflow-wrap: anywhere; }

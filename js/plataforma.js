@@ -12,7 +12,7 @@
 import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
 import { auth, onAuthStateChanged, getDoc, doc, db } from './firebase.js';
 import { urlDaLoja } from './tenant.js';
-import { contatoDaLoja } from './contato-lib.js';
+import * as CZ from './cartaz-editor.js';
 import { escapeHTML, fmt, showToast, customConfirm } from './utils.js';
 import { sugerirId, idValido, totais, diasDaFeira, textoDoDia, proximaEntrega, normCond } from './plataforma-lib.js';
 import { CAMPOS_PRODUTO, camposDaLoja } from './cadastro-lib.js';
@@ -22,7 +22,7 @@ import './icones-admin.js';
 
 const ABAS = ['feiras', 'lojas', 'condominios', 'mensalidades', 'chaves', 'erros'];
 const lerAba = () => { try { const a = localStorage.getItem('pf_aba'); return ABAS.includes(a) ? a : 'feiras'; } catch (_) { return 'feiras'; } };
-const S = { dados: null, aba: lerAba(), busca: { lojas: '', condominios: '' }, folha: null, rascunho: null, ocupado: false, editandoCond: '', mensal: {}, confirmando: 0 };
+const S = { dados: null, aba: lerAba(), busca: { lojas: '', condominios: '' }, folha: null, rascunho: null, ocupado: false, editandoCond: '', mensal: {}, confirmando: 0, cartaz: null };
 const el = () => document.getElementById('pf-conteudo');
 const $ = (id) => document.getElementById(id);
 const NOMES_MODELO = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', jantinha: 'Jantinha', padaria: 'Padaria', acai: 'Açaí', pastelacai: 'Pastel e açaí', mercadinho: 'Mercadinho', doceria: 'Doceria' };
@@ -243,15 +243,17 @@ function abrirFolha(tipo, id) {
 async function fecharFolha(forcar) {
     if (!forcar && S.ocupado) return showToast('Espere terminar de salvar.');
     if (!forcar && S.rascunho && S.rascunho.mudou && !(await confirmar('Sair sem salvar?', 'O que você mudou nesta feira vai se perder.', { ok: 'Sair sem salvar', nao: 'Continuar editando' }))) return;
-    S.folha = null; S.rascunho = null;
+    S.folha = null; S.rascunho = null; S.cartaz = null;
     const fundo = $('pf-folha'); fundo.classList.remove('aberto'); fundo.setAttribute('aria-hidden', 'true');
     if (!document.querySelector('.modal-overlay.aberto')) document.body.style.overflow = '';
 }
 function pintarFolha() {
     if (!S.folha) return;
     const { tipo, id } = S.folha;
-    const [titulo, corpo, pe] = tipo === 'feira' ? folhaFeira() : tipo === 'nova-loja' ? folhaNovaLoja() : folhaLoja(lojaPorId(id));
+    const loja = lojaPorId(id);
+    const [titulo, corpo, pe] = tipo === 'feira' ? folhaFeira() : tipo === 'nova-loja' ? folhaNovaLoja() : tipo === 'cartaz' ? CZ.folhaCartaz(S.cartaz, loja ? loja.nome : id) : folhaLoja(loja);
     $('pf-folha-titulo').textContent = titulo; $('pf-folha-corpo').innerHTML = corpo; $('pf-folha-pe').innerHTML = pe;
+    if (tipo === 'cartaz' && S.cartaz) CZ.pintarPrevia(S.cartaz, true);
 }
 
 function folhaFeira() {
@@ -289,11 +291,8 @@ function folhaLoja(l) {
     <section class="pf-sec pf-loja-cab">${ponto(l.cor)}<div><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.id)}${l.original ? ', loja original' : ''}</small></div><span class="pf-selo${l.ativo ? ' ok' : ' bloq'}">${l.ativo ? 'Ativa' : 'Bloqueada'}</span></section>
     <section class="pf-sec"><p class="pf-mes">${l.mes ? `Neste mês: <b>${fmt(l.mes.receita)}</b> em <b>${l.mes.pedidos}</b> pedidos.` : 'Sem leitura do movimento deste mês.'}${l.assinatura ? ` Mensalidade: <b>${fmt(l.assinatura.valor)}</b>${l.assinatura.dia ? `, dia ${l.assinatura.dia}` : ''}.` : ' Sem mensalidade (defina na aba Mensalidades).'}</p>
         <div class="pf-linha-bts"><a class="pf-bt" href="${urlDaLoja(l.id, './')}" target="_blank" rel="noopener">Ver a loja</a><a class="pf-bt" href="${urlDaLoja(l.id, '/admin')}">Abrir o painel</a></div>
-        <span class="pf-rot">Cartaz da loja (um para cada feira)</span>
-        <div class="pf-linha-bts" style="flex-direction:column;align-items:stretch">${fs.map((f) => `<button type="button" class="pf-bt" data-pf="cartaz-loja" data-loja="${escapeHTML(l.id)}" data-feira="${escapeHTML(f.id)}">Cartaz da ${escapeHTML(f.nome)}</button>`).join('')}<button type="button" class="pf-bt" data-pf="cartaz-loja" data-loja="${escapeHTML(l.id)}" data-feira="">Cartaz só da loja (sem feira)</button></div>
-        <label class="pf-rot" for="pf-cartaz-local">Texto no topo do cartaz (opcional)</label>
-        <div class="pf-form-linha"><input type="text" id="pf-cartaz-local" maxlength="50" autocomplete="off" placeholder="Em branco: o nome da feira. Ex.: Feira Atenas"></div>
-        <small class="pf-dica">Cartaz A4 nas cores, na logo e com a foto de capa da loja (Aparência), com o QR que abre esta loja, o passo a passo da fitinha e o WhatsApp e Instagram da loja (Configurações).</small></section>
+        <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="cartaz-abrir" data-loja="${escapeHTML(l.id)}">Montar cartaz com QR e fitinha NFC</button></div>
+        <small class="pf-dica">Um cartaz para cada feira, nas cores da loja, com logo, foto, WhatsApp e Instagram. Dá para mudar tudo antes de imprimir.</small></section>
     <section class="pf-sec"><span class="pf-rot">Proprietários</span>
         ${l.donos.length ? `<ul class="pf-donos">${l.donos.map((e) => `<li><span>${escapeHTML(e)}</span><button type="button" class="pf-bt mini" data-pf="tirar-dono" data-email="${escapeHTML(e)}" aria-label="Tirar ${escapeHTML(e)}">Tirar</button></li>`).join('')}</ul>` : `<p class="pf-dica">${l.original ? 'A conta antiga da banca continua valendo. Novos proprietários aparecem aqui.' : 'Ninguém ainda. Sem proprietário, ninguém abre o painel desta loja.'}</p>`}
         <div class="pf-form-linha"><input type="email" id="pf-l-dono" inputmode="email" autocomplete="off" placeholder="E-mail do proprietário" aria-label="E-mail do novo proprietário"><button type="button" class="pf-bt" data-pf="dar-dono">Adicionar</button></div></section>
@@ -360,18 +359,29 @@ async function agir(b) {
             } catch (e) { showToast((e && e.message) || 'Não consegui montar o cartaz.', true); }
             return;
         }
-        case 'cartaz-loja': {        // cartaz A4 desta LOJA: cores, logo e foto dela, QR que abre a loja, fitinha NFC explicada (js/cartaz-lib.js)
+        case 'cartaz-abrir': {      // editor do cartaz da loja (js/cartaz-editor.js)
             const l = lojaPorId(b.dataset.loja); if (!l) return;
-            try {
-                let ficha = {}; try { const sn = await getDoc(doc(db, 'tenants', l.id)); if (sn.exists()) ficha = sn.data() || {}; } catch (_) { /* sem a ficha: sai com as cores padrão */ }
-                const campoLocal = document.getElementById('pf-cartaz-local'), fid = b.dataset.feira || '', fe = feirasDaLoja(l.id).find((f) => f.id === fid), local = ((campoLocal && campoLocal.value.trim()) || (fe ? fe.nome : '')).trim();
-                let config = {}; try { const sn = await getDoc(doc(db, 'tenants', l.id, 'loja', 'config')); if (sn.exists()) config = sn.data() || {}; } catch (_) { /* sem contato: o cartaz sai sem a faixa */ }
-                const ct = contatoDaLoja(config, l.nome);
-                                const link = fid ? linkDaFeira(fid) : new URL(urlDaLoja(l.id, '/'), location.href).href;
-                const [{ cartazLojaHtml }, { imprimirPagina }] = await Promise.all([import('./cartaz-lib.js'), import('./impressao.js')]);
-                await imprimirPagina(cartazLojaHtml({ loja: { nome: ficha.nome || l.nome, subtitulo: ficha.subtitulo || '', tema: ficha.tema || {}, whatsapp: ct.whatsapp, instagram: ct.instagram }, condominios: local ? [local] : [], link }));
-                showToast('Cartaz pronto. Para guardar, escolha "Salvar como PDF".');
-            } catch (e) { showToast((e && e.message) || 'Não consegui montar o cartaz.', true); }
+            S.cartaz = null; S.folha = { tipo: 'cartaz', id: l.id }; pintarFolha();
+            try { const st = await CZ.carregarCartaz(l, feirasDaLoja(l.id)); if (S.folha && S.folha.tipo === 'cartaz' && S.folha.id === l.id) { S.cartaz = st; pintarFolha(); } }
+            catch (e) { showToast((e && e.message) || 'Não consegui abrir os dados da loja.', true); }
+            return;
+        }
+        case 'cartaz-voltar': { const id = S.folha && S.folha.id; S.cartaz = null; return abrirFolha('loja', id); }
+        case 'cartaz-padrao': CZ.voltarAoPadrao(S.cartaz); return pintarFolha();
+        case 'cartaz-img-loja': if (S.cartaz) { S.cartaz[b.dataset.img] = b.dataset.img === 'logo' ? S.cartaz.logoLoja : S.cartaz.fotoLoja; pintarFolha(); } return;
+        case 'cartaz-img-tirar': if (S.cartaz) { S.cartaz[b.dataset.img] = ''; pintarFolha(); } return;
+        case 'cartaz-copiar-link': {
+            if (!S.cartaz) return;
+            try { await navigator.clipboard.writeText(CZ.linkDoCartaz(S.cartaz.lojaId, S.cartaz.fid)); showToast('Endereço copiado. É este que vai na fitinha NFC.'); }
+            catch (_) { showToast('Não consegui copiar. Segure o dedo no endereço para copiar.', true); }
+            return;
+        }
+        case 'cartaz-imprimir': {
+            if (!S.cartaz) return;
+            const c = CZ.conferir(S.cartaz);
+            if (c.avisoWpp || c.avisoInsta) showToast(c.avisoWpp || c.avisoInsta, true);
+            try { const { imprimirPagina } = await import('./impressao.js'); await imprimirPagina(CZ.htmlDoCartaz(S.cartaz)); showToast('Cartaz pronto. Para guardar, escolha "Salvar como PDF".'); }
+            catch (e) { showToast((e && e.message) || 'Não consegui montar o cartaz.', true); }
             return;
         }
         case 'copiar-link': {
@@ -536,6 +546,7 @@ function ligar() {
             $('pf-folha-corpo').querySelectorAll('[data-nome]').forEach((li) => { li.hidden = !!termo && !li.dataset.nome.includes(termo); });
             return;
         }
+        if (t.dataset.pfCartaz && S.cartaz) { CZ.digitou(S.cartaz, t.dataset.pfCartaz, t.value); return; }
         if (t.id === 'pf-f-nome' && S.rascunho) { S.rascunho.nome = t.value; marcarMudanca(); return; }
         if (t.id === 'pf-f-limite' && S.rascunho) { S.rascunho.horaLimite = t.value; marcarMudanca(); return; }
         if (t.id === 'pf-nome' && !$('pf-id').dataset.mexido) $('pf-id').value = sugerirId(t.value);
@@ -552,6 +563,13 @@ function ligar() {
             return;
         }
         if (t.id === 'pf-f-limite' && S.rascunho) { S.rascunho.horaLimite = t.value; marcarMudanca(); return; }
+        if (t.hasAttribute('data-pf-cartaz-feira') && S.cartaz) { CZ.trocarFeira(S.cartaz, t.value); pintarFolha(); return; }
+        if (t.dataset.pfCartazImg && S.cartaz) {
+            const k = t.dataset.pfCartazImg, st = S.cartaz, arq = t.files && t.files[0]; if (!arq) return;
+            try { const dado = await CZ.lerImagem(arq, k); if (S.cartaz === st) { st[k] = dado; pintarFolha(); } }
+            catch (err) { showToast((err && err.message) || 'Não consegui usar esta foto.', true); }
+            return;
+        }
         if (t.dataset.pfFLoja && S.rascunho) { if (t.checked) S.rascunho.lojas.add(t.dataset.pfFLoja); else S.rascunho.lojas.delete(t.dataset.pfFLoja); $('pf-f-n-lojas').textContent = S.rascunho.lojas.size; marcarMudanca(); return; }
         if (t.dataset.pfFCond && S.rascunho) { if (t.checked) S.rascunho.conds.add(t.dataset.pfFCond); else S.rascunho.conds.delete(t.dataset.pfFCond); $('pf-f-n-conds').textContent = S.rascunho.conds.size; marcarMudanca(); return; }
         if (t.dataset.pfCampo && S.folha && S.folha.tipo === 'loja') {

@@ -139,6 +139,8 @@ const CELULAR_NA_FITINHA = (cor, claro) => `<svg viewBox="0 0 108 120" width="10
 <g stroke="${cor}" stroke-width="3" stroke-linecap="round" fill="none"><path d="M78 48a16 16 0 0 1 0 24"/><path d="M86 40a28 28 0 0 1 0 40"/><path d="M94 32a40 40 0 0 1 0 56"/></g></svg>`;
 
 const NFC_ICONE = (cor) => `<svg viewBox="0 0 24 24" fill="none" stroke="${cor}" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 8.5a5.5 5.5 0 0 1 0 7"/><path d="M9.5 6a9 9 0 0 1 0 12"/><path d="M13 3.5a12.5 12.5 0 0 1 0 17"/><circle cx="3.5" cy="12" r="1" fill="${cor}" stroke="none"/></svg>`;
+/** Imagem do cartaz: endereço https (logo/capa da loja) ou foto escolhida no aparelho na hora (data:, só png/jpeg/webp). */
+export const imagemDoCartaz = (u) => urlImagem(u) || (typeof u === 'string' && u.length < 6e6 && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(u) ? u : '');
 const ini = (nome) => (String(nome).trim().split(/\s+/).map((p) => p[0]).join('').slice(0, 2) || '?').toUpperCase();
 
 const ICONE_WPP = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#25d366"/><path d="M12 4.6a7.4 7.4 0 0 0-6.4 11.1L4.6 19.4l3.8-1a7.4 7.4 0 1 0 3.6-13.8z" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.3 8.6c.3-.4.8-.3 1 .1l.5 1.1c.1.3 0 .5-.2.7l-.4.5c.6 1.1 1.5 2 2.7 2.6l.5-.5c.2-.2.5-.3.8-.1l1.1.6c.4.2.4.7.1 1-.9 1-2.2 1-3.6.2a8.4 8.4 0 0 1-3.3-3.3c-.6-1.3-.3-2.4.8-2.9z" fill="#fff"/></svg>';
@@ -152,15 +154,16 @@ const foneBonito = (d) => { const n = String(d || '').replace(/\D/g, '').replace
  */
 export function cartazLojaHtml({ loja, condominios = [], link }) {
     const l = loja || {}, nome = String(l.nome || '').trim().slice(0, 60) || 'Loja';
-    const P = paletaDoCartaz(l.tema), logo = urlImagem(l.tema && l.tema.logo), foto = urlImagem(l.tema && l.tema.capa);
+    const P = paletaDoCartaz(l.tema), logo = imagemDoCartaz(l.tema && l.tema.logo), foto = imagemDoCartaz(l.tema && l.tema.capa);
+    const legenda = String(l.legenda == null ? nome : l.legenda).trim().slice(0, 40);
     const conds = (condominios || []).map((c) => String(c || '').trim()).filter(Boolean).slice(0, 3);
     const sub = String(l.subtitulo || '').trim().slice(0, 90);
     const insta = /^[A-Za-z0-9._]{1,30}$/.test(String(l.instagram || '')) ? String(l.instagram) : '';
     const fone = foneBonito(l.whatsapp);
     const selo = logo ? `<img class="logo" src="${esc(logo)}" alt="">` : `<div class="logo mono">${esc(ini(nome))}</div>`;
     const quadro = foto
-        ? `<div class="polaroid"><div class="ft"><img src="${esc(foto)}" alt=""></div><p>${esc(nome)}</p></div>${selo}`
-        : `<div class="polaroid"><div class="ft vazio">${logo ? `<img src="${esc(logo)}" alt="" style="width:100%;height:100%;object-fit:contain">` : `<span>${esc(ini(nome))}</span>`}</div><p>${esc(nome)}</p></div>`;
+        ? `<div class="polaroid${logo ? ' com-selo' : ''}"><div class="ft"><img src="${esc(foto)}" alt=""></div><p>${esc(legenda)}</p></div>${logo ? selo : ''}`
+        : `<div class="polaroid"><div class="ft vazio">${logo ? `<img src="${esc(logo)}" alt="" style="width:100%;height:100%;object-fit:contain">` : `<span>${esc(ini(nome))}</span>`}</div><p>${esc(legenda)}</p></div>`;
     const abas = Array.from({ length: 15 }, (_, i) => `<i style="left:${(i * 15 + 3.5).toFixed(1)}mm"></i>`).join('');
     const contato = (fone || insta) ? `<div class="contato">${fone ? `<div class="ct">${ICONE_WPP}<span><small>WhatsApp</small><b>${esc(fone)}</b></span></div>` : ''}${fone && insta ? '<u></u>' : ''}${insta ? `<div class="ct">${ICONE_INSTA}<span><small>Instagram</small><b>@${esc(insta)}</b></span></div>` : ''}</div>` : '';
     const FONTE = '"Poppins","Montserrat","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif';
@@ -173,18 +176,20 @@ body { width: 210mm; height: 297mm; overflow: hidden; font-family: ${FONTE}; }
 .pg { position: relative; width: 210mm; height: 297mm; overflow: hidden; background: ${P.escuro}; color: #fff; }
 .bola { position: absolute; border-radius: 50%; background: rgba(255,255,255,.06); }
 .topo { position: absolute; left: 15mm; top: 12mm; width: 100mm; }
+.onde span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .onde { display: inline-flex; align-items: center; gap: 2mm; border: .4mm solid rgba(255,255,255,.38); background: rgba(255,255,255,.07); color: #fff; border-radius: 99mm; padding: 1.8mm 5mm 1.8mm 3mm; font-size: 5mm; font-weight: 700; max-width: 100mm; }
 .onde svg { flex: none; width: 5mm; height: 5mm; }
-.nome { margin: 6mm 0 0; font-size: 5.8mm; font-weight: 800; letter-spacing: .5mm; text-transform: uppercase; color: ${P.destaque}; line-height: 1.15; }
+.nome { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 6mm 0 0; font-size: 5.8mm; font-weight: 800; letter-spacing: .5mm; text-transform: uppercase; color: ${P.destaque}; line-height: 1.15; }
 h1 { margin: 3mm 0 0; font-weight: 800; font-size: 17.5mm; line-height: 1.02; letter-spacing: -.5mm; color: #fff; }
 h1 span { color: ${P.destaque}; }
-.sub { margin: 4.5mm 0 0; font-size: 5mm; line-height: 1.32; font-weight: 400; color: rgba(255,255,255,.9); }
+.sub { margin: 4.5mm 0 0; font-size: 5mm; line-height: 1.32; font-weight: 400; color: rgba(255,255,255,.9); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .polaroid { position: absolute; right: 12mm; top: 14mm; width: 80mm; padding: 3.6mm 3.6mm 0; background: ${P.claro}; border-radius: 3mm; transform: rotate(2.5deg); box-shadow: 0 3mm 9mm rgba(0,0,0,.45); }
 .polaroid .ft { width: 100%; height: 60mm; border-radius: 1.2mm; overflow: hidden; background: ${P.escuro}; }
 .polaroid .ft img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .polaroid .ft.vazio { display: flex; align-items: center; justify-content: center; font: 800 26mm ${FONTE}; color: ${P.destaque}; padding: 6mm; }
-.polaroid p { margin: 0; height: 13mm; line-height: 13mm; padding-left: 28mm; text-align: center; font-weight: 800; font-size: 4.5mm; color: ${P.escuro}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.logo { position: absolute; left: 104mm; top: 70mm; width: 38mm; height: 38mm; border-radius: 50%; object-fit: cover; background: ${P.escuro}; border: 1.3mm solid ${P.claro}; box-shadow: 0 0 0 1mm ${P.destaque}, 0 2.5mm 7mm rgba(0,0,0,.5); z-index: 3; }
+.polaroid p { margin: 0; height: 13mm; line-height: 13mm; padding: 0 2mm; text-align: center; font-weight: 800; font-size: 4.5mm; color: ${P.escuro}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.polaroid.com-selo p { padding: 0 33mm 0 2mm; text-align: left; font-size: 4.2mm; }
+.logo { position: absolute; left: 165mm; top: 73mm; width: 35mm; height: 35mm; border-radius: 50%; object-fit: cover; background: ${P.escuro}; border: 1.3mm solid ${P.claro}; box-shadow: 0 0 0 1mm ${P.destaque}, 0 2.5mm 7mm rgba(0,0,0,.5); z-index: 3; }
 .logo.mono { display: flex; align-items: center; justify-content: center; font: 800 14mm ${FONTE}; color: ${P.destaque}; }
 .painel { position: absolute; left: 0; right: 0; top: 102mm; bottom: 0; background: ${P.claro}; color: ${P.tinta}; overflow: hidden; }
 .toldo { position: absolute; left: 0; right: 0; top: 0; height: 9mm; }
@@ -248,7 +253,7 @@ ${passo(3, 'Envie o pedido.', 'Abra a sacola, confira e mande. A gente confirma 
 </ol>
 <div class="nota">iPhone XS ou mais novo e quase todo Android têm NFC. Se o seu não ler, use o QR Code ao lado.</div>
 </div>
-<div class="qr">${qrSvg(link, { tamanho: 176, cor: P.escuro }).replace('<svg ', '<svg class="codigo" ')}<div><b>Ou aponte a câmera</b><small>${esc(linkCurto(link)).replace(/([/-])/g, '$1<wbr>')}</small></div></div>
+<div class="qr">${qrSvg(link, { tamanho: 176, cor: P.escuro }).replace('<svg ', '<svg class="codigo" ')}<div><b>Ou aponte a câmera</b><small>${esc(linkCurto(link)).replace(/([/-])/g, '$1<wbr>').replace(/&amp;/g, '<wbr>&amp;')}</small></div></div>
 </div>
 </div>
 ${contato}
