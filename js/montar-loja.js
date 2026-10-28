@@ -97,7 +97,7 @@ function pintarEstado() {
     document.getElementById('mt-qtd').textContent = String(qtd);
     const ok = document.getElementById('mt-ok');
     ok.classList.toggle('incompleto', !!faltando);
-    document.getElementById('mt-ok-txt').textContent = faltando ? `Escolha: ${faltando.nome}` : atual.linha ? 'Salvar mudanças' : atual.rotulo;
+    document.getElementById('mt-ok-txt').textContent = faltando ? (/^escolh/i.test(faltando.nome) ? faltando.nome : `Escolha: ${faltando.nome}`) : atual.linha ? 'Salvar mudanças' : atual.rotulo;
     document.getElementById('mt-ok-preco').textContent = atual.fmt(unit * qtd);
     atual.faltando = faltando; atual.conferido = r;
 }

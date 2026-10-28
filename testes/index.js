@@ -2303,7 +2303,7 @@ teste('fotos: miniatura só para link https em produção, nas larguras que a Ve
   for (const fora of ['https://fotos.exemplo.com/a/tomate.jpg', 'https://ibb.co.site-do-mal.com/a.jpg', 'https://site-do-mal.com/i.ibb.co/a.jpg', 'https://xibb.co/a.jpg']) assert.strictEqual(F.miniatura(fora, 384, 'site-banca1.vercel.app'), fora, 'foto guardada em outro lugar aparece no tamanho original: ' + fora);
   assert.ok(F.miniatura('https://firebasestorage.googleapis.com/v0/b/x/o/a.webp?alt=media', 384, 'site-banca1.vercel.app').startsWith('/_vercel/image?url='));
   const u = 'https://i.ibb.co/a/tomate.jpg?x=1&y=2';
-  assert.strictEqual(F.miniatura(u, 384, 'site-banca1.vercel.app'), '/_vercel/image?url=' + encodeURIComponent(u) + '&w=384&q=75&v=3');
+  assert.strictEqual(F.miniatura(u, 384, 'site-banca1.vercel.app'), '/_vercel/image?url=' + encodeURIComponent(u) + '&w=384&q=75&v=4');
   assert.ok(F.miniatura(u, 128, 'www.loja.com.br').includes('&w=128&'));
   assert.ok(F.miniatura(u, 999, 'www.loja.com.br').includes('&w=384&'), 'largura fora da lista cai na padrão');
   for (const host of ['localhost', '127.0.0.1', '192.168.0.10', '']) assert.strictEqual(F.miniatura(u, 384, host), u, host);
@@ -3186,12 +3186,12 @@ teste('cloudflare: o redutor de fotos só aceita os sites e as larguras do verce
   const pedir = (u, w) => I.onRequestGet({ request: new Request(`https://loja.exemplo.com/_vercel/image?url=${encodeURIComponent(u)}&w=${w}&q=75`) });
   try {
     globalThis.fetch = async (u, o) => { chamadas++; return new Response('IMG', { status: 200, headers: { 'Content-Type': 'image/webp', 'Content-Length': '9000' } }); };
-    const ok = await pedir('https://i.ibb.co/abc/foto.jpg', 128);
+    const ok = await pedir('https://i.ibb.co/abc/foto.webp', 128);
     assert.strictEqual(ok.status, 200); assert.strictEqual(ok.headers.get('content-type'), 'image/webp'); assert.ok(/max-age=259200/.test(ok.headers.get('cache-control')) && !/immutable/.test(ok.headers.get('cache-control')));
     assert.strictEqual((await pedir('https://exemplo.com/x.jpg', 128)).status, 400); assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 999)).status, 400);
     assert.strictEqual(chamadas, 1, 'pedido recusado não busca nada');
     globalThis.fetch = async () => new Response('<html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
-    assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 128)).status, 415, 'só devolve imagem');
+    assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 128)).status, 502, 'só devolve imagem (página no lugar da foto = foto fora do ar)');
     globalThis.fetch = async () => new Response('x', { status: 404 });
     assert.strictEqual((await pedir('https://i.ibb.co/a.jpg', 128)).status, 502);
     // imagem de erro do ImgBB ("service unavailable") é minúscula: não é devolvida nem guardada (a loja cai na foto original)
@@ -3212,6 +3212,55 @@ teste('cloudflare: o redutor de fotos só aceita os sites e as larguras do verce
     globalThis.fetch = async (u) => (/wsrv\.nl/.test(u) ? new Response('erro', { status: 502 }) : new Response('ORIG', { status: 200, headers: { 'Content-Type': 'image/jpeg', 'Content-Length': String(2 * 1024 * 1024) } }));
     assert.strictEqual(await (await pedir('https://i.ibb.co/abc/y.jpg', 384)).text(), 'ORIG');
   } finally { globalThis.fetch = antes; }
+});
+
+teste('fotos do ImgBB: a figura "service unavailable" é reconhecida, nunca guardada; a foto perdida é resgatada da cópia antiga; o painel acha e mostra o que consertar', async () => {
+  const I = await import(raiz('functions/_vercel/image.js'));
+  const resp = (tipo, n, extra = {}) => Object.assign(new Response('x'.repeat(4), { status: extra.status || 200, headers: { 'Content-Type': tipo, 'Content-Length': String(n), ...(extra.h || {}) } }), extra.r || {});
+  const webp = new URL('https://i.ibb.co/abc/foto.webp');
+  assert.strictEqual(I.pareceErro(webp, resp('image/webp', 30000)), false, 'foto WebP de verdade');
+  assert.strictEqual(I.pareceErro(webp, resp('image/png', 30000)), true, 'arquivo .webp que chega como PNG = a figura de erro');
+  assert.strictEqual(I.pareceErro(webp, resp('image/webp', 30000, { status: 503 })), true, 'resposta 503');
+  assert.strictEqual(I.pareceErro(webp, resp('image/webp', 900)), true, 'minúscula');
+  assert.strictEqual(I.pareceErro(webp, resp('image/webp', 30000, { r: {} , h: {} })), false);
+  const red = resp('image/webp', 30000); Object.defineProperty(red, 'redirected', { value: true }); Object.defineProperty(red, 'url', { value: 'https://i.ibb.co/erro/unavailable.png' });
+  assert.strictEqual(I.pareceErro(webp, red), true, 'o ImgBB mandou para outro arquivo');
+  assert.strictEqual(I.pareceErro(webp, resp('image/webp', 30000, { h: { 'cf-resized': 'internal=ok' } })), false);
+  assert.strictEqual(I.pareceErro(new URL('https://firebasestorage.googleapis.com/v0/b/x/o/a.webp'), resp('image/png', 30000)), false, 'regra de tipo só para o ImgBB');
+  assert.strictEqual(I.pareceErro(new URL('https://i.ibb.co/abc/foto.jpg'), resp('image/jpeg', 30000)), false);
+
+  // resgate: o ImgBB perdeu a foto, mas a miniatura de 384 ficou guardada com o endereço antigo
+  const antesF = globalThis.fetch, antesC = globalThis.caches, guardadas = new Map(), postas = [];
+  const corpoBom = new Uint8Array(9000).fill(7);
+  globalThis.caches = { default: { match: async (req) => { const v = guardadas.get(req.url); return v ? new Response(v.corpo, { headers: { 'Content-Type': v.tipo } }) : undefined; }, put: async (req) => { postas.push(req.url); } } };
+  const pedir = (u, w) => I.onRequestGet({ request: new Request(`https://loja.exemplo.com/_vercel/image?url=${encodeURIComponent(u)}&w=${w}&q=75&v=4`) });
+  try {
+    globalThis.fetch = async () => resp('image/png', 30000);                                    // ImgBB devolve a figura
+    let r = await pedir('https://i.ibb.co/abc/foto.webp', 828);
+    assert.strictEqual(r.status, 502, 'sem cópia: 502 (o navegador cai na outra versão, nunca na figura)');
+    assert.strictEqual(postas.length, 0, 'a figura não é guardada');
+    guardadas.set('https://loja.exemplo.com/_vercel/image?url=' + encodeURIComponent('https://i.ibb.co/abc/foto.webp') + '&w=384', { corpo: corpoBom, tipo: 'image/webp' });
+    r = await pedir('https://i.ibb.co/abc/foto.webp', 828);
+    assert.strictEqual(r.status, 200); assert.strictEqual(r.headers.get('x-foto'), 'resgatada'); assert.strictEqual((await r.arrayBuffer()).byteLength, 9000);
+    // cópia antiga que era a própria figura (PNG para um .webp) não serve
+    guardadas.clear(); guardadas.set('https://loja.exemplo.com/_vercel/image?url=' + encodeURIComponent('https://i.ibb.co/abc/foto.webp') + '&w=828', { corpo: corpoBom, tipo: 'image/png' });
+    assert.strictEqual((await pedir('https://i.ibb.co/abc/foto.webp', 828)).status, 502);
+    globalThis.fetch = async () => resp('image/webp', 30000);                                   // ImgBB voltou
+    assert.strictEqual((await pedir('https://i.ibb.co/abc/foto.webp', 384)).status, 200); assert.strictEqual(postas.length, 1, 'foto boa é guardada');
+  } finally { globalThis.fetch = antesF; globalThis.caches = antesC; }
+
+  // painel: confere as duas versões e escolhe a cópia boa
+  const L = await import(raiz('js/fotos-conserto-lib.js'));
+  const estado = { 'https://i.ibb.co/a/g.webp': 502, 'https://i.ibb.co/a/m.webp': 200, 'https://i.ibb.co/b/g.webp': 502, 'https://i.ibb.co/b/m.webp': 502, 'https://i.ibb.co/c/g.webp': 200, 'https://i.ibb.co/d/g.webp': 'resg' };
+  const buscar = async (u) => { const url = decodeURIComponent(String(u).match(/url=([^&]+)/)[1]); const e = estado[url]; return e === 'resg' ? new Response('x', { status: 200, headers: { 'X-Foto': 'resgatada' } }) : new Response('x', { status: e || 200 }); };
+  const prods = [{ id: 'a', nome: 'Heineken', foto: 'https://i.ibb.co/a/g.webp', fotoMini: 'https://i.ibb.co/a/m.webp' }, { id: 'b', nome: 'Alho sal e cheiro verde', foto: 'https://i.ibb.co/b/g.webp', fotoMini: 'https://i.ibb.co/b/m.webp' },
+    { id: 'c', nome: 'Alface', foto: 'https://i.ibb.co/c/g.webp' }, { id: 'd', nome: 'Napolitano', foto: 'https://i.ibb.co/d/g.webp' }, { id: 'e', nome: 'Sem foto' }];
+  const ruins = await L.conferir(prods, () => {}, buscar);
+  assert.deepStrictEqual(ruins.map((r) => r.p.id).sort(), ['a', 'b', 'd'], 'só os com foto fora do ar (ou resgatada)');
+  assert.strictEqual(L.melhorCopia(ruins.find((r) => r.p.id === 'a')), 'https://i.ibb.co/a/m.webp', 'a miniatura boa vira a cópia');
+  assert.strictEqual(L.melhorCopia(ruins.find((r) => r.p.id === 'b')), '', 'as duas sumiram: sem cópia');
+  assert.strictEqual(L.melhorCopia(ruins.find((r) => r.p.id === 'd')), 'https://i.ibb.co/d/g.webp', 'resgatada serve de cópia');
+  assert.strictEqual(await L.estadoDaFoto('https://i.ibb.co/x.webp', async () => new Response('nao', { status: 404 })), '?', 'sem redutor (404) não acusa à toa');
 });
 
 // ------------------------------------------------------------------ testes de segurança (arquivo próprio)

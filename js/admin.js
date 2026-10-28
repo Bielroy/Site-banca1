@@ -31,7 +31,7 @@ import { abrirFechamento } from './admin-fechamento.js';
 // em que a aba é tocada (e fica guardado para as próximas vezes).
 // ---------------------------------------------------------------------
 const TELAS = {
-    aparencia: () => import('./admin-aparencia.js'), estoque: () => import('./admin-estoque.js'), fotos: () => import('./admin-fotos.js'),
+    aparencia: () => import('./admin-aparencia.js'), estoque: () => import('./admin-estoque.js'), fotos: () => import('./admin-fotos.js'), conserto: () => import('./admin-fotos-conserto.js'),
     margens: () => import('./admin-margens.js'), compras: () => import('./admin-compras.js'), pdv: () => import('./admin-pdv.js'),
     crm: () => import('./admin-crm.js'), copiloto: () => import('./admin-copiloto.js'), calendario: () => import('./admin-calendario.js'),
     equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'), impressora: () => import('./admin-impressora.js'), avisos: () => import('./admin-avisos.js'),
@@ -61,7 +61,25 @@ import { iniciarCategoriasAdmin, abrirCategorias, chaveDaCategoria, nomeDaCatego
 let pixAsaasDaFicha = false;
 const podePixAutomatico = () => ehLojaOriginal || pixAsaasDaFicha;
 // Miniatura do redutor falhou? Volta para a foto original (mesmo cuidado da loja).
-document.addEventListener('error', (e) => { const img = e.target; if (!(img instanceof HTMLImageElement) || !img.dataset.original) return; const o = img.dataset.original; delete img.dataset.original; if (img.getAttribute('src') !== o) img.src = o; }, true);
+document.addEventListener('error', (e) => {
+    const img = e.target; if (!(img instanceof HTMLImageElement)) return;
+    // 1º a outra versão da foto (pelo redutor); depois o endereço original; na lista de produtos, em vez do original
+    // (que mostraria a figura "imgbb.com service unavailable"), um aviso e o botão de consertar
+    if (img.dataset.reserva) { const r = img.dataset.reserva; delete img.dataset.reserva; img.src = r; return; }
+    if (img.dataset.original) { const o = img.dataset.original; delete img.dataset.original; if (img.getAttribute('src') !== o) img.src = o; return; }
+    if (img.dataset.foraDoAr && img.parentElement) { const casa = img.parentElement; casa.innerHTML = '<span class="pl-sem-foto pl-fora-do-ar">Foto fora do ar</span>'; avisarFotosForaDoAr(); }
+}, true);
+const https = (u) => /^https:\/\//i.test(String(u || ''));
+let _avisoFotos = 0;
+function avisarFotosForaDoAr() {
+    clearTimeout(_avisoFotos);
+    _avisoFotos = setTimeout(() => {
+        const n = document.querySelectorAll('#lista-produtos .pl-fora-do-ar').length; if (!n) return;
+        let faixa = document.getElementById('pl-faixa-fotos');
+        if (!faixa) { faixa = document.createElement('div'); faixa.id = 'pl-faixa-fotos'; faixa.className = 'pl-faixa-fotos'; document.getElementById('lista-produtos')?.before(faixa); }
+        faixa.innerHTML = `<span>${n === 1 ? '1 foto sumiu' : `${n} fotos sumiram`} do ImgBB (aparecia "service unavailable" na loja).</span><button type="button" class="bt bt-pri" data-action="consertar-fotos">Consertar</button>`;
+    }, 400);
+}
 
 // Chart.js agora é carregado sob demanda (só ao abrir o Dashboard).
 // Isso tira ~200KB do carregamento inicial do painel.
@@ -776,7 +794,7 @@ const renderProdutos = () => {
         <article class="pl-item${p.ativo ? '' : ' fora'}${plSel.ligado ? ' marcando' : ''}${marcado ? ' marcado' : ''}">
             <button type="button" class="pl-abrir" ${plSel.ligado ? `data-pl-marcar="${escapeHTML(p.id)}" role="checkbox" aria-checked="${marcado}"` : `data-action="editar-produto" data-id="${escapeHTML(p.id)}"`}>
                 ${plSel.ligado ? '<span class="pl-marca" aria-hidden="true"></span>' : ''}
-                <span class="pl-foto">${/^https:\/\//i.test(String(p.fotoMini || p.foto || '')) ? `<img src="${escapeHTML(miniatura(p.fotoMini || p.foto, 128))}" data-original="${escapeHTML(p.fotoMini || p.foto)}" loading="lazy" decoding="async" alt="">` : '<span class="pl-sem-foto">Sem foto</span>'}</span>
+                <span class="pl-foto">${/^https:\/\//i.test(String(p.fotoMini || p.foto || '')) ? `<img src="${escapeHTML(miniatura(p.fotoMini || p.foto, 128))}"${p.fotoMini && https(p.foto) && p.foto !== p.fotoMini ? ` data-reserva="${escapeHTML(miniatura(p.foto, 128))}"` : ''} data-fora-do-ar="1" loading="lazy" decoding="async" alt="">` : '<span class="pl-sem-foto">Sem foto</span>'}</span>
                 <span class="pl-txt">
                     <b>${escapeHTML(p.nome)}</b>
                     <span class="pl-sub">${Number(p.preco) > 0 ? `${fmt(p.preco)} / ${ehPacote(p) ? 'pacote' : escapeHTML(p.unidade || 'un')}` : 'sem preço'}${promoDe(p) ? ` · ${escapeHTML(textoPromo(promoDe(p)))}` : ''}${cat ? ` · ${escapeHTML(cat)}` : ''}${p.ativo ? '' : ' · <em>fora da loja</em>'}</span>
@@ -1970,6 +1988,11 @@ document.getElementById('edit-nome')?.addEventListener('keydown', (e) => {
 document.getElementById('btn-precos-dia')?.addEventListener('click', async () => {
     try { (await TELAS.precosDia()).abrirPrecosDia(produtosAtuais); } catch (e) { console.error(e); showToast('Não consegui abrir os preços por dia. Confira a internet e toque de novo.', true); }
 });
+const abrirConsertoDeFotos = async () => {
+    try { (await TELAS.conserto()).abrirConserto(produtosAtuais, () => renderProdutos()); } catch (e) { showToast('Não consegui abrir. Confira a internet.', true); }
+};
+document.getElementById('btn-conferir-fotos')?.addEventListener('click', abrirConsertoDeFotos);
+document.addEventListener('click', (e) => { if (e.target.closest('[data-action="consertar-fotos"]')) abrirConsertoDeFotos(); });
 document.getElementById('btn-varias-fotos')?.addEventListener('click', async () => {
     try { (await TELAS.fotos()).abrirFotos(produtosAtuais); } catch (e) { showToast('Não consegui abrir. Confira a internet.', true); }
 });

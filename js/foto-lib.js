@@ -32,10 +32,10 @@ const hostAceito = (h) => HOSTS_DAS_FOTOS.some((p) => (p.startsWith('**.') ? h.e
 export function miniatura(url, largura = 384, host = (typeof location !== 'undefined' ? location.hostname : '')) {
     const u = String(url || '');
     if (!/^https:\/\/[^\s"'<>]+$/i.test(u)) return u;             // data:, blob:, http: ou vazio: fica como está
-    if (!host || LOCAL.test(host)) return u;                       // no computador de quem desenvolve não existe o redutor
+    if (!host || (LOCAL.test(host) && !(typeof globalThis !== 'undefined' && globalThis.__REDUTOR_LOCAL))) return u;   // no computador de quem desenvolve não existe o redutor (os testes de tela ligam um de mentira)
     if (/\.svg(\?|#|$)/i.test(u)) return u;                        // desenho vetorial já é leve
     let deOnde = ''; try { deOnde = new URL(u).hostname.toLowerCase(); } catch (_) { return u; }
     if (!hostAceito(deOnde)) return u;                             // guardada em outro lugar: aparece no tamanho original
     const w = LARGURAS.includes(largura) ? largura : 384;
-    return `/_vercel/image?url=${encodeURIComponent(u)}&w=${w}&q=75&v=3`;       // v=3: mudou o número, as miniaturas de erro guardadas antes deixam de valer
+    return `/_vercel/image?url=${encodeURIComponent(u)}&w=${w}&q=75&v=4`;       // v=4: mudou o número, as miniaturas de erro guardadas antes deixam de valer
 }

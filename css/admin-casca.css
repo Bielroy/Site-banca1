@@ -310,3 +310,7 @@ body.so-equipe #ped-mais { display: none; }
 .pd-chave::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s ease; }
 .pd-chave:checked { background: var(--forest); }
 .pd-chave:checked::after { transform: translateX(18px); }
+/* foto do produto que sumiu do ImgBB (js/admin-fotos-conserto.js) */
+.pl-fora-do-ar { color: #b3261e; }
+.pl-faixa-fotos { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; padding: 10px 12px; border-radius: 12px; background: #fdecea; color: #7a1c14; font-size: .9rem; font-weight: 600; }
+.pl-faixa-fotos .bt { flex: none; }

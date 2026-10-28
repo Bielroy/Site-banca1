@@ -30,6 +30,7 @@ async function abrir(caminho, cenario = cenarioPadrao(), opcoes = {}) {
   if (opcoes.antes) await ctx.addInitScript(opcoes.antes);
   // fontes do Google: fora da rede de teste (a página tem de funcionar sem elas)
   await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  if (opcoes.rotas) await opcoes.rotas(ctx);
   const pagina = await ctx.newPage(), erros = [];
   pagina.on('pageerror', (e) => erros.push(e.message));
   pagina.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|net::ERR|favicon/i.test(m.text())) erros.push('console: ' + m.text()); });
@@ -336,6 +337,62 @@ teste('retirada na banca: sem a loja ligar, a escolha nem aparece; ligada, escon
   assert.deepStrictEqual([corpo.condominio, corpo.quadra, corpo.lote], ['', '', ''], 'nenhum endereço vai junto');
   assert.ok((await pagina.locator('#sucesso-entrega').innerText()).includes('Retirada na banca: Das 7h às 11h'));
   assert.strictEqual(await pagina.evaluate(() => localStorage.getItem('banca_endereco')), null, 'a retirada não grava endereço vazio no aparelho');
+  semErros(erros); await fechar();
+});
+
+teste('loja: foto que sumiu do ImgBB nunca aparece como a figura azul: usa a outra versão, e sem nenhuma o card fica sem foto', async () => {
+  const cen = cenarioPadrao();
+  cen.lojas.banca.produtos = { ...cen.lojas.banca.produtos,
+    hk: { nome: 'Heineken lata', preco: 8, unidade: 'un', cat: 'frutas', ativo: true, foto: 'https://i.ibb.co/q/hk.webp', fotoMini: 'https://i.ibb.co/q/hk-m.webp' },
+    al: { nome: 'Alho sal e cheiro verde', preco: 10, unidade: 'un', cat: 'frutas', ativo: true, foto: 'https://i.ibb.co/q/al.webp', fotoMini: 'https://i.ibb.co/q/al-m.webp' },
+  };
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==', 'base64');
+  const perdidas = ['q/hk.webp', 'q/al.webp', 'q/al-m.webp'], diretos = [];
+  const rotas = async (ctx) => {
+    await ctx.route('https://i.ibb.co/**', (r) => { diretos.push(r.request().url()); return r.fulfill({ status: 503, contentType: 'image/png', body: png }); });
+    await ctx.route('**/_vercel/image**', (r) => { const u = decodeURIComponent(new URL(r.request().url()).searchParams.get('url') || ''); return perdidas.some((x) => u.endsWith(x)) ? r.fulfill({ status: 502, body: 'fora' }) : r.fulfill({ status: 200, contentType: 'image/png', body: png }); });
+  };
+  const { pagina, erros, fechar } = await abrir('/', cen, { rotas, antes: () => { window.__REDUTOR_LOCAL = true; } });
+  const hk = cards(pagina).filter({ hasText: 'Heineken' }).first(), al = cards(pagina).filter({ hasText: 'Alho sal' }).first();
+  await hk.scrollIntoViewIfNeeded(); await al.scrollIntoViewIfNeeded();
+  await pagina.waitForFunction(() => { const i = [...document.querySelectorAll('#lista-produtos .produto-card')].find((c) => /Heineken/.test(c.textContent)).querySelector('img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 8000 });
+  assert.match(await hk.locator('img').getAttribute('src'), /hk-m\.webp/, 'a Heineken mostra a miniatura boa');
+  await pagina.waitForFunction(() => [...document.querySelectorAll('#lista-produtos .produto-card')].find((c) => /Alho sal/.test(c.textContent)).querySelector('img').style.visibility === 'hidden', null, { timeout: 8000 });
+  assert.deepStrictEqual(diretos, [], 'nenhuma foto do ImgBB foi aberta direto (era assim que a figura azul aparecia)');
+  semErros(erros); await fechar();
+});
+
+teste('painel: foto que sumiu do ImgBB aparece como "Foto fora do ar" (nunca a figura azul), e "Consertar" reenvia a partir da versão boa', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  cen.lojas.banca.produtos = { ...cen.lojas.banca.produtos,
+    hk: { nome: 'Heineken lata', preco: 8, unidade: 'un', cat: 'frutas', ativo: true, foto: 'https://i.ibb.co/q/hk.webp', fotoMini: 'https://i.ibb.co/q/hk-m.webp' },
+    al: { nome: 'Alho sal e cheiro verde', preco: 10, unidade: 'un', cat: 'frutas', ativo: true, foto: 'https://i.ibb.co/q/al.webp', fotoMini: 'https://i.ibb.co/q/al-m.webp' },
+  };
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==', 'base64');
+  const perdidas = ['q/hk.webp', 'q/al.webp', 'q/al-m.webp'];
+  const rotas = async (ctx) => {
+    await ctx.route('https://i.ibb.co/**', (r) => (perdidas.some((x) => r.request().url().endsWith(x)) ? r.fulfill({ status: 503, contentType: 'image/png', body: png }) : r.fulfill({ status: 200, contentType: 'image/png', body: png })));
+    await ctx.route('**/_vercel/image**', (r) => { const u = decodeURIComponent(new URL(r.request().url()).searchParams.get('url') || ''); return perdidas.some((x) => u.endsWith(x)) ? r.fulfill({ status: 502, body: 'fora' }) : r.fulfill({ status: 200, contentType: 'image/png', body: png }); });
+    await ctx.route('**/api/foto', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ url: 'https://i.ibb.co/novo/' + Date.now() + '.webp' }) }));
+  };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { rotas, antes: () => { window.__REDUTOR_LOCAL = true; }, contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.locator('.tab[data-aba="produtos"]').click();
+  // na lista: o Alho (as duas versões perdidas) vira "Foto fora do ar" e aparece a faixa para consertar
+  await pagina.waitForSelector('#lista-produtos .pl-fora-do-ar', { timeout: 8000 });
+  await pagina.waitForSelector('#pl-faixa-fotos [data-action="consertar-fotos"]', { timeout: 4000 });
+  await pagina.click('#pl-faixa-fotos [data-action="consertar-fotos"]');
+  await pagina.waitForSelector('#modal-conserto-fotos.aberto #cf-lista .ft-linha', { timeout: 8000 });
+  const nomes = await pagina.locator('#cf-lista .ft-nome').allInnerTexts();
+  assert.deepStrictEqual(nomes.sort(), ['Alho sal e cheiro verde', 'Heineken lata'], 'acha as duas: a Heineken (só a grande sumiu) e o Alho (sumiram as duas)');
+  const hk = pagina.locator('#cf-lista .ft-linha', { hasText: 'Heineken' }), al = pagina.locator('#cf-lista .ft-linha', { hasText: 'Alho' });
+  assert.strictEqual(await al.locator('[data-cf="usar"]').count(), 0, 'sem cópia: só "Escolher outra"');
+  await hk.locator('[data-cf="usar"]').click();
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /produtos\/hk$/.test(g.path) && /i\.ibb\.co\/novo\//.test(g.dados.foto || '') && /i\.ibb\.co\/novo\//.test(g.dados.fotoMini || '')), null, { timeout: 8000 });
+  await hk.locator('text=Consertada').waitFor({ timeout: 4000 });
+  // Alho: escolhe a foto de novo do computador
+  const [esc] = await Promise.all([pagina.waitForEvent('filechooser', { timeout: 4000 }), al.locator('[data-cf="outra"]').click()]);
+  await esc.setFiles({ name: 'alho.png', mimeType: 'image/png', buffer: png });
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /produtos\/al$/.test(g.path) && /novo/.test(g.dados.foto || '')), null, { timeout: 8000 });
   semErros(erros); await fechar();
 });
 
@@ -2070,6 +2127,46 @@ const cenarioAcai = () => {
   ] } };
   return cen;
 };
+
+// mede TODO texto visível dentro da janela aberta contra o fundo de verdade atrás dele (primeiro ancestral com fundo opaco)
+const textosIlegiveis = (pagina, sel) => pagina.evaluate((sel) => {
+  const lum = (c) => c.slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const cor = (s) => { const n = (s.match(/[\d.]+/g) || []).map(Number); return /^color\(srgb/.test(s) ? n.map((v, i) => (i < 3 ? v * 255 : v)) : n; };
+  const fundoDe = (el) => { for (let e = el; e; e = e.parentElement) { const c = cor(getComputedStyle(e).backgroundColor); if (c.length >= 3 && (c.length < 4 || c[3] > 0.85) && getComputedStyle(e).backgroundImage === 'none') return c; if (getComputedStyle(e).backgroundImage !== 'none' && e !== el) return null; } return [255, 255, 255]; };
+  const ruins = [];
+  document.querySelectorAll(`${sel} *`).forEach((el) => {
+    const txt = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join(' ').trim();
+    if (!txt || !el.getClientRects().length) return;
+    const cs = getComputedStyle(el); if (cs.visibility === 'hidden' || Number(cs.opacity) < 0.3) return;
+    const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return;
+    const f = fundoDe(el); if (!f) return;
+    const c = cor(cs.color), a = lum(c), b = lum(f), k = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    if (k < 3) ruins.push(`"${txt.slice(0, 30)}" ${k.toFixed(1)}`);
+  });
+  return ruins;
+}, sel);
+
+teste('tema de card escuro em página clara: as janelas do produto e do montar ficam legíveis (nome, tamanhos, quantidades)', async () => {
+  const cen = cenarioAcai();
+  cen.lojas.banca.ficha.tema = { primaria: '#1c201f', destaque: '#ffde59', fundo: '#fbf4e2', superficie: '#1c1d1f', texto: '#1c201f', botao: '#fbe27a', etiqueta: 'selo' };
+  const { pagina, erros, fechar } = await abrir('/', cen);
+  await cards(pagina).first().waitFor({ timeout: 8000 }); await pagina.waitForTimeout(500);
+  // produto comum
+  const comum = cards(pagina).filter({ hasNot: pagina.locator('text=Açaí') }).first();
+  await comum.locator('.produto-nome').click();
+  await pagina.waitForSelector('#modal-detalhe-produto.aberto', { timeout: 4000 }); await pagina.waitForTimeout(500);
+  if (process.env.FOTO) await pagina.screenshot({ path: '/tmp/moe/md.png' });
+  let ruins = await textosIlegiveis(pagina, '#modal-detalhe-produto .modal');
+  assert.ok(!ruins.length, 'texto ilegível na janela do produto: ' + ruins.join(' | '));
+  await pagina.keyboard.press('Escape'); await pagina.waitForTimeout(400);
+  // montar (tamanho)
+  await cards(pagina).filter({ hasText: 'Açaí' }).first().locator('.produto-nome').click();
+  await pagina.waitForSelector('.mt-overlay.aberto', { timeout: 4000 }); await pagina.waitForTimeout(500);
+  if (process.env.FOTO) await pagina.screenshot({ path: '/tmp/moe/mt.png' });
+  ruins = await textosIlegiveis(pagina, '.mt-overlay .mt-modal');
+  assert.ok(!ruins.length, 'texto ilegível na tela de montar: ' + ruins.join(' | '));
+  semErros(erros); await fechar();
+});
 
 teste('ajudante da pastelaria: fala do jeito da loja e a sugestão "Montar assim" abre a tela de montar já marcada', async () => {
   const cen = cenarioPadrao();

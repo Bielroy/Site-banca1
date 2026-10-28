@@ -32,6 +32,7 @@ const fotoPequena = (p, largura) => miniatura(p.fotoMini || p.foto, largura);
 // Foto do CARD: celular de tela nítida (a maioria) recebe 640 px, a partir da foto de 1000 px (e não da miniatura de 400 px,
 // que ainda passava por outra redução e ficava borrada). Tela comum continua com 384 px, mais leve.
 const fotoDoCard = (p) => { const nitida = (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) >= 1.75; return nitida ? miniatura(p.foto || p.fotoMini, 640) : fotoPequena(p, 384); };
+const reservaDoCard = (p) => { const nitida = (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) >= 1.75; return reservaDaFoto(p, nitida ? (p.foto || p.fotoMini) : (p.fotoMini || p.foto), 384); };
 import { emOferta, desconto, ofertasDe, precoDoDia } from './oferta-lib.js';
 import { codigoPix, pixDaLojaValido, chaveBonita } from './pix-chave-lib.js';
 import { listaValida, listaDoCarrinho, separar, mesmoConjunto, podeConvidarAvaliar, nomeDoDia, textoDaNota } from './atalhos-lib.js';
@@ -796,7 +797,7 @@ const cardHtml = (p, rapido = false, prioridade = false) => {
         return `
         <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : sec > -1 ? ` produto-card--secao${imersivo ? ' produto-card--imersivo' : ''}` : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(textoDeBusca(p, nomeDaCategoria(p.cat)))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : sec > -1 ? ` data-secao="${sec}"` : ''} style="display: flex;${pac ? ` order: ${ORDEM_PACOTES};` : tmp ? ` order: ${ORDEM_TEMPEROS};` : sec > -1 ? ` order: ${ordemDaSecao(sec) + 500}; ${varsDaSecao(secCor)}` : ''}">
             <div class="produto-img-wrap">
-                ${p.foto ? `<img src="${escapeHTML(fotoDoCard(p))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
+                ${p.foto ? `<img src="${escapeHTML(fotoDoCard(p))}"${reservaDoCard(p) ? ` data-reserva="${escapeHTML(reservaDoCard(p))}"` : ''} data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
                 ${pac ? `<span class="lacre-pacote">${ARTE_PACOTE}Pacote</span>${pesoDoPacote(p) ? `<span class="peso-pacote">${escapeHTML(pesoDoPacote(p))}</span>` : ''}` : ''}
                 ${tmp ? `<span class="lacre-tempero">${ARTE_POTE}Tempero</span>` : ''}
@@ -812,12 +813,20 @@ const cardHtml = (p, rapido = false, prioridade = false) => {
 };
 
 // Miniatura falhou (redutor fora do ar, site que não deixa copiar a foto)? Volta para a foto original.
+// Ordem: a outra versão da foto pelo redutor (data-reserva) → o endereço original. Foto do ImgBB NÃO vai direto: quando
+// o ImgBB perde o arquivo ele manda a figura azul "imgbb.com service unavailable", que o navegador mostraria como foto.
+// Sem saída, a foto some e fica o fundo do card (melhor que a figura de erro).
 document.addEventListener('error', (e) => {
     const img = e.target;
-    if (!(img instanceof HTMLImageElement) || !img.dataset.original) return;
+    if (!(img instanceof HTMLImageElement)) return;
+    if (img.dataset.reserva) { const r = img.dataset.reserva; delete img.dataset.reserva; img.src = r; return; }
+    if (!img.dataset.original) return;
     const original = img.dataset.original; delete img.dataset.original;
+    if (/^https:\/\/([a-z0-9-]+\.)*ibb\.co\//i.test(original)) { img.style.visibility = 'hidden'; return; }
     if (img.getAttribute('src') !== original) img.src = original;
 }, true);
+/** A outra versão da mesma foto pelo redutor (grande ↔ miniatura), para quando uma delas sumir. */
+const reservaDaFoto = (p, usada, largura) => { const outra = usada === p.foto ? p.fotoMini : p.foto; return outra && outra !== usada ? miniatura(outra, largura) : ''; };
 
 // As fotos de baixo da tela começam "preguiçosas" para a loja abrir rápido (o navegador já busca
 // sozinho as que estão chegando perto). As demais vêm em lotes só DEPOIS que a pessoa começa a
@@ -2334,7 +2343,10 @@ document.body.addEventListener('click', async (e) => {
                         atual.replaceWith(grande);
                     };
                     grande.onload = () => (grande.decode ? grande.decode().then(trocar, trocar) : trocar());
-                    grande.src = p.foto;
+                    // pelo redutor (828 px): direto do ImgBB, foto perdida chegava como a figura "service unavailable"
+                    // e tomava a tela; falhou, fica a do card
+                    const pelo = miniatura(p.foto, 828);
+                    grande.src = pelo;
                 }
             } else { delete img.dataset.original; img.removeAttribute('src'); img.style.visibility = 'hidden'; }
             img.alt = p.nome;
