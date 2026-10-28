@@ -1090,6 +1090,11 @@ teste('plataforma: "Montar cartaz" da loja: um por feira, o QR abre a LOJA dentr
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==', 'base64');
   await pagina.setInputFiles('[data-pf-cartaz-img="foto"]', { name: 'truck.png', mimeType: 'image/png', buffer: png });
   await pagina.waitForFunction(() => document.querySelector('#pf-cz-previa iframe').srcdoc.includes('src="data:image/jpeg;base64,'), null, { timeout: 4000 });
+  // o botão "Escolher do celular" abre mesmo a galeria (antes era um <label> com o campo escondido) e a folha continua respondendo
+  const [escolha] = await Promise.all([pagina.waitForEvent('filechooser', { timeout: 4000 }), pagina.click('[data-pf="cartaz-img-escolher"][data-img="logo"]')]);
+  await escolha.setFiles({ name: 'logo.png', mimeType: 'image/png', buffer: png });
+  await pagina.waitForFunction(() => /src="data:image\/(webp|png);base64,/.test(document.querySelector('#pf-cz-previa iframe').srcdoc), null, { timeout: 4000 });
+  assert.ok(await pagina.isEnabled('[data-pf="cartaz-img-escolher"][data-img="foto"]'), 'terminou de preparar: os botões voltam');
   // outra feira: link e topo trocam; os textos da primeira ficam guardados
   await pagina.selectOption('#pf-cz-feira', 'feira-do-lago');
   await pagina.waitForFunction(() => { const h = document.querySelector('#pf-cz-previa iframe').srcdoc; return h.includes('Feira do Lago') && h.includes('feira=feira-do-lago'); }, null, { timeout: 4000 });

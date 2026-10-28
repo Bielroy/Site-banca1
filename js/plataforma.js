@@ -368,8 +368,13 @@ async function agir(b) {
         }
         case 'cartaz-voltar': { const id = S.folha && S.folha.id; S.cartaz = null; return abrirFolha('loja', id); }
         case 'cartaz-padrao': CZ.voltarAoPadrao(S.cartaz); return pintarFolha();
-        case 'cartaz-img-loja': if (S.cartaz) { S.cartaz[b.dataset.img] = b.dataset.img === 'logo' ? S.cartaz.logoLoja : S.cartaz.fotoLoja; pintarFolha(); } return;
-        case 'cartaz-img-tirar': if (S.cartaz) { S.cartaz[b.dataset.img] = ''; pintarFolha(); } return;
+        case 'cartaz-img-escolher': {   // abre a galeria (o campo de arquivo fica escondido, mas não "display:none": alguns celulares não abrem)
+            const inp = b.closest('.pf-cz-img') && b.closest('.pf-cz-img').querySelector('input[type="file"]');
+            if (inp && S.cartaz && !S.cartaz.lendo) inp.click();
+            return;
+        }
+        case 'cartaz-img-loja': if (S.cartaz) { S.cartaz[b.dataset.img] = b.dataset.img === 'logo' ? S.cartaz.logoLoja : S.cartaz.fotoLoja; CZ.pintarImagem(S.cartaz, b.dataset.img); } return;
+        case 'cartaz-img-tirar': if (S.cartaz) { S.cartaz[b.dataset.img] = ''; CZ.pintarImagem(S.cartaz, b.dataset.img); } return;
         case 'cartaz-copiar-link': {
             if (!S.cartaz) return;
             try { await navigator.clipboard.writeText(CZ.linkDoCartaz(S.cartaz.lojaId, S.cartaz.fid)); showToast('Endereço copiado. É este que vai na fitinha NFC.'); }
@@ -565,9 +570,12 @@ function ligar() {
         if (t.id === 'pf-f-limite' && S.rascunho) { S.rascunho.horaLimite = t.value; marcarMudanca(); return; }
         if (t.hasAttribute('data-pf-cartaz-feira') && S.cartaz) { CZ.trocarFeira(S.cartaz, t.value); pintarFolha(); return; }
         if (t.dataset.pfCartazImg && S.cartaz) {
-            const k = t.dataset.pfCartazImg, st = S.cartaz, arq = t.files && t.files[0]; if (!arq) return;
-            try { const dado = await CZ.lerImagem(arq, k); if (S.cartaz === st) { st[k] = dado; pintarFolha(); } }
+            const k = t.dataset.pfCartazImg, st = S.cartaz, arq = t.files && t.files[0]; t.value = ''; if (!arq || st.lendo) return;
+            st.lendo = k; CZ.pintarImagem(st, k);
+            await new Promise((ok) => setTimeout(ok, 30));          // deixa o "Preparando…" aparecer antes do trabalho pesado
+            try { const dado = await CZ.lerImagem(arq, k); if (S.cartaz === st) st[k] = dado; }
             catch (err) { showToast((err && err.message) || 'Não consegui usar esta foto.', true); }
+            finally { st.lendo = ''; if (S.cartaz === st) CZ.pintarImagem(st, k); }
             return;
         }
         if (t.dataset.pfFLoja && S.rascunho) { if (t.checked) S.rascunho.lojas.add(t.dataset.pfFLoja); else S.rascunho.lojas.delete(t.dataset.pfFLoja); $('pf-f-n-lojas').textContent = S.rascunho.lojas.size; marcarMudanca(); return; }

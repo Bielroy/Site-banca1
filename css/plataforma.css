@@ -192,3 +192,5 @@ body.pf-ocupado .pf-bt { pointer-events: none; opacity: .7; }
 .pf-cz-aviso:empty { display: none; }
 label.pf-bt { cursor: pointer; }
 .pf-folha code { overflow-wrap: anywhere; }
+.pf-cz-arquivo { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; clip: rect(0 0 0 0); }
+.pf-cz-img { position: relative; }

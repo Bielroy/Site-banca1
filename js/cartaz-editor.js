@@ -86,14 +86,27 @@ const campo = (k, rotulo, st, extra = '') => `<label class="pf-rot" for="pf-cz-$
 <div class="pf-form-linha"><input type="text" id="pf-cz-${k}" data-pf-cartaz="${k}" value="${escapeHTML(st[k])}" autocomplete="off" ${extra}></div>`;
 const imagem = (k, rotulo, st) => {
     const atual = st[k], daLoja = k === 'logo' ? st.logoLoja : st.fotoLoja;
-    return `<div class="pf-cz-img"><div class="pf-cz-mini${k === 'logo' ? ' redonda' : ''}">${atual ? `<img src="${escapeHTML(atual)}" alt="">` : '<span>sem</span>'}</div>
+    const ocupado = st.lendo === k;
+    return `<div class="pf-cz-img" id="pf-cz-img-${k}"><div class="pf-cz-mini${k === 'logo' ? ' redonda' : ''}">${ocupado ? '<span>preparando…</span>' : atual ? `<img src="${escapeHTML(atual)}" alt="">` : '<span>sem</span>'}</div>
 <div><span class="pf-rot">${rotulo}</span><div class="pf-linha-bts">
-<label class="pf-bt mini">Escolher do celular<input type="file" accept="image/png,image/jpeg,image/webp" data-pf-cartaz-img="${k}" hidden></label>
+<button type="button" class="pf-bt mini" data-pf="cartaz-img-escolher" data-img="${k}"${st.lendo ? ' disabled' : ''}>${ocupado ? 'Preparando a foto…' : 'Escolher do celular'}</button>
+<input type="file" accept="image/*" class="pf-cz-arquivo" data-pf-cartaz-img="${k}" tabindex="-1" aria-hidden="true">
 ${daLoja && atual !== daLoja ? `<button type="button" class="pf-bt mini" data-pf="cartaz-img-loja" data-img="${k}">Usar a da loja</button>` : ''}
 ${atual ? `<button type="button" class="pf-bt mini" data-pf="cartaz-img-tirar" data-img="${k}">Tirar</button>` : ''}</div></div></div>`;
 };
 
 /** [título, corpo, pé] da folha do editor. */
+/** Redesenha só o quadrinho da logo ou da foto (e a prévia), sem refazer a folha inteira. */
+export function pintarImagem(st, k) {
+    const caixa = document.getElementById(`pf-cz-img-${k}`); if (!caixa || !st) return;
+    const rot = k === 'logo' ? 'Logo (no selo redondo)' : 'Foto (food truck, banca, produto)';
+    const novo = document.createElement('div'); novo.innerHTML = imagem(k, rot, st);
+    caixa.replaceWith(novo.firstElementChild);
+    const outra = document.getElementById(`pf-cz-img-${k === 'logo' ? 'foto' : 'logo'}`);
+    if (outra) outra.querySelectorAll('[data-pf="cartaz-img-escolher"]').forEach((b) => { b.disabled = !!st.lendo; });
+    pintarPrevia(st);
+}
+
 export function folhaCartaz(st, nomeLoja) {
     if (!st) return ['Cartaz', '<p class="pf-dica">Carregando os dados da loja…</p>', '<button type="button" class="pf-bt" data-pf="fechar-folha">Fechar</button>'];
     const c = conferir(st), link = linkDoCartaz(st.lojaId, st.fid);
@@ -118,7 +131,7 @@ ${campo('insta', 'Instagram (vazio: não aparece)', st, 'maxlength="40" placehol
 <small class="pf-dica pf-cz-aviso" id="pf-cz-aviso-insta">${escapeHTML(c.avisoInsta)}</small>
 </section>
 <section class="pf-sec">${imagem('logo', 'Logo (no selo redondo)', st)}${imagem('foto', 'Foto (food truck, banca, produto)', st)}
-<small class="pf-dica">A foto escolhida do celular vale só para este cartaz. Para trocar na loja, use Aparência no painel dela.</small></section>
+<small class="pf-dica">A foto escolhida do celular vale só para este cartaz. Para trocar na loja, use Aparência no painel dela. Se a foto da loja aparecer como "service unavailable" ou quebrada, é o site onde ela está guardada (ImgBB) que não entregou: escolha a foto do celular.</small></section>
 <section class="pf-sec"><span class="pf-rot">Prévia</span><div class="pf-cz-previa" id="pf-cz-previa"><iframe title="Prévia do cartaz" sandbox="" tabindex="-1"></iframe></div>
 ${Object.keys(st.mexido).length ? '<div class="pf-linha-bts"><button type="button" class="pf-bt mini" data-pf="cartaz-padrao">Voltar os textos ao da loja</button></div>' : ''}</section>`;
     const pe = `<button type="button" class="pf-bt" data-pf="cartaz-voltar">Voltar</button><button type="button" class="pf-bt pri" data-pf="cartaz-imprimir">Imprimir ou salvar PDF</button>`;
@@ -136,7 +149,7 @@ export function pintarPrevia(st, imediato) {
         fr.style.transform = `scale(${largura / 794})`;
         fr.srcdoc = htmlDoCartaz(st);
     };
-    if (imediato) fazer(); else tPrevia = setTimeout(fazer, 300);
+    if (imediato) fazer(); else tPrevia = setTimeout(fazer, 450);
 }
 
 /** Digitou num campo: guarda e atualiza só o que precisa (sem redesenhar a folha, o cursor não pula). */
@@ -153,19 +166,32 @@ export function digitou(st, k, valor) {
 export function trocarFeira(st, fid) { if (!st) return; st.fid = st.feiras.some((f) => f.id === fid) ? fid : ''; aplicarFeira(st); }
 export function voltarAoPadrao(st) { if (!st) return; try { localStorage.removeItem(CHAVE(st.lojaId, st.fid)); } catch (_) { /* tanto faz */ } aplicarFeira(st); }
 
-/** Foto escolhida no celular → reduzida (o PDF não fica pesado) → data: que só vive nesta página. */
+/** Foto escolhida no celular → reduzida (o PDF não fica pesado e o celular não engasga) → data: que só vive nesta página. */
 export async function lerImagem(arquivo, tipo) {
-    if (!arquivo || !/^image\//.test(arquivo.type || 'image/')) throw new Error('Escolha uma foto (JPG, PNG ou WEBP).');
-    if (arquivo.size > 25e6) throw new Error('Esta foto é grande demais. Escolha outra.');
-    const max = tipo === 'logo' ? 700 : 1400;
-    const url = URL.createObjectURL(arquivo);
+    if (!arquivo) throw new Error('Nenhuma foto escolhida.');
+    if (arquivo.type && !/^image\//.test(arquivo.type)) throw new Error('Escolha uma foto (JPG, PNG ou WEBP).');
+    if (arquivo.size > 40e6) throw new Error('Esta foto é grande demais. Escolha outra.');
+    const max = tipo === 'logo' ? 520 : 1200;
+    let fonte = null, w = 0, h = 0, fechar = () => {};
+    // createImageBitmap decodifica fora da tela principal (não trava o toque); sem ele, o <img> de sempre
+    if (typeof createImageBitmap === 'function') {
+        try { const bm = await createImageBitmap(arquivo); fonte = bm; w = bm.width; h = bm.height; fechar = () => bm.close && bm.close(); } catch (_) { fonte = null; }
+    }
+    let url = '';
+    if (!fonte) {
+        url = URL.createObjectURL(arquivo);
+        fonte = await new Promise((ok, falha) => { const i = new Image(); i.decoding = 'async'; i.onload = () => ok(i); i.onerror = () => falha(new Error('Não consegui abrir esta foto. Tente outra (JPG ou PNG).')); i.src = url; });
+        w = fonte.naturalWidth; h = fonte.naturalHeight;
+    }
     try {
-        const img = await new Promise((ok, falha) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => falha(new Error('Não consegui abrir esta foto. Tente outra (JPG ou PNG).')); i.src = url; });
-        const esc = Math.min(1, max / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
-        const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(img.naturalWidth * esc)); cv.height = Math.max(1, Math.round(img.naturalHeight * esc));
-        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-        const dado = tipo === 'logo' && arquivo.type === 'image/png' ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.86);
+        if (!w || !h) throw new Error('Não consegui abrir esta foto. Tente outra.');
+        const esc = Math.min(1, max / Math.max(w, h));
+        const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(w * esc)); cv.height = Math.max(1, Math.round(h * esc));
+        const g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(fonte, 0, 0, cv.width, cv.height);
+        // logo guarda o fundo transparente (webp, ou png onde não houver webp); foto vai em jpeg
+        let dado = tipo === 'logo' ? cv.toDataURL('image/webp', 0.9) : cv.toDataURL('image/jpeg', 0.84);
+        if (tipo === 'logo' && !dado.startsWith('data:image/webp')) dado = cv.toDataURL('image/png');
         if (!imagemDoCartaz(dado)) throw new Error('Não consegui usar esta foto. Tente outra.');
         return dado;
-    } finally { URL.revokeObjectURL(url); }
+    } finally { fechar(); if (url) URL.revokeObjectURL(url); }
 }
