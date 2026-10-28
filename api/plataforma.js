@@ -14,6 +14,7 @@
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
 //  POST { acao: 'campos', id, campos: { duracao: false, ... } }   campos do cadastro de produto (lib/campos.js)
 //  POST { acao: 'proprietario', id, email, remover? }
+//  POST { acao: 'link-entrada', id, email }                 gera o link de entrada no painel da loja SEM mandar e-mail (para mandar pelo WhatsApp)
 //  POST { acao: 'condominio', id?, nome, formato, remover? }  cadastro de condomínios da plataforma
 //  POST { acao: 'assinatura', id, valor, dia, obs }        mensalidade da banca (valor vazio = tira)
 //  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids], condominiosIds: [ids do cadastro], horaLimite: 'HH:MM', semFeira: ['AAAA-MM-DD'] }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
@@ -280,6 +281,24 @@ async function proprietario(req, res) {
   await definirDono(id, email, b.remover === true);
   return res.status(200).json({ sucesso: true });
 }
+// LINK DE ENTRADA SEM E-MAIL: o e-mail do Firebase sai como "project-829734263703", em inglês, e cai no spam.
+// No spam, o Gmail e o iCloud DESLIGAM os links (o "Sign in" fica preto, sem dar para tocar). Aqui o servidor gera
+// o mesmo link que iria no e-mail, sem enviar nada (também não gasta o limite de links por dia), e a plataforma
+// manda pelo WhatsApp. Só para quem já tem papel NESTA loja: não serve para abrir conta de ninguém.
+async function linkEntrada(req, res) {
+  const b = req.body || {}, id = String(b.id || ''), email = String(b.email || '').trim().toLowerCase(); await exigirLoja(id);
+  if (!emailValido(email)) throw falha(400, 'Confira o e-mail.');
+  let u = null;
+  try { u = await admin.auth().getUserByEmail(email); } catch (e) { if (e && e.code !== 'auth/user-not-found') throw e; }
+  const papel = u && u.customClaims && u.customClaims.tenants ? u.customClaims.tenants[id] : null;
+  const dono = u && id === T.TENANT_PADRAO && u.customClaims && u.customClaims.admin === true;
+  if (!u || u.disabled === true || (!T.PAPEIS.includes(papel) && !dono)) throw falha(400, 'Este e-mail não faz parte da equipe desta loja.');
+  const base = H.origensPermitidas().includes(req.headers && req.headers.origin) ? req.headers.origin : H.origensPermitidas()[0];
+  const url = `${base}/admin.html${id !== T.TENANT_PADRAO ? `?loja=${encodeURIComponent(id)}` : ''}`;
+  const link = await admin.auth().generateSignInWithEmailLink(email, { url, handleCodeInApp: true });
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(200).json({ sucesso: true, link, email });
+}
 // FEIRA = um dia (ou mais) da semana + as lojas que vão nesse dia. A mesma loja pode estar em várias
 // feiras (quarta num condomínio, sábado em outro); a loja mostra a faixa só da feira de HOJE.
 // Na ficha da loja:  feiras: [ids]  (a lista)  e  feiraId  (campo antigo, mantido para telas já abertas).
@@ -419,7 +438,7 @@ module.exports = async function handler(req, res) {
     try { await db.runTransaction(async (t) => { const r = db.collection('plataforma').doc('dono'), s = await t.get(r); if (!s.exists) t.set(r, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() }); }); donoRegistrado.add(dec.uid); }
     catch (e) { console.error('[plataforma] dono', e && e.message); }
   }
-  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), 'erro-estado': async () => res.status(200).json({ sucesso: true, ...(await Erros.marcarEstado(db, req.body, dec.email || dec.uid)) }), lojas: () => lojas(res), 'lojas-leve': () => lojasLeve(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), campos: () => campos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), asaas: () => asaas(req, res), 'asaas-carteira': () => asaasCarteira(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
+  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), 'erro-estado': async () => res.status(200).json({ sucesso: true, ...(await Erros.marcarEstado(db, req.body, dec.email || dec.uid)) }), lojas: () => lojas(res), 'lojas-leve': () => lojasLeve(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), campos: () => campos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), asaas: () => asaas(req, res), 'asaas-carteira': () => asaasCarteira(req, res), proprietario: () => proprietario(req, res), 'link-entrada': () => linkEntrada(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
   const nomeAcao = typeof (req.body || {}).acao === 'string' ? (req.body || {}).acao : '';
   const fn = Object.prototype.hasOwnProperty.call(acoes, nomeAcao) ? acoes[nomeAcao] : null;
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });
@@ -430,13 +449,14 @@ module.exports = async function handler(req, res) {
     const detalhe = nomeAcao === 'imgbb' || nomeAcao === 'pagbank' || nomeAcao === 'asaas' ? (String(b.chave || '').trim() ? 'chave gravada' : 'chave apagada')
       : nomeAcao === 'asaas-carteira' ? `carteira de ${String(b.id || '').slice(0, 40)} ${String(b.carteira || '').trim() ? 'gravada' : 'apagada'}`
       : nomeAcao === 'proprietario' ? `${alvo}: ${b.remover === true ? 'tirou' : 'definiu'} ${String(b.email || '').slice(0, 80)}`
+      : nomeAcao === 'link-entrada' ? `${alvo}: gerou link de entrada para ${String(b.email || '').slice(0, 80)}`
       : nomeAcao === 'ativo' ? `${alvo}: ${b.ativo === true ? 'liberou' : 'bloqueou'}`
       : nomeAcao === 'criar-loja' ? `${alvo} (${String(b.emailDono || 'sem dono').slice(0, 80)})`
       : nomeAcao === 'condominio' ? `${b.remover === true ? 'tirou' : b.id ? 'mudou' : 'cadastrou'} ${String(b.nome || b.id || '').slice(0, 60)}`
       : nomeAcao === 'erro-estado' ? `${String(b.assinatura || '').slice(0, 20)} ${b.estado === 'aberto' ? 'reaberto' : 'corrigido'}`
       : nomeAcao === 'assinatura' ? `${alvo}: ${String(b.valor == null ? '' : b.valor).trim() === '' ? 'sem mensalidade' : `R$ ${String(b.valor).slice(0, 12)}`}` : alvo;
     await anotar(`plataforma-${nomeAcao}`, detalhe);
-    if (['proprietario', 'pagbank', 'asaas', 'asaas-carteira', 'ativo'].includes(nomeAcao)) await P.alertar(db, T.TENANT_PADRAO, `plataforma-${nomeAcao}`, { titulo: 'Plataforma alterada', corpo: `${dec.email || 'O dono da plataforma'} mudou: ${nomeAcao} (${detalhe}).`, url: '/admin-plataforma' });
+    if (['proprietario', 'link-entrada', 'pagbank', 'asaas', 'asaas-carteira', 'ativo'].includes(nomeAcao)) await P.alertar(db, T.TENANT_PADRAO, `plataforma-${nomeAcao}`, { titulo: 'Plataforma alterada', corpo: `${dec.email || 'O dono da plataforma'} mudou: ${nomeAcao} (${detalhe}).`, url: '/admin-plataforma' });
   }
   try { return await fn(); }
   catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[plataforma]', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }

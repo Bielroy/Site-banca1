@@ -113,7 +113,7 @@ async function pedirLink(req, res) {
   if (!chave) return res.status(503).json({ error: 'Não consegui enviar agora.', codigo: 'sem-config' });
   try {
     const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(chave)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Referer: `${base}/` }, signal: AbortSignal.timeout(12000),
+      method: 'POST', headers: { 'Content-Type': 'application/json', Referer: `${base}/`, 'X-Firebase-Locale': 'pt-BR' }, signal: AbortSignal.timeout(12000),
       body: JSON.stringify({ requestType: 'EMAIL_SIGNIN', email, continueUrl: continuar, canHandleCodeInApp: true }),
     });
     if (!r.ok) {

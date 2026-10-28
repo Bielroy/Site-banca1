@@ -1104,6 +1104,32 @@ teste('painel: o dono da plataforma troca de loja pelo menu "Trocar de loja", co
   semErros(erros); await fechar();
 });
 
+teste('plataforma: "Link de entrada" do proprietário gera o link sem e-mail (o do Firebase cai no spam e lá não abre) e oferece copiar e mandar no WhatsApp', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
+  const guardadas = lojasDaPlataforma(2);
+  const { pagina, ctx, erros, fechar } = await abrir('/plataforma.html', cen, { antes: `try { localStorage.setItem('pf_aba', 'lojas'); } catch (_) {}` });
+  const pedidos = [];
+  const LINK = 'https://projeto.firebaseapp.com/__/auth/action?mode=signIn&oobCode=ABC123&continueUrl=https%3A%2F%2Fusebanca.com%2Fadmin.html%3Floja%3Dloja-1';
+  await ctx.route('**/api/plataforma', async (r) => {
+    const corpo = JSON.parse(r.request().postData() || '{}'); pedidos.push(corpo);
+    if (corpo.acao === 'lojas') return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ sucesso: true, lojas: guardadas.map((l) => ({ ...l, donos: ['cliente@icloud.com'], modulos: {}, campos: {}, mes: { receita: 0, pedidos: 0 } })), feiras: [], condominios: [], modelos: ['hortifruti'], modulos: {}, campos: {}, pix: false, fotos: false }) });
+    if (corpo.acao === 'link-entrada') return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ sucesso: true, link: LINK, email: corpo.email }) });
+    return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ sucesso: true }) });
+  });
+  await pagina.reload();
+  await pagina.waitForSelector('[data-pf="abrir-loja"][data-loja="loja-1"]', { timeout: 8000 });
+  await pagina.click('[data-pf="abrir-loja"][data-loja="loja-1"]');
+  await pagina.click('[data-pf="link-entrada"][data-email="cliente@icloud.com"]');
+  await pagina.waitForSelector('.pf-link-entrada', { timeout: 4000 });
+  const p = pedidos.find((x) => x.acao === 'link-entrada');
+  assert.deepStrictEqual({ id: p.id, email: p.email }, { id: 'loja-1', email: 'cliente@icloud.com' });
+  assert.strictEqual(await pagina.locator('.pf-link-entrada input').inputValue(), LINK);
+  const wa = await pagina.locator('.pf-link-entrada a[href^="https://wa.me/"]').getAttribute('href');
+  assert.ok(decodeURIComponent(wa).includes(LINK) && decodeURIComponent(wa).includes('cliente@icloud.com'), 'o WhatsApp leva o link e o e-mail');
+  assert.strictEqual(await pagina.locator('.pf-link-entrada [data-pf="copiar-texto"]').getAttribute('data-copiar'), LINK);
+  semErros(erros); await fechar();
+});
+
 teste('plataforma: "Cartaz com QR" de cada feira manda para a impressão o cartaz com o link DAQUELA feira', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
   const { pagina, erros, fechar } = await abrir('/plataforma.html', cen, { antes: () => { try { localStorage.setItem('pf_aba', 'feiras'); } catch (_) { /* segue */ } } });

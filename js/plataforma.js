@@ -243,7 +243,7 @@ function abrirFolha(tipo, id) {
 async function fecharFolha(forcar) {
     if (!forcar && S.ocupado) return showToast('Espere terminar de salvar.');
     if (!forcar && S.rascunho && S.rascunho.mudou && !(await confirmar('Sair sem salvar?', 'O que você mudou nesta feira vai se perder.', { ok: 'Sair sem salvar', nao: 'Continuar editando' }))) return;
-    S.folha = null; S.rascunho = null; S.cartaz = null;
+    S.folha = null; S.rascunho = null; S.cartaz = null; S.linkEntrada = null;
     const fundo = $('pf-folha'); fundo.classList.remove('aberto'); fundo.setAttribute('aria-hidden', 'true');
     if (!document.querySelector('.modal-overlay.aberto')) document.body.style.overflow = '';
 }
@@ -294,7 +294,7 @@ function folhaLoja(l) {
         <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="cartaz-abrir" data-loja="${escapeHTML(l.id)}">Montar cartaz com QR e fitinha NFC</button></div>
         <small class="pf-dica">Um cartaz para cada feira, nas cores da loja, com logo, foto, WhatsApp e Instagram. Dá para mudar tudo antes de imprimir.</small></section>
     <section class="pf-sec"><span class="pf-rot">Proprietários</span>
-        ${l.donos.length ? `<ul class="pf-donos">${l.donos.map((e) => `<li><span>${escapeHTML(e)}</span><button type="button" class="pf-bt mini" data-pf="tirar-dono" data-email="${escapeHTML(e)}" aria-label="Tirar ${escapeHTML(e)}">Tirar</button></li>`).join('')}</ul>` : `<p class="pf-dica">${l.original ? 'A conta antiga da banca continua valendo. Novos proprietários aparecem aqui.' : 'Ninguém ainda. Sem proprietário, ninguém abre o painel desta loja.'}</p>`}
+        ${l.donos.length ? `<ul class="pf-donos">${l.donos.map((e) => `<li><span>${escapeHTML(e)}</span><button type="button" class="pf-bt mini" data-pf="link-entrada" data-email="${escapeHTML(e)}" aria-label="Gerar link de entrada para ${escapeHTML(e)}">Link de entrada</button><button type="button" class="pf-bt mini" data-pf="tirar-dono" data-email="${escapeHTML(e)}" aria-label="Tirar ${escapeHTML(e)}">Tirar</button></li>`).join('')}</ul>${caixaLinkEntrada(l.id)}` : `<p class="pf-dica">${l.original ? 'A conta antiga da banca continua valendo. Novos proprietários aparecem aqui.' : 'Ninguém ainda. Sem proprietário, ninguém abre o painel desta loja.'}</p>`}
         <div class="pf-form-linha"><input type="email" id="pf-l-dono" inputmode="email" autocomplete="off" placeholder="E-mail do proprietário" aria-label="E-mail do novo proprietário"><button type="button" class="pf-bt" data-pf="dar-dono">Adicionar</button></div></section>
     ${l.original ? '' : `<section class="pf-sec"><label class="pf-rot" for="pf-l-tipo">Tipo de negócio</label><div class="pf-form-linha"><input type="text" id="pf-l-tipo" maxlength="30" autocomplete="off" value="${escapeHTML(NOMES_MODELO[l.tipo] || l.tipo || '')}" placeholder="Ex.: Padaria"><button type="button" class="pf-bt" data-pf="mudar-tipo">Salvar</button></div></section>`}
     <section class="pf-sec"><span class="pf-rot">Módulos ligados</span><small class="pf-dica">Muda na hora, ao tocar.</small>
@@ -304,6 +304,16 @@ function folhaLoja(l) {
     <section class="pf-sec"><span class="pf-rot">Feiras</span>${fs.length ? `<ul class="pf-mini-lista">${fs.map((f) => `<li>${escapeHTML(f.nome)}<small>${escapeHTML(diasEmTexto(f.dias))}</small></li>`).join('')}</ul>` : '<p class="pf-dica">Não está em nenhuma feira.</p>'}<small class="pf-dica">Para colocar ou tirar de uma feira, use a aba Feiras.</small></section>
     <section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt${l.ativo ? ' perigo' : ' pri'}" data-pf="${l.ativo ? 'bloquear' : 'liberar'}">${l.ativo ? 'Bloquear a loja' : 'Liberar a loja'}</button><small class="pf-dica">Bloqueada, a loja para de receber pedidos e some das feiras, e o painel dela fecha com o aviso "Sua assinatura foi interrompida por falta de pagamento. Pague e volte a usar", mostrando a mensalidade. Nada se perde: ao liberar, tudo volta.</small></section>`;
     return [l.nome, corpo, '<button type="button" class="pf-bt" data-pf="fechar-folha">Fechar</button>'];
+}
+
+// Link de entrada gerado na hora (o e-mail do Firebase cai no spam e lá o link não abre): copiar ou mandar no WhatsApp.
+function caixaLinkEntrada(lojaId) {
+    const k = S.linkEntrada;
+    if (!k || k.lojaId !== lojaId) return '';
+    const texto = `Seu link para entrar no painel da loja (vale uma vez só, abra no celular): ${k.link}\nSe pedir, confirme o e-mail ${k.email}.`;
+    return `<div class="pf-link-entrada" role="status"><b>Link de entrada de ${escapeHTML(k.email)}</b><small class="pf-dica">Vale uma vez só e por pouco tempo. Mande agora. Se a pessoa abrir e o site pedir, ela confirma o e-mail dela.</small>
+        <input type="text" readonly value="${escapeHTML(k.link)}" aria-label="Link de entrada">
+        <div class="pf-form-linha"><button type="button" class="pf-bt" data-pf="copiar-texto" data-copiar="${escapeHTML(k.link)}">Copiar</button><a class="pf-bt pri" href="https://wa.me/?text=${encodeURIComponent(texto)}" target="_blank" rel="noopener">Mandar no WhatsApp</a></div></div>`;
 }
 
 function folhaNovaLoja() {
@@ -441,6 +451,13 @@ async function agir(b) {
             const email = $('pf-l-dono').value.trim().toLowerCase();
             if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return showToast('Confira o e-mail.', true);
             return fazer({ acao: 'proprietario', id: lojaId, email }, `${email} agora é proprietário de ${loja.nome}.`);
+        }
+        case 'link-entrada': {
+            if (S.ocupado) return; S.ocupado = true; b.disabled = true;
+            try { const r = await api({ acao: 'link-entrada', id: lojaId, email: b.dataset.email }); S.linkEntrada = { lojaId, email: r.email, link: r.link }; pintarFolha(); document.querySelector('.pf-link-entrada')?.scrollIntoView({ block: 'nearest' }); }
+            catch (e) { showToast(e.message, true); }
+            finally { S.ocupado = false; b.disabled = false; }
+            return;
         }
         case 'tirar-dono': {
             if (!(await confirmar('Tirar o proprietário?', `${b.dataset.email} deixa de abrir o painel de ${loja.nome}.`, { ok: 'Tirar', nao: 'Voltar' }))) return;

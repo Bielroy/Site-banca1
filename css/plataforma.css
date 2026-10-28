@@ -194,3 +194,9 @@ label.pf-bt { cursor: pointer; }
 .pf-folha code { overflow-wrap: anywhere; }
 .pf-cz-arquivo { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; clip: rect(0 0 0 0); }
 .pf-cz-img { position: relative; }
+
+/* link de entrada gerado na hora (aba Lojas → proprietário) */
+.pf-link-entrada { display: grid; gap: 8px; margin: 4px 0 10px; padding: 12px; border-radius: 12px; background: color-mix(in srgb, #25d366 10%, #fff); border: 1.5px solid color-mix(in srgb, #25d366 45%, #fff); }
+.pf-link-entrada input { width: 100%; min-width: 0; font-size: .8rem; }
+.pf-link-entrada a.pf-bt { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+.pf-donos li .pf-bt.mini + .pf-bt.mini { margin-left: -2px; }
