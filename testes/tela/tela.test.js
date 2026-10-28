@@ -1062,14 +1062,14 @@ teste('plataforma: "Cartaz com QR e fitinha NFC" da loja usa o nome, as cores, a
   await pagina.evaluate(() => { window.print = () => {}; new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.tagName === 'IFRAME' && n.srcdoc) window.__cartaz = n.srcdoc; }))).observe(document.body, { childList: true }); });
   await pagina.click('[data-pf="abrir-loja"][data-loja="banca"]');
   await pagina.waitForSelector('[data-pf="cartaz-loja"]', { timeout: 5000 });
-  await pagina.click('[data-pf="cartaz-loja"]');
+  await pagina.click('[data-pf="cartaz-loja"][data-feira="feira-do-bairro"]');
   await pagina.waitForFunction(() => !!window.__cartaz, null, { timeout: 5000 });
   const html = await pagina.evaluate(() => window.__cartaz);
   assert.ok(html.includes('Pastel Moe Coe') && html.includes('desde 1968'), 'nome e frase da loja');
   assert.ok(html.includes('#ffde59') && html.includes('#1c201f'), 'as cores da loja (amarelo e preto)');
   assert.ok(html.includes('src="https://img.exemplo.test/logo.png"') && html.includes('src="https://img.exemplo.test/truck.jpg"'), 'a logo e a foto (food truck) da loja');
   assert.ok(/aria-label="QR Code: [^"]*"/.test(html) && html.includes('<path fill="#1c201f" d="M'), 'QR desenhado na cor da loja');
-  assert.ok(html.includes('Feira do Bairro') && html.includes('Feira do Lago'), 'mostra onde a loja atende (feira/condomínio)');
+  assert.ok(html.includes('Feira do Bairro') && !html.includes('Feira do Lago') && html.includes('feira-do-bairro'), 'um cartaz por feira: o da Feira do Bairro leva ao link dela');
   assert.ok(html.includes('parte de trás') && html.includes('NFC'), 'explica como encostar o celular na fitinha');
   semErros(erros); await fechar();
 });

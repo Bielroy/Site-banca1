@@ -58,8 +58,6 @@ function semanaHtml(dias, editavel) {
 }
 const lojaPorId = (id) => (S.dados.lojas || []).find((l) => l.id === id);
 const feirasDaLoja = (id) => (S.dados.feiras || []).filter((f) => f.lojas.includes(id));
-/** O que vai na pílula do alto do cartaz da loja: as feiras onde ela está (a pessoa pode trocar o texto). */
-const localDoCartaz = (id) => [...new Set(feirasDaLoja(id).flatMap((f) => (f.condominios && f.condominios.length ? f.condominios : [f.nome])).filter(Boolean))].slice(0, 3).join(' · ');
 const feirasDoCond = (cid) => (S.dados.feiras || []).filter((f) => (f.condominiosIds || []).includes(cid));
 const ponto = (cor) => `<i class="pf-ponto" style="background:${corOk(cor)}" aria-hidden="true"></i>`;
 
@@ -291,11 +289,10 @@ function folhaLoja(l) {
     <section class="pf-sec pf-loja-cab">${ponto(l.cor)}<div><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.id)}${l.original ? ', loja original' : ''}</small></div><span class="pf-selo${l.ativo ? ' ok' : ' bloq'}">${l.ativo ? 'Ativa' : 'Bloqueada'}</span></section>
     <section class="pf-sec"><p class="pf-mes">${l.mes ? `Neste mês: <b>${fmt(l.mes.receita)}</b> em <b>${l.mes.pedidos}</b> pedidos.` : 'Sem leitura do movimento deste mês.'}${l.assinatura ? ` Mensalidade: <b>${fmt(l.assinatura.valor)}</b>${l.assinatura.dia ? `, dia ${l.assinatura.dia}` : ''}.` : ' Sem mensalidade (defina na aba Mensalidades).'}</p>
         <div class="pf-linha-bts"><a class="pf-bt" href="${urlDaLoja(l.id, './')}" target="_blank" rel="noopener">Ver a loja</a><a class="pf-bt" href="${urlDaLoja(l.id, '/admin')}">Abrir o painel</a></div>
-        <label class="pf-rot" for="pf-cartaz-local">Local que aparece no topo do cartaz</label>
-        <div class="pf-form-linha"><input type="text" id="pf-cartaz-local" maxlength="50" autocomplete="off" value="${escapeHTML(localDoCartaz(l.id))}" placeholder="Ex.: Feira do Atena"></div>
-        <label class="pf-rot" for="pf-cartaz-dest">Para onde o QR e a fitinha levam</label>
-        <div class="pf-form-linha"><select id="pf-cartaz-dest" aria-label="Destino do QR">${feirasDaLoja(l.id).map((f) => `<option value="${escapeHTML(f.id)}">Feira: ${escapeHTML(f.nome)} (todas as lojas da feira)</option>`).join('')}<option value="">Só a loja ${escapeHTML(l.nome)}</option></select></div>
-        <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="cartaz-loja" data-loja="${escapeHTML(l.id)}">Cartaz com QR e fitinha NFC</button></div>
+        <span class="pf-rot">Cartaz da loja (um para cada feira)</span>
+        <div class="pf-linha-bts" style="flex-direction:column;align-items:stretch">${fs.map((f) => `<button type="button" class="pf-bt" data-pf="cartaz-loja" data-loja="${escapeHTML(l.id)}" data-feira="${escapeHTML(f.id)}">Cartaz da ${escapeHTML(f.nome)}</button>`).join('')}<button type="button" class="pf-bt" data-pf="cartaz-loja" data-loja="${escapeHTML(l.id)}" data-feira="">Cartaz só da loja (sem feira)</button></div>
+        <label class="pf-rot" for="pf-cartaz-local">Texto no topo do cartaz (opcional)</label>
+        <div class="pf-form-linha"><input type="text" id="pf-cartaz-local" maxlength="50" autocomplete="off" placeholder="Em branco: o nome da feira. Ex.: Feira Atenas"></div>
         <small class="pf-dica">Cartaz A4 nas cores, na logo e com a foto de capa da loja (Aparência), com o QR que abre esta loja, o passo a passo da fitinha e o WhatsApp e Instagram da loja (Configurações).</small></section>
     <section class="pf-sec"><span class="pf-rot">Proprietários</span>
         ${l.donos.length ? `<ul class="pf-donos">${l.donos.map((e) => `<li><span>${escapeHTML(e)}</span><button type="button" class="pf-bt mini" data-pf="tirar-dono" data-email="${escapeHTML(e)}" aria-label="Tirar ${escapeHTML(e)}">Tirar</button></li>`).join('')}</ul>` : `<p class="pf-dica">${l.original ? 'A conta antiga da banca continua valendo. Novos proprietários aparecem aqui.' : 'Ninguém ainda. Sem proprietário, ninguém abre o painel desta loja.'}</p>`}
@@ -367,11 +364,10 @@ async function agir(b) {
             const l = lojaPorId(b.dataset.loja); if (!l) return;
             try {
                 let ficha = {}; try { const sn = await getDoc(doc(db, 'tenants', l.id)); if (sn.exists()) ficha = sn.data() || {}; } catch (_) { /* sem a ficha: sai com as cores padrão */ }
-                const campoLocal = document.getElementById('pf-cartaz-local'), local = (campoLocal ? campoLocal.value : localDoCartaz(l.id)).trim();
+                const campoLocal = document.getElementById('pf-cartaz-local'), fid = b.dataset.feira || '', fe = feirasDaLoja(l.id).find((f) => f.id === fid), local = ((campoLocal && campoLocal.value.trim()) || (fe ? fe.nome : '')).trim();
                 let config = {}; try { const sn = await getDoc(doc(db, 'tenants', l.id, 'loja', 'config')); if (sn.exists()) config = sn.data() || {}; } catch (_) { /* sem contato: o cartaz sai sem a faixa */ }
                 const ct = contatoDaLoja(config, l.nome);
-                const dest = document.getElementById('pf-cartaz-dest'), fid = dest ? dest.value : '';
-                const link = fid ? linkDaFeira(fid) : new URL(urlDaLoja(l.id, '/'), location.href).href;
+                                const link = fid ? linkDaFeira(fid) : new URL(urlDaLoja(l.id, '/'), location.href).href;
                 const [{ cartazLojaHtml }, { imprimirPagina }] = await Promise.all([import('./cartaz-lib.js'), import('./impressao.js')]);
                 await imprimirPagina(cartazLojaHtml({ loja: { nome: ficha.nome || l.nome, subtitulo: ficha.subtitulo || '', tema: ficha.tema || {}, whatsapp: ct.whatsapp, instagram: ct.instagram }, condominios: local ? [local] : [], link }));
                 showToast('Cartaz pronto. Para guardar, escolha "Salvar como PDF".');
