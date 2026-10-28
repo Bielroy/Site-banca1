@@ -10,7 +10,7 @@
 //  Só aceita as mesmas larguras e os mesmos sites de fotos do vercel.json (um teste confere).
 //  Qualquer outro endereço é recusado: sem isso este caminho serviria de "abridor de qualquer site".
 // =====================================================================
-export const LARGURAS = [128, 384, 828];
+export const LARGURAS = [128, 384, 640, 828];
 export const SITES_DE_FOTO = [
   { host: 'i.ibb.co' }, { sufixo: '.ibb.co' }, { host: 'firebasestorage.googleapis.com' }, { sufixo: '.firebasestorage.app' }, { host: 'storage.googleapis.com' },
 ];
@@ -39,7 +39,7 @@ export const precisaDeReserva = (r) => {
 /** Miniatura pelo wsrv.nl (redutor público e gratuito). Só para os mesmos sites de foto. null = não deu. */
 export async function reduzirPorFora(url, largura) {
   try {
-    const r = await fetch(`https://wsrv.nl/?url=${encodeURIComponent(url)}&w=${largura}&q=75&output=webp&we`, { redirect: 'follow', cf: { cacheEverything: true, cacheTtl: GUARDAR } });
+    const r = await fetch(`https://wsrv.nl/?url=${encodeURIComponent(url)}&w=${largura}&q=80&output=webp&we`, { redirect: 'follow', cf: { cacheEverything: true, cacheTtl: GUARDAR } });
     const tipo = r.headers.get('content-type') || '';
     if (!r.ok || !/^image\//i.test(tipo)) return null;
     const n = Number(r.headers.get('content-length'));
@@ -63,7 +63,7 @@ export async function onRequestGet({ request }) {
 
   let r;
   try {
-    r = await fetch(foto.href, { redirect: 'follow', cf: { image: { width: largura, quality: 75, format: 'webp', fit: 'scale-down' }, cacheEverything: true, cacheTtl: GUARDAR } });
+    r = await fetch(foto.href, { redirect: 'follow', cf: { image: { width: largura, quality: 80, format: 'webp', fit: 'scale-down' }, cacheEverything: true, cacheTtl: GUARDAR } });
   } catch (_) { return recusa(502, 'Não consegui buscar a foto.'); }
   let tipo = r.headers.get('content-type') || '';
   if (!r.ok || !/^image\//i.test(tipo)) return recusa(r.ok ? 415 : 502, 'A foto não está disponível.');

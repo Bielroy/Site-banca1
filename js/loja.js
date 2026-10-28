@@ -29,6 +29,9 @@ import { miniatura } from './foto-lib.js';
 // (fotoMini, das fotos enviadas pelo painel novo) ia direto ao i.ibb.co, e em algumas operadoras/redes esse endereço
 // não abre: a loja da Lúcia ficou sem nenhuma foto. Se o redutor falhar, a foto original entra (data-original).
 const fotoPequena = (p, largura) => miniatura(p.fotoMini || p.foto, largura);
+// Foto do CARD: celular de tela nítida (a maioria) recebe 640 px, a partir da foto de 1000 px (e não da miniatura de 400 px,
+// que ainda passava por outra redução e ficava borrada). Tela comum continua com 384 px, mais leve.
+const fotoDoCard = (p) => { const nitida = (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) >= 1.75; return nitida ? miniatura(p.foto || p.fotoMini, 640) : fotoPequena(p, 384); };
 import { emOferta, desconto, ofertasDe, precoDoDia } from './oferta-lib.js';
 import { codigoPix, pixDaLojaValido, chaveBonita } from './pix-chave-lib.js';
 import { listaValida, listaDoCarrinho, separar, mesmoConjunto, podeConvidarAvaliar, nomeDoDia, textoDaNota } from './atalhos-lib.js';
@@ -793,7 +796,7 @@ const cardHtml = (p, rapido = false, prioridade = false) => {
         return `
         <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : sec > -1 ? ` produto-card--secao${imersivo ? ' produto-card--imersivo' : ''}` : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(textoDeBusca(p, nomeDaCategoria(p.cat)))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : sec > -1 ? ` data-secao="${sec}"` : ''} style="display: flex;${pac ? ` order: ${ORDEM_PACOTES};` : tmp ? ` order: ${ORDEM_TEMPEROS};` : sec > -1 ? ` order: ${ordemDaSecao(sec) + 500}; ${varsDaSecao(secCor)}` : ''}">
             <div class="produto-img-wrap">
-                ${p.foto ? `<img src="${escapeHTML(fotoPequena(p, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
+                ${p.foto ? `<img src="${escapeHTML(fotoDoCard(p))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
                 ${pac ? `<span class="lacre-pacote">${ARTE_PACOTE}Pacote</span>${pesoDoPacote(p) ? `<span class="peso-pacote">${escapeHTML(pesoDoPacote(p))}</span>` : ''}` : ''}
                 ${tmp ? `<span class="lacre-tempero">${ARTE_POTE}Tempero</span>` : ''}

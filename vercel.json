@@ -148,6 +148,7 @@
     "sizes": [
       128,
       384,
+      640,
       828
     ],
     "remotePatterns": [
