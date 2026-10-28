@@ -221,7 +221,8 @@ module.exports = async function handler(req, res) {
   // ENCERRAR O PRÓPRIO LOGIN EM TODOS OS APARELHOS (celular perdido, computador emprestado). Qualquer pessoa da equipe.
   if ((req.body || {}).acao === 'sair-de-tudo') {
     if (!T.temPapel(dec, tid, T.PAPEIS)) return res.status(403).json({ error: 'Esta conta não faz parte da equipe desta loja.' });
-    try { await admin.auth().revokeRefreshTokens(dec.uid); await anotar(req, tid, dec, 'sair-de-tudo', ''); return res.status(200).json({ sucesso: true }); }
+    // as chaves de Face ID/digital (api/passkey.js) também saem: celular perdido não entra de novo sozinho
+    try { await admin.auth().revokeRefreshTokens(dec.uid); const pk = await require('../lib/passkey').apagarDaConta(db, dec.uid).catch(() => 0); await anotar(req, tid, dec, 'sair-de-tudo', pk ? `e ${pk} aparelho(s) com Face ID/digital` : ''); return res.status(200).json({ sucesso: true }); }
     catch (e) { console.error('[equipe] sair', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
   }
   // Avisos de pedido novo neste aparelho: qualquer pessoa da equipe que vê os pedidos pode ligar o seu.

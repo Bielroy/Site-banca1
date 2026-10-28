@@ -20,9 +20,9 @@ const conta = C.conta || { uid: 'cli-anonimo', isAnonymous: true, claims: {} };
 const usuario = { uid: conta.uid, email: conta.email || null, isAnonymous: !!conta.isAnonymous, emailVerified: !conta.isAnonymous,
   getIdToken: async () => 'token-' + conta.uid, getIdTokenResult: async () => ({ claims: { email_verified: !conta.isAnonymous, ...(conta.claims || {}) } }) };
 export const db = {}, storage = {};
-export const auth = { currentUser: usuario };
+export const auth = { currentUser: C.semLogin ? null : usuario };
 export const collection = (_d, ...p) => ({ path: p.join('/'), tipo: 'colecao' }), doc = (_d, ...p) => ({ path: p.join('/'), tipo: 'doc' });
-export const onAuthStateChanged = (a, fn) => { setTimeout(() => fn(usuario), 0); return nada; };
+export const onAuthStateChanged = (a, fn) => { window.__aoLogin = fn; setTimeout(() => fn(C.semLogin ? null : usuario), 0); return nada; };
 export const signInAnonymously = async () => ({ user: usuario });
 const lojaDe = (p) => { const m = /^tenants\\/([^/]+)\\/(.+)$/.exec(p); return m ? { loja: m[1], resto: m[2] } : { loja: 'banca', resto: p }; };
 const L = (id) => (C.lojas || {})[id] || null;
@@ -71,6 +71,7 @@ export const deleteDoc = async () => {}, addDoc = async () => ({ id: 'novo' }), 
 export const where = (campo, op, valor) => (op === '>' ? { campo, op, valor, __w: true } : undefined);
 export const query = (r, ...f) => { const filtros = f.filter((x) => x && x.__w); return filtros.length ? { ...r, filtros } : r; }, orderBy = nada, limit = nada, startAfter = nada;
 export const writeBatch = () => ({ set: (ref, dados) => { (window.__gravados = window.__gravados || []).push({ path: ref.path, dados, lote: true }); }, update: nada, delete: nada, commit: async () => {} });
+export const signInWithCustomToken = async (_a, t) => { window.__tokenCustom = t; return { user: usuario }; };
 export const sendSignInLinkToEmail = async () => {}, isSignInWithEmailLink = () => false, signInWithEmailLink = async () => {}, signOut = async () => {}, deleteField = () => null, serverTimestamp = () => new Date().toISOString(), increment = (n) => n;
 export const ref = nada, uploadBytes = nada, getDownloadURL = async () => '', terminate = async () => {}, clearIndexedDbPersistence = async () => {};
 `;

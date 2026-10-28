@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously } from "firebase/auth";
+import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously, signInWithCustomToken } from "firebase/auth";
 import { 
     initializeFirestore, 
     persistentLocalCache, 
@@ -41,6 +41,6 @@ export {
     app, db, auth,
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
     query, orderBy, limit, writeBatch, where, updateDoc, deleteField,
-    sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously,
+    sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously, signInWithCustomToken,
     terminate, clearIndexedDbPersistence
 };

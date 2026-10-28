@@ -45,9 +45,14 @@
             <div class="toldo" aria-hidden="true"></div>
             <h2>Painel da loja</h2>
             <p class="login-sub">Entre com o e-mail cadastrado na equipe da loja.</p>
+            <!-- Face ID / digital (js/admin-passkey.js): só aparece em aparelho que tem -->
+            <div id="login-passkey" class="login-passkey" hidden>
+                <button type="button" class="btn-passkey" id="btn-passkey"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9v1.5M15 9v1.5M12 9v4h-1M9.5 15.5a3.5 3.5 0 0 0 5 0"/></svg>Entrar com Face ID ou digital</button>
+                <p class="login-ou"><span>ou receba um link no e-mail</span></p>
+            </div>
             <div class="form-group">
                 <label for="email">Seu e-mail</label>
-                <input type="email" id="email" placeholder="admin@exemplo.com" autocomplete="email">
+                <input type="email" id="email" name="email" placeholder="admin@exemplo.com" autocomplete="username webauthn" inputmode="email" autocapitalize="none" spellcheck="false">
             </div>
             <button class="btn-outline" style="background: var(--forest); color: white; width: 100%; padding: 14px;" id="btn-login">Receber link de acesso</button>
             <p id="login-msg" class="login-msg"></p>

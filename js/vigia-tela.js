@@ -254,7 +254,7 @@ export function verificarTela() {
     const fotos = [...document.querySelectorAll('.produto-img-wrap img')].filter((i) => i.complete && i.getAttribute('src'));
     const abriram = fotos.filter((i) => i.naturalWidth > 0).length;
     if (navigator.onLine !== false && abriram > 0) {
-        for (const img of fotos) if (img.naturalWidth === 0 && !img.dataset.original && visivel(img.closest('.produto-card') || img)) anotar('foto-quebrada', img, 'não abriu');
+        for (const img of fotos) if (img.naturalWidth === 0 && !img.dataset.original && visivel(img.closest('.produto-card') || img)) anotar('foto-quebrada', img, img.dataset.foraDoAr ? 'sumiu do ImgBB: a loja troca no painel, em Produtos → "Conferir fotos fora do ar"' : 'não abriu');
     }
     return [...achados.values()];
 }

@@ -359,6 +359,7 @@ teste('loja: foto que sumiu do ImgBB nunca aparece como a figura azul: usa a out
   assert.match(await hk.locator('img').getAttribute('src'), /hk-m\.webp/, 'a Heineken mostra a miniatura boa');
   await pagina.waitForFunction(() => [...document.querySelectorAll('#lista-produtos .produto-card')].find((c) => /Alho sal/.test(c.textContent)).querySelector('img').style.visibility === 'hidden', null, { timeout: 8000 });
   assert.deepStrictEqual(diretos, [], 'nenhuma foto do ImgBB foi aberta direto (era assim que a figura azul aparecia)');
+  assert.ok(await al.locator('.produto-img-wrap').evaluate((w) => w.classList.contains('foto-fora-do-ar') && /svg/.test(getComputedStyle(w).backgroundImage)), 'no lugar do buraco, o fundo de "sem foto"');
   semErros(erros); await fechar();
 });
 
@@ -695,6 +696,28 @@ teste('loja desligada pela plataforma avisa "fora do ar" e não mostra produto',
   const { pagina, erros, fechar } = await abrir('/?loja=loja-off');
   await pagina.waitForFunction(() => /fora do ar/i.test(document.getElementById('lista-produtos').innerText), null, { timeout: 8000 });
   assert.ok(!(await pagina.locator('#lista-produtos').innerText()).includes('Não devia aparecer'));
+  semErros(erros.filter((e) => !/permission|permiss/i.test(e))); await fechar();
+});
+
+teste('loja BLOQUEADA aberta por quem é da plataforma (o banco libera a vitrine para a equipe): mesmo assim mostra "fora do ar" e some a sacola', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
+  cen.lojas['paes-da-lucia'].ficha = { ...cen.lojas['paes-da-lucia'].ficha, ativo: false };
+  const { pagina, erros, fechar } = await abrir('/?loja=paes-da-lucia', cen);
+  await pagina.waitForFunction(() => /fora do ar/i.test(document.getElementById('lista-produtos').innerText), null, { timeout: 8000 });
+  await pagina.waitForTimeout(800);       // os produtos chegam depois e não podem apagar o aviso
+  assert.ok(!(await pagina.locator('#lista-produtos').innerText()).includes('Pão francês'), 'nenhum produto à venda');
+  assert.ok(/fora do ar/i.test(await pagina.locator('#lista-produtos').innerText()), 'o aviso continua');
+  assert.ok(!(await pagina.locator('#btn-carrinho-mobile').isVisible()), 'sem botão de sacola');
+  semErros(erros.filter((e) => !/permission|permiss/i.test(e))); await fechar();
+});
+
+teste('cliente da feira que cai numa banca BLOQUEADA (link da feira, última banca usada) vai para outra banca ativa da mesma feira', async () => {
+  const cen = cenarioPadrao();
+  cen.lojas['paes-da-lucia'].ficha = { ...cen.lojas['paes-da-lucia'].ficha, ativo: false };
+  const { pagina, erros, fechar } = await abrir('/?loja=paes-da-lucia&feira=florenca', cen);
+  await pagina.waitForURL((u) => !/paes-da-lucia/.test(u.href) && /feira=florenca/.test(u.href), { timeout: 8000 });
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  assert.ok(/Banca Adair/.test(await pagina.locator('#header-nome').innerText()), 'abriu a outra banca da feira');
   semErros(erros.filter((e) => !/permission|permiss/i.test(e))); await fechar();
 });
 
@@ -1101,6 +1124,61 @@ teste('painel: o dono da plataforma troca de loja pelo menu "Trocar de loja", co
   await pagina.fill('.menu-bancas-busca', '');
   assert.ok((await pagina.locator('.menu-bancas-lista a[aria-current]').innerText()).includes('Banca Adair'), 'a loja aberta fica marcada');
   assert.ok((await pagina.locator('.menu-bancas-lista').innerText()).includes('(bloqueada)'), 'loja bloqueada aparece marcada');
+  semErros(erros); await fechar();
+});
+
+// Face ID/digital de mentira: o navegador "tem" e responde como um iPhone (o servidor confere a assinatura de verdade: testes/index.js)
+const faceIdFalso = () => {
+  const buf = (s) => new TextEncoder().encode(s).buffer;
+  window.PublicKeyCredential = function () {};
+  window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = async () => true;
+  window.PublicKeyCredential.isConditionalMediationAvailable = async () => false;
+  Object.defineProperty(navigator, 'credentials', { configurable: true, value: {
+    get: async (o) => { window.__pediu = o; return { id: 'cred-abc', rawId: buf('cred-abc'), type: 'public-key', response: { clientDataJSON: buf('{"x":1}'), authenticatorData: buf('ad'), signature: buf('sig'), userHandle: null } }; },
+    create: async (o) => { window.__criou = o; return { id: 'cred-novo', rawId: buf('cred-novo'), type: 'public-key', response: { clientDataJSON: buf('{"x":2}'), attestationObject: buf('att') } }; },
+  } });
+};
+teste('login do painel: e-mail da última vez já preenchido e "Entrar com Face ID ou digital" entra sem link (token do Firebase)', async () => {
+  const cen = cenarioPadrao({ semLogin: true });
+  const pedidos = [];
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, {
+    antes: `(${faceIdFalso.toString()})(); try { localStorage.setItem('painel_ultimo_email', 'dona@icloud.com'); } catch (_) {}`,
+    rotas: (ctx) => ctx.route('**/api/passkey', async (r) => { const c = JSON.parse(r.request().postData() || '{}'); pedidos.push(c);
+      const j = c.acao === 'opcoes-entrada' ? { sucesso: true, publicKey: { challenge: 'YWJj', rpId: '127.0.0.1', userVerification: 'required', timeout: 60000 } } : c.acao === 'entrar' ? { sucesso: true, token: 'tok-123' } : {};
+      return r.fulfill({ contentType: 'application/json', body: JSON.stringify(j) }); }),
+    contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForSelector('#btn-passkey', { state: 'visible', timeout: 8000 });
+  assert.strictEqual(await pagina.inputValue('#email'), 'dona@icloud.com', 'o e-mail da última entrada já vem');
+  assert.strictEqual(await pagina.getAttribute('#email', 'autocomplete'), 'username webauthn', 'o teclado do iPhone sugere a chave no campo');
+  await pagina.click('#btn-passkey');
+  await pagina.waitForFunction(() => window.__tokenCustom === 'tok-123', null, { timeout: 5000 });
+  const pediu = await pagina.evaluate(() => ({ uv: window.__pediu.publicKey.userVerification, desafio: new TextDecoder().decode(window.__pediu.publicKey.challenge), rp: window.__pediu.publicKey.rpId }));
+  assert.deepStrictEqual(pediu, { uv: 'required', desafio: 'abc', rp: '127.0.0.1' });
+  const ent = pedidos.find((p) => p.acao === 'entrar');
+  assert.strictEqual(ent.resposta.id, 'cred-abc'); assert.ok(ent.resposta.response.signature && ent.resposta.response.authenticatorData, 'manda a assinatura para o servidor conferir');
+  semErros(erros); await fechar();
+});
+
+teste('painel: depois de entrar pelo link, oferece ativar Face ID/digital; "Ativar" cadastra este aparelho e o aviso some (e não volta)', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const pedidos = [];
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, {
+    antes: `(${faceIdFalso.toString()})();`,
+    rotas: (ctx) => ctx.route('**/api/passkey', async (r) => { const c = JSON.parse(r.request().postData() || '{}'); pedidos.push({ ...c, auth: r.request().headers().authorization });
+      const j = c.acao === 'opcoes-cadastro' ? { sucesso: true, publicKey: { challenge: 'ZGVm', rp: { name: 'Painel da loja', id: '127.0.0.1' }, user: { id: 'ZG9uYQ', name: 'dona@teste.com', displayName: 'dona@teste.com' }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }], authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'required', userVerification: 'required' }, excludeCredentials: [], attestation: 'none', timeout: 60000 } }
+        : c.acao === 'cadastrar' ? { sucesso: true, aparelho: 'iPhone' } : {};
+      return r.fulfill({ contentType: 'application/json', body: JSON.stringify(j) }); }),
+    contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForSelector('#pk-oferta', { timeout: 8000 });
+  assert.strictEqual(await pagina.evaluate(() => localStorage.getItem('painel_ultimo_email')), 'dona@teste.com', 'guarda o e-mail para a próxima vez');
+  await pagina.click('#pk-oferta [data-pk="ativar"]');
+  await pagina.waitForSelector('#pk-oferta', { state: 'detached', timeout: 5000 });
+  const cad = pedidos.find((p) => p.acao === 'cadastrar');
+  assert.ok(cad && cad.auth === 'Bearer token-dona', 'cadastra com o login de quem entrou');
+  assert.strictEqual(cad.resposta.id, 'cred-novo');
+  const criou = await pagina.evaluate(() => ({ user: new TextDecoder().decode(window.__criou.publicKey.user.id), uv: window.__criou.publicKey.authenticatorSelection.userVerification }));
+  assert.deepStrictEqual(criou, { user: 'dona', uv: 'required' });
+  assert.strictEqual(await pagina.evaluate(() => localStorage.getItem('pk_ativo:dona')), '1');
   semErros(erros); await fechar();
 });
 

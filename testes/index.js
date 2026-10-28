@@ -4477,6 +4477,115 @@ teste('cloudflare: o token do aviso do Asaas passa pela ponte até o servidor', 
   } finally { globalThis.fetch = antes; }
 });
 
+
+// ---------------------------------------------------------------- FACE ID / DIGITAL (passkey) — lib/passkey.js e api/passkey.js
+// Aparelho de mentira com chave P-256 de verdade: monta as respostas do jeito que o iPhone/Android mandam (CBOR, assinatura DER).
+const aparelhoFalso = () => {
+  const crypto = require('crypto');
+  const { privateKey, publicKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const jwk = publicKey.export({ format: 'jwk' }), credId = crypto.randomBytes(32), b64u = (b) => Buffer.from(b).toString('base64url');
+  const cb = (v) => {               // CBOR mínimo para montar o que o aparelho manda
+    const cab = (mt, n) => (n < 24 ? Buffer.from([(mt << 5) | n]) : n < 256 ? Buffer.from([(mt << 5) | 24, n]) : Buffer.from([(mt << 5) | 25, n >> 8, n & 255]));
+    if (Buffer.isBuffer(v)) return Buffer.concat([cab(2, v.length), v]);
+    if (typeof v === 'string') return Buffer.concat([cab(3, Buffer.byteLength(v)), Buffer.from(v)]);
+    if (typeof v === 'number') return v >= 0 ? cab(0, v) : cab(1, -1 - v);
+    if (v instanceof Map) return Buffer.concat([cab(5, v.size), ...[...v].flatMap(([k, x]) => [cb(k), cb(x)])]);
+    throw new Error('cbor');
+  };
+  const rpHash = (rp) => crypto.createHash('sha256').update(rp).digest();
+  const cd = (tipo, challenge, origin) => b64u(JSON.stringify({ type: tipo, challenge, origin, crossOrigin: false }));
+  let contador = 0;
+  return {
+    credId: b64u(credId),
+    criar(opcoes, origin, sinais = 0x45) {
+      const cose = new Map([[1, 2], [3, -7], [-1, 1], [-2, Buffer.from(jwk.x, 'base64url')], [-3, Buffer.from(jwk.y, 'base64url')]]);
+      const ad = Buffer.concat([rpHash(opcoes.rp.id), Buffer.from([sinais]), Buffer.alloc(4), Buffer.alloc(16), Buffer.from([0, credId.length]), credId, cb(cose)]);
+      return { id: b64u(credId), rawId: b64u(credId), type: 'public-key', response: { clientDataJSON: cd('webauthn.create', opcoes.challenge, origin), attestationObject: b64u(cb(new Map([['fmt', 'none'], ['attStmt', new Map()], ['authData', ad]]))) } };
+    },
+    assinar(opcoes, origin, { sinais = 0x05, chave = privateKey, rp = opcoes.rpId, contar = false } = {}) {
+      if (contar) contador += 1;
+      const c = Buffer.alloc(4); c.writeUInt32BE(contador);
+      const ad = Buffer.concat([rpHash(rp), Buffer.from([sinais]), c]), cdj = cd('webauthn.get', opcoes.challenge, origin);
+      const sig = crypto.sign('sha256', Buffer.concat([ad, crypto.createHash('sha256').update(Buffer.from(cdj, 'base64url')).digest()]), chave);
+      return { id: b64u(credId), rawId: b64u(credId), type: 'public-key', response: { clientDataJSON: cdj, authenticatorData: b64u(ad), signature: b64u(sig), userHandle: '' } };
+    },
+  };
+};
+
+teste('Face ID / digital: lib/passkey.js aceita a chave do aparelho e recusa desafio vencido, de outra conta, de outro site, sem Face ID e assinatura falsa', async () => {
+  const PK = require(raiz('lib/passkey'));
+  const crypto = require('crypto');
+  const O = 'https://usebanca.com', rp = 'usebanca.com', seg = 'segredo-teste';
+  const apar = aparelhoFalso();
+  const opC = { challenge: PK.b64u(Buffer.from(PK.novoDesafio(seg, 'cadastro', 'u1'))), rp: { id: rp } };
+  const cad = PK.verificarCadastro({ resposta: apar.criar(opC, O), segredo: seg, uid: 'u1', origens: [O], rpId: rp });
+  assert.strictEqual(cad.credId, apar.credId); assert.strictEqual(cad.alg, -7); assert.strictEqual(cad.jwk.kty, 'EC');
+  assert.throws(() => PK.verificarCadastro({ resposta: apar.criar(opC, O), segredo: seg, uid: 'outra', origens: [O], rpId: rp }), /Desafio inválido/, 'desafio de outra conta');
+  assert.throws(() => PK.verificarCadastro({ resposta: apar.criar(opC, 'https://golpe.com'), segredo: seg, uid: 'u1', origens: [O], rpId: rp }), /outro site/);
+  assert.throws(() => PK.verificarCadastro({ resposta: apar.criar(opC, O, 0x41), segredo: seg, uid: 'u1', origens: [O], rpId: rp }), /Face ID/, 'sem verificação do usuário');
+  assert.throws(() => PK.verificarCadastro({ resposta: apar.criar(opC, O), segredo: seg, uid: 'u1', origens: [O], rpId: rp, agora: Date.now() + 6 * 60000 }), /Demorou/);
+  assert.throws(() => PK.verificarCadastro({ resposta: apar.criar({ ...opC, challenge: PK.b64u(Buffer.from(PK.novoDesafio('outro-segredo', 'cadastro', 'u1'))) }, O), segredo: seg, uid: 'u1', origens: [O], rpId: rp }), /Desafio inválido/, 'desafio que não fomos nós que criamos');
+  // entrada
+  const opE = { challenge: PK.b64u(Buffer.from(PK.novoDesafio(seg, 'entrada'))), rpId: rp };
+  const chave = { jwk: cad.jwk, alg: cad.alg, contador: 0 };
+  const r = PK.verificarEntrada({ resposta: apar.assinar(opE, O), segredo: seg, chave, origens: [O], rpId: rp });
+  assert.strictEqual(r.contador, 0); assert.ok(r.desafio.includes('.'));
+  const outraChave = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey;
+  assert.throws(() => PK.verificarEntrada({ resposta: apar.assinar(opE, O, { chave: outraChave }), segredo: seg, chave, origens: [O], rpId: rp }), /não confere/, 'assinatura de outra chave');
+  assert.throws(() => PK.verificarEntrada({ resposta: apar.assinar(opE, O, { rp: 'golpe.com' }), segredo: seg, chave, origens: [O], rpId: rp }), /outro site/);
+  assert.throws(() => PK.verificarEntrada({ resposta: apar.assinar(opE, O, { sinais: 0x01 }), segredo: seg, chave, origens: [O], rpId: rp }), /Face ID/);
+  assert.throws(() => PK.verificarEntrada({ resposta: apar.assinar(opC, O, { rp }), segredo: seg, chave, origens: [O], rpId: rp }), /Desafio inválido/, 'desafio de cadastro não serve para entrar');
+  // contador que volta para trás = chave copiada
+  assert.throws(() => PK.verificarEntrada({ resposta: apar.assinar(opE, O, { contar: true }), segredo: seg, chave: { ...chave, contador: 5 }, origens: [O], rpId: rp }), /copiada/);
+});
+
+teste('Face ID / digital: /api/passkey cadastra só com login de equipe, entra com token do Firebase, desafio vale uma vez, quem saiu da equipe não entra e "sair de todos" apaga', async () => {
+  process.env.PUBLIC_BASE_URL = 'https://usebanca.com';
+  const O = 'https://usebanca.com';
+  const db = criarBanco({});
+  const usuarios = [{ uid: 'u2', email: 'ze@teste.com', customClaims: { tenants: { espetinhos: 'proprietario' } } }, { uid: 'c1', email: 'cli@teste.com', customClaims: {} }];
+  const tokens = { 'dono-espetinhos': { uid: 'u2', email: 'ze@teste.com', email_verified: true, tenants: { espetinhos: 'proprietario' } }, cliente: { uid: 'c1', email_verified: true } };
+  const adm = criarAdmin(db, tokens, usuarios);
+  const api = carregarApi(raiz('api/passkey.js'), adm);
+  const pedir = (body, token) => chamar(api, { headers: { origin: O, ...(token ? { authorization: `Bearer ${token}` } : {}), 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)' }, body });
+  // cadastro: cliente comum (sem equipe) é recusado
+  assert.strictEqual((await pedir({ acao: 'opcoes-cadastro' }, 'cliente')).status, 403);
+  assert.strictEqual((await pedir({ acao: 'opcoes-cadastro' })).status, 401);
+  const op = (await pedir({ acao: 'opcoes-cadastro' }, 'dono-espetinhos')).corpo.publicKey;
+  assert.strictEqual(op.rp.id, 'usebanca.com'); assert.strictEqual(op.authenticatorSelection.userVerification, 'required'); assert.strictEqual(op.authenticatorSelection.residentKey, 'required');
+  const apar = aparelhoFalso();
+  const cad = await pedir({ acao: 'cadastrar', resposta: apar.criar(op, O) }, 'dono-espetinhos');
+  assert.strictEqual(cad.status, 200, JSON.stringify(cad.corpo)); assert.strictEqual(cad.corpo.aparelho, 'iPhone');
+  const guardada = db._dados.get(`passkeys/${apar.credId}`);
+  assert.ok(guardada && guardada.uid === 'u2' && guardada.jwk && !JSON.stringify(guardada).includes('"d"'), 'só a chave PÚBLICA é guardada');
+  // entrada: sem login
+  const opE = (await pedir({ acao: 'opcoes-entrada' })).corpo.publicKey;
+  assert.strictEqual(opE.rpId, 'usebanca.com');
+  const resp = apar.assinar(opE, O);
+  const e1 = await pedir({ acao: 'entrar', resposta: resp });
+  assert.strictEqual(e1.status, 200, JSON.stringify(e1.corpo)); assert.strictEqual(e1.corpo.token, 'custom-u2');
+  assert.strictEqual(e1.cabecalhos['cache-control'], 'no-store');
+  // a MESMA resposta de novo (alguém copiou): recusada
+  assert.strictEqual((await pedir({ acao: 'entrar', resposta: resp })).status, 400, 'desafio usado uma vez só');
+  // chave de outro site
+  const opE2 = (await pedir({ acao: 'opcoes-entrada' })).corpo.publicKey;
+  assert.strictEqual((await pedir({ acao: 'entrar', resposta: apar.assinar(opE2, 'https://golpe.com') })).status, 400);
+  // tirada da equipe: a chave para de abrir
+  usuarios[0].customClaims = { tenants: {} };
+  const opE3 = (await pedir({ acao: 'opcoes-entrada' })).corpo.publicKey;
+  assert.strictEqual((await pedir({ acao: 'entrar', resposta: apar.assinar(opE3, O) })).status, 403);
+  usuarios[0].customClaims = { tenants: { espetinhos: 'proprietario' } };
+  // listar e remover os próprios aparelhos
+  const l = await pedir({ acao: 'listar' }, 'dono-espetinhos');
+  assert.deepStrictEqual(l.corpo.aparelhos.map((a) => a.aparelho), ['iPhone']);
+  // "sair de todos os aparelhos" (api/equipe.js) apaga as chaves
+  assert.strictEqual(await require(raiz('lib/passkey')).apagarDaConta(db, 'u2'), 1);
+  assert.ok(!db._dados.has(`passkeys/${apar.credId}`));
+  const opE4 = (await pedir({ acao: 'opcoes-entrada' })).corpo.publicKey;
+  assert.strictEqual((await pedir({ acao: 'entrar', resposta: apar.assinar(opE4, O) })).status, 404, 'chave apagada não entra');
+  delete process.env.PUBLIC_BASE_URL;
+});
+
 (async () => {
   let falhas = 0;
   for (const [nome, fn] of testes) {

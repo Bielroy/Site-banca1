@@ -48,7 +48,7 @@ function render() {
     ${lista}
     <p class="config-sub cal-nota">A pessoa abre o painel, digita o e-mail e entra pelo link que chega na caixa de entrada. Mudança de papel vale quando ela entrar de novo. Ao tirar o acesso, o painel que já estiver aberto pode continuar mostrando a tela por até 1 hora, mas vendas, estoque e equipe são recusados na hora.</p>
     <h4 class="cp-sub">Segurança</h4>
-    <p class="config-sub">Perdeu o celular ou entrou num computador que não é seu? Encerre o seu login em todos os aparelhos. Depois é só entrar de novo pelo link do e-mail.</p>
+    <p class="config-sub">Perdeu o celular ou entrou num computador que não é seu? Encerre o seu login em todos os aparelhos (o Face ID/digital deles também é desligado). Depois é só entrar de novo pelo link do e-mail.</p>
     <button type="button" class="btn-outline" id="eq-sair-tudo" style="padding:12px 18px">Sair de todos os aparelhos</button>
     <h4 class="cp-sub">Registro de ações</h4>
     <p class="config-sub">Quem deu ou tirou acesso, quem baixou a cópia com dados de clientes, quem zerou ou restaurou. Fica guardado no servidor e ninguém apaga pelo painel.</p>
@@ -84,7 +84,7 @@ function ligar() {
             return definir(email, $('eq-papel').value, $('eq-adicionar'));
         }
         if (e.target.closest('#eq-sair-tudo')) {
-            if (!(await customConfirm('Sair de todos os aparelhos?', 'O seu login é encerrado neste e em qualquer outro aparelho. Você vai precisar entrar de novo pelo link do e-mail.'))) return;
+            if (!(await customConfirm('Sair de todos os aparelhos?', 'O seu login é encerrado neste e em qualquer outro aparelho, e o Face ID/digital de todos eles é desligado. Você vai precisar entrar de novo pelo link do e-mail.'))) return;
             try { await api({ acao: 'sair-de-tudo' }); showToast('Login encerrado em todos os aparelhos.'); setTimeout(() => sairELimpar(), 1200); } catch (err) { showToast(err.message, true); }
             return;
         }

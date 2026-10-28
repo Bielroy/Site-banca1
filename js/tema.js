@@ -432,6 +432,15 @@ export async function iniciarTema() {
         const guardar = (feiras) => { try { localStorage.setItem(K, JSON.stringify({ v: 3, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, feiras: ficha.feiras || null, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feiras })); } catch (_) { /* cheio */ } };
         // veio pelo link da feira: escolher a banca precisa saber quem está bloqueada (aqui ainda espera a conferência)
         if (entrando && await irParaBancaDaFeira(doLink, comVivas(await conferir))) return null;
+        // ESTA banca foi BLOQUEADA pela plataforma: cliente de feira (pelo link ou lembrado no aparelho, ou que caiu aqui
+        // porque era a "última banca") vai para outra banca ATIVA da mesma feira. Sem feira, a loja mostra "fora do ar" (js/loja.js).
+        if (ficha && ficha.ativo === false && !EM_PREVIA) {
+            const fid = doLink || lerFeiraCliente();
+            if (fid) {
+                const f = comVivas(await conferir).find((x) => x.id === fid), outra = lojasValidas(f).find((l) => l.id !== TENANT);
+                if (outra) { gravarUltimaBanca(fid, outra.id); location.replace(comFeira(urlDaLoja(outra.id), fid)); return null; }
+            }
+        }
         if (!ficha) ligarFontesDaBanca();                    // sem ficha: o visual (e as letras) de sempre
         FICHA_GRAVADA = ficha;
         if (ficha || FICHA_PREVIA) aplicarFicha({ ...(ficha || {}), ...(FICHA_PREVIA || {}) });

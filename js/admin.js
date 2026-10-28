@@ -2,6 +2,7 @@ import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba E
 import { normalizarInstagram, normalizarWhatsapp, telefoneBonito } from './contato-lib.js';
 import { miniatura } from './foto-lib.js';   // foto pelo redutor do site (o i.ibb.co direto não abre em algumas redes)
 import { getDoc, auth, db, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, limit, writeBatch, where, updateDoc } from './firebase.js';
+import { iniciarLoginRapido, depoisDeEntrar } from './admin-passkey.js';
 import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
@@ -108,6 +109,7 @@ const normalizar = (txt) => String(txt || '').toLowerCase().normalize("NFD").rep
 // mágico, qualquer pessoa pedia um link para o próprio e-mail e entrava.
 // AGORA: exige o custom claim `admin: true`, que só o servidor grava.
 // =====================================================================
+let loginRapidoLigado = false;      // Face ID/digital e e-mail lembrado na tela de login (js/admin-passkey.js)
 onAuthStateChanged(auth, async (user) => {
     unsubscribes.forEach(unsub => unsub());
     unsubscribes = [];
@@ -116,6 +118,7 @@ onAuthStateChanged(auth, async (user) => {
     if (!user) {
         document.getElementById('login-screen').style.display = 'block';
         document.getElementById('dashboard').style.display = 'none';
+        if (!loginRapidoLigado) { loginRapidoLigado = true; iniciarLoginRapido().catch(() => { /* só conveniência */ }); }
         return;
     }
 
@@ -140,6 +143,7 @@ onAuthStateChanged(auth, async (user) => {
     if (papelAtual === 'plataforma') montarTrocaDaPlataforma(); else montarTrocaDeBanca();
     if (ehGestor(papelAtual)) iniciarIAFeaturesDOM();
     iniciarRealTimeSync();
+    depoisDeEntrar(user).catch(() => { /* só conveniência */ });     // guarda o e-mail e oferece Face ID/digital neste aparelho
 });
 
 let isLoginProcessing = false;

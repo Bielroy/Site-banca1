@@ -26,6 +26,7 @@ function criarBanco(inicial = {}) {
       },
       update: async (v) => { if (!dados.has(caminho)) throw new Error('NOT_FOUND ' + caminho); dados.set(caminho, aplicar(dados.get(caminho), v)); },
       delete: async () => { dados.delete(caminho); },
+      create: async (v) => { if (dados.has(caminho)) throw Object.assign(new Error('ALREADY_EXISTS ' + caminho), { code: 6 }); dados.set(caminho, aplicar({}, v)); },
     };
   }
   function collection(caminho) {
@@ -68,6 +69,7 @@ function criarAdmin(db, tokens = {}, usuarios = []) {
     createUser: async ({ email }) => { const u = { uid: `novo-${usuarios.length + 1}-conta`, email }; usuarios.push(u); return u; },
     setCustomUserClaims: async (id, c) => { usuarios.find((x) => x.uid === id).customClaims = c; },
     revokeRefreshTokens: async (id) => { const u = usuarios.find((x) => x.uid === id); if (u) u.revogado = true; },
+    createCustomToken: async (id) => `custom-${id}`,
     updateUser: async (id, dados) => { const u = usuarios.find((x) => x.uid === id); if (!u) throw naoAchei(); if (dados && dados.password) u.senhaTrocada = true; return u; },
   };
   const firestore = () => db;

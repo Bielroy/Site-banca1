@@ -822,7 +822,7 @@ document.addEventListener('error', (e) => {
     if (img.dataset.reserva) { const r = img.dataset.reserva; delete img.dataset.reserva; img.src = r; return; }
     if (!img.dataset.original) return;
     const original = img.dataset.original; delete img.dataset.original;
-    if (/^https:\/\/([a-z0-9-]+\.)*ibb\.co\//i.test(original)) { img.style.visibility = 'hidden'; return; }
+    if (/^https:\/\/([a-z0-9-]+\.)*ibb\.co\//i.test(original)) { img.style.visibility = 'hidden'; img.dataset.foraDoAr = '1'; img.closest('.produto-img-wrap')?.classList.add('foto-fora-do-ar'); return; }
     if (img.getAttribute('src') !== original) img.src = original;
 }, true);
 /** A outra versão da mesma foto pelo redutor (grande ↔ miniatura), para quando uma delas sumir. */
@@ -1421,6 +1421,7 @@ const iniciarRealTimeSync = () => {
     let _lista = '', _porProduto = new Map();
     const assinaturaDe = (p) => `${p.preco}:${p.precoDe || ''}:${p.foto || ''}:${p.fotoMini || ''}:${p.nome}:${p.cat}:${p.unidade || ''}:${p.pesoMedio || ''}:${p.mostrarPrimeiro || ''}:${p.chegouEm || ''}:${p.estacao ? 1 : ''}:${p.escolha ? 1 : ''}:${Array.isArray(p.palavras) ? p.palavras.join(',') : ''}`;
     const aplicarCatalogo = () => {
+        if (STATE.lojaBloqueada) return;                       // loja bloqueada pela plataforma: fica o aviso de fora do ar
         if (!_catsProntas || !_produtosChegaram) return;
         STATE.catalogoChegou = true;
         // preço do DIA DA ENTREGA (feira do cliente, ou hoje): todo o resto da loja usa p.preco
@@ -2937,4 +2938,14 @@ const iniciarComunicados = () => {
 
 iniciarComunicados();
 initIA(STATE);
-iniciarTema();   // cores, fontes e nome desta loja + faixa de lojas da feira
+// cores, fontes e nome desta loja + faixa de lojas da feira. Loja BLOQUEADA pela plataforma: "fora do ar" para todo mundo.
+// (as regras do banco já escondem a vitrine do público, mas quem é da equipe ou da plataforma continuava vendo a loja
+// inteira e só levava erro ao fechar o pedido: parecia que o bloqueio não funcionava)
+iniciarTema().then((ficha) => { if (ficha && ficha.ativo === false && !EM_PREVIA) mostrarLojaBloqueada(); }).catch(() => { /* segue */ });
+function mostrarLojaBloqueada() {
+    STATE.lojaBloqueada = true; STATE.lojaRenderizada = false;
+    document.body.classList.add('loja-bloqueada');
+    const lista = document.getElementById('lista-produtos');
+    if (lista) lista.innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Esta loja está fora do ar no momento</p><span>Os pedidos por aqui estão pausados. Fale direto com a loja.</span></div>`;
+    try { document.getElementById('carrinho-overlay')?.classList.remove('aberto'); document.getElementById('carrinho')?.classList.remove('aberto'); } catch (_) { /* segue */ }
+}

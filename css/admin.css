@@ -160,3 +160,17 @@
 /* Gerente: não vê nem troca a chave PIX, o PIX automático e o WhatsApp dos pedidos (js/papeis-lib.js · mexeNaChavePix).
    Só esconde a tela; quem barra de verdade são as regras do banco (firestore.rules · gerenteSemDinheiro). */
 body.sem-chave-pix .so-chave-pix { display: none !important; }
+
+/* ---------- Face ID / digital (js/admin-passkey.js) ---------- */
+.login-passkey { margin-bottom: 6px; }
+.btn-passkey { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px; border-radius: 12px; border: 0; background: var(--forest); color: #fff; font: 700 1rem/1.2 inherit; cursor: pointer; min-height: 50px; }
+.btn-passkey svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.btn-passkey:disabled { opacity: .7; cursor: wait; }
+.login-ou { display: flex; align-items: center; gap: 10px; margin: 18px 0 14px; color: var(--text-light); font-size: .85rem; text-align: center; }
+.login-ou::before, .login-ou::after { content: ""; flex: 1; height: 1px; background: var(--linha, #e4dfd3); }
+.login-passkey:not([hidden]) ~ #btn-login { background: transparent !important; color: var(--forest) !important; border: 1.5px solid var(--forest); }
+.pk-oferta { position: fixed; z-index: 900; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: 460px; margin: 0 auto; display: grid; gap: 6px; padding: 16px; border-radius: 16px; background: var(--superficie, #fff); color: var(--text-dark); box-shadow: 0 10px 30px rgba(0,0,0,.22); border: 1.5px solid var(--linha, #e4dfd3); }
+.pk-oferta b { font-size: 1.02rem; }
+.pk-oferta span { color: var(--text-mid); font-size: .9rem; line-height: 1.35; }
+.pk-oferta-bts { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.pk-oferta-bts button { flex: 1 1 120px; padding: 11px 14px; }
