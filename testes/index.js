@@ -3405,6 +3405,7 @@ teste('fotos do ImgBB: a figura "service unavailable" é reconhecida, nunca guar
   assert.strictEqual(I.pareceErro(webp, resp('image/png', 30000)), true, 'arquivo .webp que chega como PNG = a figura de erro');
   assert.strictEqual(I.pareceErro(webp, resp('image/webp', 30000, { status: 503 })), true, 'resposta 503');
   assert.strictEqual(I.pareceErro(webp, resp('image/webp', 900)), true, 'minúscula');
+  assert.strictEqual(I.pareceErro(new URL('https://fotos.usebanca.com/lojas/banca/alho-e-sal.webp'), resp('image/webp', 900)), false, 'miniatura minúscula do R2 é foto de verdade (não "fora do ar")');
   assert.strictEqual(I.pareceErro(webp, resp('image/webp', 30000, { r: {} , h: {} })), false);
   const red = resp('image/webp', 30000); Object.defineProperty(red, 'redirected', { value: true }); Object.defineProperty(red, 'url', { value: 'https://i.ibb.co/erro/unavailable.png' });
   assert.strictEqual(I.pareceErro(webp, red), true, 'o ImgBB mandou para outro arquivo');

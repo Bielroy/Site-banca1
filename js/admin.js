@@ -73,6 +73,8 @@ document.addEventListener('error', (e) => {
     if (img.dataset.foraDoAr && img.parentElement) { const casa = img.parentElement; casa.innerHTML = '<span class="pl-sem-foto pl-fora-do-ar">Foto fora do ar</span>'; avisarFotosForaDoAr(); }
 }, true);
 const https = (u) => /^https:\/\//i.test(String(u || ''));
+// "Foto fora do ar" só vale para link antigo do ImgBB (que some de vez). Foto do R2/Firebase cuja miniatura falhou cai na original.
+const ehImgbb = (u) => /^https:\/\/([a-z0-9-]+\.)*ibb\.co\//i.test(String(u || ''));
 let _avisoFotos = 0;
 function avisarFotosForaDoAr() {
     clearTimeout(_avisoFotos);
@@ -816,7 +818,7 @@ const renderProdutos = () => {
         <article class="pl-item${p.ativo ? '' : ' fora'}${plSel.ligado ? ' marcando' : ''}${marcado ? ' marcado' : ''}">
             <button type="button" class="pl-abrir" ${plSel.ligado ? `data-pl-marcar="${escapeHTML(p.id)}" role="checkbox" aria-checked="${marcado}"` : `data-action="editar-produto" data-id="${escapeHTML(p.id)}"`}>
                 ${plSel.ligado ? '<span class="pl-marca" aria-hidden="true"></span>' : ''}
-                <span class="pl-foto">${/^https:\/\//i.test(String(p.fotoMini || p.foto || '')) ? `<img src="${escapeHTML(miniatura(p.fotoMini || p.foto, 128))}"${p.fotoMini && https(p.foto) && p.foto !== p.fotoMini ? ` data-reserva="${escapeHTML(miniatura(p.foto, 128))}"` : ''} data-fora-do-ar="1" loading="lazy" decoding="async" alt="">` : '<span class="pl-sem-foto">Sem foto</span>'}</span>
+                <span class="pl-foto">${/^https:\/\//i.test(String(p.fotoMini || p.foto || '')) ? `<img src="${escapeHTML(miniatura(p.fotoMini || p.foto, 128))}"${p.fotoMini && https(p.foto) && p.foto !== p.fotoMini ? ` data-reserva="${escapeHTML(miniatura(p.foto, 128))}"` : ''}${ehImgbb(p.fotoMini || p.foto) ? ' data-fora-do-ar="1"' : ` data-original="${escapeHTML(p.fotoMini || p.foto)}"`} loading="lazy" decoding="async" alt="">` : '<span class="pl-sem-foto">Sem foto</span>'}</span>
                 <span class="pl-txt">
                     <b>${escapeHTML(p.nome)}</b>
                     <span class="pl-sub">${Number(p.preco) > 0 ? `${fmt(p.preco)} / ${ehPacote(p) ? 'pacote' : escapeHTML(p.unidade || 'un')}` : 'sem preço'}${promoDe(p) ? ` · ${escapeHTML(textoPromo(promoDe(p)))}` : ''}${cat ? ` · ${escapeHTML(cat)}` : ''}${p.ativo ? '' : ' · <em>fora da loja</em>'}</span>

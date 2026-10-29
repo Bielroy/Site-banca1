@@ -63,9 +63,12 @@ export function pareceErro(foto, r) {
   if (!r || !r.ok) return true;
   const tipo = (r.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
   if (!/^image\//.test(tipo)) return true;
+  // Daqui para baixo, só o ImgBB: a figura de erro é dele. Foto do R2 ou do Firebase que veio 2xx e é imagem é foto
+  // de verdade, mesmo minúscula (a miniatura de 128 px de um pacote de fundo branco tem menos de 2 KB; antes ela era
+  // tomada por "imagem de erro" e o painel mostrava "Foto fora do ar" numa foto que estava no ar).
+  if (!/\.ibb\.co$|^i\.ibb\.co$/i.test(foto.hostname)) return false;
   const n = Number(r.headers.get('content-length'));
   if (n > 0 && n < MUITO_PEQUENA) return true;
-  if (!/\.ibb\.co$|^i\.ibb\.co$/i.test(foto.hostname)) return false;
   if (r.redirected && r.url) { try { if (new URL(r.url).pathname !== foto.pathname) return true; } catch (_) { /* segue */ } }
   if (/internal=ok/i.test(r.headers.get('cf-resized') || '')) return false;          // reduzida pelo Cloudflare: o tipo muda de propósito
   const ext = (foto.pathname.match(/\.([a-z0-9]+)$/i) || [])[1];
@@ -126,7 +129,7 @@ export async function onRequestGet({ request }) {
   // Então pede a miniatura a um redutor público (wsrv.nl, servidor para servidor). Falhou? Fica a original, como antes.
   if (precisaDeReserva(r)) {
     const reserva = await reduzirPorFora(foto.href, largura);
-    if (reserva && !(Number(reserva.headers.get('content-length')) > 0 && Number(reserva.headers.get('content-length')) < MUITO_PEQUENA)) {
+    if (reserva && !(/\.ibb\.co$/i.test(foto.hostname) && Number(reserva.headers.get('content-length')) > 0 && Number(reserva.headers.get('content-length')) < MUITO_PEQUENA)) {
       try { await r.body?.cancel(); } catch (_) { /* nada a cancelar */ } r = reserva; tipo = reserva.headers.get('content-type') || tipo;
     }
   }
