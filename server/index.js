@@ -29,6 +29,7 @@ const crypto = require('crypto');
 const LIMITE_CORPO = 6 * 1024 * 1024;        // a Vercel aceita 4,5 MB; a foto do painel chega a 1,5 MB em base64
 const LIMITE_ABSOLUTO = 40 * 1024 * 1024;     // passou disso, fecha a conexão (o Cloud Run já corta em 32 MB)
 const PASTA_API = path.join(__dirname, '..', 'api');
+const R2_LIGADO = () => !!require('../lib/r2').config();   // /api/saude diz se as fotos vão para o R2 (só sim/não, nunca as chaves)
 
 const igualSeguro = (a, b) => {
   const x = Buffer.from(String(a || '')), y = Buffer.from(String(b || ''));
@@ -158,7 +159,7 @@ function criarServidor({
       // /api/saude: aberto pelo site (https://seu-site/api/saude), passa pela ponte do Cloudflare.
       // "ponte": true = o PROXY_SEGREDO do Cloudflare é IGUAL ao daqui. Se vier false, os freios por IP
       // enxergam todos os clientes como um só (o Cloudflare) e bloqueiam a loja inteira de uma vez.
-      if (url.pathname === '/api/saude') return dar(200, { ok: true, ponte: confiarNoCabecalho(req, segredo) });
+      if (url.pathname === '/api/saude') return dar(200, { ok: true, ponte: confiarNoCabecalho(req, segredo), fotos: R2_LIGADO() ? 'r2' : 'imgbb' });
       const m = /^\/api\/([a-z0-9-]+)\/?$/.exec(url.pathname);
       if (!m || !Object.prototype.hasOwnProperty.call(funcoes, m[1])) return dar(404, { error: 'Não encontrado.' });
 
@@ -193,6 +194,10 @@ if (require.main === module) {
   if (!String(process.env.FIREBASE_WEB_API_KEY || process.env.VITE_FIREBASE_API_KEY || '').trim()) faltam.push('FIREBASE_WEB_API_KEY (entrar no painel)');
   if (!String(process.env.PAGBANK_API_TOKEN || '').trim()) faltam.push('PAGBANK_API_TOKEN (PIX e cartão)');
   if (!require('../lib/cofre').ligado()) faltam.push('DADOS_CHAVE (dados de cliente gravados SEM cifra)');
+  const R2 = require('../lib/r2');
+  if (R2.nenhuma()) faltam.push('R2_* (fotos no Cloudflare R2; sem elas vão para o ImgBB)');
+  else if (!R2.config()) faltam.push(`${R2.faltando().join(', ')} (R2 pela metade: as fotos seguem indo para o ImgBB)`);
+  else console.log('[servidor] fotos: Cloudflare R2 ligado.');
   if (faltam.length) console.warn(`[servidor] variáveis vazias: ${faltam.join(', ')}`);
 
   const servidor = criarServidor();

@@ -13,6 +13,7 @@
 export const LARGURAS = [128, 384, 640, 828];
 export const SITES_DE_FOTO = [
   { host: 'i.ibb.co' }, { sufixo: '.ibb.co' }, { host: 'firebasestorage.googleapis.com' }, { sufixo: '.firebasestorage.app' }, { host: 'storage.googleapis.com' },
+  { host: 'fotos.usebanca.com' },         // Cloudflare R2 (lib/r2.js): o lugar das fotos desde a saída do ImgBB
 ];
 const MAX_BYTES = 8 * 1024 * 1024;
 const UM_MES = 2678400;

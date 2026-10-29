@@ -19,13 +19,14 @@ export const LARGURAS = [128, 384, 640, 828];   // 828: foto do quadro na largur
 const LOCAL = /^(localhost|127\.|192\.168\.|10\.|\[::1\])/;
 
 /**
- * De ONDE aceitamos reduzir foto: os serviços onde as lojas guardam as fotos (ImgBB e o armazenamento do Firebase).
+ * De ONDE aceitamos reduzir foto: os serviços onde as lojas guardam as fotos (Cloudflare R2 em fotos.usebanca.com,
+ * ImgBB e o armazenamento do Firebase).
  * Têm de ser os MESMOS de vercel.json ("images.remotePatterns"); um teste confere.
  * Antes o redutor aceitava qualquer endereço da internet: qualquer pessoa podia usar o site como atravessador
  * de imagens e gastar a cota de redução da loja. Foto guardada em outro lugar continua aparecendo, só que no
  * tamanho original.
  */
-export const HOSTS_DAS_FOTOS = ['i.ibb.co', '**.ibb.co', 'firebasestorage.googleapis.com', '**.firebasestorage.app', 'storage.googleapis.com'];
+export const HOSTS_DAS_FOTOS = ['i.ibb.co', '**.ibb.co', 'firebasestorage.googleapis.com', '**.firebasestorage.app', 'storage.googleapis.com', 'fotos.usebanca.com'];
 const hostAceito = (h) => HOSTS_DAS_FOTOS.some((p) => (p.startsWith('**.') ? h.endsWith(p.slice(2)) && h.length > p.length - 2 : h === p));
 
 /** Endereço da miniatura de uma foto. Devolve a própria foto quando não dá para reduzir. */

@@ -59,6 +59,21 @@ O Docker roda `server/index.js`; o **Caddy** cuida do HTTPS de `api.usebanca.com
 - **Fim do período grátis da AWS (6 meses):** antes do fim, decida entre passar para o plano pago (alguns dólares por mês) ou mudar o servidor
   de lugar. O alerta de orçamento de US$ 5 avisa se começar a cobrar.
 
+## Fotos no Cloudflare R2 (no lugar do ImgBB)
+
+- **Onde ficam:** bucket `fotos-bancas` no R2, aberto em `https://fotos.usebanca.com` (domínio próprio do bucket).
+  Foto nova do painel vai para `lojas/<loja>/...`; foto copiada do ImgBB vai para `migrado/...`.
+- **Chaves:** 5 linhas no `~/segredos.env` (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`,
+  `R2_URL_PUBLICA`) e `bash ~/loja/scripts/atualizar-servidor.sh`. Token do R2 com "Object Read & Write" **só** nesse bucket.
+  Conferir: `https://usebanca.com/api/saude` mostra `"fotos":"r2"`; a tela Plataforma → Chaves mostra "Ligado".
+  Faltou ou errou uma linha: o servidor avisa na atualização ("variáveis vazias: R2_...") e as fotos seguem para o ImgBB.
+- **Migrar as fotos antigas** (no terminal da AWS, depois de atualizar o servidor):
+  1. `docker exec loja node server/migrar-fotos.js` — **simulação**: conta as fotos, confere se abrem, não grava nada.
+  2. `docker exec loja node server/migrar-fotos.js --gravar` — copia para o R2 e troca os links no banco.
+  Pode repetir: o que já foi copiado é pulado. `--pedidos` inclui as fotos dos pedidos antigos; `--limite=20` testa com poucas;
+  `--desfazer` volta os links para o ImgBB (cada troca fica anotada em `migracao_fotos`).
+  Foto que o ImgBB já perdeu: tenta a miniatura guardada pelo site; sem ela, sai na lista do relatório para a loja reenviar.
+
 ## PIX pelo Asaas (conta da plataforma + carteira de cada banca)
 Quando a chave do Asaas está cadastrada, o PIX de todas as lojas sai por ele (o PagBank fica de lado; sem chave, nada muda).
 - **Chave:** tela Plataforma → aba Chaves → "PIX automático (Asaas)". Comece pela chave do **sandbox** (`$aact_hmlg_...`): o site

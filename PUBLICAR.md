@@ -66,7 +66,9 @@ conferido com o exemplo oficial, mas nunca foi pago de verdade: faça um PIX de 
   passar do valor de entrega grátis.
 - A taxa entra no faturamento do Balanço junto com os itens. Vendas no Balcão não têm taxa.
 
-## 4e. Fotos automáticas (ImgBB)
+## 4e. Fotos automáticas (Cloudflare R2; ImgBB de reserva)
+O lugar das fotos agora é o Cloudflare R2: veja ROTA-CLOUDFLARE.md, "Fotos no Cloudflare R2". O ImgBB abaixo fica de reserva.
+
 1. Crie uma conta grátis em imgbb.com, abra api.imgbb.com e toque em "Get API key".
 2. No painel, abra **Plataforma → Fotos dos produtos**, cole a chave e toque em Salvar.
 3. Em qualquer loja: **Produtos → Enviar várias fotos**. Escolha as fotos; o sistema reduz, envia

@@ -28,6 +28,7 @@ const Aprov = require('../lib/aprovacao');
 const { MODELOS, MODULOS } = require('../lib/modelos');
 const { CAMPOS_PRODUTO } = require('../lib/campos');
 const Segredos = require('../lib/segredos');
+const R2 = require('../lib/r2');
 const Asaas = require('../lib/asaas');
 const P = require('../lib/prudencia');
 const crypto = require('crypto');
@@ -104,9 +105,10 @@ async function lojas(res) {
   const condominios = await Cond.garantir(db, T);   // sem o cadastro, a tela não abre (senão salvar uma feira apagaria os condomínios dela)
   const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, condominiosIds: Cond.idsDaFeira(condominios, d.data()), dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira) }));
   const seg = await db.collection('plataforma').doc('segredos').get();
-  const fotos = /^[a-f0-9]{32}$/i.test(String(process.env.IMGBB_API_KEY || (seg.exists && seg.data().imgbb) || ''));
+  const imgbbLigado = /^[a-f0-9]{32}$/i.test(String(process.env.IMGBB_API_KEY || (seg.exists && seg.data().imgbb) || ''));
+  const r2 = !!R2.config(), fotos = r2 || imgbbLigado;            // r2: fotos no Cloudflare (lib/r2.js); o ImgBB fica de reserva
   const pix = !!process.env.PAGBANK_API_TOKEN || Segredos.tokenPagbankValido(seg.exists && seg.data().pagbank);
-  return res.status(200).json({ sucesso: true, lojas: lista, feiras, condominios, modelos: Object.keys(MODELOS), modulos: MODULOS, campos: CAMPOS_PRODUTO, mes: mesAtual(), fotos, pix, asaas: await situacaoAsaas(seg.exists ? seg.data() : {}) });
+  return res.status(200).json({ sucesso: true, lojas: lista, feiras, condominios, modelos: Object.keys(MODELOS), modulos: MODULOS, campos: CAMPOS_PRODUTO, mes: mesAtual(), fotos, fotosR2: r2, fotosImgbb: imgbbLigado, r2Falta: r2 || R2.nenhuma() ? [] : R2.faltando(), pix, asaas: await situacaoAsaas(seg.exists ? seg.data() : {}) });
 }
 
 // LISTA LEVE (trocar de loja): só as fichas, sem movimento do mês nem donos. 1 leitura por loja, guardada por 60 s.

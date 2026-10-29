@@ -2295,6 +2295,195 @@ teste('fotos: envio ao ImgBB só para gestor, só imagem de verdade, e a chave n
   } finally { global.fetch = fetchReal; }
 });
 
+const R2_TESTE = { R2_ACCOUNT_ID: '0123456789abcdef0123456789abcdef', R2_ACCESS_KEY_ID: 'AKIATESTE0123456789', R2_SECRET_ACCESS_KEY: 'segredo-de-teste-0123456789', R2_BUCKET: 'fotos-bancas', R2_URL_PUBLICA: 'https://fotos.usebanca.com' };
+const comR2 = async (valores, fn) => {
+  const antes = Object.fromEntries(Object.keys(R2_TESTE).map((k) => [k, process.env[k]]));
+  Object.keys(R2_TESTE).forEach((k) => delete process.env[k]); Object.assign(process.env, valores);
+  try { return await fn(); } finally { Object.keys(R2_TESTE).forEach((k) => { if (antes[k] === undefined) delete process.env[k]; else process.env[k] = antes[k]; }); }
+};
+const IMG = (ext, n = 4000) => ({ webp: Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP'), Buffer.alloc(n, 7)]), jpg: Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(n, 3)]), png: Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(n, 1)]) }[ext]);
+const respostaImg = (buf, tipo, extra = {}) => { const r = new Response(buf, { status: 200, headers: { 'content-type': tipo, 'content-length': String(buf.length) } }); for (const [k, v] of Object.entries(extra)) Object.defineProperty(r, k, { value: v }); return r; };
+
+teste('fotos no R2: a assinatura S3 confere com os exemplos publicados pela Amazon', () => {
+  const R2 = require(raiz('lib/r2.js')), c = require('crypto');
+  const g = R2.assinar({ metodo: 'GET', host: 'examplebucket.s3.amazonaws.com', caminho: '/test.txt', cabecalhos: { Range: 'bytes=0-9' }, chave: 'AKIAIOSFODNN7EXAMPLE', segredo: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', regiao: 'us-east-1', quando: new Date('2013-05-24T00:00:00Z') });
+  assert.strictEqual(g.assinatura, 'f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41', 'exemplo GET da documentação do S3');
+  const p = R2.assinar({ metodo: 'PUT', host: 'examplebucket.s3.amazonaws.com', caminho: R2.caminhoCodificado('/test$file.text'), cabecalhos: { Date: 'Fri, 24 May 2013 00:00:00 GMT', 'x-amz-storage-class': 'REDUCED_REDUNDANCY' }, corpoHash: c.createHash('sha256').update('Welcome to Amazon S3.').digest('hex'), chave: 'AKIAIOSFODNN7EXAMPLE', segredo: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', regiao: 'us-east-1', quando: new Date('2013-05-24T00:00:00Z') });
+  assert.strictEqual(p.assinatura, '98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd', 'exemplo PUT da documentação do S3 (com $ no nome)');
+  for (const ruim of ['', '/abs.webp', 'a/../b.webp', 'a//b.webp', 'Maiuscula.webp', 'pasta/', 'a b.webp', 'x'.repeat(301)]) assert.strictEqual(R2.nomeValido(ruim), false, ruim.slice(0, 30));
+  assert.ok(R2.nomeValido('lojas/espetinhos/tomate-abc123.webp') && R2.nomeValido('migrado/0123abcd.jpg'));
+});
+
+teste('fotos no R2: configurado só com as 5 variáveis certas; pela metade, diz só os nomes que faltam', async () => {
+  await comR2({}, () => { const R2 = require(raiz('lib/r2.js')); assert.strictEqual(R2.config(), null); assert.strictEqual(R2.nenhuma(), true); });
+  await comR2({ ...R2_TESTE, R2_ACCOUNT_ID: 'curto' }, () => {
+    const R2 = require(raiz('lib/r2.js')); assert.strictEqual(R2.config(), null); assert.strictEqual(R2.nenhuma(), false); assert.deepStrictEqual(R2.faltando(), ['R2_ACCOUNT_ID']);
+  });
+  await comR2({ ...R2_TESTE, R2_URL_PUBLICA: 'http://fotos.usebanca.com' }, () => assert.deepStrictEqual(require(raiz('lib/r2.js')).faltando(), ['R2_URL_PUBLICA'], 'endereço público sem https não vale'));
+  await comR2({ ...R2_TESTE, R2_URL_PUBLICA: 'https://fotos.usebanca.com/' }, () => {
+    const c = require(raiz('lib/r2.js')).config(); assert.strictEqual(c.publica, 'https://fotos.usebanca.com'); assert.strictEqual(c.host, '0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com');
+  });
+});
+
+teste('fotos no R2: o painel envia para o R2, na pasta da loja, assinado; R2 fora cai no ImgBB; chave nenhuma volta para a tela', async () => {
+  await comR2(R2_TESTE, async () => {
+    const db = criarBanco({ 'tenants/espetinhos': { nome: 'Espetinhos', ativo: true } });
+    const tokens = { dono: { uid: 'd-1', tenants: { espetinhos: 'proprietario' } }, caixa: { uid: 'c-1', tenants: { espetinhos: 'caixa' } }, super: { uid: 's-1', plataforma: true } };
+    const adm = criarAdmin(db, tokens), foto = carregarApi(raiz('api/foto.js'), adm), plat = carregarApi(raiz('api/plataforma.js'), adm);
+    const ch = (tk, body) => chamar(foto, { headers: { authorization: `Bearer ${tk}`, 'x-loja': 'espetinhos' }, body });
+    const webp = IMG('webp', 60), fetchReal = global.fetch, idas = []; let r2Status = 200, imgbbOk = true;
+    global.fetch = async (url, o = {}) => {
+      idas.push({ url: String(url), metodo: o.method, cab: o.headers || {}, corpo: o.body });
+      if (String(url).includes('r2.cloudflarestorage.com')) return new Response(r2Status === 200 ? '' : '<Error><Code>InternalError</Code></Error>', { status: r2Status });
+      return { ok: imgbbOk, status: imgbbOk ? 200 : 500, json: async () => (imgbbOk ? { success: true, data: { url: 'https://i.ibb.co/abc/reserva.webp' } } : null) };
+    };
+    try {
+      delete process.env.IMGBB_API_KEY; foto._zerar();
+      const est = await ch('dono', { acao: 'estado' }); assert.strictEqual(est.corpo.ligado, true); assert.strictEqual(est.corpo.onde, 'r2');
+      assert.strictEqual((await ch('caixa', { imagem: webp.toString('base64') })).status, 403, 'caixa não envia');
+      const ok = await ch('dono', { imagem: webp.toString('base64'), nome: 'Tomate Italiano!' });
+      assert.strictEqual(ok.status, 200, JSON.stringify(ok.corpo));
+      assert.match(ok.corpo.url, /^https:\/\/fotos\.usebanca\.com\/lojas\/espetinhos\/tomate-italiano-[a-z0-9]+\.webp$/, 'link público, na pasta da loja');
+      assert.strictEqual(idas.length, 1); const ida = idas[0];
+      assert.strictEqual(ida.metodo, 'PUT');
+      assert.ok(ida.url.startsWith('https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/fotos-bancas/lojas/espetinhos/'), ida.url);
+      assert.strictEqual(ida.url.split('/fotos-bancas/')[1], ok.corpo.url.split('fotos.usebanca.com/')[1], 'o arquivo guardado é o do link');
+      assert.ok(Buffer.compare(ida.corpo, webp) === 0, 'vai a foto como chegou');
+      assert.strictEqual(ida.cab['content-type'], 'image/webp'); assert.match(ida.cab['cache-control'], /immutable/);
+      assert.strictEqual(ida.cab['x-amz-content-sha256'], require('crypto').createHash('sha256').update(webp).digest('hex'));
+      assert.match(ida.cab.authorization, /^AWS4-HMAC-SHA256 Credential=AKIATESTE0123456789\/\d{8}\/auto\/s3\/aws4_request, SignedHeaders=cache-control;content-type;host;x-amz-content-sha256;x-amz-date, Signature=[a-f0-9]{64}$/);
+      assert.ok(!('host' in ida.cab), 'o host é posto pelo próprio fetch');
+      assert.ok(!JSON.stringify(ok.corpo).includes(R2_TESTE.R2_SECRET_ACCESS_KEY) && !JSON.stringify(ida.cab).includes(R2_TESTE.R2_SECRET_ACCESS_KEY), 'a chave secreta não viaja nem volta');
+      const outro = await ch('dono', { imagem: webp.toString('base64'), nome: 'Tomate Italiano!' });
+      assert.notStrictEqual(outro.corpo.url, ok.corpo.url, 'mesmo nome não sobrescreve a foto anterior');
+      // jpg e png também; o que não é imagem não chega ao R2
+      assert.match((await ch('dono', { imagem: IMG('png', 60).toString('base64') })).corpo.url, /\.png$/);
+      const antes = idas.length; assert.strictEqual((await ch('dono', { imagem: Buffer.from('<svg onload=x>isto não é foto</svg>').toString('base64') })).status, 400); assert.strictEqual(idas.length, antes);
+      // R2 recusou e não há ImgBB: erro claro
+      r2Status = 500; assert.strictEqual((await ch('dono', { imagem: webp.toString('base64') })).status, 502);
+      // R2 recusou e há ImgBB: a foto vai para o ImgBB (não se perde)
+      process.env.IMGBB_API_KEY = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4';
+      const res = await ch('dono', { imagem: webp.toString('base64'), nome: 'alface' });
+      assert.strictEqual(res.status, 200); assert.strictEqual(res.corpo.url, 'https://i.ibb.co/abc/reserva.webp');
+      assert.ok(idas[idas.length - 1].url.startsWith('https://api.imgbb.com/'));
+      // a tela da Plataforma mostra que o R2 está ligado (sem chave nenhuma)
+      const lista = (await chamar(plat, { headers: { authorization: 'Bearer super' }, body: { acao: 'lojas' } })).corpo;
+      assert.strictEqual(lista.fotos, true); assert.strictEqual(lista.fotosR2, true); assert.strictEqual(lista.fotosImgbb, true); assert.deepStrictEqual(lista.r2Falta, []);
+      assert.ok(!JSON.stringify(lista).includes(R2_TESTE.R2_SECRET_ACCESS_KEY) && !JSON.stringify(lista).includes(R2_TESTE.R2_ACCESS_KEY_ID));
+    } finally { global.fetch = fetchReal; delete process.env.IMGBB_API_KEY; }
+  });
+  // R2 pela metade: a tela diz o nome do que falta, e as fotos seguem pelo caminho antigo
+  await comR2({ ...R2_TESTE, R2_ACCOUNT_ID: '' }, async () => {
+    const db = criarBanco({}), adm = criarAdmin(db, { super: { uid: 's-1', plataforma: true } }), plat = carregarApi(raiz('api/plataforma.js'), adm);
+    const lista = (await chamar(plat, { headers: { authorization: 'Bearer super' }, body: { acao: 'lojas' } })).corpo;
+    assert.strictEqual(lista.fotosR2, false); assert.deepStrictEqual(lista.r2Falta, ['R2_ACCOUNT_ID']);
+  });
+});
+
+teste('fotos no R2: o redutor do site aceita fotos.usebanca.com, e só ele', async () => {
+  const F = await import(raiz('js/foto-lib.js')), I = await import(raiz('functions/_vercel/image.js'));
+  assert.ok(F.miniatura('https://fotos.usebanca.com/lojas/x/tomate.webp', 384, 'usebanca.com').startsWith('/_vercel/image?url='), 'foto do R2 vai pelo redutor');
+  assert.ok(I.siteDeFotoValido('https://fotos.usebanca.com/migrado/abc.webp'));
+  for (const ruim of ['https://fotos.usebanca.com.mal.com/a.webp', 'https://xfotos.usebanca.com/a.webp', 'https://usebanca.com/a.webp', 'http://fotos.usebanca.com/a.webp', 'https://pub-123.r2.dev/a.webp'])
+    assert.strictEqual(I.siteDeFotoValido(ruim), null, ruim);
+});
+
+teste('migração das fotos: acha link do ImgBB em qualquer campo e troca só o que foi copiado', () => {
+  const M = require(raiz('lib/migrar-fotos.js'));
+  const dados = { nome: 'Tomate', foto: 'https://i.ibb.co/a/t.webp', extra: { fundo: 'url(https://i.ibb.co/b/f.jpg) center', lista: ['https://i.ibb.co/a/t.webp', 'x', 3] }, quando: new Date(0), outra: 'https://exemplo.com/i.ibb.co/x.jpg' };
+  assert.deepStrictEqual([...M.acharLinks(dados)].sort(), ['https://i.ibb.co/a/t.webp', 'https://i.ibb.co/b/f.jpg']);
+  const mapa = new Map([['https://i.ibb.co/a/t.webp', 'https://fotos.usebanca.com/migrado/1.webp']]);
+  const mud = M.camposMudados(dados, mapa);
+  assert.deepStrictEqual(Object.keys(mud).sort(), ['extra', 'foto'], 'só os campos com link copiado');
+  assert.strictEqual(mud.foto, 'https://fotos.usebanca.com/migrado/1.webp');
+  assert.strictEqual(mud.extra.fundo, 'url(https://i.ibb.co/b/f.jpg) center', 'link não copiado fica');
+  assert.deepStrictEqual(mud.extra.lista, ['https://fotos.usebanca.com/migrado/1.webp', 'x', 3]);
+  assert.strictEqual(M.trocarLinks(dados, mapa).quando, dados.quando, 'data continua o mesmo objeto');
+  assert.strictEqual(M.ehArquivo('https://ibb.co/abc123'), false, 'página do ImgBB não é a foto'); assert.strictEqual(M.ehArquivo('https://i.ibb.co/abc/x.jpg'), true);
+});
+
+teste('migração das fotos: simulação não grava; de verdade copia uma vez, troca os links, pula na 2ª rodada e desfaz', async () => {
+  await comR2(R2_TESTE, async () => {
+    const db = criarBanco({
+      'produtos/tomate': { nome: 'Tomate', preco: 5, foto: 'https://i.ibb.co/a/tomate.webp', fotoMini: 'https://i.ibb.co/a/tomate-m.webp' },
+      'produtos/alface': { nome: 'Alface', foto: 'https://i.ibb.co/a/tomate.webp' },                           // mesma foto do tomate
+      'produtos/sumida': { nome: 'Sumida', foto: 'https://i.ibb.co/x/sumida.webp' },                          // o ImgBB perdeu
+      'produtos/salva': { nome: 'Salva', foto: 'https://i.ibb.co/y/salva.jpg' },                              // perdida, mas o site guardou miniatura
+      'produtos/pagina': { nome: 'Página', foto: 'https://ibb.co/AbCdEf' },
+      'loja/fotos': { itens: [{ url: 'https://i.ibb.co/a/tomate.webp', mini: 'https://i.ibb.co/a/tomate-m.webp', nome: 'tomate.jpg' }] },
+      'tenants/espetinhos': { nome: 'Espetinhos', logo: 'https://i.ibb.co/e/logo.png' },
+      'tenants/espetinhos/produtos/espeto': { nome: 'Espeto', foto: 'https://i.ibb.co/e/espeto.webp' },
+      'plataforma/segredos': { imgbb: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4', nota: 'https://i.ibb.co/n/nao-mexer.webp' },
+      'pedidos/p1': { itens: [{ foto: 'https://i.ibb.co/a/tomate.webp' }] },
+    });
+    const M = require(raiz('lib/migrar-fotos.js'));
+    const guardados = new Map(), idas = [];
+    const fetch = async (url, o = {}) => {
+      const u = String(url); idas.push(`${o.method || 'GET'} ${u}`);
+      if (u.includes('r2.cloudflarestorage.com')) {
+        const nome = u.split('/fotos-bancas/')[1];
+        if (o.method === 'HEAD') return new Response(null, { status: guardados.has(nome) ? 200 : 404 });
+        if (o.method === 'PUT') { guardados.set(nome, o.body); return new Response('', { status: 200 }); }
+      }
+      if (u === 'https://i.ibb.co/x/sumida.webp') return respostaImg(IMG('png', 5000), 'image/png', { redirected: true, url: 'https://i.ibb.co/erro/unavailable.png' });
+      if (u === 'https://i.ibb.co/y/salva.jpg') return new Response('não achei', { status: 404 });
+      if (u.startsWith('https://usebanca.com/_vercel/image?url=')) {
+        if (u.includes(encodeURIComponent('https://i.ibb.co/y/salva.jpg'))) return respostaImg(IMG('webp', 5000), 'image/webp');
+        return new Response('A foto não está disponível agora.', { status: 502 });
+      }
+      if (u === 'https://i.ibb.co/e/logo.png') return respostaImg(IMG('png', 5000), 'image/png');
+      if (/^https:\/\/i\.ibb\.co\/.+\.webp$/.test(u)) return respostaImg(IMG('webp', 5000), 'image/webp');
+      return new Response('?', { status: 404 });
+    };
+    const antes = JSON.stringify([...db._dados]);
+    const sim = await M.migrar(db, { fetch, site: 'https://usebanca.com' });
+    assert.strictEqual(JSON.stringify([...db._dados]), antes, 'a simulação não mexe no banco');
+    assert.ok(!idas.some((i) => i.includes('r2.cloudflarestorage.com')), 'nem no R2');
+    assert.strictEqual(sim.simulacao, true);
+    assert.strictEqual(sim.unicos, 7, 'tomate, tomate-m, sumida, salva, página, logo, espeto (o segredo e o pedido não entram)');
+    assert.strictEqual(sim.copiados, 5, JSON.stringify(sim)); assert.strictEqual(sim.resgatados, 1);
+    assert.strictEqual(sim.perdidas.length, 1); assert.match(sim.perdidas[0].motivo, /outra imagem/); assert.deepStrictEqual(sim.perdidas[0].onde, ['produtos/sumida']);
+    assert.strictEqual(sim.paginas.length, 1);
+
+    idas.length = 0;
+    const r = await M.migrar(db, { gravar: true, fetch, site: 'https://usebanca.com' });
+    assert.strictEqual(r.copiados, 5); assert.strictEqual(guardados.size, 5, 'cada foto vai uma vez, mesmo usada em vários lugares');
+    const doc = (c) => JSON.parse(JSON.stringify(db._dados.get(c)));
+    const tomate = doc('produtos/tomate');
+    assert.match(tomate.foto, /^https:\/\/fotos\.usebanca\.com\/migrado\/[a-f0-9]{32}\.webp$/); assert.match(tomate.fotoMini, /^https:\/\/fotos\.usebanca\.com\/migrado\/[a-f0-9]{32}\.webp$/);
+    assert.strictEqual(tomate.preco, 5); assert.strictEqual(tomate.nome, 'Tomate', 'o resto do produto fica igual');
+    assert.strictEqual(doc('produtos/alface').foto, tomate.foto, 'mesma foto, mesmo link novo');
+    assert.strictEqual(doc('loja/fotos').itens[0].url, tomate.foto); assert.strictEqual(doc('loja/fotos').itens[0].nome, 'tomate.jpg');
+    assert.match(doc('tenants/espetinhos').logo, /\.png$/); assert.match(doc('tenants/espetinhos/produtos/espeto').foto, /^https:\/\/fotos\.usebanca\.com\//);
+    assert.match(doc('produtos/salva').foto, /\.webp$/, 'a resgatada vira webp (a miniatura guardada)');
+    assert.strictEqual(doc('produtos/sumida').foto, 'https://i.ibb.co/x/sumida.webp', 'a perdida fica com o link antigo');
+    assert.strictEqual(doc('produtos/pagina').foto, 'https://ibb.co/AbCdEf');
+    assert.strictEqual(doc('plataforma/segredos').nota, 'https://i.ibb.co/n/nao-mexer.webp', 'plataforma/segredos nunca é lido');
+    assert.strictEqual(doc('pedidos/p1').itens[0].foto, 'https://i.ibb.co/a/tomate.webp', 'pedidos só com --pedidos');
+    assert.strictEqual([...db._dados.keys()].filter((k) => k.startsWith('migracao_fotos/')).length, 5, 'cada troca anotada (para desfazer)');
+    const putSalva = [...guardados.keys()].find((k) => doc('produtos/salva').foto.endsWith(k)); assert.ok(putSalva);
+
+    // 2ª rodada: nada é baixado nem enviado de novo; com --pedidos o pedido também troca
+    idas.length = 0;
+    const r2 = await M.migrar(db, { gravar: true, fetch, site: 'https://usebanca.com', pedidos: true });
+    assert.strictEqual(r2.jaMigrados, 1, 'só o link do pedido ainda era do ImgBB, e já tinha cópia'); assert.strictEqual(r2.copiados, 0); assert.strictEqual(r2.unicos, 3, 'sobraram a sumida, a página e o pedido');
+    assert.ok(!idas.some((i) => i.startsWith('PUT')), 'nada reenviado'); assert.strictEqual(doc('pedidos/p1').itens[0].foto, tomate.foto);
+
+    // desfazer: volta tudo para o ImgBB
+    await M.desfazer(db);
+    assert.strictEqual(doc('produtos/tomate').foto, 'https://i.ibb.co/a/tomate.webp'); assert.strictEqual(doc('loja/fotos').itens[0].mini, 'https://i.ibb.co/a/tomate-m.webp');
+    assert.strictEqual(doc('tenants/espetinhos').logo, 'https://i.ibb.co/e/logo.png'); assert.strictEqual(doc('pedidos/p1').itens[0].foto, 'https://i.ibb.co/a/tomate.webp');
+  });
+});
+
+teste('migração das fotos: sem o R2 configurado, "--gravar" para antes de mexer em qualquer coisa', async () => {
+  await comR2({}, async () => {
+    const db = criarBanco({ 'produtos/a': { foto: 'https://i.ibb.co/a/a.webp' } }), M = require(raiz('lib/migrar-fotos.js'));
+    await assert.rejects(M.migrar(db, { gravar: true, fetch: async () => { throw new Error('não devia buscar'); } }), /R2 não está configurado/);
+    assert.strictEqual(db._dados.get('produtos/a').foto, 'https://i.ibb.co/a/a.webp');
+  });
+});
+
 teste('fotos: miniatura só para link https em produção, nas larguras que a Vercel aceita', async () => {
   const F = await import(raiz('js/foto-lib.js')), V = JSON.parse(require('fs').readFileSync(raiz('vercel.json'), 'utf8'));
   assert.deepStrictEqual(V.images.sizes, F.LARGURAS, 'vercel.json e js/foto-lib.js com as mesmas larguras');
@@ -2929,9 +3118,9 @@ teste('cloud run: o servidor entrega body/query/status/json como a Vercel e conf
     r = await j('/api/eco', { headers: { ...doProxy, 'X-Cliente-IP': 'nao-e-ip; drop table' } });
     assert.strictEqual(r.corpo.ip, '104.16.0.1', 'IP inválido do proxy não vale');
     // /api/saude (aberto pelo site): diz se o segredo da ponte confere, sem mostrar segredo nenhum
-    assert.deepStrictEqual((await j('/api/saude', { headers: doProxy })).corpo, { ok: true, ponte: true });
-    assert.deepStrictEqual((await j('/api/saude', { headers: { ...doProxy, 'X-Proxy-Segredo': 'errado' } })).corpo, { ok: true, ponte: false });
-    assert.deepStrictEqual((await j('/api/saude')).corpo, { ok: true, ponte: false });
+    assert.deepStrictEqual((await j('/api/saude', { headers: doProxy })).corpo, { ok: true, ponte: true, fotos: 'imgbb' });
+    assert.deepStrictEqual((await j('/api/saude', { headers: { ...doProxy, 'X-Proxy-Segredo': 'errado' } })).corpo, { ok: true, ponte: false, fotos: 'imgbb' });
+    assert.deepStrictEqual((await j('/api/saude')).corpo, { ok: true, ponte: false, fotos: 'imgbb' }, '"fotos" diz só r2 ou imgbb, nunca chave');
   } finally { srv.close(); }
   // sem segredo configurado, nada é confiado (ninguém "acerta" um segredo vazio)
   const sem = criarServidor({ funcoes: { eco: async (req, res) => res.json({ ip: req.headers['x-real-ip'] }) }, segredo: '' });
