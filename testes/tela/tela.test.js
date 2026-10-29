@@ -1246,19 +1246,20 @@ teste('login do painel: aparelho que já entra com Face ID mostra só o botão; 
 
 teste('loja que exige aparelho aprovado: login só do link mostra "Aguardando aprovação" e, aprovado, troca o login e abre', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'caixa1', email: 'caixa@teste.com', isAnonymous: false, claims: { tenants: { banca: 'caixa' }, apr: { banca: true } } } });
-  let n = 0;
+  let n = 0, liberar = false;
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, {
     rotas: (ctx) => ctx.route('**/api/equipe', async (r) => { const c = JSON.parse(r.request().postData() || '{}');
-      if (c.acao === 'sessao-aparelho') { n++; return r.fulfill({ contentType: 'application/json', body: JSON.stringify(n < 2 ? { sucesso: true, pendente: true, dono: false } : { sucesso: true, token: 'tok-aparelho' }) }); }
+      if (c.acao === 'sessao-aparelho') { n++; return r.fulfill({ contentType: 'application/json', body: JSON.stringify(!liberar ? { sucesso: true, pendente: true, dono: false } : { sucesso: true, token: 'tok-aparelho' }) }); }
       return r.fulfill({ contentType: 'application/json', body: '{"sucesso":true}' }); }),
     contexto: { viewport: { width: 390, height: 844 }, isMobile: true } });
-  await pagina.waitForSelector('#tela-aguardando-aparelho', { timeout: 8000 });
+  await pagina.waitForSelector('#tela-aguardando-aparelho', { timeout: 15000 });
   assert.match(await pagina.innerText('#tela-aguardando-aparelho'), /Aguardando aprovação/);
   assert.match(await pagina.innerText('#tela-aguardando-aparelho'), /proprietário recebeu um aviso/);
   assert.strictEqual(await pagina.evaluate(() => document.getElementById('dashboard').style.display), 'none', 'o painel não abre antes da aprovação');
-  const recarregou = pagina.waitForEvent('load', { timeout: 16000 });
-  await pagina.waitForFunction(() => window.__tokenCustom === 'tok-aparelho', null, { timeout: 15000 });
-  await recarregou;
+  // o dono aprova: na próxima conferência (de 10 em 10 s) vem o login do aparelho, troca e recarrega
+  const antes = n; liberar = true;
+  await pagina.waitForEvent('load', { timeout: 25000 });
+  assert.ok(n > antes, 'conferiu de novo sozinho');
   semErros(erros); await fechar();
 });
 

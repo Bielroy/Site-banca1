@@ -113,7 +113,8 @@ export async function garantirAparelho(u, { forcar = false } = {}) {
     if (j.livre) return true;
     if (j.bloqueado) { showToast('Este aparelho foi desconectado do painel pelo proprietário.', true); setTimeout(() => sairELimpar(), 1800); return false; }
     if (j.token) { try { await trocarLogin(j.token); } catch (e) { showToast(e.message, true); return false; } location.reload(); return false; }
-    // aguardando: confere de 10 em 10 segundos até o dono aprovar
+    // aguardando: confere de 10 em 10 segundos até o dono aprovar (uma conferência só, mesmo se chamado duas vezes)
+    if (document.getElementById(TELA)) return false;
     let parar = false;
     mostrarEspera(!!j.dono, () => { parar = true; sairELimpar(); });
     const conferir = async () => {
