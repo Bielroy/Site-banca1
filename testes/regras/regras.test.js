@@ -119,6 +119,27 @@ teste('chaves de Face ID e registro de aparelhos: ninguém lê nem grava pelo na
   }
 });
 
+// ====================================================================== APARELHO APROVADO (lib/aprovacao.js)
+teste('loja que exige aparelho aprovado: login só do link (sem a marca do aparelho) não vê nem grava nada; aparelho aprovado sim; outra loja não muda', async () => {
+  const exige = { apr: { 'loja-a': true } };
+  const doLink = (papel) => conta(`link-${papel}`, { tenants: { 'loja-a': papel, 'loja-b': papel }, ...exige });
+  const aprovado = (papel, apl = ['loja-a']) => conta(`ok-${papel}`, { tenants: { 'loja-a': papel }, ...exige, apl, apd: 'u_x' });
+  for (const papel of ['proprietario', 'caixa']) {
+    const v = doLink(papel);
+    await nega(getDoc(d(v, cam('loja-a', 'pedidos/ped-1')))); await nega(getDocs(c(v, cam('loja-a', 'pedidos'))));
+    await nega(getDoc(d(v, cam('loja-a', 'loja/fotos')))); await nega(updateDoc(d(v, cam('loja-a', 'pedidos/ped-1')), { status: 'preparando' }));
+    await nega(setDoc(d(v, cam('loja-a', 'produtos/p9')), { nome: 'x', preco: 1 }));
+    await pode(getDocs(c(v, cam('loja-b', 'pedidos'))));            // a loja B não exige: continua igual
+    await nega(getDocs(c(aprovado(papel, ['loja-b']), cam('loja-a', 'pedidos'))));   // aprovado em OUTRA loja não vale aqui
+    await nega(getDocs(c(aprovado(papel, 'loja-a'), cam('loja-a', 'pedidos'))));     // marca torta (texto, não lista) não vale
+  }
+  await pode(getDocs(c(aprovado('caixa'), cam('loja-a', 'pedidos'))));
+  await pode(updateDoc(d(aprovado('caixa'), cam('loja-a', 'pedidos/ped-1')), { status: 'preparando' }));
+  await pode(getDoc(d(aprovado('proprietario'), cam('loja-a', 'loja/fotos'))));
+  await pode(getDocs(c(plataforma(), cam('loja-a', 'pedidos'))));   // a plataforma não depende de aparelho
+  await pode(getDoc(d(doLink('caixa'), cam('loja-a', 'loja/catalogo'))));        // a vitrine pública continua aberta
+});
+
 // ====================================================================== PÚBLICO (sem login)
 teste('visitante sem login lê só a vitrine', async () => {
   const v = anonimo();

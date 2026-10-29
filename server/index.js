@@ -49,11 +49,14 @@ function confiarNoCabecalho(req, segredo) {
     if (ehIp(dele)) ip = dele;
     const host = String(h['x-host-original'] || '').trim().toLowerCase();
     if (/^[a-z0-9.-]{1,253}(:\d{1,5})?$/.test(host)) h['x-forwarded-host'] = host; else delete h['x-forwarded-host'];
+    const pais = String(h['x-cliente-pais'] || '').toUpperCase();
+    if (/^[A-Z]{2}$/.test(pais)) h['cf-ipcountry'] = pais; else delete h['cf-ipcountry'];
   } else {
     delete h['x-forwarded-host'];
+    delete h['cf-ipcountry'];                  // país escrito por quem chamou direto não vale
   }
   h['x-real-ip'] = ip || 'desconhecido';
-  for (const k of ['x-proxy-segredo', 'x-cliente-ip', 'x-host-original']) delete h[k];
+  for (const k of ['x-proxy-segredo', 'x-cliente-ip', 'x-host-original', 'x-cliente-pais']) delete h[k];
   return doProxy;
 }
 

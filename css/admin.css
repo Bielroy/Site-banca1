@@ -181,3 +181,26 @@ body.sem-chave-pix .so-chave-pix { display: none !important; }
 .eq-aparelhos .eq-suspeito { border-left: 3px solid var(--danger, #b42318); padding-left: 10px; }
 .eq-aparelhos .eq-bloqueado { opacity: .7; }
 .eq-aparelhos .eq-desc { color: var(--danger, #b42318); border-color: currentColor; }
+
+/* ---- porteiro e Face ID como caminho principal (lib/porteiro.js, js/admin-passkey.js) ---- */
+.campo-isca { position: absolute !important; left: -10000px !important; top: auto; width: 1px; height: 1px; overflow: hidden; }
+.login-outro { display: block; width: 100%; margin-top: 14px; padding: 12px; background: none; border: 0; color: var(--forest); font: 600 .95rem/1.3 inherit; text-decoration: underline; cursor: pointer; min-height: 44px; }
+.login-box.com-faceid .login-ou { display: none; }
+.login-box.com-faceid .login-email { display: none; }
+.login-box.com-faceid.mostrar-email .login-email { display: block; margin-top: 12px; }
+.login-box.com-faceid.mostrar-email .login-outro { display: none; }
+/* espera do aparelho aprovado (js/admin-aparelho.js) */
+.tela-espera-aparelho { position: fixed; inset: 0; z-index: 99998; background: #0f1b14; color: #fff; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; font-family: system-ui, -apple-system, sans-serif; }
+.tea-caixa { max-width: 400px; }
+.tea-caixa h1 { font-size: 1.45rem; margin: 0 0 12px; }
+.tea-caixa p { line-height: 1.6; margin: 0 0 14px; opacity: .92; }
+.tea-conferindo { font-size: .9rem; opacity: .75 !important; }
+.tea-caixa .btn-outline { padding: 13px 26px; border-radius: 10px; background: #fff; color: #0f1b14; font-weight: 700; border: 0; min-height: 44px; }
+/* equipe: aprovação de aparelho */
+.eq-aprov { display: flex; gap: 12px; align-items: flex-start; padding: 14px; margin: 6px 0 12px; border: 1.5px solid var(--linha, #e4dfd3); border-radius: 12px; cursor: pointer; }
+.eq-aprov input { width: 22px; height: 22px; flex: none; margin-top: 2px; accent-color: var(--forest); }
+.eq-aprov span { display: flex; flex-direction: column; gap: 4px; }
+.eq-aprov small { color: var(--text-light); line-height: 1.45; }
+.eq-item.eq-pendente { border-left: 4px solid #c4773a; }
+.eq-bts { display: flex; gap: 8px; flex-wrap: wrap; }
+.eq-bts .btn-salvar-config { width: auto; padding: 10px 16px; margin: 0; }

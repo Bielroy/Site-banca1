@@ -19,6 +19,7 @@ const P = require('../lib/prudencia');
 const T = require('../lib/tenant');
 const PK = require('../lib/passkey');
 const Ap = require('../lib/aparelhos');
+const Aprov = require('../lib/aprovacao');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -66,8 +67,20 @@ async function entrar(req, res) {
     await P.registrar(db, null, { acao: 'passkey-sem-acesso', quem: chave.email || chave.uid, detalhe: 'conta fora de todas as equipes', ip });
     return recusa(res, 403, 'Esta conta não tem mais acesso ao painel.');
   }
+  // APARELHO (lib/aparelhos.js + lib/aprovacao.js): aparelho desconectado não entra; aparelho aprovado em alguma
+  // loja já recebe o login preso a ele (loja que exige aparelho aprovado abre direto, sem trocar de login depois)
+  let marcas;
+  if (Ap.idValido(b.aparelho)) {
+    const sit = await Ap.situacao(db, u.uid, b.aparelho);
+    if (sit.bloqueado) {
+      await P.registrar(db, null, { acao: 'passkey-sem-acesso', quem: chave.email || chave.uid, detalhe: 'aparelho desconectado pelo proprietário', ip });
+      return recusa(res, 403, 'Este aparelho foi desconectado do painel. Fale com o proprietário da loja.');
+    }
+    const lojas = Aprov.lojasAprovadas(sit.doc, u.customClaims);
+    if (lojas.length) marcas = { apl: lojas, apd: sit.id };
+  }
   await ref.set({ contador: r.contador, usadoEm: new Date().toISOString() }, { merge: true });
-  const token = await admin.auth().createCustomToken(u.uid);
+  const token = await admin.auth().createCustomToken(u.uid, marcas);
   await P.registrar(db, null, { acao: 'login-passkey', quem: u.email || u.uid, uid: u.uid, detalhe: chave.aparelho || '', ip });
   res.setHeader('Cache-Control', 'no-store');
   return res.status(200).json({ sucesso: true, token });

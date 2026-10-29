@@ -1204,6 +1204,92 @@ teste('painel: avisa o servidor que este aparelho entrou (mesmo número de apare
   semErros(erros); await fechar();
 });
 
+teste('login do painel: o navegador resolve o desafio do porteiro de verdade (o servidor confere) e a isca fica fora da vista', async () => {
+  const Po = require(path.join(__dirname, '..', '..', 'lib', 'porteiro.js')), seg = 'seg-tela';
+  const cen = cenarioPadrao({ semLogin: true });
+  const pedidos = []; let conferido = null;
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, {
+    rotas: (ctx) => ctx.route('**/api/equipe', async (r) => { const c = JSON.parse(r.request().postData() || '{}'); pedidos.push(c);
+      if (c.acao === 'porteiro') return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ sucesso: true, ...Po.novoDesafio(seg, { acao: 'link', ip: 'tela', dificuldade: 14 }, Date.now() - 5000) }) });
+      if (c.acao === 'pedir-link') {
+        conferido = Po.conferir(seg, { desafio: c.desafio, solucao: c.solucao, acao: 'link', ip: 'tela', alvo: c.email, minimo: 14 });
+        return r.fulfill({ status: conferido.ok ? 200 : 428, contentType: 'application/json', body: JSON.stringify(conferido.ok ? { sucesso: true, mensagem: 'Se este e-mail estiver autorizado, o link chega em instantes.' } : { error: 'x', codigo: 'desafio' }) });
+      }
+      return r.fulfill({ contentType: 'application/json', body: '{}' }); }),
+    contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForSelector('#btn-login', { state: 'visible', timeout: 8000 });
+  const isca = await pagina.locator('#site-empresa').boundingBox();
+  assert.ok(!isca || isca.x < -1000 || isca.width <= 1, 'o campo-isca não aparece para gente');
+  await pagina.waitForTimeout(400);
+  await pagina.fill('#email', 'Dona@Teste.com');
+  await pagina.click('#btn-login');
+  await pagina.waitForFunction(() => /link chega em instantes/.test(document.getElementById('login-msg').textContent), null, { timeout: 15000 });
+  const pl = pedidos.find((p) => p.acao === 'pedir-link');
+  assert.ok(conferido && conferido.ok, `o servidor aceitou a resposta do navegador (${conferido && conferido.motivo})`);
+  assert.strictEqual(pl.isca, '', 'gente não preenche a isca'); assert.ok(/^[A-Za-z0-9_-]{16,80}$/.test(pl.aparelho), 'vai o número do aparelho');
+  semErros(erros); await fechar();
+});
+
+teste('login do painel: aparelho que já entra com Face ID mostra só o botão; o e-mail fica atrás de "Entrar pelo link do e-mail"', async () => {
+  const cen = cenarioPadrao({ semLogin: true });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, {
+    antes: `(${faceIdFalso.toString()})(); try { localStorage.setItem('pk_aparelho', '1'); } catch (_) {}`,
+    rotas: (ctx) => ctx.route('**/api/passkey', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ sucesso: true, publicKey: { challenge: 'YWJj', rpId: '127.0.0.1', userVerification: 'required', timeout: 60000 } }) })),
+    contexto: { viewport: { width: 390, height: 844 }, isMobile: true } });
+  await pagina.waitForSelector('.login-box.com-faceid', { timeout: 8000 });
+  assert.ok(await pagina.isVisible('#btn-passkey'), 'Face ID é o caminho principal');
+  assert.ok(!(await pagina.isVisible('#email')), 'o e-mail fica guardado');
+  await pagina.click('#login-outro');
+  assert.ok(await pagina.isVisible('#email') && await pagina.isVisible('#btn-login'), 'o link do e-mail continua ao alcance');
+  semErros(erros); await fechar();
+});
+
+teste('loja que exige aparelho aprovado: login só do link mostra "Aguardando aprovação" e, aprovado, troca o login e abre', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'caixa1', email: 'caixa@teste.com', isAnonymous: false, claims: { tenants: { banca: 'caixa' }, apr: { banca: true } } } });
+  let n = 0;
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, {
+    rotas: (ctx) => ctx.route('**/api/equipe', async (r) => { const c = JSON.parse(r.request().postData() || '{}');
+      if (c.acao === 'sessao-aparelho') { n++; return r.fulfill({ contentType: 'application/json', body: JSON.stringify(n < 2 ? { sucesso: true, pendente: true, dono: false } : { sucesso: true, token: 'tok-aparelho' }) }); }
+      return r.fulfill({ contentType: 'application/json', body: '{"sucesso":true}' }); }),
+    contexto: { viewport: { width: 390, height: 844 }, isMobile: true } });
+  await pagina.waitForSelector('#tela-aguardando-aparelho', { timeout: 8000 });
+  assert.match(await pagina.innerText('#tela-aguardando-aparelho'), /Aguardando aprovação/);
+  assert.match(await pagina.innerText('#tela-aguardando-aparelho'), /proprietário recebeu um aviso/);
+  assert.strictEqual(await pagina.evaluate(() => document.getElementById('dashboard').style.display), 'none', 'o painel não abre antes da aprovação');
+  const recarregou = pagina.waitForEvent('load', { timeout: 16000 });
+  await pagina.waitForFunction(() => window.__tokenCustom === 'tok-aparelho', null, { timeout: 15000 });
+  await recarregou;
+  semErros(erros); await fechar();
+});
+
+teste('equipe: o proprietário liga "aparelho novo só com a minha aprovação" e aprova o aparelho que está aguardando', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const pedidos = []; let ligado = false, aprovado = false;
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, {
+    rotas: (ctx) => ctx.route('**/api/equipe', async (r) => { const c = JSON.parse(r.request().postData() || '{}'); pedidos.push(c);
+      const j = c.acao === 'aprovacao-estado' ? { sucesso: true, ligado }
+        : c.acao === 'aprovacao-definir' ? (ligado = c.ligar, { sucesso: true, ligado, pessoas: 2, aprovados: 1 })
+        : c.acao === 'aparelho-aprovar' ? (aprovado = true, { sucesso: true })
+        : c.acao === 'aparelhos' ? { sucesso: true, aparelhos: [{ id: 'u3_abc1234567', uid: 'u3', email: 'caixa@teste.com', nome: 'Android · Chrome', ultima: new Date().toISOString(), primeira: new Date().toISOString(), pendente: !aprovado, aprovado, bloqueado: false, conexao: '200.1.x.x', conexoes: 1 }] }
+        : c.acao === 'listar' ? { sucesso: true, equipe: [] } : { sucesso: true };
+      return r.fulfill({ contentType: 'application/json', body: JSON.stringify(j) }); }),
+    contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForFunction(() => document.getElementById('dashboard').style.display !== 'none', null, { timeout: 8000 });
+  await pagina.locator('.tab[data-aba="equipe"]').click();
+  await pagina.waitForSelector('#eq-aprovacao', { timeout: 8000 });
+  assert.match(await pagina.innerText('#eq-aparelhos'), /Aguardando a sua aprovação/);
+  await pagina.check('#eq-aprovacao');
+  await pagina.click('#btn-confirm-ok');
+  await pagina.waitForFunction(() => document.getElementById('eq-aprovacao') && !document.getElementById('eq-aprovacao').disabled, null, { timeout: 5000 });
+  await pagina.waitForTimeout(300);
+  const def = pedidos.find((p) => p.acao === 'aprovacao-definir');
+  assert.ok(def && def.ligar === true && /^[A-Za-z0-9_-]{16,80}$/.test(def.aparelho), 'liga e manda o número deste aparelho (fica aprovado na hora)');
+  await pagina.click('[data-eq-aprovar]');
+  await pagina.waitForFunction(() => !document.querySelector('[data-eq-aprovar]'), null, { timeout: 5000 });
+  assert.deepStrictEqual(pedidos.filter((p) => p.acao === 'aparelho-aprovar').map((p) => p.id), ['u3_abc1234567']);
+  semErros(erros); await fechar();
+});
+
 teste('plataforma: "Link de entrada" do proprietário gera o link sem e-mail (o do Firebase cai no spam e lá não abre) e oferece copiar e mandar no WhatsApp', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
   const guardadas = lojasDaPlataforma(2);

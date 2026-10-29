@@ -69,7 +69,7 @@ function criarAdmin(db, tokens = {}, usuarios = []) {
     createUser: async ({ email }) => { const u = { uid: `novo-${usuarios.length + 1}-conta`, email }; usuarios.push(u); return u; },
     setCustomUserClaims: async (id, c) => { usuarios.find((x) => x.uid === id).customClaims = c; },
     revokeRefreshTokens: async (id) => { const u = usuarios.find((x) => x.uid === id); if (u) u.revogado = true; },
-    createCustomToken: async (id) => `custom-${id}`,
+    createCustomToken: async (id, marcas) => (marcas ? `custom-${id}|${JSON.stringify(marcas)}` : `custom-${id}`),
     updateUser: async (id, dados) => { const u = usuarios.find((x) => x.uid === id); if (!u) throw naoAchei(); if (dados && dados.password) u.senhaTrocada = true; return u; },
   };
   const firestore = () => db;

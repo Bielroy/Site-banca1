@@ -2,14 +2,15 @@
 //  js/admin-equipe.js — aba "Equipe": o proprietário dá acesso por e-mail.
 //  Quem grava o papel é o servidor (/api/equipe); a tela só pede.
 // =====================================================================
-import { auth } from './firebase.js';
+import { auth, signInWithCustomToken } from './firebase.js';
+import { numeroDoAparelho } from './admin-aparelho.js';
 import { escapeHTML, showToast, customConfirm } from './utils.js';
 import { sairELimpar } from './admin-guard.js';
 import { PAPEIS, ATRIBUIVEIS } from './papeis-lib.js';
 
-const S = { equipe: null, estado: 'carregando', ligado: false, enviando: false, registros: null, assinatura: null, aparelhos: null };
+const S = { equipe: null, estado: 'carregando', ligado: false, enviando: false, registros: null, assinatura: null, aparelhos: null, aprovacao: null };
 // nomes simples para o que fica na trilha de auditoria (api/equipe.js grava; ninguém edita nem apaga pelo painel)
-const ACOES = { 'equipe-papel': 'Deu acesso', 'equipe-remover': 'Tirou o acesso', 'zerar-movimento': 'Zerou o movimento', 'copia-restaurar': 'Restaurou o cadastro', 'copia-baixar': 'Baixou a cópia de segurança', maquininha: 'Mexeu na maquininha', 'sair-de-tudo': 'Encerrou o próprio login em todos os aparelhos', 'aparelho-novo': 'Entrou de um aparelho novo', 'aparelho-desconectar': 'Desconectou um aparelho', 'aparelho-liberar': 'Liberou um aparelho' };
+const ACOES = { 'equipe-papel': 'Deu acesso', 'equipe-remover': 'Tirou o acesso', 'zerar-movimento': 'Zerou o movimento', 'copia-restaurar': 'Restaurou o cadastro', 'copia-baixar': 'Baixou a cópia de segurança', maquininha: 'Mexeu na maquininha', 'sair-de-tudo': 'Encerrou o próprio login em todos os aparelhos', 'aparelho-novo': 'Entrou de um aparelho novo', 'aparelho-desconectar': 'Desconectou um aparelho', 'aparelho-liberar': 'Liberou um aparelho', 'aparelho-aguardando': 'Aparelho novo aguardando aprovação', 'aparelho-aprovar': 'Aprovou um aparelho', 'aprovacao-aparelhos': 'Mudou a aprovação de aparelho novo' };
 const quando = (iso) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''; };
 const registrosHtml = () => (S.registros === null ? '' : (S.registros.length
     ? `<ul class="eq-lista">${S.registros.map((r) => `<li class="eq-item"><span><b>${escapeHTML(ACOES[r.acao] || r.acao)}</b><small>${escapeHTML(quando(r.em))} · ${escapeHTML(r.quem || '')}${r.detalhe ? ` · ${escapeHTML(r.detalhe)}` : ''}</small></span></li>`).join('')}</ul>`
@@ -20,13 +21,20 @@ const aparelhosHtml = () => {
     if (S.aparelhos === null) return '<p class="config-sub">Carregando os aparelhos...</p>';
     if (!S.aparelhos.length) return '<p class="config-sub">Nenhum aparelho registrado ainda. Eles aparecem aqui conforme cada pessoa abre o painel.</p>';
     return `<ul class="eq-lista eq-aparelhos">${S.aparelhos.map((a) => `
-        <li class="eq-item${a.bloqueado ? ' eq-bloqueado' : ''}${a.como === 'link-outro-aparelho' ? ' eq-suspeito' : ''}">
+        <li class="eq-item${a.bloqueado ? ' eq-bloqueado' : ''}${a.pendente && !a.bloqueado ? ' eq-pendente' : ''}${a.como === 'link-outro-aparelho' ? ' eq-suspeito' : ''}">
             <span><b>${escapeHTML(a.nome)}${a.meu ? ' <em class="eq-fixo">você</em>' : ''}</b>
             <small>${escapeHTML(a.email)} · último acesso ${escapeHTML(quando(a.ultima))}${a.conexao ? ` · conexão ${escapeHTML(a.conexao)}` : ''}${a.conexoes > 1 ? ` (${a.conexoes} conexões)` : ''}</small>
-            <small>${a.bloqueado ? '<b>Desconectado</b>' : `primeiro acesso ${escapeHTML(quando(a.primeira))}${COMO[a.como] ? ` · ${escapeHTML(COMO[a.como])}` : ''}`}</small></span>
-            ${a.bloqueado ? `<button type="button" class="btn-outline" data-eq-liberar="${escapeHTML(a.id)}">Liberar</button>` : `<button type="button" class="btn-outline eq-desc" data-eq-desconectar="${escapeHTML(a.id)}">Desconectar</button>`}
+            <small>${a.bloqueado ? '<b>Desconectado</b>' : a.pendente ? '<b>Aguardando a sua aprovação</b> · ' : ''}${a.bloqueado ? '' : `primeiro acesso ${escapeHTML(quando(a.primeira))}${COMO[a.como] ? ` · ${escapeHTML(COMO[a.como])}` : ''}`}</small></span>
+            ${a.bloqueado ? `<button type="button" class="btn-outline" data-eq-liberar="${escapeHTML(a.id)}">Liberar</button>`
+                : a.pendente ? `<span class="eq-bts"><button type="button" class="btn-salvar-config" data-eq-aprovar="${escapeHTML(a.id)}">Aprovar</button><button type="button" class="btn-outline eq-desc" data-eq-desconectar="${escapeHTML(a.id)}">Negar</button></span>`
+                : `<button type="button" class="btn-outline eq-desc" data-eq-desconectar="${escapeHTML(a.id)}">Desconectar</button>`}
         </li>`).join('')}</ul>`;
 };
+// APROVAÇÃO DE APARELHO NOVO (lib/aprovacao.js): opção desta loja. Ligada, aparelho que nunca entrou fica esperando o proprietário aprovar.
+const aprovacaoHtml = () => (S.aprovacao === null ? '' : `
+    <label class="eq-aprov"><input type="checkbox" id="eq-aprovacao"${S.aprovacao ? ' checked' : ''}>
+        <span><b>Aparelho novo só entra com a minha aprovação</b>
+        <small>${S.aprovacao ? 'Ligado: celular ou computador que nunca entrou no painel fica esperando você tocar em Aprovar aqui. Você recebe aviso no celular. Os aparelhos aprovados entram normalmente.' : 'Desligado: aparelho novo entra direto e você só recebe o aviso. Ao ligar, os aparelhos que já entram continuam aprovados.'}</small></span></label>`);
 const el = () => document.getElementById('equipe-conteudo');
 const $ = (id) => document.getElementById(id);
 
@@ -65,6 +73,7 @@ function render() {
     <button type="button" class="btn-outline" id="eq-sair-tudo" style="padding:12px 18px">Sair de todos os aparelhos</button>
     <h4 class="cp-sub">Aparelhos que entraram</h4>
     <p class="config-sub">Cada celular ou computador que abriu o painel desta loja. Aparelho novo, link aberto em outro aparelho e acesso que parece compartilhado (muitos aparelhos ou conexões ao mesmo tempo) também chegam como aviso no seu celular. Não reconhece? Toque em Desconectar.</p>
+    <div id="eq-aprov-lugar">${aprovacaoHtml()}</div>
     <div id="eq-aparelhos">${aparelhosHtml()}</div>
     <h4 class="cp-sub">Registro de ações</h4>
     <p class="config-sub">Quem deu ou tirou acesso, quem baixou a cópia com dados de clientes, quem zerou ou restaurou. Fica guardado no servidor e ninguém apaga pelo painel.</p>
@@ -85,6 +94,7 @@ async function carregarAparelhos() {
 }
 async function carregar() {
     carregarAparelhos();
+    api({ acao: 'aprovacao-estado' }).then((j) => { S.aprovacao = !!j.ligado; const lugar = document.getElementById('eq-aprov-lugar'); if (lugar) lugar.innerHTML = aprovacaoHtml(); }).catch(() => {});
     api({ acao: 'minha-assinatura' }).then((j) => { S.assinatura = j.assinatura || null; const lugar = document.getElementById('eq-assin-lugar'); if (lugar) lugar.innerHTML = assinaturaHtml(); }).catch(() => {});
     try { S.equipe = (await api({ acao: 'listar' })).equipe || []; S.estado = 'ok'; }
     catch (e) { S.estado = 'erro'; S.erro = e.message; }
@@ -98,6 +108,29 @@ async function definir(email, papel, botao) {
 }
 function ligar() {
     if (S.ligado) return; S.ligado = true;
+    el().addEventListener('change', async (e) => {
+        const caixa = e.target.closest('#eq-aprovacao'); if (!caixa) return;
+        const ligar = caixa.checked;
+        const ok = await customConfirm(ligar ? 'Exigir aprovação para aparelho novo?' : 'Desligar a aprovação de aparelho novo?', ligar
+            ? 'Os aparelhos que já entram no painel continuam funcionando. Daqui para frente, celular ou computador novo da equipe só entra depois que você aprovar aqui (você recebe aviso no celular). Este aparelho fica aprovado agora.'
+            : 'Aparelho novo da equipe volta a entrar direto. O aviso de aparelho novo continua chegando.');
+        if (!ok) { caixa.checked = !ligar; return; }
+        caixa.disabled = true;
+        try {
+            const j = await api({ acao: 'aprovacao-definir', ligar, aparelho: numeroDoAparelho() });
+            S.aprovacao = ligar;
+            if (j.token) {               // este aparelho ganhou o login preso a ele: troca e recarrega
+                showToast('Aprovação ligada. Este aparelho continua aprovado.');
+                await signInWithCustomToken(auth, j.token);
+                setTimeout(() => location.reload(), 900);
+                return;
+            }
+            showToast(ligar ? 'Aprovação ligada.' : 'Aprovação desligada.');
+            const lugar = document.getElementById('eq-aprov-lugar'); if (lugar) lugar.innerHTML = aprovacaoHtml();
+            carregarAparelhos();
+        } catch (err) { caixa.checked = !ligar; showToast(err.message, true); }
+        finally { caixa.disabled = false; }
+    });
     el().addEventListener('click', async (e) => {
         if (e.target.closest('#eq-adicionar')) {
             const email = $('eq-email').value.trim().toLowerCase();
@@ -107,6 +140,13 @@ function ligar() {
         if (e.target.closest('#eq-sair-tudo')) {
             if (!(await customConfirm('Sair de todos os aparelhos?', 'O seu login é encerrado neste e em qualquer outro aparelho, e o Face ID/digital de todos eles é desligado. Você vai precisar entrar de novo pelo link do e-mail.'))) return;
             try { await api({ acao: 'sair-de-tudo' }); showToast('Login encerrado em todos os aparelhos.'); setTimeout(() => sairELimpar(), 1200); } catch (err) { showToast(err.message, true); }
+            return;
+        }
+        const aprovar = e.target.closest('[data-eq-aprovar]');
+        if (aprovar) {
+            aprovar.disabled = true;
+            try { await api({ acao: 'aparelho-aprovar', id: aprovar.dataset.eqAprovar }); showToast('Aparelho aprovado. A pessoa já pode entrar.'); await carregarAparelhos(); }
+            catch (err) { showToast(err.message, true); aprovar.disabled = false; }
             return;
         }
         const desc = e.target.closest('[data-eq-desconectar]'), lib = e.target.closest('[data-eq-liberar]');

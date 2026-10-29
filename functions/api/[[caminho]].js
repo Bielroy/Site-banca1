@@ -44,6 +44,7 @@ export async function onRequest({ request, env, params }) {
   cab.set('x-proxy-segredo', env.PROXY_SEGREDO);
   cab.set('x-cliente-ip', request.headers.get('cf-connecting-ip') || '');
   cab.set('x-host-original', url.host);
+  cab.set('x-cliente-pais', String(request.headers.get('cf-ipcountry') || '').slice(0, 2));  // país da conexão (pontuação do porteiro e lista de aparelhos)
 
   const comCorpo = !['GET', 'HEAD'].includes(request.method);
   try {

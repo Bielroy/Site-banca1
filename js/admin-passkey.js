@@ -13,6 +13,7 @@ import { showToast } from './utils.js';
 import { anotarComoEntrou, numeroDoAparelho } from './admin-aparelho.js';
 
 const CH_EMAIL = 'painel_ultimo_email';
+const CH_APARELHO = 'pk_aparelho';          // este aparelho já entra com Face ID/digital: o botão vira o caminho principal
 const chAtivo = (uid) => `pk_ativo:${uid}`, chNao = (uid) => `pk_nao:${uid}`;
 const ler = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
 const gravar = (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* sem armazenamento */ } };
@@ -25,6 +26,7 @@ const avisar = (texto, cor = 'var(--text-dark)') => { const m = $('login-msg'); 
 async function entrarComToken(token) {
     avisar('Entrando...');
     anotarComoEntrou('passkey');
+    gravar(CH_APARELHO, '1');
     await signInWithCustomToken(auth, token);       // o resto (conferir o papel, abrir o painel) é o onAuthStateChanged de js/admin.js
 }
 
@@ -32,7 +34,7 @@ async function entrarComToken(token) {
 async function ligarSugestao() {
     if (sugestaoAtiva || !(await PK.temSugestaoNoCampo())) return;
     const ctrl = new AbortController(); sugestaoAtiva = ctrl;
-    try { await entrarComToken(await PK.pedirEntrada({ condicional: true, sinal: ctrl.signal })); }
+    try { await entrarComToken(await PK.pedirEntrada({ condicional: true, sinal: ctrl.signal, aparelho: numeroDoAparelho() })); }
     catch (e) {
         if (ctrl.signal.aborted || (e && e.name === 'AbortError')) return;
         const m = PK.explicarErro(e); if (m) avisar(m, 'var(--danger)');
@@ -48,6 +50,15 @@ export async function iniciarLoginRapido() {
     const caixa = $('login-passkey'), bt = $('btn-passkey');
     if (!caixa || !bt || !(await PK.temSuporte())) return false;
     caixa.hidden = false;
+    // FACE ID COMO CAMINHO PRINCIPAL: neste aparelho já deu certo antes, então o e-mail fica guardado atrás de um botão
+    if (ler(CH_APARELHO)) {
+        const box = caixa.closest('.login-box'), outro = $('login-outro'), sub = box && box.querySelector('.login-sub');
+        if (box && outro) {
+            box.classList.add('com-faceid'); outro.hidden = false;
+            if (sub) sub.textContent = 'Toque no botão e confirme com Face ID ou digital.';
+            outro.addEventListener('click', () => { box.classList.add('mostrar-email'); $('email')?.focus(); });
+        }
+    }
     PK.prepararEntrada().then(ligarSugestao).catch(() => { /* sem servidor: o botão tenta de novo no toque */ });
     // o desafio vale 5 min: renova antes, para o toque no iPhone nunca esperar internet (o Safari exige o Face ID logo após o toque)
     const renovar = setInterval(() => { if (!document.getElementById('login-passkey') || $('login-screen')?.style.display === 'none') return clearInterval(renovar); if (!sugestaoAtiva) PK.prepararEntrada(true).then(ligarSugestao).catch(() => {}); }, 210000);
@@ -55,7 +66,7 @@ export async function iniciarLoginRapido() {
         if (bt.disabled) return;
         if (sugestaoAtiva) { sugestaoAtiva.abort(); sugestaoAtiva = null; }
         bt.disabled = true; avisar('Confirme com Face ID ou digital...');
-        try { await entrarComToken(await PK.pedirEntrada()); }
+        try { await entrarComToken(await PK.pedirEntrada({ aparelho: numeroDoAparelho() })); }
         catch (e) {
             const m = PK.explicarErro(e); avisar(m || '', 'var(--danger)');
             PK.prepararEntrada(true).then(ligarSugestao).catch(() => {});
@@ -90,7 +101,7 @@ export async function depoisDeEntrar(user) {
         b.disabled = true;
         try {
             await PK.ativar(pegarToken, numeroDoAparelho());
-            gravar(chAtivo(user.uid), '1'); caixa.remove();
+            gravar(chAtivo(user.uid), '1'); gravar(CH_APARELHO, '1'); caixa.remove();
             showToast('Pronto! Da próxima vez, toque em "Entrar com Face ID ou digital".');
         } catch (err) {
             if (err && err.name === 'InvalidStateError') { gravar(chAtivo(user.uid), '1'); caixa.remove(); showToast('Este aparelho já está com Face ID/digital ativado.'); return; }

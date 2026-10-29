@@ -30,8 +30,15 @@ service cloud.firestore {
     function plataforma() { return confirmado() && request.auth.token.get('plataforma', false) == true; }
     function mapaDePapeis() { return request.auth.token.get('tenants', {}); }
     // papel da pessoa NESTA loja ('' se não tiver). A conta antiga (admin: true) vale como proprietária da loja original.
+    // APARELHO APROVADO (lib/aprovacao.js): loja com a opção ligada põe no login a marca apr[loja] = true.
+    // Aí o papel nela só vale com login dado pelo servidor a um aparelho aprovado (apl contém a loja).
+    // O link do e-mail sozinho não basta. A mesma conta é feita no servidor (lib/tenant.js, faltaAparelho).
+    function aparelhoOk(tid) {
+      return !(request.auth.token.get('apr', {}) is map && request.auth.token.get('apr', {}).get(tid, false) == true)
+        || (request.auth.token.get('apl', []) is list && tid in request.auth.token.get('apl', []));
+    }
     function papel(tid) {
-      return !confirmado() ? ''
+      return !confirmado() || !aparelhoOk(tid) ? ''
         : (mapaDePapeis() is map && mapaDePapeis().get(tid, '') is string && mapaDePapeis().get(tid, '') != '' ? mapaDePapeis().get(tid, '')
           : (tid == 'banca' && request.auth.token.get('admin', false) == true ? 'proprietario' : ''));
     }

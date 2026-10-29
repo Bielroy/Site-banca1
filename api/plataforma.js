@@ -24,6 +24,7 @@
 // =====================================================================
 const admin = require('firebase-admin');
 const T = require('../lib/tenant');
+const Aprov = require('../lib/aprovacao');
 const { MODELOS, MODULOS } = require('../lib/modelos');
 const { CAMPOS_PRODUTO } = require('../lib/campos');
 const Segredos = require('../lib/segredos');
@@ -136,7 +137,8 @@ async function definirDono(id, email, remover) {
   if (!remover && u.emailVerified !== true) { try { await admin.auth().updateUser(u.uid, { password: crypto.randomBytes(48).toString('base64') }); await admin.auth().revokeRefreshTokens(u.uid); } catch (e) { console.error('[plataforma] blindar', e && e.code); } }
   const claims = u.customClaims || {}, tenants = { ...(claims.tenants || {}) };
   if (remover) { if (tenants[id] !== 'proprietario') throw falha(400, 'Esta conta não é proprietária desta loja.'); delete tenants[id]; } else tenants[id] = 'proprietario';
-  const novos = { ...claims, tenants };
+  // loja que exige aparelho aprovado: o login do dono leva a marca (lib/aprovacao.js); quem sai perde a marca
+  const novos = Aprov.claimsCom({ ...claims, tenants }, id, !remover && (await Aprov.exige(db, id)));
   if (JSON.stringify(novos).length > 900) throw falha(400, 'Esta conta já participa de lojas demais.');
   await admin.auth().setCustomUserClaims(u.uid, novos);
   const ref = T.tdoc(db, id, 'equipe', u.uid);
@@ -392,7 +394,7 @@ async function assinatura(req, res) {
 }
 
 async function assumir(dec, res) {
-  const donoDaOriginal = dec.admin === true || (dec.tenants && dec.tenants[T.TENANT_PADRAO] === 'proprietario');
+  const donoDaOriginal = T.papelDe(dec, T.TENANT_PADRAO) === 'proprietario';      // respeita a aprovação de aparelho (lib/aprovacao.js)
   if (!donoDaOriginal && dec.plataforma !== true) throw falha(403, 'Só quem é dono da loja original pode assumir a plataforma.');
   const ref = db.collection('plataforma').doc('dono');
   await db.runTransaction(async (t) => {

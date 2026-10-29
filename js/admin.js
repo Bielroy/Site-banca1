@@ -3,7 +3,8 @@ import { normalizarInstagram, normalizarWhatsapp, telefoneBonito } from './conta
 import { miniatura } from './foto-lib.js';   // foto pelo redutor do site (o i.ibb.co direto não abre em algumas redes)
 import { getDoc, auth, db, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, limit, writeBatch, where, updateDoc } from './firebase.js';
 import { iniciarLoginRapido, depoisDeEntrar } from './admin-passkey.js';
-import { vigiarEsteAparelho, anotarComoEntrou } from './admin-aparelho.js';
+import { vigiarEsteAparelho, anotarComoEntrou, garantirAparelho, numeroDoAparelho } from './admin-aparelho.js';
+import { prepararPorteiro, provaPara } from './porteiro-cliente.js';
 import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
@@ -119,12 +120,14 @@ onAuthStateChanged(auth, async (user) => {
     if (!user) {
         document.getElementById('login-screen').style.display = 'block';
         document.getElementById('dashboard').style.display = 'none';
-        if (!loginRapidoLigado) { loginRapidoLigado = true; iniciarLoginRapido().catch(() => { /* só conveniência */ }); }
+        if (!loginRapidoLigado) { loginRapidoLigado = true; iniciarLoginRapido().catch(() => { /* só conveniência */ }); prepararPorteiro(); }
         return;
     }
 
     const autorizado = await exigirAdmin(user);
     if (!autorizado) return; // o guard já exibe a tela de bloqueio
+    // loja que exige APARELHO APROVADO (lib/aprovacao.js): troca o login do link pelo deste aparelho, ou espera o dono aprovar
+    if (!(await garantirAparelho(user))) return;
 
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('dashboard').style.display = 'grid';
@@ -159,21 +162,32 @@ document.getElementById('btn-login').addEventListener('click', async () => {
     }
 
     isLoginProcessing = true; document.getElementById('btn-login').disabled = true;
-    msg.textContent = "A enviar link..."; msg.style.color = "var(--text-dark)";
+    msg.textContent = "Conferindo que não é um robô..."; msg.style.color = "var(--text-dark)";
 
     const guardarEmail = () => { try { window.localStorage.setItem('emailForSignIn', email); } catch (_) {} try { window.sessionStorage.setItem('emailForSignIn', email); } catch (_) {} };
     try {
         // O pedido do link passa pelo NOSSO servidor: só e-mail que já faz parte de alguma equipe recebe, e a
         // resposta é a mesma para qualquer e-mail (não dá para descobrir por aqui quem é da equipe).
+        // PORTEIRO (lib/porteiro.js): o navegador resolve o desafio (1 a 3 s, sem a pessoa fazer nada) e manda junto
+        // com a isca (campo escondido) e o número deste aparelho. Se o servidor pedir um desafio mais pesado, refaz sozinho.
         let r = null, j = {};
-        try {
-            r = await fetch('/api/equipe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'pedir-link', email, loja: TENANT }) });
-            j = await r.json().catch(() => ({}));
-        } catch (_) { r = null; }
+        const aparelho = numeroDoAparelho(), isca = document.getElementById('site-empresa')?.value || '';
+        for (let tentativa = 0, pesado = null; tentativa < 3; tentativa++) {
+            let prova = { desafio: '', solucao: '' };
+            try { prova = await provaPara(email, aparelho, pesado); } catch (e) { if (e && e.status === 429) { r = { ok: false, status: 429 }; j = { error: e.message }; break; } }
+            msg.textContent = "A enviar link...";
+            try {
+                r = await fetch('/api/equipe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'pedir-link', email, loja: TENANT, aparelho, isca, ...prova }) });
+                j = await r.json().catch(() => ({}));
+            } catch (_) { r = null; }
+            if (!(r && r.status === 428)) break;
+            pesado = { dificuldade: j.dificuldade };
+            msg.textContent = "Conferindo de novo...";
+        }
         if (r && r.ok) {
             guardarEmail();
             msg.textContent = j.mensagem || 'Se este e-mail estiver autorizado, o link chega em instantes.'; msg.style.color = "var(--success)";
-        } else if (r && (r.status === 429 || r.status === 400)) {
+        } else if (r && (r.status === 429 || r.status === 400 || r.status === 428 || r.status === 403)) {
             msg.textContent = j.error || 'Não consegui enviar. Tente de novo em alguns minutos.'; msg.style.color = "var(--danger)";
         } else {
             // Plano B: o servidor não conseguiu (fora do ar ou sem configuração). Pede direto ao Firebase, como era antes,

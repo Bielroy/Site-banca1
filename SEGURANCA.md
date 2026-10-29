@@ -212,7 +212,10 @@ pedido, PIX de pedido cancelado, enxurrada de pedidos.
 
 - **Segundo fator (MFA) dentro do site.** O Firebase só oferece com upgrade pago do login. O segundo fator de hoje
   é a verificação em duas etapas **da conta de e-mail** de quem entra no painel: ligue nela.
-- **App Check e CAPTCHA.** Dependem de cadastro e chaves no console; ficaram documentados em PUBLICAR.md.
+- **App Check.** Depende de cadastro e chaves no console; ficou documentado em PUBLICAR.md. O CAPTCHA existe, feito aqui mesmo
+  (seção "Porteiro"), sem Google nem Cloudflare. Sem o App Check, quem chama o Firebase direto com a chave pública ainda
+  consegue pedir link de e-mail por fora do nosso servidor (gasta a cota de 5 links por dia, mas o link só vai para o
+  próprio e-mail digitado).
 - **Registro de mudança de preço e de exclusão de produto.** Essas gravações vão do painel direto ao banco; para
   registrá-las o cadastro teria de passar pelo servidor.
 - **Limite na borda.** Na Rota A ele existe: ver "Spam e ataques" abaixo (regra do Cloudflare + freio do servidor).
@@ -261,3 +264,37 @@ dados de cliente (lista de clientes, clientes esperados, explicações da previs
 - **Cópias de segurança antigas** (até 7 dias) ainda têm os dados abertos e saem sozinhas na rotação.
 - **O que continua aberto de propósito:** valores, itens, condomínio, forma de pagamento e datas (o caixa, o estoque e a
   previsão precisam). CPF e e-mail do PIX não são guardados: vão direto ao PagBank.
+
+## Porteiro da entrada (captcha próprio) — `lib/porteiro.js`
+
+Fica na frente do "Receber link de acesso" (`/api/equipe`, ação `pedir-link`). Camadas que se somam:
+
+| Camada | O que faz |
+|---|---|
+| Pontuação de risco | Pontos por: muitas tentativas da conexão, o mesmo e-mail pedido de vários lugares, enxurrada geral, conexão de fora do Brasil. Poucos pontos: desafio levinho. Médio: desafio mais pesado. 8 ou mais: barrado e o dono é avisado |
+| Aparelho conhecido | Aparelho que já entrou com aquela conta ganha desconto; aparelho desconectado é barrado |
+| Isca e tempo mínimo | Campo escondido (robô preenche → resposta de "sucesso" sem enviar nada, fica na trilha); desafio respondido em menos de 1,5 s é recusado |
+| Desafio (prova de trabalho) | O navegador acha um número cujo SHA-256 (junto com o desafio e o e-mail) começa com 12 a 19 bits zero: de instantes a ~3 s no celular. Assinado (HMAC), vale 10 min, só para a conexão que pediu, só para aquele e-mail, uma vez (`porteiro_usados`) |
+| Freio global | O mesmo e-mail atacado de muitas conexões ou enxurrada geral esquenta a pontuação de todos sem aparelho conhecido |
+
+Os contadores ficam na memória do servidor (reiniciar zera); os limites do banco continuam por baixo. O Face ID não usa
+o desafio: a assinatura do aparelho já é a prova, e ele tem o próprio limite por conexão.
+
+**Limite honesto:** não barra uma pessoa de verdade resolvendo o desafio nem um robô paciente com muitas conexões. Isso
+fica com: só e-mail da equipe recebe link, aviso de aparelho novo, aprovação do dono e Face ID.
+
+## Aprovação de aparelho novo (opção de cada loja) — `lib/aprovacao.js`
+
+Equipe → Aparelhos → "Aparelho novo só entra com a minha aprovação". Ligada:
+
+- O login de cada pessoa da equipe leva a marca `apr: { loja: true }`. Com ela, o papel naquela loja só vale com o login
+  que o SERVIDOR dá a um aparelho aprovado (`apl: [lojas]`). Quem conferem: `firestore.rules` e `storage.rules`
+  (`aparelhoOk`) e o servidor (`lib/tenant.papelDe`). O link do e-mail sozinho não abre nada da loja.
+- Aparelho novo: tela "Aguardando aprovação"; o dono recebe aviso e aprova (ou nega) em Equipe → Aparelhos.
+- Aparelho novo do proprietário: ele aprova de outro aparelho dele já aprovado; sem nenhum, a plataforma aprova.
+- Ao ligar, os aparelhos que já entravam ficam aprovados. Aprovado entra normalmente (link ou Face ID), sem perguntar de novo.
+- A plataforma não depende de aparelho. A vitrine pública não muda.
+- **Limite honesto:** o login já aberto vale por até 1 hora depois de desconectar (regra do Firebase).
+- **As regras do banco e do armazenamento precisam ser publicadas no console** para a trava valer também nas leituras
+  diretas do banco (PUBLICAR.md, seção "Regras"). Publicar antes ou depois do servidor não quebra nada: sem a marca no
+  login, as regras se comportam como antes.

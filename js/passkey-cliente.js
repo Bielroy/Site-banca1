@@ -56,13 +56,13 @@ const respostaGet = (c) => ({ id: c.id, rawId: b64u(c.rawId), type: c.type, resp
  * Pede o Face ID/digital e devolve o token do Firebase (para signInWithCustomToken).
  * condicional = true: espera a pessoa escolher a chave na sugestão do campo de e-mail (sem abrir nada sozinho).
  */
-export async function pedirEntrada({ condicional = false, sinal } = {}) {
+export async function pedirEntrada({ condicional = false, sinal, aparelho = '' } = {}) {
     const pronta = opEntrada && Date.now() - opEntrada.em < VALE_MS ? opEntrada.publicKey : null;
     const pk = pronta || await prepararEntrada(true);
     if (!condicional) opEntrada = null;                       // cada desafio vale uma vez (a sugestão do campo, se cancelada, não gasta o desafio)
     const cred = await navigator.credentials.get({ publicKey: paraGet(pk), ...(condicional ? { mediation: 'conditional' } : {}), ...(sinal ? { signal: sinal } : {}) });
     if (!cred) throw Object.assign(new Error('Cancelado.'), { name: 'NotAllowedError' });
-    const j = await post({ acao: 'entrar', resposta: respostaGet(cred) });
+    const j = await post({ acao: 'entrar', resposta: respostaGet(cred), ...(aparelho ? { aparelho } : {}) });   // aparelho: o servidor já dá o login preso a ele (lib/aprovacao.js)
     return j.token;
 }
 
