@@ -159,7 +159,7 @@ function criarServidor({
       // /api/saude: aberto pelo site (https://seu-site/api/saude), passa pela ponte do Cloudflare.
       // "ponte": true = o PROXY_SEGREDO do Cloudflare é IGUAL ao daqui. Se vier false, os freios por IP
       // enxergam todos os clientes como um só (o Cloudflare) e bloqueiam a loja inteira de uma vez.
-      if (url.pathname === '/api/saude') return dar(200, { ok: true, ponte: confiarNoCabecalho(req, segredo), fotos: R2_LIGADO() ? 'r2' : 'imgbb' });
+      if (url.pathname === '/api/saude') return dar(200, { ok: true, ponte: confiarNoCabecalho(req, segredo), fotos: R2_LIGADO() ? 'r2' : 'desligado' });
       const m = /^\/api\/([a-z0-9-]+)\/?$/.exec(url.pathname);
       if (!m || !Object.prototype.hasOwnProperty.call(funcoes, m[1])) return dar(404, { error: 'Não encontrado.' });
 
@@ -189,14 +189,14 @@ if (require.main === module) {
   const porta = Number(process.env.PORT) || 8080;
   if (!process.env.PROXY_SEGREDO) console.warn('[servidor] PROXY_SEGREDO não definido: o IP vem só da conexão (os freios por IP veem o Cloudflare como um só visitante).');
   // Aviso na largada sobre o que falta (só nomes, nunca valores), para não descobrir pelo cliente.
-  const faltam = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY', 'GEMINI_API_KEY', 'IMGBB_API_KEY', 'PUBLIC_BASE_URL', 'CRON_SECRET', 'VAPID_PRIVATE_KEY']
+  const faltam = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY', 'GEMINI_API_KEY', 'PUBLIC_BASE_URL', 'CRON_SECRET', 'VAPID_PRIVATE_KEY']
     .filter((k) => !String(process.env[k] || '').trim());
   if (!String(process.env.FIREBASE_WEB_API_KEY || process.env.VITE_FIREBASE_API_KEY || '').trim()) faltam.push('FIREBASE_WEB_API_KEY (entrar no painel)');
   if (!String(process.env.PAGBANK_API_TOKEN || '').trim()) faltam.push('PAGBANK_API_TOKEN (PIX e cartão)');
   if (!require('../lib/cofre').ligado()) faltam.push('DADOS_CHAVE (dados de cliente gravados SEM cifra)');
   const R2 = require('../lib/r2');
-  if (R2.nenhuma()) faltam.push('R2_* (fotos no Cloudflare R2; sem elas vão para o ImgBB)');
-  else if (!R2.config()) faltam.push(`${R2.faltando().join(', ')} (R2 pela metade: as fotos seguem indo para o ImgBB)`);
+  if (R2.nenhuma()) faltam.push('R2_* (fotos no Cloudflare R2: sem elas o painel não envia fotos pelo servidor)');
+  else if (!R2.config()) faltam.push(`${R2.faltando().join(', ')} (R2 pela metade: o painel não envia fotos pelo servidor)`);
   else console.log('[servidor] fotos: Cloudflare R2 ligado.');
   if (faltam.length) console.warn(`[servidor] variáveis vazias: ${faltam.join(', ')}`);
 

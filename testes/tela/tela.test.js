@@ -374,7 +374,9 @@ teste('painel: foto que sumiu do ImgBB aparece como "Foto fora do ar" (nunca a f
   const rotas = async (ctx) => {
     await ctx.route('https://i.ibb.co/**', (r) => (perdidas.some((x) => r.request().url().endsWith(x)) ? r.fulfill({ status: 503, contentType: 'image/png', body: png }) : r.fulfill({ status: 200, contentType: 'image/png', body: png })));
     await ctx.route('**/_vercel/image**', (r) => { const u = decodeURIComponent(new URL(r.request().url()).searchParams.get('url') || ''); return perdidas.some((x) => u.endsWith(x)) ? r.fulfill({ status: 502, body: 'fora' }) : r.fulfill({ status: 200, contentType: 'image/png', body: png }); });
-    await ctx.route('**/api/foto', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ url: 'https://i.ibb.co/novo/' + Date.now() + '.webp' }) }));
+    await ctx.route('https://fotos.usebanca.com/**', (r) => r.fulfill({ status: 200, contentType: 'image/png', body: png }));
+    // a foto reenviada vai para o Cloudflare R2 (o ImgBB não recebe mais nada)
+    await ctx.route('**/api/foto', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ url: 'https://fotos.usebanca.com/lojas/banca/novo-' + Date.now() + '.webp' }) }));
   };
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { rotas, antes: () => { window.__REDUTOR_LOCAL = true; }, contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
   await pagina.locator('.tab[data-aba="produtos"]').click();
@@ -388,7 +390,7 @@ teste('painel: foto que sumiu do ImgBB aparece como "Foto fora do ar" (nunca a f
   const hk = pagina.locator('#cf-lista .ft-linha', { hasText: 'Heineken' }), al = pagina.locator('#cf-lista .ft-linha', { hasText: 'Alho' });
   assert.strictEqual(await al.locator('[data-cf="usar"]').count(), 0, 'sem cópia: só "Escolher outra"');
   await hk.locator('[data-cf="usar"]').click();
-  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /produtos\/hk$/.test(g.path) && /i\.ibb\.co\/novo\//.test(g.dados.foto || '') && /i\.ibb\.co\/novo\//.test(g.dados.fotoMini || '')), null, { timeout: 8000 });
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /produtos\/hk$/.test(g.path) && /fotos\.usebanca\.com\/lojas\/banca\/novo-/.test(g.dados.foto || '') && /fotos\.usebanca\.com\/lojas\/banca\/novo-/.test(g.dados.fotoMini || '')), null, { timeout: 8000 });
   await hk.locator('text=Consertada').waitFor({ timeout: 4000 });
   // Alho: escolhe a foto de novo do computador
   const [esc] = await Promise.all([pagina.waitForEvent('filechooser', { timeout: 4000 }), al.locator('[data-cf="outra"]').click()]);

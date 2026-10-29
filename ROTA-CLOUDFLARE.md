@@ -66,7 +66,8 @@ O Docker roda `server/index.js`; o **Caddy** cuida do HTTPS de `api.usebanca.com
 - **Chaves:** 5 linhas no `~/segredos.env` (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`,
   `R2_URL_PUBLICA`) e `bash ~/loja/scripts/atualizar-servidor.sh`. Token do R2 com "Object Read & Write" **só** nesse bucket.
   Conferir: `https://usebanca.com/api/saude` mostra `"fotos":"r2"`; a tela Plataforma → Chaves mostra "Ligado".
-  Faltou ou errou uma linha: o servidor avisa na atualização ("variáveis vazias: R2_...") e as fotos seguem para o ImgBB.
+  Faltou ou errou uma linha: o servidor avisa na atualização ("variáveis vazias: R2_...") e o painel não envia fotos.
+  O ImgBB não é mais usado: o servidor não manda nada para lá, e a tela Plataforma oferece apagar a chave antiga.
 - **Migrar as fotos antigas** (no terminal da AWS, depois de atualizar o servidor):
   1. `docker exec loja node server/migrar-fotos.js` — **simulação**: conta as fotos, confere se abrem, não grava nada.
   2. `docker exec loja node server/migrar-fotos.js --gravar` — copia para o R2 e troca os links no banco.

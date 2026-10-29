@@ -166,10 +166,10 @@ function abaChaves() {
         <p>${d.pix ? 'Para trocar, cole o novo token. Para o PIX aparecer ao cliente, ligue também "PIX automático" nas Configurações do painel da loja.' : 'Cole o token da conta PagBank (no site do PagBank: Integrações, Token). Depois ligue "PIX automático" nas Configurações do painel da loja. Vale para a loja original.'}</p>
         <div class="pf-form-linha"><input type="password" id="pf-pagbank" autocomplete="off" spellcheck="false" maxlength="300" placeholder="Token do PagBank" aria-label="Token do PagBank"><button type="button" class="pf-bt pri" data-pf="salvar-pagbank">Salvar</button></div></section>
     <section class="pf-chave"><div class="pf-chave-topo"><h3>Fotos dos produtos (Cloudflare R2)</h3><span class="pf-selo${d.fotosR2 ? ' ok' : ''}">${d.fotosR2 ? 'Ligado' : 'Desligado'}</span></div>
-        <p>${d.fotosR2 ? 'As fotos enviadas pelo painel vão para o R2 (fotos.usebanca.com). O ImgBB abaixo fica só de reserva, se o R2 falhar.' : (d.r2Falta || []).length ? `O R2 está configurado pela metade no servidor. Falta ou está errado: ${(d.r2Falta || []).join(', ')} (no ~/segredos.env).` : 'Desligado: as chaves do R2 ficam no ~/segredos.env do servidor (veja ROTA-CLOUDFLARE.md). Sem elas, as fotos vão para o ImgBB.'}</p></section>
-    <section class="pf-chave"><div class="pf-chave-topo"><h3>Fotos dos produtos (ImgBB${d.fotosR2 ? ', reserva' : ''})</h3><span class="pf-selo${d.fotosImgbb ? ' ok' : ''}">${d.fotosImgbb ? 'Chave guardada' : 'Sem chave'}</span></div>
-        <p>${d.fotosImgbb ? (d.fotosR2 ? 'Só é usado se o R2 falhar. Para trocar a chave, cole a nova.' : 'As lojas enviam as fotos pelo painel e elas vão sozinhas para o ImgBB. Para trocar a chave, cole a nova.') : 'Com a chave do ImgBB, as lojas enviam várias fotos de uma vez pelo painel. Para pegar a chave (grátis): crie a conta em imgbb.com, abra api.imgbb.com e toque em "Get API key".'}</p>
-        <div class="pf-form-linha"><input type="password" id="pf-imgbb" autocomplete="off" spellcheck="false" maxlength="40" placeholder="Chave do ImgBB (32 letras e números)" aria-label="Chave do ImgBB"><button type="button" class="pf-bt pri" data-pf="salvar-imgbb">Salvar</button></div></section>`;
+        <p>${d.fotosR2 ? 'As fotos enviadas pelo painel vão para o R2 (fotos.usebanca.com).' : (d.r2Falta || []).length ? `O R2 está configurado pela metade no servidor. Falta ou está errado: ${(d.r2Falta || []).join(', ')} (no ~/segredos.env).` : 'Desligado: as chaves do R2 ficam no ~/segredos.env do servidor (veja ROTA-CLOUDFLARE.md). Sem elas, o painel não envia fotos pelo servidor.'}</p></section>
+    ${d.imgbbGuardada ? `<section class="pf-chave"><div class="pf-chave-topo"><h3>Chave antiga do ImgBB</h3><span class="pf-selo">Não é mais usada</span></div>
+        <p>As fotos agora vão para o Cloudflare R2. A chave do ImgBB que ficou guardada não serve para mais nada: pode apagar.</p>
+        <div class="pf-form-linha"><button type="button" class="pf-bt" data-pf="apagar-imgbb">Apagar a chave do ImgBB</button></div></section>` : ''}`;
 }
 
 // ---------------------------------------------------------------- erros do site (lib/erros.js)
@@ -519,11 +519,7 @@ async function agir(b) {
             if (chave.length < 20 || /\s/.test(chave)) return showToast('O token do PagBank é longo e não tem espaços. Confira se copiou inteiro.', true);
             return fazer({ acao: 'pagbank', chave }, 'Chave do PagBank guardada. Agora ligue "PIX automático" nas Configurações da loja.');
         }
-        case 'salvar-imgbb': {
-            const chave = $('pf-imgbb').value.trim();
-            if (!/^[a-f0-9]{32}$/i.test(chave)) return showToast('A chave do ImgBB tem 32 letras e números. Confira se copiou inteira.', true);
-            return fazer({ acao: 'imgbb', chave }, 'Chave guardada. O envio automático de fotos está ligado.');
-        }
+        case 'apagar-imgbb': return fazer({ acao: 'imgbb' }, 'Chave do ImgBB apagada.');
         default: return undefined;
     }
 }

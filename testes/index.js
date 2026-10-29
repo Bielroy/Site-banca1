@@ -2256,43 +2256,37 @@ teste('prudência: limite contado no banco, alerta de falha com intervalo e cóp
   assert.strictEqual((await ce('dono', { acao: 'copia-estado' })).corpo.ultima.guardadas, P.GUARDAR);
 });
 
-teste('fotos: envio ao ImgBB só para gestor, só imagem de verdade, e a chave nunca volta para a tela', async () => {
-  const db = criarBanco({ 'tenants/espetinhos': { nome: 'Espetinhos', ativo: true } });
-  const tokens = { super: { uid: 's-1', plataforma: true }, dono: { uid: 'd-1', tenants: { espetinhos: 'proprietario' } }, caixa: { uid: 'c-1', tenants: { espetinhos: 'caixa' } }, antigo: { uid: 'a-1', admin: true } };
+teste('fotos: sem o R2 no servidor, o envio responde "sem-lugar" sem chamar ninguém, e o ImgBB não é mais usado', async () => {
+  const antes = Object.fromEntries(['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_URL_PUBLICA', 'IMGBB_API_KEY'].map((k) => [k, process.env[k]]));
+  Object.keys(antes).forEach((k) => delete process.env[k]);
+  process.env.IMGBB_API_KEY = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4';            // chave antiga do ImgBB que ficou no servidor: tem de ser ignorada
+  const db = criarBanco({ 'tenants/espetinhos': { nome: 'Espetinhos', ativo: true }, 'plataforma/segredos': { imgbb: 'f'.repeat(32), pagbank: '' } });
+  const tokens = { super: { uid: 's-1', plataforma: true }, dono: { uid: 'd-1', tenants: { espetinhos: 'proprietario' } }, caixa: { uid: 'c-1', tenants: { espetinhos: 'caixa' } } };
   const adm = criarAdmin(db, tokens), foto = carregarApi(raiz('api/foto.js'), adm), plat = carregarApi(raiz('api/plataforma.js'), adm);
   const ch = (tk, body, loja) => chamar(foto, { headers: { authorization: `Bearer ${tk}`, ...(loja ? { 'x-loja': loja } : {}) }, body });
   const webp = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP'), Buffer.alloc(40, 7)]).toString('base64');
-  const CHAVE = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4', fetchReal = global.fetch, idas = []; let resposta = { ok: true, status: 200, corpo: { success: true, data: { url: 'https://i.ibb.co/abc/tomate.webp' } } };
-  global.fetch = async (url, o) => { idas.push({ url: String(url), corpo: String(o.body) }); return { ok: resposta.ok, status: resposta.status, json: async () => resposta.corpo }; };
+  const fetchReal = global.fetch, idas = [];
+  global.fetch = async (url) => { idas.push(String(url)); throw new Error('não devia chamar ninguém'); };
   try {
-    delete process.env.IMGBB_API_KEY;
     assert.strictEqual((await ch('', { imagem: webp }, 'espetinhos')).status, 401);
     assert.strictEqual((await ch('caixa', { imagem: webp }, 'espetinhos')).status, 403, 'caixa não envia foto');
     assert.strictEqual((await ch('dono', { imagem: webp })).status, 403, 'dono de uma loja não envia na loja original');
-    // sem chave: avisa com um código que o painel entende, e não chama ninguém
-    const sem = await ch('dono', { imagem: webp }, 'espetinhos'); assert.strictEqual(sem.status, 503); assert.strictEqual(sem.corpo.codigo, 'sem-imgbb'); assert.strictEqual(idas.length, 0);
-    assert.strictEqual((await ch('dono', { acao: 'estado' }, 'espetinhos')).corpo.ligado, false);
-    // a chave entra pela tela Plataforma, só pelo dono da plataforma, e a lista só diz SE existe
-    const cp = (tk, body) => chamar(plat, { headers: { authorization: `Bearer ${tk}` }, body });
-    assert.strictEqual((await cp('dono', { acao: 'imgbb', chave: CHAVE })).status, 403);
-    assert.strictEqual((await cp('super', { acao: 'imgbb', chave: 'curta' })).status, 400);
-    assert.strictEqual((await cp('super', { acao: 'imgbb', chave: CHAVE })).status, 200);
-    const lista = (await cp('super', { acao: 'lojas' })).corpo; assert.strictEqual(lista.fotos, true); assert.ok(!JSON.stringify(lista).includes(CHAVE), 'a chave não volta para a tela');
-    foto._zerar();
-    // agora envia: a foto segue para o ImgBB com a chave, e volta só o link
-    const ok = await ch('dono', { imagem: webp, nome: 'Tomate Italiano!' }, 'espetinhos'); assert.strictEqual(ok.status, 200, JSON.stringify(ok.corpo)); assert.strictEqual(ok.corpo.url, 'https://i.ibb.co/abc/tomate.webp');
-    assert.strictEqual(idas.length, 1); assert.ok(idas[0].url.startsWith('https://api.imgbb.com/1/upload')); assert.ok(idas[0].corpo.includes('key=' + CHAVE) && idas[0].corpo.includes('name=espetinhos-tomate-italiano'));
-    assert.ok(!JSON.stringify(ok.corpo).includes(CHAVE));
-    assert.strictEqual((await ch('antigo', { imagem: webp })).status, 200, 'a conta antiga envia na loja original');
-    // o que não é imagem não passa (o servidor olha os bytes, não o nome)
-    for (const ruim of ['', 'não é base64 !!!', Buffer.from('<script>alert(1)</script> isto não é imagem').toString('base64'), Buffer.alloc(1.6 * 1024 * 1024, 1).toString('base64')])
-      assert.strictEqual((await ch('dono', { imagem: ruim }, 'espetinhos')).status, 400, ruim.slice(0, 20));
-    assert.strictEqual(idas.length, 2, 'nada inválido chegou ao ImgBB');
-    // ImgBB fora do ar, ou devolvendo link estranho: erro claro, sem gravar lixo
-    resposta = { ok: false, status: 500, corpo: null }; assert.strictEqual((await ch('dono', { imagem: webp }, 'espetinhos')).status, 502);
-    resposta = { ok: true, status: 200, corpo: { success: true, data: { url: 'javascript:alert(1)' } } }; assert.strictEqual((await ch('dono', { imagem: webp }, 'espetinhos')).status, 502);
+    const sem = await ch('dono', { imagem: webp }, 'espetinhos'); assert.strictEqual(sem.status, 503); assert.strictEqual(sem.corpo.codigo, 'sem-lugar', 'o painel cai no Storage');
+    assert.deepStrictEqual(idas, [], 'nada vai para o ImgBB, mesmo com a chave antiga no servidor');
+    const est = (await ch('dono', { acao: 'estado' }, 'espetinhos')).corpo; assert.strictEqual(est.ligado, false); assert.strictEqual(est.onde, '');
     assert.strictEqual(foto.tipoDaImagem(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0])), 'jpg');
-  } finally { global.fetch = fetchReal; }
+    // a tela da Plataforma: diz que há chave antiga do ImgBB guardada, e a ação só APAGA (chave enviada é ignorada)
+    const cp = (tk, body) => chamar(plat, { headers: { authorization: `Bearer ${tk}` }, body });
+    let lista = (await cp('super', { acao: 'lojas' })).corpo;
+    assert.strictEqual(lista.fotos, false); assert.strictEqual(lista.fotosR2, false); assert.strictEqual(lista.imgbbGuardada, true); assert.ok(!JSON.stringify(lista).includes('f'.repeat(32)), 'a chave não volta para a tela');
+    assert.strictEqual((await cp('dono', { acao: 'imgbb' })).status, 403, 'só o dono da plataforma');
+    assert.strictEqual((await cp('super', { acao: 'imgbb', chave: 'b'.repeat(32) })).status, 200);
+    assert.strictEqual(db._dados.get('plataforma/segredos').imgbb, '', 'apagou, e não gravou a chave enviada');
+    lista = (await cp('super', { acao: 'lojas' })).corpo; assert.strictEqual(lista.imgbbGuardada, false);
+  } finally {
+    global.fetch = fetchReal;
+    Object.entries(antes).forEach(([k, v]) => { if (v === undefined) delete process.env[k]; else process.env[k] = v; });
+  }
 });
 
 const R2_TESTE = { R2_ACCOUNT_ID: '0123456789abcdef0123456789abcdef', R2_ACCESS_KEY_ID: 'AKIATESTE0123456789', R2_SECRET_ACCESS_KEY: 'segredo-de-teste-0123456789', R2_BUCKET: 'fotos-bancas', R2_URL_PUBLICA: 'https://fotos.usebanca.com' };
@@ -2325,20 +2319,20 @@ teste('fotos no R2: configurado só com as 5 variáveis certas; pela metade, diz
   });
 });
 
-teste('fotos no R2: o painel envia para o R2, na pasta da loja, assinado; R2 fora cai no ImgBB; chave nenhuma volta para a tela', async () => {
+teste('fotos no R2: o painel envia para o R2, na pasta da loja, assinado; R2 fora dá erro claro (sem ImgBB); chave nenhuma volta para a tela', async () => {
   await comR2(R2_TESTE, async () => {
     const db = criarBanco({ 'tenants/espetinhos': { nome: 'Espetinhos', ativo: true } });
     const tokens = { dono: { uid: 'd-1', tenants: { espetinhos: 'proprietario' } }, caixa: { uid: 'c-1', tenants: { espetinhos: 'caixa' } }, super: { uid: 's-1', plataforma: true } };
     const adm = criarAdmin(db, tokens), foto = carregarApi(raiz('api/foto.js'), adm), plat = carregarApi(raiz('api/plataforma.js'), adm);
     const ch = (tk, body) => chamar(foto, { headers: { authorization: `Bearer ${tk}`, 'x-loja': 'espetinhos' }, body });
-    const webp = IMG('webp', 60), fetchReal = global.fetch, idas = []; let r2Status = 200, imgbbOk = true;
+    const webp = IMG('webp', 60), fetchReal = global.fetch, idas = []; let r2Status = 200;
     global.fetch = async (url, o = {}) => {
       idas.push({ url: String(url), metodo: o.method, cab: o.headers || {}, corpo: o.body });
-      if (String(url).includes('r2.cloudflarestorage.com')) return new Response(r2Status === 200 ? '' : '<Error><Code>InternalError</Code></Error>', { status: r2Status });
-      return { ok: imgbbOk, status: imgbbOk ? 200 : 500, json: async () => (imgbbOk ? { success: true, data: { url: 'https://i.ibb.co/abc/reserva.webp' } } : null) };
+      if (String(url).includes('r2.cloudflarestorage.com')) return new Response(r2Status === 200 ? '' : '<Error><Code>AccessDenied</Code></Error>', { status: r2Status });
+      throw new Error('só o R2 pode ser chamado: ' + url);
     };
     try {
-      delete process.env.IMGBB_API_KEY; foto._zerar();
+      delete process.env.IMGBB_API_KEY;
       const est = await ch('dono', { acao: 'estado' }); assert.strictEqual(est.corpo.ligado, true); assert.strictEqual(est.corpo.onde, 'r2');
       assert.strictEqual((await ch('caixa', { imagem: webp.toString('base64') })).status, 403, 'caixa não envia');
       const ok = await ch('dono', { imagem: webp.toString('base64'), nome: 'Tomate Italiano!' });
@@ -2359,16 +2353,16 @@ teste('fotos no R2: o painel envia para o R2, na pasta da loja, assinado; R2 for
       // jpg e png também; o que não é imagem não chega ao R2
       assert.match((await ch('dono', { imagem: IMG('png', 60).toString('base64') })).corpo.url, /\.png$/);
       const antes = idas.length; assert.strictEqual((await ch('dono', { imagem: Buffer.from('<svg onload=x>isto não é foto</svg>').toString('base64') })).status, 400); assert.strictEqual(idas.length, antes);
-      // R2 recusou e não há ImgBB: erro claro
-      r2Status = 500; assert.strictEqual((await ch('dono', { imagem: webp.toString('base64') })).status, 502);
-      // R2 recusou e há ImgBB: a foto vai para o ImgBB (não se perde)
+      // R2 recusou: erro claro, e NADA vai para o ImgBB (mesmo com a chave antiga no servidor)
       process.env.IMGBB_API_KEY = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4';
-      const res = await ch('dono', { imagem: webp.toString('base64'), nome: 'alface' });
-      assert.strictEqual(res.status, 200); assert.strictEqual(res.corpo.url, 'https://i.ibb.co/abc/reserva.webp');
-      assert.ok(idas[idas.length - 1].url.startsWith('https://api.imgbb.com/'));
+      const n = idas.length;
+      r2Status = 500; assert.strictEqual((await ch('dono', { imagem: webp.toString('base64') })).status, 502);
+      r2Status = 403; const neg = await ch('dono', { imagem: webp.toString('base64') }); assert.strictEqual(neg.status, 502); assert.match(neg.corpo.error, /recusou a chave/);
+      assert.ok(idas.slice(n).every((i) => i.url.includes('r2.cloudflarestorage.com')), 'só o R2 é chamado');
+      r2Status = 200;
       // a tela da Plataforma mostra que o R2 está ligado (sem chave nenhuma)
       const lista = (await chamar(plat, { headers: { authorization: 'Bearer super' }, body: { acao: 'lojas' } })).corpo;
-      assert.strictEqual(lista.fotos, true); assert.strictEqual(lista.fotosR2, true); assert.strictEqual(lista.fotosImgbb, true); assert.deepStrictEqual(lista.r2Falta, []);
+      assert.strictEqual(lista.fotos, true); assert.strictEqual(lista.fotosR2, true); assert.deepStrictEqual(lista.r2Falta, []);
       assert.ok(!JSON.stringify(lista).includes(R2_TESTE.R2_SECRET_ACCESS_KEY) && !JSON.stringify(lista).includes(R2_TESTE.R2_ACCESS_KEY_ID));
     } finally { global.fetch = fetchReal; delete process.env.IMGBB_API_KEY; }
   });
@@ -3118,9 +3112,9 @@ teste('cloud run: o servidor entrega body/query/status/json como a Vercel e conf
     r = await j('/api/eco', { headers: { ...doProxy, 'X-Cliente-IP': 'nao-e-ip; drop table' } });
     assert.strictEqual(r.corpo.ip, '104.16.0.1', 'IP inválido do proxy não vale');
     // /api/saude (aberto pelo site): diz se o segredo da ponte confere, sem mostrar segredo nenhum
-    assert.deepStrictEqual((await j('/api/saude', { headers: doProxy })).corpo, { ok: true, ponte: true, fotos: 'imgbb' });
-    assert.deepStrictEqual((await j('/api/saude', { headers: { ...doProxy, 'X-Proxy-Segredo': 'errado' } })).corpo, { ok: true, ponte: false, fotos: 'imgbb' });
-    assert.deepStrictEqual((await j('/api/saude')).corpo, { ok: true, ponte: false, fotos: 'imgbb' }, '"fotos" diz só r2 ou imgbb, nunca chave');
+    assert.deepStrictEqual((await j('/api/saude', { headers: doProxy })).corpo, { ok: true, ponte: true, fotos: 'desligado' });
+    assert.deepStrictEqual((await j('/api/saude', { headers: { ...doProxy, 'X-Proxy-Segredo': 'errado' } })).corpo, { ok: true, ponte: false, fotos: 'desligado' });
+    assert.deepStrictEqual((await j('/api/saude')).corpo, { ok: true, ponte: false, fotos: 'desligado' }, '"fotos" diz só r2 ou desligado, nunca chave');
   } finally { srv.close(); }
   // sem segredo configurado, nada é confiado (ninguém "acerta" um segredo vazio)
   const sem = criarServidor({ funcoes: { eco: async (req, res) => res.json({ ip: req.headers['x-real-ip'] }) }, segredo: '' });

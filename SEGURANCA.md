@@ -12,7 +12,7 @@ Para publicar as regras e ligar o que depende do console do Firebase, veja a se�
 | Plataforma (`plataforma.html`) | Todas as lojas | Dono da plataforma | O mesmo login, com a marca `plataforma` | Sem a marca, toda ação responde "área restrita" |
 | Funções (`api/*.js`, na Vercel) | Quem grava pedido, estoque, equipe | Chamadas do site | Token do Firebase conferido no servidor | Entrada fora do formato é recusada antes de tocar no banco |
 | Banco (Firestore) | Os dados | Navegador (com as regras) e servidor | Regras de `firestore.rules` | O que não está liberado nas regras é negado |
-| Fotos (R2 / ImgBB / Storage) | Fotos de produto | Todos veem; só gestor envia | Função `api/foto.js` (R2 e ImgBB) / regras de `storage.rules` | Só JPG, PNG e WebP pequenos, conferidos pelos bytes; no R2 cada loja na sua pasta, nome com sorteio (não sobrescreve) |
+| Fotos (Cloudflare R2 / Storage) | Fotos de produto | Todos veem; só gestor envia | Função `api/foto.js` (R2) / regras de `storage.rules` | Só JPG, PNG e WebP pequenos, conferidos pelos bytes; no R2 cada loja na sua pasta, nome com sorteio (não sobrescreve) |
 | PagBank | PIX automático e maquininha | Só o servidor | Chave guardada no servidor | Aviso de pagamento sem assinatura do banco é ignorado |
 | Gemini (IA) | Ajudante da loja e copiloto | Só o servidor | Chave guardada no servidor | Limite por conexão, por pessoa e por dia |
 
@@ -169,7 +169,6 @@ defeito, no mesmo aparelho e na mesma versão do site, vai uma vez só. Apagado 
 | `GEMINI_API_KEY` | variável da Vercel (vai no cabeçalho da chamada, nunca no endereço) | não |
 | `PAGBANK_API_TOKEN` | Vercel ou `plataforma/segredos` | não |
 | Token da maquininha (EDI) | `plataforma/maquininha_{loja}` | não |
-| Chave do ImgBB | Vercel ou `plataforma/segredos` | não |
 | Chaves do R2 (token só do bucket de fotos, ler e gravar) | `~/segredos.env` do servidor | não (a assinatura é feita no servidor; `/api/saude` só diz `r2` ou `imgbb`) |
 | `CRON_SECRET`, `DIAGNOSTICO_SECRET` | variáveis da Vercel | não |
 | `VAPID_PRIVATE_KEY` | variável da Vercel | não |

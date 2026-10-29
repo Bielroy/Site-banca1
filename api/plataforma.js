@@ -8,7 +8,7 @@
 //  POST { acao: 'erros' }                                   erros do site nos últimos 7 dias (lib/erros.js)
 //  POST { acao: 'erro-estado', assinatura, estado }          marca um erro como corrigido ('corrigido') ou reabre ('aberto')
 //  POST { acao: 'criar-loja', id, nome, modelo, tipoNome?, emailDono? }   (modelo = aparência inicial; tipoNome = tipo escrito à mão)
-//  POST { acao: 'imgbb', chave }                               liga (ou desliga, com chave vazia) o envio de fotos ao ImgBB
+//  POST { acao: 'imgbb' }                                      apaga a chave antiga do ImgBB (as fotos agora vão para o Cloudflare R2)
 //  POST { acao: 'tipo', id, tipo }                              muda o tipo de negócio de uma loja
 //  POST { acao: 'ativo', id, ativo }                        bloquear / liberar
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
@@ -105,10 +105,10 @@ async function lojas(res) {
   const condominios = await Cond.garantir(db, T);   // sem o cadastro, a tela não abre (senão salvar uma feira apagaria os condomínios dela)
   const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, condominiosIds: Cond.idsDaFeira(condominios, d.data()), dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira) }));
   const seg = await db.collection('plataforma').doc('segredos').get();
-  const imgbbLigado = /^[a-f0-9]{32}$/i.test(String(process.env.IMGBB_API_KEY || (seg.exists && seg.data().imgbb) || ''));
-  const r2 = !!R2.config(), fotos = r2 || imgbbLigado;            // r2: fotos no Cloudflare (lib/r2.js); o ImgBB fica de reserva
+  const r2 = !!R2.config(), fotos = r2;                           // fotos no Cloudflare R2 (lib/r2.js)
+  const imgbbGuardada = !!(seg.exists && seg.data().imgbb);       // chave antiga do ImgBB, que não é mais usada: a tela oferece apagar
   const pix = !!process.env.PAGBANK_API_TOKEN || Segredos.tokenPagbankValido(seg.exists && seg.data().pagbank);
-  return res.status(200).json({ sucesso: true, lojas: lista, feiras, condominios, modelos: Object.keys(MODELOS), modulos: MODULOS, campos: CAMPOS_PRODUTO, mes: mesAtual(), fotos, fotosR2: r2, fotosImgbb: imgbbLigado, r2Falta: r2 || R2.nenhuma() ? [] : R2.faltando(), pix, asaas: await situacaoAsaas(seg.exists ? seg.data() : {}) });
+  return res.status(200).json({ sucesso: true, lojas: lista, feiras, condominios, modelos: Object.keys(MODELOS), modulos: MODULOS, campos: CAMPOS_PRODUTO, mes: mesAtual(), fotos, fotosR2: r2, imgbbGuardada, r2Falta: r2 || R2.nenhuma() ? [] : R2.faltando(), pix, asaas: await situacaoAsaas(seg.exists ? seg.data() : {}) });
 }
 
 // LISTA LEVE (trocar de loja): só as fichas, sem movimento do mês nem donos. 1 leitura por loja, guardada por 60 s.
@@ -181,15 +181,13 @@ async function tipo(req, res) {
   T._cacheFichas.delete(id);
   return res.status(200).json({ sucesso: true });
 }
-// Chave do ImgBB (hospedagem das fotos). Fica em plataforma/segredos, que ninguém lê pelo navegador.
-// A tela só fica sabendo SE existe chave, nunca qual é.
+// Chave antiga do ImgBB: as fotos foram para o Cloudflare R2 e o ImgBB não é mais usado. Esta ação só APAGA
+// a chave que ficou guardada em plataforma/segredos (qualquer chave enviada é ignorada).
 async function imgbb(req, res) {
-  const chave = String((req.body || {}).chave || '').trim();
-  if (chave && !/^[a-f0-9]{32}$/i.test(chave)) throw falha(400, 'Esta não parece uma chave do ImgBB (são 32 letras e números).');
-  await db.collection('plataforma').doc('segredos').set({ imgbb: chave, imgbbEm: new Date().toISOString() }, { merge: true });
-  return res.status(200).json({ sucesso: true, ligado: !!chave });
+  await db.collection('plataforma').doc('segredos').set({ imgbb: '', imgbbEm: new Date().toISOString() }, { merge: true });
+  return res.status(200).json({ sucesso: true, ligado: false });
 }
-// Chave do PagBank (PIX automático). Mesmo cuidado da chave do ImgBB: fica em plataforma/segredos
+// Chave do PagBank (PIX automático). Fica em plataforma/segredos
 // e a tela só fica sabendo SE existe. Chave vazia desliga.
 async function pagbank(req, res) {
   const chave = String((req.body || {}).chave || '').trim();
@@ -450,7 +448,8 @@ module.exports = async function handler(req, res) {
   if (!['lojas', 'lojas-leve', 'auditoria', 'erros'].includes(nomeAcao)) {
     guardados.leve = null; guardados.mov.clear();          // mexeu em alguma coisa: as listas guardadas são lidas de novo
     const b = req.body || {}, alvo = String(b.id || b.fid || '').slice(0, 40);
-    const detalhe = nomeAcao === 'imgbb' || nomeAcao === 'pagbank' || nomeAcao === 'asaas' ? (String(b.chave || '').trim() ? 'chave gravada' : 'chave apagada')
+    const detalhe = nomeAcao === 'imgbb' ? 'chave apagada'
+      : nomeAcao === 'pagbank' || nomeAcao === 'asaas' ? (String(b.chave || '').trim() ? 'chave gravada' : 'chave apagada')
       : nomeAcao === 'asaas-carteira' ? `carteira de ${String(b.id || '').slice(0, 40)} ${String(b.carteira || '').trim() ? 'gravada' : 'apagada'}`
       : nomeAcao === 'proprietario' ? `${alvo}: ${b.remover === true ? 'tirou' : 'definiu'} ${String(b.email || '').slice(0, 80)}`
       : nomeAcao === 'link-entrada' ? `${alvo}: gerou link de entrada para ${String(b.email || '').slice(0, 80)}`
