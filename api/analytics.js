@@ -94,6 +94,8 @@ module.exports = async function handler(req, res) {
       }
       await P.limparLimites(banco);
       try { await Erros.faxina(banco); } catch (e) { console.error('[erros] faxina', e && e.message); }
+      // Face ID: desafios já usados (1 dia) e aparelhos parados há 90 dias saem; sem isto as duas coleções só cresciam
+      try { await require('../lib/passkey').limparUsados(banco); await require('../lib/aparelhos').limpar(banco); } catch (e) { console.error('[passkey] faxina', e && e.message); }
       // trilha de auditoria: o que passou de 400 dias sai
       try { await P.limparAuditoria(banco, null); for (const id of lojas) await P.limparAuditoria(banco, id); } catch (e) { console.error('[auditoria] faxina', e && e.message); }
       for (const id of Object.keys(maquininha)) saida[id] = { ...saida[id], maquininha: maquininha[id] };

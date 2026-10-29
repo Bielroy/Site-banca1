@@ -4611,6 +4611,38 @@ teste('aparelhos do painel: aparelho novo e link aberto em OUTRO aparelho avisam
   assert.strictEqual(Ap.nomeDoAparelho('Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36'), 'Android · Chrome');
 });
 
+teste('aparelhos do painel: conta com login roubado não enche o banco nem o celular do dono; a faxina da noite apaga o que está parado', async () => {
+  const Ap = require(raiz('lib/aparelhos')), PK = require(raiz('lib/passkey'));
+  const ua = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36';
+  const t0 = Date.parse('2026-10-01T12:00:00Z'), DIA = 86400000, iso = (t) => new Date(t).toISOString();
+  const id = (n) => `aparelho-${String(n).padStart(12, '0')}`;
+  // 1) aparelhos novos por dia: o 7º é barrado, avisa o dono uma vez e não grava nada
+  let db = criarBanco({});
+  const base = { uid: 'u9', email: 'caixa@teste.com', tid: 'espetinhos', ua };
+  for (let i = 0; i < Ap.NOVOS_POR_DIA; i++) assert.ok(!(await Ap.registrar(db, { ...base, aparelho: id(i), ip: `9.9.9.${i}` }, t0 + i * 1000)).erro);
+  const barrado = await Ap.registrar(db, { ...base, aparelho: id(99), ip: '9.9.9.99' }, t0 + 60000);
+  assert.strictEqual(barrado.lotado, true); assert.match(barrado.alertas[0].titulo, /Muitos aparelhos novos/);
+  assert.strictEqual((await Ap.listar(db, 'espetinhos')).length, Ap.NOVOS_POR_DIA, 'o aparelho barrado não foi gravado');
+  assert.ok(!(await Ap.registrar(db, { ...base, aparelho: id(99), ip: '9.9.9.99' }, t0 + 2 * DIA)).erro, 'no dia seguinte volta a aceitar');
+  // 2) conta cheia: aparelhos parados há 30 dias saem para dar lugar; cheia de aparelhos em uso, recusa
+  const encher = async (ultima) => { const d = criarBanco({}); for (let i = 0; i < Ap.MAX_POR_CONTA; i++) await d.collection('aparelhos').doc(`u8_${String(i).padStart(32, '0')}`).set({ uid: 'u8', lojas: ['espetinhos'], primeira: iso(t0 - 60 * DIA), ultima: iso(ultima), bloqueado: false }); return d; };
+  db = await encher(t0 - DIA);
+  const cheia = await Ap.registrar(db, { uid: 'u8', email: 'x@teste.com', tid: 'espetinhos', ua, aparelho: id(1), ip: '8.8.8.8' }, t0);
+  assert.strictEqual(cheia.lotado, true); assert.deepStrictEqual(cheia.alertas, []);
+  db = await encher(t0 - 40 * DIA);
+  const livre = await Ap.registrar(db, { uid: 'u8', email: 'x@teste.com', tid: 'espetinhos', ua, aparelho: id(1), ip: '8.8.8.8' }, t0);
+  assert.ok(!livre.erro, 'parados há 40 dias abrem lugar'); assert.strictEqual((await Ap.listar(db, 'espetinhos')).length, 1, 'os 20 parados saíram, ficou o novo');
+  // 3) faxina da noite: aparelho parado há 90 dias sai (o bloqueado fica); desafio de Face ID usado há mais de 1 dia sai
+  db = criarBanco({});
+  const ap = (quem, ultima, bloqueado = false) => db.collection('aparelhos').doc(quem).set({ uid: 'u1', lojas: ['banca'], primeira: iso(ultima), ultima: iso(ultima), bloqueado });
+  await ap('u1_velho', t0 - 100 * DIA); await ap('u1_velho_bloqueado', t0 - 100 * DIA, true); await ap('u1_recente', t0 - 10 * DIA);
+  await db.collection('passkey_usados').doc('usado-velho').set({ em: iso(t0 - 2 * DIA) });
+  await db.collection('passkey_usados').doc('usado-novo').set({ em: iso(t0 - 60000) });
+  assert.strictEqual(await Ap.limpar(db, t0), 1); assert.strictEqual(await PK.limparUsados(db, t0), 1);
+  const existe = async (c, d) => (await db.collection(c).doc(d).get()).exists;
+  assert.deepStrictEqual([await existe('aparelhos', 'u1_velho'), await existe('aparelhos', 'u1_velho_bloqueado'), await existe('aparelhos', 'u1_recente'), await existe('passkey_usados', 'usado-velho'), await existe('passkey_usados', 'usado-novo')], [false, true, true, false, true]);
+});
+
 teste('aparelhos do painel: qualquer um da equipe avisa; só o proprietário lista e desconecta; desconectado sai, perde o Face ID e o login da conta é encerrado', async () => {
   const db = criarBanco({ ...semente() });
   const usuarios = [{ uid: 'u3', email: 'caixa@teste.com', customClaims: { tenants: { espetinhos: 'caixa' } } }, { uid: 'u2', email: 'ze@teste.com', customClaims: { tenants: { espetinhos: 'proprietario' } } }];

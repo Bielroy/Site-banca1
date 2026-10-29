@@ -247,7 +247,10 @@ module.exports = async function handler(req, res) {
     try {
       const b = req.body || {}, como = ['link', 'link-outro-aparelho', 'passkey'].includes(b.como) ? b.como : '';
       const r = await Ap.registrar(db, { uid: dec.uid, email: dec.email || '', tid, aparelho: b.aparelho, ua: req.headers && req.headers['user-agent'], ip: H.ipDe(req), como, pais: String((req.headers && req.headers['cf-ipcountry']) || '').slice(0, 2) });
-      if (r.erro) return res.status(400).json({ error: r.erro });
+      if (r.erro) {
+        for (const a of r.alertas || []) await P.alertar(db, tid, a.assunto, { titulo: a.titulo, corpo: a.corpo });       // 1 aviso por conta a cada 30 min
+        return res.status(r.lotado ? 429 : 400).json({ error: r.erro });
+      }
       if (r.novo) await anotar(req, tid, dec, 'aparelho-novo', `${Ap.nomeDoAparelho(req.headers && req.headers['user-agent'])}${como === 'link-outro-aparelho' ? ' (link aberto em outro aparelho)' : ''}`);
       for (const a of r.alertas || []) await P.alertar(db, tid, a.assunto, { titulo: a.titulo, corpo: a.corpo });
       res.setHeader('Cache-Control', 'no-store');
