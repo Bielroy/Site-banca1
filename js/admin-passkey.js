@@ -73,7 +73,9 @@ export async function depoisDeEntrar(user) {
     if (nao && Date.now() - nao < TRINTA_DIAS) return;
     if (!(await PK.temSuporte()) || $('pk-oferta')) return;
     const pegarToken = () => user.getIdToken();
-    PK.prepararCadastro(await pegarToken()).catch(() => { /* tenta de novo no toque */ });
+    // só oferece se o servidor já tem o Face ID (servidor ainda não atualizado respondia "Não encontrado." no toque)
+    try { await PK.prepararCadastro(await pegarToken()); } catch (_) { return; }
+    if ($('pk-oferta')) return;
     document.body.insertAdjacentHTML('beforeend', `
         <div class="pk-oferta" id="pk-oferta" role="region" aria-label="Entrar mais rápido">
             <b>Entrar mais rápido neste aparelho</b>
