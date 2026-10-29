@@ -109,6 +109,16 @@ teste('mensalidade da banca: ninguém lê nem grava direto no banco, nem o próp
   }
 });
 
+// ====================================================================== FACE ID E APARELHOS: só pelo servidor
+teste('chaves de Face ID e registro de aparelhos: ninguém lê nem grava pelo navegador (nem o dono, nem a plataforma)', async () => {
+  for (const v of [anonimo(), cliente(), de('loja-a', 'proprietario'), de('loja-a', 'caixa'), plataforma()]) {
+    for (const [col, id] of [['passkeys', 'cred-1'], ['passkey_usados', 'h1'], ['aparelhos', 'u1_abc']]) {
+      await nega(getDoc(d(v, `${col}/${id}`))); await nega(getDocs(c(v, col)));
+      await nega(setDoc(d(v, `${col}/${id}`), { uid: 'eu', jwk: { kty: 'EC' }, bloqueado: false }));
+    }
+  }
+});
+
 // ====================================================================== PÚBLICO (sem login)
 teste('visitante sem login lê só a vitrine', async () => {
   const v = anonimo();

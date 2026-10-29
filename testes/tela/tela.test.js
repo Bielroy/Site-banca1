@@ -1182,6 +1182,28 @@ teste('painel: depois de entrar pelo link, oferece ativar Face ID/digital; "Ativ
   semErros(erros); await fechar();
 });
 
+teste('painel: avisa o servidor que este aparelho entrou (mesmo número de aparelho sempre) e, se o dono desconectou, sai sozinho', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'caixa1', email: 'caixa@teste.com', isAnonymous: false, claims: { tenants: { banca: 'caixa' } } } });
+  const pedidos = [];
+  let bloquear = false;
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, {
+    rotas: (ctx) => ctx.route('**/api/equipe', async (r) => { const c = JSON.parse(r.request().postData() || '{}'); pedidos.push(c);
+      return r.fulfill({ contentType: 'application/json', body: JSON.stringify(c.acao === 'aparelho' ? { sucesso: true, bloqueado: bloquear } : { sucesso: true }) }); }),
+    contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForFunction(() => document.getElementById('dashboard').style.display !== 'none', null, { timeout: 8000 });
+  await pagina.waitForTimeout(600);
+  const p1 = pedidos.find((p) => p.acao === 'aparelho');
+  assert.ok(p1 && /^[A-Za-z0-9_-]{16,80}$/.test(p1.aparelho), 'manda o número deste aparelho');
+  assert.strictEqual(await pagina.evaluate(() => localStorage.getItem('painel_aparelho')), p1.aparelho, 'o número fica guardado no aparelho');
+  // o dono desconectou: na próxima conferência o painel sai (recarrega na tela de login)
+  bloquear = true;
+  const recarregou = pagina.waitForEvent('load', { timeout: 8000 });
+  await pagina.evaluate(() => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
+  await pagina.waitForFunction(() => /desconectado do painel/.test(document.body.innerText), null, { timeout: 4000 });
+  await recarregou;
+  semErros(erros); await fechar();
+});
+
 teste('plataforma: "Link de entrada" do proprietário gera o link sem e-mail (o do Firebase cai no spam e lá não abre) e oferece copiar e mandar no WhatsApp', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
   const guardadas = lojasDaPlataforma(2);

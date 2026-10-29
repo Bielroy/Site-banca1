@@ -7,13 +7,26 @@ import { escapeHTML, showToast, customConfirm } from './utils.js';
 import { sairELimpar } from './admin-guard.js';
 import { PAPEIS, ATRIBUIVEIS } from './papeis-lib.js';
 
-const S = { equipe: null, estado: 'carregando', ligado: false, enviando: false, registros: null, assinatura: null };
+const S = { equipe: null, estado: 'carregando', ligado: false, enviando: false, registros: null, assinatura: null, aparelhos: null };
 // nomes simples para o que fica na trilha de auditoria (api/equipe.js grava; ninguém edita nem apaga pelo painel)
-const ACOES = { 'equipe-papel': 'Deu acesso', 'equipe-remover': 'Tirou o acesso', 'zerar-movimento': 'Zerou o movimento', 'copia-restaurar': 'Restaurou o cadastro', 'copia-baixar': 'Baixou a cópia de segurança', maquininha: 'Mexeu na maquininha', 'sair-de-tudo': 'Encerrou o próprio login em todos os aparelhos' };
+const ACOES = { 'equipe-papel': 'Deu acesso', 'equipe-remover': 'Tirou o acesso', 'zerar-movimento': 'Zerou o movimento', 'copia-restaurar': 'Restaurou o cadastro', 'copia-baixar': 'Baixou a cópia de segurança', maquininha: 'Mexeu na maquininha', 'sair-de-tudo': 'Encerrou o próprio login em todos os aparelhos', 'aparelho-novo': 'Entrou de um aparelho novo', 'aparelho-desconectar': 'Desconectou um aparelho', 'aparelho-liberar': 'Liberou um aparelho' };
 const quando = (iso) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''; };
 const registrosHtml = () => (S.registros === null ? '' : (S.registros.length
     ? `<ul class="eq-lista">${S.registros.map((r) => `<li class="eq-item"><span><b>${escapeHTML(ACOES[r.acao] || r.acao)}</b><small>${escapeHTML(quando(r.em))} · ${escapeHTML(r.quem || '')}${r.detalhe ? ` · ${escapeHTML(r.detalhe)}` : ''}</small></span></li>`).join('')}</ul>`
     : '<p class="config-sub">Nenhuma ação registrada ainda.</p>'));
+// APARELHOS que entraram no painel desta loja (lib/aparelhos.js): o proprietário vê e desconecta o que não reconhece
+const COMO = { 'link-outro-aparelho': 'entrou por um link aberto em OUTRO aparelho', passkey: 'entrou com Face ID/digital', link: 'entrou pelo link do e-mail' };
+const aparelhosHtml = () => {
+    if (S.aparelhos === null) return '<p class="config-sub">Carregando os aparelhos...</p>';
+    if (!S.aparelhos.length) return '<p class="config-sub">Nenhum aparelho registrado ainda. Eles aparecem aqui conforme cada pessoa abre o painel.</p>';
+    return `<ul class="eq-lista eq-aparelhos">${S.aparelhos.map((a) => `
+        <li class="eq-item${a.bloqueado ? ' eq-bloqueado' : ''}${a.como === 'link-outro-aparelho' ? ' eq-suspeito' : ''}">
+            <span><b>${escapeHTML(a.nome)}${a.meu ? ' <em class="eq-fixo">você</em>' : ''}</b>
+            <small>${escapeHTML(a.email)} · último acesso ${escapeHTML(quando(a.ultima))}${a.conexao ? ` · conexão ${escapeHTML(a.conexao)}` : ''}${a.conexoes > 1 ? ` (${a.conexoes} conexões)` : ''}</small>
+            <small>${a.bloqueado ? '<b>Desconectado</b>' : `primeiro acesso ${escapeHTML(quando(a.primeira))}${COMO[a.como] ? ` · ${escapeHTML(COMO[a.como])}` : ''}`}</small></span>
+            ${a.bloqueado ? `<button type="button" class="btn-outline" data-eq-liberar="${escapeHTML(a.id)}">Liberar</button>` : `<button type="button" class="btn-outline eq-desc" data-eq-desconectar="${escapeHTML(a.id)}">Desconectar</button>`}
+        </li>`).join('')}</ul>`;
+};
 const el = () => document.getElementById('equipe-conteudo');
 const $ = (id) => document.getElementById(id);
 
@@ -50,6 +63,9 @@ function render() {
     <h4 class="cp-sub">Segurança</h4>
     <p class="config-sub">Perdeu o celular ou entrou num computador que não é seu? Encerre o seu login em todos os aparelhos (o Face ID/digital deles também é desligado). Depois é só entrar de novo pelo link do e-mail.</p>
     <button type="button" class="btn-outline" id="eq-sair-tudo" style="padding:12px 18px">Sair de todos os aparelhos</button>
+    <h4 class="cp-sub">Aparelhos que entraram</h4>
+    <p class="config-sub">Cada celular ou computador que abriu o painel desta loja. Aparelho novo, link aberto em outro aparelho e acesso que parece compartilhado (muitos aparelhos ou conexões ao mesmo tempo) também chegam como aviso no seu celular. Não reconhece? Toque em Desconectar.</p>
+    <div id="eq-aparelhos">${aparelhosHtml()}</div>
     <h4 class="cp-sub">Registro de ações</h4>
     <p class="config-sub">Quem deu ou tirou acesso, quem baixou a cópia com dados de clientes, quem zerou ou restaurou. Fica guardado no servidor e ninguém apaga pelo painel.</p>
     ${S.registros === null ? '<button type="button" class="btn-outline" id="eq-ver-registro" style="padding:12px 18px">Ver o registro</button>' : registrosHtml()}`;
@@ -63,7 +79,12 @@ function assinaturaHtml() {
 }
 const fmtReais = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+async function carregarAparelhos() {
+    try { S.aparelhos = (await api({ acao: 'aparelhos' })).aparelhos || []; } catch (_) { S.aparelhos = []; }
+    const lugar = document.getElementById('eq-aparelhos'); if (lugar) lugar.innerHTML = aparelhosHtml();
+}
 async function carregar() {
+    carregarAparelhos();
     api({ acao: 'minha-assinatura' }).then((j) => { S.assinatura = j.assinatura || null; const lugar = document.getElementById('eq-assin-lugar'); if (lugar) lugar.innerHTML = assinaturaHtml(); }).catch(() => {});
     try { S.equipe = (await api({ acao: 'listar' })).equipe || []; S.estado = 'ok'; }
     catch (e) { S.estado = 'erro'; S.erro = e.message; }
@@ -86,6 +107,14 @@ function ligar() {
         if (e.target.closest('#eq-sair-tudo')) {
             if (!(await customConfirm('Sair de todos os aparelhos?', 'O seu login é encerrado neste e em qualquer outro aparelho, e o Face ID/digital de todos eles é desligado. Você vai precisar entrar de novo pelo link do e-mail.'))) return;
             try { await api({ acao: 'sair-de-tudo' }); showToast('Login encerrado em todos os aparelhos.'); setTimeout(() => sairELimpar(), 1200); } catch (err) { showToast(err.message, true); }
+            return;
+        }
+        const desc = e.target.closest('[data-eq-desconectar]'), lib = e.target.closest('[data-eq-liberar]');
+        if (desc || lib) {
+            const a = (S.aparelhos || []).find((x) => x.id === (desc ? desc.dataset.eqDesconectar : lib.dataset.eqLiberar)); if (!a) return;
+            if (desc && !(await customConfirm('Desconectar este aparelho?', `${a.nome} (${a.email}) sai do painel e não entra mais por ele. O login dessa conta é encerrado em todos os aparelhos dela: nos outros, a pessoa entra de novo pelo Face ID ou pelo link.${a.meu ? ' Atenção: esta conta é a sua.' : ''}`))) return;
+            try { await api({ acao: desc ? 'aparelho-desconectar' : 'aparelho-liberar', id: a.id }); showToast(desc ? 'Aparelho desconectado.' : 'Aparelho liberado. A pessoa entra de novo pelo link ou Face ID.'); await carregarAparelhos(); }
+            catch (err) { showToast(err.message, true); }
             return;
         }
         if (e.target.closest('#eq-ver-registro')) {

@@ -74,7 +74,7 @@ export async function prepararCadastro(token) {
     return j.publicKey;
 }
 /** Ativa o Face ID/digital neste aparelho. pegarToken = () => Promise<id token do Firebase>. */
-export async function ativar(pegarToken) {
+export async function ativar(pegarToken, aparelho = '') {
     const pronta = opCadastro && Date.now() - opCadastro.em < VALE_MS ? opCadastro.publicKey : null;
     const pk = pronta || await prepararCadastro(await pegarToken());
     opCadastro = null;
@@ -83,7 +83,7 @@ export async function ativar(pegarToken) {
         excludeCredentials: (pk.excludeCredentials || []).map((c) => ({ type: 'public-key', id: deB64u(c.id) })),
     } });
     if (!cred) throw Object.assign(new Error('Cancelado.'), { name: 'NotAllowedError' });
-    return post({ acao: 'cadastrar', resposta: { id: cred.id, rawId: b64u(cred.rawId), type: cred.type, response: {
+    return post({ acao: 'cadastrar', ...(aparelho ? { aparelho } : {}), resposta: { id: cred.id, rawId: b64u(cred.rawId), type: cred.type, response: {
         clientDataJSON: b64u(cred.response.clientDataJSON), attestationObject: b64u(cred.response.attestationObject) } } }, await pegarToken());
 }
 export const _b64 = { deB64u, b64u };

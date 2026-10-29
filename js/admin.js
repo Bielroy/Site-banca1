@@ -3,6 +3,7 @@ import { normalizarInstagram, normalizarWhatsapp, telefoneBonito } from './conta
 import { miniatura } from './foto-lib.js';   // foto pelo redutor do site (o i.ibb.co direto não abre em algumas redes)
 import { getDoc, auth, db, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, limit, writeBatch, where, updateDoc } from './firebase.js';
 import { iniciarLoginRapido, depoisDeEntrar } from './admin-passkey.js';
+import { vigiarEsteAparelho, anotarComoEntrou } from './admin-aparelho.js';
 import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
@@ -144,6 +145,7 @@ onAuthStateChanged(auth, async (user) => {
     if (ehGestor(papelAtual)) iniciarIAFeaturesDOM();
     iniciarRealTimeSync();
     depoisDeEntrar(user).catch(() => { /* só conveniência */ });     // guarda o e-mail e oferece Face ID/digital neste aparelho
+    vigiarEsteAparelho();       // avisa o servidor que este aparelho está no painel (aparelho novo vira aviso ao dono; desconectado sai)
 });
 
 let isLoginProcessing = false;
@@ -193,6 +195,8 @@ if (isSignInWithEmailLink(auth, window.location.href)) {
     try { email = email || window.localStorage.getItem('emailForSignIn'); } catch (_) {}
     const linkCompleto = window.location.href;
     const processLogin = async () => {
+        // link aberto num aparelho que NÃO pediu (encaminhado, copiado): o dono da loja é avisado (js/admin-aparelho.js)
+        anotarComoEntrou(email ? 'link' : 'link-outro-aparelho');
         if (!email) email = prompt("Por segurança, confirme o seu e-mail:");
         if (email) {
             try {

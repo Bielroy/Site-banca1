@@ -4586,6 +4586,91 @@ teste('Face ID / digital: /api/passkey cadastra só com login de equipe, entra c
   delete process.env.PUBLIC_BASE_URL;
 });
 
+
+// ---------------------------------------------------------------- APARELHOS DO PAINEL (lib/aparelhos.js)
+teste('aparelhos do painel: aparelho novo e link aberto em OUTRO aparelho avisam o dono; muitos aparelhos = acesso compartilhado; o id fica só em hash', async () => {
+  const Ap = require(raiz('lib/aparelhos'));
+  const db = criarBanco({});
+  const ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1';
+  const base = { uid: 'u3', email: 'caixa@teste.com', tid: 'espetinhos', ua };
+  let r = await Ap.registrar(db, { ...base, aparelho: 'aparelho-aaaaaaaaaaaa1', ip: '200.1.2.3' });
+  assert.strictEqual(r.novo, true); assert.match(r.alertas[0].titulo, /Aparelho novo/); assert.match(r.alertas[0].corpo, /iPhone · Safari/); assert.match(r.alertas[0].corpo, /200\.1\.x\.x/);
+  assert.ok(![...db._dados.keys()].some((k) => k.includes('aparelho-aaaaaaaaaaaa1')), 'o número do aparelho não fica gravado (só o hash)');
+  r = await Ap.registrar(db, { ...base, aparelho: 'aparelho-aaaaaaaaaaaa1', ip: '200.1.2.3' });
+  assert.strictEqual(r.novo, false); assert.deepStrictEqual(r.alertas, [], 'o mesmo aparelho de novo: nada');
+  r = await Ap.registrar(db, { ...base, aparelho: 'aparelho-bbbbbbbbbbbb2', ip: '177.9.9.9', como: 'link-outro-aparelho' });
+  assert.match(r.alertas[0].titulo, /aberto em outro aparelho/);
+  await Ap.registrar(db, { ...base, aparelho: 'aparelho-cccccccccccc3', ip: '177.9.9.8' });
+  r = await Ap.registrar(db, { ...base, aparelho: 'aparelho-dddddddddddd4', ip: '177.9.9.7' });
+  assert.ok(r.alertas.some((a) => /compartilhado/.test(a.titulo)), '4 aparelhos ativos na mesma conta: parece compartilhado');
+  assert.strictEqual((await Ap.registrar(db, { ...base, aparelho: 'curto', ip: '1.1.1.1' })).erro, 'Aparelho inválido.');
+  // muitas conexões no mesmo aparelho
+  const db2 = criarBanco({});
+  for (let i = 1; i <= 5; i++) r = await Ap.registrar(db2, { ...base, aparelho: 'aparelho-eeeeeeeeeeee5', ip: `10.0.0.${i}` });
+  assert.ok(r.alertas.some((a) => /conexões diferentes/.test(a.titulo)));
+  assert.strictEqual(Ap.nomeDoAparelho('Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36'), 'Android · Chrome');
+});
+
+teste('aparelhos do painel: qualquer um da equipe avisa; só o proprietário lista e desconecta; desconectado sai, perde o Face ID e o login da conta é encerrado', async () => {
+  const db = criarBanco({ ...semente() });
+  const usuarios = [{ uid: 'u3', email: 'caixa@teste.com', customClaims: { tenants: { espetinhos: 'caixa' } } }, { uid: 'u2', email: 'ze@teste.com', customClaims: { tenants: { espetinhos: 'proprietario' } } }];
+  const tokens = { ...TOKENS, 'caixa-espetinhos': { uid: 'u3', email: 'caixa@teste.com', tenants: { espetinhos: 'caixa' } }, 'dono-espetinhos': { uid: 'u2', email: 'ze@teste.com', tenants: { espetinhos: 'proprietario' } }, 'dono-espetinhos-2': { uid: 'u7', email: 'outro@teste.com', tenants: { espetinhos: 'proprietario' } } };
+  const eq = carregarApi(raiz('api/equipe.js'), criarAdmin(db, tokens, usuarios));
+  const pedir = (token, body) => chamar(eq, { headers: { Authorization: `Bearer ${token}`, 'X-Loja': 'espetinhos', 'user-agent': 'Mozilla/5.0 (Windows NT 10.0) Chrome/126 Safari/537.36' }, body });
+  let r = await pedir('caixa-espetinhos', { acao: 'aparelho', aparelho: 'pc-do-caixa-123456', como: 'link-outro-aparelho' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(r.corpo.bloqueado, false);
+  const alertas = db._dados.get('plataforma/alertas') || {};
+  assert.ok(Object.keys(alertas).some((k) => /^seg_espetinhos_aparelho-/.test(k)), 'o dono da loja foi avisado');
+  assert.ok([...db._dados.entries()].some(([k, v]) => /auditoria/.test(k) && v.acao === 'aparelho-novo' && /outro aparelho/.test(v.detalhe || '')), 'fica na trilha');
+  assert.strictEqual((await pedir('cliente', { acao: 'aparelho', aparelho: 'pc-do-cliente-123456' })).status, 403, 'quem não é da equipe não registra');
+  assert.strictEqual((await pedir('caixa-espetinhos', { acao: 'aparelhos' })).status, 403, 'caixa não lista');
+  const lista = (await pedir('dono-espetinhos', { acao: 'aparelhos' })).corpo.aparelhos;
+  assert.strictEqual(lista.length, 1); assert.strictEqual(lista[0].email, 'caixa@teste.com'); assert.strictEqual(lista[0].nome, 'Windows · Chrome'); assert.strictEqual(lista[0].como, 'link-outro-aparelho');
+  // Face ID criado nesse aparelho
+  const Ap = require(raiz('lib/aparelhos'));
+  await db.collection('passkeys').doc('chave-do-pc-123456789').set({ uid: 'u3', aparelhoDoc: lista[0].id });
+  r = await pedir('dono-espetinhos', { acao: 'aparelho-desconectar', id: lista[0].id });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(usuarios[0].revogado, true, 'o login da conta foi encerrado');
+  assert.ok(!db._dados.has('passkeys/chave-do-pc-123456789'), 'o Face ID criado nele foi apagado');
+  r = await pedir('caixa-espetinhos', { acao: 'aparelho', aparelho: 'pc-do-caixa-123456' });
+  assert.strictEqual(r.corpo.bloqueado, true, 'o aparelho desconectado recebe "bloqueado" e o painel sai');
+  // dono de outra loja não mexe; aparelho de proprietário não é derrubado por outro proprietário
+  assert.strictEqual((await chamar(eq, { headers: { Authorization: 'Bearer dono-espetinhos', 'X-Loja': 'espetinhos' }, body: { acao: 'aparelho-desconectar', id: 'nao-existe-0000' } })).status, 404);
+  await pedir('dono-espetinhos', { acao: 'aparelho', aparelho: 'celular-do-ze-123456' });
+  const doZe = (await pedir('dono-espetinhos', { acao: 'aparelhos' })).corpo.aparelhos.find((a) => a.email === 'ze@teste.com');
+  assert.ok(doZe.meu, 'marca o próprio aparelho');
+  assert.strictEqual((await pedir('dono-espetinhos-2', { acao: 'aparelho-desconectar', id: doZe.id })).status, 403);
+  // liberar
+  assert.strictEqual((await pedir('dono-espetinhos', { acao: 'aparelho-liberar', id: lista[0].id })).status, 200);
+  assert.strictEqual((await pedir('caixa-espetinhos', { acao: 'aparelho', aparelho: 'pc-do-caixa-123456' })).corpo.bloqueado, false);
+  assert.ok(Ap);
+});
+
+
+teste('SEGURANÇA · código do navegador: sem segredo, sem mapa do código-fonte no build, painel e plataforma nunca ficam guardados no aparelho', async () => {
+  const fs = require('fs');
+  const arquivos = [...fs.readdirSync(raiz('js')).filter((f) => f.endsWith('.js')).map((f) => `js/${f}`), ...fs.readdirSync(raiz('.')).filter((f) => f.endsWith('.html'))];
+  for (const f of arquivos) {
+    const t = fs.readFileSync(raiz(f), 'utf8');
+    assert.ok(!/-----BEGIN [A-Z ]*PRIVATE KEY-----|sk_live_[0-9a-zA-Z]{8}|FIREBASE_PRIVATE_KEY\s*[:=]\s*['"`]|PROXY_SEGREDO\s*[:=]\s*['"`]/.test(t), `segredo no código do navegador: ${f}`);
+  }
+  // o build NÃO publica o mapa do código-fonte (com ele, ler o painel "por dentro" ficava fácil)
+  assert.ok(!/sourcemap\s*:\s*(true|['"]inline['"]|['"]hidden['"])/.test(fs.readFileSync(raiz('vite.config.js'), 'utf8')), 'vite.config.js: sem sourcemap no build');
+  // painel e plataforma: nem o navegador nem um computador emprestado guardam a página (botão voltar depois de sair)
+  const v = JSON.parse(fs.readFileSync(raiz('vercel.json'), 'utf8'));
+  for (const pag of ['/admin.html', '/plataforma.html']) {
+    const h = (v.headers.find((x) => x.source === pag) || { headers: [] }).headers;
+    assert.strictEqual((h.find((x) => x.key === 'Cache-Control') || {}).value, 'no-store', `${pag} com Cache-Control: no-store`);
+    assert.ok(/noindex/.test((h.find((x) => x.key === 'X-Robots-Tag') || {}).value || ''), `${pag} fora do Google`);
+  }
+  // nenhuma página do site abre dentro de outro site (clique enganado por cima do painel)
+  const geral = v.headers.find((x) => x.source === '/((?!previa).*)').headers;
+  assert.strictEqual(geral.find((x) => x.key === 'X-Frame-Options').value, 'DENY');
+  assert.ok(/frame-ancestors 'none'/.test(geral.find((x) => x.key === 'Content-Security-Policy').value), 'CSP: frame-ancestors none');
+  assert.ok(!/unsafe-eval/.test(geral.find((x) => x.key === 'Content-Security-Policy').value), 'CSP: sem eval');
+});
+
 (async () => {
   let falhas = 0;
   for (const [nome, fn] of testes) {

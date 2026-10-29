@@ -13,6 +13,8 @@
 //  POST { acao: 'zerar-movimento', confirmacao: 'ZERAR' }      apaga pedidos, caixa, histórico e o que o motor de demanda aprendeu
 //  POST { acao: 'copia-restaurar', dia }                      volta o cadastro (produtos, categorias, configurações, cupons) para a cópia do dia
 //  POST { acao: 'copia-estado' } / { acao: 'copia-baixar' }   cópia de segurança dos dados da loja
+//  POST { acao: 'aparelho', aparelho, como? }                 QUALQUER pessoa da equipe: "este aparelho está no painel" (lib/aparelhos.js)
+//  POST { acao: 'aparelhos' } / { acao: 'aparelho-desconectar', id } / { acao: 'aparelho-liberar', id }   (só proprietário)
 //
 //  O papel fica gravado DENTRO do login da pessoa (custom claims), que só o
 //  servidor consegue escrever. A lista em {loja}/equipe é só um espelho para
@@ -32,6 +34,7 @@ const A = require('../lib/avisos');
 const P = require('../lib/prudencia');
 const Maq = require('../lib/maquininha');
 const Cofre = require('../lib/cofre');
+const Ap = require('../lib/aparelhos');
 const hojeBrasilia = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
 const ontemBrasilia = () => new Date(Date.now() - 27 * 3600000).toISOString().slice(0, 10);
 
@@ -237,6 +240,20 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ sucesso: true });
     } catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[avisos]', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
   }
+  // ESTE APARELHO ESTÁ NO PAINEL (lib/aparelhos.js): ao entrar e de 5 em 5 minutos. Aparelho novo, link aberto em outro
+  // aparelho e acesso que parece compartilhado viram aviso no celular do dono. Aparelho desconectado recebe "bloqueado" e sai.
+  if ((req.body || {}).acao === 'aparelho') {
+    if (!T.temPapel(dec, tid, T.PAPEIS)) return res.status(403).json({ error: 'Esta conta não faz parte da equipe desta loja.' });
+    try {
+      const b = req.body || {}, como = ['link', 'link-outro-aparelho', 'passkey'].includes(b.como) ? b.como : '';
+      const r = await Ap.registrar(db, { uid: dec.uid, email: dec.email || '', tid, aparelho: b.aparelho, ua: req.headers && req.headers['user-agent'], ip: H.ipDe(req), como, pais: String((req.headers && req.headers['cf-ipcountry']) || '').slice(0, 2) });
+      if (r.erro) return res.status(400).json({ error: r.erro });
+      if (r.novo) await anotar(req, tid, dec, 'aparelho-novo', `${Ap.nomeDoAparelho(req.headers && req.headers['user-agent'])}${como === 'link-outro-aparelho' ? ' (link aberto em outro aparelho)' : ''}`);
+      for (const a of r.alertas || []) await P.alertar(db, tid, a.assunto, { titulo: a.titulo, corpo: a.corpo });
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).json({ sucesso: true, bloqueado: !!r.bloqueado });
+    } catch (e) { console.error('[aparelho]', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
+  }
   // CHAVE DOS DADOS DO CLIENTE (lib/cofre.js): só quem atende (os mesmos papéis que leem pedidos nas regras do banco).
   // O login foi conferido com "encerrado?" (verifyIdToken com true): quem saiu da equipe não recebe mais a chave.
   if ((req.body || {}).acao === 'chave-dados') {
@@ -251,6 +268,25 @@ module.exports = async function handler(req, res) {
     if (acao === 'auditoria') return res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, tid, 40) });
     if (acao === 'definir') return await definir(req, res, { tid, dec });
     if (acao === 'remover') return await remover(req, res, { tid, dec });
+    if (acao === 'aparelhos') return res.status(200).json({ sucesso: true, aparelhos: (await Ap.listar(db, tid)).map((a) => ({ ...a, meu: a.uid === dec.uid })) });
+    if (acao === 'aparelho-desconectar' || acao === 'aparelho-liberar') {
+      const id = String((req.body || {}).id || '');
+      const s0 = /^[A-Za-z0-9_-]{10,120}$/.test(id) ? await db.collection('aparelhos').doc(id).get() : null;
+      const ap = s0 && s0.exists ? s0.data() : null;
+      if (!ap || !(ap.lojas || []).includes(tid)) return res.status(404).json({ error: 'Aparelho não encontrado nesta loja.' });
+      if (ap.uid !== dec.uid) {
+        let alvo = null; try { alvo = await admin.auth().getUser(ap.uid); } catch (_) { alvo = null; }
+        const c = (alvo && alvo.customClaims) || {};
+        if (c.plataforma === true || ehDono(c, tid)) return res.status(403).json({ error: 'Aparelho de proprietário ou da plataforma só a própria pessoa desconecta.' });
+      }
+      if (acao === 'aparelho-liberar') { await Ap.liberar(db, id); await anotar(req, tid, dec, 'aparelho-liberar', `${ap.email || ap.uid} · ${ap.nome || ''}`); return res.status(200).json({ sucesso: true }); }
+      const r = await Ap.bloquear(db, id);
+      // o login da conta é encerrado em TODOS os aparelhos dela (o Firebase não encerra um só); os outros aparelhos
+      // dela entram de novo com o Face ID ou o link. Este fica bloqueado e as chaves de Face ID criadas nele somem.
+      try { await admin.auth().revokeRefreshTokens(ap.uid); } catch (_) { /* segue: o bloqueio já vale */ }
+      await anotar(req, tid, dec, 'aparelho-desconectar', `${ap.email || ap.uid} · ${ap.nome || ''}${r && r.chavesApagadas ? ` · ${r.chavesApagadas} chave(s) de Face ID apagada(s)` : ''}`);
+      return res.status(200).json({ sucesso: true });
+    }
     // CÓPIA DE SEGURANÇA: o proprietário vê quando foi a última e baixa uma cópia feita na hora.
     // MAQUININHA (PagBank): o proprietário guarda as credenciais, vê os últimos dias e pede a busca de um dia.
     // As credenciais nunca voltam para a tela: ela só fica sabendo SE estão guardadas.

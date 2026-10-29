@@ -10,6 +10,7 @@
 import { auth, signInWithCustomToken } from './firebase.js';
 import * as PK from './passkey-cliente.js';
 import { showToast } from './utils.js';
+import { anotarComoEntrou, numeroDoAparelho } from './admin-aparelho.js';
 
 const CH_EMAIL = 'painel_ultimo_email';
 const chAtivo = (uid) => `pk_ativo:${uid}`, chNao = (uid) => `pk_nao:${uid}`;
@@ -23,6 +24,7 @@ const avisar = (texto, cor = 'var(--text-dark)') => { const m = $('login-msg'); 
 
 async function entrarComToken(token) {
     avisar('Entrando...');
+    anotarComoEntrou('passkey');
     await signInWithCustomToken(auth, token);       // o resto (conferir o papel, abrir o painel) é o onAuthStateChanged de js/admin.js
 }
 
@@ -85,7 +87,7 @@ export async function depoisDeEntrar(user) {
         if (b.dataset.pk === 'agora-nao') { gravar(chNao(user.uid), String(Date.now())); caixa.remove(); return; }
         b.disabled = true;
         try {
-            await PK.ativar(pegarToken);
+            await PK.ativar(pegarToken, numeroDoAparelho());
             gravar(chAtivo(user.uid), '1'); caixa.remove();
             showToast('Pronto! Da próxima vez, toque em "Entrar com Face ID ou digital".');
         } catch (err) {

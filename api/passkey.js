@@ -18,6 +18,7 @@ const H = require('../lib/http');
 const P = require('../lib/prudencia');
 const T = require('../lib/tenant');
 const PK = require('../lib/passkey');
+const Ap = require('../lib/aparelhos');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -99,7 +100,7 @@ async function comLogin(req, res) {
     const lista = await minhas();
     if (lista.length >= MAX_POR_CONTA) return recusa(res, 400, `Esta conta já tem ${MAX_POR_CONTA} aparelhos com Face ID ou digital. Tire um antes.`);
     const aparelho = aparelhoDe(req.headers && req.headers['user-agent']);
-    await col().doc(r.credId).set({ uid: dec.uid, email: dec.email || '', jwk: r.jwk, alg: r.alg, contador: r.contador, rpId, aparelho, criadoEm: new Date().toISOString() });
+    await col().doc(r.credId).set({ uid: dec.uid, email: dec.email || '', jwk: r.jwk, alg: r.alg, contador: r.contador, rpId, aparelho, ...(Ap.idValido(b.aparelho) ? { aparelhoDoc: Ap.docId(dec.uid, b.aparelho) } : {}), criadoEm: new Date().toISOString() });
     await P.registrar(db, null, { acao: 'passkey-cadastrada', quem: dec.email || dec.uid, uid: dec.uid, detalhe: aparelho, ip: H.ipDe(req) });
     return res.status(200).json({ sucesso: true, aparelho });
   }
