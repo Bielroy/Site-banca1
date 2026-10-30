@@ -1,18 +1,23 @@
 name: Diagnostico iPhone (temporario)
 on: push
+permissions:
+  contents: write
 jobs:
   testar:
     if: github.ref == 'refs/heads/diagnostico-iphone'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: DNS
         run: |
+          exec >> resultado.txt 2>&1
           sudo apt-get install -y -qq dnsutils >/dev/null 2>&1 || true
           for h in usebanca.com www.usebanca.com api.usebanca.com fotos.usebanca.com; do
             for t in A AAAA CNAME CAA HTTPS; do echo "== $h $t (1.1.1.1)"; dig +short @1.1.1.1 $h $t; echo "== $h $t (8.8.8.8)"; dig +short @8.8.8.8 $h $t; done
           done
       - name: HTTP como iPhone
         run: |
+          exec >> resultado.txt 2>&1
           UA='Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
           for u in https://usebanca.com/ https://www.usebanca.com/ https://usebanca.com/api/saude https://usebanca.com/feira/atenas https://usebanca.com/admin; do
             echo "======== $u"
@@ -22,5 +27,11 @@ jobs:
           echo "======== IPv6"; curl -6 -sS -o /dev/null -m 15 -w 'v6 http=%{http_code} ip=%{remote_ip}\n' -A "$UA" https://usebanca.com/ || echo "sem IPv6 no runner ou falhou"
       - name: Certificado
         run: |
+          exec >> resultado.txt 2>&1
           echo | openssl s_client -connect usebanca.com:443 -servername usebanca.com 2>/dev/null | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
           for v in tls1_2 tls1_3; do echo | openssl s_client -connect usebanca.com:443 -servername usebanca.com -$v 2>&1 | grep -E 'Protocol|Cipher is' | head -2; done
+      - name: Guardar resultado
+        if: always()
+        run: |
+          git config user.name diagnostico; git config user.email diagnostico@users.noreply.github.com
+          git add resultado.txt; git commit -m "resultado do diagnóstico [skip ci]" && git push
