@@ -497,6 +497,24 @@ teste('cliente que volta: o resumo só aparece com nome, WhatsApp e endereço; a
   assert.strictEqual(C.pagamentoQueVale(null, ['PIX']), ''); assert.strictEqual(C.pagamentoQueVale('PIX', null), '');
 });
 
+teste('aviso vermelho: recusa do próprio navegador (animação cancelada, app recusado) e recusa sem texto não assustam o cliente; a aba Erros diz o que era', async () => {
+  const E = await import(raiz('js/erros-site.js'));
+  const erro = (name, message, stack = '') => Object.assign(new Error(message), { name, stack });
+  assert.ok(E.rejeicaoDoNavegador(erro('AbortError', 'Transition was skipped')), 'animação de troca de tela pulada');
+  assert.ok(E.rejeicaoDoNavegador(erro('InvalidStateError', 'View transition was skipped because document visibility state is hidden.')), 'tela apagou no meio');
+  assert.ok(E.rejeicaoDoNavegador(erro('Error', 'Failed to register a ServiceWorker', 'at registerSW')), 'registro do app recusado');
+  assert.ok(!E.rejeicaoDoNavegador(erro('TypeError', "Cannot read properties of undefined (reading 'id')")), 'defeito de verdade continua aparecendo');
+  assert.strictEqual(E.mensagemDaRejeicao(undefined), ''); assert.strictEqual(E.mensagemDaRejeicao({ type: 'error' }), ''); assert.strictEqual(E.mensagemDaRejeicao('IndexedDB Error'), 'IndexedDB Error');
+  assert.strictEqual(E.descreverRejeicaoSemTexto(undefined), 'Promessa recusada sem motivo');
+  assert.strictEqual(E.descreverRejeicaoSemTexto({ code: 1, detalhe: 2 }), 'Promessa recusada sem mensagem (Object: code, detalhe)');
+  assert.ok(E.rejeicaoDeRede('Failed to fetch') && !E.rejeicaoDeRede('x is not a function'));
+  const fonte = require('fs').readFileSync(raiz('js/utils.js'), 'utf8');
+  assert.ok(/if \(rejeicaoDoNavegador\(r\) \|\| !mensagemDaRejeicao\(r\)\) return;/.test(fonte), 'o aviso "Algo não saiu como esperado" usa a mesma régua');
+  const vigia = require('fs').readFileSync(raiz('js/vigia-tela.js'), 'utf8');
+  assert.ok(/\.carrinho-overlay\.aberto/.test(vigia), 'sacola aberta conta como janela aberta (nada "por cima" das categorias)');
+  assert.ok(/!img\.dataset\.foraDoAr/.test(vigia), 'foto que sumiu do ImgBB não vai para a aba Erros (o painel da loja já avisa)');
+});
+
 teste('mensagem do pedido: loja de unidades não fala em "pesados"; com item a pesar, fala; "Falar com a loja" leva os itens da sacola', async () => {
   const db = criarBanco(semente()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
   const r = await chamar(api, { headers: ip(), body: pedido() });

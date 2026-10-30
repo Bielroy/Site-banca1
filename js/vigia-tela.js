@@ -154,7 +154,8 @@ function caixaVisual(el) {
 }
 const caixa = (b) => `x ${Math.round(b.left)}–${Math.round(b.right)}, y ${Math.round(b.top)}–${Math.round(b.bottom)}`;
 const dentro = (b, a, folga = T) => b.left >= a.left - folga && b.right <= a.right + folga && b.top >= a.top - folga && b.bottom <= a.bottom + folga;
-const umModalAberto = () => !!document.querySelector('.modal-overlay.active, .modal-overlay.aberto, dialog[open]');
+// a sacola aberta (gaveta + fundo escuro) também é janela: o que fica por baixo dela não está "coberto por defeito"
+const umModalAberto = () => !!document.querySelector('.modal-overlay.active, .modal-overlay.aberto, dialog[open], .carrinho-overlay.aberto, #carrinho.aberto');
 
 /**
  * Confere a tela como ela está agora. Devolve a lista de problemas (vazia = tudo certo):
@@ -254,7 +255,9 @@ export function verificarTela() {
     const fotos = [...document.querySelectorAll('.produto-img-wrap img')].filter((i) => i.complete && i.getAttribute('src'));
     const abriram = fotos.filter((i) => i.naturalWidth > 0).length;
     if (navigator.onLine !== false && abriram > 0) {
-        for (const img of fotos) if (img.naturalWidth === 0 && !img.dataset.original && visivel(img.closest('.produto-card') || img)) anotar('foto-quebrada', img, img.dataset.foraDoAr ? 'sumiu do ImgBB: a loja troca no painel, em Produtos → "Conferir fotos fora do ar"' : 'não abriu');
+        // foto antiga que SUMIU DO IMGBB não é defeito do site: a loja já esconde e o painel DELA avisa
+        // (Produtos → "Conferir fotos fora do ar"). Na aba Erros ficava voltando a cada visita, sem nada para corrigir no código.
+        for (const img of fotos) if (img.naturalWidth === 0 && !img.dataset.original && !img.dataset.foraDoAr && visivel(img.closest('.produto-card') || img)) anotar('foto-quebrada', img, 'não abriu');
     }
     return [...achados.values()];
 }

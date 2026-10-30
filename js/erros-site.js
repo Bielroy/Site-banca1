@@ -32,6 +32,30 @@ function versao() {
     try { const s = document.querySelector('script[type="module"][src*="/assets/"]'); return s ? s.getAttribute('src').split('/').pop().slice(0, 40) : ''; } catch (_) { return ''; }
 }
 
+/** O texto de uma promessa recusada ('' quando ela não traz mensagem). */
+export const mensagemDaRejeicao = (r) => (r && typeof r.message === 'string' && r.message ? r.message : typeof r === 'string' ? r : '');
+/** Falha de internet: não é defeito do site. */
+export const rejeicaoDeRede = (msg) => /Failed to fetch|NetworkError|Load failed|network error|unavailable|offline/i.test(String(msg || ''));
+/** Recusa do PRÓPRIO NAVEGADOR que não atrapalha nada: animação de troca de tela cancelada (girou o celular, tocou de novo
+ *  no meio, voltou de outro app) ou registro do aplicativo (service worker) recusado por alguns aparelhos. A loja segue igual. */
+export function rejeicaoDoNavegador(r) {
+    const msg = mensagemDaRejeicao(r), nome = String((r && r.name) || '');
+    if ((nome === 'AbortError' || nome === 'InvalidStateError') && /transition/i.test(msg)) return true;
+    if (/^(Transition was (aborted|skipped)|Skipping view transition)/i.test(msg) || /view ?transition/i.test(msg)) return true;
+    if (/ServiceWorker|serviceWorker|^Rejected$/i.test(msg) && /registerSW|sw\.js|serviceWorker/i.test(`${String((r && r.stack) || '')} ${msg}`)) return true;
+    return false;
+}
+/** Recusa SEM mensagem (um evento, undefined, um objeto qualquer): diz o que era, sem levar dado nenhum do cliente. */
+export function descreverRejeicaoSemTexto(r) {
+    if (r === undefined || r === null) return 'Promessa recusada sem motivo';
+    try {
+        if (typeof Event !== 'undefined' && r instanceof Event) { const alvo = r.target && r.target.tagName ? ` em <${String(r.target.tagName).toLowerCase()}>` : ''; return `Promessa recusada com evento "${r.type}"${alvo}`; }
+    } catch (_) { /* segue */ }
+    const tipo = (r && r.constructor && r.constructor.name) || typeof r;
+    const campos = r && typeof r === 'object' ? Object.keys(r).slice(0, 6).join(', ') : '';
+    return `Promessa recusada sem mensagem (${tipo}${campos ? `: ${campos}` : ''})`;
+}
+
 export function avisarErro(dados) {
     if (desligado || enviados >= MAX_POR_PAGINA) return;
     const msg = String((dados && dados.msg) || '').slice(0, 300);
@@ -59,16 +83,9 @@ if (!desligado && typeof window !== 'undefined' && !window.__errosSite) {
     const calar = (e) => { const t = e && e.viewTransition; if (t) { for (const k of ['ready', 'finished', 'updateCallbackDone']) t[k] && t[k].catch(() => {}); } };
     window.addEventListener('pageswap', calar); window.addEventListener('pagereveal', calar);
     window.addEventListener('unhandledrejection', (e) => {
-        const r = e && e.reason;
-        // falha de internet não é defeito do site
-        const msg = r && r.message ? r.message : typeof r === 'string' ? r : '';
-        if (!msg || /Failed to fetch|NetworkError|Load failed|network error|unavailable|offline/i.test(msg)) return;
-        // animação de troca de tela cancelada pelo navegador (girou o celular, tocou de novo no meio, voltou de outro
-        // app): o Chrome avisa como erro, mas a página abre normal. Não é defeito do site.
-        if ((r && r.name === 'AbortError' && /transition/i.test(msg)) || /^Transition was (aborted|skipped)/i.test(msg)) return;
-        // o registro do aplicativo (service worker) é opcional: o navegador de alguns aparelhos ou de navegadores
-        // embutidos recusa, e a loja funciona igual. Não é defeito do site, então não vai para a aba Erros.
-        if (/ServiceWorker|serviceWorker|^Rejected$/i.test(msg) && /registerSW|sw\.js|serviceWorker/i.test(String(r && r.stack || msg) + ' ' + String(msg))) return;
-        avisarErro({ tipo: 'promessa', msg, pilha: r && r.stack });
+        const r = e && e.reason, msg = mensagemDaRejeicao(r);
+        if (rejeicaoDeRede(msg) || rejeicaoDoNavegador(r)) return;   // internet, animação cancelada, registro do app: não é defeito do site
+        // sem mensagem: antes sumia sem deixar rastro. Agora entra na aba Erros dizendo O QUE era (evento, objeto), para dar para achar.
+        avisarErro({ tipo: 'promessa', msg: msg || descreverRejeicaoSemTexto(r), pilha: r && r.stack });
     });
 }

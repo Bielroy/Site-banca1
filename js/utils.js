@@ -291,12 +291,18 @@ export const customConfirm = (title, msg, rotulos = {}) => {
 };
 
 // --------- Rede: erros globais ---------
+import { rejeicaoDoNavegador, mensagemDaRejeicao } from './erros-site.js';   // a mesma régua da aba Erros (já carregado antes em toda página)
 window.addEventListener('unhandledrejection', (event) => {
-  console.error('Unhandled Promise:', event.reason);
+  const r = event.reason;
+  console.error('Unhandled Promise:', r);
   // Só fala em "conexão" quando é mesmo conexão; outros erros não culpam a internet de quem está usando.
-  const txt = String((event.reason && (event.reason.code || event.reason.message)) || event.reason || '');
+  const txt = String((r && (r.code || r.message)) || (typeof r === 'string' ? r : '') || '');
   const rede = !navigator.onLine || /network|fetch|unavailable|offline|timeout|deadline/i.test(txt);
-  showToast(rede ? 'Erro de conexão. Tente novamente.' : 'Algo não saiu como esperado. Tente de novo.', true);
+  if (rede) { showToast('Erro de conexão. Tente novamente.', true); return; }
+  // Recusa do próprio navegador que não atrapalha nada (animação de troca de tela cancelada, registro do app recusado)
+  // e recusa sem mensagem nenhuma: o cliente não tem o que "tentar de novo". Fica só no console e na aba Erros.
+  if (rejeicaoDoNavegador(r) || !mensagemDaRejeicao(r)) return;
+  showToast('Algo não saiu como esperado. Tente de novo.', true);
 });
 
 // --------- Versão nova do site: entra sozinha ---------
