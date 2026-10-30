@@ -1,0 +1,133 @@
+== usebanca.com A (1.1.1.1)
+172.67.175.207
+104.21.91.170
+== usebanca.com A (8.8.8.8)
+104.21.91.170
+172.67.175.207
+== usebanca.com AAAA (1.1.1.1)
+2606:4700:3030::6815:5baa
+2606:4700:3032::ac43:afcf
+== usebanca.com AAAA (8.8.8.8)
+2606:4700:3032::ac43:afcf
+2606:4700:3030::6815:5baa
+== usebanca.com CNAME (1.1.1.1)
+== usebanca.com CNAME (8.8.8.8)
+== usebanca.com CAA (1.1.1.1)
+== usebanca.com CAA (8.8.8.8)
+== usebanca.com HTTPS (1.1.1.1)
+1 . alpn="h3,h2" ipv4hint=104.21.91.170,172.67.175.207 ech=AEX+DQBBkQAgACB7PtyyYYv6bYi4VIfeoi05rs1vDGTkA4VQ5RsgMtbsTgAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA= ipv6hint=2606:4700:3030::6815:5baa,2606:4700:3032::ac43:afcf
+== usebanca.com HTTPS (8.8.8.8)
+1 . alpn="h3,h2" ipv4hint=104.21.91.170,172.67.175.207 ech=AEX+DQBBTAAgACBQ2O6a2IZOq31wtLqnZpsxiB9iDcnPgRThvaj/UKebRQAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA= ipv6hint=2606:4700:3030::6815:5baa,2606:4700:3032::ac43:afcf
+== www.usebanca.com A (1.1.1.1)
+== www.usebanca.com A (8.8.8.8)
+== www.usebanca.com AAAA (1.1.1.1)
+== www.usebanca.com AAAA (8.8.8.8)
+== www.usebanca.com CNAME (1.1.1.1)
+== www.usebanca.com CNAME (8.8.8.8)
+== www.usebanca.com CAA (1.1.1.1)
+== www.usebanca.com CAA (8.8.8.8)
+== www.usebanca.com HTTPS (1.1.1.1)
+== www.usebanca.com HTTPS (8.8.8.8)
+== api.usebanca.com A (1.1.1.1)
+54.207.72.209
+== api.usebanca.com A (8.8.8.8)
+54.207.72.209
+== api.usebanca.com AAAA (1.1.1.1)
+== api.usebanca.com AAAA (8.8.8.8)
+== api.usebanca.com CNAME (1.1.1.1)
+== api.usebanca.com CNAME (8.8.8.8)
+== api.usebanca.com CAA (1.1.1.1)
+== api.usebanca.com CAA (8.8.8.8)
+== api.usebanca.com HTTPS (1.1.1.1)
+== api.usebanca.com HTTPS (8.8.8.8)
+== fotos.usebanca.com A (1.1.1.1)
+104.21.91.170
+172.67.175.207
+== fotos.usebanca.com A (8.8.8.8)
+104.21.91.170
+172.67.175.207
+== fotos.usebanca.com AAAA (1.1.1.1)
+2606:4700:3032::ac43:afcf
+2606:4700:3030::6815:5baa
+== fotos.usebanca.com AAAA (8.8.8.8)
+2606:4700:3032::ac43:afcf
+2606:4700:3030::6815:5baa
+== fotos.usebanca.com CNAME (1.1.1.1)
+== fotos.usebanca.com CNAME (8.8.8.8)
+== fotos.usebanca.com CAA (1.1.1.1)
+== fotos.usebanca.com CAA (8.8.8.8)
+== fotos.usebanca.com HTTPS (1.1.1.1)
+1 . alpn="h3,h2" ipv4hint=104.21.91.170,172.67.175.207 ech=AEX+DQBBTAAgACBQ2O6a2IZOq31wtLqnZpsxiB9iDcnPgRThvaj/UKebRQAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA= ipv6hint=2606:4700:3030::6815:5baa,2606:4700:3032::ac43:afcf
+== fotos.usebanca.com HTTPS (8.8.8.8)
+1 . alpn="h3,h2" ipv4hint=104.21.91.170,172.67.175.207 ech=AEX+DQBBkQAgACB7PtyyYYv6bYi4VIfeoi05rs1vDGTkA4VQ5RsgMtbsTgAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA= ipv6hint=2606:4700:3030::6815:5baa,2606:4700:3032::ac43:afcf
+======== https://usebanca.com/
+HTTP/2 200 
+content-type: text/html; charset=utf-8
+strict-transport-security: max-age=63072000; includeSubDomains
+server: cloudflare
+cf-ray: a52cbaafc8aaca5c-ATL
+alt-svc: h3=":443"; ma=86400
+http=200 ip=104.21.91.170 tls=0 ver=2 bytes=31348
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <!-- Zoom liberado: maximum-scale/user-scalable=no bloqueava o pinch-to-zoom
+         (falha de acessibilidade WCAG 1.4.4). Removidos. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=
+======== https://www.usebanca.com/
+curl: (6) Could not resolve host: www.usebanca.com
+http=000 ip= tls=0 ver=0 bytes=0
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <!-- Zoom liberado: maximum-scale/user-scalable=no bloqueava o pinch-to-zoom
+         (falha de acessibilidade WCAG 1.4.4). Removidos. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=
+======== https://usebanca.com/api/saude
+HTTP/2 200 
+content-type: application/json; charset=utf-8
+strict-transport-security: max-age=63072000; includeSubDomains
+server: cloudflare
+cf-ray: a52cbab11a7634e1-ATL
+alt-svc: h3=":443"; ma=86400
+http=200 ip=172.67.175.207 tls=0 ver=2 bytes=37
+{"ok":true,"ponte":true,"fotos":"r2"}
+======== https://usebanca.com/feira/atenas
+HTTP/2 302 
+content-type: text/plain;charset=UTF-8
+location: /?feira=atenas&entrar=1
+server: cloudflare
+cf-ray: a52cbab28fc93baa-ATL
+alt-svc: h3=":443"; ma=86400
+http=302 ip=104.21.91.170 tls=0 ver=2 bytes=38
+Redirecting to /?feira=atenas&entrar=1
+======== https://usebanca.com/admin
+HTTP/2 200 
+content-type: text/html; charset=utf-8
+server: cloudflare
+cf-ray: a52cbab30b8d0bec-ATL
+alt-svc: h3=":443"; ma=86400
+http=200 ip=104.21.91.170 tls=0 ver=2 bytes=55151
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <!-- Zoom liberado: bloquear o pinch-to-zoom é falha de acessibilidade (WCAG 1.4.4) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+    <t
+======== IPv6
+curl: (7) Failed to connect to usebanca.com port 443 after 0 ms: Could not connect to server
+v6 http=000 ip=
+sem IPv6 no runner ou falhou
+subject=CN=usebanca.com
+issuer=C=US, O=Google Trust Services, CN=WE1
+notBefore=Oct 13 09:25:42 2026 GMT
+notAfter=Jan 11 10:25:40 2027 GMT
+X509v3 Subject Alternative Name: 
+    DNS:usebanca.com
+New, TLSv1.2, Cipher is ECDHE-ECDSA-CHACHA20-POLY1305
+Protocol: TLSv1.2
+New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+Protocol: TLSv1.3
