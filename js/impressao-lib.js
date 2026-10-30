@@ -31,15 +31,25 @@ export function enderecoTxt(p) {
     return [limpo(p.condominio, 60), resto.filter(Boolean).join(f === 'ql' ? ' · ' : ', ')].filter(Boolean).join(' - ');
 }
 
+/** Como o pedido chega ao cliente, em letra grande no papel: quem separa vê de cara se é para entregar ou se o cliente busca. */
+export function modoTxt(p) {
+    if (!p || p.origem === 'balcao') return '';                                   // venda no balcão: o cliente já está ali
+    if (p.modo === 'retirada') return p.feiraId ? 'RETIRADA NA FEIRA' : 'RETIRADA NA BANCA';
+    return limpo(p.quadra) || limpo(p.condominio) ? 'ENTREGA' : '';
+}
+/** Linha de "onde": na retirada, o local (o tipo já saiu grande em cima); na entrega, o endereço. */
+const ondeTxt = (p) => (p && p.modo === 'retirada' ? (limpo(p.retiradaLocal, 60) ? `Local: ${limpo(p.retiradaLocal, 60)}` : '') : enderecoTxt(p));
+
 /** Cupom completo de um pedido (da loja on-line ou do balcão). */
 export function cupomDoPedido(p, { loja = '', aviso = '' } = {}) {
     const L = [], itens = Array.isArray(p.itens) ? p.itens : [];
     if (loja) L.push(txt(loja, { al: 'c', b: true, g: true }));
     L.push(txt(`${p.origem === 'balcao' ? 'Venda no balcão' : 'Pedido'}${p.id ? ` ${numeroDoPedido(p)}` : ''}`, { al: 'c' }), txt(dataHora(p.data), { al: 'c' }));
     if (limpo(aviso)) L.push(txt(aviso, { al: 'c', b: true }));            // ex.: "CUPOM ATUALIZADO (depois da balança)"
+    const modo = modoTxt(p); if (modo) L.push(SEP, txt(modo, { al: 'c', b: true, g: true }));
     L.push(SEP);
     if (limpo(p.nome)) L.push(txt(p.nome, { b: true }));
-    const end = enderecoTxt(p); if (end) L.push(txt(end));
+    const end = ondeTxt(p); if (end) L.push(txt(end));
     if (limpo(p.telefone)) L.push(txt(`Tel: ${limpo(p.telefone, 20)}`));
     if (limpo(p.nome) || end) L.push(SEP);
     let soma = 0, aPesar = 0;
@@ -84,7 +94,8 @@ export function etiquetaDeEntrega(p, { loja = '', volume = 1, volumes = 1 } = {}
     const L = [], itens = Array.isArray(p.itens) ? p.itens : [], pago = p.pagamento && p.pagamento.status === 'PAID';
     if (loja) L.push(txt(loja, { al: 'c' }));
     L.push(txt(p.nome || 'Cliente', { al: 'c', b: true, g: true }));
-    const end = enderecoTxt(p); if (end) L.push(txt(end, { al: 'c', b: true }));
+    const modo = modoTxt(p); if (modo) L.push(txt(modo, { al: 'c', b: true, g: true }));
+    const end = ondeTxt(p); if (end) L.push(txt(end, { al: 'c', b: true }));
     if (p.feiraId && /^\d{4}-\d{2}-\d{2}$/.test(String(p.entregaDia || '')) && p.paraHoje === false) L.push(txt(`PARA ${String(p.entregaDia).slice(8, 10)}/${String(p.entregaDia).slice(5, 7)}`, { al: 'c', b: true }));   // pedido para a próxima feira
     if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`${p.modo === 'retirada' ? 'Retirar' : 'Entregar'}: ${limpo(p.entrega.horario, 40)}`, { al: 'c' }));
     L.push(SEP, { t: 'par', e: `${itens.length} item(ns)${p.id ? ` - Pedido ${numeroDoPedido(p)}` : ''}`, d: volumes > 1 ? `Volume ${volume}/${volumes}` : '' });

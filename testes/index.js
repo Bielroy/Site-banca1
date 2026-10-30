@@ -2827,14 +2827,21 @@ teste('retirada na banca: sem endereço e sem taxa, horários próprios, só com
 
   // papel, etiqueta e linha de endereço
   const ped = { nome: 'Ana', modo: 'retirada', itens: [{ nome: 'Ovos', qtd: 1, unidade: 'un', tipo: 'un', subtotal: 14 }], total: 14, entrega: { taxa: 0, horario: 'Das 7h às 11h' } };
-  const cupom = I.paraTexto(I.cupomDoPedido(ped), 32), etiqueta = I.paraTexto(I.etiquetaDeEntrega(ped), 32);
+  const umaLinha = (s) => s.replace(/\s+/g, ' ');   // letra grande quebra a linha no papel de 58 mm
+  const cupom = umaLinha(I.paraTexto(I.cupomDoPedido(ped), 32)), etiqueta = umaLinha(I.paraTexto(I.etiquetaDeEntrega(ped), 32));
   assert.ok(cupom.includes('RETIRADA NA BANCA') && cupom.includes('Retirar: Das 7h às 11h') && !cupom.includes('Entregar'), cupom);
   assert.ok(etiqueta.includes('RETIRADA NA BANCA') && etiqueta.includes('Retirar: Das 7h às 11h'), etiqueta);
   const entregaTxt = I.paraTexto(I.cupomDoPedido({ ...ped, modo: undefined, quadra: '5', lote: '3', condominio: 'Jardins' }), 32); assert.ok(entregaTxt.includes('Entregar: Das 7h às 11h') && entregaTxt.includes('Quadra 5'), entregaTxt);
   // (js/endereco.js puxa o Firebase do navegador, que não existe aqui: confere o texto do arquivo)
   assert.ok(/if \(p\.modo === 'retirada'\) return curto \? 'Retirada' : \(p\.feiraId \? 'Retirada na feira' : 'Retirada na banca'\)/.test(require('fs').readFileSync(raiz('js/endereco.js'), 'utf8')), 'painel e loja mostram "Retirada" no lugar do endereço');
   const LE = require(raiz('lib/endereco')); assert.strictEqual(LE.linhaEndereco(ped), 'Retirada na banca'); assert.strictEqual(LE.linhaEndereco({ ...ped, feiraId: 'madri' }), 'Retirada na feira');
-  const papelFeira = I.paraTexto(I.cupomDoPedido({ ...ped, feiraId: 'madri', retiradaLocal: 'Na feira do Madri' }), 32); assert.ok(papelFeira.includes('RETIRADA NA FEIRA') && papelFeira.replace(/\s+/g, ' ').includes('Na feira do Madri'), papelFeira);   // (a linha quebra no papel) assert.strictEqual(LE.linhaEndereco({ quadra: '5', lote: '3', condominio: 'Jardins' }), 'Jardins — Quadra 5 • Lote 3', 'entrega não mudou');
+  // o tipo sai em LETRA GRANDE no topo do cupom e da etiqueta (quem separa vê de cara); balcão não tem
+  const grande = (folha) => folha.filter((l) => l.t === 'txt' && l.g).map((l) => l.v);
+  assert.ok(grande(I.cupomDoPedido({ ...ped, feiraId: 'madri' })).includes('RETIRADA NA FEIRA'), 'cupom da retirada na feira: aviso grande');
+  assert.ok(grande(I.etiquetaDeEntrega({ ...ped, feiraId: 'madri' })).includes('RETIRADA NA FEIRA'), 'etiqueta da retirada na feira: aviso grande');
+  assert.ok(grande(I.cupomDoPedido({ ...ped, modo: undefined, quadra: '5', lote: '3' })).includes('ENTREGA'), 'cupom da entrega: aviso grande');
+  assert.ok(!grande(I.cupomDoPedido({ ...ped, modo: undefined, origem: 'balcao' })).some((v) => /ENTREGA|RETIRADA/.test(v)), 'balcão: sem aviso');
+  const papelFeira = I.paraTexto(I.cupomDoPedido({ ...ped, feiraId: 'madri', retiradaLocal: 'Na feira do Madri' }), 32); assert.ok(papelFeira.replace(/\s+/g, ' ').includes('RETIRADA NA FEIRA') && papelFeira.replace(/\s+/g, ' ').includes('Na feira do Madri'), papelFeira);   // (a linha quebra no papel) assert.strictEqual(LE.linhaEndereco({ quadra: '5', lote: '3', condominio: 'Jardins' }), 'Jardins — Quadra 5 • Lote 3', 'entrega não mudou');
 });
 
 teste('agenda das feiras: cada dia de cada feira tem entrega e/ou retirada, horários e local; cliente sem feira segue a regra geral', async () => {
