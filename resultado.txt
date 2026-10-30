@@ -1,11 +1,23 @@
 DNS www: 104.21.91.170 172.67.175.207 
 ======== https://www.usebanca.com/feira/feira-madri
-http=301 ip=172.67.175.207
+http=301 ip=104.21.91.170
 location: https://usebanca.com/feira/feira-madri
 final=https://usebanca.com/?feira=feira-madri&entrar=1 http=200 redirs=2
 ======== https://www.usebanca.com/feira/feira-madri?x=1
-http=301 ip=104.21.91.170
+http=301 ip=172.67.175.207
 location: https://usebanca.com/feira/feira-madri?x=1
 final=https://usebanca.com/?feira=feira-madri&entrar=1 http=200 redirs=2
 ======== http://www.usebanca.com/feira/feira-madri
-http=522 ip=104.21.91.170
+http=301 ip=172.67.175.207
+Location: https://usebanca.com/feira/feira-madri
+final=https://usebanca.com/?feira=feira-madri&entrar=1 http=200 redirs=2
+======== https://www.usebanca.com/
+http=301 ip=104.21.91.170
+location: https://usebanca.com/
+final=https://usebanca.com/ http=200 redirs=1
+======== https://usebanca.com/feira/feira-madri
+http=302 ip=104.21.91.170
+location: /?feira=feira-madri&entrar=1
+final=https://usebanca.com/?feira=feira-madri&entrar=1 http=200 redirs=1
+======== https://fotos.usebanca.com/
+http=404 ip=104.21.91.170
