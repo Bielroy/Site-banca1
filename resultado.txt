@@ -1,95 +1,11 @@
-== qualquercoisa123.usebanca.com: A= AAAA=
-   https=000 final=https://qualquercoisa123.usebanca.com/
-== pastel-moe-coe.usebanca.com: A= AAAA=
-   https=000 final=https://pastel-moe-coe.usebanca.com/
-== top-frutas.usebanca.com: A= AAAA=
-   https=000 final=https://top-frutas.usebanca.com/
-== topfrutas.usebanca.com: A= AAAA=
-   https=000 final=https://topfrutas.usebanca.com/
-== banca.usebanca.com: A= AAAA=
-   https=000 final=https://banca.usebanca.com/
-======== feira-madri
-final=https://usebanca.com/?feira=feira-madri&entrar=1 http=200
-======== domínio das lojas dentro do site publicado
-/assets/endereco-Ddpkg76C.js: "fotos.usebanca.com" 
-======== feira no banco (REST público)
-{
-  "name": "projects/banca-adair-e-pedrina/databases/(default)/documents/feiras/feira-madri",
-  "fields": {
-    "condominios": {
-      "arrayValue": {
-        "values": [
-          {
-            "stringValue": "Jardins Madri"
-          }
-        ]
-      }
-    },
-    "conds": {
-      "arrayValue": {
-        "values": [
-          {
-            "mapValue": {
-              "fields": {
-                "id": {
-                  "stringValue": "jardins-madri"
-                },
-                "nome": {
-                  "stringValue": "Jardins Madri"
-                },
-                "formato": {
-                  "stringValue": "ql"
-                }
-              }
-            }
-          }
-        ]
-      }
-    },
-    "dias": {
-      "arrayValue": {
-        "values": [
-          {
-            "integerValue": "3"
-          },
-          {
-            "integerValue": "5"
-          }
-        ]
-      }
-    },
-    "horaLimite": {
-      "stringValue": ""
-    },
-    "semFeira": {
-      "arrayValue": {}
-    },
-    "lojas": {
-      "arrayValue": {
-        "values": [
-          {
-            "mapValue": {
-              "fields": {
-                "id": {
-                  "stringValue": "banca"
-                },
-                "nome": {
-                  "stringValue": "Banca Adair e Pedrina"
-                },
-                "cor": {
-                  "stringValue": "#1a3a2a"
-                }
-              }
-            }
-          },
-          {
-            "mapValue": {
-          
-{
-  "error": {
-    "code": 404,
-    "message": "Document \"projects/banca-adair-e-pedrina/databases/(default)/documents/feiras/madri\" not found.",
-    "status": "NOT_FOUND"
-  }
-}
-
+DNS www: 104.21.91.170 172.67.175.207 
+======== https://www.usebanca.com/feira/feira-madri
+http=301 ip=172.67.175.207
+location: https://usebanca.com/feira/feira-madri
+final=https://usebanca.com/?feira=feira-madri&entrar=1 http=200 redirs=2
+======== https://www.usebanca.com/feira/feira-madri?x=1
+http=301 ip=104.21.91.170
+location: https://usebanca.com/feira/feira-madri?x=1
+final=https://usebanca.com/?feira=feira-madri&entrar=1 http=200 redirs=2
+======== http://www.usebanca.com/feira/feira-madri
+http=522 ip=104.21.91.170
