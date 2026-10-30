@@ -8,19 +8,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Subdominios das lojas
+      - name: Teste do www
         run: |
           exec > resultado.txt 2>&1
           UA='Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
-          for h in qualquercoisa123.usebanca.com pastel-moe-coe.usebanca.com top-frutas.usebanca.com topfrutas.usebanca.com banca.usebanca.com; do echo "== $h: A=$(dig +short @1.1.1.1 $h A | tr '\n' ' ') AAAA=$(dig +short @1.1.1.1 $h AAAA | tr '\n' ' ')"; curl -sS -o /dev/null -m 15 -A "$UA" -w "   https=%{http_code} final=%{url_effective}\n" -L "https://$h/" 2>&1 | tail -1; done
-          echo "======== feira-madri"
-          curl -sS -L -o /tmp/b -A "$UA" -m 25 -w 'final=%{url_effective} http=%{http_code}\n' https://usebanca.com/feira/feira-madri
-          echo "======== domínio das lojas dentro do site publicado"
-          curl -sS -A "$UA" https://usebanca.com/ -o /tmp/i.html
-          for js in $(grep -oE '/assets/[^"]+\.js' /tmp/i.html | sort -u); do curl -sS "https://usebanca.com$js" -o /tmp/a.js; n=$(grep -oE '"[a-z0-9.-]*usebanca\.com[a-z0-9.,=-]*"' /tmp/a.js | sort -u | head -5 | tr '\n' ' '); [ -n "$n" ] && echo "$js: $n"; done
-          echo "======== feira no banco (REST público)"
-          curl -sS -m 15 "https://firestore.googleapis.com/v1/projects/banca-adair-e-pedrina/databases/(default)/documents/feiras/feira-madri" | head -c 1500; echo
-          curl -sS -m 15 "https://firestore.googleapis.com/v1/projects/banca-adair-e-pedrina/databases/(default)/documents/feiras/madri" | head -c 300; echo
+          echo "DNS www: $(dig +short @1.1.1.1 www.usebanca.com A | tr '\n' ' ')"
+          for u in https://www.usebanca.com/feira/feira-madri "https://www.usebanca.com/feira/feira-madri?x=1" http://www.usebanca.com/feira/feira-madri https://www.usebanca.com/ https://usebanca.com/feira/feira-madri https://fotos.usebanca.com/ https://usebanca.com/api/saude; do
+            echo "======== $u"
+            curl -sS -o /tmp/b -D /tmp/h -A "$UA" -m 25 -w 'http=%{http_code} ip=%{remote_ip}\n' "$u" 2>&1 | tail -2
+            grep -i '^location' /tmp/h
+            curl -sS -L -o /dev/null -A "$UA" -m 25 -w 'final=%{url_effective} http=%{http_code} redirs=%{num_redirects}\n' "$u" 2>&1 | tail -1
+          done
       - name: Guardar resultado
         if: always()
         run: |
