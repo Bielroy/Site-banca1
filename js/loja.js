@@ -15,7 +15,7 @@ import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_
 import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, chavePromo, contaDaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO, ehTempero, ehPotinho, NOMES_POTE, TEMPEROS_PADRAO, ORDEM_PACOTES, ORDEM_TEMPEROS, ordemDaSecao } from './pacote-lib.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
-import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras, condominioTravado } from './tema.js';
+import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras, condominioTravado, condominioUnicoDaFeira } from './tema.js';
 import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
@@ -42,6 +42,7 @@ import { textoDeBusca, combinaBusca } from './busca-lib.js';
 import { ligarVerFoto } from './ver-foto.js';
 import { temDoisModos, modoPreferido, limparMemoria, botoesDoCard, textoNoPedido, proximaQtd } from './modo-lib.js';
 import { juntarPedidos, perfilParaAparelho, unirFavs, unirModo, sacolaParaGuardar, sacolaVale } from './conta-lib.js';
+import { resumoDoCliente, pagamentoQueVale } from './conhecido-lib.js';
 import { buscarConta, agendarGuardar, marcarConta, sairDaConta } from './conta-loja.js';
 import { temMontar, remontar, linhaMontada, chaveDaLinha, limparOpcoes } from './montar-lib.js';
 import { abrirMontar } from './montar-loja.js';
@@ -601,9 +602,12 @@ const pintarListaDeCondominios = () => {
     travarCondominio();
 };
 // Condomínio já escolhido e que é da feira do cliente: fica TRAVADO (só quadra e lote mudam) e o topo mostra só "Entregar: Qd.. · Lt..".
+// Feira com UM só condomínio (link da feira do Atenas, por exemplo): o condomínio já vem travado nele, sem pedir para escolher.
 const travarCondominio = () => {
-    const e = lerEnderecoSalvo(), c = e && e.condominio ? condominioTravado(e.condominio) : null;
-    try { endCheckout.travar(c); endTopo.travar(c); } catch (_) { /* campos ainda não montados */ }
+    const e = lerEnderecoSalvo(), salvo = e && e.condominio ? condominioTravado(e.condominio) : null;
+    const unico = salvo ? null : condominioUnicoDaFeira();
+    const c = salvo || unico, zerar = !!unico && !!(e && e.condominio);      // endereço guardado era de outro condomínio: não reaproveita quadra e lote
+    try { endCheckout.travar(c, { zerar }); endTopo.travar(c, { zerar }); } catch (_) { /* campos ainda não montados */ }
     pintarResumoEndereco();
 };
 const normNome = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -2175,6 +2179,7 @@ function pintarResumoEndereco() {
     const e = lerEnderecoSalvo(), el = document.getElementById('endereco-resumo');
     if (!el) return;
     if (!(e && e.condominio)) { el.textContent = 'Onde entregar?'; return; }
+    if (e.modo !== 'retirada' && !condominioTravado(e.condominio) && condominioUnicoDaFeira()) { el.textContent = 'Informe quadra e lote'; return; }   // o endereço guardado é de outro condomínio
     const travado = e.modo !== 'retirada' && condominioTravado(e.condominio);
     // condomínio travado: só quadra e lote (o condomínio é o da feira dele e não muda por aqui)
     const resto = travado ? linhaEndereco({ ...e, condominio: '' }, { curto: true }) : '';
@@ -2235,7 +2240,7 @@ const esquecerDados = async () => {
     // o login anônimo deste aparelho também sai: o próximo pedido daqui não herda os pedidos de quem usou antes
     // (só o login anônimo de cliente: quem está logado no painel neste navegador continua logado)
     try { if (auth.currentUser && auth.currentUser.isAnonymous) await signOut(auth); } catch (_) { /* segue */ }
-    ['banca_clientes', 'banca_endereco', 'banca_meus_pedidos', 'banca_favs', 'banca_modo', CHAVE_LISTA].forEach((k) => { try { localStorage.removeItem(chave(k)); } catch (_) { /* segue */ } });
+    ['banca_clientes', 'banca_endereco', 'banca_meus_pedidos', 'banca_favs', 'banca_modo', 'banca_pagamento', CHAVE_LISTA].forEach((k) => { try { localStorage.removeItem(chave(k)); } catch (_) { /* segue */ } });
     esquecerFeiraCliente();
     showToast('Pronto. Este aparelho esqueceu os seus dados.');
     setTimeout(() => location.reload(), 1300);
@@ -2575,6 +2580,34 @@ const recarregarComPedidoGuardado = (aviso) => {
 };
 try { if (sessionStorage.getItem('banca_atualizou')) { sessionStorage.removeItem('banca_atualizou'); setTimeout(() => showToast('Loja atualizada. Seu pedido continua aqui: é só finalizar.'), 1800); } } catch (_) { /* sem armazenamento */ }
 
+// CLIENTE QUE VOLTA: nome, WhatsApp e endereço já guardados viram um resumo; "Mudar meus dados" abre os campos (js/conhecido-lib.js).
+let _dadosAbertos = false;      // a pessoa pediu para mudar (ou faltou algo no envio): os campos ficam à mostra até a tela abrir de novo
+const pintarConhecido = () => {
+    const tela = document.getElementById('modal-checkout'), card = document.getElementById('ck-conhecido'); if (!tela || !card) return;
+    const retirada = modoEscolhido() === 'retirada', e = endCheckout.ler();
+    const r = _dadosAbertos ? null : resumoDoCliente({
+        nome: document.getElementById('cli-nome')?.value, telefone: document.getElementById('cli-telefone')?.value, retirada,
+        enderecoTexto: linhaEndereco(e), enderecoOk: !endCheckout.validar(),
+    });
+    card.hidden = !r; tela.classList.toggle('ck-resumido', !!r);
+    if (!r) return;
+    const por = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+    por('ck-conhecido-titulo', r.titulo); por('ck-conhecido-end', r.endereco ? `📍 ${r.endereco}` : ''); por('ck-conhecido-tel', `WhatsApp ${r.telefone}`);
+};
+const abrirDadosDoCliente = () => { _dadosAbertos = true; pintarConhecido(); };
+document.getElementById('ck-conhecido-mudar')?.addEventListener('click', () => { abrirDadosDoCliente(); document.getElementById('checkout-sub-titulo')?.scrollIntoView({ block: 'nearest' }); });
+document.addEventListener('change', (e) => { if (e.target && e.target.name === 'cli-modo') pintarConhecido(); });
+// Forma de pagamento da última vez já vem marcada (só na 1ª abertura da tela: depois vale o que a pessoa escolher).
+const CHAVE_PAGAMENTO = () => chave('banca_pagamento');
+let _pagamentoLembrado = false;
+const lembrarPagamento = () => {
+    if (_pagamentoLembrado) return; _pagamentoLembrado = true;
+    const sel = document.getElementById('cli-pagamento'); if (!sel) return;
+    let guardado = ''; try { guardado = JSON.parse(localStorage.getItem(CHAVE_PAGAMENTO()) || '""'); } catch (_) { /* sem memória */ }
+    const vale = pagamentoQueVale(guardado, [...sel.options].filter((o) => !o.hidden && !o.disabled).map((o) => o.value));
+    if (vale && sel.value !== vale) { sel.value = vale; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+};
+
 document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     // TELA DESATUALIZADA: fechar o pedido numa tela velha é onde dá problema (campo que não existe mais,
     // regra que mudou). Se já sabemos que há versão nova, atualiza ANTES de abrir a tela de entrega.
@@ -2591,6 +2624,8 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     const cara = assinaturaDoCarrinho();
     if (!STATE.checkoutSessionId || STATE.checkoutCara !== cara) { STATE.checkoutSessionId = novoId(); STATE.checkoutCara = cara; }
     pintarModo();                   // garante o modo (entrega/retirada) e a lista de horários na hora de abrir (não depende de a configuração ter chegado antes)
+    lembrarPagamento();
+    _dadosAbertos = false; pintarConhecido();
     pintarAvisoDeEntrega();
     lerTrocaGuardada();
     renderComanda();
@@ -2713,8 +2748,8 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
     const cupom = (document.getElementById('cli-cupom')?.value || '').trim().toUpperCase();
     
     const faltaEndereco = retirada ? '' : endCheckout.validar();
-    if (faltaEndereco) return showToast(faltaEndereco, true);
-    if (!nome) return showToast(retirada ? "Escreva o seu nome para a retirada." : "Escreva o seu nome para a entrega.", true);
+    if (faltaEndereco) { abrirDadosDoCliente(); return showToast(faltaEndereco, true); }
+    if (!nome) { abrirDadosDoCliente(); return showToast(retirada ? "Escreva o seu nome para a retirada." : "Escreva o seu nome para a entrega.", true); }
     // Horário de entrega: escolher é OPCIONAL. Sem escolha, o pedido chega à loja como "horário a combinar".
     btn.disabled = true; btn.textContent = 'Enviando pedido...';
 
@@ -2787,6 +2822,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             if (idx >= 0) clientes.splice(idx, 1);
             clientes.unshift(este);
             localStorage.setItem(chave('banca_clientes'), JSON.stringify(clientes.slice(0, 5)));
+            try { localStorage.setItem(CHAVE_PAGAMENTO(), JSON.stringify(pag)); } catch (_) { /* a próxima vez a pessoa escolhe de novo */ }
             if (data.temConta) marcarConta(true);
             if (!retirada) { salvarEndereco(endereco); travarCondominio(); feiraDoEnderecoSalvo(endereco); }
 

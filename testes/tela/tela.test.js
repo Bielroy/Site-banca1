@@ -966,6 +966,70 @@ teste('feira: cliente que entrou pelo link não troca o condomínio no topo (só
   semErros(erros); await fechar();
 });
 
+teste('feira com um só condomínio: o condomínio já vem travado, sem escolher; com mais de um, escolhe entre os da feira', async () => {
+  const cen = cenarioPadrao();
+  cen.feiras = { ...cen.feiras,
+    florenca: { ...cen.feiras.florenca, conds: [{ id: 'jf', nome: 'Jardins Florença', formato: 'ql' }, { id: 'vf', nome: 'Vila Florença', formato: 'ql' }] },
+    madri: { nome: 'Feira Madri', dias: [3], lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', cor: '#1a3a2a' }], conds: [{ id: 'sm', nome: 'Solar Madri', formato: 'ql' }] } };
+  cen.lojas.banca.ficha = { ...cen.lojas.banca.ficha, feiras: ['florenca', 'madri'] };
+  const { pagina, erros, fechar } = await abrir('/feira/madri', cen);
+  await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
+  assert.strictEqual((await pagina.locator('#endereco-resumo').innerText()).trim(), 'Onde entregar?');
+  await pagina.click('#btn-endereco');
+  // a feira só tem o Solar Madri: não há o que escolher
+  assert.strictEqual(await pagina.locator('#end-cond').isVisible(), false, 'sem seletor de condomínio');
+  assert.match(await pagina.locator('#end-cond-fixo').innerText(), /Entregamos no condomínio Solar Madri/);
+  await pagina.fill('#end-quadra', '5'); await pagina.fill('#end-lote', '12');
+  await pagina.click('#btn-salvar-endereco'); await pagina.waitForTimeout(400);
+  assert.strictEqual((await pagina.locator('#endereco-resumo').innerText()).trim(), 'Entregar: Qd 5 · Lt 12');
+  const salvo = await pagina.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => /^banca_endereco/.test(k)))));
+  assert.strictEqual(salvo.condominio, 'Solar Madri', 'o pedido leva o condomínio da feira sem a pessoa escolher');
+  // a feira com DOIS condomínios: escolhe entre os dois (e o endereço do Solar Madri, de outra feira, não vale aqui)
+  await pagina.goto(servidor.base + '/feira/florenca');
+  await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
+  await pagina.click('#btn-endereco');
+  assert.strictEqual(await pagina.locator('#end-cond').isVisible(), true);
+  assert.deepStrictEqual(await opcoesDe(pagina, '#end-cond'), ['Escolha o condomínio', 'Jardins Florença', 'Vila Florença']);
+  semErros(erros); await fechar();
+});
+
+teste('cliente que volta: resumo no lugar dos campos, "Mudar meus dados" abre, e o pagamento da última vez já vem marcado', async () => {
+  const semear = (tel) => () => {
+    if (localStorage.getItem('banca_clientes')) return;           // só na 1ª abertura: o resto da conversa usa o que o próprio site guardou
+    localStorage.setItem('banca_clientes', JSON.stringify([{ nome: 'Maria Souza', quadra: '5', lote: '12', ...(tel ? { tel } : {}) }]));
+    localStorage.setItem('banca_endereco', JSON.stringify({ modo: 'entrega', condominio: 'Jardins Florença', formatoEndereco: 'ql', quadra: '5', lote: '12' }));
+    localStorage.setItem('banca_pagamento', JSON.stringify('Dinheiro'));     // a forma da última vez
+  };
+  let { pagina, erros, fechar } = await abrir('/', cenarioPadrao(), { antes: `(${semear.toString()})('62999998888')()` });
+  await abrirCheckoutComOvos(pagina);
+  assert.strictEqual(await pagina.locator('#ck-conhecido').isVisible(), true, 'o resumo aparece');
+  assert.match(await pagina.locator('#ck-conhecido-titulo').innerText(), /Entrega para Maria Souza/);
+  assert.match(await pagina.locator('#ck-conhecido-end').innerText(), /Jardins Florença.*5.*12/);
+  assert.match(await pagina.locator('#ck-conhecido-tel').innerText(), /\(62\) 99999-8888/);
+  for (const sel of ['#cli-nome', '#cli-telefone', '#checkout-endereco']) assert.strictEqual(await pagina.locator(sel).isVisible(), false, `${sel} fica escondido atrás do resumo`);
+  assert.strictEqual(await pagina.inputValue('#cli-pagamento'), 'Dinheiro', 'a mesma forma de pagamento da última vez já vem marcada');
+  // "Mudar meus dados": os campos de sempre, já preenchidos
+  await pagina.click('#ck-conhecido-mudar');
+  assert.strictEqual(await pagina.locator('#ck-conhecido').isVisible(), false);
+  assert.strictEqual(await pagina.inputValue('#cli-nome'), 'Maria Souza');
+  assert.strictEqual(await pagina.locator('#cli-telefone').isVisible(), true);
+  // troca para PIX e envia SEM tocar em mais nada: o servidor recebe os dados do resumo
+  await pagina.click('.pag-chip[data-pag="PIX"]');
+  await pagina.click('#btn-enviar-pedido');
+  await pagina.waitForSelector('#sucesso-whatsapps .btn-wpp', { timeout: 6000 });
+  const corpo = pedidosEnviados().pop().corpo;
+  assert.strictEqual(corpo.nome, 'Maria Souza'); assert.strictEqual(corpo.telefone, '62999998888'); assert.strictEqual(corpo.quadra, '5'); assert.strictEqual(corpo.lote, '12'); assert.strictEqual(corpo.pag, 'PIX');
+  assert.strictEqual(await pagina.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => /^banca_pagamento/.test(k))))), 'PIX', 'a nova forma de pagamento ficou guardada');
+  semErros(erros); await fechar();
+  // sem WhatsApp guardado, o formulário aparece (é lá que a pessoa completa)
+  ({ pagina, erros, fechar } = await abrir('/', cenarioPadrao(), { antes: `(${semear.toString()})('')()` }));
+  await abrirCheckoutComOvos(pagina);
+  assert.strictEqual(await pagina.locator('#ck-conhecido').isVisible(), false, 'sem WhatsApp: mostra os campos');
+  assert.strictEqual(await pagina.locator('#cli-telefone').isVisible(), true);
+  assert.strictEqual(await pagina.inputValue('#cli-nome'), 'Maria Souza');
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- REGISTRO DE ERROS
 teste('erro de código na loja é avisado ao servidor (sem os parâmetros do endereço)', async () => {
   const { pagina, fechar } = await abrir('/?loja=paes-da-lucia&tel=62999', cenarioPadrao(), { antes: () => { window.__errosSiteTeste = true; } });

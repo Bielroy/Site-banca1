@@ -481,6 +481,22 @@ teste('feira: pedido fora do dia vai para a próxima feira (caixa do dia certo, 
   const n = N.normalizarPedidos([{ id: 'a', data: new Date().toISOString(), entregaDia: esperado, quadra: '1', lote: '1', itens: [{ id: 'tomate', qtd: 1, tipo: 'kg', unidade: 'kg' }] }]);
   assert.strictEqual(n.vendasDia.get('tomate').has(N.diaDeIso(esperado)), true);
 });
+
+teste('cliente que volta: o resumo só aparece com nome, WhatsApp e endereço; a forma de pagamento guardada só vale se a loja ainda aceita', async () => {
+  const C = await import(raiz('js/conhecido-lib.js'));
+  const base = { nome: ' Maria  Souza ', telefone: '(62) 99999-8888', retirada: false, enderecoTexto: 'Atenas — Quadra 5 • Lote 12', enderecoOk: true };
+  assert.deepStrictEqual(C.resumoDoCliente(base), { titulo: 'Entrega para Maria Souza', endereco: 'Atenas — Quadra 5 • Lote 12', telefone: '(62) 99999-8888' });
+  assert.strictEqual(C.resumoDoCliente({ ...base, nome: '' }), null, 'sem nome');
+  assert.strictEqual(C.resumoDoCliente({ ...base, telefone: '' }), null, 'sem WhatsApp: mostra o formulário');
+  assert.strictEqual(C.resumoDoCliente({ ...base, telefone: '6299' }), null, 'WhatsApp curto demais');
+  assert.strictEqual(C.resumoDoCliente({ ...base, enderecoOk: false }), null, 'endereço incompleto');
+  assert.strictEqual(C.resumoDoCliente({ ...base, enderecoTexto: '' }), null);
+  assert.deepStrictEqual(C.resumoDoCliente({ ...base, retirada: true, enderecoOk: false, enderecoTexto: '' }), { titulo: 'Retirada para Maria Souza', endereco: '', telefone: '(62) 99999-8888' }, 'retirada não pede endereço');
+  assert.strictEqual(C.pagamentoQueVale('PIX', ['PIX', 'Dinheiro']), 'PIX');
+  assert.strictEqual(C.pagamentoQueVale('Cartão', ['PIX', 'Dinheiro']), '', 'a loja desligou o cartão');
+  assert.strictEqual(C.pagamentoQueVale(null, ['PIX']), ''); assert.strictEqual(C.pagamentoQueVale('PIX', null), '');
+});
+
 teste('mensagem do pedido: loja de unidades não fala em "pesados"; com item a pesar, fala; "Falar com a loja" leva os itens da sacola', async () => {
   const db = criarBanco(semente()); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
   const r = await chamar(api, { headers: ip(), body: pedido() });

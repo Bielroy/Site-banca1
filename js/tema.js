@@ -244,6 +244,16 @@ export function condominioTravado(nome) {
     const c = condominiosDasFeiras().find((x) => [x.nome, ...(x.apelidos || [])].some((v) => n(v) === alvo));
     return c ? { id: c.id, nome: c.nome, formato: c.formato } : null;
 }
+/**
+ * A feira do cliente tem UM só condomínio? Então o link já diz onde ele mora e não há o que escolher:
+ * o endereço fica travado nesse condomínio (só quadra e lote). Com mais de um, ele escolhe entre os da feira.
+ * Sem feira no link (loja aberta pelo endereço normal), devolve null: aí o cliente escolhe na lista.
+ */
+export function condominioUnicoDaFeira() {
+    if (!FEIRA_CLIENTE) return null;
+    const lista = condominiosDasFeiras();
+    return lista.length === 1 ? { id: lista[0].id, nome: lista[0].nome, formato: lista[0].formato } : null;
+}
 const lojasValidas = (feira) => ((feira && feira.lojas) || []).filter((l) => l && /^[a-z0-9][a-z0-9-]{1,39}$/.test(l.id || '') && l.nome);
 
 // SELO DA FEIRA no cabeçalho ("Feira do Madri"): só para quem entrou pelo link/QR daquela feira.

@@ -100,3 +100,15 @@
 
 /* pagamento: deixa claro que nada é cobrado pelo site (enquanto o pagamento online não estiver ligado) */
 .pag-nota { margin: 8px 2px 0; font-size: .8rem; line-height: 1.4; color: var(--text-mid); }
+
+/* CLIENTE QUE VOLTA: resumo no lugar do endereço, do nome e do WhatsApp (js/conhecido-lib.js, loja.js) */
+#modal-checkout .ck-conhecido { margin: 4px 0 16px; padding: 14px 16px; border-radius: var(--radius-sm, 12px); background: var(--parchment, #f2ede3); border: 1.5px solid var(--linha, #e0d9c8); }
+#modal-checkout .ck-conhecido[hidden] { display: none; }
+#modal-checkout .ck-conhecido-titulo { margin: 0 0 6px; font-family: var(--fonte-titulo); font-size: 1.1rem; font-weight: 750; color: var(--forest, #1a3a2a); overflow-wrap: anywhere; }
+#modal-checkout .ck-conhecido-linha { margin: 0 0 4px; font-size: .95rem; color: var(--text-mid, #4a4a44); overflow-wrap: anywhere; }
+#modal-checkout .ck-conhecido-linha:empty { display: none; }
+#modal-checkout .ck-conhecido-mudar { margin-top: 8px; padding: 10px 0; min-height: 44px; background: none; border: 0; font: inherit; font-size: .92rem; font-weight: 700; color: var(--forest, #1a3a2a); text-decoration: underline; cursor: pointer; }
+#modal-checkout.ck-resumido #checkout-endereco,
+#modal-checkout.ck-resumido #ck-pessoais,
+#modal-checkout.ck-resumido #checkout-sub-titulo { display: none; }
+#modal-checkout.ck-resumido .chk-oferta { margin-top: 0; }

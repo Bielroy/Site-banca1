@@ -280,13 +280,22 @@
                 </div>
                 <p class="checkout-entrega" id="retirada-local" hidden></p>
             </fieldset>
+            <!-- CLIENTE QUE VOLTA: o resumo no lugar dos campos (js/conhecido-lib.js). "Mudar meus dados" abre os campos. -->
+            <section class="ck-conhecido" id="ck-conhecido" aria-label="Seus dados" hidden>
+                <p class="ck-conhecido-titulo" id="ck-conhecido-titulo"></p>
+                <p class="ck-conhecido-linha" id="ck-conhecido-end"></p>
+                <p class="ck-conhecido-linha" id="ck-conhecido-tel"></p>
+                <button type="button" class="ck-conhecido-mudar" id="ck-conhecido-mudar">Mudar meus dados</button>
+            </section>
             <h3 class="checkout-sub" id="checkout-sub-titulo">Dados da entrega</h3>
             <!-- Condomínio + quadra/lote (ou rua/número). Montado por js/endereco.js -->
             <div id="checkout-endereco"></div>
+            <div id="ck-pessoais">
             <div class="form-group"><label for="cli-nome">Como devemos te chamar?</label><input type="text" id="cli-nome" placeholder="Seu nome" autocomplete="name" autocapitalize="words" enterkeyhint="next"></div>
             <div class="form-group">
                 <label for="cli-telefone">WhatsApp (para avisarmos quando ficar pronto)</label>
                 <input type="tel" id="cli-telefone" inputmode="tel" placeholder="62 9 9999-9999" autocomplete="tel" enterkeyhint="next">
+            </div>
             </div>
             <label class="chk-oferta"><input type="checkbox" id="cli-ofertas"> Quero receber ofertas e novidades da loja no WhatsApp</label>
             <p class="checkout-entrega" id="checkout-entrega" hidden></p>

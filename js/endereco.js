@@ -136,8 +136,9 @@ export function criarCamposEndereco(raiz, p) {
     };
 
     /** Trava o condomínio (cliente de uma feira): só quadra e lote ficam para preencher. `null` solta de novo. */
-    const travar = (c) => {
-        const quadra = campoA.value, lote = campoB.value;
+    // zerar: o condomínio travado não é o do endereço que estava guardado (outra feira): quadra e lote antigos não valem aqui.
+    const travar = (c, { zerar = false } = {}) => {
+        const quadra = zerar ? '' : campoA.value, lote = zerar ? '' : campoB.value;
         travado = c && c.nome ? { id: c.id || '', nome: String(c.nome), formato: c.formato || 'ql' } : null;
         ajustar();
         campoA.value = quadra; campoB.value = lote;
