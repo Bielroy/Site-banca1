@@ -66,15 +66,14 @@ conferido com o exemplo oficial, mas nunca foi pago de verdade: faça um PIX de 
   passar do valor de entrega grátis.
 - A taxa entra no faturamento do Balanço junto com os itens. Vendas no Balcão não têm taxa.
 
-## 4e. Fotos automáticas (ImgBB)
-1. Crie uma conta grátis em imgbb.com, abra api.imgbb.com e toque em "Get API key".
-2. No painel, abra **Plataforma → Fotos dos produtos**, cole a chave e toque em Salvar.
-3. Em qualquer loja: **Produtos → Enviar várias fotos**. Escolha as fotos; o sistema reduz, envia
-   ao ImgBB e grava o link em cada produto. Arquivo com o nome do produto (tomate.jpg) já vem marcado.
+## 4e. Fotos automáticas (Cloudflare R2)
+1. Ligue o R2 no servidor: veja ROTA-CLOUDFLARE.md, "Fotos no Cloudflare R2" (5 linhas no `~/segredos.env`).
+   A tela **Plataforma → Chaves** mostra "Fotos dos produtos (Cloudflare R2): Ligado".
+2. Em qualquer loja: **Produtos → Enviar várias fotos**. Escolha as fotos; o sistema reduz, envia
+   ao R2 (fotos.usebanca.com) e grava o link em cada produto. Arquivo com o nome do produto (tomate.jpg) já vem marcado.
    Foto sem produto marcado vai para o **banco de fotos** da loja; depois, na tela de cada produto,
    toque em "Escolher do banco de fotos".
-A chave fica só no servidor (`plataforma/segredos`); nenhuma tela mostra a chave de volta.
-Nunca foi testado com o ImgBB de verdade: confira o primeiro envio.
+As chaves ficam só no servidor; nenhuma tela mostra chave. O ImgBB não é mais usado.
 
 ## 4f. Cópia de segurança, alertas e limite
 - **Cópia diária**: a rotina da madrugada guarda, por loja, produtos, configurações e os pedidos dos
@@ -188,7 +187,7 @@ da publicação; os outros, quando puder. O desenho completo está em `SEGURANCA
    funciona igual, mas sem as travas novas: status de pedido só para frente, estoque e produção sem ver pedidos,
    formato conferido em limites, custos e aparência).
 2. **Publicar as regras das fotos.** Firebase → Storage → aba **Regras** → cole `storage.rules` → **Publicar**.
-   (Se o Storage nunca foi ligado no projeto, pule: as fotos vão pelo ImgBB.)
+   (Se o Storage nunca foi ligado no projeto, pule: as fotos vão pelo Cloudflare R2.)
 3. **Domínios autorizados.** Firebase → Authentication → Configurações → **Domínios autorizados**. Deixe só os que
    são seus: `localhost`, os dois do Firebase (`...firebaseapp.com` e `...web.app`) e `site-banca1.vercel.app`.
    Se aparecer `bancaadairepedrina.com.br` (ou qualquer outro que você não controla), **remova**: quem registrar

@@ -200,23 +200,44 @@ let carregandoCrm = null;
 function carregarCrm(primeira) {
     if (carregandoCrm) return carregandoCrm;
     carregandoCrm = (async () => {
-        try {
-            const [painel, contatos, ficha] = await Promise.all([lerPainel({ atualizar: true }), getDoc(tdoc('crm', 'contatos')).catch(() => null), getDoc(fichaRef()).catch(() => null)]);
-            if (ficha && ficha.exists() && ficha.data().nome) S.nomeLoja = ficha.data().nome;
-            S.contatos = contatos && contatos.exists() ? contatos.data() : {};
+        // Na PRIMEIRA abertura: mostra logo o último cálculo guardado (rápido, sem recalcular) e só depois confere
+        // em segundo plano se entrou pedido novo (essa conferência pode recalcular e demorar). Antes a tela esperava tudo.
+        const aplicar = (painel, forcaDesenho) => {
             const geradoEm = (painel.meta && painel.meta.geradoEm) || '';
-            if (!primeira && S.seg && geradoEm === S.geradoEm) return;             // nada mudou: não redesenha (não atrapalha quem está digitando)
+            if (!forcaDesenho && S.seg && geradoEm === S.geradoEm) return false;     // nada mudou: não redesenha (não atrapalha quem está digitando)
             const indice = painel.indiceClientes || [];
             S.geradoEm = geradoEm;
             S.feiras = (painel.meta && Array.isArray(painel.meta.feiras)) ? painel.meta.feiras : [];
             if (S.feira && S.feira !== '-' && !S.feiras.some((f) => f.id === S.feira)) S.feira = '';
             if (!indice.length) { S.seg = null; S.estado = 'vazio'; }
             else { S.seg = segmentar(indice, hojeBR()); S.estado = 'ok'; }
-        } catch (_) { if (primeira || !S.seg) S.estado = 'erro'; else return; }
+            return true;
+        };
         // quem está digitando na busca não perde o cursor quando a lista nova chega
-        const ativo = document.activeElement, pos = ativo && ativo.id === 'crm-busca' ? ativo.selectionStart : null;
-        render();
-        if (pos != null && $('crm-busca')) { $('crm-busca').focus(); $('crm-busca').setSelectionRange(pos, pos); }
+        const desenhar = () => {
+            const ativo = document.activeElement, pos = ativo && ativo.id === 'crm-busca' ? ativo.selectionStart : null;
+            render();
+            if (pos != null && $('crm-busca')) { $('crm-busca').focus(); $('crm-busca').setSelectionRange(pos, pos); }
+        };
+        try {
+            const extras = Promise.all([getDoc(tdoc('crm', 'contatos')).catch(() => null), getDoc(fichaRef()).catch(() => null)]);
+            if (primeira) {
+                const rapido = await lerPainel().catch(() => null);               // sem "atualizar": só lê o que já está guardado
+                const [contatos, ficha] = await extras;
+                if (ficha && ficha.exists() && ficha.data().nome) S.nomeLoja = ficha.data().nome;
+                S.contatos = contatos && contatos.exists() ? contatos.data() : {};
+                if (rapido && !rapido.vazio && aplicar(rapido, true)) desenhar();
+            }
+            const painel = await lerPainel({ atualizar: true });
+            if (!primeira) {
+                const [contatos, ficha] = await extras;
+                if (ficha && ficha.exists() && ficha.data().nome) S.nomeLoja = ficha.data().nome;
+                S.contatos = contatos && contatos.exists() ? contatos.data() : {};
+            }
+            if (aplicar(painel, primeira && S.estado !== 'ok')) desenhar();
+        } catch (_) {
+            if (!S.seg && S.estado !== 'vazio') { S.estado = 'erro'; desenhar(); }       // já mostrou a lista guardada: um erro na conferência não a apaga
+        }
     })();
     return carregandoCrm.finally(() => { carregandoCrm = null; });
 }

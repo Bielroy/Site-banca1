@@ -14,7 +14,8 @@ import { feiraDoDia, feirasDaFicha, feiraDoCliente, feirasDoCondominio, feiraDoE
 import { lerFeiraCliente, gravarFeiraCliente, gravarUltimaBanca, lerUltimaBanca } from './feira-cliente.js';
 import { TENANT, fichaRef, chave, urlDaLoja, ehLojaOriginal, EM_PREVIA } from './tenant.js';
 import { ARTES, arteDoTipo } from './arte-lib.js';
-import { OPCOES, urlImagem, corLegivel, legivelSobre, FONTES, MODELOS, NOMES_MODELOS, FOTO_FORMATOS, linkDaFonte } from './aparencia-lib.js';
+import { textosDoAjudante, aplicarTextosDoAjudante } from './ajudante-lib.js';
+import { OPCOES, urlImagem, corLegivel, legivelSobre, contraste, FONTES, MODELOS, NOMES_MODELOS, FOTO_FORMATOS, linkDaFonte } from './aparencia-lib.js';
 // As listas moraram aqui por muito tempo; quem já importava daqui continua funcionando.
 export { FONTES, MODELOS, NOMES_MODELOS, FOTO_FORMATOS };
 
@@ -101,10 +102,22 @@ export function variaveisDoTema(tema) {
     if (FOTO_FORMATOS[t.fotoFormato]) v['--foto-proporcao'] = FOTO_FORMATOS[t.fotoFormato][1];
     if (t.fotoFormato === 'alta') v['--foto-hero'] = '1 / 1'; else if (t.fotoFormato === 'bem-alta') v['--foto-hero'] = '4 / 5';   // a foto grande, ao abrir o produto, acompanha
     if (t.fotoEncaixe === 'inteira') v['--foto-encaixe'] = 'contain';
+    if (Number.isFinite(Number(t.peliculaForca)) && t.peliculaForca !== null && t.peliculaForca !== '') v['--pelicula-forca'] = String(Math.min(100, Math.max(0, Number(t.peliculaForca))) / 100);
+    if (Number.isFinite(Number(t.botaoFundoForca)) && t.botaoFundoForca !== null && t.botaoFundoForca !== '') v['--botao-cab-pct'] = `${Math.min(100, Math.max(0, Number(t.botaoFundoForca)))}%`;
     if (RAIO_BOTAO[t.botaoFormato]) v['--raio-botao'] = RAIO_BOTAO[t.botaoFormato];
     // etiqueta: em tema escuro o "papel" claro continua claro (é um objeto), com tinta escura
     const classes = { 'com-cor-botao': !!bt };
     for (const [k, val, classe] of CLASSES_OPCOES) classes[classe] = t[k] === val;
+    // CARD ESCURO EM PÁGINA CLARA (ou o contrário): o texto é um só para a página e para os cards. Se ele não lê bem
+    // sobre o card, o nome do produto some. Aí os cards ganham a própria cor de texto, legível sobre a superfície deles.
+    classes['ap-card-contraste'] = false;
+    const txEf = tx || '#1a1a18';                           // sem cor de texto escolhida, vale a padrão (css/variables.css)
+    if (sup && contraste(sup, txEf) < 4.5) {
+        const lt = legivelSobre(sup, '#f5f5f2', '#1a1a18');
+        v['--tc-dark'] = lt; v['--tc-mid'] = mix(lt, 78, sup); v['--tc-light'] = mix(lt, 62, sup); v['--tc-linha'] = mix(lt, 18, sup);
+        v['--tc-forest'] = p ? corLegivel(p, [sup]) : lt;
+        classes['ap-card-contraste'] = true;
+    }
     // capa só vale com uma foto de verdade; sem ela, o cabeçalho fica na cor lisa
     if (t.cabecalho === 'capa' && !urlImagem(t.capa)) classes['ap-cabecalho-capa'] = false;
     return { variaveis: v, classes };
@@ -186,12 +199,14 @@ function aplicarFicha(ficha, completa = true) {
         document.title = ficha.subtitulo ? `${nome} | ${ficha.subtitulo}` : nome;
         document.querySelectorAll('[data-nome-loja]').forEach((el) => { el.textContent = nome; });
         const nota = document.getElementById('header-nota'); if (nota) { nota.textContent = typeof ficha.nota === 'string' ? ficha.nota : ''; nota.hidden = !nota.textContent; }
+        // O Ajudante fala do jeito desta loja (pastelaria: escolher e montar; espetinho: quanto pedir...)
+        if (completa) aplicarTextosDoAjudante(textosDoAjudante(ficha, nome));
     }
     escrever('header-sub', ficha.subtitulo);
     const busca = document.getElementById('busca-input');
     if (busca && (ficha.busca || !ehLojaOriginal)) busca.placeholder = ficha.busca || 'Buscar produto...';
     // MÓDULOS: cada loja liga só o que usa (ficha.modulos = { ia: true, ... }).
-    // O Ajudante foi escrito para hortifruti, então nas outras lojas começa desligado.
+    // Nas outras lojas o Ajudante começa desligado: a plataforma liga por loja (módulo 'ia').
     if (completa) document.body.classList.toggle('sem-ia', !moduloLigado(ficha, 'ia'));
     if (ficha.nota !== undefined) { const n = document.getElementById('header-nota'); if (n) { n.textContent = ficha.nota || ''; n.hidden = !ficha.nota; } }
 }
@@ -219,13 +234,48 @@ export function condominiosDasFeiras() {
     }
     return out;
 }
+/**
+ * O condomínio guardado no aparelho é de UMA das feiras do cliente? Então o endereço fica travado nele:
+ * trocar de condomínio (e de feira) só pelo link da outra feira. Devolve { id, nome, formato } ou null.
+ */
+export function condominioTravado(nome) {
+    if (!FEIRA_CLIENTE || !nome) return null;
+    const n = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(), alvo = n(nome);
+    const c = condominiosDasFeiras().find((x) => [x.nome, ...(x.apelidos || [])].some((v) => n(v) === alvo));
+    return c ? { id: c.id, nome: c.nome, formato: c.formato } : null;
+}
+/**
+ * A feira do cliente tem UM só condomínio? Então o link já diz onde ele mora e não há o que escolher:
+ * o endereço fica travado nesse condomínio (só quadra e lote). Com mais de um, ele escolhe entre os da feira.
+ * Sem feira no link (loja aberta pelo endereço normal), devolve null: aí o cliente escolhe na lista.
+ */
+export function condominioUnicoDaFeira() {
+    if (!FEIRA_CLIENTE) return null;
+    const lista = condominiosDasFeiras();
+    return lista.length === 1 ? { id: lista[0].id, nome: lista[0].nome, formato: lista[0].formato } : null;
+}
 const lojasValidas = (feira) => ((feira && feira.lojas) || []).filter((l) => l && /^[a-z0-9][a-z0-9-]{1,39}$/.test(l.id || '') && l.nome);
 
+// SELO DA FEIRA no cabeçalho ("Feira do Madri"): só para quem entrou pelo link/QR daquela feira.
+// Quem abre a loja pelo endereço normal não vê nada. O nome é o que está cadastrado na Plataforma.
+const PIN_FEIRA = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>';
+function pintarSeloFeira(feira) {
+    const h1 = document.getElementById('header-nome');
+    let selo = document.getElementById('selo-feira');
+    const nome = feira && typeof feira.nome === 'string' ? feira.nome.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+    if (!h1 || !nome) { if (selo) selo.remove(); return; }
+    if (!selo) { selo = document.createElement('p'); selo.id = 'selo-feira'; selo.className = 'selo-feira'; h1.before(selo); }
+    selo.innerHTML = PIN_FEIRA;
+    const t = document.createElement('span'); t.textContent = nome; selo.append(t);
+    selo.setAttribute('aria-label', `Você está comprando pela ${nome}`);
+}
+
 function montarFeira(feiras) {
-    const barra = document.getElementById('feira-lojas');
-    if (!barra) return;
     const escolhida = lerFeiraCliente();
     const { feira, doCliente } = feiraDoCliente(feiras, escolhida, diaBR());
+    pintarSeloFeira(doCliente ? feira : null);
+    const barra = document.getElementById('feira-lojas');
+    if (!barra) return;
     const antes = FEIRA_CLIENTE && FEIRA_CLIENTE.id; FEIRA_CLIENTE = doCliente ? feira : null;
     if ((FEIRA_CLIENTE && FEIRA_CLIENTE.id) !== antes) { try { document.dispatchEvent(new CustomEvent('feira-do-cliente')); } catch (_) { /* navegador antigo */ } }
     try { document.dispatchEvent(new CustomEvent('feiras-da-loja')); } catch (_) { /* navegador antigo */ }
@@ -303,6 +353,7 @@ export function feiraDaConta(id) {
 // ---------------------------------------------------------------------
 let FICHA_PREVIA = null, FICHA_GRAVADA = null;
 const textoAte = (v, n) => (typeof v === 'string' ? v.slice(0, n) : undefined);
+if (EM_PREVIA && typeof document !== 'undefined') document.documentElement.classList.add('em-previa');      // esconde o botão Ajuda, que ficava cortado na janelinha
 if (EM_PREVIA && typeof window !== 'undefined' && window.parent && window.parent !== window) {
     window.addEventListener('message', (e) => {
         if (e.source !== window.parent || e.origin !== location.origin) return;
@@ -366,25 +417,56 @@ export async function iniciarTema() {
         }
     } catch (_) { /* sem cache */ }
     try {
+        // SEM FILA: antes era ficha → (espera) → feiras → (espera) → ficha de cada banca da feira → (espera) → tela.
+        // Agora: se o aparelho já conhece a loja, as feiras dela são pedidas JUNTO com a ficha; e a ficha das outras
+        // bancas (só confere nome/cor/bloqueio da faixa) não segura mais a tela: a faixa aparece com a cópia que a feira
+        // guarda e se acerta sozinha quando a conferência chega.
+        const lerFeira = (id) => getDoc(doc(db, 'feiras', id)).then((f) => (f.exists() ? { ...f.data(), id } : null)).catch(() => null);
+        const pedidas = new Map();
+        const pedir = (id) => { if (!pedidas.has(id)) pedidas.set(id, lerFeira(id)); return pedidas.get(id); };
+        feirasDaFicha(guardada && guardada.ficha).forEach(pedir);          // adiantadas (podem não servir: só gasta uma leitura)
         const s = await getDoc(fichaRef());
         const ficha = s.exists() ? s.data() : null;
         // a loja pode estar em várias feiras: lê todas (com o id) e mostra a do cliente (ou a de hoje)
-        const feirasCruas = (await Promise.all(feirasDaFicha(ficha).map((id) => getDoc(doc(db, 'feiras', id)).then((f) => (f.exists() ? { ...f.data(), id } : null)).catch(() => null)))).filter(Boolean);
+        const feirasCruas = (await Promise.all(feirasDaFicha(ficha).map(pedir))).filter(Boolean);
         // a feira guarda uma CÓPIA do nome e da cor de cada banca: confere a ficha de verdade (banca bloqueada some,
         // nome e cor novos aparecem). Sem resposta da ficha, fica a cópia.
         const ids = [...new Set(feirasCruas.flatMap((f) => (f.lojas || []).map((l) => l && l.id)).filter((x) => /^[a-z0-9][a-z0-9-]{1,39}$/.test(x || '') && x !== TENANT))].slice(0, 24);
-        const vivas = new Map(await Promise.all(ids.map((id) => getDoc(doc(db, 'tenants', id)).then((f) => [id, f.exists() ? f.data() : null]).catch(() => [id, undefined]))));
-        if (ficha) vivas.set(TENANT, ficha);
-        const feiras = feirasCruas.map((f) => ({ ...f, lojas: (f.lojas || []).filter((l) => { const v = vivas.get(l && l.id); return !(v && v.ativo === false); })
-            .map((l) => { const v = vivas.get(l.id); return v ? { ...l, nome: v.nome || l.nome, cor: (v.tema && v.tema.primaria) || l.cor } : l; }) }));
-        if (entrando && await irParaBancaDaFeira(doLink, feiras)) return null;
+        const conferir = Promise.all(ids.map((id) => getDoc(doc(db, 'tenants', id)).then((f) => [id, f.exists() ? f.data() : null]).catch(() => [id, undefined])));
+        const comVivas = (lista) => {
+            const vivas = new Map(lista);
+            if (ficha) vivas.set(TENANT, ficha);
+            return feirasCruas.map((f) => ({ ...f, lojas: (f.lojas || []).filter((l) => { const v = vivas.get(l && l.id); return !(v && v.ativo === false); })
+                .map((l) => { const v = vivas.get(l.id); return v ? { ...l, nome: v.nome || l.nome, cor: (v.tema && v.tema.primaria) || l.cor } : l; }) }));
+        };
+        const guardar = (feiras) => { try { localStorage.setItem(K, JSON.stringify({ v: 3, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, feiras: ficha.feiras || null, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feiras })); } catch (_) { /* cheio */ } };
+        // veio pelo link da feira: escolher a banca precisa saber quem está bloqueada (aqui ainda espera a conferência)
+        if (entrando && await irParaBancaDaFeira(doLink, comVivas(await conferir))) return null;
+        // ESTA banca foi BLOQUEADA pela plataforma: cliente de feira (pelo link ou lembrado no aparelho, ou que caiu aqui
+        // porque era a "última banca") vai para outra banca ATIVA da mesma feira. Sem feira, a loja mostra "fora do ar" (js/loja.js).
+        if (ficha && ficha.ativo === false && !EM_PREVIA) {
+            const fid = doLink || lerFeiraCliente();
+            if (fid) {
+                const f = comVivas(await conferir).find((x) => x.id === fid), outra = lojasValidas(f).find((l) => l.id !== TENANT);
+                if (outra) { gravarUltimaBanca(fid, outra.id); location.replace(comFeira(urlDaLoja(outra.id), fid)); return null; }
+            }
+        }
         if (!ficha) ligarFontesDaBanca();                    // sem ficha: o visual (e as letras) de sempre
         FICHA_GRAVADA = ficha;
         if (ficha || FICHA_PREVIA) aplicarFicha({ ...(ficha || {}), ...(FICHA_PREVIA || {}) });
-        FEIRAS_DA_LOJA = feiras;
-        montarFeira(feiras);
+        // a faixa já com o que o aparelho sabia de bloqueio (cópia guardada): banca que já estava bloqueada não "pisca"
+        const jaSabia = new Map((guardada && Array.isArray(guardada.feiras) ? guardada.feiras : []).flatMap((f) => (f && f.lojas) || []).map((l) => [l && l.id, l]));
+        const semBloqueadaConhecida = (feiras) => feiras.map((f) => ({ ...f, lojas: (f.lojas || []).filter((l) => !ids.includes(l && l.id) || jaSabia.size === 0 || jaSabia.has(l.id)) }));
+        FEIRAS_DA_LOJA = semBloqueadaConhecida(comVivas([]));
+        montarFeira(FEIRAS_DA_LOJA);
         avisarTemaPronto();
-        try { localStorage.setItem(K, JSON.stringify({ v: 3, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, feiras: ficha.feiras || null, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feiras })); } catch (_) { /* cheio */ }
+        guardar(FEIRAS_DA_LOJA);
+        // conferência das outras bancas em segundo plano: só redesenha a faixa se algo mudou
+        conferir.then((lista) => {
+            const feiras = comVivas(lista);
+            if (JSON.stringify(feiras) === JSON.stringify(FEIRAS_DA_LOJA)) return;
+            FEIRAS_DA_LOJA = feiras; montarFeira(feiras); guardar(feiras);
+        }).catch(() => { /* fica a cópia */ });
         return ficha;
     } catch (e) { console.warn('[tema] usando o visual guardado:', e && e.code); if (!guardada) ligarFontesDaBanca(); avisarTemaPronto(); return null; }
 }

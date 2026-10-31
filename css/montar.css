@@ -1,0 +1,94 @@
+/* =====================================================================
+   css/montar.css — MONTAR PEDIDO (açaí com complementos, pastel com adicionais...)
+   A tela é uma folha que sobe de baixo no celular e uma janela no computador.
+   As cores vêm do tema da loja (--forest, --cor-botao...).
+   ===================================================================== */
+
+/* ---------- botão do cartão ---------- */
+.card-acao.montar .card-add--montar { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; }
+.card-add--montar .ico { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; }
+.card-add--montar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-add--montar .montar-n { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; display: inline-grid; place-items: center; font-size: .78rem; font-weight: 800;
+    background: var(--sobre-botao, var(--sobre-primaria, #fff)); color: var(--cor-botao, var(--forest)); }
+#lista-produtos .produto-card--imersivo .card-add--montar .montar-n { background: var(--sec-sobre-botao, var(--sec-cor)); color: var(--sec-botao, var(--sec-tinta)); }
+
+/* ---------- a folha ---------- */
+.mt-overlay .mt-modal { max-width: 520px; height: min(92dvh, 860px); max-height: none; position: relative; padding: 0; background: var(--superficie, #fff); }
+@media (max-width: 600px) { .mt-overlay .mt-modal { height: 94dvh; border-radius: 26px 26px 0 0; } }
+.mt-fechar { position: absolute; top: 12px; right: 12px; z-index: 3; width: 40px; height: 40px; border-radius: 50%; border: 0; font-size: 1.5rem; line-height: 1;
+    background: color-mix(in srgb, #fff 92%, transparent); color: #222; box-shadow: 0 4px 14px rgba(0,0,0,.18); cursor: pointer; }
+.mt-rolo { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scroll-padding-top: 12px; }
+
+.mt-foto { position: relative; aspect-ratio: 16 / 10; background: var(--parchment, #f1ead9); overflow: hidden; }
+.mt-foto img { width: 100%; height: 100%; object-fit: cover; display: block; animation: mtZoom 6s ease-out both; }
+.mt-foto::after { content: ""; position: absolute; inset: auto 0 0 0; height: 40%; background: linear-gradient(transparent, color-mix(in srgb, var(--superficie, #fff) 96%, transparent)); }
+@keyframes mtZoom { from { transform: scale(1.06); } to { transform: scale(1); } }
+.mt-modal.sem-foto .mt-cabeca { padding-top: 26px; }
+
+.mt-cabeca { padding: 4px 20px 6px; position: relative; }
+.mt-cabeca h2 { margin: 0; font-family: var(--fonte-titulo); font-size: 1.55rem; line-height: 1.15; color: var(--text-dark); padding-right: 40px; }
+.mt-desc { margin: 6px 0 0; color: var(--text-mid); font-size: .92rem; line-height: 1.45; }
+.mt-base { margin: 8px 0 0; color: var(--text-mid); font-size: .9rem; }
+.mt-base b { font-size: 1.15rem; color: var(--forest-texto, var(--forest)); font-family: var(--fonte-titulo); }
+
+/* passos: um risquinho por grupo, que enche quando o grupo fica pronto */
+.mt-passos { display: flex; gap: 6px; padding: 12px 20px 4px; position: sticky; top: 0; z-index: 2; background: var(--superficie, #fff); }
+.mt-passos i { flex: 1; height: 5px; border-radius: 9px; background: color-mix(in srgb, var(--text-dark) 12%, transparent); transition: background .3s ease; }
+.mt-passos i.feito { background: var(--cor-botao, var(--forest)); }
+.mt-passos i.falta { background: color-mix(in srgb, var(--earth, #c4773a) 45%, transparent); }
+
+.mt-grupo { padding: 14px 16px 6px; scroll-margin-top: 24px; }
+.mt-grupo + .mt-grupo { border-top: 8px solid color-mix(in srgb, var(--text-dark) 5%, transparent); }
+.mt-grupo-topo { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 0 4px 10px; }
+.mt-grupo-topo h3 { margin: 0; font-size: 1.08rem; font-weight: 800; color: var(--text-dark); }
+.mt-grupo-topo small { display: block; margin-top: 2px; font-size: .82rem; color: var(--text-mid); }
+.mt-selo { flex: none; font-size: .74rem; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; }
+.mt-selo:empty { display: none; }
+.mt-selo.falta { background: var(--text-dark); color: var(--superficie, #fff); }
+.mt-selo.feito { background: color-mix(in srgb, var(--cor-botao, var(--forest)) 14%, transparent); color: var(--cor-botao-texto, var(--forest-texto, var(--forest))); }
+.mt-grupo.chama { animation: mtChama .9s ease; }
+@keyframes mtChama { 0%, 100% { background: transparent; } 25%, 60% { background: color-mix(in srgb, var(--earth, #c4773a) 14%, transparent); } }
+
+.mt-ops { display: flex; flex-direction: column; gap: 8px; }
+.mt-op { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 54px; padding: 10px 14px; border-radius: 16px; text-align: left; cursor: pointer;
+    font: inherit; color: var(--text-dark); background: var(--superficie, #fff); border: 1.5px solid var(--linha, #e6dfcf);
+    transition: border-color .18s ease, background .18s ease, transform .12s ease, opacity .2s ease; }
+.mt-op:active { transform: scale(.985); }
+.mt-op.on { border-color: var(--cor-botao, var(--forest)); background: color-mix(in srgb, var(--cor-botao, var(--forest)) 8%, var(--superficie, #fff)); }
+.mt-op.cheio { opacity: .45; }
+.mt-op.acabou { opacity: .45; cursor: not-allowed; text-decoration: line-through; }
+.mt-marca { flex: none; width: 26px; height: 26px; border-radius: 8px; border: 2px solid color-mix(in srgb, var(--text-dark) 28%, transparent); display: grid; place-items: center; transition: background .18s ease, border-color .18s ease; }
+.mt-marca.redonda { border-radius: 50%; }
+.mt-marca svg { width: 16px; height: 16px; fill: none; stroke: var(--sobre-botao, #fff); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 24; stroke-dashoffset: 24; transition: stroke-dashoffset .25s ease .05s; }
+.mt-op.on .mt-marca { background: var(--cor-botao, var(--forest)); border-color: var(--cor-botao, var(--forest)); }
+.mt-op.on .mt-marca svg { stroke-dashoffset: 0; }
+.mt-op-nome { flex: 1 1 auto; min-width: 0; font-weight: 650; font-size: .98rem; line-height: 1.25; }
+.mt-op-preco { flex: none; font-size: .9rem; font-weight: 700; color: var(--text-mid); font-variant-numeric: tabular-nums; }
+.mt-op-preco.gratis { font-weight: 600; color: var(--text-light, #7b7466); }
+.mt-op.on .mt-op-preco { color: var(--cor-botao-texto, var(--forest-texto, var(--forest))); }
+.mt-op.pulo .mt-marca { animation: mtPulo .32s cubic-bezier(.3,1.6,.5,1); }
+@keyframes mtPulo { 0% { transform: scale(.7); } 100% { transform: scale(1); } }
+.mt-op.treme { animation: mtTreme .35s ease; }
+@keyframes mtTreme { 20%, 60% { transform: translateX(-4px); } 40%, 80% { transform: translateX(4px); } }
+
+/* ---------- rodapé: resumo, quantidade e botão com o preço ---------- */
+.mt-rodape { flex: none; padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px)); background: var(--superficie, #fff);
+    box-shadow: 0 -8px 24px rgba(0,0,0,.08); position: relative; z-index: 2; }
+.mt-resumo { margin: 0 2px 8px; font-size: .84rem; color: var(--text-mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-acoes { display: flex; gap: 10px; align-items: stretch; }
+.mt-qtd { display: flex; align-items: center; border-radius: 999px; border: 1.5px solid var(--linha, #e6dfcf); flex: none; }
+.mt-qtd button { width: 44px; height: 52px; border: 0; background: none; font-size: 1.4rem; font-weight: 700; color: var(--forest-texto, var(--forest)); cursor: pointer; }
+.mt-qtd output { min-width: 22px; text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; }
+.mt-ok { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; padding: 0 20px; border: 0; border-radius: 999px; cursor: pointer;
+    font: inherit; font-weight: 800; font-size: 1rem; background: var(--cor-botao, var(--forest)); color: var(--sobre-botao, var(--sobre-primaria, #fff));
+    box-shadow: 0 4px 0 color-mix(in srgb, var(--cor-botao, var(--forest)) 65%, #000); transition: transform .12s ease, filter .2s ease; }
+.mt-ok:active { transform: translateY(2px); box-shadow: 0 2px 0 color-mix(in srgb, var(--cor-botao, var(--forest)) 65%, #000); }
+.mt-ok span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mt-ok b { flex: none; font-variant-numeric: tabular-nums; }
+.mt-ok.incompleto { filter: saturate(.55) brightness(1.05); }
+
+/* ---------- linha montada na sacola ---------- */
+.item-adicionais { margin: 0 0 6px; font-size: .8rem; line-height: 1.35; color: var(--text-mid); display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.item-alterar { border: 0; background: none; padding: 0 0 6px; font: inherit; font-size: .8rem; font-weight: 700; color: var(--forest-texto, var(--forest)); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) { .mt-foto img, .mt-op.pulo .mt-marca, .mt-op.treme, .mt-grupo.chama { animation: none; } }

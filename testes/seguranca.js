@@ -16,7 +16,7 @@ const fs = require('fs');
 
 module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chamar, carregarApi }) {
   // ------------------------------------------------------------------ cenário: duas lojas, todos os papéis
-  const PAPEIS = ['proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque'];
+  const PAPEIS = ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa', 'producao', 'estoque'];
   const TOK = { plataforma: { uid: 'plat', email: 'dono@plataforma', email_verified: true, plataforma: true }, cliente: { uid: 'cli-1' }, 'cliente-2': { uid: 'cli-2' } };
   for (const p of PAPEIS) {
     TOK[`a-${p}`] = { uid: `a-${p}`, email: `${p}@loja-a`, email_verified: true, tenants: { 'loja-a': p } };
@@ -44,7 +44,13 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
   const pedidoDe = (extra = {}) => ({ nome: 'Ana', quadra: '5', lote: '3', pag: 'Dinheiro', idempotencyKey: chavePedido(), itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], ...extra });
   const soDe = (db, prefixo) => JSON.stringify([...db._dados.entries()].filter(([k]) => k.startsWith(prefixo)).sort());
   const comFetch = async (falso, fn) => { const real = global.fetch; global.fetch = falso; try { return await fn(); } finally { global.fetch = real; } };
-  const zerarFreios = () => require(raiz('lib/http'))._usos.clear();
+  const zerarFreios = () => { require(raiz('lib/http'))._usos.clear(); require(raiz('lib/prudencia'))._reserva.clear(); require(raiz('lib/porteiro'))._marcas.clear(); };
+  // desafio do porteiro (lib/porteiro.js) resolvido como o navegador faria: pedido há 5 s, na conexão de quem chama
+  const comProva = (email, cab) => {
+    const Po = require(raiz('lib/porteiro')), ipC = String((cab || {})['x-forwarded-for'] || '').split(',')[0].trim();
+    const { desafio, dificuldade } = Po.novoDesafio(Po.segredoPadrao(), { acao: 'link', ip: ipC }, Date.now() - 5000);
+    return { desafio, solucao: Po.resolver(desafio, email, dificuldade) };
+  };
   const ler = (arq) => fs.readFileSync(raiz(arq), 'utf8');
 
   // ================================================================== ISOLAMENTO ENTRE LOJAS
@@ -118,10 +124,10 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
   teste('SEGURANÇA · papéis: cada papel faz só o que é dele dentro da PRÓPRIA loja (matriz de permissões)', async () => {
     // operação → papéis que PODEM (a plataforma pode tudo)
     const MATRIZ = [
-      ['api/analytics.js', { acao: 'painel' }, ['proprietario', 'administrador']],
-      ['api/pdv.js', { acao: 'venda', itens: [{ id: 'p1', qtd: 1 }], pag: 'PIX', chave: 'venda-0000009' }, ['proprietario', 'administrador', 'funcionario', 'caixa']],
-      ['api/estoque.js', { acao: 'movimentar', produtoId: 'p1', tipo: 'compra', qtd: 5, chave: 'mov-00000009' }, ['proprietario', 'administrador', 'estoque', 'producao']],
-      ['api/foto.js', { acao: 'estado' }, ['proprietario', 'administrador']],
+      ['api/analytics.js', { acao: 'painel' }, ['proprietario', 'administrador', 'gerente']],
+      ['api/pdv.js', { acao: 'venda', itens: [{ id: 'p1', qtd: 1 }], pag: 'PIX', chave: 'venda-0000009' }, ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa']],
+      ['api/estoque.js', { acao: 'movimentar', produtoId: 'p1', tipo: 'compra', qtd: 5, chave: 'mov-00000009' }, ['proprietario', 'administrador', 'gerente', 'estoque', 'producao']],
+      ['api/foto.js', { acao: 'estado' }, ['proprietario', 'administrador', 'gerente']],
       ['api/equipe.js', { acao: 'listar' }, ['proprietario']],
       ['api/equipe.js', { acao: 'definir', email: 'nova@x.com', papel: 'caixa' }, ['proprietario']],
       ['api/equipe.js', { acao: 'copia-estado' }, ['proprietario']],
@@ -143,7 +149,7 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
       for (const papel of PAPEIS) {
         const db = criarBanco(base()); const api = carregarApi(raiz('api/assistente.js'), criarAdmin(db, TOK, [])); zerarFreios();
         const r = await chamar(api, { headers: { ...ip(), Authorization: `Bearer a-${papel}`, 'X-Loja': 'loja-a' }, body: { action: 'gerar_descricao', produtoInfo: { nome: 'Pão', cat: 'paes' } } });
-        assert.strictEqual(r.status, ['proprietario', 'administrador'].includes(papel) ? 200 : 403, `IA do painel como ${papel}: ${r.status}`);
+        assert.strictEqual(r.status, ['proprietario', 'administrador', 'gerente'].includes(papel) ? 200 : 403, `IA do painel como ${papel}: ${r.status}`);
       }
     });
   });
@@ -454,7 +460,7 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
       { uid: 'u-off', email: 'bloqueado@loja.com', disabled: true, customClaims: { tenants: { 'loja-a': 'caixa' } } }, { uid: 'u-inv', email: 'inventado@loja.com', customClaims: { tenants: { 'loja-a': 'rei' } } }];
     const db = criarBanco(base()); const api = carregarApi(raiz('api/equipe.js'), criarAdmin(db, TOK, usuarios));
     const idas = [];
-    const pedir = (email, extra = {}, cab = {}) => { zerarFreios(); return chamar(api, { headers: { ...ip(), ...cab }, body: { acao: 'pedir-link', email, ...extra } }); };
+    const pedir = (email, extra = {}, cab = {}) => { zerarFreios(); const h = { ...ip(), ...cab }; return chamar(api, { headers: h, body: { acao: 'pedir-link', email, ...comProva(email, h), ...extra } }); };
     await comFetch(async (url, o) => { idas.push({ url: String(url), corpo: JSON.parse(o.body) }); return { ok: true, status: 200, json: async () => ({ email: 'x' }) }; }, async () => {
       const autorizado = await pedir('Dono@Loja.com ', { loja: 'loja-a' });
       assert.strictEqual(autorizado.status, 200); assert.strictEqual(idas.length, 1, 'o link foi pedido ao Firebase');
@@ -487,38 +493,154 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
       // por e-mail: 3 em 15 minutos, mesmo vindo de conexões diferentes — e o comportamento é o MESMO para e-mail que não existe
       for (const email of ['dono@loja.com', 'naoexiste@x.com']) {
         const db = criarBanco(base()); const api = carregarApi(raiz('api/equipe.js'), criarAdmin(db, TOK, usuarios)); const status = [];
-        for (let i = 0; i < 5; i++) { zerarFreios(); status.push((await chamar(api, { headers: ip(), body: { acao: 'pedir-link', email } })).status); }
+        for (let i = 0; i < 5; i++) { zerarFreios(); status.push((await (() => { const h = ip(); return chamar(api, { headers: h, body: { acao: 'pedir-link', email: email, ...comProva(email, h) } }); })()).status); }
         assert.deepStrictEqual(status, [200, 200, 200, 429, 429], email);
       }
       assert.strictEqual(enviados, 3, 'só os 3 primeiros pedidos do e-mail autorizado viraram envio');
       // por conexão: 6 em 15 minutos, com e-mails diferentes
       const db = criarBanco(base()); const api = carregarApi(raiz('api/equipe.js'), criarAdmin(db, TOK, usuarios)); const cab = ip(); const status = [];
-      for (let i = 0; i < 8; i++) { zerarFreios(); status.push((await chamar(api, { headers: cab, body: { acao: 'pedir-link', email: `alguem${i}@x.com` } })).status); }
+      for (let i = 0; i < 8; i++) { zerarFreios(); status.push((await (() => { const h = cab, e = `alguem${i}@x.com`; return chamar(api, { headers: h, body: { acao: 'pedir-link', email: e, ...comProva(e, h) } }); })()).status); }
       assert.deepStrictEqual(status, [200, 200, 200, 200, 200, 200, 429, 429]);
       // rajada na mesma cópia do servidor: a trava de memória segura antes de tocar no banco
       const db3 = criarBanco(base()); const api3 = carregarApi(raiz('api/equipe.js'), criarAdmin(db3, TOK, usuarios)); zerarFreios(); const cab3 = ip(); let barradoNaMemoria = false;
-      for (let i = 0; i < 7; i++) barradoNaMemoria = (await chamar(api3, { headers: cab3, body: { acao: 'pedir-link', email: `r${i}@x.com` } })).status === 429 || barradoNaMemoria;
+      for (let i = 0; i < 7; i++) barradoNaMemoria = (await (() => { const h = cab3, e = `r${i}@x.com`; return chamar(api3, { headers: h, body: { acao: 'pedir-link', email: e, ...comProva(e, h) } }); })()).status === 429 || barradoNaMemoria;
       assert.ok(barradoNaMemoria);
       // teto geral por hora
       process.env.LOGIN_TETO_HORA = '4';
       try {
         const db2 = criarBanco(base()); const api2 = carregarApi(raiz('api/equipe.js'), criarAdmin(db2, TOK, usuarios)); const s2 = [];
-        for (let i = 0; i < 6; i++) { zerarFreios(); s2.push((await chamar(api2, { headers: ip(), body: { acao: 'pedir-link', email: `outro${i}@x.com` } })).status); }
+        for (let i = 0; i < 6; i++) { zerarFreios(); s2.push((await (() => { const h = ip(), e = `outro${i}@x.com`; return chamar(api2, { headers: h, body: { acao: 'pedir-link', email: e, ...comProva(e, h) } }); })()).status); }
         assert.deepStrictEqual(s2, [200, 200, 200, 200, 429, 429]);
       } finally { delete process.env.LOGIN_TETO_HORA; }
     });
     // o Firebase recusou o envio (cota do dia): a tela recebe um aviso claro e a equipe é registrada
     await comFetch(async () => ({ ok: false, status: 400, json: async () => ({ error: { message: 'QUOTA_EXCEEDED : Exceeded daily quota for email sign-in.' } }) }), async () => {
       const db = criarBanco(base()); const api = carregarApi(raiz('api/equipe.js'), criarAdmin(db, TOK, usuarios)); zerarFreios();
-      const r = await chamar(api, { headers: ip(), body: { acao: 'pedir-link', email: 'dono@loja.com' } });
+      const r = await (() => { const h = ip(); return chamar(api, { headers: h, body: { acao: 'pedir-link', email: 'dono@loja.com', ...comProva('dono@loja.com', h) } }); })();
       assert.strictEqual(r.status, 429); assert.strictEqual(r.corpo.codigo, 'cota');
     });
     // falha qualquer do envio: código para a tela usar o plano B (pedir direto ao Firebase), em vez de trancar a equipe para fora
     await comFetch(async () => { throw new Error('rede caiu'); }, async () => {
       const db = criarBanco(base()); const api = carregarApi(raiz('api/equipe.js'), criarAdmin(db, TOK, usuarios)); zerarFreios();
-      const r = await chamar(api, { headers: ip(), body: { acao: 'pedir-link', email: 'dono@loja.com' } });
+      const r = await (() => { const h = ip(); return chamar(api, { headers: h, body: { acao: 'pedir-link', email: 'dono@loja.com', ...comProva('dono@loja.com', h) } }); })();
       assert.strictEqual(r.status, 502); assert.strictEqual(r.corpo.codigo, 'falha-envio');
     });
+  });
+
+  // ================================================================== PORTEIRO DA ENTRADA (lib/porteiro.js)
+  teste('SEGURANÇA · porteiro da entrada: desafio preso à conexão e ao e-mail, uso único, tempo mínimo, isca, e pontuação que sobe e barra', async () => {
+    const Po = require(raiz('lib/porteiro')), seg = 'segredo-de-teste';
+    const cli = await import(require('url').pathToFileURL(raiz('js/porteiro-cliente.js')).href);
+    for (const t of ['', 'abc', 'a'.repeat(55), 'a'.repeat(56), 'ção|x', 'z'.repeat(300)]) assert.strictEqual(cli.sha256Hex(t), crypto.createHash('sha256').update(t).digest('hex'), `resumo do navegador = do servidor (${t.length})`);
+    const t0 = Date.now();
+    const { desafio } = Po.novoDesafio(seg, { acao: 'link', ip: '1.1.1.1' }, t0 - 5000);
+    const pr = { desafio, solucao: await cli.resolver(desafio, 'Ana@Loja.com ', 12), acao: 'link', ip: '1.1.1.1', alvo: 'ana@loja.com' };
+    assert.ok(Po.conferir(seg, pr, t0).ok, 'a resposta do navegador vale no servidor');
+    const m = (extra, agora = t0) => Po.conferir(seg, { ...pr, ...extra }, agora).motivo;
+    assert.strictEqual(m({ alvo: 'outra@loja.com' }), 'resposta errada', 'resposta presa ao e-mail');
+    assert.strictEqual(m({ ip: '2.2.2.2' }), 'desafio de outra conexão');
+    assert.strictEqual(m({ acao: 'outra' }), 'desafio de outra ação');
+    assert.strictEqual(m({}, t0 + Po.VALIDADE_MS), 'desafio vencido');
+    assert.strictEqual(m({ minimo: 15 }), 'precisa de desafio mais pesado');
+    assert.strictEqual(m({ desafio: `${desafio.split('.')[0]}.${'A'.repeat(43)}` }), 'desafio falso');
+    assert.strictEqual(m({ solucao: '' }), 'sem resposta');
+    assert.strictEqual(m({ desafio: Po.novoDesafio(seg, { acao: 'link', ip: '1.1.1.1' }, t0).desafio }, t0 + 200), 'rápido demais');
+    assert.strictEqual(Po.conferir('outro-segredo', pr, t0).motivo, 'desafio falso', 'desafio de outro servidor não vale');
+    // pontuação
+    Po._marcas.clear();
+    assert.strictEqual(Po.pontuar('link', { ip: '3.3.3.3', alvo: 'a@b.com' }).dificuldade, 12, 'pessoa comum: desafio levinho');
+    for (let i = 0; i < 6; i++) Po.anotar('link', { ip: `9.9.9.${i}`, alvo: 'alvo@loja.com' });
+    assert.ok(Po.pontuar('link', { ip: '3.3.3.3', alvo: 'alvo@loja.com' }).dificuldade > 12, 'o mesmo e-mail pedido de vários lugares pesa para todos');
+    assert.strictEqual(Po.pontuar('link', { ip: '3.3.3.3', alvo: 'alvo@loja.com', aparelho: { conhecido: true } }).dificuldade, 12, 'aparelho conhecido ganha desconto');
+    for (let i = 0; i < 20; i++) Po.anotar('link', { ip: `7.7.7.${i}`, alvo: 'alvo@loja.com' });
+    assert.ok(Po.pontuar('link', { ip: '3.3.3.3', alvo: 'alvo@loja.com' }).bloquear, 'ataque espalhado no mesmo e-mail: barra');
+    assert.ok(Po.pontuar('link', { ip: '5.5.5.5', aparelho: { bloqueado: true } }).bloquear, 'aparelho desconectado: barra');
+    assert.ok(Po.pontuar('link', { isca: true }).bloquear);
+    assert.strictEqual(Po.pontuar('link', { ip: '4.4.4.4', pais: 'RU' }).dificuldade, 15, 'conexão de fora do Brasil pesa');
+    Po._marcas.clear();
+    // pela API
+    process.env.VITE_FIREBASE_API_KEY = 'chave-publica-de-teste';
+    const usuarios = [{ uid: 'u-dono', email: 'dono@loja.com', customClaims: { tenants: { 'loja-a': 'proprietario' } } }];
+    const db = criarBanco(base()); const api = carregarApi(raiz('api/equipe.js'), criarAdmin(db, TOK, usuarios));
+    let enviados = 0;
+    await comFetch(async () => { enviados++; return { ok: true, status: 200, json: async () => ({}) }; }, async () => {
+      const h = ip(), email = 'dono@loja.com';
+      zerarFreios(); let r = await chamar(api, { headers: h, body: { acao: 'pedir-link', email } });
+      assert.strictEqual(r.status, 428, 'sem desafio: não envia'); assert.strictEqual(r.corpo.codigo, 'desafio'); assert.strictEqual(enviados, 0);
+      zerarFreios(); const d = (await chamar(api, { headers: h, body: { acao: 'porteiro' } })).corpo; assert.ok(d.desafio && d.dificuldade >= 12);
+      zerarFreios(); r = await chamar(api, { headers: h, body: { acao: 'pedir-link', email, desafio: d.desafio, solucao: Po.resolver(d.desafio, email, d.dificuldade) } });
+      assert.strictEqual(r.status, 428); assert.strictEqual(r.corpo.motivo, 'rápido demais', 'robô que pede e responde no mesmo segundo');
+      const prova = comProva(email, h);
+      zerarFreios(); r = await chamar(api, { headers: h, body: { acao: 'pedir-link', email, ...prova } }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(enviados, 1);
+      zerarFreios(); r = await chamar(api, { headers: h, body: { acao: 'pedir-link', email, ...prova } }); assert.strictEqual(r.status, 428); assert.strictEqual(r.corpo.motivo, 'desafio já usado', 'cada desafio vale uma vez');
+      zerarFreios(); r = await chamar(api, { headers: ip(), body: { acao: 'pedir-link', email, ...prova } }); assert.strictEqual(r.corpo.motivo, 'desafio de outra conexão', 'resposta comprada não serve em outra conexão');
+      // isca preenchida: a MESMA resposta de sucesso (o robô não aprende nada), nada enviado, fica na trilha
+      zerarFreios(); const h2 = ip(); r = await chamar(api, { headers: h2, body: { acao: 'pedir-link', email, isca: 'https://spam', ...comProva(email, h2) } });
+      assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(enviados, 1, 'robô não recebe link'); assert.ok([...db._dados.values()].some((v) => v && v.acao === 'login-isca'));
+      // o mesmo e-mail atacado de muitas conexões: barra e avisa o dono
+      zerarFreios(); const PoApi = require(raiz('lib/porteiro'));   // a mesma cópia que a API carregou
+      for (let i = 0; i < 25; i++) PoApi.anotar('link', { ip: `8.8.${i}.1`, alvo: email });
+      const h3 = ip(); r = await chamar(api, { headers: h3, body: { acao: 'pedir-link', email, ...comProva(email, h3) } });
+      assert.strictEqual(r.status, 429); assert.strictEqual(enviados, 1);
+      assert.ok(Object.keys(db._dados.get('plataforma/alertas') || {}).some((k) => /login-porteiro/.test(k)), 'o dono foi avisado');
+    });
+    Po._marcas.clear();
+  });
+
+  // ================================================================== APROVAÇÃO DE APARELHO (lib/aprovacao.js)
+  teste('SEGURANÇA · aparelho novo só entra com aprovação do dono (opção da loja): login do link não abre nada; aparelho aprovado ganha login próprio', async () => {
+    const T = require(raiz('lib/tenant')), Aprov = require(raiz('lib/aprovacao'));
+    assert.strictEqual(T.papelDe({ tenants: { 'loja-a': 'caixa' }, apr: { 'loja-a': true } }, 'loja-a'), null, 'link sozinho não vale');
+    assert.strictEqual(T.papelDe({ tenants: { 'loja-a': 'caixa' }, apr: { 'loja-a': true }, apl: ['loja-a'] }, 'loja-a'), 'caixa');
+    assert.strictEqual(T.papelDe({ tenants: { 'loja-a': 'caixa', 'loja-b': 'caixa' }, apr: { 'loja-a': true } }, 'loja-b'), 'caixa', 'outra loja não muda');
+    assert.strictEqual(T.papelDe({ tenants: { 'loja-a': 'caixa' }, apr: { 'loja-a': true }, apl: ['loja-b'] }, 'loja-a'), null, 'aprovado em outra loja não vale aqui');
+    assert.strictEqual(T.papelDe({ tenants: { 'loja-a': 'caixa' }, apr: { 'loja-a': true }, apl: 'loja-a' }, 'loja-a'), null, 'marca torta não vale');
+    assert.strictEqual(T.papelDe({ plataforma: true, apr: { 'loja-a': true } }, 'loja-a'), 'plataforma');
+    Aprov._cache.clear();
+    const usuarios = [
+      { uid: 'a-dono', email: 'dono@loja-a', emailVerified: true, customClaims: { tenants: { 'loja-a': 'proprietario' } } },
+      { uid: 'a-caixa', email: 'caixa@loja-a', emailVerified: true, customClaims: { tenants: { 'loja-a': 'caixa' } } }];
+    const db = criarBanco({ ...base(), 'tenants/loja-a/equipe/a-dono': { email: 'dono@loja-a', papel: 'proprietario' }, 'tenants/loja-a/equipe/a-caixa': { email: 'caixa@loja-a', papel: 'caixa' } });
+    const tokens = {};
+    // o login como o Firebase entregaria: o que está gravado na conta + as marcas do login (as do servidor, no Face ID/troca)
+    const login = (uid, marcas = {}) => { const u = usuarios.find((x) => x.uid === uid), k = `tk-${uid}-${Object.keys(tokens).length}`; tokens[k] = { uid, email: u.email, email_verified: true, ...u.customClaims, ...marcas }; return k; };
+    const api = carregarApi(raiz('api/equipe.js'), criarAdmin(db, tokens, usuarios));
+    const pedir = (tk, body) => { zerarFreios(); return chamar(api, { headers: { ...ip(), Authorization: `Bearer ${tk}`, 'X-Loja': 'loja-a', 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1' }, body }); };
+    const marcasDo = (token) => JSON.parse(String(token).split('|')[1] || '{}');
+    // o caixa já entrava por este celular antes de ligar
+    assert.strictEqual((await pedir(login('a-caixa'), { acao: 'aparelho', aparelho: 'celular-do-caixa-0001' })).status, 200);
+    // o dono liga: a equipe ganha a marca, o celular do caixa continua aprovado, o dono recebe o login do aparelho dele
+    let r = await pedir(login('a-dono'), { acao: 'aprovacao-definir', ligar: true, aparelho: 'celular-do-dono-0001' });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(r.corpo.aprovados, 1);
+    assert.deepStrictEqual(usuarios.map((u) => u.customClaims.apr), [{ 'loja-a': true }, { 'loja-a': true }]);
+    assert.deepStrictEqual(marcasDo(r.corpo.token).apl, ['loja-a']);
+    // login só do link: o servidor não abre nada da loja (e as regras do banco também não: testes/regras)
+    const doLink = login('a-dono');
+    assert.strictEqual((await pedir(doLink, { acao: 'listar' })).status, 403);
+    assert.strictEqual((await pedir(login('a-caixa'), { acao: 'chave-dados' })).status, 403, 'sem aparelho aprovado, nem a chave dos dados de cliente');
+    // aparelho que já entrava: troca o login na hora
+    r = await pedir(login('a-caixa'), { acao: 'sessao-aparelho', aparelho: 'celular-do-caixa-0001' });
+    assert.deepStrictEqual(marcasDo(r.corpo.token).apl, ['loja-a']);
+    assert.strictEqual((await pedir(login('a-caixa', marcasDo(r.corpo.token)), { acao: 'chave-dados' })).status, 200);
+    // aparelho NOVO do caixa: fica aguardando e o dono é avisado
+    r = await pedir(login('a-caixa'), { acao: 'sessao-aparelho', aparelho: 'notebook-novo-00001' });
+    assert.strictEqual(r.corpo.pendente, true); assert.ok(!r.corpo.token);
+    assert.ok(Object.keys(db._dados.get('plataforma/alertas') || {}).some((k) => /aprovar-/.test(k)), 'aviso ao dono');
+    const donoOk = login('a-dono', { apl: ['loja-a'], apd: 'x' });
+    const pend = (await pedir(donoOk, { acao: 'aparelhos' })).corpo.aparelhos.find((a) => a.pendente);
+    assert.ok(pend, 'aparece como aguardando');
+    assert.strictEqual((await pedir(login('a-caixa', { apl: ['loja-a'] }), { acao: 'aparelho-aprovar', id: pend.id })).status, 403, 'caixa não aprova');
+    assert.strictEqual((await pedir(doLink, { acao: 'aparelho-aprovar', id: pend.id })).status, 403, 'dono em aparelho NÃO aprovado não aprova nada (nem o próprio)');
+    assert.strictEqual((await pedir(donoOk, { acao: 'aparelho-aprovar', id: pend.id })).status, 200);
+    r = await pedir(login('a-caixa'), { acao: 'sessao-aparelho', aparelho: 'notebook-novo-00001' });
+    assert.deepStrictEqual(marcasDo(r.corpo.token).apl, ['loja-a'], 'aprovado: ganha o login do aparelho');
+    // desconectado: não ganha mais login
+    await pedir(donoOk, { acao: 'aparelho-desconectar', id: pend.id });
+    assert.strictEqual((await pedir(login('a-caixa'), { acao: 'sessao-aparelho', aparelho: 'notebook-novo-00001' })).corpo.bloqueado, true);
+    // desligar: a marca sai de todos
+    await pedir(donoOk, { acao: 'aprovacao-definir', ligar: false });
+    assert.deepStrictEqual(usuarios.map((u) => u.customClaims.apr), [undefined, undefined]);
+    Aprov._cache.clear();
   });
 
   // ================================================================== EQUIPE E TRILHA
@@ -566,6 +688,66 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
       const r = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer plataforma', 'X-Loja': 'loja-a' }, body: { acao: 'listar' } });
       assert.strictEqual(conferiu, true, `${arq} precisa conferir se o login foi encerrado`); assert.strictEqual(r.status, 401, arq);
     }
+  });
+
+  teste('SEGURANÇA · login encerrado também é recusado ao cancelar pedido, gerar PIX e usar a IA do painel; o cliente não paga consulta a mais', async () => {
+    const casos = [
+      ['api/cancelar-pedido.js', 'a-caixa', 'loja-a', { pedidoId: 'pedido123', acao: 'cancelar' }],
+      ['api/pagamento-pix.js', 'plataforma', null, { pedidoId: 'pedido123' }],
+      ['api/assistente.js', 'a-proprietario', 'loja-a', { action: 'gerar_descricao', produtoInfo: { nome: 'Alface' } }],
+      ['api/assistente.js', 'a-proprietario', 'loja-a', { action: 'copiloto', pergunta: 'quanto vendi hoje?' }],
+    ];
+    for (const [arq, quem, loja, corpo] of casos) {
+      const db = criarBanco(base()); const adm = criarAdmin(db, TOK, []); const real = adm.auth;
+      let conferiu = null;
+      adm.auth = () => ({ ...real(), verifyIdToken: async (t, conferirEncerrado) => { if (conferirEncerrado) { conferiu = true; throw Object.assign(new Error('revogado'), { code: 'auth/id-token-revoked' }); } return TOK[t]; } });
+      const api = carregarApi(raiz(arq), adm); zerarFreios();
+      const r = await chamar(api, { headers: { ...ip(), Authorization: `Bearer ${quem}`, ...(loja ? { 'X-Loja': loja } : {}) }, body: corpo });
+      assert.strictEqual(conferiu, true, `${arq} (${corpo.action || corpo.acao || 'pix'}) precisa conferir se o login foi encerrado`);
+      assert.strictEqual(r.status, 401, `${arq}: login encerrado tem de dar 401 (deu ${r.status})`);
+    }
+    // cliente da loja (login anônimo, sem papel): NÃO faz a consulta extra
+    for (const arq of ['api/cancelar-pedido.js', 'api/pagamento-pix.js']) {
+      const db = criarBanco(base()); const adm = criarAdmin(db, TOK, []); const real = adm.auth;
+      let conferiu = false;
+      adm.auth = () => ({ ...real(), verifyIdToken: async (t, conferirEncerrado) => { if (conferirEncerrado) conferiu = true; if (!TOK[t]) throw new Error('token inválido'); return TOK[t]; } });
+      const api = carregarApi(raiz(arq), adm); zerarFreios();
+      await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: { pedidoId: 'pedido123', acao: 'cancelar' } });
+      assert.strictEqual(conferiu, false, `${arq}: cliente não precisa da consulta de login encerrado`);
+    }
+    const H = require(raiz('lib/http'));
+    assert.strictEqual(H.temPapelDeEquipe({ uid: 'x' }), false);
+    assert.strictEqual(H.temPapelDeEquipe({ uid: 'x', tenants: {} }), false);
+    assert.strictEqual(H.temPapelDeEquipe({ uid: 'x', tenants: { 'loja-a': '' } }), false);
+    assert.strictEqual(H.temPapelDeEquipe({ uid: 'x', tenants: { 'loja-a': 'caixa' } }), true);
+    assert.strictEqual(H.temPapelDeEquipe({ uid: 'x', admin: true }), true);
+  });
+
+  teste('SEGURANÇA · freios: se o banco falhar, o limite continua valendo (conta na memória), sem barrar quem está dentro do limite', async () => {
+    const P = require(raiz('lib/prudencia')); zerarFreios();
+    const quebrado = { collection: () => ({ doc: () => ({}) }), runTransaction: async () => { throw Object.assign(new Error('ABORTED: muita disputa'), { code: 10 }); } };
+    const agora = 1_000_000;
+    assert.strictEqual(await P.limitar(quebrado, 'teste', '1.2.3.4', 2, 60, agora), true);
+    assert.strictEqual(await P.limitar(quebrado, 'teste', '1.2.3.4', 2, 60, agora + 1), true);
+    assert.strictEqual(await P.limitar(quebrado, 'teste', '1.2.3.4', 2, 60, agora + 2), false, 'antes deixava passar sem limite quando o banco falhava');
+    assert.strictEqual(await P.limitar(quebrado, 'teste', '5.6.7.8', 2, 60, agora + 3), true, 'outra pessoa não é afetada');
+    assert.strictEqual(await P.limitar(quebrado, 'teste', '1.2.3.4', 2, 60, agora + 61000), true, 'depois da janela volta a passar');
+    // com o banco funcionando, nada muda: conta no banco
+    const db = criarBanco({});
+    for (let i = 0; i < 3; i++) assert.strictEqual(await P.limitar(db, 'teste', 'x', 3, 60), true);
+    assert.strictEqual(await P.limitar(db, 'teste', 'x', 3, 60), false);
+
+    // teto diário da IA do painel: com o contador do banco quebrado, o teto passa a valer na memória
+    process.env.IA_PAINEL_LIMITE_DIA = '2'; delete process.env.GEMINI_API_KEY;
+    const dbIA = criarBanco(base()); const adm = criarAdmin(dbIA, TOK, []);
+    const fs0 = adm.firestore; let chamadas = 0;
+    adm.firestore = Object.assign(() => { const f = fs0(); return new Proxy(f, { get: (o, k) => (k === 'runTransaction' ? async (fn) => { chamadas++; if (chamadas % 2 === 0) throw new Error('banco fora'); return o.runTransaction(fn); } : o[k]) }); }, fs0);
+    const api = carregarApi(raiz('api/assistente.js'), adm); zerarFreios();
+    const pedir = () => chamar(api, { headers: { ...ip(), Authorization: 'Bearer a-proprietario', 'X-Loja': 'loja-a' }, body: { action: 'gerar_descricao', produtoInfo: { nome: 'Alface' } } });
+    const st = [];
+    for (let i = 0; i < 3; i++) st.push((await pedir()).status);
+    delete process.env.IA_PAINEL_LIMITE_DIA;
+    assert.strictEqual(st[2], 429, `o 3º pedido passa do teto de 2 mesmo com o contador quebrado (deu ${st.join(',')})`);
   });
 
   teste('SEGURANÇA · trilha de auditoria: registra as ações críticas e NUNCA guarda chave, token ou senha', async () => {

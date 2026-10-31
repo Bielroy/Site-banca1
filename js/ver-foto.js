@@ -58,7 +58,10 @@ export function ligarVerFoto() {
     const abrirDaJanela = (hero) => {
         const img = hero.querySelector('img');
         if (!img || !img.getAttribute('src') || img.style.visibility === 'hidden') return;
-        abrir(img.currentSrc || img.src, img.dataset.original || '', img.alt || '');
+        // foto do ImgBB não vai direto: se o arquivo sumiu de lá, chega a figura "service unavailable" no lugar da foto.
+        // Fica a que já está na tela (a de 828 px, pelo redutor do site).
+        const original = img.dataset.original || '';
+        abrir(img.currentSrc || img.src, /^https:\/\/([a-z0-9-]+\.)*ibb\.co\//i.test(original) ? '' : original, img.alt || '');
     };
     document.addEventListener('click', (e) => { const h = e.target.closest('.md-hero'); if (h) abrirDaJanela(h); });
     document.addEventListener('keydown', (e) => {

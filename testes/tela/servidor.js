@@ -20,9 +20,9 @@ const conta = C.conta || { uid: 'cli-anonimo', isAnonymous: true, claims: {} };
 const usuario = { uid: conta.uid, email: conta.email || null, isAnonymous: !!conta.isAnonymous, emailVerified: !conta.isAnonymous,
   getIdToken: async () => 'token-' + conta.uid, getIdTokenResult: async () => ({ claims: { email_verified: !conta.isAnonymous, ...(conta.claims || {}) } }) };
 export const db = {}, storage = {};
-export const auth = { currentUser: usuario };
+export const auth = { currentUser: C.semLogin ? null : usuario };
 export const collection = (_d, ...p) => ({ path: p.join('/'), tipo: 'colecao' }), doc = (_d, ...p) => ({ path: p.join('/'), tipo: 'doc' });
-export const onAuthStateChanged = (a, fn) => { setTimeout(() => fn(usuario), 0); return nada; };
+export const onAuthStateChanged = (a, fn) => { window.__aoLogin = fn; setTimeout(() => fn(C.semLogin ? null : usuario), 0); return nada; };
 export const signInAnonymously = async () => ({ user: usuario });
 const lojaDe = (p) => { const m = /^tenants\\/([^/]+)\\/(.+)$/.exec(p); return m ? { loja: m[1], resto: m[2] } : { loja: 'banca', resto: p }; };
 const L = (id) => (C.lojas || {})[id] || null;
@@ -33,12 +33,17 @@ function ler(p) {
   const { loja, resto } = lojaDe(p), f = L(loja);
   if (!f) return null;
   if (resto === 'loja/config') return f.config || { lojaAberta: true, diasAbertos: [0,1,2,3,4,5,6], minimo: 0, wpp: '5562999990000' };
+  if (resto === 'loja/catalogo') return f.catalogo || null;      // vitrine num documento só (lib/catalogo.js)
+  if (resto === 'loja/painel') return f.painel || null;          // painel num documento só
+  if (resto === 'loja/custos') return f.custosDoc || null;
+  if (resto === 'loja/comunicados') return f.comunicados || null;
+  if (resto === 'loja/avaliacoes') return f.avaliacoes || null;
   if (resto.startsWith('loja/')) return null;
   return null;
 }
 function lista(p) {
   const { loja, resto } = lojaDe(p), f = L(loja) || {};
-  if (resto === 'produtos') return Object.entries(f.produtos || {}).map(([id, d]) => ({ id, data: () => d }));
+  if (resto === 'produtos') return Object.entries(f.produtos || {}).map(([id, d]) => ({ id, data: () => d })).filter((s) => (f.produtosFiltro || []).every((w) => w.op !== '>' || Number(s.data()[w.campo]) > Number(w.valor)));
   if (resto === 'categorias') return (f.categorias || []).map((c, i) => ({ id: c.chave || 'c' + i, data: () => c }));
   if (resto === 'pedidos') return Object.entries(f.pedidos || {}).map(([id, d]) => ({ id, data: () => d }));
   return [];
@@ -50,17 +55,23 @@ const negado = () => Object.assign(new Error('Missing or insufficient permission
 const ehVitrine = (p) => { const { resto } = lojaDe(p); return resto === 'produtos' || resto === 'categorias' || resto === 'loja/config' || resto === 'loja/comunicados'; };
 const snapDoc = (d, id = 'x') => ({ exists: () => !!d, data: () => d || {}, id });
 const snapLista = (docs) => ({ docs, metadata: { fromCache: !!C.daCopia, hasPendingWrites: false }, empty: !docs.length, size: docs.length, forEach(f) { docs.forEach(f); }, docChanges: () => [] });
-export const onSnapshot = (ref, ...resto) => { if (resto[0] && typeof resto[0] === 'object') resto.shift(); const [cb, erro] = resto; setTimeout(() => {
+export const onSnapshot = (ref, ...resto) => { if (resto[0] && typeof resto[0] === 'object') resto.shift(); const [cb, erro] = resto;
+  (window.__ouvidos = window.__ouvidos || []).push(ref.path + (ref.filtros && ref.filtros.length ? '?' + ref.filtros.map((w) => w.campo + w.op + w.valor).join('&') : ''));
+  setTimeout(() => {
   const { loja } = lojaDe(ref.path);
+  if (ref.filtros && ref.filtros.length) { const f = L(loja); if (f) { f.produtosFiltro = ref.filtros; try { cb(snapLista(lista(ref.path))); } finally { f.produtosFiltro = null; } } return; }
   if (ehVitrine(ref.path) && bloqueada(loja) && conta.isAnonymous) { if (erro) erro(negado()); return; }
   if (ref.tipo === 'doc') cb(snapDoc(ler(ref.path), ref.path.split('/').pop())); else cb(snapLista(lista(ref.path)));
 }, 20 + (atrasoDe(ref.path) || 0)); return nada; };
-export const getDoc = async (ref) => { await esperar(atrasoDe(ref.path)); const { loja } = lojaDe(ref.path); if (ehVitrine(ref.path) && bloqueada(loja) && conta.isAnonymous) throw negado(); return snapDoc(ler(ref.path), ref.path.split('/').pop()); };
+export const getDoc = async (ref) => { (window.__lidos = window.__lidos || []).push(ref.path); await esperar(atrasoDe(ref.path)); const { loja } = lojaDe(ref.path); if (ehVitrine(ref.path) && bloqueada(loja) && conta.isAnonymous) throw negado(); return snapDoc(ler(ref.path), ref.path.split('/').pop()); };
 export const getDocs = async (ref) => snapLista(lista((ref && ref.path) || ''));
 export const setDoc = async (ref, dados) => { (window.__gravados = window.__gravados || []).push({ path: ref.path, dados }); };
 export const deleteDoc = async () => {}, addDoc = async () => ({ id: 'novo' }), updateDoc = async () => {};
-export const query = (r) => r, orderBy = nada, limit = nada, where = nada, startAfter = nada;
-export const writeBatch = () => ({ set: nada, update: nada, delete: nada, commit: async () => {} });
+// where '>' vira filtro de verdade (a vitrine pede "produtos mudados depois de"); os outros seguem ignorados, como antes
+export const where = (campo, op, valor) => (op === '>' ? { campo, op, valor, __w: true } : undefined);
+export const query = (r, ...f) => { const filtros = f.filter((x) => x && x.__w); return filtros.length ? { ...r, filtros } : r; }, orderBy = nada, limit = nada, startAfter = nada;
+export const writeBatch = () => ({ set: (ref, dados) => { (window.__gravados = window.__gravados || []).push({ path: ref.path, dados, lote: true }); }, update: nada, delete: nada, commit: async () => {} });
+export const signInWithCustomToken = async (_a, t) => { window.__tokenCustom = t; return { user: usuario }; };
 export const sendSignInLinkToEmail = async () => {}, isSignInWithEmailLink = () => false, signInWithEmailLink = async () => {}, signOut = async () => {}, deleteField = () => null, serverTimestamp = () => new Date().toISOString(), increment = (n) => n;
 export const ref = nada, uploadBytes = nada, getDownloadURL = async () => '', terminate = async () => {}, clearIndexedDbPersistence = async () => {};
 `;

@@ -1,31 +1,53 @@
 import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
-import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc, signOut } from './firebase.js';
+import './texto-grande.js';   // a letra do aparelho (iPhone: Tamanho do Texto) vale no site
+import { iniciarVigia } from './vigia-tela.js';   // confere se algo quebrou no desenho da tela (aba Erros da Plataforma)
+iniciarVigia();
+import { db, auth, collection, onSnapshot, signInAnonymously, onAuthStateChanged, doc, getDoc, signOut, query, where } from './firebase.js';
+import { ouvirVitrine } from './catalogo-loja.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja, EM_PREVIA } from './tenant.js';
 import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, showToast, animarFeedbackBtn, hapticFeedback, openModal, closeModal, iconeCarrinhoVazio, iconeHistoricoVazio, customConfirm, dbStorage, haVersaoNova, conferirVersaoAgora, recarregarFresco } from './utils.js';
 import { initIA } from './ia.js';
-import { iniciarRanking, aplicarOrdem, scoreDe, destaques } from './ranking-loja.js';
+import { iniciarRanking, aplicarOrdem, scoreDe, destaques, maisPedidos } from './ranking-loja.js';
+import { contatoDaLoja, telefoneBonito, linkWhatsapp, normalizarWhatsapp, saudacaoComSacola } from './contato-lib.js';
+import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca, tintaSobre, botaoSobre } from './vitrine-lib.js';
+import { ARTES } from './arte-lib.js';
+import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_POTE } from './vitrine-arte.js';
+import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, chavePromo, contaDaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO, ehTempero, ehPotinho, NOMES_POTE, TEMPEROS_PADRAO, ORDEM_PACOTES, ORDEM_TEMPEROS, ordemDaSecao } from './pacote-lib.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
-import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras } from './tema.js';
+import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras, condominioTravado, condominioUnicoDaFeira } from './tema.js';
 import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
 import { podePagarPix } from './pix-lib.js';
-import { lerEntrega, previaDaEntrega } from './entrega-lib.js';
+import { lerEntrega, previaDaEntrega, horariosDoModo, opcoesDoDia } from './entrega-lib.js';
+import { ehIOS, navegadorIOS, deveConvidar } from './instalar-lib.js';
+import { falhaDoServidor, tentarDeNovo, textoPedidoReserva } from './pedido-reserva-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
 import { miniatura } from './foto-lib.js';
 // Foto pequena SEMPRE pelo redutor do próprio site (mesmo endereço da loja). Antes, a foto com miniatura do ImgBB
 // (fotoMini, das fotos enviadas pelo painel novo) ia direto ao i.ibb.co, e em algumas operadoras/redes esse endereço
 // não abre: a loja da Lúcia ficou sem nenhuma foto. Se o redutor falhar, a foto original entra (data-original).
 const fotoPequena = (p, largura) => miniatura(p.fotoMini || p.foto, largura);
+// Foto do CARD: celular de tela nítida (a maioria) recebe 640 px, a partir da foto de 1000 px (e não da miniatura de 400 px,
+// que ainda passava por outra redução e ficava borrada). Tela comum continua com 384 px, mais leve.
+const fotoDoCard = (p) => { const nitida = (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) >= 1.75; return nitida ? miniatura(p.foto || p.fotoMini, 640) : fotoPequena(p, 384); };
+const reservaDoCard = (p) => { const nitida = (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) >= 1.75; return reservaDaFoto(p, nitida ? (p.foto || p.fotoMini) : (p.fotoMini || p.foto), 384); };
 import { emOferta, desconto, ofertasDe, precoDoDia } from './oferta-lib.js';
 import { codigoPix, pixDaLojaValido, chaveBonita } from './pix-chave-lib.js';
 import { listaValida, listaDoCarrinho, separar, mesmoConjunto, podeConvidarAvaliar, nomeDoDia, textoDaNota } from './atalhos-lib.js';
-import { iniciarCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias } from './categorias-loja.js';
+import { iniciarCategorias, definirCategorias, aplicarCategorias, abasDeCategoria, assinaturaCategorias, nomeDaCategoria } from './categorias-loja.js';
+import { vendeNoDia, textoDosDias, diaBR, aceitaAmanha, NOMES_DIA } from './dias-lib.js';
+import { textoDeBusca, combinaBusca } from './busca-lib.js';
 import { ligarVerFoto } from './ver-foto.js';
 import { temDoisModos, modoPreferido, limparMemoria, botoesDoCard, textoNoPedido, proximaQtd } from './modo-lib.js';
 import { juntarPedidos, perfilParaAparelho, unirFavs, unirModo, sacolaParaGuardar, sacolaVale } from './conta-lib.js';
+import { resumoDoCliente, pagamentoQueVale } from './conhecido-lib.js';
 import { buscarConta, agendarGuardar, marcarConta, sairDaConta } from './conta-loja.js';
+import { temMontar, remontar, linhaMontada, chaveDaLinha, limparOpcoes } from './montar-lib.js';
+import { abrirMontar } from './montar-loja.js';
+import { dicaDoAjudante } from './ajudante-lib.js';
+import './checkout-teclado.js';   // tela de envio com o teclado aberto: campos, botão e pagamento em botões
 ligarVerFoto();   // tocar na foto da janela do produto abre ela inteira
 
 // Lista guardada no aparelho. Dado corrompido ou armazenamento bloqueado NÃO pode derrubar a loja:
@@ -56,7 +78,7 @@ const resetInatividadeTimer = () => {
     clearTimeout(inatividadeTimer);
     if (STATE.carrinho.length > 0 && !document.getElementById('modal-checkout')?.classList.contains('aberto') && !document.getElementById('modal-ia-chat')?.classList.contains('aberto')) {
         inatividadeTimer = setTimeout(() => {
-            showToast("🧺 Quer uma ideia de receita com o que já está no pedido? Toque no Ajudante.", false);
+            showToast(`🧺 ${dicaDoAjudante()}`, false);
             const btnIA = document.getElementById('btn-ia-flutuante');
             if(btnIA) { btnIA.classList.add('pulse-anim'); setTimeout(() => btnIA.classList.remove('pulse-anim'), 10000); }
         }, 180000); 
@@ -85,6 +107,7 @@ onAuthStateChanged(auth, (user) => {
         STATE.uid = user.uid;
         if (!realTimeSyncIniciado) { iniciarRealTimeSync(); realTimeSyncIniciado = true; }
         iniciarRanking(); // ordena a vitrine para este cliente (falha em silêncio)
+        setTimeout(() => contarFunil('visita'), 1500);   // depois da vitrine: contar não disputa a internet com as fotos
     } else {
         unsubscribes.forEach(u => u()); unsubscribes = []; realTimeSyncIniciado = false;
         iniciarRealTimeSync(); realTimeSyncIniciado = true;
@@ -97,9 +120,18 @@ const syncCarrinhoComPrecosAoVivo = () => {
     let modificou = false; let itensRemovidos = 0;
     STATE.carrinho.forEach(itemCart => {
         const prodAoVivo = STATE.produtos.find(p => p.id === itemCart.id);
-        if (prodAoVivo) {
+        if (prodAoVivo && (itemCart.linha || temMontar(prodAoVivo))) {
+            // produto montado: as escolhas são conferidas no cadastro de agora (opção que acabou tira a linha)
+            const nova = remontar(prodAoVivo, itemCart.opcoes, itemCart.qtd);
+            if (!nova) { itemCart.qtd = 0; itensRemovidos++; modificou = true; }
+            else if (nova.preco !== itemCart.preco || nova.linha !== itemCart.linha || nova.adicionais !== itemCart.adicionais) { Object.assign(itemCart, nova, { qtd: itemCart.qtd }); modificou = true; }
+        } else if (prodAoVivo) {
             if (itemCart.preco !== prodAoVivo.preco) { itemCart.preco = prodAoVivo.preco; modificou = true; }
+        } else if ((STATE.foraDoDia || []).some((p) => p.id === itemCart.id)) {
+            // não sai no dia escolhido: FICA na sacola, marcado (a pessoa decide: tira ou troca o dia). Nunca some em silêncio.
+            if (!itemCart.foraDoDia) { itemCart.foraDoDia = true; modificou = true; }
         } else { itemCart.qtd = 0; itensRemovidos++; modificou = true; }
+        if (prodAoVivo && itemCart.foraDoDia) { delete itemCart.foraDoDia; modificou = true; }
     });
     if (modificou) {
         STATE.carrinho = STATE.carrinho.filter(i => i.qtd > 0);
@@ -111,7 +143,8 @@ const syncCarrinhoComPrecosAoVivo = () => {
     }
 };
 
-const getCartQty = (id) => { const item = STATE.carrinho.find(x => x.id === id); return item ? item.qtd : 0; };
+const getCartQty = (id) => STATE.carrinho.reduce((t, x) => t + (x.id === id ? Number(x.qtd) || 0 : 0), 0);   // produto montado pode estar em várias linhas
+const linhasDoProduto = (id) => STATE.carrinho.filter((x) => x.id === id);
 
 // ---------------------------------------------------------------------
 // ITENS "A PESAR" — pedido em unidades de um produto vendido por quilo.
@@ -121,9 +154,55 @@ const getCartQty = (id) => { const item = STATE.carrinho.find(x => x.id === id);
 const ehAPesar = (item) => item.tipo === 'un' && isFracionavel(item.unidade);
 const pesoMedioDe = (item) => Number((STATE.produtos.find(p => p.id === item.id) || item).pesoMedio || 0);
 const valorEstimado = (item) => { const pm = pesoMedioDe(item); return pm > 0 ? (item.preco * pm / 1000) * item.qtd : null; };
+// PACOTE e PROMOÇÃO "4 por R$ 10" (js/pacote-lib.js). O produto vale pelo cadastro AO VIVO (o item da sacola pode ser velho);
+// quem cobra de verdade é o servidor, com a mesma conta (lib/pacote.js).
+const produtoDoItem = (item) => (STATE.produtos || []).find(p => p.id === item.id) || item;
+const promoDoItem = (item) => (item.tipo === 'kg' || item.linha || isFracionavel(item.unidade) ? null : promoDe(produtoDoItem(item), item.preco));
+// A promoção é da SACOLA, não do item: pacotes com a mesma promoção se juntam (2 de batata + 2 de cenoura = "4 por R$ 10").
+const linhaPromo = (item) => { const pr = promoDoItem(item); return { preco: item.preco, qtd: pr ? item.qtd : 0, promo: pr, chave: pr ? chavePromo(produtoDoItem(item), pr) : '' }; };
+const contaDaSacola = (carrinho = STATE.carrinho) => contaDaPromo(carrinho.map(linhaPromo));
+const contaDoItem = (item) => { const i = STATE.carrinho.indexOf(item); return i < 0 ? null : contaDaSacola().itens[i]; };
+const subtotalDoItem = (item) => {
+    if (!promoDoItem(item)) return item.preco * item.qtd;
+    const r = contaDoItem(item); return r ? r.sub / 100 : totalComPromo(item.preco, item.qtd, promoDoItem(item)) / 100;
+};
+const naPromoDoItem = (item) => { const r = promoDoItem(item) && contaDoItem(item); return r ? r.naPromo : 0; };
+/** Grupo da promoção do produto na sacola agora: { promo, total, completos, falta } ou null. */
+const grupoPromoDe = (p) => { const pr = p && promoDe(p); if (!pr) return null; const ch = chavePromo(p, pr); return contaDaSacola().grupos.get(ch) || { promo: pr, total: 0, completos: 0, falta: pr.qtd }; };
+/** Há outro pacote na loja com a mesma promoção? Então dá para misturar. */
+const misturaPromo = (p) => { const pr = p && ehPacote(p) && promoDe(p); if (!pr) return false; const ch = chavePromo(p, pr); return (STATE.produtos || []).some((x) => x && x.id !== p.id && x.ativo !== false && ehPacote(x) && chavePromo(x, promoDe(x)) === ch); };
+/** Mudou um pacote: os outros da mesma promoção mudam de valor também (cartão e linha da sacola). */
+const repintarGrupoPromo = (id) => {
+    const p = produtoPorId(id), pr = p && promoDe(p); if (!pr || !ehPacote(p)) return;
+    const ch = chavePromo(p, pr);
+    STATE.carrinho.forEach((it) => {
+        if (it.id === id || chavePromo(produtoDoItem(it), promoDoItem(it)) !== ch) return;
+        atualizarBadgesDOM(it.id);
+        const row = document.getElementById(`cart-row-${it.id}`); if (!row) return;
+        const price = row.querySelector('.item-preco'); if (price) price.outerHTML = precoLinhaHtml(it);
+        const pal = row.querySelector('.item-palavras'); if (pal) pal.innerHTML = palavrasHtml(it);
+    });
+};
+const itemEhPacote = (item) => ehPacote(produtoDoItem(item));
+// CANTINHO DOS TEMPEROS (js/pacote-lib.js): vale pela categoria escolhida em Aparência → Vitrine
+const cfgTemperos = () => vitrineDaLoja().temperos;
+const ehTemp = (p) => ehTempero(p, cfgTemperos());
+const ehPote = (p) => ehPotinho(p, cfgTemperos());
+const itemEhPote = (item) => item.tipo !== 'kg' && ehPote(produtoDoItem(item));
+/** Quantidade em palavras, para não haver dúvida do que vai: "2 batatas · ≈ 360 g", "1,5 kg", "4 pacotes de 500 g". */
+const qtdEmPalavras = (item) => {
+    const p = produtoDoItem(item), n = Number(item.qtd) || 0;
+    if (isFracionavel(item.unidade) && item.tipo !== 'un') return `${formatarQuantidadeVisual(n, true)} ${String(item.unidade || 'kg').toLowerCase()}`;
+    if (itemEhPacote(item)) { const peso = pesoDoPacote(p); return `${emPalavras(Math.round(n), NOMES_PACOTE)}${peso ? ` de ${peso}` : ''}`; }
+    if (itemEhPote(item)) return emPalavras(Math.round(n), NOMES_POTE);
+    if (isFracionavel(item.unidade)) { const pm = pesoMedioDe(item); return `${emPalavras(Math.round(n), nomesDaUnidade(p.nomeUn))}${pm > 0 ? ` · ${pesoAproximado(pm * n)}` : ''}`; }
+    return emPalavras(Math.round(n), { um: 'unidade', varios: 'unidades' });
+};
 
 const textoQtdCard = (item) => {
     const frac = isFracionavel(item.unidade);
+    if (!frac && itemEhPacote(item)) return emPalavras(Math.round(Number(item.qtd) || 0), NOMES_PACOTE);
+    if (!frac && itemEhPote(item)) return emPalavras(Math.round(Number(item.qtd) || 0), NOMES_POTE);
     if (frac && item.tipo !== 'un') return `${formatarQuantidadeVisual(item.qtd, true)} ${String(item.unidade || 'kg').toLowerCase()}`;
     return `${item.qtd} ${!frac && item.unidade && item.unidade !== 'un' ? item.unidade : 'un'}`;
 };
@@ -169,6 +248,41 @@ const pintarDoisModos = (area, p, item) => {
     }
     if (foco) (area.querySelector(`[data-action="${foco}"]`) || area.querySelector('[data-action="inc"], .modo-btn'))?.focus({ preventScroll: true });
 };
+// MONTAR PEDIDO (açaí, pastel...): o card tem um botão só, que abre a tela de montar. Com o produto na sacola,
+// o botão diz quantos já vão ("2 na sacola") e monta outro.
+const pintarBotaoMontar = (area, p) => {
+    const n = getCartQty(p.id), sig = `m|${n}`;
+    area.closest('.produto-card')?.classList.toggle('na-sacola', n > 0);
+    if (area.dataset.sig === sig) return;
+    area.dataset.sig = sig; area.classList.remove('dupla'); area.classList.add('montar');
+    const nome = escapeHTML(p.nome || '');
+    area.innerHTML = `<button type="button" class="card-add card-add--montar" data-action="montar" data-id="${escapeHTML(p.id)}" aria-label="${n ? `Montar outro ${nome}` : `Montar ${nome}`}">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M4 12h7M4 17h5M17 10v8M13 14h8"/></svg><span>${n ? 'Mais um' : 'Montar o seu'}</span>${n ? `<b class="montar-n">${n}</b>` : ''}</button>`;
+};
+const abrirMontarDoProduto = (id, linhaChave = null, inicial = null) => {
+    const p = produtoPorId(id); if (!p) return;
+    const linha = linhaChave ? STATE.carrinho.find((x) => chaveDaLinha(x) === linhaChave) : null;
+    abrirMontar({ produto: p, linha, inicial: linha ? null : inicial, fmt, foto: p.foto ? fotoPequena(p, 828) : '', rotuloBotao: STATE.config.textoBotao || 'Pôr na sacola', aoConfirmar: porMontadoNaSacola });
+};
+/** O cliente terminou de montar: entra na sacola (ou troca a linha que estava sendo alterada). Igual + igual = soma. */
+const porMontadoNaSacola = (p, conferido, qtd, antiga) => {
+    const nova = linhaMontada(p, conferido, qtd);
+    if (antiga) STATE.carrinho = STATE.carrinho.filter((x) => x !== antiga);
+    const igual = STATE.carrinho.find((x) => chaveDaLinha(x) === nova.linha);
+    if (igual) igual.qtd = Math.min(50, Number(igual.qtd) + nova.qtd); else STATE.carrinho.push(nova);
+    if (!antiga) { contarFunil('adicionou'); showToast(`${nova.qtd > 1 ? `${nova.qtd}× ` : ''}${p.nome} na sacola.`); }
+    persistirCarrinhoComDebounce(); atualizarBadgesDOM(p.id, getCartQty(p.id), true); renderCarrinhoCompleto(); hapticFeedback();
+    const card = document.querySelector(`#lista-produtos .produto-card[data-id="${CSS.escape(String(p.id))}"]`);
+    if (card && !antiga) voarParaPedido(card);
+};
+/** + e − de uma linha montada da sacola. */
+const mudarLinhaMontada = (chave, delta, fixo = false) => {
+    const item = STATE.carrinho.find((x) => chaveDaLinha(x) === chave); if (!item) return;
+    const n = fixo ? Math.round(delta) : Math.round(Number(item.qtd) + delta);
+    if (n <= 0) STATE.carrinho = STATE.carrinho.filter((x) => x !== item); else item.qtd = Math.min(50, n);
+    persistirCarrinhoComDebounce(); atualizarBadgesDOM(item.id); renderCarrinhoCompleto();
+};
+
 // produto pelo id sem varrer a lista inteira a cada card (com catálogo grande, a vitrine fazia N × N buscas)
 let _mapaProdutos = null, _mapaDe = null;
 const produtoPorId = (id) => { if (_mapaDe !== STATE.produtos) { _mapaDe = STATE.produtos; _mapaProdutos = new Map((STATE.produtos || []).map((p) => [p.id, p])); } return _mapaProdutos.get(id); };
@@ -176,11 +290,27 @@ const pintarAcao = (area, produtoId, animar) => {
     const item = STATE.carrinho.find(x => x.id === produtoId);
     area.closest('.produto-card')?.classList.toggle('na-sacola', !!item);
     const prod = produtoPorId(produtoId);
+    if (prod && temMontar(prod)) return pintarBotaoMontar(area, prod);
+    if (area.classList.contains('montar')) { area.classList.remove('montar'); delete area.dataset.sig; area.textContent = ''; }
     if (prod && temDoisModos(prod)) return pintarDoisModos(area, prod, item);
     if (area.classList.contains('dupla')) { area.classList.remove('dupla'); delete area.dataset.sig; area.textContent = ''; }   // o produto deixou de ser por quilo
 
     const seletor = area.querySelector('.card-qtd');
-    if (item && seletor) { seletor.querySelector('output').textContent = textoQtdCard(item); return; }
+    const pac = ehPacote(prod), pote = !pac && ehPote(prod), promo = prod ? promoDe(prod) : null;
+    // com pacote ou promoção, o contador diz o valor (a promoção muda a conta) e quanto falta para ela
+    const extra = (it) => (pac || promo) && it ? `<small>${fmt(subtotalDoItem(it))}</small>` : '';
+    // "quanto falta" só antes de completar a 1ª promoção (com 5 de "4 por R$ 10", "mais 3" confundiria)
+    // pacotes com a mesma promoção contam juntos: o "falta" é do grupo todo na sacola
+    const dica = (it) => {
+        const g = it && promo ? grupoPromoDe(prod) : null, f = g && !g.completos ? g.falta : 0;
+        return f ? `<p class="promo-falta">Mais ${f}${misturaPromo(prod) ? ', de qualquer pacote,' : ''} e os ${promo.qtd} saem ${escapeHTML(textoPromo(promo).replace(/^\d+ por /, ''))}</p>` : '';
+    };
+    if (item && seletor) {
+        const out = seletor.querySelector('output');
+        if (pac || promo) out.innerHTML = `<b>${escapeHTML(textoQtdCard(item))}</b>${extra(item)}`; else out.textContent = textoQtdCard(item);
+        area.querySelector('.promo-falta')?.remove(); if (dica(item)) seletor.insertAdjacentHTML('afterend', dica(item));
+        return;
+    }
     if (!item && area.querySelector('.card-add')) return;
 
     const tinhaFoco = area.contains(document.activeElement);
@@ -189,10 +319,10 @@ const pintarAcao = (area, produtoId, animar) => {
     area.innerHTML = item
         ? `<div class="card-qtd${classe}">
                <button type="button" data-action="dec" data-id="${escapeHTML(produtoId)}" aria-label="Tirar um de ${nome}">−</button>
-               <output aria-live="polite">${escapeHTML(textoQtdCard(item))}</output>
+               <output aria-live="polite">${pac || promo ? `<b>${escapeHTML(textoQtdCard(item))}</b>${extra(item)}` : escapeHTML(textoQtdCard(item))}</output>
                <button type="button" data-action="inc" data-id="${escapeHTML(produtoId)}" aria-label="Colocar mais um de ${nome}">+</button>
-           </div>`
-        : `<button type="button" class="card-add${classe}" data-action="add" data-id="${escapeHTML(produtoId)}" aria-label="Adicionar ${nome}">Adicionar</button>`;
+           </div>${dica(item)}`
+        : `<button type="button" class="card-add${pac ? ' card-add--pacote' : pote ? ' card-add--tempero' : ''}${classe}" data-action="add" data-id="${escapeHTML(produtoId)}" aria-label="${pac ? `Adicionar 1 pacote de ${nome}` : pote ? `Adicionar 1 potinho de ${nome}` : `Adicionar ${nome}`}">${pac ? '+ 1 pacote' : pote ? '+ 1 potinho' : 'Adicionar'}</button>`;
     if (tinhaFoco) area.querySelector('[data-action="inc"], .card-add')?.focus({ preventScroll: true });
 };
 
@@ -220,10 +350,14 @@ const voarParaPedido = (card) => {
     ], { duration: 560, easing: 'cubic-bezier(.4,0,.2,1)' });
     const chegou = () => { v.remove(); alvo.classList.remove('pulo'); void alvo.getBoundingClientRect(); alvo.classList.add('pulo'); };
     anim.onfinish = chegou; anim.oncancel = () => v.remove();
+    setTimeout(() => v.remove(), 1500);      // garantia: se o navegador não avisar o fim da animação (iPhone em segundo plano, aba trocada), a foto não fica solta na tela
 };
 
 const precoLinhaHtml = (item) => {
-    if (!ehAPesar(item)) return `<span class="item-preco">${fmt(item.preco * item.qtd)}</span>`;
+    if (!ehAPesar(item)) {
+        const cheio = item.preco * item.qtd, valor = subtotalDoItem(item);
+        return valor < cheio - 0.004 ? `<span class="item-preco item-preco--promo">${fmt(valor)}<small><s>${fmt(cheio)}</s></small></span>` : `<span class="item-preco">${fmt(valor)}</span>`;
+    }
     const v = valorEstimado(item);
     return v == null
         ? `<span class="item-preco item-preco--pesar">a pesar</span>`
@@ -247,6 +381,7 @@ const atualizarLinhaCarrinhoDOM = (id, novaQtd, subtotalFmt, tipo) => {
             
             const item = STATE.carrinho.find(x => x.id === id);
             if (price && item) price.outerHTML = precoLinhaHtml(item);
+            const pal = row.querySelector('.item-palavras'); if (pal && item) pal.innerHTML = palavrasHtml(item);
         }
     }
 };
@@ -284,7 +419,7 @@ const atualizarRodapeCarrinhoDOM = () => {
             const v = valorEstimado(item);
             if (v == null) semEstimativa = true; else estimado += v;
         } else {
-            totalExato += (item.preco * item.qtd);
+            totalExato += subtotalDoItem(item);
             qtdDistinta += (isFracionavel(item.unidade) ? 1 : item.qtd);
         }
     });
@@ -352,7 +487,9 @@ const atualizarRodapeCarrinhoDOM = () => {
     const lojaAberta = STATE.config.lojaAberta !== false;
     // Cliente da feira: quem manda são os dias da FEIRA. Fora do dia, o pedido vai para o próximo dia de feira.
     const ent = entregaDaFeira();
-    const hojePermitido = ent ? true : feiraDoClienteAqui() ? false : (STATE.config.diasAbertos || [0,1,2,3,4,5,6]).includes(new Date(Date.now() - 3 * 3600000).getUTCDay());
+    const hojePermitido = entregaDoPedido() ? true : feiraDoClienteAqui() ? false : hojeAbre();
+    const foraDoDia = STATE.carrinho.filter((i) => i.foraDoDia);
+    pintarEscolhaDia();
     const bannerFeira = document.getElementById('banner-feira');
     if (bannerFeira) { const futuro = lojaAberta && ent && !ent.hoje; bannerFeira.textContent = futuro ? `Hoje não tem feira. Seu pedido vai para ${textoDoDia(ent.dia)}.` : ''; bannerFeira.classList.toggle('visivel', !!futuro); }
     
@@ -361,7 +498,10 @@ const atualizarRodapeCarrinhoDOM = () => {
         bannerMin.classList.remove('visivel'); bannerFechado.classList.add('visivel');
     } else { 
         bannerFechado.classList.remove('visivel'); 
-        if (falta > 0) { 
+        if (foraDoDia.length) {
+            btnF.disabled = true; btnF.textContent = foraDoDia.length > 1 ? `Tire os ${foraDoDia.length} itens que não saem nesse dia` : `Tire "${foraDoDia[0].nome}" (não sai nesse dia)`;
+            bannerMin.classList.remove('visivel');
+        } else if (falta > 0) { 
             btnF.disabled = true; btnF.textContent = `Faltam ${fmt(falta)}`;
             bannerMin.textContent = `Pedido mínimo: ${fmt(minimo)}`; bannerMin.classList.add('visivel'); 
         } else { 
@@ -381,36 +521,55 @@ const renderSkeletons = () => {
     grid.innerHTML = skeletonHtml;
 };
 
+// Sacola em GRUPOS (só quando há mais de um tipo): o que a banca pesa, os pacotes fechados e o resto por unidade.
+// Cada item diz em palavras o que vai ("2 batatas · ≈ 360 g", "4 pacotes de 500 g"): é aqui que a pessoa confere.
+const GRUPOS_SACOLA = [
+    { id: 'peso', titulo: 'Pesados na hora', sub: 'valor final pela balança', ico: () => ARTE_BALANCA },
+    { id: 'pacote', titulo: 'Pacotes prontos', sub: 'preço fechado', ico: () => ARTE_PACOTE },
+    { id: 'tempero', titulo: 'Temperos', sub: 'preço por potinho', ico: () => ARTE_POTE },
+    { id: 'un', titulo: 'Por unidade', sub: '', ico: () => '' },
+];
+const grupoDoItem = (item) => (isFracionavel(item.unidade) ? 'peso' : itemEhPacote(item) ? 'pacote' : itemEhPote(item) ? 'tempero' : 'un');
+const palavrasHtml = (item) => {
+    const pr = promoDoItem(item), usou = naPromoDoItem(item) > 0;
+    return `<b>${escapeHTML(qtdEmPalavras(item))}</b>${usou ? `<small>promoção ${escapeHTML(textoPromo(pr))}</small>` : ''}`;
+};
 const renderCarrinhoCompleto = () => {
     const cont = document.getElementById('carrinho-itens');
     STATE.produtos.forEach(p => atualizarBadgesDOM(p.id));   // cards acompanham o pedido
     if (STATE.carrinho.length === 0) {
-        cont.innerHTML = `<div class="empty-state">${iconeCarrinhoVazio}<p>Seu pedido está vazio</p><span>Adicione produtos para começar.</span></div>`;
+        cont.innerHTML = `<div class="empty-state">${iconeCarrinhoVazio}<p>${SACOLA_VAZIA.titulo}</p><span>${SACOLA_VAZIA.dica}</span></div>`;
         atualizarRodapeCarrinhoDOM(); return;
     }
-    let html = '';
-    STATE.carrinho.forEach(item => {
-        const sub = item.preco * item.qtd; 
+    const linha = (item) => {
         const isPeso = isFracionavel(item.unidade) && item.tipo !== 'un';
-        
-        const precoHtml = precoLinhaHtml(item);
-
-        html += `
-        <article class="carrinho-item" id="cart-row-${escapeHTML(item.id)}">
-            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(fotoPequena(item, 128))}" data-original="${escapeHTML(item.foto)}" alt="${escapeHTML(item.nome)}" loading="lazy" width="48" height="48">` : ''}</div>
+        const prod = produtoDoItem(item);
+        // pediu poucas unidades de algo pesado e existe o pacote "parecido": só informa, sem perguntar nada
+        const parecido = item.tipo === 'un' && isFracionavel(item.unidade) && Math.round(item.qtd) <= 3 ? pacoteParecido(prod, STATE.produtos) : null;
+        return `
+        <article class="carrinho-item${itemEhPacote(item) ? ' carrinho-item--pacote' : itemEhPote(item) ? ' carrinho-item--tempero' : ''}${item.linha ? ' carrinho-item--montado' : ''}" id="cart-row-${escapeHTML(chaveDaLinha(item))}">
+            <div class="item-emoji">${item.foto ? `<img src="${escapeHTML(fotoPequena(item, 128))}" data-original="${escapeHTML(item.foto)}" alt="${escapeHTML(item.nome)}" loading="lazy" width="48" height="48">` : (itemEhPacote(item) ? ARTE_PACOTE : itemEhPote(item) ? ARTE_POTE : '')}</div>
             <div class="item-meio">
                 <h3 class="item-nome">${escapeHTML(item.nome)} </h3>
+                <p class="item-palavras">${palavrasHtml(item)}</p>
+                ${item.foraDoDia ? `<p class="item-fora">Não sai para ${escapeHTML(nomeDoDiaDoPedido())}${(() => { const f = (STATE.foraDoDia || []).find((p) => p.id === item.id); return f ? `: só ${escapeHTML(textoDosDias(f.dias))}` : ''; })()}. <button type="button" data-tirar-linha="${escapeHTML(chaveDaLinha(item))}">Tirar da sacola</button></p>` : ''}
+                ${item.linha ? `<p class="item-adicionais">${item.adicionais ? escapeHTML(item.adicionais) : 'Sem adicionais'}</p><button type="button" class="item-alterar" data-action="montar" data-id="${escapeHTML(item.id)}" data-linha="${escapeHTML(item.linha)}">Alterar</button>` : ''}
                 <div class="qtd-ctrl">
-                    <button class="btn-qtd" data-action="dec" data-id="${escapeHTML(item.id)}" aria-label="Diminuir ${escapeHTML(item.nome)}">−</button>
-                    <input class="qtd-input" type="text" inputmode="decimal" value="${escapeHTML(formatarQuantidadeVisual(Number(item.qtd) || 0, isPeso))}" data-id="${escapeHTML(item.id)}" aria-label="Quantidade de ${escapeHTML(item.nome)}" enterkeyhint="done">
-                    <button class="btn-qtd" data-action="inc" data-id="${escapeHTML(item.id)}" aria-label="Aumentar ${escapeHTML(item.nome)}">+</button>
-                    <span class="qtd-unid">${isPeso ? escapeHTML(String(item.unidade || 'kg').toLowerCase()) : 'un'}</span>
+                    <button class="btn-qtd" data-action="dec" data-id="${escapeHTML(item.id)}"${item.linha ? ` data-linha="${escapeHTML(item.linha)}"` : ''} aria-label="Diminuir ${escapeHTML(item.nome)}">−</button>
+                    <input class="qtd-input" type="text" inputmode="${item.linha ? 'numeric' : 'decimal'}" value="${escapeHTML(formatarQuantidadeVisual(Number(item.qtd) || 0, isPeso))}" data-id="${escapeHTML(item.id)}"${item.linha ? ` data-linha="${escapeHTML(item.linha)}"` : ''} aria-label="Quantidade de ${escapeHTML(item.nome)}" enterkeyhint="done">
+                    <button class="btn-qtd" data-action="inc" data-id="${escapeHTML(item.id)}"${item.linha ? ` data-linha="${escapeHTML(item.linha)}"` : ''} aria-label="Aumentar ${escapeHTML(item.nome)}">+</button>
+                    <span class="qtd-unid">${isPeso ? escapeHTML(String(item.unidade || 'kg').toLowerCase()) : itemEhPacote(item) ? 'pct' : itemEhPote(item) ? 'pote' : 'un'}</span>
                 </div>
+                ${parecido ? `<button type="button" class="item-tambem" data-action="ver-pacote" data-id="${escapeHTML(parecido.id)}">Também tem em pacote: <u>${escapeHTML(parecido.nome)}</u></button>` : ''}
             </div>
-            ${precoHtml}
+            ${precoLinhaHtml(item)}
         </article>`;
-    });
-    cont.innerHTML = html; atualizarRodapeCarrinhoDOM();
+    };
+    const grupos = GRUPOS_SACOLA.map(g => ({ ...g, itens: STATE.carrinho.filter(i => grupoDoItem(i) === g.id) })).filter(g => g.itens.length);
+    cont.innerHTML = grupos.length > 1
+        ? grupos.map(g => `<h4 class="sacola-grupo sacola-grupo--${g.id}">${g.ico()}<span>${g.titulo}</span>${g.sub ? `<small>${g.sub}</small>` : ''}</h4>${g.itens.map(linha).join('')}`).join('')
+        : STATE.carrinho.map(linha).join('');
+    atualizarRodapeCarrinhoDOM();
 };
 
 let debounceSalvarCarrinho;
@@ -434,26 +593,115 @@ const agoraLoja = () => Date.now() + ACERTO_RELOGIO;
 const pintarListaDeCondominios = () => {
     const daLoja = Array.isArray(STATE.config.condominios) ? STATE.config.condominios : [];
     const ja = new Set(daLoja.filter((c) => c && c.nome).map((c) => normNome(c.nome)));
-    const lista = daLoja.concat(condominiosDasFeiras().filter((c) => ![c.nome, ...(c.apelidos || [])].some((n) => ja.has(normNome(n)))).map(({ apelidos, ...c }) => c));
-    try { endCheckout.definirLista(lista); endTopo.definirLista(lista); } catch (_) { /* campos ainda não montados */ }
+    const daFeira = condominiosDasFeiras();
+    // Cliente de uma feira (entrou pelo link dela): só vê os condomínios DA feira dele. Para ver os de outra feira, só com o link dela.
+    const soDaFeira = !!feiraDoClienteAqui() && daFeira.length > 0;
+    const lista = soDaFeira ? daFeira.map(({ apelidos, ...c }) => c)
+        : daLoja.concat(daFeira.filter((c) => ![c.nome, ...(c.apelidos || [])].some((n) => ja.has(normNome(n)))).map(({ apelidos, ...c }) => c));
+    try { endCheckout.definirLista(lista, { semOutro: soDaFeira }); endTopo.definirLista(lista, { semOutro: soDaFeira }); } catch (_) { /* campos ainda não montados */ }
+    travarCondominio();
+};
+// Condomínio já escolhido e que é da feira do cliente: fica TRAVADO (só quadra e lote mudam) e o topo mostra só "Entregar: Qd.. · Lt..".
+// Feira com UM só condomínio (link da feira do Atenas, por exemplo): o condomínio já vem travado nele, sem pedir para escolher.
+const travarCondominio = () => {
+    const e = lerEnderecoSalvo(), salvo = e && e.condominio ? condominioTravado(e.condominio) : null;
+    const unico = salvo ? null : condominioUnicoDaFeira();
+    const c = salvo || unico, zerar = !!unico && !!(e && e.condominio);      // endereço guardado era de outro condomínio: não reaproveita quadra e lote
+    try { endCheckout.travar(c, { zerar }); endTopo.travar(c, { zerar }); } catch (_) { /* campos ainda não montados */ }
+    pintarResumoEndereco();
 };
 const normNome = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 document.addEventListener('feiras-da-loja', () => pintarListaDeCondominios());
+document.addEventListener('feira-do-cliente', () => pintarListaDeCondominios());
 /** Para quando é o pedido de um cliente da feira (null = não é cliente de feira desta banca). */
 const entregaDaFeira = () => { const f = feiraDoClienteAqui(); return f ? proximaEntrega(f, agoraLoja()) : null; };
 /** Dia da semana que decide o preço: o da entrega da feira do cliente, ou hoje (Brasília). Mesmo critério do servidor. */
-const diaDoPreco = () => { const e = entregaDaFeira(); return e ? e.dow : new Date(agoraLoja() - 3 * 3600000).getUTCDay(); };
+// PEDIDO PARA AMANHÃ (quem não é cliente de feira): "Para quando? Hoje | Amanhã" no alto da vitrine. A escolha vale até a
+// meia-noite (guarda a DATA de amanhã; no dia seguinte volta sozinha para "hoje"). Aparece quando a loja tem produto que não sai
+// todo dia (ou ligou "sempre" no painel) e amanhã é dia de abrir. Hoje fechado e amanhã aberto: o pedido já vai para amanhã.
+const hojeAbre = () => (Array.isArray(STATE.config.diasAbertos) && STATE.config.diasAbertos.length ? STATE.config.diasAbertos : [0, 1, 2, 3, 4, 5, 6]).includes(diaBR(agoraLoja()).dow);
+const podeAmanha = () => !feiraDoClienteAqui() && aceitaAmanha(STATE.config, STATE.produtosTodos || [], agoraLoja());
+const amanhaEscolhido = () => { try { return localStorage.getItem(chave('pedido_para')) === diaBR(agoraLoja(), 1).dia; } catch (_) { return false; } };
+const entregaAmanha = () => { if (!podeAmanha() || (!amanhaEscolhido() && hojeAbre())) return null; const a = diaBR(agoraLoja(), 1); return { dia: a.dia, dow: a.dow, hoje: false, amanha: true }; };
+/** Para quando é o pedido: o dia da feira do cliente, amanhã (escolhido) ou null = hoje. */
+const entregaDoPedido = () => entregaDaFeira() || entregaAmanha();
+/** Dia da semana que decide o preço E o que aparece na vitrine: o da entrega, ou hoje (Brasília). Mesmo critério do servidor. */
+const diaDoPreco = () => { const e = entregaDoPedido(); return e ? e.dow : diaBR(agoraLoja()).dow; };
+const nomeDoDiaDoPedido = () => { const e = entregaDoPedido(); return e && e.amanha ? `amanhã (${NOMES_DIA[e.dow]})` : e && !e.hoje ? textoDoDia(e.dia) : `hoje (${NOMES_DIA[diaBR(agoraLoja()).dow]})`; };
 /** Aviso "seu pedido é para..." dentro da tela de envio. */
 const pintarAvisoDeEntrega = () => {
-    const ent = entregaDaFeira(), aviso = document.getElementById('checkout-entrega'); if (!aviso) return;
-    aviso.textContent = ent ? (ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.`) : ''; aviso.hidden = !ent;
+    const ent = entregaDoPedido(), aviso = document.getElementById('checkout-entrega'); if (!aviso) return;
+    aviso.textContent = !ent ? '' : ent.amanha ? `📅 Seu pedido é para amanhã, ${textoDoDia(ent.dia)}.` : ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.`;
+    aviso.hidden = !ent;
 };
-document.addEventListener('feira-do-cliente', () => { try { atualizarRodapeCarrinhoDOM(); } catch (_) { /* carrinho ainda não montado */ } });
+let _escolhaDiaHtml = null;
+const pintarEscolhaDia = () => {
+    const box = document.getElementById('escolha-dia'); if (!box) return;
+    let html = '';
+    if (podeAmanha()) {
+        const hoje = diaBR(agoraLoja()), am = diaBR(agoraLoja(), 1), amanha = !!entregaAmanha();
+        html = !hojeAbre()
+            ? `<p class="ed-so"><b>Hoje a banca não abre.</b> Seu pedido é para amanhã, ${NOMES_DIA[am.dow]}.</p>`
+            : `<span class="ed-rot">Para quando é o pedido?</span><div class="ed-ops" role="radiogroup" aria-label="Para quando é o pedido">`
+              + `<button type="button" class="ed-op${amanha ? '' : ' on'}" role="radio" aria-checked="${!amanha}" data-dia-pedido="hoje"><b>Hoje</b><small>${NOMES_DIA[hoje.dow]}</small></button>`
+              + `<button type="button" class="ed-op${amanha ? ' on' : ''}" role="radio" aria-checked="${amanha}" data-dia-pedido="amanha"><b>Amanhã</b><small>${NOMES_DIA[am.dow]}</small></button></div>`;
+    }
+    if (html === _escolhaDiaHtml) return;
+    _escolhaDiaHtml = html; box.innerHTML = html; box.hidden = !html;
+};
+const trocarDiaDoPedido = (amanha) => {
+    try { if (amanha) localStorage.setItem(chave('pedido_para'), diaBR(agoraLoja(), 1).dia); else localStorage.removeItem(chave('pedido_para')); } catch (_) { /* aparelho sem armazenamento: vale só nesta tela */ }
+    document.dispatchEvent(new CustomEvent('feira-do-cliente'));   // refaz preços, vitrine e sacola para o dia novo
+    pintarEscolhaDia(); pintarAvisoDeEntrega();
+    const fora = STATE.carrinho.filter((i) => i.foraDoDia);
+    if (fora.length) showToast(`${fora.map((i) => i.nome).join(', ')} não ${fora.length > 1 ? 'saem' : 'sai'} ${amanha ? 'amanhã' : 'hoje'}. Tire da sacola ou volte para ${amanha ? 'hoje' : 'amanhã'}.`, true);
+    else showToast(amanha ? `Pronto: mostrando o que tem amanhã, ${NOMES_DIA[diaBR(agoraLoja(), 1).dow]}.` : 'Pronto: mostrando o que tem hoje.');
+};
+document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-dia-pedido]'); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    const amanha = b.dataset.diaPedido === 'amanha';
+    if (amanha !== !!entregaAmanha()) trocarDiaDoPedido(amanha);
+});
+// BUSCA: o que combina com a busca mas não sai no dia escolhido ("Alface: só quarta") e, se o outro dia resolve, o botão para trocar.
+const notaDeOutroDia = (termo) => {
+    const fora = (STATE.foraDoDia || []).filter((p) => combinaBusca(textoDeBusca(p, nomeDaCategoria(p.cat)), termo)).slice(0, 6);
+    if (!fora.length) return '';
+    const amanha = !!entregaAmanha(), outro = diaBR(agoraLoja(), amanha ? 0 : 1).dow;
+    const resolve = podeAmanha() && hojeAbre() && !entregaDaFeira() && fora.some((p) => vendeNoDia(p, outro));
+    const itens = fora.map((p) => `<li><b>${escapeHTML(p.nome)}</b> <span>sai ${escapeHTML(textoDosDias(p.dias))}</span></li>`).join('');
+    return `<div id="busca-outro-dia" class="busca-outro-dia" style="grid-column: 1/-1; order: 99999;"><p>Não ${fora.length > 1 ? 'saem' : 'sai'} para ${escapeHTML(nomeDoDiaDoPedido())}:</p><ul>${itens}</ul>`
+        + (resolve ? `<button type="button" class="btn-outro-dia" data-dia-pedido="${amanha ? 'hoje' : 'amanha'}">Ver o que tem ${amanha ? 'hoje' : `amanhã (${NOMES_DIA[outro]})`}</button>` : '') + '</div>';
+};
+// "Não achei": abre o WhatsApp da banca já com a pergunta escrita. Ninguém fica sem caminho.
+const botaoNaoAchei = (termo) => {
+    const k = contatoDaLoja(STATE.config), numero = k.whatsapp || normalizarWhatsapp(STATE.config.wpp);
+    if (!numero) return '';
+    const t = String(termo || '').trim().slice(0, 60);
+    return `<a class="btn-nao-achei" href="${escapeHTML(linkWhatsapp(numero, `Oi! Vocês têm ${t}?`))}" target="_blank" rel="noopener noreferrer">${ICO_ZAP}<span>Perguntar "${escapeHTML(t)}" no WhatsApp</span></a>`;
+};
+document.addEventListener('feira-do-cliente', () => { try { atualizarRodapeCarrinhoDOM(); } catch (_) { /* carrinho ainda não montado */ } try { pintarModo(); } catch (_) { /* tela de envio ainda não montada */ } });
 const feiraDoEnderecoSalvo = (e) => { if (e && e.condominio) feiraPeloCondominio(e.condominio, perguntarFeira).then((id) => { if (id) guardarNaConta(); }).catch(() => {}); };
 
 // Modificado para aceitar o "tipo" de compra (Kg ou Un)
+// Na PRIMEIRA vez que um produto entra na sacola: diz em palavras o que entrou. Só informa, não pergunta nada.
+//  - pacote: "1 pacote de Batata baby (500 g) na sacola."
+//  - 1 unidade de algo pesado que também existe em pacote: "1 batata de Batata inglesa (≈ 180 g)... Também tem em pacote: ..."
+const _avisados = new Set();
+const avisarAoAdicionar = (p, tipo) => {
+    if (!p || _avisados.has(p.id)) return;
+    if (ehPacote(p)) { _avisados.add(p.id); const peso = pesoDoPacote(p); showToast(`1 pacote de ${p.nome}${peso ? ` (${peso})` : ''} na sacola.`); return; }
+    if (ehPote(p)) { _avisados.add(p.id); showToast(`1 potinho de ${p.nome} na sacola.`); return; }
+    if (tipo === 'un' && isFracionavel(p.unidade)) {
+        const par = pacoteParecido(p, STATE.produtos); if (!par) return;
+        _avisados.add(p.id);
+        const pm = Number(p.pesoMedio || 0);
+        showToast(`${p.nome}: 1 ${nomesDaUnidade(p.nomeUn).um}${pm > 0 ? ` (${pesoAproximado(pm)})` : ''} na sacola. Também tem em pacote: ${par.nome}.`);
+    }
+};
 const modificarCarrinho = (id, delta, fixo = false, tipoCompraForcado = null) => {
     const p = STATE.produtos.find(x => x.id === id); if (!p) return;
+    if (temMontar(p)) { if (delta > 0) abrirMontarDoProduto(id); return; }   // montado: escolhe as opções antes
     
     const idx = STATE.carrinho.findIndex(x => x.id === id);
     const itemAtual = idx > -1 ? STATE.carrinho[idx] : null;
@@ -481,16 +729,19 @@ const modificarCarrinho = (id, delta, fixo = false, tipoCompraForcado = null) =>
     } else if (valParaAplicar > 0) { 
         novaQtd = fixFloat(fixo ? valParaAplicar : (isPeso ? 1.0 : 1)); 
         STATE.carrinho.push({...p, qtd: novaQtd, tipo: tipoAtual}); 
+        contarFunil('adicionou');
+        avisarAoAdicionar(p, tipoAtual);
     }
     
     persistirCarrinhoComDebounce(); atualizarBadgesDOM(id, novaQtd, true);
-    atualizarLinhaCarrinhoDOM(id, novaQtd, fmt(p.preco * novaQtd), tipoAtual); atualizarRodapeCarrinhoDOM();
+    atualizarLinhaCarrinhoDOM(id, novaQtd, fmt(p.preco * novaQtd), tipoAtual); repintarGrupoPromo(id); atualizarRodapeCarrinhoDOM();
 };
 
 // Etiqueta de preço do card. A UNIDADE vem em destaque; o quilo fica de referência.
 const NOME_UNIDADE = { un: 'a unidade', 'maço': 'o maço', maco: 'o maço', bdj: 'a bandeja', kit: 'o kit', kg: 'o quilo', kilo: 'o quilo', quilograma: 'o quilo', l: 'o litro', litro: 'o litro', g: 'o grama', grama: 'o grama' };
 const nomeUnidade = (u) => NOME_UNIDADE[String(u || 'un').toLowerCase()] || `por ${escapeHTML(u)}`;
-const etiquetaHtml = (p) => etiquetaDeOferta(p) + etiquetaBase(p);
+const etiquetaHtml = (p) => etiquetaDeOferta(p) + etiquetaBase(p) + etiquetaPromo(p);
+const etiquetaPromo = (p) => { const pr = promoDe(p); return pr ? `<span class="etq-promo">${escapeHTML(textoPromo(pr))}</span>${misturaPromo(p) ? '<span class="etq-mistura">pode misturar pacotes</span>' : ''}` : ''; };
 // preço antigo riscado (o preço que vale continua sendo o de baixo; o servidor só conhece esse)
 // Quando a etiqueta mostra o preço POR UNIDADE (item pesado com peso médio), o preço antigo também vai por unidade:
 // comparar "R$ 14,85 o quilo" com "R$ 4,46 a unidade" faria a oferta parecer maior do que é.
@@ -499,37 +750,66 @@ const etiquetaDeOferta = (p) => {
     const pm = Number(p.pesoMedio || 0), porUnidade = isFracionavel(p.unidade) && pm > 0 && !temDoisModos(p);
     return `<div class="etq-de">de <s>${fmt(porUnidade ? p.precoDe * pm / 1000 : p.precoDe)}</s> por</div>`;
 };
+// Preço da etiqueta: o "R$" pode ir para a linha de cima quando o card é estreito e a letra é grande
+// (o espaço normal do formato de moeda não deixa quebrar; a matriz de telas achou "R$ 1.234,56" cortado).
+const fmtEtq = (n) => fmt(n).replace(/\u00a0/, ' ');
 const etiquetaBase = (p) => {
     const frac = isFracionavel(p.unidade), pm = Number(p.pesoMedio || 0);
+    if (ehPacote(p)) return `<div class="etq-preco">${fmtEtq(p.preco)} <small>o pacote</small></div>`;
+    // produto montado com adicional pago: o preço do cartão é o de partida
+    if (temMontar(p) && (p.montar.grupos || []).some((g) => (g.opcoes || []).some((o) => Number(o.preco) > 0))) return `<div class="etq-de">a partir de</div><div class="etq-preco">${fmtEtq(p.preco)}</div>`;
+    if (ehPote(p)) return `<div class="etq-preco">${fmtEtq(p.preco)} <small>o potinho</small></div>`;
     // por quilo com os dois botões: a etiqueta mostra o quilo; o preço da unidade vai escrito no botão dela
     if (temDoisModos(p)) {
-        return `<div class="etq-preco">${fmt(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>
-                <div class="etq-ref">pesado na hora</div>`;
+        // com peso médio, o tamanho de 1 unidade ajuda a escolher sem fazer conta ("1 un. ≈ 450 g")
+        return `<div class="etq-preco">${fmtEtq(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>
+                <div class="etq-ref">${pm > 0 ? `${escapeHTML(pesoAproximado(pm))} cada · ${fmt(pm * p.preco / 1000)}` : 'pesado na hora'}</div>`;
     }
     if (frac && pm > 0) {
-        return `<div class="etq-preco">≈ ${fmt(p.preco * pm / 1000)} <small>a unidade</small></div>
-                <div class="etq-ref">${fmt(p.preco)} ${nomeUnidade(p.unidade)} · pesado na hora</div>`;
+        // R$/kg sempre junto da estimativa (Decreto 5.903/2006: preço sem o cliente precisar calcular)
+        return `<div class="etq-preco">≈ ${fmtEtq(p.preco * pm / 1000)} <small>a unidade</small></div>
+                <div class="etq-ref">${fmt(p.preco)}/kg · ${escapeHTML(pesoAproximado(pm))} cada · pesado na hora</div>`;
     }
     if (frac) {
-        return `<div class="etq-preco">${fmt(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>
+        return `<div class="etq-preco">${fmtEtq(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>
                 <div class="etq-ref">por unidade, pesamos na hora</div>`;
     }
-    return `<div class="etq-preco">${fmt(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>`;
+    return `<div class="etq-preco">${fmtEtq(p.preco)} <small>${nomeUnidade(p.unidade)}</small></div>`;
 };
 
+// Selos verdadeiros do produto (o dono marca no painel): "Chegou hoje" vale só hoje.
+// No card vai só o mais forte, para não poluir; a janela do produto mostra todos.
+const selosHtml = (p, todos = false) => {
+    const lista = selosDe(p, { hoje: hojeDaLoja(), escolha: vitrineDaLoja().escolha });
+    if (!lista.length) return '';
+    return `<div class="selos">${(todos ? lista : lista.slice(0, 1)).map((s) => `<span class="selo-casa selo--${s.tipo}">${ARTE_SELO[s.tipo] || ''}${escapeHTML(s.texto)}</span>`).join('')}</div>`;
+};
+let _vitrineCache = null, _vitrineDe = Symbol('ainda-não-leu');   // símbolo: na 1ª chamada sempre confere (config ainda sem 'vitrine')
+const vitrineDaLoja = () => { if (_vitrineDe !== STATE.config.vitrine) { _vitrineDe = STATE.config.vitrine; _vitrineCache = vitrineSegura(STATE.config.vitrine); } return _vitrineCache; };
+
+// SEÇÕES COLORIDAS (Aparência → Vitrine): a posição da seção a que o produto pertence (-1 = nenhuma). Pacote e tempero têm bloco próprio.
+const secaoDoProduto = (p) => { const l = vitrineDaLoja().secoes || [], c = String(p.cat || '').toLowerCase(); return c ? l.findIndex((x) => x.cat.toLowerCase() === c) : -1; };
+
+// Cor do botão da loja (Aparência → cor dos botões; sem ela, a cor principal), para o botão sobre a seção colorida
+const corDaMarca = () => { try { const s = getComputedStyle(document.documentElement); return (s.getPropertyValue('--cor-botao') || s.getPropertyValue('--forest') || '').trim(); } catch (_) { return ''; } };
+const varsDaSecao = (cor) => { const b = botaoSobre(cor, corDaMarca()); return `--sec-cor: ${cor}; --sec-tinta: ${tintaSobre(cor)}; --sec-botao: ${b.fundo}; --sec-sobre-botao: ${b.texto};`; };
 // Um card de produto. `rapido` = foto carregada já (os primeiros da tela); `prioridade` = a foto passa na frente
 // do resto (só as primeiras da vitrine, que são o "maior elemento" que o celular espera para mostrar a loja).
 const cardHtml = (p, rapido = false, prioridade = false) => {
         const favActive = STATE.favoritos.includes(p.id) ? 'ativo' : '';
+        const pac = ehPacote(p), tmp = !pac && ehTemp(p), sec = pac || tmp ? -1 : secaoDoProduto(p), secX = sec > -1 ? vitrineDaLoja().secoes[sec] : null, secCor = secX ? secX.cor : '', imersivo = !!secX && secX.estilo === 'fundo';
         return `
-        <article class="produto-card" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(semAcento(p.nome))}" style="display: flex;">
+        <article class="produto-card${pac ? ' produto-card--pacote' : tmp ? ' produto-card--tempero' : sec > -1 ? ` produto-card--secao${imersivo ? ' produto-card--imersivo' : ''}` : ''}" data-action="detalhe" data-id="${escapeHTML(p.id)}" data-cat="${escapeHTML(p.cat)}" data-nome="${escapeHTML(textoDeBusca(p, nomeDaCategoria(p.cat)))}"${pac ? ' data-pacote="1"' : tmp ? ' data-tempero="1"' : sec > -1 ? ` data-secao="${sec}"` : ''} style="display: flex;${pac ? ` order: ${ORDEM_PACOTES};` : tmp ? ` order: ${ORDEM_TEMPEROS};` : sec > -1 ? ` order: ${ordemDaSecao(sec) + 500}; ${varsDaSecao(secCor)}` : ''}">
             <div class="produto-img-wrap">
-                ${p.foto ? `<img src="${escapeHTML(fotoPequena(p, 384))}" data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
+                ${p.foto ? `<img src="${escapeHTML(fotoDoCard(p))}"${reservaDoCard(p) ? ` data-reserva="${escapeHTML(reservaDoCard(p))}"` : ''} data-original="${escapeHTML(p.foto)}" alt="${escapeHTML(p.nome)}" loading="${rapido ? 'eager' : 'lazy'}"${prioridade ? ' fetchpriority="high"' : ''} decoding="async" width="200" height="200">` : '<div class="produto-img-placeholder"></div>'}
                 ${emOferta(p) ? `<span class="selo-oferta">${desconto(p) >= 5 ? '−' + desconto(p) + '%' : 'Oferta'}</span>` : ''}
+                ${pac ? `<span class="lacre-pacote">${ARTE_PACOTE}Pacote</span>${pesoDoPacote(p) ? `<span class="peso-pacote">${escapeHTML(pesoDoPacote(p))}</span>` : ''}` : ''}
+                ${tmp ? `<span class="lacre-tempero">${ARTE_POTE}Tempero</span>` : ''}
                 <button class="btn-fav ${favActive}" data-action="fav" data-id="${escapeHTML(p.id)}" aria-label="Favoritar ${escapeHTML(p.nome)}" aria-pressed="${favActive ? 'true' : 'false'}">${ICO.coracao}</button>
             </div>
             <div class="produto-info">
                 <h3 class="produto-nome">${escapeHTML(p.nome)}</h3>
+                ${selosHtml(p)}
                 <div class="etiqueta">${etiquetaHtml(p)}</div>
                 <div class="card-acao" data-acao="${escapeHTML(p.id)}"></div>
             </div>
@@ -537,12 +817,20 @@ const cardHtml = (p, rapido = false, prioridade = false) => {
 };
 
 // Miniatura falhou (redutor fora do ar, site que não deixa copiar a foto)? Volta para a foto original.
+// Ordem: a outra versão da foto pelo redutor (data-reserva) → o endereço original. Foto do ImgBB NÃO vai direto: quando
+// o ImgBB perde o arquivo ele manda a figura azul "imgbb.com service unavailable", que o navegador mostraria como foto.
+// Sem saída, a foto some e fica o fundo do card (melhor que a figura de erro).
 document.addEventListener('error', (e) => {
     const img = e.target;
-    if (!(img instanceof HTMLImageElement) || !img.dataset.original) return;
+    if (!(img instanceof HTMLImageElement)) return;
+    if (img.dataset.reserva) { const r = img.dataset.reserva; delete img.dataset.reserva; img.src = r; return; }
+    if (!img.dataset.original) return;
     const original = img.dataset.original; delete img.dataset.original;
+    if (/^https:\/\/([a-z0-9-]+\.)*ibb\.co\//i.test(original)) { img.style.visibility = 'hidden'; img.dataset.foraDoAr = '1'; img.closest('.produto-img-wrap')?.classList.add('foto-fora-do-ar'); return; }
     if (img.getAttribute('src') !== original) img.src = original;
 }, true);
+/** A outra versão da mesma foto pelo redutor (grande ↔ miniatura), para quando uma delas sumir. */
+const reservaDaFoto = (p, usada, largura) => { const outra = usada === p.foto ? p.fotoMini : p.foto; return outra && outra !== usada ? miniatura(outra, largura) : ''; };
 
 // As fotos de baixo da tela começam "preguiçosas" para a loja abrir rápido (o navegador já busca
 // sozinho as que estão chegando perto). As demais vêm em lotes só DEPOIS que a pessoa começa a
@@ -635,41 +923,253 @@ const renderFaixaOfertas = (forcar = false) => {
     ofertas.forEach(p => atualizarBadgesDOM(p.id));
 };
 
+// ---------------------------------------------------------------------
+// FAIXAS NOVAS: "Chegou hoje" (no topo), "Da estação", "Os mais pedidos" e "Kits prontos".
+// Poucas de propósito: no máximo 4 faixas contando Ofertas e "Seus de sempre" (js/vitrine-lib.js).
+// Somem na busca e dentro de uma categoria, como as outras.
+// ---------------------------------------------------------------------
+const ICONE_DA_FAIXA = { chegou: 'chegou', estacao: 'estacao', mais: 'mais', kits: 'kits' };
+let _extrasCara = '';
+const renderFaixasExtras = (forcar = false) => {
+    const topo = document.getElementById('faixas-topo'), meio = document.getElementById('faixas-meio');
+    if (!topo || !meio) return;
+    const livre = !semAcento(STATE.busca).trim() && STATE.catAtiva === 'todas';
+    topo.hidden = meio.hidden = !livre;
+    if (!livre) return;
+    const faixas = faixasDaVitrine(STATE.produtos, {
+        hoje: hojeDaLoja(), maisPedidos: maisPedidos(),
+        temOfertas: !document.getElementById('faixa-ofertas')?.hidden, temSempre: !document.getElementById('faixa-sempre')?.hidden,
+        proprias: vitrineDaLoja().faixas || [],
+    });
+    const porId = new Map(STATE.produtos.map(p => [p.id, p]));
+    const cara = faixas.map(f => `${f.id}:${f.ids.map(id => (porId.get(id) || {}).preco).join(',')}:${f.ids.join(',')}`).join('|');
+    if (forcar) _extrasCara = '';
+    if (cara === _extrasCara) return;
+    _extrasCara = cara;
+    const html = (f) => `
+        <section class="faixa-sempre faixa-extra faixa--${f.id}" aria-labelledby="fx-${f.id}">
+            <h2 id="fx-${f.id}">${ICONE_DA_FAIXA[f.id] ? `<span class="faixa-ico">${ARTE_SELO[ICONE_DA_FAIXA[f.id]]}</span>` : ''}${escapeHTML(f.titulo)}</h2>
+            ${f.sub ? `<p class="faixa-sub">${escapeHTML(f.sub)}</p>` : ''}
+            <div class="faixa-rolo">${f.ids.map((id, i) => cardHtml(porId.get(id), i < 2)).join('')}</div>
+        </section>`;
+    topo.innerHTML = faixas.filter(f => f.lugar === 'topo').map(html).join('');
+    meio.innerHTML = faixas.filter(f => f.lugar === 'meio').map(html).join('');
+    faixas.forEach(f => f.ids.forEach(id => atualizarBadgesDOM(id)));
+};
+document.addEventListener('ranking-pronto', () => renderFaixasExtras());
+
+// ---------------------------------------------------------------------
+// QUADROS NO MEIO DA VITRINE: imagens e recados que o dono põe no painel (Aparência → Vitrine)
+// e o bloco "Quem escolhe seu pedido". Entram depois do 6º produto, do 14º... (js/vitrine-lib.js).
+// A vitrine é ordenada por CSS `order` (ranking): o quadro copia o `order` do produto que vem
+// antes dele e entra logo depois dele, para cair no lugar certo em qualquer ordem.
+// ---------------------------------------------------------------------
+let _blocosCara = '';
+const blocoHtml = (b) => {
+    const aba = b.cat && (STATE.abas || []).find(a => a.chave !== 'todas' && a.chave !== 'favoritos' && (semAcento(a.chave) === semAcento(b.cat) || semAcento(a.nome) === semAcento(b.cat)));
+    // SEMPRE pelo redutor do site (em algumas redes o i.ibb.co não abre direto no celular).
+    // A do quadro ocupa a largura toda no celular: 828 px para não ficar borrada; a dos donos é pequena.
+    const foto = (url, classe) => { const l = classe === 'quadro-foto' ? 828 : 384; return `<img class="${classe}" src="${escapeHTML(miniatura(url, l))}" data-original="${escapeHTML(url)}" alt="" loading="lazy" decoding="async" width="${l}" height="${l * 3 / 4}">`; };
+    if (b.tipo === 'donos') return `
+        <aside class="bloco-vitrine bloco-donos" data-depois="${b.depoisDe}" aria-label="${escapeHTML(b.titulo)}">
+            <div class="bloco-donos-foto">${b.img ? foto(b.img, 'donos-foto') : ARTE_DONOS}</div>
+            <div class="bloco-texto"><span class="bloco-chapeu">Quem escolhe seu pedido</span><h3>${escapeHTML(b.titulo)}</h3>${b.texto ? `<p>${escapeHTML(b.texto)}</p>` : ''}</div>
+        </aside>`;
+    return `
+        <aside class="bloco-vitrine bloco-quadro${b.img ? '' : ' sem-foto'}" data-depois="${b.depoisDe}" aria-label="${escapeHTML(b.titulo)}">
+            ${b.img ? `<div class="bloco-foto">${foto(b.img, 'quadro-foto')}</div>` : ''}
+            <div class="bloco-texto"><h3>${escapeHTML(b.titulo)}</h3>${b.texto ? `<p>${escapeHTML(b.texto)}</p>` : ''}
+                ${aba ? `<button type="button" class="bloco-bt" data-action="cat-ir" data-cat="${escapeHTML(aba.chave)}">Ver ${escapeHTML(aba.nome)}</button>` : ''}</div>
+        </aside>`;
+};
+const renderBlocos = (visiveis) => {
+    const grid = document.getElementById('lista-produtos'); if (!grid) return;
+    const blocos = visiveis ? blocosDaVitrine(vitrineDaLoja(), visiveis) : [];
+    const cara = JSON.stringify(blocos) + '#' + (STATE.abas || []).map(a => a.chave).join(',');
+    const naTela = grid.querySelectorAll('.bloco-vitrine');
+    if (cara !== _blocosCara || naTela.length !== blocos.length) {
+        _blocosCara = cara;
+        naTela.forEach(b => b.remove());
+        if (blocos.length) grid.insertAdjacentHTML('beforeend', blocos.map(blocoHtml).join(''));
+    }
+    posicionarBlocos();
+};
+const posicionarBlocos = () => {
+    const grid = document.getElementById('lista-produtos'); if (!grid) return;
+    const blocos = [...grid.querySelectorAll('.bloco-vitrine')]; if (!blocos.length) return;
+    const cards = [...grid.querySelectorAll('.produto-card')].filter(c => c.style.display !== 'none' && c.dataset.pacote !== '1' && c.dataset.tempero !== '1')
+        .map((c, i) => ({ c, i, o: Number(c.style.order) || 0 })).sort((a, b) => a.o - b.o || a.i - b.i).map(x => x.c);
+    // do último para o primeiro: mover um quadro não mexe na posição dos que vêm antes
+    blocos.sort((a, b) => Number(b.dataset.depois) - Number(a.dataset.depois)).forEach(b => {
+        const alvo = cards[Number(b.dataset.depois) - 1];
+        if (!alvo) { b.hidden = true; return; }
+        b.hidden = false; b.style.order = alvo.style.order || '';
+        if (alvo.nextElementSibling !== b) alvo.after(b);
+    });
+};
+document.addEventListener('ranking-pronto', posicionarBlocos);
+
+// Trocar de categoria com a página rolada para baixo: a lista nova (mais curta) aparecia com a página
+// no mesmo lugar, e o navegador jogava a pessoa para o FIM dela, onde não tem produto. Agora a página
+// sobe até o primeiro produto, logo abaixo da barra de busca e categorias (que fica presa no topo).
+// Quem ainda está acima da lista (no começo da página) não é mexido.
+function subirParaOsProdutos() {
+    const grid = document.getElementById('lista-produtos'); if (!grid) return;
+    const barra = document.querySelector('.controles');
+    const alvo = Math.max(0, Math.round(grid.getBoundingClientRect().top + window.scrollY - (barra ? barra.offsetHeight : 0) - 8));
+    if (window.scrollY > alvo + 2) window.scrollTo({ top: alvo, behavior: 'auto' });
+}
+
+// ---------------------------------------------------------------------
+// FUNIL (para o dono ver o antes e depois da vitrine no painel): cada aparelho conta
+// UMA vez por dia em cada etapa. Só número; a prévia do painel não conta.
+// ---------------------------------------------------------------------
+const contarFunil = async (etapa) => {
+    if (EM_PREVIA || !navigator.onLine) return;
+    const k = chave(`banca_funil_${etapa}`), hoje = hojeDaLoja();
+    try { if (localStorage.getItem(k) === hoje) return; localStorage.setItem(k, hoje); } catch (_) { /* sem armazenamento: o servidor ainda segura a repetição */ }
+    try {
+        const token = await auth.currentUser?.getIdToken(); if (!token) return;
+        fetch('/api/analytics', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ acao: 'funil', etapa }) }).catch(() => {});
+    } catch (_) { /* contar nunca atrapalha a compra */ }
+};
+
 const renderLoja = (forcarRebuild = false) => {
     const grid = document.getElementById('lista-produtos');
     if (!STATE.catalogoChegou) return;     // produtos ainda a caminho: fica o carregando, e não um falso "sem produtos"
     if(!STATE.lojaRenderizada || forcarRebuild) construirCardsIniciais();
-    renderFaixaSempre(); renderFaixaOfertas(forcarRebuild); renderAtalhos();
+    renderFaixaSempre(); renderFaixaOfertas(forcarRebuild); renderFaixasExtras(forcarRebuild); renderAtalhos();
     const termo = semAcento(STATE.busca).trim();
     const cards = grid.querySelectorAll('.produto-card');
-    let itensVisiveis = 0;
+    let itensVisiveis = 0, soltosVisiveis = 0;
 
     cards.forEach(card => {
-        const matchBusca = (card.dataset.nome || '').includes(termo);
+        const matchBusca = !termo || combinaBusca(card.dataset.nome || '', termo);   // nome, palavras da loja, categoria, "folhas"... (js/busca-lib.js)
         // [PATCH 1] Favoritos: usar card.dataset.id (o data-id existe; produtoId não existia)
-        const matchCat = !!termo || (STATE.catAtiva === 'todas') || (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(card.dataset.id)) || (card.dataset.cat === STATE.catAtiva);
-        if(matchBusca && matchCat) { card.style.display = 'flex'; itensVisiveis++; } 
+        const matchCat = !!termo || (STATE.catAtiva === 'todas') || (STATE.catAtiva === 'favoritos' && STATE.favoritos.includes(card.dataset.id)) || (STATE.catAtiva === 'pacotes' && card.dataset.pacote === '1') || (card.dataset.cat === STATE.catAtiva);
+        if(matchBusca && matchCat) { card.style.display = 'flex'; itensVisiveis++; if (card.dataset.pacote !== '1' && card.dataset.tempero !== '1') soltosVisiveis++; } 
         else { card.style.display = 'none'; }
     });
+    pintarBlocosSecoes(grid, termo ? '' : STATE.catAtiva);
+    pintarBlocoPacotes(grid);
+    pintarBlocoTemperos(grid);
     // aviso de "nada aqui": sempre refeito, para o texto acompanhar busca/aba
     document.getElementById('empty-grid-msg')?.remove();
+    document.getElementById('busca-outro-dia')?.remove();
+    if (termo) { const nota = notaDeOutroDia(termo); if (nota) grid.insertAdjacentHTML('beforeend', nota); }
     if (itensVisiveis === 0 && cards.length > 0) {
         const titulo = termo ? 'Não achei esse produto' : (STATE.catAtiva === 'favoritos' ? 'Nenhum favorito ainda' : 'Nenhum produto aqui hoje');
-        const dica = termo ? 'Tente outro nome.' : (STATE.catAtiva === 'favoritos' ? 'Toque no coração de um produto para guardar aqui.' : '');
-        grid.insertAdjacentHTML('beforeend', `<div id="empty-grid-msg" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>${titulo}</p><span>${dica}</span></div>`);
+        const dica = termo ? 'Tente outro nome, ou pergunte direto para a banca:' : (STATE.catAtiva === 'favoritos' ? 'Toque no coração de um produto para guardar aqui.' : '');
+        grid.insertAdjacentHTML('beforeend', `<div id="empty-grid-msg" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>${titulo}</p><span>${dica}</span>${termo ? botaoNaoAchei(STATE.busca) : ''}</div>`);
     } else if (cards.length === 0) {
         grid.insertAdjacentHTML('beforeend', `<div id="empty-grid-msg" class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>A banca está sem produtos no momento</p><span>Volte daqui a pouco.</span></div>`);
     }
+    renderBlocos(!termo && STATE.catAtiva === 'todas' ? soltosVisiveis : 0);
+};
+
+// SEÇÕES COLORIDAS: antes dos produtos soltos, cada categoria escolhida na Aparência → Vitrine ganha a sua cor, desenho,
+// título e frase (ex.: Pastéis em dourado, Açaí em roxo). Dois jeitos (vitrineSegura):
+//   'faixa' → só a faixa do título, na vitrine inteira;
+//   'fundo' → a cor toma o FUNDO da seção inteira e os produtos ficam soltos sobre ela, sem a caixa do cartão (imersivo).
+//             Aparece também quando o cliente escolhe a categoria, e então a página toda fica dessa cor.
+// `aba` = categoria escolhida ('todas', 'pasteis'...) ou '' com busca (com busca não há faixa nenhuma).
+const pintarBlocosSecoes = (grid, aba) => {
+    const lista = vitrineDaLoja().secoes || [];
+    const vale = (sec) => !!sec && !!aba && (aba === 'todas' || (sec.estilo === 'fundo' && aba === sec.cat));
+    grid.querySelectorAll('.bloco-secao, .fim-secao').forEach((c) => { if (!vale(lista[Number(c.dataset.i)])) c.remove(); });
+    lista.forEach((sec, i) => {
+        if (!vale(sec)) return;
+        const cab = grid.querySelector(`.bloco-secao[data-i="${i}"]`), fim = grid.querySelector(`.fim-secao[data-i="${i}"]`);
+        const algum = [...grid.querySelectorAll(`.produto-card[data-secao="${i}"]`)].some((c) => c.style.display !== 'none');
+        if (!algum) { cab?.remove(); fim?.remove(); return; }
+        const fundo = sec.estilo === 'fundo', cara = `${sec.titulo}|${sec.texto}|${sec.cor}|${sec.icone}|${sec.estilo}`;
+        if (!fundo) fim?.remove();
+        else if (!fim) grid.insertAdjacentHTML('beforeend', `<div class="fim-secao" data-i="${i}" aria-hidden="true" style="order: ${ordemDaSecao(i) + 1999}"></div>`);
+        if (cab && cab.dataset.cara === cara) return;
+        const ico = sec.icone && ARTES[sec.icone] ? `<svg class="arte-cat" viewBox="0 0 120 120" aria-hidden="true" focusable="false">${ARTES[sec.icone]}</svg>` : '';
+        const html = `<header class="bloco-secao${fundo ? ' bloco-secao--fundo' : ''}" data-i="${i}" data-cara="${escapeHTML(cara)}" style="order: ${ordemDaSecao(i) - 1}; ${varsDaSecao(sec.cor)}"><h2>${ico}<span>${escapeHTML(sec.titulo)}</span></h2>${sec.texto ? `<p>${escapeHTML(sec.texto)}</p>` : ''}</header>`;
+        if (cab) cab.outerHTML = html; else grid.insertAdjacentHTML('beforeend', html);
+    });
+    pintarPaginaDaSecao(lista.find((x) => x.estilo === 'fundo' && aba && aba === x.cat));
+    pedirFundosDasSecoes();
+};
+
+// O FUNDO de cada seção imersiva: um retângulo atrás do título e dos produtos dela, do primeiro ao último
+// (os produtos ficam num grid só, ordenados por `order`; por isso o fundo é medido e posto por baixo).
+const pintarFundosDasSecoes = () => {
+    const grid = document.getElementById('lista-produtos'); if (!grid) return;
+    const lista = vitrineDaLoja().secoes || [], usados = new Set(), caixas = [];
+    lista.forEach((sec, i) => {
+        if (sec.estilo !== 'fundo') return;
+        const els = [...grid.querySelectorAll(`.bloco-secao[data-i="${i}"], .produto-card[data-secao="${i}"], .fim-secao[data-i="${i}"]`)].filter((e) => e.style.display !== 'none' && e.offsetParent);
+        if (!els.some((e) => e.classList.contains('produto-card'))) return;
+        let topo = Infinity, base = -Infinity;
+        for (const e of els) { const m = e.classList.contains('bloco-secao') ? parseFloat(getComputedStyle(e).marginTop) || 0 : 0; topo = Math.min(topo, e.offsetTop - m); base = Math.max(base, e.offsetTop + e.offsetHeight); }
+        if (!grid.querySelector(`.bloco-secao[data-i="${i}"]`)) topo -= 14;          // sem o título (aba escolhida): um respiro em cima
+        let f = grid.querySelector(`.fundo-secao[data-i="${i}"]`);
+        if (!f) { f = document.createElement('div'); f.className = 'fundo-secao'; f.dataset.i = String(i); f.setAttribute('aria-hidden', 'true'); grid.prepend(f); }
+        caixas.push({ f, topo, base, cor: sec.cor });
+        usados.add(String(i));
+    });
+    // seções vizinhas se encostam: uma cor emenda na outra, sem a tira do fundo da loja no meio
+    caixas.sort((a, b) => a.topo - b.topo).forEach((c, k, l) => { const prox = l[k + 1]; if (prox && prox.topo - c.base < 48) { c.base = prox.topo; c.baixo = prox.cima = true; } });
+    caixas.forEach((c) => { c.f.style.cssText = `top: ${Math.round(c.topo)}px; height: ${Math.max(0, Math.round(c.base - c.topo))}px; --sec-cor: ${c.cor}`; c.f.classList.toggle('emenda-cima', !!c.cima); c.f.classList.toggle('emenda-baixo', !!c.baixo); });
+    grid.querySelectorAll('.fundo-secao').forEach((f) => { if (!usados.has(f.dataset.i)) f.remove(); });
+};
+let _fundosPedido = 0, _fundosObs = null;
+const pedirFundosDasSecoes = () => {
+    cancelAnimationFrame(_fundosPedido); _fundosPedido = requestAnimationFrame(pintarFundosDasSecoes);
+    if (!_fundosObs && typeof ResizeObserver !== 'undefined') {       // fonte que chega, foto que carrega, letra maior, giro da tela: mede de novo
+        const grid = document.getElementById('lista-produtos');
+        if (grid) { _fundosObs = new ResizeObserver(() => { cancelAnimationFrame(_fundosPedido); _fundosPedido = requestAnimationFrame(pintarFundosDasSecoes); }); _fundosObs.observe(grid); }
+    }
+};
+// Categoria imersiva escolhida: a página inteira fica da cor dela (volta ao normal em "Todos" ou com busca).
+const pintarPaginaDaSecao = (sec) => {
+    const b = document.body;
+    b.classList.toggle('cat-imersiva', !!sec);
+    if (sec) { b.style.setProperty('--cat-cor', sec.cor); b.style.setProperty('--cat-tinta', tintaSobre(sec.cor)); }
+    else { b.style.removeProperty('--cat-cor'); b.style.removeProperty('--cat-tinta'); }
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) { if (!meta.dataset.original) meta.dataset.original = meta.content || ''; meta.content = sec ? sec.cor : meta.dataset.original; }
+};
+
+// BLOCO "PACOTES PRONTOS": os pacotes vão para o fim da vitrine (order 2000+, js/ranking-loja.js), depois deste cabeçalho.
+// Título e frase são da loja (Aparência → Vitrine). Some quando nenhum pacote está à vista.
+const pintarBlocoPacotes = (grid) => {
+    const cab = grid.querySelector('.bloco-pacotes');
+    const algum = [...grid.querySelectorAll('.produto-card[data-pacote="1"]')].some(c => c.style.display !== 'none');
+    if (!algum) { cab?.remove(); return; }
+    const v = vitrineDaLoja().pacotes || PACOTES_PADRAO;
+    const cara = `${v.titulo}|${v.texto}`;
+    if (cab && cab.dataset.cara === cara) return;
+    const html = `<header class="bloco-pacotes" data-cara="${escapeHTML(cara)}" style="order: ${ORDEM_PACOTES - 1}"><h2>${ARTE_PACOTE}<span>${escapeHTML(v.titulo)}</span></h2>${v.texto ? `<p>${escapeHTML(v.texto)}</p>` : ''}</header>`;
+    if (cab) cab.outerHTML = html; else grid.insertAdjacentHTML('beforeend', html);
+};
+
+// CANTINHO DOS TEMPEROS: depois dos pacotes (order 5000+, ORDEM_TEMPEROS em js/ranking-loja.js). Título e frase da loja (Aparência → Vitrine).
+const pintarBlocoTemperos = (grid) => {
+    const cab = grid.querySelector('.bloco-temperos');
+    const algum = [...grid.querySelectorAll('.produto-card[data-tempero="1"]')].some(c => c.style.display !== 'none');
+    if (!algum) { cab?.remove(); return; }
+    const c = cfgTemperos() || {}, titulo = c.titulo || TEMPEROS_PADRAO.titulo, texto = c.titulo || c.texto ? c.texto : TEMPEROS_PADRAO.texto;
+    const cara = `${titulo}|${texto}`;
+    if (cab && cab.dataset.cara === cara) return;
+    const html = `<header class="bloco-temperos" data-cara="${escapeHTML(cara)}" style="order: ${ORDEM_TEMPEROS - 1}"><h2>${ARTE_POTE}<span>${escapeHTML(titulo)}</span></h2>${texto ? `<p>${escapeHTML(texto)}</p>` : ''}</header>`;
+    if (cab) cab.outerHTML = html; else grid.insertAdjacentHTML('beforeend', html);
 };
 
 // Pedido com itens de mais de um atendimento (ex.: banca + artesanais) gera
 // um botão por número. Com um só número, abre direto como sempre foi.
-const mostrarLinksWhatsApp = (pedido) => {
+// pixPendente: há um PIX para pagar agora. Aí o WhatsApp NÃO abre sozinho (a pessoa sairia da tela sem ver o PIX):
+// primeiro paga, depois toca no botão e manda o pedido junto com o comprovante.
+const mostrarLinksWhatsApp = (pedido, { pixPendente = false } = {}) => {
     const links = (pedido.whatsapps && pedido.whatsapps.length) ? pedido.whatsapps : [{ nome: 'WhatsApp', url: pedido.whatsappMsg }];
     const area = document.getElementById('sucesso-whatsapps');
     const texto = document.getElementById('sucesso-texto');
+    const rotuloUnico = pixPendente ? 'Enviar pedido e comprovante no WhatsApp' : 'Abrir WhatsApp';
     if (area) {
-        area.innerHTML = links.map((l, i) => `<a class="btn-wpp" href="${escapeHTML(l.url)}" target="_blank" rel="noopener noreferrer">${links.length > 1 ? `Enviar para ${escapeHTML(l.nome)}` : 'Abrir WhatsApp'}${l.qtdItens && links.length > 1 ? ` <small>(${l.qtdItens} ${l.qtdItens === 1 ? 'item' : 'itens'})</small>` : ''}</a>`).join('');
+        area.innerHTML = links.map((l, i) => `<a class="btn-wpp" href="${escapeHTML(l.url)}" target="_blank" rel="noopener noreferrer">${links.length > 1 ? `Enviar para ${escapeHTML(l.nome)}` : rotuloUnico}${l.qtdItens && links.length > 1 ? ` <small>(${l.qtdItens} ${l.qtdItens === 1 ? 'item' : 'itens'})</small>` : ''}</a>`).join('');
         area.onclick = (e) => {
             const a = e.target.closest('.btn-wpp'); if (!a) return;
             a.classList.add('enviado');
@@ -683,11 +1183,12 @@ const mostrarLinksWhatsApp = (pedido) => {
         ? `Seu pedido tem itens de ${links.length} atendimentos da banca. Toque nos ${links.length} botões, um de cada vez, para enviar tudo:`
         // iPhone: o navegador costuma barrar a abertura automática (ela acontece depois de o servidor responder,
         // e o iPhone só deixa abrir outro app no instante do toque). O texto pede o toque em vez de prometer.
+        : pixPendente ? 'Falta só o pagamento. Pague o PIX abaixo e depois mande o comprovante no WhatsApp.'
         : (ehIphone() ? 'Pedido recebido! Agora toque no botão verde para mandar a mensagem no WhatsApp.'
             : 'Vamos abrir o WhatsApp da banca com o seu pedido pronto. Se não abrir sozinho, toque no botão abaixo.');
-    if (area) area.classList.toggle('precisa-toque', ehIphone() && links.length === 1);
+    if (area) area.classList.toggle('precisa-toque', ehIphone() && links.length === 1 && !pixPendente);
     // só abre o que for mesmo um link do WhatsApp (o endereço vem do servidor; isto é a segunda conferência)
-    if (links.length === 1 && /^https:\/\/wa\.me\/\d{8,15}\?/.test(String(links[0].url))) window.open(links[0].url, '_blank', 'noopener');
+    if (links.length === 1 && !pixPendente &&/^https:\/\/wa\.me\/\d{8,15}\?/.test(String(links[0].url))) window.open(links[0].url, '_blank', 'noopener');
 };
 
 // PIX automático: a tela (js/pix-loja.js) só é baixada quando alguém vai pagar.
@@ -702,11 +1203,31 @@ const pagarComPix = async (pedidoId, total) => {
 //  1. automático (PagBank): QR na tela e o pedido vira PAGO sozinho. Só com a conta ligada.
 //  2. copia e cola com a chave da loja: o código já sai com o valor; quem confere o pagamento é a loja.
 // Se o automático estiver ligado, ele vence. Pedido com item a pesar espera a balança (o valor ainda muda).
-const pixAutomaticoHtml = (pedido) => `<button type="button" class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Pagar ${fmt(pedido.total)} com PIX agora</button>`;
-const pixCopiaColaHtml = (pedido) => {
+const ICO_PIX = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.6c.6 0 1.2.2 1.7.7l3.1 3.1h-.4c-.8 0-1.5.3-2 .8L12.6 9a.9.9 0 0 1-1.2 0L9.6 7.2a2.8 2.8 0 0 0-2-.8h-.4l3.1-3.1c.5-.5 1.1-.7 1.7-.7zm6.2 5.2 2.5 2.5a2.4 2.4 0 0 1 0 3.4l-2.5 2.5h-1.8a1.4 1.4 0 0 1-1-.4L13.6 14a2.3 2.3 0 0 0-3.2 0l-1.8 1.8c-.3.3-.6.4-1 .4H5.8l-2.5-2.5a2.4 2.4 0 0 1 0-3.4l2.5-2.5h1.8c.4 0 .7.1 1 .4L10.4 10a2.3 2.3 0 0 0 3.2 0l1.8-1.8c.3-.3.6-.4 1-.4zM12 15.4c.2 0 .4.1.6.2l1.8 1.8c.5.5 1.2.8 2 .8h.4l-3.1 3.1a2.4 2.4 0 0 1-3.4 0l-3.1-3.1h.4c.8 0 1.5-.3 2-.8l1.8-1.8c.2-.1.4-.2.6-.2z"/></svg>';
+const ICO_COPIAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>';
+// Cartão grande da tela de sucesso: deixa claro que FALTA PAGAR, quanto, para quem e como.
+const pixCartao = (pedido, miolo) => `<section class="pix-destaque" aria-label="Pagamento PIX pendente">
+        <div class="pix-d-topo"><span class="pix-d-selo">${ICO_PIX}PIX</span><span class="pix-d-status">Falta pagar</span></div>
+        <p class="pix-d-rot">Valor a pagar</p>
+        <p class="pix-d-total">${fmt(pedido.total)}</p>
+        ${miolo}
+    </section>`;
+const pixAutomaticoHtml = (pedido, destaque) => destaque
+    ? pixCartao(pedido, `<button type="button" class="btn-pix btn-pix--grande" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">${ICO_PIX}<span>Pagar com PIX agora</span></button>
+        <p class="pix-d-nota">Abre o QR Code e o código copia e cola. A banca fica sabendo do pagamento na hora.</p>`)
+    : `<button type="button" class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Pagar ${fmt(pedido.total)} com PIX agora</button>`;
+const pixCopiaColaHtml = (pedido, destaque) => {
     if (!(Number(pedido.total) > 0)) return '';          // pedido de cortesia (cupom de 100%): nada a pagar
     const pix = STATE.config.pix, codigo = codigoPix(pix, pedido.total, pedido.id);
     if (!codigo) return '';
+    if (destaque) return pixCartao(pedido, `<p class="pix-d-para">Para <b>${escapeHTML(pix.nome)}</b><span>Chave ${escapeHTML(chaveBonita(pix))}</span></p>
+        <button type="button" class="btn-pix btn-pix--grande" data-action="copiar-pix" data-codigo="${escapeHTML(codigo)}">${ICO_COPIAR}<span>Copiar código PIX</span></button>
+        <ol class="pix-d-passos">
+            <li><span>1</span><p>Toque em <b>Copiar código PIX</b>.</p></li>
+            <li><span>2</span><p>No app do banco, escolha <b>PIX copia e cola</b> e cole. O valor já vem preenchido.</p></li>
+            <li><span>3</span><p>Depois de pagar, mande o <b>comprovante no WhatsApp</b> no botão verde abaixo.</p></li>
+        </ol>
+        <details class="pix-d-qr"><summary>Vai pagar por outro celular? Mostrar QR Code</summary><div class="pix-d-qr-caixa" data-codigo="${escapeHTML(codigo)}"></div></details>`);
     return `<div class="pix-cola">
         <b>Pague ${fmt(pedido.total)} com PIX</b>
         <span>Para ${escapeHTML(pix.nome)} · chave ${escapeHTML(chaveBonita(pix))}</span>
@@ -714,18 +1235,36 @@ const pixCopiaColaHtml = (pedido) => {
         <small>Cole no aplicativo do seu banco, em "PIX copia e cola". O valor já vem preenchido. Depois, mande o comprovante no WhatsApp.</small>
     </div>`;
 };
-const pixDoPedidoHtml = (pedido) => {
-    if (ehLojaOriginal && podePagarPix(STATE.config.pixAutomatico === true, pedido)) return pixAutomaticoHtml(pedido);
-    if (pixDaLojaValido(STATE.config.pix) && podePagarPix(true, pedido)) return pixCopiaColaHtml(pedido);
+// "Pagamento só na entrega" (painel → Configurações → Pagamento): o site não mostra código PIX nem QR em lugar nenhum.
+const pagaNaEntrega = () => STATE.config && STATE.config.pagamentoNaEntrega === true;
+const pixDoPedidoHtml = (pedido, destaque = false) => {
+    if (pagaNaEntrega()) return '';
+    if (STATE.config && STATE.config.formasPagamento && STATE.config.formasPagamento.pix === false) return '';   // a loja desligou o PIX
+    // outras lojas só conseguem ligar a opção quando a plataforma cadastra a carteira Asaas delas (o servidor confere de novo)
+    if (podePagarPix(STATE.config.pixAutomatico === true, pedido)) return Number(pedido.total) > 0 ? pixAutomaticoHtml(pedido, destaque) : '';   // R$ 0,00 (cupom de 100%): nada a pagar
+    if (pixDaLojaValido(STATE.config.pix) && podePagarPix(true, pedido)) return pixCopiaColaHtml(pedido, destaque);
     if (pixDaLojaValido(STATE.config.pix) && String(pedido.pag || '').toUpperCase() === 'PIX' && pedido.temItensAPesar && pedido.status !== 'cancelado')
         return '<p class="pix-espera">O código PIX aparece aqui, em Meus pedidos, assim que a banca pesar os itens e fechar o valor.</p>';
     return '';
 };
+// Devolve true quando ficou um PIX para pagar agora: aí o cartão sobe para logo abaixo do título,
+// antes do botão do WhatsApp (pagar primeiro, mandar o comprovante depois).
 const oferecerPixNoSucesso = (pedido) => {
-    const area = document.getElementById('sucesso-pix'); if (!area) return;
-    const html = pixDoPedidoHtml(pedido);
+    const area = document.getElementById('sucesso-pix'); if (!area) return false;
+    const html = pixDoPedidoHtml(pedido, true), pendente = html.includes('pix-destaque');
     area.hidden = !html; area.innerHTML = html;
+    const antes = document.getElementById(pendente ? 'sucesso-whatsapps' : 'btn-lista-sucesso');
+    if (antes && antes.parentNode && area.nextElementSibling !== antes) antes.parentNode.insertBefore(area, antes);
+    document.getElementById('modal-sucesso')?.classList.toggle('com-pix', pendente);
+    return pendente;
 };
+// QR do código PIX (para pagar com outro celular): só é desenhado quando a pessoa abre.
+document.addEventListener('toggle', async (e) => {
+    const det = e.target; if (!(det instanceof HTMLDetailsElement) || !det.classList.contains('pix-d-qr') || !det.open) return;
+    const caixa = det.querySelector('.pix-d-qr-caixa'); if (!caixa || caixa.firstChild) return;
+    try { const { qrSvg } = await import('./cartaz-lib.js'); caixa.innerHTML = qrSvg(caixa.dataset.codigo || '', { tamanho: 220, cor: '#111' }) || '<p>Não deu para desenhar o QR. Use o botão de copiar.</p>'; }
+    catch (_) { caixa.textContent = 'Não deu para desenhar o QR. Use o botão de copiar.'; }
+}, true);
 const copiarPix = async (botao) => {
     const codigo = botao.dataset.codigo || '';
     let ok = false;
@@ -734,24 +1273,94 @@ const copiarPix = async (botao) => {
         const t = document.createElement('textarea'); t.value = codigo; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;opacity:0;';
         document.body.appendChild(t); t.select(); try { ok = document.execCommand('copy'); } catch (__) { ok = false; } t.remove();
     }
-    if (ok) { botao.textContent = 'Código copiado'; showToast('Código PIX copiado. Agora cole no aplicativo do seu banco.'); setTimeout(() => { botao.textContent = 'Copiar código PIX'; }, 4000); }
+    const rotulo = botao.querySelector('span') || botao;
+    if (ok) { rotulo.textContent = 'Código copiado ✓'; botao.classList.add('copiado'); showToast('Código PIX copiado. Agora cole no aplicativo do seu banco.'); setTimeout(() => { rotulo.textContent = 'Copiar código PIX'; botao.classList.remove('copiado'); }, 4000); }
     else showToast('Não consegui copiar sozinho. Use a chave que aparece acima do botão.', true);
 };
 
-// Horário de entrega: o campo só aparece se a loja cadastrou horários no painel.
+// ENTREGA OU RETIRADA. O que vale no dia do pedido vem da AGENDA desta banca (cliente da feira: o dia da feira dele)
+// ou da regra geral (cliente sem feira). Mesma conta do servidor: js/entrega-lib.js e lib/entrega.js (opcoesDoDia).
+// Qualquer dúvida = entrega, como sempre foi.
+const feiraAqui = () => { const f = feiraDoClienteAqui(); return f && f.id ? String(f.id) : ''; };
+const opcoesDeHoje = () => opcoesDoDia(lerEntrega(STATE.config), feiraAqui(), diaDoPreco());
+const modoEscolhido = () => {
+    const o = opcoesDeHoje();
+    if (!o.retirada) return 'entrega';
+    if (!o.entrega) return 'retirada';                                       // dia só de retirada
+    return document.querySelector('input[name="cli-modo"]:checked')?.value === 'retirada' ? 'retirada' : 'entrega';
+};
+const pintarModo = () => {
+    const grupo = document.getElementById('grupo-modo'); if (!grupo) return;
+    const o = opcoesDeHoje(), retirada = modoEscolhido() === 'retirada', daFeira = !!feiraAqui();
+    grupo.hidden = !o.retirada;                                               // só entrega: não há o que escolher
+    const rotEnt = document.getElementById('rot-modo-entrega'), rotRet = document.getElementById('rot-modo-retirada');
+    if (rotEnt) rotEnt.closest('label').style.display = o.entrega ? '' : 'none';   // dia só de retirada: some a entrega
+    if (rotRet) rotRet.textContent = daFeira ? 'Retirar na feira' : 'Retirar na banca';
+    const marcar = document.querySelector(`input[name="cli-modo"][value="${retirada ? 'retirada' : 'entrega'}"]`); if (marcar && !marcar.checked) marcar.checked = true;
+    const local = document.getElementById('retirada-local');
+    if (local) { local.textContent = o.local ? `📍 ${o.local}` : ''; local.hidden = !(retirada && o.local); }
+    const end = document.getElementById('checkout-endereco'), sub = document.getElementById('checkout-sub-titulo'), rotulo = document.getElementById('cli-horario-rotulo');
+    if (end) end.hidden = retirada;                                             // quem busca não precisa dizer onde mora
+    if (sub) sub.textContent = retirada ? 'Seus dados' : 'Dados da entrega';
+    if (rotulo) rotulo.textContent = retirada ? 'Quando vai retirar? (opcional)' : 'Quando prefere receber? (opcional)';
+    pintarHorariosDeEntrega();
+    pintarPagamentoDaLoja();
+};
+document.addEventListener('change', (e) => { if (e.target && e.target.name === 'cli-modo') pintarModo(); });
+
+// Com "pagamento só na entrega", os botões dizem que tudo é pago na hora de receber (ou de retirar).
+// Formas que a loja aceita (Painel → Configurações → Pagamento). Sem a configuração, aceita as três, como sempre.
+const CHAVE_FORMA = { PIX: 'pix', 'Cartão': 'cartao', Dinheiro: 'dinheiro' };
+const formaAceita = (valor) => { const f = (STATE.config && STATE.config.formasPagamento) || {}; const k = CHAVE_FORMA[valor]; return !k || f[k] !== false; };
+// "Falar com a loja" (cabeçalho e rodapé): com itens na sacola, a mensagem já leva os itens; sem itens, é o "Oi" de sempre.
+document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('#header-redes a, #fale-loja a'); if (!a || !/^https:\/\/wa\.me\//.test(a.href)) return;
+    try {
+        const k = contatoDaLoja(STATE.config); if (!k.whatsapp) return;
+        a.href = linkWhatsapp(k.whatsapp, saudacaoComSacola((document.getElementById('header-nome')?.textContent || '').trim(), STATE.carrinho));
+    } catch (_) { /* fica o link de sempre */ }
+}, true);
+
+const pintarPagamentoDaLoja = () => {
+    const sel = document.getElementById('cli-pagamento'), nota = document.getElementById('pag-nota'); if (!sel) return;
+    // forma desligada some dos botões; se era a escolhida, passa para a primeira que sobrou
+    let mudou = false;
+    [...sel.options].forEach((o) => { const fora = !formaAceita(o.value); if (o.hidden !== fora) { o.hidden = fora; o.disabled = fora; mudou = true; } });
+    if (!formaAceita(sel.value)) { const prim = [...sel.options].find((o) => !o.hidden); if (prim) { sel.value = prim.value; mudou = true; } }
+    if (mudou) sel.dispatchEvent(new Event('change', { bubbles: true }));
+    const naEntrega = pagaNaEntrega(), quando = modoEscolhido() === 'retirada' ? 'na retirada' : 'na entrega';
+    const textos = { PIX: `PIX (${quando})`, 'Cartão': `Cartão (maquininha ${quando})`, Dinheiro: `Dinheiro (${quando})` };
+    [...sel.options].forEach((o) => {
+        if (!o.dataset.original) o.dataset.original = o.textContent;
+        const novo = naEntrega && textos[o.value] ? textos[o.value] : o.dataset.original;
+        if (o.textContent !== novo) o.textContent = novo;
+    });
+    if (nota) {
+        if (!nota.dataset.original) nota.dataset.original = nota.textContent;
+        const aceitas = [['Cartão', 'cartão na maquininha'], ['PIX', 'PIX'], ['Dinheiro', 'dinheiro']].filter(([v]) => formaAceita(v)).map(([, t]) => t);
+        const lista = aceitas.length > 1 ? `${aceitas.slice(0, -1).join(', ')} ou ${aceitas[aceitas.length - 1]}` : (aceitas[0] || '');
+        nota.textContent = naEntrega ? `Nada é cobrado agora. Você paga ${modoEscolhido() === 'retirada' ? 'quando retirar' : 'quando receber o pedido'}${lista ? `: ${lista}` : ''}.` : nota.dataset.original;
+    }
+};
+
+// Horário de entrega (ou de retirada): o campo só aparece se a loja cadastrou horários para o modo e o dia do pedido.
 const pintarHorariosDeEntrega = () => {
     const grupo = document.getElementById('grupo-horario'), campo = document.getElementById('cli-horario'); if (!grupo || !campo) return;
-    const { horarios } = lerEntrega(STATE.config), atual = campo.value;
+    const horarios = horariosDoModo(lerEntrega(STATE.config), modoEscolhido(), { feira: feiraAqui(), dow: diaDoPreco() }), atual = campo.value;
     grupo.hidden = !horarios.length;
     campo.innerHTML = horarios.length ? '<option value="">Tanto faz (a combinar)</option>' + horarios.map((h) => `<option value="${escapeHTML(h)}">${escapeHTML(h)}</option>`).join('') : '';
     if (horarios.includes(atual)) campo.value = atual;
 };
 
 const renderCategorias = () => {
-    const abas = [{ chave: 'todas', nome: 'Todos' }, { chave: 'favoritos', nome: 'Favoritos' }, ...abasDeCategoria(STATE.produtos)];
+    const temPacote = (STATE.produtos || []).some(ehPacote);
+    // as categorias da loja vêm logo depois de "Todos" (é o que o cliente procura); Favoritos, que começa vazio, fica no fim
+    const abas = [{ chave: 'todas', nome: 'Todos' }, ...(temPacote ? [{ chave: 'pacotes', nome: 'Pacotes' }] : []), ...abasDeCategoria(STATE.produtos), { chave: 'favoritos', nome: 'Favoritos' }];
     // se a categoria aberta sumiu (ocultada no painel), volta para "Todos"
     if (!abas.some(a => a.chave === STATE.catAtiva)) STATE.catAtiva = 'todas';
-    document.getElementById('categorias').innerHTML = abas.map(a => `<button class="cat-btn ${a.chave === STATE.catAtiva ? 'active' : ''}" data-action="cat" data-cat="${escapeHTML(a.chave)}">${escapeHTML(a.nome)}</button>`).join('');
+    STATE.abas = abas;
+    const arteDe = (a) => (a.chave === 'pacotes' ? ARTE_PACOTE : ehTemp({ cat: a.chave }) ? ARTE_POTE : ARTE_CATEGORIA[a.chave === 'todas' || a.chave === 'favoritos' ? a.chave : iconeDaCategoria(a.nome || a.chave)] || '');
+    document.getElementById('categorias').innerHTML = abas.map(a => { const arte = arteDe(a); return `<button class="cat-btn${arte ? ' tem-arte' : ''} ${a.chave === STATE.catAtiva ? 'active' : ''}" data-action="cat" data-cat="${escapeHTML(a.chave)}">${arte}<span>${escapeHTML(a.nome)}</span></button>`; }).join('');
 };
 
 let buscaTimeout;
@@ -759,20 +1368,53 @@ document.getElementById('busca-input').addEventListener('input', (e) => {
     clearTimeout(buscaTimeout); buscaTimeout = setTimeout(() => { STATE.busca = e.target.value; renderLoja(); }, 150);
 });
 
+// INSTAGRAM E WHATSAPP DA LOJA (Configurações → Atendimento, js/contato-lib.js): dois botões redondos no topo
+// e o bloco "Fale com a loja" no fim da página. Sem nada cadastrado, nada aparece.
+const ICO_INSTA = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r=".6" fill="currentColor"/></svg>';
+const ICO_ZAP = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5l1.2-3.6A8 8 0 1 1 8.4 18.6z"/><path d="M9.2 8.6c.3 2.8 2.6 5.2 5.4 5.6l1-1.3-1.7-.9-.8.7c-.9-.4-1.9-1.3-2.3-2.3l.7-.8-.9-1.7z" fill="currentColor" stroke="none"/></svg>';
+let _contatoDe = '';
+const pintarContato = () => {
+    const k = contatoDaLoja(STATE.config), cara = JSON.stringify(k);
+    if (cara === _contatoDe) return; _contatoDe = cara;
+    const topo = document.getElementById('header-redes'), fim = document.getElementById('fale-loja');
+    const tem = !!(k.instagram || k.whatsapp);
+    if (topo) {
+        topo.innerHTML = (k.whatsapp ? `<a class="chip-header chip-rede" href="${escapeHTML(k.urlWhatsapp)}" target="_blank" rel="noopener noreferrer" aria-label="Falar com a loja no WhatsApp">${ICO_ZAP}</a>` : '')
+            + (k.instagram ? `<a class="chip-header chip-rede" href="${escapeHTML(k.urlInstagram)}" target="_blank" rel="noopener noreferrer" aria-label="Instagram da loja: @${escapeHTML(k.instagram)}">${ICO_INSTA}</a>` : '');
+        topo.hidden = !tem;
+    }
+    if (fim) {
+        fim.innerHTML = tem ? `<h2 id="fale-loja-titulo">Fale com a loja</h2><p>Dúvida, encomenda ou só um oi: estamos por aqui.</p><div class="fale-loja-bts">`
+            + (k.whatsapp ? `<a class="fale-bt fale-bt--zap" href="${escapeHTML(k.urlWhatsapp)}" target="_blank" rel="noopener noreferrer">${ICO_ZAP}<span><b>WhatsApp</b><small>${escapeHTML(telefoneBonito(k.whatsapp))}</small></span></a>` : '')
+            + (k.instagram ? `<a class="fale-bt fale-bt--insta" href="${escapeHTML(k.urlInstagram)}" target="_blank" rel="noopener noreferrer">${ICO_INSTA}<span><b>Instagram</b><small>@${escapeHTML(k.instagram)}</small></span></a>` : '')
+            + '</div>' : '';
+        fim.hidden = !tem;
+    }
+};
+
 const iniciarRealTimeSync = () => {
     renderSkeletons();
     const unsubConfig = onSnapshot(tdoc("loja", "config"), (snap) => {
+        const vitrineAntes = JSON.stringify(vitrineDaLoja());
         if(snap.exists()) STATE.config = {...STATE.config, ...snap.data()}; atualizarRodapeCarrinhoDOM();
+        if (STATE.diaDoPreco != null && diaDoPreco() !== STATE.diaDoPreco) document.dispatchEvent(new CustomEvent('feira-do-cliente'));   // dias abertos / "pedido para amanhã" mudaram
+        if (STATE.lojaRenderizada && JSON.stringify(vitrineDaLoja()) !== vitrineAntes) renderLoja(true);   // o dono mudou os quadros ou o texto da escolha
         pintarListaDeCondominios();
-        pintarHorariosDeEntrega();
+        pintarModo();
+        pintarContato();
     }, (e) => console.warn('[loja] config:', e?.code || e));
     unsubscribes.push(unsubConfig);
 
-    // Nota da loja no cabeçalho (só com 5 avaliações ou mais). Uma leitura só, sem ficar ouvindo.
-    getDoc(tdoc('loja', 'avaliacoes')).then((s) => {
-        const el = document.getElementById('header-avaliacao'), txt = s.exists() ? textoDaNota(s.data()) : '';
+    // Nota da loja no cabeçalho (só com 5 avaliações ou mais). Vem junto no documento da vitrine; sem ele, uma leitura só.
+    const pintarNota = (dados) => {
+        const el = document.getElementById('header-avaliacao'), txt = dados ? textoDaNota(dados) : '';
         if (el && txt) { el.textContent = '★ ' + txt; el.hidden = false; }
-    }).catch(() => { /* sem nota não muda nada */ });
+    };
+    let _notaDoBanco = false;
+    const lerNotaDoBanco = () => {
+        if (_notaDoBanco) return; _notaDoBanco = true;
+        getDoc(tdoc('loja', 'avaliacoes')).then((s) => pintarNota(s.exists() ? s.data() : null)).catch(() => { /* sem nota não muda nada */ });
+    };
 
     // [PATCH 3] Só reconstrói o grid quando o catálogo realmente muda (evita reflows/lag)
     let _assinaturaProdutos = '';
@@ -781,13 +1423,17 @@ const iniciarRealTimeSync = () => {
     let _catsProntas = false;      // espera a 1ª resposta das categorias p/ não "piscar" produto de categoria oculta
     // Junta produtos + categorias do painel (ocultas somem; renomear/ordenar reflete na hora)
     let _lista = '', _porProduto = new Map();
-    const assinaturaDe = (p) => `${p.preco}:${p.precoDe || ''}:${p.foto || ''}:${p.fotoMini || ''}:${p.nome}:${p.cat}:${p.unidade || ''}:${p.pesoMedio || ''}:${p.mostrarPrimeiro || ''}`;
+    const assinaturaDe = (p) => `${p.preco}:${p.precoDe || ''}:${p.foto || ''}:${p.fotoMini || ''}:${p.nome}:${p.cat}:${p.unidade || ''}:${p.pesoMedio || ''}:${p.mostrarPrimeiro || ''}:${p.chegouEm || ''}:${p.estacao ? 1 : ''}:${p.escolha ? 1 : ''}:${Array.isArray(p.palavras) ? p.palavras.join(',') : ''}`;
     const aplicarCatalogo = () => {
+        if (STATE.lojaBloqueada) return;                       // loja bloqueada pela plataforma: fica o aviso de fora do ar
         if (!_catsProntas || !_produtosChegaram) return;
         STATE.catalogoChegou = true;
         // preço do DIA DA ENTREGA (feira do cliente, ou hoje): todo o resto da loja usa p.preco
         const dia = diaDoPreco(); _diaDoPrecoAplicado = dia; STATE.diaDoPreco = dia;
-        STATE.produtos = aplicarCategorias(_produtosBrutos.map((p) => ({ ...p, precoNormal: p.preco, preco: precoDoDia(p, dia) })));
+        const comPreco = aplicarCategorias(_produtosBrutos.map((p) => ({ ...p, precoNormal: p.preco, preco: precoDoDia(p, dia) })));
+        // produto que não sai neste dia (js/dias-lib.js) sai da vitrine; a busca ainda avisa "Alface: só quarta"
+        STATE.produtos = comPreco.filter((p) => vendeNoDia(p, dia));
+        STATE.foraDoDia = comPreco.filter((p) => !vendeNoDia(p, dia));
         const lista = STATE.produtos.map(p => p.id).join('|') + '#' + assinaturaCategorias();
         const porProduto = new Map(STATE.produtos.map(p => [p.id, assinaturaDe(p)]));
         const assinatura = lista + '#' + [...porProduto.values()].join('|');
@@ -803,16 +1449,35 @@ const iniciarRealTimeSync = () => {
         }
         syncCarrinhoComPrecosAoVivo();
         STATE.carrinho.forEach(item => { atualizarBadgesDOM(item.id, item.qtd); });
+        pintarEscolhaDia();
+        if (STATE.carrinho.some((i) => i.foraDoDia)) atualizarRodapeCarrinhoDOM();
         tentarRestaurarSacola();
     };
     // a feira do cliente mudou (link, condomínio, conta) ou virou o dia: os preços mudam junto
     document.addEventListener('feira-do-cliente', aplicarCatalogo);
     setInterval(() => { if (diaDoPreco() !== _diaDoPrecoAplicado) aplicarCatalogo(); }, 60000);
-    const unsubProdutos = onSnapshot(tcol("produtos"), (snap) => {
+    // A vitrine vem de UM documento (loja/catalogo, montado pelo servidor) + os produtos que mudaram há pouco.
+    // Sem o documento (ou com qualquer problema), volta sozinha para o jeito antigo: ler os produtos um por um.
+    // (js/catalogo-loja.js; ingrediente de receita e produto desligado não vão para a vitrine)
+    // Categorias, aviso do dia e nota vêm JUNTO no documento da vitrine (antes: 1 leitura por categoria a cada visita).
+    // Documento de antes, ou jeito antigo: cada um é lido do banco, como sempre foi. Depois de ler do banco, fica no banco.
+    let _catsDoBanco = false;
+    const lerCategoriasDoBanco = () => {
+        if (_catsDoBanco) return; _catsDoBanco = true;
+        unsubscribes.push(iniciarCategorias(() => { _catsProntas = true; aplicarCatalogo(); }));
+    };
+    const usarExtras = (ex) => {
+        if (!ex) { lerCategoriasDoBanco(); lerNotaDoBanco(); lerComunicadoDoBanco(); return; }
+        if (!_catsDoBanco) { definirCategorias(ex.categorias); _catsProntas = true; }
+        if (!_notaDoBanco) pintarNota(ex.avaliacoes);
+        usarComunicado(ex.comunicados);
+    };
+    const unsubProdutos = ouvirVitrine({ onSnapshot, query, where, docCatalogo: tdoc('loja', 'catalogo'), colProdutos: tcol('produtos') }, { forcarAntigo: EM_PREVIA, aoExtras: usarExtras, aoMudar: (lista) => {
         _produtosChegaram = true;
-        _produtosBrutos = snap.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter(p => p.ativo && !p.soInsumo);   // ingrediente de receita não vai para a vitrine
+        _produtosBrutos = lista;
+        STATE.produtosTodos = _produtosBrutos;   // para saber se a loja tem produto de dia certo (mostra "Hoje | Amanhã")
         aplicarCatalogo();
-    }, (e) => {
+    }, aoErro: (e) => {
         console.warn('[loja] produtos:', e?.code || e);
         // o banco recusou: a plataforma desligou esta loja. Avisa, mesmo que houvesse vitrine guardada no aparelho.
         if (e && e.code === 'permission-denied') {
@@ -821,9 +1486,8 @@ const iniciarRealTimeSync = () => {
         }
         if (STATE.lojaRenderizada) return;      // já tem vitrine na tela: mantém
         document.getElementById('lista-produtos').innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Não consegui carregar os produtos</p><span>Verifique a internet e tente de novo.</span><button class="btn btn-primary" style="margin-top:14px" data-action="recarregar">Tentar de novo</button></div>`;
-    });
+    } });
     unsubscribes.push(unsubProdutos);
-    unsubscribes.push(iniciarCategorias(() => { _catsProntas = true; aplicarCatalogo(); }));
     setTimeout(() => { if (!_catsProntas) { _catsProntas = true; aplicarCatalogo(); } }, 2500);   // offline/sem resposta: segue sem categorias
 };
 
@@ -927,7 +1591,7 @@ const injetarModalDetalheSeNecessario = () => {
         const fracionavel = isFracionavel(p.unidade);
 
         if (escreverCampo) $('md-qtd').value = formatarQuantidadeVisual(qtd, modoPeso());
-        $('md-qtd-unid').textContent = modoPeso() ? (p.unidade || 'kg') : (qtd === 1 ? 'unidade' : 'unidades');
+        $('md-qtd-unid').textContent = modoPeso() ? (p.unidade || 'kg') : ehPacote(p) ? (qtd === 1 ? 'pacote' : 'pacotes') : ehPote(p) ? (qtd === 1 ? 'potinho' : 'potinhos') : (qtd === 1 ? 'unidade' : 'unidades');
         $('md-menos').disabled = qtd <= passo();
         marcarPresetAtivo();
 
@@ -951,10 +1615,16 @@ const injetarModalDetalheSeNecessario = () => {
             }
             btn.textContent = `Adicionar ${qtd} ${qtd === 1 ? 'unidade' : 'unidades'}`;
         } else {
-            const total = p.preco * qtd;
+            // com a promoção misturada, o total deste produto depende dos outros pacotes que já estão na sacola
+            const promo = fracionavel ? null : promoDe(p);
+            let total = p.preco * qtd;
+            if (promo) {
+                const lista = STATE.carrinho.filter((i) => i.id !== p.id).concat([{ ...p, qtd, tipo: 'un' }]);
+                total = contaDaSacola(lista).itens[lista.length - 1].sub / 100;
+            }
             resumo.className = 'md-resumo md-resumo-exato';
-            resumo.innerHTML = `<div class="md-resumo-linha"><span>Total</span><strong>${fmt(total)}</strong></div>`;
-            btn.textContent = `Adicionar • ${fmt(total)}`;
+            resumo.innerHTML = `<div class="md-resumo-linha"><span>Total</span><strong>${fmt(total)}</strong></div>${promo ? `<small>Promoção ${escapeHTML(textoPromo(promo))}${misturaPromo(p) ? ', pode misturar com outros pacotes' : ''}</small>` : ''}`;
+            btn.textContent = ehPacote(p) ? `Adicionar ${emPalavras(qtd, NOMES_PACOTE)} • ${fmt(total)}` : ehPote(p) ? `Adicionar ${emPalavras(qtd, NOMES_POTE)} • ${fmt(total)}` : `Adicionar • ${fmt(total)}`;
         }
     };
 
@@ -1072,7 +1742,7 @@ const mensagemDeErroAmigavel = (erro) => {
 // fetch com aviso antecipado de offline e tempo limite
 const chamarApi = async (url, corpo, { comToken = false, limiteMs = 20000 } = {}) => {
     // Prévia da aparência (aba do painel): dá para montar o pedido, mas nada é enviado nem cancelado.
-    if (EM_PREVIA) throw new Error('Esta é só a prévia da aparência: aqui nenhum pedido é enviado.');
+    if (EM_PREVIA) throw Object.assign(new Error('Esta é só a prévia da aparência: aqui nenhum pedido é enviado.'), { previa: true });
     if (!navigator.onLine) throw new Error(MSG_SEM_CONEXAO);
 
     const cabecalhos = { 'Content-Type': 'application/json' };
@@ -1274,17 +1944,54 @@ const repetirPedido = (pedId) => {
     return porNoPedido(ped.itens);
 };
 
-const guardarListaDaSemana = () => {
+// LISTA DA SEMANA, bem à vista: um cartão na sacola (acima do total) diz o que faz e muda de texto
+// conforme a lista guardada: "Guardar lista", "Atualizar lista" ou "Esta é a sua lista".
+const pintarCartaoDaLista = () => {
+    const card = document.getElementById('lista-semana-card'); if (!card) return;
+    card.hidden = STATE.carrinho.length < 3 || EM_PREVIA;
+    if (card.hidden) return;
+    const lista = lerListaSemana(), igual = !!lista && mesmoConjunto(STATE.carrinho, lista.itens);
+    document.getElementById('lista-semana-titulo').textContent = igual ? 'Esta é a sua lista da semana' : (lista ? 'Mudou a sua lista?' : 'Compra isso toda semana?');
+    document.getElementById('lista-semana-sub').textContent = igual ? 'Fica no topo da loja para repetir num toque.' : (lista ? 'Troque a lista guardada por esta sacola.' : 'Guarde como sua lista e repita num toque.');
+    const bt = document.getElementById('btn-guardar-lista');
+    bt.hidden = igual; bt.textContent = lista ? 'Atualizar lista' : 'Guardar lista';
+    card.classList.toggle('igual', igual);
+};
+const gravarLista = (lista) => {
+    try { localStorage.setItem(chave(CHAVE_LISTA), JSON.stringify(lista)); return true; } catch (_) { showToast('Não consegui guardar a lista neste aparelho.', true); return false; }
+};
+// Guardar a sacola como lista. Depois pergunta: pedir agora, ou só deixar guardada para a próxima semana
+// (aí a sacola esvazia sozinha: é o jeito de "montar a lista" sem fazer pedido hoje).
+const guardarListaDaSemana = async () => {
     const lista = listaDoCarrinho(STATE.carrinho);
-    if (!lista) return;
-    try { localStorage.setItem(chave(CHAVE_LISTA), JSON.stringify(lista)); } catch (_) { showToast('Não consegui guardar a lista neste aparelho.', true); return; }
-    showToast(`Lista da semana guardada com ${lista.itens.length} ${lista.itens.length === 1 ? 'item' : 'itens'}. Ela fica no topo da loja.`);
-    renderAtalhos();
+    if (!lista || !gravarLista(lista)) return;
+    renderAtalhos(); pintarCartaoDaLista(); hapticFeedback();
+    const n = lista.itens.length, itens = `${n} ${n === 1 ? 'item' : 'itens'}`;
+    const pedirAgora = await customConfirm('Lista guardada!', `Sua lista da semana tem ${itens} e fica no topo da loja: na próxima vez, é um toque para pôr tudo na sacola, com os preços do dia. Quer pedir agora ou deixar só guardada?`, { ok: 'Pedir agora', nao: 'Só guardar' });
+    if (pedirAgora) return;
+    STATE.carrinho = []; dbStorage.set(chave('banca_cart'), { v: CART_VERSION, items: [] }); guardarNaConta();
+    renderCarrinhoCompleto(); renderAtalhos();
+    if (ehCelular() && document.getElementById('carrinho')?.classList.contains('aberto') && history.state?.cart) history.back();
+    showToast(`Lista guardada para a próxima semana (${itens}). Ela está no topo da loja.`);
+};
+// depois do pedido: oferecer guardar o que acabou de pedir como lista (só se for diferente da guardada)
+let _listaDoUltimoPedido = null;
+const oferecerListaNoSucesso = (lista) => {
+    _listaDoUltimoPedido = lista;
+    const b = document.getElementById('btn-lista-sucesso'); if (!b) return;
+    const atual = lerListaSemana();
+    b.hidden = !lista || (!!atual && mesmoConjunto(atual.itens, lista.itens));
+    b.textContent = atual ? 'Trocar minha lista da semana por este pedido' : 'Guardar este pedido como minha lista da semana';
+};
+const guardarListaDoPedido = (botao) => {
+    if (!_listaDoUltimoPedido || !gravarLista(_listaDoUltimoPedido)) return;
+    botao.hidden = true; renderAtalhos(); hapticFeedback();
+    showToast('Pronto! Na próxima semana, toque em "Minha lista da semana" no topo da loja.');
 };
 const verListaDaSemana = async () => {
     const lista = lerListaSemana(); if (!lista) return;
     const nomes = lista.itens.map(i => i.nome).filter(Boolean).join(', ');
-    const apagar = await customConfirm('Minha lista da semana', `${nomes || lista.itens.length + ' itens'}. Para mudar a lista, monte o pedido como quiser e toque em "Guardar como minha lista da semana".`, { ok: 'Apagar a lista', nao: 'Fechar' });
+    const apagar = await customConfirm('Minha lista da semana', `${nomes || lista.itens.length + ' itens'}. Para mudar, monte a sacola como quiser e toque em "Atualizar lista" (aparece na sacola, acima do total).`, { ok: 'Apagar a lista', nao: 'Fechar' });
     if (!apagar) return;
     try { localStorage.removeItem(chave(CHAVE_LISTA)); } catch (_) {}
     showToast('Lista apagada.'); renderAtalhos();
@@ -1321,17 +2028,61 @@ const instalarApp = async () => {
     if (ehIphone()) await customConfirm('Pôr a loja na tela inicial', 'No Safari, toque no botão Compartilhar (o quadrado com a seta para cima) e depois em "Adicionar à Tela de Início". A loja passa a abrir como um aplicativo.', { ok: 'Entendi', nao: 'Fechar' });
 };
 
+// CONVITE DO IPHONE: cartão na vitrine explicando como pôr a loja na tela inicial (o iPhone não deixa o site
+// abrir o convite sozinho). Só para quem já pediu aqui, fora do modo app e da prévia; fechou, some por 30 dias.
+// Regras em js/instalar-lib.js. O Android não passa por aqui: lá vale o botão "Instalar" do topo.
+const CONVITE_APP = 'banca_convite_app';
+const ICO_COMPARTILHAR = '<svg class="convite-ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Compartilhar" role="img"><path d="M12 15V3M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>';
+function pintarConviteApp() {
+    const caixa = document.getElementById('convite-app'); if (!caixa) return;
+    let fechadoEm = 0; try { fechadoEm = Number(localStorage.getItem(chave(CONVITE_APP))) || 0; } catch (_) { /* sem memória: trata como nunca fechado */ }
+    let emQuadro = false; try { emQuadro = window.self !== window.top; } catch (_) { emQuadro = true; }
+    const mostrar = deveConvidar({ ios: ehIOS(navigator.userAgent, navigator.maxTouchPoints), jaEhApp: jaEhApp(), emPrevia: EM_PREVIA, emQuadro, pedidos: lerLista('banca_meus_pedidos').length, fechadoEm });
+    if (!mostrar) { caixa.hidden = true; caixa.innerHTML = ''; return; }
+    const nav = navegadorIOS(navigator.userAgent);
+    const texto = nav === 'embutido'
+        ? 'Aberta por dentro de outro aplicativo, a loja não vai para a tela inicial. Toque nos três pontinhos e em <b>Abrir no navegador</b>, ou copie o link e cole no Safari.'
+        : nav === 'safari'
+            ? `Toque em <b>Compartilhar</b> ${ICO_COMPARTILHAR} (nos iPhones mais novos, ele fica dentro do botão <b>···</b>) e depois em <b>Adicionar à Tela de Início</b>.`
+            : `Toque em <b>Compartilhar</b> ${ICO_COMPARTILHAR} e depois em <b>Adicionar à Tela de Início</b>.`;
+    caixa.innerHTML = `
+        <div class="convite-cab"><span class="convite-icone" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/><path d="M12 7v6M9.5 10.5 12 13l2.5-2.5"/></svg></span>
+            <div><h2 class="convite-tit">Peça mais rápido da próxima vez</h2><p class="convite-sub">Ponha a loja na tela de início do iPhone. Ela abre como um aplicativo.</p></div>
+            <button type="button" class="convite-x" data-action="convite-fechar" aria-label="Fechar o convite">&times;</button></div>
+        <p class="convite-passo">${texto}</p>
+        <div class="convite-acoes">${nav === 'embutido' ? '<button type="button" class="convite-bt" data-action="convite-copiar"><span>Copiar link da loja</span></button>' : ''}
+            <button type="button" class="convite-agora" data-action="convite-fechar">Agora não</button></div>`;
+    caixa.dataset.nav = nav;
+    caixa.hidden = false;
+}
+pintarConviteApp();
+const fecharConviteApp = () => {
+    try { localStorage.setItem(chave(CONVITE_APP), String(Date.now())); } catch (_) { /* some só nesta visita */ }
+    const caixa = document.getElementById('convite-app'); if (caixa) { caixa.hidden = true; caixa.innerHTML = ''; }
+};
+const copiarLinkDaLoja = async (botao) => {
+    const link = location.href.split('#')[0];
+    let ok = false;
+    try { await navigator.clipboard.writeText(link); ok = true; }
+    catch (_) {
+        const t = document.createElement('textarea'); t.value = link; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;opacity:0;';
+        document.body.appendChild(t); t.select(); try { ok = document.execCommand('copy'); } catch (__) { ok = false; } t.remove();
+    }
+    if (ok) { const r = botao.querySelector('span') || botao; r.textContent = 'Link copiado ✓'; showToast('Link copiado. Abra o Safari e cole na barra de endereço.'); }
+    else showToast('Não consegui copiar. Toque nos três pontinhos e em Abrir no navegador.', true);
+};
+
 // "Indicar para um vizinho": abre o compartilhar do celular (WhatsApp, etc.) com um recado pronto e o link da loja.
 const indicarLoja = async () => {
     const nome = (document.getElementById('header-nome')?.textContent || 'a loja').trim(), url = location.href.split('#')[0];
-    const texto = `Estou pedindo na ${nome} e entregam aqui no condomínio. Dá uma olhada:`;
+    const texto = ehLojaOriginal ? `Estou pedindo na ${nome} e entregam aqui no condomínio. Dá uma olhada:` : `Estou pedindo na ${nome} pelo celular. Dá uma olhada:`;
     try { if (navigator.share) { await navigator.share({ title: nome, text: texto, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
     window.open(`https://wa.me/?text=${encodeURIComponent(texto + ' ' + url)}`, '_blank', 'noopener');
 };
 const dataCurta = (iso) => { try { return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }); } catch (_) { return ''; } };
 function renderAtalhos() {
     const nav = document.getElementById('atalhos'); if (!nav) return;
-    const guardar = document.getElementById('btn-guardar-lista'); if (guardar) guardar.hidden = STATE.carrinho.length < 2;
+    pintarCartaoDaLista();
     const livre = STATE.catalogoChegou && !semAcento(STATE.busca).trim() && STATE.catAtiva === 'todas';
     const pedidos = lerLista('banca_meus_pedidos'), ultimo = pedidos.find(p => Array.isArray(p.itens) && p.itens.length && !p.cancelado), lista = lerListaSemana();
     const avaliar = pedidos.find(p => podeConvidarAvaliar(p));
@@ -1413,6 +2164,8 @@ const transicaoFoto = (fotoCard, abrir) => {
         // 'sem-anim' fica até a tela fechar: tirar aqui fazia a animação de abrir tocar de novo por cima.
     };
     t.finished.then(limpar, limpar);
+    // animação interrompida (trocou de app, tela apagou no meio): o navegador cancela e avisa; não é erro do cliente
+    t.ready.catch(() => {}); t.updateCallbackDone.catch(() => {});
 };
 
 // =========================================================
@@ -1422,10 +2175,16 @@ const transicaoFoto = (fotoCard, abrir) => {
 // =========================================================
 const endCheckout = criarCamposEndereco(document.getElementById('checkout-endereco'), 'cli');
 const endTopo = criarCamposEndereco(document.getElementById('endereco-campos'), 'end');
-const pintarResumoEndereco = () => {
-    const e = lerEnderecoSalvo();
-    document.getElementById('endereco-resumo').textContent = e && e.condominio ? linhaEndereco(e, { curto: true }) : 'Escolha onde entregar';
-};
+function pintarResumoEndereco() {
+    const e = lerEnderecoSalvo(), el = document.getElementById('endereco-resumo');
+    if (!el) return;
+    if (!(e && e.condominio)) { el.textContent = 'Onde entregar?'; return; }
+    if (e.modo !== 'retirada' && !condominioTravado(e.condominio) && condominioUnicoDaFeira()) { el.textContent = 'Informe quadra e lote'; return; }   // o endereço guardado é de outro condomínio
+    const travado = e.modo !== 'retirada' && condominioTravado(e.condominio);
+    // condomínio travado: só quadra e lote (o condomínio é o da feira dele e não muda por aqui)
+    const resto = travado ? linhaEndereco({ ...e, condominio: '' }, { curto: true }) : '';
+    el.textContent = travado ? (resto ? `Entregar: ${resto}` : 'Informe quadra e lote') : linhaEndereco(e, { curto: true });
+}
 pintarResumoEndereco();
 
 // =========================================================
@@ -1481,7 +2240,7 @@ const esquecerDados = async () => {
     // o login anônimo deste aparelho também sai: o próximo pedido daqui não herda os pedidos de quem usou antes
     // (só o login anônimo de cliente: quem está logado no painel neste navegador continua logado)
     try { if (auth.currentUser && auth.currentUser.isAnonymous) await signOut(auth); } catch (_) { /* segue */ }
-    ['banca_clientes', 'banca_endereco', 'banca_meus_pedidos', 'banca_favs', 'banca_modo', CHAVE_LISTA].forEach((k) => { try { localStorage.removeItem(chave(k)); } catch (_) { /* segue */ } });
+    ['banca_clientes', 'banca_endereco', 'banca_meus_pedidos', 'banca_favs', 'banca_modo', 'banca_pagamento', CHAVE_LISTA].forEach((k) => { try { localStorage.removeItem(chave(k)); } catch (_) { /* segue */ } });
     esquecerFeiraCliente();
     showToast('Pronto. Este aparelho esqueceu os seus dados.');
     setTimeout(() => location.reload(), 1300);
@@ -1490,7 +2249,7 @@ const esquecerDados = async () => {
 document.getElementById('btn-salvar-endereco').addEventListener('click', () => {
     const falta = endTopo.validar();
     if (falta) return showToast(falta, true);
-    const endNovo = endTopo.ler(); salvarEndereco(endNovo); pintarResumoEndereco(); feiraDoEnderecoSalvo(endNovo);
+    const endNovo = endTopo.ler(); salvarEndereco(endNovo); travarCondominio(); feiraDoEnderecoSalvo(endNovo);
     closeModal('modal-endereco');
     if (history.state && history.state.modal === 'modal-endereco') history.back();
     showToast('Endereço guardado neste aparelho');
@@ -1530,7 +2289,15 @@ document.body.addEventListener('click', async (e) => {
     const actionTarget = e.target.closest('[data-action]'); 
     if (actionTarget) {
         const action = actionTarget.dataset.action; const id = actionTarget.dataset.id;
-        if(action === 'add' || action === 'inc' || action === 'dec' || action === 'fav' || action === 'trocar') e.stopPropagation();
+        if(action === 'add' || action === 'inc' || action === 'dec' || action === 'fav' || action === 'trocar' || action === 'montar') e.stopPropagation();
+        // MONTAR PEDIDO: abre a tela de montar (de novo, ou para alterar uma linha da sacola); + e − da linha montada
+        if (action === 'montar') {
+            // data-opcoes: combinação sugerida pelo Ajudante ({ grupoId: [opcaoId] }); só ids válidos passam
+            let inicial = null; try { inicial = actionTarget.dataset.opcoes ? limparOpcoes(JSON.parse(actionTarget.dataset.opcoes)) : null; } catch (_) { inicial = null; }
+            abrirMontarDoProduto(id, actionTarget.dataset.linha || null, inicial); return;
+        }
+        if ((action === 'inc' || action === 'dec') && actionTarget.dataset.linha) { mudarLinhaMontada(actionTarget.dataset.linha, action === 'inc' ? 1 : -1); return; }
+        if (action === 'detalhe' && temMontar(produtoPorId(id) || {})) { abrirMontarDoProduto(id); return; }
 
         // CARD COM UNIDADE E QUILO: cada botão diz o que faz, e o toque faz exatamente isso
         const modo = actionTarget.dataset.modo === 'kg' ? 'kg' : actionTarget.dataset.modo === 'un' ? 'un' : null;
@@ -1582,14 +2349,18 @@ document.body.addEventListener('click', async (e) => {
                         atual.replaceWith(grande);
                     };
                     grande.onload = () => (grande.decode ? grande.decode().then(trocar, trocar) : trocar());
-                    grande.src = p.foto;
+                    // pelo redutor (828 px): direto do ImgBB, foto perdida chegava como a figura "service unavailable"
+                    // e tomava a tela; falhou, fica a do card
+                    const pelo = miniatura(p.foto, 828);
+                    grande.src = pelo;
                 }
             } else { delete img.dataset.original; img.removeAttribute('src'); img.style.visibility = 'hidden'; }
             img.alt = p.nome;
             document.getElementById('md-tag').textContent = p.cat || '';
             document.getElementById('md-desc').textContent = p.descricao || "Produto fresco, selecionado no dia.";
+            { let ms = document.getElementById('md-selos'); if (!ms) { ms = document.createElement('div'); ms.id = 'md-selos'; document.getElementById('md-tag').after(ms); } ms.innerHTML = selosHtml(p, true); }
             document.getElementById('md-preco').innerHTML =
-                `${emOferta(p) ? `<s class="md-preco-de">${fmt(p.precoDe)}</s> ` : ''}${fmt(p.preco)} <span class="md-preco-unid">/ ${escapeHTML(p.unidade || 'un')}</span>`;
+                `${emOferta(p) ? `<s class="md-preco-de">${fmt(p.precoDe)}</s> ` : ''}${fmt(p.preco)} <span class="md-preco-unid">/ ${escapeHTML(p.unidade || 'un')}</span>${isFracionavel(p.unidade) && Number(p.pesoMedio) > 0 ? `<small class="md-peso">1 unidade ${escapeHTML(pesoAproximado(p.pesoMedio))}</small>` : ''}`;
 
             // Se o cliente JÁ tem esse item no carrinho, o modal abre no estado atual dele
             const jaNoCarrinho = STATE.carrinho.find(c => c.id === p.id);
@@ -1635,6 +2406,22 @@ document.body.addEventListener('click', async (e) => {
             document.querySelectorAll('#categorias .cat-btn').forEach(b => b.classList.toggle('active', b === actionTarget));
             actionTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
             renderLoja();
+            subirParaOsProdutos();
+        }
+        else if (action === 'ver-pacote') {     // "Também tem em pacote" na sacola: fecha a sacola e mostra o pacote na vitrine
+            if (history.state && history.state.cart) history.back();
+            STATE.busca = ''; const bi = document.getElementById('busca-input'); if (bi) bi.value = '';
+            const aba = document.querySelector('#categorias .cat-btn[data-cat="pacotes"]'); if (aba) aba.click(); else renderLoja();
+            setTimeout(() => {
+                const card = document.querySelector(`#lista-produtos .produto-card[data-id="${CSS.escape(id || '')}"]`);
+                if (!card) return;
+                card.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+                card.classList.add('pacote-mostrar'); setTimeout(() => card.classList.remove('pacote-mostrar'), 1800);
+            }, 380);
+        }
+        else if (action === 'cat-ir') {     // botão "Ver Frutas" de um quadro da vitrine: abre a aba e sobe até ela
+            const aba = document.querySelector(`#categorias .cat-btn[data-cat="${CSS.escape(actionTarget.dataset.cat || '')}"]`);
+            if (aba) { aba.click(); document.querySelector('.controles')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); }
         }
         else if (action === 'fav') { 
             const eraFav = STATE.favoritos.includes(id);
@@ -1657,9 +2444,13 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'esquecer-dados') { esquecerDados(); }
         else if (action === 'copiar-pix') { copiarPix(actionTarget); }
         else if (action === 'instalar') { instalarApp(); }
+        else if (action === 'convite-fechar') { fecharConviteApp(); }
+        else if (action === 'reserva-pronto') { pedidoReservaMandado(); }
+        else if (action === 'convite-copiar') { copiarLinkDaLoja(actionTarget); }
         else if (action === 'por-lista') { const l = lerListaSemana(); if (l) porNoPedido(l.itens); }
         else if (action === 'ver-lista') { verListaDaSemana(); }
         else if (action === 'guardar-lista') { guardarListaDaSemana(); }
+        else if (action === 'guardar-lista-pedido') { guardarListaDoPedido(actionTarget); }
         else if (action === 'estrela') { marcarEstrela(actionTarget); }
         else if (action === 'enviar-avaliacao') { enviarAvaliacao(actionTarget); }
         else if (action === 'cancelar-pedido') { cancelarPedido(id); }
@@ -1687,6 +2478,13 @@ document.addEventListener('input', (e) => {
 
 // 'change' (ao sair do campo / OK do teclado), não 'input': aplicando a cada
 // tecla, "1,5" virava 15 kg e digitar "0" apagava o item no meio da digitação.
+// item que não sai no dia escolhido: "Tirar da sacola" num toque
+document.getElementById('carrinho-itens').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tirar-linha]'); if (!b) return;
+    e.stopPropagation();
+    STATE.carrinho = STATE.carrinho.filter((i) => chaveDaLinha(i) !== b.dataset.tirarLinha);
+    persistirCarrinhoComDebounce(); renderCarrinhoCompleto();
+});
 document.getElementById('carrinho-itens').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.classList.contains('qtd-input')) { e.preventDefault(); e.target.blur(); }
 });
@@ -1694,6 +2492,11 @@ document.getElementById('carrinho-itens').addEventListener('focusin', (e) => {
     if (e.target.classList.contains('qtd-input')) e.target.select?.();
 });
 document.getElementById('carrinho-itens').addEventListener('change', (e) => {
+    if(e.target.classList.contains('qtd-input') && e.target.dataset.linha) {
+        const v = /^\d{1,3}$/.test(e.target.value.trim()) ? Number(e.target.value.trim()) : NaN;
+        if (!Number.isFinite(v)) { renderCarrinhoCompleto(); return; }
+        mudarLinhaMontada(e.target.dataset.linha, v, true); return;
+    }
     if(e.target.classList.contains('qtd-input')) {
         const id = e.target.dataset.id; const p = STATE.produtos.find(x => x.id === id);
         const itemCart = STATE.carrinho.find(x => x.id === id);
@@ -1745,7 +2548,10 @@ window.addEventListener('popstate', (e) => {
 });
 
 const toggleCartMobile = (abrir) => {
-    if (!ehCelular()) return;
+    if (!ehCelular()) {        // tablet: a sacola fica embaixo dos produtos; o botão flutuante leva até ela
+        if (abrir) document.getElementById('carrinho')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+        return;
+    }
     if (abrir) { 
         document.getElementById('carrinho').classList.add('aberto'); document.getElementById('carrinho-overlay').classList.add('aberto'); 
         document.body.style.overflow = 'hidden'; history.pushState({cart: true}, ''); 
@@ -1755,6 +2561,7 @@ const toggleCartMobile = (abrir) => {
 };
 document.getElementById('btn-carrinho-mobile')?.addEventListener('click', () => toggleCartMobile(true));
 document.getElementById('carrinho-overlay')?.addEventListener('click', () => { if (history.state?.cart) history.back(); });
+['btn-fechar-sacola', 'btn-continuar-comprando'].forEach((id) => document.getElementById(id)?.addEventListener('click', () => { if (history.state?.cart) history.back(); }));
 
 document.getElementById('cli-pagamento').addEventListener('change', (e) => { 
     const isDinheiro = e.target.value === 'Dinheiro';
@@ -1763,7 +2570,7 @@ document.getElementById('cli-pagamento').addEventListener('change', (e) => {
 });
 
 // UI Checkout
-const assinaturaDoCarrinho = () => STATE.carrinho.map(i => `${i.id}:${i.qtd}:${i.tipo || ''}`).join('|');
+const assinaturaDoCarrinho = () => STATE.carrinho.map(i => `${chaveDaLinha(i)}:${i.qtd}:${i.tipo || ''}`).join('|');
 // Guarda o carrinho JÁ (sem esperar) e recarrega buscando a versão nova no servidor.
 const recarregarComPedidoGuardado = (aviso) => {
     try { clearTimeout(debounceSalvarCarrinho); dbStorage.set(chave('banca_cart'), { v: CART_VERSION, items: STATE.carrinho }); } catch (_) { /* segue */ }
@@ -1772,6 +2579,34 @@ const recarregarComPedidoGuardado = (aviso) => {
     setTimeout(recarregarFresco, 1600);
 };
 try { if (sessionStorage.getItem('banca_atualizou')) { sessionStorage.removeItem('banca_atualizou'); setTimeout(() => showToast('Loja atualizada. Seu pedido continua aqui: é só finalizar.'), 1800); } } catch (_) { /* sem armazenamento */ }
+
+// CLIENTE QUE VOLTA: nome, WhatsApp e endereço já guardados viram um resumo; "Mudar meus dados" abre os campos (js/conhecido-lib.js).
+let _dadosAbertos = false;      // a pessoa pediu para mudar (ou faltou algo no envio): os campos ficam à mostra até a tela abrir de novo
+const pintarConhecido = () => {
+    const tela = document.getElementById('modal-checkout'), card = document.getElementById('ck-conhecido'); if (!tela || !card) return;
+    const retirada = modoEscolhido() === 'retirada', e = endCheckout.ler();
+    const r = _dadosAbertos ? null : resumoDoCliente({
+        nome: document.getElementById('cli-nome')?.value, telefone: document.getElementById('cli-telefone')?.value, retirada,
+        enderecoTexto: linhaEndereco(e), enderecoOk: !endCheckout.validar(),
+    });
+    card.hidden = !r; tela.classList.toggle('ck-resumido', !!r);
+    if (!r) return;
+    const por = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+    por('ck-conhecido-titulo', r.titulo); por('ck-conhecido-end', r.endereco ? `📍 ${r.endereco}` : ''); por('ck-conhecido-tel', `WhatsApp ${r.telefone}`);
+};
+const abrirDadosDoCliente = () => { _dadosAbertos = true; pintarConhecido(); };
+document.getElementById('ck-conhecido-mudar')?.addEventListener('click', () => { abrirDadosDoCliente(); document.getElementById('checkout-sub-titulo')?.scrollIntoView({ block: 'nearest' }); });
+document.addEventListener('change', (e) => { if (e.target && e.target.name === 'cli-modo') pintarConhecido(); });
+// Forma de pagamento da última vez já vem marcada (só na 1ª abertura da tela: depois vale o que a pessoa escolher).
+const CHAVE_PAGAMENTO = () => chave('banca_pagamento');
+let _pagamentoLembrado = false;
+const lembrarPagamento = () => {
+    if (_pagamentoLembrado) return; _pagamentoLembrado = true;
+    const sel = document.getElementById('cli-pagamento'); if (!sel) return;
+    let guardado = ''; try { guardado = JSON.parse(localStorage.getItem(CHAVE_PAGAMENTO()) || '""'); } catch (_) { /* sem memória */ }
+    const vale = pagamentoQueVale(guardado, [...sel.options].filter((o) => !o.hidden && !o.disabled).map((o) => o.value));
+    if (vale && sel.value !== vale) { sel.value = vale; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+};
 
 document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     // TELA DESATUALIZADA: fechar o pedido numa tela velha é onde dá problema (campo que não existe mais,
@@ -1788,26 +2623,133 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     // cair no meio e a pessoa abrir de novo e reenviar, o servidor reconhece e não cria um segundo pedido.
     const cara = assinaturaDoCarrinho();
     if (!STATE.checkoutSessionId || STATE.checkoutCara !== cara) { STATE.checkoutSessionId = novoId(); STATE.checkoutCara = cara; }
-    pintarHorariosDeEntrega();      // garante a lista de horários na hora de abrir (não depende de a configuração ter chegado antes)
+    pintarModo();                   // garante o modo (entrega/retirada) e a lista de horários na hora de abrir (não depende de a configuração ter chegado antes)
+    lembrarPagamento();
+    _dadosAbertos = false; pintarConhecido();
     pintarAvisoDeEntrega();
+    lerTrocaGuardada();
+    renderComanda();
     openModal('modal-checkout');
+    contarFunil('sacola');
 });
+
+// Valor da sacola (itens exatos + estimativa dos a pesar), para saber se a troca de dia mudou o que a pessoa viu.
+const valorDaSacola = () => Math.round(STATE.carrinho.reduce((t, i) => t + (ehAPesar(i) ? (valorEstimado(i) || 0) : (subtotalDoItem(i) || 0)), 0) * 100) / 100;
+
+// COMANDA: o pedido do jeito que a banca vai receber, no alto da tela de envio. Ninguém pergunta "tem certeza?":
+// a quantidade grande à esquerda ("2 batatas", "1 kg", "4 pacotes") já deixa claro o que vai.
+const renderComanda = () => {
+    const el = document.getElementById('comanda'); if (!el) return;
+    const ent = entregaDoPedido();
+    const quando = ent && ent.amanha ? `para amanhã, ${textoDoDia(ent.dia)}` : ent && !ent.hoje ? `para ${textoDoDia(ent.dia)}` : 'para hoje';
+    const grupos = GRUPOS_SACOLA.map(g => ({ ...g, itens: STATE.carrinho.filter(i => grupoDoItem(i) === g.id) })).filter(g => g.itens.length);
+    let exato = 0, estimado = 0, temPesar = false, semEst = false;
+    const valor = (i) => {
+        if (ehAPesar(i)) { temPesar = true; const v = valorEstimado(i); if (v == null) { semEst = true; return 'a pesar'; } estimado += v; return `≈ ${fmt(v)}`; }
+        const v = subtotalDoItem(i); exato += v; if (isFracionavel(i.unidade)) temPesar = true; return fmt(v);
+    };
+    const linha = (i) => {
+        const p = produtoDoItem(i), n = Math.round(Number(i.qtd) || 0), pr = promoDoItem(i), usou = naPromoDoItem(i) > 0;
+        const pac = itemEhPacote(i), pote = !pac && itemEhPote(i), frac = isFracionavel(i.unidade), pm = pesoMedioDe(i);
+        const q = frac && i.tipo !== 'un' ? `${formatarQuantidadeVisual(Number(i.qtd) || 0, true)} ${String(i.unidade || 'kg').toLowerCase()}`
+            : emPalavras(n, pac ? NOMES_PACOTE : pote ? NOMES_POTE : frac ? nomesDaUnidade(p.nomeUn) : { um: 'unidade', varios: 'unidades' });
+        const sub = [frac && i.tipo === 'un' && pm > 0 ? pesoAproximado(pm * n) : '', pac && pesoDoPacote(p) ? `pacote de ${pesoDoPacote(p)}` : '', usou ? `promoção ${textoPromo(pr)}` : '', i.adicionais || ''].filter(Boolean).join(' · ');
+        return `<li class="cm-linha${pac ? ' cm-linha--pacote' : pote ? ' cm-linha--tempero' : ''}"><span class="cm-q">${escapeHTML(q)}</span><span class="cm-n">${escapeHTML(i.nome)}${sub ? `<small>${escapeHTML(sub)}</small>` : ''}</span><span class="cm-v">${valor(i)}</span></li>`;
+    };
+    const corpo = grupos.map(g => `${grupos.length > 1 ? `<li class="cm-grupo cm-grupo--${g.id}">${g.ico()}<span>${g.titulo}</span></li>` : ''}${g.itens.map(linha).join('')}`).join('');
+    const total = exato + estimado, aproximado = temPesar || semEst;
+    const temPac = STATE.carrinho.some(itemEhPacote);
+    // A comanda começa FECHADA numa linha (itens, dia e total): os campos aparecem logo, sem rolar. Um toque abre a lista.
+    const nItens = STATE.carrinho.length, aberta = el.querySelector('details')?.open === true;
+    el.innerHTML = `
+        <details class="cm-dobra"${aberta ? ' open' : ''}>
+            <summary class="cm-cab"><span class="cm-cab-txt"><b>Seu pedido</b><small>${nItens} ${nItens === 1 ? 'item' : 'itens'} · ${escapeHTML(quando)}</small></span><span class="cm-cab-total">${aproximado ? '≈ ' : ''}${fmt(total)}${semEst ? ' +' : ''}</span><span class="cm-seta" aria-hidden="true"></span></summary>
+            <ul class="cm-itens">${corpo}</ul>
+            <div class="cm-total"><b>${aproximado ? 'Total estimado' : 'Total'}</b><span>${aproximado ? '≈ ' : ''}${fmt(total)}${semEst ? ' + itens a pesar' : ''}</span></div>
+            ${aproximado ? `<p class="cm-nota">O que é pesado na hora pode variar um pouco${temPac ? '. Os pacotes têm preço certo.' : '.'}</p>` : ''}
+            <button type="button" class="cm-voltar" data-fechar="modal-checkout">‹ Voltar e mudar algum item</button>
+        </details>`;
+};
+
+// "Se faltar algum item": a escolha vai no fim da observação do pedido e fica lembrada neste aparelho.
+const trocaEscolhida = () => document.querySelector('input[name="cli-troca"]:checked')?.value || '';
+const lerTrocaGuardada = () => {
+    let v = ''; try { v = localStorage.getItem(chave('banca_troca')) || ''; } catch (_) { /* sem memória */ }
+    const r = document.querySelector(`input[name="cli-troca"][value="${CSS.escape(v)}"]`); if (r && !trocaEscolhida()) r.checked = true;
+};
+document.addEventListener('change', (e) => {
+    if (e.target && e.target.name === 'cli-troca') { try { localStorage.setItem(chave('banca_troca'), e.target.value); } catch (_) { /* sem memória */ } }
+});
+
+// Envia o pedido. Falha rápida do servidor (5xx, rede caindo) ganha UMA tentativa a mais, com a MESMA chave:
+// se a primeira chegou a gravar, o servidor reconhece a chave e devolve o mesmo pedido (nunca cria dois).
+const enviarPedidoAoServidor = async (payload) => {
+    try { return await chamarApi('/api/checkout', payload, { comToken: true }); }
+    catch (e) {
+        if (!tentarDeNovo(e)) throw e;
+        await new Promise((r) => setTimeout(r, 1500));
+        return chamarApi('/api/checkout', payload, { comToken: true });
+    }
+};
+
+// PLANO B: o servidor não respondeu (ou está fora do ar). A mensagem do pedido é montada aqui, no celular, e vai
+// pelo WhatsApp da banca. A sacola só esvazia quando a pessoa diz que mandou. Regras em js/pedido-reserva-lib.js.
+const ICO_ZAP_RESERVA = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3a.4.4 0 0 0 0-.4l-.8-1.9c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7a2.8 2.8 0 0 0 1.8-1.3 2.3 2.3 0 0 0 .2-1.3c-.1-.1-.2-.2-.5-.3z"/></svg>';
+function oferecerPedidoPeloWhatsApp(d) {
+    const k = contatoDaLoja(STATE.config), numero = k.whatsapp || normalizarWhatsapp(STATE.config.wpp);
+    const caixa = document.getElementById('reserva-corpo');
+    if (!numero || !caixa || !STATE.carrinho.length) return false;
+    let total = 0, aproximado = false;
+    const itens = STATE.carrinho.map((i) => {
+        const aPesar = i.tipo === 'un' && isFracionavel(i.unidade);
+        const sub = aPesar ? 0 : subtotalDoItem(i);
+        if (aPesar || i.tipo === 'kg') aproximado = true;
+        total += sub;
+        return { nome: i.nome, qtd: i.qtd, tipo: i.tipo, aPesar, subtotal: sub, adicionais: i.adicionais || '' };
+    });
+    const codigo = String(d.chave || '').slice(-6).toUpperCase();
+    const texto = textoPedidoReserva({ ...d, loja: (document.getElementById('header-nome')?.textContent || '').trim(), codigo, itens, total, aproximado });
+    const link = linkWhatsapp(numero, texto);
+    caixa.innerHTML = `
+        <div class="reserva-ico" aria-hidden="true">${ICO_ZAP_RESERVA}</div>
+        <h2 class="reserva-tit" id="reserva-titulo">O sistema da banca não respondeu</h2>
+        <p class="reserva-txt">Seu pedido não se perdeu. Mande pelo WhatsApp da banca: a mensagem já vai pronta, com os itens, o endereço e o pagamento.</p>
+        <a class="reserva-zap" id="reserva-zap" href="${escapeHTML(link)}" target="_blank" rel="noopener noreferrer">${ICO_ZAP_RESERVA}<span>Mandar o pedido no WhatsApp</span></a>
+        <div class="reserva-depois" id="reserva-depois" hidden>
+            <p>Mandou a mensagem? Então a banca já recebeu.</p>
+            <button type="button" class="reserva-pronto" data-action="reserva-pronto">Pronto, mandei</button>
+        </div>
+        <button type="button" class="reserva-site" data-fechar="modal-reserva">Tentar de novo pelo site</button>
+        ${codigo ? `<p class="reserva-cod">Código do pedido: <b>${escapeHTML(codigo)}</b></p>` : ''}`;
+    document.getElementById('reserva-zap').addEventListener('click', () => { const dp = document.getElementById('reserva-depois'); if (dp) dp.hidden = false; });
+    openModal('modal-reserva');
+    return true;
+}
+const pedidoReservaMandado = () => {
+    closeModal('modal-reserva'); closeModal('modal-checkout');
+    STATE.checkoutSessionId = null;
+    STATE.carrinho = []; dbStorage.set(chave('banca_cart'), { v: CART_VERSION, items: [] }); guardarNaConta();
+    renderCarrinhoCompleto();
+    showToast('Pedido mandado pelo WhatsApp. A banca confirma por lá.');
+};
 
 // Envio de Pedido com o novo formato de Unidades
 document.getElementById('btn-enviar-pedido').addEventListener('click', async (e) => {
     const btn = e.currentTarget; if (btn.disabled) return;
     const nome = document.getElementById('cli-nome').value.trim();
-    const endereco = endCheckout.ler();
+    const retirada = modoEscolhido() === 'retirada';
+    // retirada na banca: sem endereço (condomínio, quadra e lote vão vazios)
+    const endereco = retirada ? { condominioId: '', condominio: '', formatoEndereco: 'ql', quadra: '', lote: '' } : endCheckout.ler();
     const { quadra, lote } = endereco;
     const telefone = (document.getElementById('cli-telefone')?.value || '').replace(/\D/g, '');
     const pag = document.getElementById('cli-pagamento').value;
     const trocoRaw = document.getElementById('cli-troco')?.value.trim();
-    const obs = document.getElementById('cli-obs').value.trim();
+    const obs = obsComTroca(document.getElementById('cli-obs').value.trim(), trocaEscolhida());
     const cupom = (document.getElementById('cli-cupom')?.value || '').trim().toUpperCase();
     
-    const faltaEndereco = endCheckout.validar();
-    if (faltaEndereco) return showToast(faltaEndereco, true);
-    if (!nome) return showToast("Escreva o seu nome para a entrega.", true);
+    const faltaEndereco = retirada ? '' : endCheckout.validar();
+    if (faltaEndereco) { abrirDadosDoCliente(); return showToast(faltaEndereco, true); }
+    if (!nome) { abrirDadosDoCliente(); return showToast(retirada ? "Escreva o seu nome para a retirada." : "Escreva o seu nome para a entrega.", true); }
     // Horário de entrega: escolher é OPCIONAL. Sem escolha, o pedido chega à loja como "horário a combinar".
     btn.disabled = true; btn.textContent = 'Enviando pedido...';
 
@@ -1816,31 +2758,41 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         const itensFormatados = STATE.carrinho.map(item => {
             // Se for unidade a pesar, envia com preco 0 e tag de pendente
             const isAPesar = item.tipo === 'un' && isFracionavel(item.unidade);
-            if (!isAPesar) totalEstimado += (item.preco * item.qtd);
+            if (!isAPesar) totalEstimado += subtotalDoItem(item);
             return { 
                 id: item.id, 
                 nome: item.nome,
                 qtd: item.qtd, 
                 tipo: item.tipo, // 'kg' ou 'un'
                 aPesar: isAPesar,
-                precoOriginal: item.preco
+                precoOriginal: item.preco,
+                ...(item.linha ? { opcoes: item.opcoes || {}, adicionais: item.adicionais || '' } : {})   // montar pedido: só os ids vão para o servidor (ele cobra)
             };
         });
 
         // o condomínio escolhido agora pode ser de uma feira desta banca. Se a feira mudou, os preços e a data
         // mudam junto: NÃO envia com um valor que a pessoa não viu. Atualiza a sacola e pede para conferir.
-        const feiraAntes = lerFeiraCliente();
+        // Antes a pessoa tinha de tocar em "Enviar" DUAS vezes sempre que isso acontecia. Agora: se o valor da sacola
+        // não mudou, segue direto; se mudou, uma pergunta clara mostra o dia e o total novo, e "Enviar assim" já envia.
+        const feiraAntes = lerFeiraCliente(), valorAntes = valorDaSacola();
         if (endereco.condominio) { try { await feiraPeloCondominio(endereco.condominio, perguntarFeira); } catch (_) { /* segue */ } }
         if (lerFeiraCliente() !== feiraAntes || (STATE.diaDoPreco != null && diaDoPreco() !== STATE.diaDoPreco)) {
-            document.dispatchEvent(new CustomEvent('feira-do-cliente')); pintarAvisoDeEntrega();
-            const ent = entregaDaFeira();
-            showToast(ent && !ent.hoje ? `Seu condomínio é atendido na feira de ${textoDoDia(ent.dia)}: os preços são os desse dia. Confira e toque em enviar de novo.` : 'Os preços foram atualizados. Confira e toque em enviar de novo.');
-            return;
+            document.dispatchEvent(new CustomEvent('feira-do-cliente')); pintarAvisoDeEntrega(); renderComanda();
+            const fora = STATE.carrinho.filter((i) => i.foraDoDia), valorDepois = valorDaSacola(), entF = entregaDaFeira();
+            if (fora.length || Math.abs(valorDepois - valorAntes) >= 0.01) {
+                const dia = entF && !entF.hoje ? textoDoDia(entF.dia) : nomeDoDiaDoPedido();
+                const ok = !fora.length && await customConfirm(`Seu pedido é para ${dia}`,
+                    `Os preços são os desse dia, então o total mudou de ${fmt(valorAntes)} para ${fmt(valorDepois)}. Quer enviar assim?`, { ok: 'Enviar assim', nao: 'Voltar e conferir' });
+                if (!ok) { if (fora.length) showToast(`${fora.map((i) => i.nome).join(', ')} não ${fora.length > 1 ? 'saem' : 'sai'} para ${dia}. Tire da sacola ou troque o dia.`, true); return; }
+            }
         }
-        const ent = entregaDaFeira();
+        const ent = entregaDoPedido();
+        { const fora = STATE.carrinho.filter((i) => i.foraDoDia); if (fora.length) { showToast(`${fora.map((i) => i.nome).join(', ')} não ${fora.length > 1 ? 'saem' : 'sai'} para ${nomeDoDiaDoPedido()}. Tire da sacola ou troque o dia.`, true); return; } }
         const payload = {
-            feira: lerFeiraCliente(),
+            feira: lerFeiraCliente(),                       // a feira vale também para a retirada (o servidor confere a agenda do dia)
+            modo: retirada ? 'retirada' : 'entrega',
             diaPreco: STATE.diaDoPreco, ...(ent ? { entregaDia: ent.dia } : {}),   // o dia que a loja mostrou: o servidor confere
+            ...(ent && ent.amanha ? { paraAmanha: true } : {}),                    // "Para quando? Amanhã" (quem não é de feira)
             nome, quadra, lote, telefone, pag, troco: trocoRaw, obs, cupom,
             condominio: endereco.condominio, condominioId: endereco.condominioId, formatoEndereco: endereco.formatoEndereco,
             aceitaOfertas: !!document.getElementById('cli-ofertas')?.checked,
@@ -1855,7 +2807,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
 
         // comToken faz a requisição levar o token da sessão. É ele que permite
         // à cliente cancelar o pedido depois pela própria loja.
-        const data = await chamarApi('/api/checkout', payload, { comToken: true });
+        const data = await enviarPedidoAoServidor(payload);
 
         // O pedido JÁ FOI ACEITO. Guardar no aparelho é só conveniência: se falhar (memória cheia,
         // armazenamento bloqueado), a cliente não pode ver "erro" nem ficar com o pedido ainda aberto.
@@ -1864,30 +2816,43 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             const clientes = lerLista('banca_clientes');
             const idx = clientes.findIndex(c => String(c && c.nome || '').toLowerCase() === nome.toLowerCase());
             // o cliente deste pedido vai para a frente da lista (é ele que preenche o próximo pedido)
-            const este = { nome, quadra, lote, ...(telefone ? { tel: telefone } : {}) };
+            // retirada não tem endereço: o "cliente lembrado" neste aparelho mantém a quadra e o lote que já tinha
+            const ql = retirada ? (lerEnderecoSalvo() || {}) : { quadra, lote };
+            const este = { nome, quadra: ql.quadra || '', lote: ql.lote || '', ...(telefone ? { tel: telefone } : {}) };
             if (idx >= 0) clientes.splice(idx, 1);
             clientes.unshift(este);
             localStorage.setItem(chave('banca_clientes'), JSON.stringify(clientes.slice(0, 5)));
+            try { localStorage.setItem(CHAVE_PAGAMENTO(), JSON.stringify(pag)); } catch (_) { /* a próxima vez a pessoa escolhe de novo */ }
             if (data.temConta) marcarConta(true);
-            salvarEndereco(endereco); pintarResumoEndereco(); feiraDoEnderecoSalvo(endereco);
+            if (!retirada) { salvarEndereco(endereco); travarCondominio(); feiraDoEnderecoSalvo(endereco); }
 
             const meusPedidos = lerLista('banca_meus_pedidos');
             meusPedidos.unshift({
                 id: data.pedido.id, data: new Date().toISOString(), total: data.pedido.total,
-                descItens: STATE.carrinho.map(i => i.tipo === 'un' && isFracionavel(i.unidade) ? `${i.qtd} un de ${i.nome} (A Pesar)` : `${i.qtd}x ${i.nome}`).join(', '),
+                descItens: STATE.carrinho.map(i => i.tipo === 'un' && isFracionavel(i.unidade) ? `${i.qtd} un de ${i.nome} (A Pesar)` : `${i.qtd}x ${i.nome}${i.adicionais ? ` (${i.adicionais})` : ''}`).join(', '),
                 itens: itensFormatados
             });
             localStorage.setItem(chave('banca_meus_pedidos'), JSON.stringify(meusPedidos.slice(0, 10)));
 
         } catch (e) { console.warn('[loja] pedido enviado, mas não consegui guardar no aparelho:', e && e.message); }
 
-        mostrarLinksWhatsApp(data.pedido);
+        { const tit = document.querySelector('#modal-sucesso .title-success'); if (tit) tit.textContent = pagaNaEntrega() ? 'Pedido enviado!' : 'Pedido registrado!'; }
+        { const lp = document.getElementById('sucesso-pag'); if (lp) { lp.hidden = !pagaNaEntrega(); lp.textContent = pagaNaEntrega() ? `💳 Pagamento ${retirada ? 'na retirada' : 'na entrega'}${pag ? `: ${pag}` : ''}.` : ''; } }
+        const pixPendente = oferecerPixNoSucesso({ id: data.pedido.id, total: data.pedido.total, pag, status: 'pendente', temItensAPesar: itensFormatados.some(i => i.aPesar) });
+        mostrarLinksWhatsApp(data.pedido, { pixPendente });
         const dicaAcesso = document.getElementById('sucesso-dica-acesso'); if (dicaAcesso) dicaAcesso.hidden = !data.temConta;
         const sucEnt = document.getElementById('sucesso-entrega');
-        if (sucEnt) { const futuro = data.pedido && data.pedido.paraHoje === false && data.pedido.entregaDia; sucEnt.textContent = futuro ? `📅 Seu pedido é para ${textoDoDia(data.pedido.entregaDia)}.` : ''; sucEnt.hidden = !futuro; }
-        oferecerPixNoSucesso({ id: data.pedido.id, total: data.pedido.total, pag, status: 'pendente', temItensAPesar: itensFormatados.some(i => i.aPesar) });
+        if (sucEnt) {
+            const futuro = data.pedido && data.pedido.paraHoje === false && data.pedido.entregaDia;
+            const horaRet = document.getElementById('cli-horario')?.value || '';
+            const ondeRet = feiraAqui() ? 'na feira' : 'na banca';
+            const textoSuc = retirada ? `🛍️ Retirada ${ondeRet}${futuro ? ` em ${textoDoDia(data.pedido.entregaDia)}` : ''}${horaRet ? `: ${horaRet}` : ''}.` : futuro ? `📅 Seu pedido é para ${textoDoDia(data.pedido.entregaDia)}.` : '';
+            sucEnt.textContent = textoSuc; sucEnt.hidden = !textoSuc;
+        }
         closeModal('modal-checkout');
+        oferecerListaNoSucesso(listaDoCarrinho(STATE.carrinho));
         setTimeout(() => openModal('modal-sucesso'), 300); 
+        contarFunil('pedido');
         STATE.carrinho = []; dbStorage.set(chave('banca_cart'), {v: CART_VERSION, items: []}); guardarNaConta();
         renderCarrinhoCompleto();
         document.getElementById('cli-obs').value = '';
@@ -1900,10 +2865,21 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         // refaz os preços e a data na tela e deixa a pessoa conferir antes de enviar de novo.
         if (err && err.dados && err.dados.codigo === 'dia-mudou') {
             if (Number.isFinite(err.dados.agora)) ACERTO_RELOGIO = err.dados.agora - Date.now();
-            document.dispatchEvent(new CustomEvent('feira-do-cliente')); pintarAvisoDeEntrega();
-            showToast(err.message, true);
+            document.dispatchEvent(new CustomEvent('feira-do-cliente')); pintarAvisoDeEntrega(); renderComanda();
+            if (!STATE.reenvioDoDia) {
+                STATE.reenvioDoDia = true;
+                const reenviar = await customConfirm('O dia do pedido mudou', `${err.message} O total agora é ${fmt(valorDaSacola())}. Quer enviar assim?`, { ok: 'Enviar assim', nao: 'Voltar e conferir' });
+                if (reenviar) setTimeout(() => { btn.click(); }, 0);
+                setTimeout(() => { STATE.reenvioDoDia = false; }, 5000);
+            } else showToast(err.message, true);
             return;
         }
+        // O servidor não respondeu ou está com problema: o pedido vai pelo WhatsApp da banca (plano B).
+        if (falhaDoServidor(err) && oferecerPedidoPeloWhatsApp({
+            chave: STATE.checkoutSessionId, nome, telefone, modo: retirada ? 'retirada' : 'entrega',
+            endereco: retirada ? '' : linhaEndereco({ ...endereco, modo: 'entrega' }), dia: nomeDoDiaDoPedido(),
+            horario: document.getElementById('cli-horario')?.value || '', pag, troco: trocoRaw, obs,
+        })) return;
         // Antes ia "Failed to fetch" cru, em inglês, para a tela da cliente
         showToast(mensagemDeErroAmigavel(err), true);
         // O servidor recusou e esta tela está desatualizada? Então o motivo pode ser a própria tela velha:
@@ -1911,11 +2887,12 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         // (sem "await": o botão volta a funcionar na hora; a conferência corre por fora)
         if (navigator.onLine) conferirVersaoAgora().then((velha) => {
             if (!velha) return;
+            if (retirada) { recarregarComPedidoGuardado('A loja foi atualizada. Vou recarregar: seu pedido continua na sacola.'); return; }
             try { salvarEndereco(endereco); const cl = lerLista('banca_clientes').filter(c => String(c && c.nome || '').toLowerCase() !== nome.toLowerCase()); cl.unshift({ nome, quadra, lote }); localStorage.setItem(chave('banca_clientes'), JSON.stringify(cl.slice(0, 5))); } catch (_) { /* segue */ }
             recarregarComPedidoGuardado('A loja foi atualizada. Vou recarregar: seu pedido continua na sacola.');
         }).catch(() => { /* sem sinal: fica o aviso de cima */ });
     } finally {
-        btn.disabled = false; btn.textContent = 'Enviar pedido';
+        btn.disabled = false; btn.textContent = 'Enviar pedido para a banca';
     }
 });
 
@@ -1931,7 +2908,7 @@ if (!navigator.onLine) document.getElementById('banner-offline')?.classList.add(
   cart.addEventListener('touchstart', (e) => {
     // Quem rola é a LISTA de itens, não a gaveta. Se o toque começou na lista
     // já rolada (ou num campo), é rolagem/edição — não é para fechar.
-    const lista = e.target.closest('.carrinho-itens');
+    const lista = e.target.closest('.carrinho-rolo');
     const editando = e.target.closest('input, textarea, select');
     y0 = (editando || (lista && lista.scrollTop > 0)) ? null : e.touches[0].clientY;
   }, { passive: true });
@@ -1948,39 +2925,63 @@ if (!navigator.onLine) document.getElementById('banner-offline')?.classList.add(
 // COMUNICADO DA LOJA — aviso fixo ou mensagem do dia da semana,
 // configurado pelo painel admin (loja/comunicados).
 // =====================================================================
-const iniciarComunicados = () => {
+// Pinta o aviso (dados de loja/comunicados; null = nenhum).
+const pintarComunicado = (dados) => {
     const alvo = document.getElementById('banner-comunicado');
     if (!alvo) return;
-    onSnapshot(tdoc("loja", "comunicados"), (snap) => {
-        if (!snap.exists()) { alvo.classList.remove('visivel'); return; }
-        const dados = snap.data();
+    if (!dados) { alvo.classList.remove('visivel'); return; }
 
-        // Um aviso pode ter data de validade. Depois dela, some sozinho —
-        // assim uma oferta "de hoje" não fica no ar semana que vem porque
-        // ninguém lembrou de desligar.
-        const noPrazo = (bloco) => {
-            if (!bloco?.validoAte) return true;          // sem validade = vale sempre
-            // A data chega como "2026-07-24" (só o dia). Interpretada crua, ela
-            // vira meia-noite em UTC — que no Brasil é 21h do dia ANTERIOR, e o
-            // aviso sumiria um dia antes do combinado. Por isso fixamos o fim
-            // do dia no horário de Brasília.
-            const limite = new Date(`${bloco.validoAte}T23:59:59-03:00`);
-            if (isNaN(limite)) return true;
-            return new Date() <= limite;
-        };
+    // Um aviso pode ter data de validade. Depois dela, some sozinho —
+    // assim uma oferta "de hoje" não fica no ar semana que vem porque
+    // ninguém lembrou de desligar.
+    const noPrazo = (bloco) => {
+        if (!bloco?.validoAte) return true;          // sem validade = vale sempre
+        // A data chega como "2026-07-24" (só o dia). Interpretada crua, ela
+        // vira meia-noite em UTC — que no Brasil é 21h do dia ANTERIOR, e o
+        // aviso sumiria um dia antes do combinado. Por isso fixamos o fim
+        // do dia no horário de Brasília.
+        const limite = new Date(`${bloco.validoAte}T23:59:59-03:00`);
+        if (isNaN(limite)) return true;
+        return new Date() <= limite;
+    };
 
-        // O aviso fixo tem prioridade sobre a mensagem do dia
-        const doDia = dados.dias?.[String(new Date().getDay())];
-        const fixoVale = dados.fixo?.ativo && dados.fixo?.texto && noPrazo(dados.fixo);
-        const diaVale  = doDia?.ativo && doDia?.texto && noPrazo(doDia);
-        const escolhido = fixoVale ? dados.fixo.texto : (diaVale ? doDia.texto : '');
-        if (escolhido) { alvo.textContent = escolhido; alvo.classList.add('visivel'); }
-        else { alvo.classList.remove('visivel'); }
-    }, (e) => console.warn('[loja] comunicados:', e?.code || e));
-    // NÃO vai para "unsubscribes": aquela lista é desligada logo no primeiro
-    // carregamento (antes do login anônimo) e o aviso nunca aparecia na 1ª visita.
+    // O aviso fixo tem prioridade sobre a mensagem do dia
+    const doDia = dados.dias?.[String(new Date().getDay())];
+    const fixoVale = dados.fixo?.ativo && dados.fixo?.texto && noPrazo(dados.fixo);
+    const diaVale  = doDia?.ativo && doDia?.texto && noPrazo(doDia);
+    const escolhido = fixoVale ? dados.fixo.texto : (diaVale ? doDia.texto : '');
+    if (escolhido) { alvo.textContent = escolhido; alvo.classList.add('visivel'); }
+    else { alvo.classList.remove('visivel'); }
+};
+// O aviso vem junto no documento da vitrine (usarComunicado). Sem ele, ouve loja/comunicados como antes.
+// NÃO vai para "unsubscribes": aquela lista é desligada logo no primeiro
+// carregamento (antes do login anônimo) e o aviso nunca aparecia na 1ª visita.
+let _comunicadoDoBanco = false, _comunicadoDecidido = false;
+function lerComunicadoDoBanco() {
+    _comunicadoDecidido = true;
+    if (_comunicadoDoBanco) return; _comunicadoDoBanco = true;
+    onSnapshot(tdoc("loja", "comunicados"), (snap) => pintarComunicado(snap.exists() ? snap.data() : null),
+        (e) => console.warn('[loja] comunicados:', e?.code || e));
+}
+function usarComunicado(dados) {
+    _comunicadoDecidido = true;
+    if (!_comunicadoDoBanco) pintarComunicado(dados);
+}
+const iniciarComunicados = () => {
+    // a vitrine não respondeu nada em 8 s (página sem vitrine, erro): lê o aviso direto, como antes
+    setTimeout(() => { if (!_comunicadoDecidido) lerComunicadoDoBanco(); }, 8000);
 };
 
 iniciarComunicados();
 initIA(STATE);
-iniciarTema();   // cores, fontes e nome desta loja + faixa de lojas da feira
+// cores, fontes e nome desta loja + faixa de lojas da feira. Loja BLOQUEADA pela plataforma: "fora do ar" para todo mundo.
+// (as regras do banco já escondem a vitrine do público, mas quem é da equipe ou da plataforma continuava vendo a loja
+// inteira e só levava erro ao fechar o pedido: parecia que o bloqueio não funcionava)
+iniciarTema().then((ficha) => { if (ficha && ficha.ativo === false && !EM_PREVIA) mostrarLojaBloqueada(); }).catch(() => { /* segue */ });
+function mostrarLojaBloqueada() {
+    STATE.lojaBloqueada = true; STATE.lojaRenderizada = false;
+    document.body.classList.add('loja-bloqueada');
+    const lista = document.getElementById('lista-produtos');
+    if (lista) lista.innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">${iconeHistoricoVazio}<p>Esta loja está fora do ar no momento</p><span>Os pedidos por aqui estão pausados. Fale direto com a loja.</span></div>`;
+    try { document.getElementById('carrinho-overlay')?.classList.remove('aberto'); document.getElementById('carrinho')?.classList.remove('aberto'); } catch (_) { /* segue */ }
+}

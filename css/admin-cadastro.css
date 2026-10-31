@@ -1,0 +1,112 @@
+/* =====================================================================
+   css/admin-cadastro.css — cadastro de produto mais rápido (js/admin.js, js/admin-varios.js)
+   ===================================================================== */
+
+/* rótulo comum (para grupos de botões, que não têm <label for>) */
+.prod-rot { display: block; font-weight: 700; font-size: .9rem; color: var(--text-dark); margin-bottom: 8px; }
+
+/* botões de escolha: unidade e categoria */
+.prod-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.prod-chips-cat { margin-bottom: 10px; max-height: 172px; overflow-y: auto; padding: 2px; }
+.prod-chip { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--linha, #e4dfd3);
+    background: #fff; color: var(--text-dark); font: 700 .92rem/1.1 var(--fonte-texto, inherit); cursor: pointer; transition: border-color .15s, background .15s; }
+.prod-chip-cat { padding-left: 6px; }
+.prod-chip-ico { width: 32px; height: 32px; border-radius: 50%; background: var(--parchment); display: grid; place-items: center; flex: none; }
+.prod-chip-ico .arte-cat { width: 24px; height: 24px; }
+.prod-chip.on { border-color: var(--forest); background: var(--foam); color: var(--forest); box-shadow: inset 0 0 0 1px var(--forest); }
+.prod-chip.on .prod-chip-ico { background: #fff; }
+.prod-chip:focus-visible { outline: 3px solid var(--manga, #f2b33d); outline-offset: 2px; }
+@media (hover: hover) { .prod-chip:hover { border-color: var(--sage, #9db8a6); } }
+
+/* preço grande: é o campo que mais se mexe */
+.prod-preco input { font-size: 1.25rem; font-weight: 700; max-width: 220px; }
+
+/* foto compacta: miniatura + botões ao lado */
+.prod-foto-linha { display: flex; gap: 12px; align-items: stretch; margin-bottom: 10px; }
+.prod-foto-previa { width: 96px; height: 96px; flex: none; border-radius: 12px; overflow: hidden; background: var(--parchment); }
+.prod-foto-bts { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
+.prod-foto-bts > * { width: 100%; min-height: 44px; margin: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-align: center; cursor: pointer; }
+.prod-foto .prod-foto-bt { display: inline-flex; align-items: center; justify-content: center; text-transform: none; letter-spacing: 0; font-size: .92rem; font-weight: 700; color: var(--forest); margin: 0; }
+.prod-foto-bt .ic { width: 1.1rem; height: 1.1rem; }
+.prod-foto .guia-foto { margin-top: 10px; }
+#edit-foto:focus-visible + .btn-banco-fotos, .prod-foto-bt:focus-within { outline: 3px solid var(--manga, #f2b33d); }
+
+/* "Mais opções": o que nem toda loja usa */
+.prod-mais { border: 1.5px solid var(--linha, #e4dfd3); border-radius: 14px; background: var(--cream); margin-top: 6px; }
+.prod-mais > summary { list-style: none; cursor: pointer; padding: 14px 16px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-height: 48px; }
+.prod-mais > summary::-webkit-details-marker { display: none; }
+.prod-mais > summary::before { content: '+'; font-weight: 800; color: var(--forest); width: 1em; }
+.prod-mais[open] > summary::before { content: '−'; }
+.prod-mais > summary b { color: var(--forest); }
+.prod-mais > summary small { color: var(--text-light); font-size: .82rem; }
+.prod-mais[open] > summary { border-bottom: 1px dashed var(--linha, #e4dfd3); }
+.prod-mais > :not(summary) { margin-left: 14px; margin-right: 14px; }
+.prod-mais > :last-child { margin-bottom: 14px; }
+.prod-mais > summary + * { margin-top: 14px; }
+#lugar-estoque:empty, #lugar-descricao:empty { display: none; }
+
+/* aviso "Pastel de carne guardado. Escreva o próximo nome" */
+.prod-repetindo { background: var(--success-light, #dcfce7); color: #14532d; border-radius: 12px; padding: 10px 14px; margin: 0 0 14px; font-size: .92rem; line-height: 1.45; }
+
+/* campos que a plataforma desligou nesta loja (Plataforma → loja → Campos no cadastro de produto) */
+#modal-produto.sem-oferta [data-campo="oferta"],
+#modal-produto.sem-estoque [data-campo="estoque"],
+#modal-produto.sem-pacote [data-campo="pacote"],
+#modal-produto.sem-pesoMedio [data-campo="pesoMedio"],
+#modal-produto.sem-selos [data-campo="selos"],
+#modal-produto.sem-descricao [data-campo="descricao"],
+#modal-produto.sem-insumo [data-campo="insumo"],
+#modal-produto.sem-duracao [data-campo="duracao"],
+#modal-produto.sem-rotulo [data-campo="rotulo"],
+#modal-produto.sem-montar [data-campo="montar"],
+#modal-produto.sem-dias [data-campo="dias"],
+#modal-produto.sem-palavras [data-campo="palavras"] { display: none !important; }
+
+/* ---------------------------------------------------------------
+   VÁRIOS DE UMA VEZ (js/admin-varios.js)
+   --------------------------------------------------------------- */
+.pl-topo .pl-varios { white-space: nowrap; }
+.vv-passo { margin-bottom: 18px; }
+.vv-passo > .prod-rot b { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--forest); color: #fff; font-size: .8rem; margin-right: 6px; }
+.vv-passo input, .vv-passo textarea { width: 100%; box-sizing: border-box; padding: 14px; border: 1.5px solid var(--linha, #e4dfd3); border-radius: var(--radius-sm, 12px); background: var(--parchment); color: var(--text-dark); font-size: 16px; font-family: inherit; outline: none; }
+.vv-passo input:focus, .vv-passo textarea:focus { border-color: var(--forest); background: #fff; box-shadow: 0 0 0 3px rgba(26,58,42,.1); }
+.vv-passo #vv-preco { font-size: 1.2rem; font-weight: 700; max-width: 220px; }
+.vv-passo .prod-chips-cat { margin-bottom: 10px; }
+.vv-lista { width: 100%; min-height: 150px; font: 1rem/1.5 var(--fonte-texto, inherit); resize: vertical; }
+.vv-dica { display: block; color: var(--text-mid); font-size: .82rem; line-height: 1.45; margin-top: 6px; }
+.vv-previa { list-style: none; margin: 8px 0 0; padding: 0; border: 1.5px solid var(--linha, #e4dfd3); border-radius: 12px; overflow: hidden; background: #fff; }
+.vv-previa:empty { display: none; }
+.vv-previa li { display: flex; justify-content: space-between; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--linha, #e4dfd3); font-size: .94rem; }
+.vv-previa li:first-child { border-top: 0; }
+.vv-previa li b { font-weight: 700; overflow-wrap: anywhere; }
+.vv-previa li span { white-space: nowrap; color: var(--forest); font-weight: 700; }
+.vv-previa li.fora { background: var(--warning-light, #fef3c7); }
+.vv-previa li.fora b { text-decoration: line-through; color: var(--text-mid); font-weight: 600; }
+.vv-previa li.fora span { color: #92400e; font-weight: 600; }
+.vv-resumo { font-weight: 700; color: var(--forest); margin: 10px 0 0; }
+
+/* barra de marcados: mudar o preço de vários */
+.pl-lote-acoes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pl-lote-acoes .bt { min-width: 0; }
+.pl-lote-acoes .bt.on { background: #fff; color: var(--forest); }
+.pl-lote-preco { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 8px; }
+.pl-lote-preco input { width: 100%; min-width: 0; min-height: 48px; padding: 0 12px; border-radius: 10px; border: 0; font-size: 1.05rem; box-sizing: border-box; }
+.pl-lote-preco .bt { min-height: 48px; padding: 0 18px; }
+
+/* .bt tem display próprio: sem isto, os botões escondidos do rodapé apareciam */
+#modal-produto .modal-footer [hidden], .prod-mais[hidden], .prod-chips[hidden] { display: none !important; }
+
+/* Redes da loja (Configurações → Atendimento) */
+.contato-loja { border: 1.5px dashed var(--linha, #e3dccd); border-radius: 14px; padding: 12px 14px 4px; margin: 6px 0 4px; min-width: 0; }
+.contato-loja legend { padding: 0 6px; font-weight: 800; font-size: .9rem; }
+.form-group label.contato-check { display: flex; align-items: center; gap: 10px; margin: 10px 0 0; text-transform: none; letter-spacing: 0; font-size: .95rem; font-weight: 600; color: var(--text-dark, #2a1a0c); cursor: pointer; }
+.contato-check input { width: 22px; height: 22px; flex: none; accent-color: var(--forest, #1a3a2a); }
+
+/* "Sai em quais dias?" (js/admin-dias.js) */
+.prod-dias-chips { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.prod-dia { min-height: 42px; padding: 0; border-radius: 10px; border: 1.5px solid var(--linha, #e4dfd3); background: var(--cream, #faf7f2); color: var(--text-mid);
+    font: inherit; font-size: .85rem; font-weight: 800; text-transform: capitalize; cursor: pointer; }
+.prod-dia.on { background: var(--forest); border-color: var(--forest); color: #fff; }
+.prod-dia-todos { grid-column: 1 / -1; min-height: 38px; border-radius: 10px; border: 1.5px dashed var(--linha, #d8d1c1); background: none; color: var(--forest); font: inherit; font-weight: 700; cursor: pointer; }
+.prod-dia-todos[hidden] { display: none; }
+#dias-previa.erro { color: var(--danger, #c0392b); font-weight: 700; }

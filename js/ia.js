@@ -1,5 +1,6 @@
 import { escapeHTML, showToast, isFracionavel } from './utils.js';
 import { ICO } from './icones.js';
+import { temMontar, montarDoProduto } from './montar-lib.js';
 
 export const initIA = (STATE) => {
     const inputMsg = document.getElementById('input-ia-mensagem');
@@ -72,7 +73,14 @@ export const initIA = (STATE) => {
         return `${item.qtd} ${item.unidade && item.unidade !== 'un' ? item.unidade : 'un'}`;
     };
 
-    const montarPilula = (p) => `
+    // Produto de montar (pastel, açaí...): a pílula abre a tela de montar em vez de pôr direto na sacola.
+    const pilulaDeMontar = (p, opcoes = null, resumo = '') => `
+        <div class="ia-pill ia-pill--montar">
+            <span class="ia-pill-nome" title="${escapeHTML(resumo ? `${p.nome}: ${resumo}` : p.nome)}">${escapeHTML(p.nome)}${resumo ? `<small>${escapeHTML(resumo)}</small>` : ''}</span>
+            <button type="button" class="ia-pill-add" data-action="montar" data-id="${escapeHTML(p.id)}"${opcoes ? ` data-opcoes="${escapeHTML(JSON.stringify(opcoes))}"` : ''}>${opcoes ? 'Montar assim' : 'Montar'}</button>
+        </div>`;
+
+    const montarPilula = (p) => temMontar(p) ? pilulaDeMontar(p) : `
         <div class="ia-pill" data-pill="${escapeHTML(p.id)}">
             <span class="ia-pill-nome" title="${escapeHTML(p.nome)}">${escapeHTML(p.nome)}</span>
             <button type="button" class="ia-pill-add" data-action="add" data-id="${escapeHTML(p.id)}">+ Adicionar</button>
@@ -84,7 +92,7 @@ export const initIA = (STATE) => {
         </div>`;
 
     const sincronizarPilulas = () => {
-        containerSugestoes.querySelectorAll('.ia-pill').forEach(pill => {
+        containerSugestoes.querySelectorAll('.ia-pill[data-pill]').forEach(pill => {
             const item = STATE.carrinho.find(i => String(i.id) === pill.dataset.pill);
             const add = pill.querySelector('.ia-pill-add');
             const qtd = pill.querySelector('.ia-pill-qtd');
@@ -119,25 +127,52 @@ export const initIA = (STATE) => {
     // crases/aspas/asteriscos em volta do id, usa o NOME em vez do id, ou a
     // resposta é cortada antes do "]". Em todos esses casos a pílula sumia
     // sem aviso e a marcação crua aparecia na conversa.
-    const RE_TAG = /\[\s*SUGEST[OÕ]ES\s*:([^\]]*)\]?/i;
+    // Alguns modelos esquecem os colchetes e escrevem "SUGESTOES:id1,id2" numa linha própria: também vale.
+    const RE_TAG = /\[\s*SUGEST[OÕ]ES\s*:([^\]]*)\]?|(?:^|\n)[ \t]*\**SUGEST[OÕ]ES\s*:([^\n]*)/i;
     const semAcento = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
     const textoVisivel = (bruto) => {
         let t = String(bruto || '');
-        const i = t.search(/\[\s*SUGEST/i);
-        if (i >= 0) t = t.slice(0, i);                      // esconde a marcação, mesmo ainda incompleta
-        t = t.replace(/\[\s*S?U?G?E?S?T?$/i, '');            // começo da marcação chegando em pedaços
+        const i = t.search(/\[\s*(?:SUGEST|MONTAR)|(?:^|\n)[ \t]*\**(?:SUGEST[OÕ]ES|MONTAR)\s*:/i);
+        if (i >= 0) t = t.slice(0, i);                      // esconde as marcações, mesmo ainda incompletas
+        t = t.replace(/\[\s*(?:S?U?G?E?S?T?|M?O?N?T?A?R?)$/i, '');   // começo da marcação chegando em pedaços
         return t.replace(/\*\*(.+?)\*\*/g, '$1').trim();   // **negrito** do modelo vira texto simples
     };
     const produtosSugeridos = (bruto) => {
         const m = String(bruto || '').match(RE_TAG);
         if (!m) return [];
         const achados = [];
-        m[1].split(/[,;\n]/).map(x => x.replace(/[`"'*\s]+/g, ' ').trim()).filter(Boolean).forEach(tok => {
+        (m[1] !== undefined ? m[1] : (m[2] || '')).split(/[,;\n]/).map(x => x.replace(/[`"'*\s]+/g, ' ').trim()).filter(Boolean).forEach(tok => {
             const p = STATE.produtos.find(x => String(x.id) === tok)
                    || STATE.produtos.find(x => semAcento(x.nome) === semAcento(tok));
             if (p && !achados.includes(p)) achados.push(p);
         });
         return achados.slice(0, 4);
+    };
+
+    // ---------- Leitura da linha [MONTAR:produto|grupo=opcao,opcao|grupo=opcao] ----------
+    // O Ajudante sugere uma combinação; a pílula "Montar assim" abre a tela de montar já marcada.
+    // Só passa o que existe AGORA no produto (id ou nome, sem acento); o resto é ignorado.
+    const RE_MONTAR = /\[\s*MONTAR\s*:([^\]\n]*)\]?|(?:^|\n)[ \t]*\**MONTAR\s*:([^\n]*)/gi;
+    const acharProduto = (tok) => STATE.produtos.find(x => String(x.id) === tok) || STATE.produtos.find(x => semAcento(x.nome) === semAcento(tok));
+    const montadosSugeridos = (bruto) => {
+        const saida = [];
+        for (const m of String(bruto || '').matchAll(RE_MONTAR)) {
+            const partes = String(m[1] !== undefined ? m[1] : (m[2] || '')).replace(/[`"'*]+/g, '').split('|').map(x => x.trim()).filter(Boolean);
+            const p = partes.length ? acharProduto(partes.shift()) : null;
+            if (!p || !temMontar(p) || saida.some(x => x.p === p)) continue;
+            const { grupos } = montarDoProduto(p), opcoes = {}, nomes = [];
+            for (const parte of partes) {
+                const [gid, lista = ''] = parte.split('=');
+                const g = grupos.find(x => x.id === gid.trim() || semAcento(x.nome) === semAcento(gid));
+                if (!g) continue;
+                const ids = [...new Set(lista.split(',').map(t => t.trim()).filter(Boolean)
+                    .map(t => (g.opcoes.find(o => o.ativo && (o.id === t || semAcento(o.nome) === semAcento(t))) || {}).id).filter(Boolean))].slice(0, g.max);
+                if (ids.length) { opcoes[g.id] = ids; ids.forEach(id => nomes.push(g.opcoes.find(o => o.id === id).nome)); }
+            }
+            saida.push({ p, opcoes, resumo: nomes.join(', ') });
+            if (saida.length >= 2) break;
+        }
+        return saida;
     };
 
     const enviarMensagemParaIA = async (repetindo) => {
@@ -251,9 +286,10 @@ export const initIA = (STATE) => {
             }
 
             // Pílulas de sugestão: só entram produtos que existem na vitrine agora
-            const sugeridos = produtosSugeridos(textoAcumulado);
-            containerSugestoes.innerHTML = sugeridos.map(montarPilula).join('');
-            containerSugestoes.classList.toggle('tem-mais', sugeridos.length > 1);
+            const montados = montadosSugeridos(textoAcumulado);
+            const sugeridos = produtosSugeridos(textoAcumulado).filter(p => !montados.some(m => m.p === p));
+            containerSugestoes.innerHTML = montados.map(m => pilulaDeMontar(m.p, m.opcoes, m.resumo)).join('') + sugeridos.map(montarPilula).join('');
+            containerSugestoes.classList.toggle('tem-mais', montados.length + sugeridos.length > 1);
             containerSugestoes.scrollLeft = 0;
             sincronizarPilulas();
 

@@ -17,12 +17,17 @@ service firebase.storage {
   match /b/{bucket}/o {
     function confirmado() { return request.auth != null && request.auth.token.get('email_verified', false) == true; }
     function plataforma() { return confirmado() && request.auth.token.get('plataforma', false) == true; }
+    // aparelho aprovado: a mesma conta de firestore.rules (aparelhoOk) e lib/aprovacao.js
+    function aparelhoOk(tid) {
+      return !(request.auth.token.get('apr', {}) is map && request.auth.token.get('apr', {}).get(tid, false) == true)
+        || (request.auth.token.get('apl', []) is list && tid in request.auth.token.get('apl', []));
+    }
     function papel(tid) {
-      return !confirmado() ? ''
+      return !confirmado() || !aparelhoOk(tid) ? ''
         : (request.auth.token.get('tenants', {}).get(tid, '') is string && request.auth.token.get('tenants', {}).get(tid, '') != '' ? request.auth.token.get('tenants', {}).get(tid, '')
           : (tid == 'banca' && request.auth.token.get('admin', false) == true ? 'proprietario' : ''));
     }
-    function gestor(tid) { return plataforma() || papel(tid) in ['proprietario', 'administrador']; }
+    function gestor(tid) { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'gerente']; }
     function fotoOk(arquivo) {
       return request.resource.size > 0 && request.resource.size < 2 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp)')

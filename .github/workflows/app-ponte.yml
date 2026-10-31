@@ -1,0 +1,118 @@
+# Compila o APP PONTE (pasta android/): o celular Android que imprime os pedidos com a tela bloqueada.
+# A cada mudança na pasta android/, gera o APK assinado e publica como "release" do GitHub:
+#   https://github.com/Bielroy/Site-banca1/releases/latest/download/banca-ponte.apk
+# (o painel aponta para esse endereço no botão "Baixar o app").
+# CHAVE DE ASSINATURA: com a mesma chave, cada APK novo instala POR CIMA do antigo, sem perder a impressora
+# nem a ligação com a loja. Ela é criada aqui na primeira vez e guardada CIFRADA no repositório
+# (android/assinatura/ponte.jks.enc, AES-256), com uma senha tirada do segredo PONTE_SENHA
+# (GitHub → Settings → Secrets and variables → Actions → New repository secret, nome PONTE_SENHA,
+# valor: uma frase longa qualquer). Sem o segredo, o APK sai com uma chave de TESTE (pré-lançamento):
+# funciona igual, mas o próximo APK definitivo pede desinstalar o de teste antes.
+# Se o PONTE_SENHA mudar, a compilação para com um aviso: apague o .enc para gerar outra chave.
+name: App ponte (APK)
+
+on:
+  push:
+    branches: [app-impressora, rota-cloudflare]
+    paths: ['android/**', '.github/workflows/app-ponte.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: app-ponte-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Compilar o APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # com credencial: na primeira vez, guarda a chave cifrada no repositório
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Chave de assinatura
+        env:
+          SEGREDO: ${{ secrets.PONTE_SENHA }}
+        run: |
+          ARQ=android/assinatura/ponte.jks.enc
+          gerar() { keytool -genkeypair -keystore "$1" -storetype PKCS12 -alias ponte -keyalg RSA -keysize 3072 -validity 18250 \
+            -storepass "$SENHA" -keypass "$SENHA" -dname "CN=Ponte da Banca, O=Banca Adair e Pedrina, C=BR" >/dev/null 2>&1; }
+          if [ "${#SEGREDO}" -ge 12 ]; then
+            export SENHA="$(printf 'ponte-apk-v1|%s' "$SEGREDO" | sha256sum | cut -d' ' -f1)"
+            echo "::add-mask::$SENHA"
+            if [ ! -f "$ARQ" ]; then
+              mkdir -p android/assinatura
+              gerar "$RUNNER_TEMP/ponte.jks"
+              openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$RUNNER_TEMP/ponte.jks" -out "$ARQ" -pass env:SENHA
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add "$ARQ"
+              git commit -m "App ponte: chave de assinatura (cifrada com o PONTE_SENHA)"
+              git push origin "HEAD:${GITHUB_REF_NAME}"
+              echo "Chave definitiva criada e guardada cifrada em $ARQ."
+            else
+              openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$ARQ" -out "$RUNNER_TEMP/ponte.jks" -pass env:SENHA \
+                || { echo "::error::Não consegui abrir a chave do app. O segredo PONTE_SENHA mudou? (veja o topo deste arquivo)"; exit 1; }
+            fi
+            echo "DEFINITIVO=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Sem o segredo PONTE_SENHA: este APK sai com uma chave de TESTE (veja o topo deste arquivo)."
+            export SENHA="$(openssl rand -hex 24)"
+            echo "::add-mask::$SENHA"
+            gerar "$RUNNER_TEMP/ponte.jks"
+            echo "DEFINITIVO=0" >> "$GITHUB_ENV"
+          fi
+          echo "ASSINATURA_ARQUIVO=$RUNNER_TEMP/ponte.jks" >> "$GITHUB_ENV"
+          echo "ASSINATURA_SENHA=$SENHA" >> "$GITHUB_ENV"
+      - name: Compilar
+        working-directory: android
+        env:
+          VERSAO_NUMERO: ${{ github.run_number }}
+        run: |
+          set -o pipefail
+          if ! gradle --no-daemon assembleRelease 2>&1 | tee "$RUNNER_TEMP/gradle.log"; then
+            # os erros viram avisos na página do GitHub (dá para ler sem abrir o registro inteiro)
+            grep -E "^e: |error:|What went wrong|Could not|> " "$RUNNER_TEMP/gradle.log" | head -40 | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error::$l"; done
+            exit 1
+          fi
+      - name: Conferir o APK
+        run: |
+          APK=$(ls android/app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
+          [ -n "$APK" ] && [ -s "$APK" ] || { echo "::error::Não achei o APK: $(find android/app/build/outputs -name '*.apk' | tr '\n' ' ')"; exit 1; }
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          BT=$(ls -d "$SDK"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify "$APK" || { echo "::error::O APK não tem assinatura válida."; exit 1; }
+          CERT=$("$BT/apksigner" verify --print-certs "$APK" 2>&1 | grep -m1 "SHA-256" || true)
+          PKG=$("$BT/aapt2" dump badging "$APK" 2>&1 | grep -E "^package:|^targetSdkVersion|^sdkVersion" | tr '\n' ' ' || true)
+          PERM=$("$BT/aapt2" dump permissions "$APK" 2>&1 | grep -o "name='[^']*'" | sed "s/name='android.permission.//;s/'//" | tr '\n' ' ' || true)
+          echo "::notice::APK $(stat -c%s "$APK") bytes | $PKG | $CERT"
+          echo "::notice::Permissões: $PERM"
+          cp "$APK" banca-ponte.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: banca-ponte-${{ github.run_number }}
+          path: banca-ponte.apk
+          retention-days: 30
+      - name: Publicar (release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ github.run_number }}
+        run: |
+          if [ "$DEFINITIVO" = "1" ]; then
+            gh release create "ponte-v1.0.$N" banca-ponte.apk --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "Ponte da Banca 1.0.$N" \
+              --notes "App Ponte da Banca (Android). Instale no celular que fica perto da impressora. Ramo: ${GITHUB_REF_NAME}."
+          else
+            gh release create "ponte-teste-1.0.$N" banca-ponte.apk --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+              --title "Ponte da Banca 1.0.$N (TESTE)" \
+              --notes "APK de teste (chave provisória). Funciona igual; o primeiro APK definitivo pede desinstalar este antes. Ramo: ${GITHUB_REF_NAME}."
+          fi

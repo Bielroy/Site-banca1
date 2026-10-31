@@ -40,6 +40,9 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .header-arte.plana { right: 12px; bottom: 14px;
     width: auto; aspect-ratio: 1; height: min(calc(100% - 28px), clamp(126px, 32vw, 200px)); }
 .header-arte.plana ~ .header-inner .header-acoes { padding-right: clamp(136px, 35vw, 216px); }
+/* celular estreito: o desenho some e os botões usam a largura toda. Valia só para o desenho da banca: com o desenho
+   "plano" das outras lojas a folga continuava e os botões viravam "Onde entr..." (achado pela matriz de telas) */
+@media (max-width: 340px) { .header-arte.plana ~ .header-inner .header-acoes { padding-right: 0; } }
 /* toldo listrado pendurado embaixo do cabeçalho (igual ao do painel); usa a cor principal da loja */
 .toldo-loja { height: 22px; background: repeating-linear-gradient(90deg, var(--forest) 0 22px, var(--toldo-claro, #f3ead8) 22px 44px);
     -webkit-mask: radial-gradient(circle 11px at 11px 11px, #000 98%, transparent) 0 0 / 22px 22px repeat-x, linear-gradient(#000, #000) 0 0 / 100% 11px no-repeat;
@@ -57,7 +60,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .chip-header.btn-historico { background: transparent; border-color: rgba(255,255,255,.3); font-weight: 600; }
 
 /* faixa das lojas da feira (só aparece quando há mais de uma loja) */
-.feira-lojas { display: flex; gap: 8px; overflow-x: auto; padding: 10px 16px; background: var(--text-dark); scrollbar-width: none; scroll-snap-type: x proximity; }
+.feira-lojas { display: flex; gap: 8px; overflow-x: auto; padding: 10px 16px; background: var(--text-dark); scrollbar-width: none; scroll-snap-type: x proximity; overscroll-behavior-x: contain; }
 .feira-lojas::-webkit-scrollbar { display: none; }
 .feira-lojas[hidden] { display: none; }   /* sem outra loja na feira, a faixa some (antes ficava uma tira escura vazia no topo) */
 .feira-loja { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 14px; border-radius: 999px; scroll-snap-align: center;
@@ -77,10 +80,17 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .faixa-sempre { min-width: 0; max-width: 100%; }
 .vitrine .produtos-grid { flex: none; width: 100%; }
 .faixa-sempre h2 { font-family: var(--fonte-titulo); font-size: 1.3rem; font-weight: 650; color: var(--forest-texto, var(--forest)); margin-bottom: 12px; }
-.faixa-rolo { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 10px; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.faixa-rolo { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 10px; scroll-snap-type: x proximity; scrollbar-width: none; overscroll-behavior-x: contain; }
+/* iPhone (todo navegador de iPhone usa o motor do Safari): nas faixas que rolam para o lado, card e foto sem "contain" e
+   sem transição. Com eles, o Safari guardava a pintura de um card e a reaproveitava esticada nos vizinhos ao rolar
+   rápido (a cliente viu o tomate cobrir a faixa inteira, ficando "tudo vermelho"). */
+@supports (-webkit-touch-callout: none) {
+    .faixa-rolo .produto-card, .ia-sugestoes > * { contain: none; transition: none; }
+    .faixa-rolo .produto-img-wrap img { transition: none; transform: none; }
+}
 .faixa-rolo::-webkit-scrollbar { display: none; }
-.faixa-rolo .produto-card { flex: 0 0 168px; scroll-snap-align: start; }
-@media (max-width: 600px) { .faixa-rolo { margin-right: -16px; padding-right: 16px; } .faixa-rolo .produto-card { flex-basis: 152px; } }
+.faixa-rolo .produto-card { flex: 0 0 168px; min-width: 0; max-width: 168px; scroll-snap-align: start; }
+@media (max-width: 600px) { .faixa-rolo { margin-right: -16px; padding-right: 16px; } .faixa-rolo .produto-card { flex-basis: 152px; max-width: 152px; } }
 
 /* ---------- 4. CARD DE PRODUTO E ETIQUETA ---------- */
 .produto-card {
@@ -90,7 +100,9 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 }
 @media (hover: hover) { .produto-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--sage); } }
 .produto-card.na-sacola, .produto-card.na-sacola:hover { border-color: var(--leaf); }
-.produto-img-wrap { width: auto; margin: 8px 8px 0; border-radius: 9px; }
+/* Largura da caixa da foto ESCRITA (não "auto"): com "auto" + margem, o motor do iPhone calculava a altura pela largura
+   do card inteiro e a caixa ficava mais alta que larga (133x149 num card de 152), e a foto, ao carregar, mexia no card. */
+.produto-img-wrap { --foto-margem: 8px; width: calc(100% - 2 * var(--foto-margem)); margin: var(--foto-margem) var(--foto-margem) 0; border-radius: 9px; flex: 0 0 auto; }
 .produto-info { padding: 10px 12px 12px; gap: 10px; pointer-events: auto; }
 .produto-nome { font-size: 1rem; line-height: 1.2; min-height: 2.4em; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
@@ -276,7 +288,7 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .chk-oferta input { width: 22px; height: 22px; flex: none; accent-color: var(--forest); margin-top: 1px; }
 
 /* ---------- ATALHOS DE QUEM VOLTA: pedir de novo, lista da semana, avaliar ---------- */
-.atalhos { display: flex; gap: 10px; overflow-x: auto; padding: 2px 0 14px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.atalhos { display: flex; gap: 10px; overflow-x: auto; padding: 2px 0 14px; scrollbar-width: none; overscroll-behavior-x: contain; }
 .atalhos::-webkit-scrollbar { display: none; }
 .atalhos[hidden] { display: none; }
 .atalho { flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 56px; padding: 10px 16px; text-align: left; cursor: pointer;
@@ -414,6 +426,44 @@ h1, h2, h3, .carrinho-titulo, .modal-head h2 { font-variation-settings: "SOFT" 1
 .pix-cola .btn-pix { margin: 4px 0; background: var(--forest); color: var(--sobre-primaria); border-color: var(--forest); font-weight: 700; }
 .pix-espera { margin: 10px 0; font-size: .86rem; color: var(--text-mid); }
 
+/* PIX pendente na tela de sucesso: cartão grande, logo abaixo do título */
+.pix-destaque { --pix: #1f9e91; position: relative; margin: 4px 0 16px; padding: 16px 16px 14px; text-align: left; border-radius: 18px; background: var(--superficie, #fff); border: 2px solid var(--pix); box-shadow: 0 8px 24px -12px rgba(31, 158, 145, .55); }
+.pix-d-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.pix-d-selo { display: inline-flex; align-items: center; gap: 6px; font-weight: 900; letter-spacing: .04em; color: var(--pix); font-size: 1rem; }
+.pix-d-selo svg { width: 22px; height: 22px; }
+.pix-d-status { padding: 5px 11px; border-radius: 999px; background: #fff3d6; color: #8a5a00; font-size: .8rem; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; animation: pixPulsa 2s ease-in-out infinite; }
+@keyframes pixPulsa { 50% { background: #ffe3a3; } }
+.pix-d-rot { margin: 0; font-size: .85rem; color: var(--text-mid); font-weight: 600; }
+.pix-d-total { margin: 0 0 10px; font-size: 2.3rem; line-height: 1.05; font-weight: 900; color: var(--text-dark, #1d1a22); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.pix-d-para { display: flex; flex-direction: column; gap: 2px; margin: 0 0 14px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--pix) 8%, var(--superficie, #fff)); font-size: .92rem; color: var(--text-mid); line-height: 1.35; word-break: break-word; }
+.pix-d-para b { color: var(--text-dark, #1d1a22); }
+.pix-d-para span { font-size: .86rem; }
+.btn-pix--grande { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 58px; margin: 0 0 14px; padding: 12px 16px; border: 0; border-radius: 14px; background: var(--pix); color: #fff; font-size: 1.1rem; font-weight: 800; cursor: pointer; transition: transform .15s ease, background .2s ease; }
+.btn-pix--grande svg { width: 22px; height: 22px; flex: none; }
+.btn-pix--grande:active { transform: scale(.97); }
+.btn-pix--grande.copiado { background: #15803d; }
+.pix-d-passos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.pix-d-passos li { display: flex; align-items: flex-start; gap: 10px; font-size: .9rem; line-height: 1.35; color: var(--text-mid); }
+.pix-d-passos li span { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: color-mix(in srgb, var(--pix) 15%, var(--superficie, #fff)); color: var(--pix); font-weight: 900; font-size: .82rem; }
+.pix-d-passos p { margin: 0; padding-top: 2px; }
+.pix-d-passos b { color: var(--text-dark, #1d1a22); }
+.pix-d-nota { margin: -4px 0 0; font-size: .85rem; color: var(--text-mid); line-height: 1.35; }
+.pix-d-qr { margin-top: 12px; border-top: 1px dashed color-mix(in srgb, var(--pix) 35%, transparent); padding-top: 10px; }
+.pix-d-qr summary { cursor: pointer; font-size: .86rem; font-weight: 700; color: var(--pix); list-style: none; }
+.pix-d-qr summary::-webkit-details-marker { display: none; }
+.pix-d-qr summary::before { content: '▸ '; }
+.pix-d-qr[open] summary::before { content: '▾ '; }
+.pix-d-qr-caixa { display: flex; justify-content: center; padding: 12px 0 2px; }
+.pix-d-qr-caixa svg { max-width: 100%; height: auto; border-radius: 10px; }
+/* com PIX pendente, o WhatsApp vira o passo 3 */
+.com-pix .modal-body { padding-top: 24px !important; }
+.com-pix .circulo-sucesso { width: 64px; height: 64px; margin-bottom: 10px; }
+.com-pix .circulo-sucesso svg { width: 32px; height: 32px; }
+.com-pix .title-success { font-size: 1.6rem; margin-bottom: 6px; }
+.com-pix #sucesso-texto { margin-bottom: 14px !important; font-size: .98rem !important; }
+.com-pix .sucesso-whatsapps .btn-wpp { font-size: 1rem; }
+@media (prefers-reduced-motion: reduce) { .pix-d-status { animation: none; } }
+
 /* campo obrigatório que ficou em branco: pisca a borda para a pessoa achar */
 .form-group .campo-faltando { border-color: var(--danger) !important; box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 22%, transparent) !important; }
 
@@ -425,3 +475,52 @@ button, a, input, select, textarea, label, summary, [data-action], .produto-card
 .precisa-toque .btn-wpp { min-height: 56px; font-size: 1.05rem; animation: chamaToque 1.4s ease-in-out 3; }
 @keyframes chamaToque { 50% { transform: scale(1.04); box-shadow: 0 0 0 6px color-mix(in srgb, #25d366 30%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .precisa-toque .btn-wpp { animation: none; } }
+
+/* selo da feira no cabeçalho ("Feira do Madri"), só para quem entrou pelo link da feira (js/tema.js) */
+.selo-feira {
+    display: inline-flex; align-items: center; gap: 5px; margin: 0 0 8px; padding: 4px 11px 4px 8px; border-radius: 999px;
+    background: color-mix(in srgb, var(--sobre-primaria, #f6f1e4) 14%, transparent); border: 1px solid color-mix(in srgb, var(--sobre-primaria, #f6f1e4) 35%, transparent);
+    color: var(--sobre-primaria, #f6f1e4); font-family: var(--fonte-texto); font-size: .82rem; font-weight: 700; line-height: 1.2; max-width: 100%;
+}
+.selo-feira svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.selo-feira span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* condomínio travado (cliente de uma feira): só quadra e lote se preenchem */
+.end-fixo { margin: 0 0 4px; padding: 10px 14px; border-radius: var(--radius-sm, 12px); background: var(--parchment, #f2ede3); color: var(--text-dark); font-size: .95rem; line-height: 1.4; }
+.end-fixo b { color: var(--primaria, var(--forest)); }
+/* "Pagamento só na entrega": a forma escolhida, na tela de sucesso */
+.sucesso-pag { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; background: #fdf3e2; color: #6b4300; font-weight: 700; line-height: 1.4; }
+.sucesso-pag[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- convite do iPhone: pôr a loja na tela de início
+   Cartão dentro da vitrine (não flutua): não cobre o carrinho nem as janelas. js/loja.js, pintarConviteApp. */
+.convite-app { margin: 4px 0 16px; padding: 14px 14px 12px; background: var(--warm-white); border: 1px solid color-mix(in srgb, var(--forest) 16%, transparent); border-radius: 18px; box-shadow: 0 2px 10px rgba(26, 58, 42, .06); color: var(--text-dark); }
+.convite-app[hidden] { display: none; }
+.convite-cab { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; }
+.convite-icone { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--forest); color: var(--sobre-primaria, #fff); }
+.convite-tit { margin: 0; font-size: 1rem; font-weight: 800; line-height: 1.25; }
+.convite-sub { margin: 2px 0 0; font-size: .88rem; line-height: 1.35; opacity: .78; }
+.convite-x { width: 32px; height: 32px; margin: -4px -4px 0 0; border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: 1.5rem; line-height: 1; opacity: .55; cursor: pointer; }
+.convite-x:hover, .convite-x:focus-visible { opacity: 1; background: color-mix(in srgb, var(--forest) 8%, transparent); }
+.convite-passo { margin: 10px 0 0; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--forest) 6%, transparent); font-size: .92rem; line-height: 1.45; }
+.convite-passo b { font-weight: 700; }
+.convite-ico { display: inline-block; vertical-align: -3px; color: #0a84ff; }
+.convite-acoes { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 14px; margin-top: 10px; }
+.convite-bt { flex: 1 1 auto; min-height: 42px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--forest); color: var(--sobre-primaria, #fff); font: inherit; font-weight: 700; cursor: pointer; }
+.convite-agora { min-height: 42px; padding: 0 6px; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; opacity: .7; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+/* ---------------------------------------------------------------- plano B: pedido pelo WhatsApp quando o servidor não responde */
+.modal-reserva { z-index: 1010; }
+.reserva-corpo { padding: 28px 22px 22px; text-align: center; }
+.reserva-ico { display: grid; place-items: center; width: 56px; height: 56px; margin: 0 auto 12px; border-radius: 50%; background: #e7f6ec; color: #128c4a; }
+.reserva-ico svg { width: 28px; height: 28px; }
+.reserva-tit { margin: 0 0 8px; font-size: 1.2rem; line-height: 1.25; }
+.reserva-txt { margin: 0 0 18px; color: var(--text-mid, #555); line-height: 1.5; }
+.reserva-zap { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; padding: 0 18px; border-radius: 999px; background: #1f9d55; color: #fff; font-weight: 800; font-size: 1.05rem; text-decoration: none; }
+.reserva-zap:active { transform: scale(.98); }
+.reserva-depois { margin-top: 14px; padding: 12px; border-radius: 14px; background: color-mix(in srgb, var(--forest) 6%, transparent); }
+.reserva-depois[hidden] { display: none; }
+.reserva-depois p { margin: 0 0 8px; font-size: .95rem; }
+.reserva-pronto { min-height: 46px; width: 100%; border: 0; border-radius: 999px; background: var(--forest); color: var(--sobre-primaria, #fff); font: inherit; font-weight: 700; cursor: pointer; }
+.reserva-site { margin-top: 12px; min-height: 44px; padding: 0 10px; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; opacity: .75; cursor: pointer; }
+.reserva-cod { margin: 10px 0 0; font-size: .85rem; opacity: .7; }

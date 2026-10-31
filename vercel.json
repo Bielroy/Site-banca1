@@ -112,7 +112,7 @@
         },
         {
           "key": "Cache-Control",
-          "value": "no-cache"
+          "value": "no-store"
         }
       ]
     },
@@ -125,7 +125,7 @@
         },
         {
           "key": "Cache-Control",
-          "value": "no-cache"
+          "value": "no-store"
         }
       ]
     }
@@ -147,7 +147,9 @@
   "images": {
     "sizes": [
       128,
-      384
+      384,
+      640,
+      828
     ],
     "remotePatterns": [
       {
@@ -169,6 +171,10 @@
       {
         "protocol": "https",
         "hostname": "storage.googleapis.com"
+      },
+      {
+        "protocol": "https",
+        "hostname": "fotos.usebanca.com"
       }
     ],
     "minimumCacheTTL": 2678400,
@@ -183,6 +189,10 @@
     {
       "source": "/previa",
       "destination": "/index.html"
+    },
+    {
+      "source": "/admin-plataforma",
+      "destination": "/plataforma.html"
     }
   ],
   "redirects": [

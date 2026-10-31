@@ -23,11 +23,14 @@ export const OPCOES = {
     etiqueta: ['barbante', 'limpa', 'selo'],
     fotoEncaixe: ['preencher', 'inteira'],
     cabecalho: ['cor', 'degrade', 'capa'],
+    pelicula: ['sim', 'nao'],
     borda: ['toldo', 'onda', 'reta'],
     arte: ['mostrar', 'esconder'],
     alinhamento: ['esquerda', 'centro'],
     logoFormato: ['redondo', 'quadrado'],
     botaoFormato: ['pilula', 'arredondado', 'quadrado'],
+    textoLado: ['tudo', 'esquerda'],                // nome, subtítulo e botões usam a largura toda, ou só o lado esquerdo
+    botaoCab: ['contorno', 'vidro', 'solido'],      // botões "Onde entregar?" e "Meus pedidos" no cabeçalho
     card: ['borda', 'sombra', 'plano'],
     fundoEstilo: ['liso', 'papel', 'pontos', 'listras'],
     letra: ['normal', 'grande'],
@@ -55,6 +58,8 @@ export function temaSeguro(bruto, cfg) {
     const raio = Number(t.raio);
     if (t.raio !== null && t.raio !== '' && Number.isFinite(raio) && raio >= 0 && raio <= 24) saida.raio = Math.round(raio);
     if (typeof t.fotoFormato === 'string' && Object.prototype.hasOwnProperty.call(cfg.formatos, t.fotoFormato)) saida.fotoFormato = t.fotoFormato;
+    // forças de 0 a 100 (%): quanto da película aparece sobre a capa e quanto o fundo dos botões do cabeçalho aparece
+    for (const k of ['peliculaForca', 'botaoFundoForca']) { const n = Number(t[k]); if (t[k] !== null && t[k] !== '' && t[k] !== undefined && Number.isFinite(n) && n >= 0 && n <= 100) saida[k] = Math.round(n); }
     for (const [k, lista] of Object.entries(OPCOES)) if (lista.includes(t[k])) saida[k] = t[k];
     for (const k of ['logo', 'capa']) { const u = urlImagem(t[k]); if (u) saida[k] = u; else delete saida[k]; }
     for (const k of Object.keys(saida)) if (saida[k] === undefined) delete saida[k];     // o banco recusa campo "indefinido"
@@ -100,13 +105,14 @@ export const MODELOS = {
     jantinha: { primaria: '#7a2e12', secundaria: '#c8662e', destaque: '#e0a23a', fundo: '#fbf3e7', superficie: '#fffaf2', texto: '#2a1c14', sobrePrimaria: '#fff8ef', fonteTitulo: 'Lora', fonteTexto: 'Nunito Sans', raio: 18, etiqueta: 'limpa' },
     padaria: { primaria: '#5b3a1e', secundaria: '#b9853f', destaque: '#d9a441', fundo: '#f7efe3', superficie: '#fffdf8', texto: '#2b1d10', sobrePrimaria: '#fff8ec', fonteTitulo: 'Playfair Display', fonteTexto: 'Lato', raio: 12, etiqueta: 'barbante', fundoEstilo: 'papel' },
     acai: { primaria: '#4a1650', secundaria: '#8e3a8f', destaque: '#f0b21a', fundo: '#f8f2f8', superficie: '#ffffff', texto: '#24102a', sobrePrimaria: '#ffffff', fonteTitulo: 'Baloo 2', fonteTexto: 'Poppins', raio: 20, etiqueta: 'selo', botaoFormato: 'pilula', card: 'sombra' },
+    pastelacai: { primaria: '#4a1650', secundaria: '#8e3a8f', destaque: '#f0b94a', fundo: '#fff6e4', superficie: '#ffffff', texto: '#2a1230', sobrePrimaria: '#ffffff', botao: '#7b2d8b', fonteTitulo: 'Baloo 2', fonteTexto: 'Poppins', raio: 20, etiqueta: 'selo', botaoFormato: 'pilula', card: 'sombra', borda: 'toldo' },
     mercadinho: { primaria: '#0f4c81', secundaria: '#2f8fd8', destaque: '#f2a516', fundo: '#f2f6fa', superficie: '#ffffff', texto: '#14212e', sobrePrimaria: '#ffffff', fonteTitulo: 'Montserrat', fonteTexto: 'Inter', raio: 10, etiqueta: 'selo', botaoFormato: 'arredondado', card: 'borda', borda: 'reta' },
     doceria: { primaria: '#c2416b', secundaria: '#e88aa8', destaque: '#7a3b2e', fundo: '#fdf3f5', superficie: '#ffffff', texto: '#3a1a24', sobrePrimaria: '#ffffff', fonteTitulo: 'Pacifico', fonteTexto: 'Nunito Sans', raio: 22, etiqueta: 'limpa', card: 'sombra', fundoEstilo: 'pontos', borda: 'onda' },
     natural: { primaria: '#3d5a40', secundaria: '#8aa87a', destaque: '#d08c3d', fundo: '#f3f1e8', superficie: '#fbfaf5', texto: '#1f2a20', sobrePrimaria: '#ffffff', fonteTitulo: 'Merriweather', fonteTexto: 'DM Sans', raio: 16, etiqueta: 'barbante', card: 'plano', fundoEstilo: 'papel' },
     noite: { primaria: '#1c1c1e', secundaria: '#3ddc84', destaque: '#3ddc84', fundo: '#0e0e10', superficie: '#1a1a1d', texto: '#f2f2f2', sobrePrimaria: '#ffffff', botao: '#3ddc84', fonteTitulo: 'Rubik', fonteTexto: 'Inter', raio: 12, etiqueta: 'selo', botaoFormato: 'arredondado', card: 'borda', borda: 'reta', cabecalho: 'degrade' },
 };
 /** Nomes dos modelos no painel. */
-export const NOMES_MODELOS = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', jantinha: 'Jantinha', padaria: 'Padaria', acai: 'Açaí', mercadinho: 'Mercadinho', doceria: 'Doceria', natural: 'Natural', noite: 'Noite' };
+export const NOMES_MODELOS = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', jantinha: 'Jantinha', padaria: 'Padaria', acai: 'Açaí', pastelacai: 'Pastel e açaí', mercadinho: 'Mercadinho', doceria: 'Doceria', natural: 'Natural', noite: 'Noite' };
 
 /** Formatos da área da foto no cartão do produto: rótulo e proporção (largura / altura). */
 export const FOTO_FORMATOS = { quadrada: ['Quadrada', '1 / 1'], alta: ['Em pé', '4 / 5'], 'bem-alta': ['Bem em pé (pacotes, garrafas)', '2 / 3'], larga: ['Deitada', '4 / 3'] };
@@ -183,8 +189,10 @@ export function avisosDeContraste(t) {
     if (!t) return av;
     if (ok('primaria') && ok('sobrePrimaria') && contraste(t.primaria, t.sobrePrimaria) < 4.5) av.push({ campo: 'sobrePrimaria', texto: 'O texto do cabeçalho e dos botões está difícil de ler sobre a cor principal.' });
     if (ok('botao') && contraste(t.botao, legivelSobre(t.botao)) < 4.5) av.push({ campo: 'botao', texto: 'A cor dos botões não deixa ler bem o texto deles.' });
-    if (ok('superficie') && ok('texto') && contraste(t.superficie, t.texto) < 4.5) av.push({ campo: 'texto', texto: 'O texto está com pouco contraste sobre o fundo dos cards.' });
-    if (ok('fundo') && ok('texto') && contraste(t.fundo, t.texto) < 4.5) av.push({ campo: 'texto', texto: 'O texto está com pouco contraste sobre o fundo da página.' });
+    // sem cor escolhida, vale a padrão do site (texto quase preto, card branco, página creme)
+    const tx = ok('texto') ? t.texto : '#1a1a18', sup = ok('superficie') ? t.superficie : '#ffffff', fd = ok('fundo') ? t.fundo : '#faf7f2';
+    if ((ok('superficie') || ok('texto')) && contraste(sup, tx) < 4.5) av.push({ campo: 'texto', texto: 'O texto está com pouco contraste sobre o fundo dos cards.' });
+    if ((ok('fundo') || ok('texto')) && contraste(fd, tx) < 4.5) av.push({ campo: 'texto', texto: 'O texto está com pouco contraste sobre o fundo da página.' });
     return av.filter((a, i) => av.findIndex((b) => b.campo === a.campo) === i);
 }
 
@@ -193,6 +201,11 @@ export function ajustarContraste(t, campo) {
     const n = { ...t };
     if (campo === 'sobrePrimaria' && corValida(n.primaria)) n.sobrePrimaria = legivelSobre(n.primaria);
     else if (campo === 'botao' && corValida(n.botao)) n.botao = corLegivel(n.botao, [legivelSobre(n.botao)]);
-    else if (campo === 'texto' && corValida(n.texto)) n.texto = corLegivel(n.texto, [n.superficie, n.fundo]);
+    else if (campo === 'texto') {
+        const sup = corValida(n.superficie) ? n.superficie : '#ffffff', fd = corValida(n.fundo) ? n.fundo : '#faf7f2', tx = corValida(n.texto) ? n.texto : '#1a1a18';
+        // card escuro em página clara (ou o contrário): nenhuma cor lê bem nos dois. O texto acerta a PÁGINA;
+        // os cards ganham a cor deles sozinhos (js/tema.js, ap-card-contraste).
+        n.texto = legivelSobre(sup) !== legivelSobre(fd) ? corLegivel(tx, [fd]) : corLegivel(tx, [sup, fd]);
+    }
     return n;
 }

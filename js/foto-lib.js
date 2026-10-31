@@ -14,28 +14,29 @@
 // =====================================================================
 
 /** Larguras aceitas — têm de ser as MESMAS de vercel.json ("images.sizes"). */
-export const LARGURAS = [128, 384];
+export const LARGURAS = [128, 384, 640, 828];   // 828: foto do quadro na largura toda do celular
 
 const LOCAL = /^(localhost|127\.|192\.168\.|10\.|\[::1\])/;
 
 /**
- * De ONDE aceitamos reduzir foto: os serviços onde as lojas guardam as fotos (ImgBB e o armazenamento do Firebase).
+ * De ONDE aceitamos reduzir foto: os serviços onde as lojas guardam as fotos (Cloudflare R2 em fotos.usebanca.com,
+ * ImgBB e o armazenamento do Firebase).
  * Têm de ser os MESMOS de vercel.json ("images.remotePatterns"); um teste confere.
  * Antes o redutor aceitava qualquer endereço da internet: qualquer pessoa podia usar o site como atravessador
  * de imagens e gastar a cota de redução da loja. Foto guardada em outro lugar continua aparecendo, só que no
  * tamanho original.
  */
-export const HOSTS_DAS_FOTOS = ['i.ibb.co', '**.ibb.co', 'firebasestorage.googleapis.com', '**.firebasestorage.app', 'storage.googleapis.com'];
+export const HOSTS_DAS_FOTOS = ['i.ibb.co', '**.ibb.co', 'firebasestorage.googleapis.com', '**.firebasestorage.app', 'storage.googleapis.com', 'fotos.usebanca.com'];
 const hostAceito = (h) => HOSTS_DAS_FOTOS.some((p) => (p.startsWith('**.') ? h.endsWith(p.slice(2)) && h.length > p.length - 2 : h === p));
 
 /** Endereço da miniatura de uma foto. Devolve a própria foto quando não dá para reduzir. */
 export function miniatura(url, largura = 384, host = (typeof location !== 'undefined' ? location.hostname : '')) {
     const u = String(url || '');
     if (!/^https:\/\/[^\s"'<>]+$/i.test(u)) return u;             // data:, blob:, http: ou vazio: fica como está
-    if (!host || LOCAL.test(host)) return u;                       // no computador de quem desenvolve não existe o redutor
+    if (!host || (LOCAL.test(host) && !(typeof globalThis !== 'undefined' && globalThis.__REDUTOR_LOCAL))) return u;   // no computador de quem desenvolve não existe o redutor (os testes de tela ligam um de mentira)
     if (/\.svg(\?|#|$)/i.test(u)) return u;                        // desenho vetorial já é leve
     let deOnde = ''; try { deOnde = new URL(u).hostname.toLowerCase(); } catch (_) { return u; }
     if (!hostAceito(deOnde)) return u;                             // guardada em outro lugar: aparece no tamanho original
     const w = LARGURAS.includes(largura) ? largura : 384;
-    return `/_vercel/image?url=${encodeURIComponent(u)}&w=${w}&q=75`;
+    return `/_vercel/image?url=${encodeURIComponent(u)}&w=${w}&q=75&v=4`;       // v=4: mudou o número, as miniaturas de erro guardadas antes deixam de valer
 }

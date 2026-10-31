@@ -1,0 +1,21 @@
+/* =====================================================================
+   css/loja-tudo.css — os estilos da LOJA (index.html) num arquivo só.
+   O build do Vite emenda estes @import num único arquivo: a primeira tela espera 1 pedido em vez de 14.
+   A ORDEM importa (o que vem depois vence): produto-modal depois de loja, visual por último entre os de visual, etc.
+   Arquivo novo de estilo da loja? Entra AQUI, não no index.html.
+   ===================================================================== */
+@import './variables.css';
+@import './shared.css';
+@import './loja.css';
+@import './produto-modal.css';
+@import './melhorias.css';
+@import './visual.css';
+@import './aparencia-loja.css';
+@import './vitrine.css';
+@import './pacotes.css';
+@import './secoes.css';
+@import './montar.css';
+@import './checkout.css';
+@import './dias.css';
+@import './encaixe.css';
+@import './vigia.css';

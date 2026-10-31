@@ -1,0 +1,197 @@
+/* =====================================================================
+   css/admin-impressora.css — tela "Impressora" do Menu (js/admin-impressora.js).
+   A peça que dá a cara da tela é a impressora ao lado: a boca escura e o papel
+   térmico saindo dela, com o corte serrilhado embaixo, mostrando como vai sair.
+   ===================================================================== */
+.ipr { --papel: #fffef8; --tinta: #1d1d1b; --boca: var(--forest); max-width: 1080px; }
+
+/* ---- faixa de cima: a impressora está pronta? ---- */
+.ipr-status { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin: 0 0 14px; padding: 14px 16px;
+    border-radius: 16px; background: var(--superficie, #fff); border: 1.5px solid var(--linha, #e4dfd3); }
+.ipr-led { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--disabled); box-shadow: 0 0 0 4px rgba(148, 163, 184, .18); }
+.ipr-status.ok .ipr-led { background: #2f9e5b; box-shadow: 0 0 0 4px rgba(47, 158, 91, .18), 0 0 12px rgba(47, 158, 91, .55); }
+.ipr-status.alerta .ipr-led { background: #d98a06; box-shadow: 0 0 0 4px rgba(217, 138, 6, .2); }
+.ipr-status.erro .ipr-led { background: #c8352b; box-shadow: 0 0 0 4px rgba(200, 53, 43, .18); }
+.ipr-status.espera .ipr-led { animation: ipr-pisca 1.2s ease-in-out infinite; }
+@keyframes ipr-pisca { 50% { opacity: .35; } }
+.ipr-status-txt { flex: 1 1 220px; min-width: 0; display: grid; gap: 2px; }
+.ipr-status-txt b { font: 700 1.08rem/1.25 var(--fonte-titulo); color: var(--forest); }
+.ipr-status-txt small { color: var(--text-mid); font-size: .88rem; line-height: 1.4; }
+.ipr-status.erro { border-color: #f0c2bd; background: #fffaf9; }
+.ipr-status.alerta { border-color: #f0d49a; background: #fffcf3; }
+.ipr-status .bt-sec { min-height: 44px; }
+/* mais de um celular da banca: cada um com a sua bolinha */
+.ipr-cels { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 0; padding: 10px 0 0; list-style: none; border-top: 1px dashed var(--linha, #e4dfd3); }
+.ipr-cel { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 12px 4px 10px; border-radius: 999px; background: #fff; border: 1.5px solid #e4dfd3; font-size: .88rem; }
+.ipr-cel i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--disabled); }
+.ipr-cel.ok i { background: #2f9e5b; }
+.ipr-cel.alerta i { background: #d98a06; }
+.ipr-cel.erro i { background: #c8352b; }
+.ipr-cel b { font-weight: 700; color: var(--forest); }
+.ipr-cel small { color: var(--text-mid); }
+
+/* ---- as três partes ---- */
+.ipr-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 0 0 18px; padding: 4px; border-radius: 14px; background: var(--parchment); }
+.ipr-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 6px 8px; border: 0; border-radius: 11px;
+    background: transparent; color: var(--text-mid); font: 700 .95rem/1.15 var(--fonte-texto); cursor: pointer; transition: background .15s, color .15s; }
+.ipr-seg button .ic { width: 1.3rem; height: 1.3rem; flex: none; }
+.ipr-seg button[aria-selected="true"] { background: #fff; color: var(--forest); box-shadow: 0 1px 2px rgba(26, 58, 42, .12), 0 2px 8px rgba(26, 58, 42, .06); }
+.ipr-seg button:focus-visible { outline: 3px solid var(--manga); outline-offset: 1px; }
+
+.ipr-palco { display: grid; gap: 20px; align-items: start; }
+.ipr-painel[hidden], .ipr-saida[hidden] { display: none; }
+.ipr-lead { margin: 0 0 14px; color: var(--text-mid); line-height: 1.5; max-width: 62ch; }
+
+/* ---- pedido do WhatsApp ---- */
+.ipr-rotulo { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.ipr-rotulo label { margin: 0; }
+.ipr-colar { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--sage);
+    background: var(--foam); color: var(--forest); font: 700 .88rem var(--fonte-texto); cursor: pointer; }
+.ipr-colar .ic { width: 1.05rem; height: 1.05rem; }
+.ipr-itens textarea { width: 100%; min-height: 168px; resize: vertical; font: 1rem/1.5 var(--fonte-texto); }
+.ipr-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.ipr-grade .ipr-largo { grid-column: 1 / -1; }
+.ipr-nota { margin: 4px 0 0; font-size: .86rem; color: var(--text-mid); line-height: 1.5; }
+.ipr-link { padding: 0; border: 0; background: none; color: var(--forest); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.ipr-limpar { display: inline-flex; align-items: center; min-height: 44px; margin-top: 6px; }
+.ipr-limpar[hidden] { display: none; }
+
+/* ---- foto ---- */
+.ipr-foto-escolher { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ipr-foto-escolher[hidden], .ipr-foto-ajustes[hidden] { display: none; }
+.ipr-alvo { position: relative; display: grid; justify-items: center; align-content: center; gap: 6px; min-height: 170px; padding: 18px 14px; text-align: center;
+    border: 2px dashed #cfc7b6; border-radius: 16px; background: #fffdf8; cursor: pointer; transition: border-color .15s, background .15s; }
+.ipr-alvo:hover, .ipr-alvo:focus-within { border-color: var(--leaf); background: var(--foam); }
+.ipr-alvo input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.ipr-alvo .ic { width: 2.2rem; height: 2.2rem; color: var(--forest); }
+.ipr-alvo b { font: 700 1.02rem var(--fonte-texto); color: var(--forest); }
+.ipr-alvo small { color: var(--text-mid); font-size: .84rem; line-height: 1.35; }
+.ipr-foto-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.ipr-foto-topo span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--text-mid); }
+.ipr-foto-topo .ipr-link { min-height: 44px; flex: none; }
+.ipr-jeito { border: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 14px; }
+.ipr-jeito legend { font-weight: 700; color: var(--forest); margin-bottom: 8px; }
+.ipr-jeito label { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1.5px solid #e0dcd4; border-radius: 12px; background: #fff; cursor: pointer; }
+.ipr-jeito label.sel { border-color: var(--forest); background: var(--warm-white); }
+.ipr-jeito input { width: 20px; height: 20px; margin-top: 2px; flex: none; accent-color: var(--forest); }
+.ipr-jeito small { display: block; margin-top: 2px; font-size: .82rem; color: var(--text-mid); line-height: 1.35; }
+.ipr-faixa { display: flex; align-items: center; gap: 10px; }
+.ipr-faixa span { flex: none; font-size: .8rem; color: var(--text-mid); }
+.ipr-faixa input { flex: 1; min-width: 0; height: 44px; accent-color: var(--forest); }
+#ipr-girar { margin-bottom: 10px; }
+
+/* ---- a impressora ao lado: boca + papel ---- */
+.ipr-saida { display: grid; justify-items: center; }
+.ipr-boca { position: relative; z-index: 1; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px 20px;
+    border-radius: 16px 16px 10px 10px; background: var(--boca); color: #e9f2ec; }
+.ipr-boca span { font: 600 .95rem var(--fonte-titulo); }
+.ipr-boca small { font-size: .78rem; opacity: .8; }
+/* a fenda por onde o papel sai */
+.ipr-boca::after { content: ""; position: absolute; left: 10%; right: 10%; bottom: 8px; height: 5px; border-radius: 3px; background: #0b1f15; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .6); }
+.ipr-papel { --col: 48; position: relative; width: min(100% - 28px, calc(var(--col) * 1ch + 3ch)); min-height: 220px; margin-top: -12px; padding: 22px 1.5ch 26px;
+    background: var(--papel); color: var(--tinta); font: 12px/1.38 ui-monospace, 'Cascadia Mono', 'Roboto Mono', Menlo, monospace;
+    box-shadow: 0 10px 24px rgba(26, 58, 42, .12);
+    /* corte serrilhado embaixo, como papel rasgado na serra da impressora */
+    -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 12px 100%;
+    mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 12px 100%; }
+/* sombra da fenda em cima do papel */
+.ipr-papel::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 16px; background: linear-gradient(rgba(0, 0, 0, .14), transparent); pointer-events: none; }
+.ipr-papel.com-foto { padding-left: 10px; padding-right: 10px; }
+.ipr-previa { white-space: pre; overflow: hidden; }
+.ipr-previa span { display: block; min-height: 1.38em; }
+.ipr-previa .b { font-weight: 800; }
+.ipr-previa .g { font-size: 2em; line-height: 1.12; }
+.ipr-canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.ipr-vazio { margin: 40px 6px; text-align: center; color: #9a948a; font: 500 .9rem/1.5 var(--fonte-texto); }
+.ipr-vazio[hidden], .ipr-previa[hidden], .ipr-canvas[hidden] { display: none; }
+
+.ipr-acao { width: 100%; display: flex; align-items: stretch; gap: 10px; margin-top: 16px; }
+.ipr-vias { flex: none; display: flex; align-items: center; border: 1.5px solid #d9d3c6; border-radius: 12px; background: #fff; }
+.ipr-vias button { width: 44px; min-height: 52px; border: 0; background: none; color: var(--forest); font: 700 1.3rem var(--fonte-texto); cursor: pointer; }
+.ipr-vias span { min-width: 3.6em; text-align: center; font-weight: 700; font-size: .9rem; color: var(--text-dark); }
+.ipr-imprimir.bt { flex: 1; min-height: 52px; font-size: 1.05rem; }
+.ipr-imprimir:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- atalho: rótulos adesivos dos produtos ---- */
+.ipr-mais { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 14px; margin-top: 22px; padding: 14px 16px; border-radius: 16px;
+    background: var(--warm-white, #fffaf2); border: 1.5px dashed #d9d3c6; }
+.ipr-mais[hidden] { display: none; }
+.ipr-mais > .ic { flex: none; width: 2rem; height: 2rem; color: var(--forest); }
+.ipr-mais div { flex: 1 1 220px; min-width: 0; display: grid; gap: 2px; }
+.ipr-mais b { font: 700 1rem/1.25 var(--fonte-titulo); color: var(--forest); }
+.ipr-mais small { color: var(--text-mid); font-size: .86rem; line-height: 1.4; }
+.ipr-mais .bt-sec { min-height: 44px; }
+
+/* ---- computador: a impressora fica do lado, parada enquanto a página rola ---- */
+@media (min-width: 900px) {
+    .ipr-palco { grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); }
+    .ipr-painel { grid-column: 1; }
+    .ipr-saida { grid-column: 2; grid-row: 1 / span 3; position: sticky; top: 16px; }
+    .ipr[data-secao="ajustes"] .ipr-palco { grid-template-columns: minmax(0, 720px); }
+}
+
+/* ---- celular ---- */
+@media (max-width: 899px) {
+    .ipr-acao { position: sticky; bottom: calc(var(--barra-h, 0px) + 10px); z-index: 5; padding: 8px; margin-top: 14px; border-radius: 16px;
+        background: rgba(250, 247, 242, .94); box-shadow: 0 6px 20px rgba(26, 58, 42, .14); backdrop-filter: blur(6px); }
+}
+@media (max-width: 560px) {
+    .ipr-status { padding: 12px; }
+    .ipr-status .bt-sec { flex: 1 1 auto; }
+    .ipr-seg button { flex-direction: column; gap: 3px; min-height: 58px; font-size: .82rem; }
+    .ipr-grade, .ipr-jeito { grid-template-columns: minmax(0, 1fr); }
+    .ipr-foto-escolher { grid-template-columns: minmax(0, 1fr); }
+    .ipr-alvo { min-height: 120px; }
+    .ipr-papel { font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .ipr-status.espera .ipr-led { animation: none; } .ipr-seg button { transition: none; } }
+/* nesta tela a faixa de cima já diz como a impressora está: a faixa geral da impressão automática sai */
+#dashboard:has(#aba-impressora.active) #imp-auto { display: none; }
+
+/* ---------------- Conferir e registrar o pedido do WhatsApp (js/admin-conferir-whats.js) ---------------- */
+.iconf { margin-top: 16px; --ok: #2f8a55; --duv: #c98a00; --ruim: #b8382a; }
+.iconf[hidden] { display: none; }
+.iconf-convite { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 14px; padding: 14px 16px; border-radius: 16px; background: linear-gradient(135deg, color-mix(in srgb, var(--forest) 9%, #fff), #fff); border: 1px solid color-mix(in srgb, var(--forest) 18%, #fff); }
+.iconf-convite b { font-size: 1rem; color: var(--forest); }
+.iconf-convite span { grid-column: 1; font-size: .84rem; color: var(--text-mid); line-height: 1.45; }
+.iconf-convite .iconf-bt { grid-column: 2; grid-row: 1 / span 2; margin: 0; }
+@media (max-width: 480px) { .iconf-convite { grid-template-columns: 1fr; } .iconf-convite .iconf-bt { grid-column: 1; grid-row: auto; width: 100%; margin-top: 6px; } }
+.iconf-bt { min-height: 48px; padding: 10px 20px; border: 0; border-radius: 14px; background: var(--forest); color: #fff; font: inherit; font-weight: 800; cursor: pointer; box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--forest) 80%, transparent); transition: transform .12s ease; }
+.iconf-bt:active { transform: scale(.97); }
+.iconf-bt:disabled { opacity: .5; cursor: default; box-shadow: none; }
+.iconf-cab { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+.iconf-cab b { font-size: 1.15rem; color: var(--forest); }
+.iconf-cab span { display: flex; flex-wrap: wrap; gap: 6px; font-size: 0; }
+.iconf-chip { font-style: normal; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: .8rem; font-weight: 700; background: #f1efe9; color: var(--text-mid); }
+.iconf-chip::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.iconf-chip.ok { background: #e8f4ec; color: var(--ok); } .iconf-chip.duv { background: #fdf3dc; color: #8a5f00; } .iconf-chip.rec { color: #8b857a; }
+.iconf-dica { margin: 0 0 10px; font-size: .8rem; color: var(--text-mid); }
+.iconf-lista { list-style: none; margin: 0; padding: 0; border-radius: 16px; background: #fff; border: 1px solid #e8e3d8; overflow: hidden; }
+.iconf-linha { position: relative; padding: 12px 14px 12px 18px; border-top: 1px solid #efebe3; }
+.iconf-linha:first-child { border-top: 0; }
+.iconf-linha::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 4px; border-radius: 0 4px 4px 0; background: var(--ok); }
+.iconf-duvida { background: #fffbf2; } .iconf-duvida::before { background: var(--duv); }
+.iconf-nada { background: #fff7f6; } .iconf-nada::before { background: var(--ruim); }
+.iconf-fora, .iconf-recado { background: #faf9f6; } .iconf-fora::before, .iconf-recado::before { background: #d6d1c6; }
+.iconf-orig { display: block; margin-bottom: 6px; font-size: .78rem; color: #8b857a; font-style: italic; line-height: 1.35; word-break: break-word; }
+.iconf-orig::before { content: '“'; } .iconf-orig::after { content: '”'; }
+.iconf-campos { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 8px; }
+.iconf-prod { grid-column: 1 / -1; width: 100%; min-height: 44px; padding: 8px 34px 8px 0; border: 0; border-bottom: 1.5px dashed #d8d2c5; border-radius: 0; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23888' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 6px center; -webkit-appearance: none; appearance: none; font-size: 1.02rem; font-weight: 800; color: var(--text-dark, #1d1a22); }
+.iconf-fora .iconf-prod, .iconf-recado .iconf-prod { font-weight: 600; color: #8b857a; }
+.iconf-qtd { width: 70px; min-height: 40px; padding: 6px 10px; border: 1.5px solid #e1dbcf; border-radius: 10px; background: #fff; font-size: 16px; font-weight: 700; text-align: center; }
+.iconf-campos select[data-k="tipo"] { min-height: 40px; padding: 6px 10px; border: 1.5px solid #e1dbcf; border-radius: 10px; background: #fff; font-size: 14px; }
+.iconf-un { font-size: .85rem; color: var(--text-mid); padding: 0 4px; }
+.iconf-valor { justify-self: end; font-size: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.iconf-aviso { display: flex; gap: 6px; margin: 8px 0 0; padding: 6px 10px; border-radius: 8px; background: #fdf3dc; font-size: .78rem; font-weight: 700; color: #7a5300; line-height: 1.35; }
+.iconf-nada .iconf-aviso { background: #fbe6e3; color: #92281c; }
+.iconf-rodape { position: sticky; bottom: 0; z-index: 2; margin-top: 12px; padding: 14px; border-radius: 18px; background: #fff; border: 1px solid #e8e3d8; box-shadow: 0 -10px 24px -16px rgba(0,0,0,.35); }
+.iconf-grade { display: grid; grid-template-columns: 1.3fr 1fr; gap: 10px; }
+.iconf-grade .form-group { margin: 0; }
+.iconf-grade label { font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--text-mid); }
+.iconf-grade input, .iconf-grade select { width: 100%; min-height: 44px; font-size: 16px; }
+.iconf-total { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 12px 0; padding-top: 10px; border-top: 1px dashed #e1dbcf; }
+.iconf-total span { color: var(--text-mid); font-weight: 600; }
+.iconf-total b { text-align: right; font-size: 1.15rem; color: var(--forest); font-variant-numeric: tabular-nums; }
+.iconf-acoes { display: flex; align-items: center; gap: 12px; }
+.iconf-acoes .iconf-bt { flex: 1; margin: 0; }
+@media (max-width: 380px) { .iconf-grade { grid-template-columns: 1fr; } }
