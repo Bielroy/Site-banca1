@@ -9,6 +9,7 @@ import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, sho
 import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques, maisPedidos } from './ranking-loja.js';
 import { contatoDaLoja, telefoneBonito, linkWhatsapp, normalizarWhatsapp, saudacaoComSacola } from './contato-lib.js';
+import { mensagemDoProduto } from './formato-lib.js';
 import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca, tintaSobre, botaoSobre } from './vitrine-lib.js';
 import { ARTES } from './arte-lib.js';
 import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_POTE } from './vitrine-arte.js';
@@ -286,7 +287,36 @@ const mudarLinhaMontada = (chave, delta, fixo = false) => {
 // produto pelo id sem varrer a lista inteira a cada card (com catálogo grande, a vitrine fazia N × N buscas)
 let _mapaProdutos = null, _mapaDe = null;
 const produtoPorId = (id) => { if (_mapaDe !== STATE.produtos) { _mapaDe = STATE.produtos; _mapaProdutos = new Map((STATE.produtos || []).map((p) => [p.id, p])); } return _mapaProdutos.get(id); };
+// LOJA "SÓ VITRINE" (Plataforma → Lojas → Formato; js/formato-lib.js): sem carrinho. Cada produto ganha
+// "Pedir no WhatsApp" com o nome e o preço na mensagem. O js/tema.js marca <html data-formato="vitrine"> ao ler a ficha.
+const emVitrine = () => document.documentElement.dataset.formato === 'vitrine';
+// número da vitrine: o WhatsApp de atendimento ou, sem ele, o que recebe pedidos (mesmo com o botão do topo desligado)
+const zapDaVitrine = () => { const c = STATE.config || {}, k = c.contato && typeof c.contato === 'object' ? c.contato : {}; return normalizarWhatsapp(k.whatsapp) || normalizarWhatsapp(c.wpp); };
+const nomeDaLojaNaTela = () => (document.getElementById('header-nome')?.textContent || '').trim();
+const precoDaVitrine = (p) => (p && Number(p.preco) > 0 ? `${fmt(Number(p.preco))}${p.unidade ? ` / ${p.unidade}` : ''}` : '');
+const linkZapDoProduto = (p) => linkWhatsapp(zapDaVitrine(), mensagemDoProduto(nomeDaLojaNaTela(), p, precoDaVitrine(p)));
+const pintarBotaoZap = (area, produtoId) => {
+    const p = produtoPorId(produtoId), num = zapDaVitrine();
+    const sig = `zap|${num}|${p ? `${p.nome}|${p.preco}|${p.unidade || ''}` : ''}|${nomeDaLojaNaTela()}`;
+    if (area.dataset.sig === sig) return;
+    area.dataset.sig = sig;
+    area.classList.remove('dupla', 'montar'); area.classList.add('zap');
+    area.closest('.produto-card')?.classList.remove('na-sacola');
+    if (!p || !num) { area.textContent = ''; return; }
+    area.innerHTML = `<a class="card-zap" href="${escapeHTML(linkZapDoProduto(p))}" target="_blank" rel="noopener noreferrer" data-action="zap" aria-label="Pedir ${escapeHTML(p.nome || '')} no WhatsApp">${ICO_ZAP}<span>Pedir no WhatsApp</span></a>`;
+};
+// Botão fixo do WhatsApp na vitrine (no lugar da sacola)
+const pintarZapFixo = () => {
+    let a = document.getElementById('zap-vitrine');
+    const num = emVitrine() ? zapDaVitrine() : '';
+    if (!num) { a?.remove(); return; }
+    if (!a) { a = document.createElement('a'); a.id = 'zap-vitrine'; a.className = 'zap-vitrine'; a.target = '_blank'; a.rel = 'noopener noreferrer'; document.body.appendChild(a); }
+    a.href = linkWhatsapp(num, mensagemDoProduto(nomeDaLojaNaTela(), null));
+    a.innerHTML = `${ICO_ZAP}<span>Fazer pedido no WhatsApp</span>`;
+};
 const pintarAcao = (area, produtoId, animar) => {
+    if (emVitrine()) return pintarBotaoZap(area, produtoId);
+    if (area.classList.contains('zap')) { area.classList.remove('zap'); delete area.dataset.sig; area.textContent = ''; }   // deixou de ser vitrine
     const item = STATE.carrinho.find(x => x.id === produtoId);
     area.closest('.produto-card')?.classList.toggle('na-sacola', !!item);
     const prod = produtoPorId(produtoId);
@@ -700,6 +730,7 @@ const avisarAoAdicionar = (p, tipo) => {
     }
 };
 const modificarCarrinho = (id, delta, fixo = false, tipoCompraForcado = null) => {
+    if (emVitrine()) return;                       // loja só vitrine: não tem sacola
     const p = STATE.produtos.find(x => x.id === id); if (!p) return;
     if (temMontar(p)) { if (delta > 0) abrirMontarDoProduto(id); return; }   // montado: escolhe as opções antes
     
@@ -1373,7 +1404,13 @@ document.getElementById('busca-input').addEventListener('input', (e) => {
 const ICO_INSTA = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r=".6" fill="currentColor"/></svg>';
 const ICO_ZAP = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5l1.2-3.6A8 8 0 1 1 8.4 18.6z"/><path d="M9.2 8.6c.3 2.8 2.6 5.2 5.4 5.6l1-1.3-1.7-.9-.8.7c-.9-.4-1.9-1.3-2.3-2.3l.7-.8-.9-1.7z" fill="currentColor" stroke="none"/></svg>';
 let _contatoDe = '';
+document.addEventListener('banca:formato', () => {
+    document.querySelectorAll('[data-acao]').forEach((area) => pintarAcao(area, area.dataset.acao));
+    pintarZapFixo();
+    if (emVitrine() && document.getElementById('carrinho')?.classList.contains('aberto')) document.getElementById('btn-fechar-sacola')?.click();
+});
 const pintarContato = () => {
+    pintarZapFixo();
     const k = contatoDaLoja(STATE.config), cara = JSON.stringify(k);
     if (cara === _contatoDe) return; _contatoDe = cara;
     const topo = document.getElementById('header-redes'), fim = document.getElementById('fale-loja');
@@ -2289,6 +2326,7 @@ document.body.addEventListener('click', async (e) => {
     const actionTarget = e.target.closest('[data-action]'); 
     if (actionTarget) {
         const action = actionTarget.dataset.action; const id = actionTarget.dataset.id;
+        if (action === 'zap') { e.stopPropagation(); return; }     // vitrine: o link do WhatsApp abre sozinho
         if(action === 'add' || action === 'inc' || action === 'dec' || action === 'fav' || action === 'trocar' || action === 'montar') e.stopPropagation();
         // MONTAR PEDIDO: abre a tela de montar (de novo, ou para alterar uma linha da sacola); + e − da linha montada
         if (action === 'montar') {
@@ -2397,6 +2435,14 @@ document.body.addEventListener('click', async (e) => {
                 closeModal('modal-detalhe-produto');
                 if (history.state && history.state.modal === 'modal-detalhe-produto') history.back();
             };
+            // vitrine: sem quantidade nem sacola; o botão leva ao WhatsApp com este produto
+            const janelaMd = document.getElementById('modal-detalhe-produto'), btnMd = document.getElementById('md-btn-add');
+            janelaMd?.classList.toggle('md-vitrine', emVitrine());
+            if (emVitrine()) {
+                const num = zapDaVitrine();
+                btnMd.hidden = !num; btnMd.textContent = 'Pedir no WhatsApp';
+                btnMd.onclick = () => { if (num) window.open(linkZapDoProduto(p), '_blank', 'noopener'); };
+            } else btnMd.hidden = false;
             };
             transicaoFoto(fotoCard, abrirDetalhe);
         }

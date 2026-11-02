@@ -16,6 +16,7 @@ import * as CZ from './cartaz-editor.js';
 import { escapeHTML, fmt, showToast, customConfirm } from './utils.js';
 import { sugerirId, idValido, totais, diasDaFeira, textoDoDia, proximaEntrega, normCond } from './plataforma-lib.js';
 import { CAMPOS_PRODUTO, camposDaLoja } from './cadastro-lib.js';
+import { FORMATOS as FORMATOS_LOJA } from './formato-lib.js';
 import { listaGuardada, guardarDaPlataforma } from './lojas-rapido.js';
 const diasEmTexto = (dias) => diasDaFeira(dias);
 import './icones-admin.js';
@@ -106,7 +107,7 @@ function abaLojas() {
     const lojas = d.lojas.filter((l) => !termo || normCond(`${l.nome} ${l.id}`).includes(termo));
     return `<div class="pf-topo-aba"><input type="search" class="pf-busca" data-busca="lojas" placeholder="Buscar loja" value="${escapeHTML(S.busca.lojas)}" aria-label="Buscar loja"><button type="button" class="pf-bt pri" data-pf="nova-loja">Nova loja</button></div>
     <ul class="pf-lista">${lojas.map((l) => `<li class="pf-linha-wrap"><button type="button" class="pf-linha${l.ativo ? '' : ' bloq'}" data-pf="abrir-loja" data-loja="${escapeHTML(l.id)}">
-        ${ponto(l.cor)}<span class="pf-linha-txt"><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.original ? 'Loja original' : NOMES_MODELO[l.tipo] || l.tipo || 'Loja')}${feirasDaLoja(l.id).length ? `, em ${feirasDaLoja(l.id).length} feira${feirasDaLoja(l.id).length > 1 ? 's' : ''}` : ''}${l.donos.length ? '' : ', sem proprietário'}</small></span>
+        ${ponto(l.cor)}<span class="pf-linha-txt"><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.original ? 'Loja original' : NOMES_MODELO[l.tipo] || l.tipo || 'Loja')}${l.formato === 'vitrine' ? ', só vitrine' : ''}${feirasDaLoja(l.id).length ? `, em ${feirasDaLoja(l.id).length} feira${feirasDaLoja(l.id).length > 1 ? 's' : ''}` : ''}${l.donos.length ? '' : ', sem proprietário'}</small></span>
         <span class="pf-linha-num"><b>${l.mes ? fmt(l.mes.receita) : '–'}</b><small>${l.ativo ? `${l.mes ? l.mes.pedidos : 0} pedidos no mês` : 'Bloqueada'}</small></span>
     </button><a class="pf-bt mini pf-painel" href="${escapeHTML(urlDaLoja(l.id, '/admin'))}" aria-label="Abrir o painel de ${escapeHTML(l.nome)}">Painel</a></li>`).join('') || '<li class="pf-nada">Nenhuma loja com esse nome.</li>'}</ul>`;
 }
@@ -299,6 +300,8 @@ function folhaLoja(l) {
         ${l.donos.length ? `<ul class="pf-donos">${l.donos.map((e) => `<li><span>${escapeHTML(e)}</span><button type="button" class="pf-bt mini" data-pf="link-entrada" data-email="${escapeHTML(e)}" aria-label="Gerar link de entrada para ${escapeHTML(e)}">Link de entrada</button><button type="button" class="pf-bt mini" data-pf="tirar-dono" data-email="${escapeHTML(e)}" aria-label="Tirar ${escapeHTML(e)}">Tirar</button></li>`).join('')}</ul>${caixaLinkEntrada(l.id)}` : `<p class="pf-dica">${l.original ? 'A conta antiga da banca continua valendo. Novos proprietários aparecem aqui.' : 'Ninguém ainda. Sem proprietário, ninguém abre o painel desta loja.'}</p>`}
         <div class="pf-form-linha"><input type="email" id="pf-l-dono" inputmode="email" autocomplete="off" placeholder="E-mail do proprietário" aria-label="E-mail do novo proprietário"><button type="button" class="pf-bt" data-pf="dar-dono">Adicionar</button></div></section>
     ${l.original ? '' : `<section class="pf-sec"><label class="pf-rot" for="pf-l-tipo">Tipo de negócio</label><div class="pf-form-linha"><input type="text" id="pf-l-tipo" maxlength="30" autocomplete="off" value="${escapeHTML(NOMES_MODELO[l.tipo] || l.tipo || '')}" placeholder="Ex.: Padaria"><button type="button" class="pf-bt" data-pf="mudar-tipo">Salvar</button></div></section>`}
+    ${l.original ? '' : `<section class="pf-sec"><span class="pf-rot">Formato da loja</span><small class="pf-dica">Só vitrine: o cliente vê produtos, fotos e preços, sem carrinho nem pedido, e pede pelo WhatsApp. Muda na hora, ao tocar.</small>
+        <div class="pf-toggles">${Object.entries(FORMATOS_LOJA).map(([k, rot]) => `<label><input type="radio" name="pf-formato" data-pf-formato="${k}"${(l.formato || 'loja') === k ? ' checked' : ''}> ${escapeHTML(rot)}</label>`).join('')}</div></section>`}
     <section class="pf-sec"><span class="pf-rot">Módulos ligados</span><small class="pf-dica">Muda na hora, ao tocar.</small>
         <div class="pf-toggles">${Object.entries(S.dados.modulos).map(([k, rot]) => `<label><input type="checkbox" data-pf-modulo="${k}"${l.modulos[k] ? ' checked' : ''}> ${escapeHTML(rot)}</label>`).join('')}</div></section>
     <section class="pf-sec"><span class="pf-rot">Campos no cadastro de produto</span><small class="pf-dica">O que esta loja vê ao criar ou editar um produto. Nome, preço, unidade, categoria e foto sempre aparecem. Muda na hora, ao tocar.</small>
@@ -599,6 +602,12 @@ function ligar() {
             const k = t.dataset.pfCampo, nome = (S.dados.campos || CAMPOS_PRODUTO)[k];
             const loja = lojaPorId(S.folha.id), ligado = t.checked;
             if (!(await fazer({ acao: 'campos', id: S.folha.id, campos: { [k]: ligado } }, `${nome}: ${ligado ? 'aparece' : 'escondido'} no cadastro.`, { aplicar: () => { if (loja) loja.campos = { ...(loja.campos || {}), [k]: ligado }; } }))) t.checked = !t.checked;
+            return;
+        }
+        if (t.dataset.pfFormato && S.folha && S.folha.tipo === 'loja' && t.checked) {
+            const loja = lojaPorId(S.folha.id), novo = t.dataset.pfFormato, antes = (loja && loja.formato) || 'loja';
+            const ok = await fazer({ acao: 'formato', id: S.folha.id, formato: novo }, novo === 'vitrine' ? `${(loja && loja.nome) || 'Loja'} agora é só vitrine.` : `${(loja && loja.nome) || 'Loja'} voltou a receber pedidos.`, { aplicar: () => { if (loja) loja.formato = novo; } });
+            if (!ok) { const volta = document.querySelector(`[data-pf-formato="${antes}"]`); if (volta) volta.checked = true; }
             return;
         }
         if (t.dataset.pfModulo && S.folha && S.folha.tipo === 'loja') {

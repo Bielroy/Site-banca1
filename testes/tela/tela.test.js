@@ -713,6 +713,30 @@ teste('loja BLOQUEADA aberta por quem é da plataforma (o banco libera a vitrine
   semErros(erros.filter((e) => !/permission|permiss/i.test(e))); await fechar();
 });
 
+teste('loja SÓ VITRINE: mostra produto e preço, cada card leva ao WhatsApp com o produto, e não existe sacola', async () => {
+  const cen = cenarioPadrao();
+  cen.lojas['paes-da-lucia'].ficha = { ...cen.lojas['paes-da-lucia'].ficha, formato: 'vitrine' };
+  const { pagina, erros, fechar } = await abrir('/?loja=paes-da-lucia', cen);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForFunction(() => document.documentElement.dataset.formato === 'vitrine' && !!document.querySelector('.card-zap'), null, { timeout: 8000 });
+  const href = await pagina.locator('.card-zap').first().getAttribute('href');
+  assert.ok(/^https:\/\/wa\.me\/5562999990000\?text=/.test(href), href);
+  assert.ok(decodeURIComponent(href).includes('Pão francês') && decodeURIComponent(href).includes('R$'), 'a mensagem leva o produto e o preço');
+  assert.strictEqual(await pagina.locator('.card-add').count(), 0, 'sem botão de adicionar');
+  assert.ok(!(await pagina.locator('#btn-carrinho-mobile').isVisible()), 'sem botão de sacola');
+  assert.ok(await pagina.locator('#zap-vitrine').isVisible(), 'botão fixo do WhatsApp');
+  if (process.env.FOTO_VITRINE) await pagina.screenshot({ path: process.env.FOTO_VITRINE, fullPage: false });
+  // abrir o produto: sem quantidade, o botão é do WhatsApp
+  await cards(pagina).first().locator('.produto-nome').click();
+  await pagina.locator('#modal-detalhe-produto.active, #modal-detalhe-produto.aberto, #modal-detalhe-produto[open]').first().waitFor({ timeout: 5000 }).catch(() => {});
+  if (await pagina.locator('#md-btn-add').isVisible()) {
+    assert.strictEqual((await pagina.locator('#md-btn-add').innerText()).trim(), 'Pedir no WhatsApp');
+    assert.ok(!(await pagina.locator('.md-stepper').isVisible()), 'sem escolher quantidade');
+  }
+  assert.strictEqual(await pagina.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => /banca_cart/.test(k)) || 'null') || '{"items":[]}').items.length), 0, 'nada entrou na sacola');
+  semErros(erros); await fechar();
+});
+
 teste('cliente da feira que cai numa banca BLOQUEADA (link da feira, última banca usada) vai para outra banca ativa da mesma feira', async () => {
   const cen = cenarioPadrao();
   cen.lojas['paes-da-lucia'].ficha = { ...cen.lojas['paes-da-lucia'].ficha, ativo: false };

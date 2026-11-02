@@ -10,6 +10,7 @@
 //  POST { acao: 'criar-loja', id, nome, modelo, tipoNome?, emailDono? }   (modelo = aparência inicial; tipoNome = tipo escrito à mão)
 //  POST { acao: 'imgbb' }                                      apaga a chave antiga do ImgBB (as fotos agora vão para o Cloudflare R2)
 //  POST { acao: 'tipo', id, tipo }                              muda o tipo de negócio de uma loja
+//  POST { acao: 'formato', id, formato }                        'loja' (carrinho e pedidos) ou 'vitrine' (só catálogo, lib/formato.js)
 //  POST { acao: 'ativo', id, ativo }                        bloquear / liberar
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
 //  POST { acao: 'campos', id, campos: { duracao: false, ... } }   campos do cadastro de produto (lib/campos.js)
@@ -28,6 +29,7 @@ const Aprov = require('../lib/aprovacao');
 const { MODELOS, MODULOS } = require('../lib/modelos');
 const { CAMPOS_PRODUTO } = require('../lib/campos');
 const Segredos = require('../lib/segredos');
+const Formato = require('../lib/formato');
 const R2 = require('../lib/r2');
 const Asaas = require('../lib/asaas');
 const P = require('../lib/prudencia');
@@ -100,7 +102,7 @@ async function lojas(res) {
   const lista = await Promise.all(ids.map(async (id) => {
     const f = fichas.get(id), [mes, donos] = await Promise.all([movimentoDoMes(id), donosDe(id)]);
     const modulos = {}; Object.keys(MODULOS).forEach((m) => { modulos[m] = m === 'ia' && id !== T.TENANT_PADRAO ? !!(f.modulos && f.modulos.ia === true) : T.moduloAtivo(f, m); });
-    return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, campos: camposMarcados(f), mes, donos, assinatura: assinaturas.get(id) || null };
+    return { id, nome: f.nome || id, tipo: f.tipo || '', formato: Formato.formatoDaFicha(f), ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, campos: camposMarcados(f), mes, donos, assinatura: assinaturas.get(id) || null };
   }));
   const condominios = await Cond.garantir(db, T);   // sem o cadastro, a tela não abre (senão salvar uma feira apagaria os condomínios dela)
   const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, condominiosIds: Cond.idsDaFeira(condominios, d.data()), dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira) }));
@@ -180,6 +182,15 @@ async function tipo(req, res) {
   await fichaRef(id).set({ ...base(f), tipo: nome }, { merge: true });
   T._cacheFichas.delete(id);
   return res.status(200).json({ sucesso: true });
+}
+// Formato da loja: 'loja' (carrinho e pedidos) ou 'vitrine' (só catálogo com preço e WhatsApp). A loja original fica sempre loja.
+async function formato(req, res) {
+  const id = String((req.body || {}).id || ''), f = await exigirLoja(id), valor = String((req.body || {}).formato || '');
+  if (!Formato.formatoValido(valor)) throw falha(400, 'Formato desconhecido.');
+  if (id === T.TENANT_PADRAO && valor !== 'loja') throw falha(400, 'A loja original continua recebendo pedidos.');
+  await fichaRef(id).set({ ...base(f), formato: valor }, { merge: true });
+  T._cacheFichas.delete(id);
+  return res.status(200).json({ sucesso: true, formato: valor });
 }
 // Chave antiga do ImgBB: as fotos foram para o Cloudflare R2 e o ImgBB não é mais usado. Esta ação só APAGA
 // a chave que ficou guardada em plataforma/segredos (qualquer chave enviada é ignorada).
@@ -440,7 +451,7 @@ module.exports = async function handler(req, res) {
     try { await db.runTransaction(async (t) => { const r = db.collection('plataforma').doc('dono'), s = await t.get(r); if (!s.exists) t.set(r, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() }); }); donoRegistrado.add(dec.uid); }
     catch (e) { console.error('[plataforma] dono', e && e.message); }
   }
-  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), 'erro-estado': async () => res.status(200).json({ sucesso: true, ...(await Erros.marcarEstado(db, req.body, dec.email || dec.uid)) }), lojas: () => lojas(res), 'lojas-leve': () => lojasLeve(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), campos: () => campos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), asaas: () => asaas(req, res), 'asaas-carteira': () => asaasCarteira(req, res), proprietario: () => proprietario(req, res), 'link-entrada': () => linkEntrada(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
+  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), 'erro-estado': async () => res.status(200).json({ sucesso: true, ...(await Erros.marcarEstado(db, req.body, dec.email || dec.uid)) }), lojas: () => lojas(res), 'lojas-leve': () => lojasLeve(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), campos: () => campos(req, res), tipo: () => tipo(req, res), formato: () => formato(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), asaas: () => asaas(req, res), 'asaas-carteira': () => asaasCarteira(req, res), proprietario: () => proprietario(req, res), 'link-entrada': () => linkEntrada(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
   const nomeAcao = typeof (req.body || {}).acao === 'string' ? (req.body || {}).acao : '';
   const fn = Object.prototype.hasOwnProperty.call(acoes, nomeAcao) ? acoes[nomeAcao] : null;
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });

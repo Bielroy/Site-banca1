@@ -23,6 +23,7 @@ import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar, banc
 import { htmlSimples, csvCampo } from './html-lib.js';
 import { carregarChave, abrirPedidos } from './cofre-lib.js';   // nome, telefone e endereço do cliente chegam cifrados do banco
 import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel, mexeNaChavePix } from './papeis-lib.js';
+import { formatoDaFicha } from './formato-lib.js';
 import { ico } from './icones-admin.js';          // também liga a troca das marcas <i class="ic"> pelos desenhos
 import { linhaEndereco } from './endereco.js';
 import { abrirPrevisao } from './admin-previsao.js';
@@ -139,7 +140,7 @@ onAuthStateChanged(auth, async (user) => {
     iniciarLogoutPorInatividade(12 * 60);
     let suspensa = false;
     let fichaLida = null;
-    try { const f = await getDoc(fichaRef()); fichaLida = f.exists() ? f.data() : null; suspensa = f.exists() && f.data().ativo === false; modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; lerDiasSemFeira(f.exists() ? f.data() : null); } catch (_) { modulosDaLoja = null; }
+    try { const f = await getDoc(fichaRef()); fichaLida = f.exists() ? f.data() : null; suspensa = f.exists() && f.data().ativo === false; modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; formatoDaLoja = formatoDaFicha(f.exists() ? f.data() : null); nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; lerDiasSemFeira(f.exists() ? f.data() : null); } catch (_) { modulosDaLoja = null; }
     pixAsaasDaFicha = !!(fichaLida && fichaLida.pixAsaas === true);
     try { aplicarCampos(fichaLida); } catch (e) { console.warn('[campos]', e); }   // campos do cadastro que a plataforma ligou nesta loja
     // LOJA BLOQUEADA pela plataforma (falta de pagamento): o painel não abre. Só a plataforma continua entrando.
@@ -237,8 +238,9 @@ document.getElementById('btn-logout').addEventListener('click', () => sairELimpa
 // ---------------------------------------------------------------------
 const TODAS_AS_ABAS = [...document.querySelectorAll('.tab')].map((t) => t.dataset.aba);
 let modulosDaLoja = null;                                // ficha.modulos: o que a plataforma ligou nesta loja
+let formatoDaLoja = 'loja';                              // ficha.formato: 'vitrine' = só catálogo (js/formato-lib.js)
 const aplicarPapel = () => {
-    const minhas = abasDoPapel(papelAtual, TODAS_AS_ABAS, modulosDaLoja), gestor = ehGestor(papelAtual);
+    const minhas = abasDoPapel(papelAtual, TODAS_AS_ABAS, modulosDaLoja, formatoDaLoja), gestor = ehGestor(papelAtual);
     const lp = document.getElementById('link-plataforma'); if (lp) lp.hidden = !(papelAtual === 'plataforma' || (papelAtual === 'proprietario' && ehLojaOriginal));
     document.querySelectorAll('.tab').forEach((t) => { t.hidden = !minhas.includes(t.dataset.aba); });
     const ba = document.getElementById('btn-avisos');   // quem não vê pedidos (produção, estoque) não recebe aviso de pedido
@@ -375,7 +377,7 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');
     if (!tab) return;
     const aba = tab.dataset.aba;
-    if (!podeAbrir(papelAtual, aba, TODAS_AS_ABAS, modulosDaLoja)) return;
+    if (!podeAbrir(papelAtual, aba, TODAS_AS_ABAS, modulosDaLoja, formatoDaLoja)) return;
     document.querySelectorAll('.tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
     document.querySelectorAll('.aba-content').forEach(c => c.classList.remove('active'));
 
@@ -601,7 +603,7 @@ const iniciarRealTimeSync = () => {
     if (ehGestor(papelAtual)) iniciarCupons();
     unsubscribes.push(...iniciarCategoriasAdmin(() => produtosAtuais));
     // Produção e Estoque não têm a fila de pedidos: não gasta leitura com ela.
-    if (!podeAbrir(papelAtual, 'relatorios', TODAS_AS_ABAS, modulosDaLoja)) return;
+    if (!podeAbrir(papelAtual, 'relatorios', TODAS_AS_ABAS, modulosDaLoja, formatoDaLoja)) return;
 
     // IMPRESSÃO AUTOMÁTICA (js/impressao-auto.js): quem atende pedidos pode deixar este aparelho
     // imprimindo sozinho. Ela recebe a fila (abaixo, em aplicarPedidos) e os cancelados recentes,

@@ -497,6 +497,68 @@ teste('cliente que volta: o resumo só aparece com nome, WhatsApp e endereço; a
   assert.strictEqual(C.pagamentoQueVale(null, ['PIX']), ''); assert.strictEqual(C.pagamentoQueVale('PIX', null), '');
 });
 
+// ------------------------------------------------------------------ formato da loja: "só vitrine"
+teste('formato: só "vitrine" exato vira vitrine; o resto (sem ficha, sem campo, valor estranho) continua loja, igual na loja e no servidor', async () => {
+  const F = await import(raiz('js/formato-lib.js')); const S = require(raiz('lib/formato'));
+  for (const f of [null, undefined, {}, { formato: '' }, { formato: 'loja' }, { formato: 'Vitrine' }, { formato: 'catalogo' }, { formato: true }, { formato: 'vitrine' }]) {
+    assert.strictEqual(F.formatoDaFicha(f), S.formatoDaFicha(f), JSON.stringify(f));
+    assert.strictEqual(F.ehVitrine(f), S.ehVitrine(f));
+  }
+  assert.strictEqual(F.formatoDaFicha({ formato: 'vitrine' }), 'vitrine'); assert.strictEqual(F.formatoDaFicha({ nome: 'X' }), 'loja');
+  assert.deepStrictEqual(Object.keys(F.FORMATOS), S.FORMATOS);
+  assert.ok(S.formatoValido('vitrine') && S.formatoValido('loja') && !S.formatoValido('x') && !S.formatoValido(''));
+  // mensagem do WhatsApp: loja, produto e preço; sem produto, um pedido geral
+  assert.strictEqual(F.mensagemDoProduto('Doces da Ana', { nome: 'Bolo de pote' }, 'R$ 12,00 / un'), 'Oi, Doces da Ana! Vi no catálogo e quero: Bolo de pote (R$ 12,00 / un)');
+  assert.strictEqual(F.mensagemDoProduto('', { nome: 'Bolo' }), 'Oi! Vi no catálogo e quero: Bolo');
+  assert.strictEqual(F.mensagemDoProduto('Doces da Ana', null), 'Oi, Doces da Ana! Vi o catálogo e quero fazer um pedido.');
+});
+teste('formato vitrine: o painel fica só com produtos, categorias, comunicados, aparência, equipe e configurações; loja completa não muda', async () => {
+  const P = await import(raiz('js/papeis-lib.js'));
+  const todas = ['relatorios', 'pdv', 'fechamento', 'calendario', 'impressora', 'produtos', 'categorias', 'estoque', 'compras', 'balanco', 'previsao', 'crm', 'cupons', 'comunicados', 'copiloto', 'aparencia', 'equipe', 'config'];
+  assert.deepStrictEqual(P.abasDoPapel('proprietario', todas, null, 'vitrine'), ['produtos', 'categorias', 'comunicados', 'aparencia', 'equipe', 'config']);
+  assert.deepStrictEqual(P.abasDoPapel('proprietario', todas, null, 'loja'), P.abasDoPapel('proprietario', todas, null), 'loja completa: igual a antes');
+  assert.deepStrictEqual(P.abasDoPapel('proprietario', todas, null), todas);
+  assert.ok(!P.podeAbrir('proprietario', 'relatorios', todas, null, 'vitrine') && P.podeAbrir('proprietario', 'relatorios', todas, null));
+});
+teste('formato vitrine: o servidor recusa pedido da loja só vitrine; a loja completa segue recebendo', async () => {
+  const sem = semente();
+  sem['tenants/catalogo-ana'] = { nome: 'Doces da Ana', ativo: true, formato: 'vitrine' };
+  sem['tenants/catalogo-ana/produtos/tomate'] = { nome: 'Bolo', preco: 10, unidade: 'un', cat: 'doces', ativo: true };
+  sem['tenants/catalogo-ana/loja/config'] = { wpp: '5562977770000', lojaAberta: true, diasAbertos: [0, 1, 2, 3, 4, 5, 6] };
+  const db = criarBanco(sem); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  const p = pedido({ itens: [{ id: 'tomate', qtd: 1, tipo: 'un' }] });
+  const r = await chamar(api, { headers: { ...ip(), 'X-Loja': 'catalogo-ana' }, body: p });
+  assert.strictEqual(r.status, 403, JSON.stringify(r.corpo)); assert.match(r.corpo.error, /só o catálogo/);
+  assert.ok(![...db._dados.keys()].some((k) => k.startsWith('tenants/catalogo-ana/pedidos/')), 'nenhum pedido gravado');
+  const ok = await chamar(api, { headers: { ...ip(), 'X-Loja': 'espetinhos' }, body: pedido({ itens: [{ id: 'tomate', qtd: 1, tipo: 'un' }] }) });
+  assert.strictEqual(ok.status, 200, JSON.stringify(ok.corpo));
+});
+teste('formato vitrine: só a plataforma muda; valor desconhecido e loja original ficam de fora; a lista de lojas mostra o formato', async () => {
+  const db = criarBanco(semente()); const api = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, TOKENS));
+  const pf = { Authorization: 'Bearer plataforma' };
+  const r = await chamar(api, { headers: pf, body: { acao: 'formato', id: 'espetinhos', formato: 'vitrine' } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(db._dados.get('tenants/espetinhos').formato, 'vitrine');
+  assert.strictEqual(db._dados.get('tenants/espetinhos').nome, 'Espetinhos do Zé', 'o resto da ficha fica');
+  const lista = await chamar(api, { headers: pf, body: { acao: 'lojas' } });
+  assert.strictEqual(lista.corpo.lojas.find((l) => l.id === 'espetinhos').formato, 'vitrine');
+  assert.strictEqual(lista.corpo.lojas.find((l) => l.id === 'banca').formato, 'loja');
+  assert.notStrictEqual((await chamar(api, { headers: pf, body: { acao: 'formato', id: 'espetinhos', formato: 'catalogo' } })).status, 200);
+  assert.notStrictEqual((await chamar(api, { headers: pf, body: { acao: 'formato', id: 'banca', formato: 'vitrine' } })).status, 200, 'a loja original continua recebendo pedidos');
+  assert.notStrictEqual((await chamar(api, { headers: { Authorization: 'Bearer dono-espetinhos' }, body: { acao: 'formato', id: 'espetinhos', formato: 'loja' } })).status, 200, 'dono da loja não muda o formato');
+  const volta = await chamar(api, { headers: pf, body: { acao: 'formato', id: 'espetinhos', formato: 'loja' } });
+  assert.strictEqual(volta.status, 200); assert.strictEqual(db._dados.get('tenants/espetinhos').formato, 'loja');
+});
+teste('formato vitrine: na loja, a sacola some só com <html data-formato="vitrine"> e nada entra no carrinho', () => {
+  const fs = require('fs');
+  const css = fs.readFileSync(raiz('css/vitrine-formato.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const seletores = css.split('}').map((b) => b.split('{')[0]).join(',').split(',').map((x) => x.trim()).filter((x) => x && !x.startsWith('@'));
+  for (const sel of seletores) assert.ok(/^html\[data-formato="vitrine"\]/.test(sel) || /(\.card-zap|\.md-vitrine|\.zap-vitrine)/.test(sel), `regra que pode mexer na loja completa: ${sel}`);
+  assert.ok(/@import '\.\/vitrine-formato\.css';/.test(fs.readFileSync(raiz('css/loja-tudo.css'), 'utf8')));
+  const loja = fs.readFileSync(raiz('js/loja.js'), 'utf8');
+  assert.ok(/const modificarCarrinho = [^\n]*\n\s*if \(emVitrine\(\)\) return;/.test(loja), 'o carrinho não aceita nada na vitrine');
+  assert.ok(/const pintarAcao = [^\n]*\n\s*if \(emVitrine\(\)\) return pintarBotaoZap/.test(loja));
+  assert.ok(/formatoDaFicha\(ficha\)/.test(fs.readFileSync(raiz('js/tema.js'), 'utf8')), 'o tema marca o formato ao ler a ficha');
+});
 teste('aviso vermelho: recusa do próprio navegador (animação cancelada, app recusado) e recusa sem texto não assustam o cliente; a aba Erros diz o que era', async () => {
   const E = await import(raiz('js/erros-site.js'));
   const erro = (name, message, stack = '') => Object.assign(new Error(message), { name, stack });

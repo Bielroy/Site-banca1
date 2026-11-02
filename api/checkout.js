@@ -103,6 +103,7 @@ const agoraBrasilia = () => new Date(Date.now() - 3 * 3600000);
 
 const { linhaEndereco } = require('../lib/endereco');
 const T = require('../lib/tenant');
+const Formato = require('../lib/formato');
 const Avisos = require('../lib/avisos');
 const P = require('../lib/prudencia');
 const Entrega = require('../lib/entrega');
@@ -227,8 +228,11 @@ module.exports = async function handler(req, res) {
 
   // Qual loja? (cabeçalho X-Loja; sem ele, a loja original). Só diz ONDE olhar.
   let tid;
-  try { ({ tid } = await T.resolverLoja(db, req)); }
+  let fichaDaLoja = null;
+  try { ({ tid, ficha: fichaDaLoja } = await T.resolverLoja(db, req)); }
   catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+  // loja "só vitrine" (lib/formato.js): mostra o catálogo e não recebe pedido pelo site
+  if (Formato.ehVitrine(fichaDaLoja)) return res.status(403).json({ error: Formato.MSG_VITRINE });
 
   // Limite de verdade: contado no banco (vale para todas as cópias do servidor e não zera sozinho).
   // 60 pedidos em 10 minutos, por conexão, em cada loja. Era 20 (e antes 8): operadora de celular e Wi-Fi da feira põem

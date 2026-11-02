@@ -13,6 +13,7 @@ import { getDoc, doc, db } from './firebase.js';
 import { feiraDoDia, feirasDaFicha, feiraDoCliente, feirasDoCondominio, feiraDoEndereco, comFeira } from './plataforma-lib.js';
 import { lerFeiraCliente, gravarFeiraCliente, gravarUltimaBanca, lerUltimaBanca } from './feira-cliente.js';
 import { TENANT, fichaRef, chave, urlDaLoja, ehLojaOriginal, EM_PREVIA } from './tenant.js';
+import { formatoDaFicha } from './formato-lib.js';
 import { ARTES, arteDoTipo } from './arte-lib.js';
 import { textosDoAjudante, aplicarTextosDoAjudante } from './ajudante-lib.js';
 import { OPCOES, urlImagem, corLegivel, legivelSobre, contraste, FONTES, MODELOS, NOMES_MODELOS, FOTO_FORMATOS, linkDaFonte } from './aparencia-lib.js';
@@ -180,6 +181,10 @@ const escrever = (id, texto) => { const el = document.getElementById(id); if (el
 // Nesse caso o desenho e o botão do Ajudante esperam a ficha de verdade, em vez de mostrar o errado e trocar depois.
 function aplicarFicha(ficha, completa = true) {
     if (!ficha) return;
+    // FORMATO (js/formato-lib.js): "só vitrine" tira a sacola da loja (js/loja.js escuta 'banca:formato')
+    const formato = formatoDaFicha(ficha), antes = document.documentElement.dataset.formato || 'loja';
+    if (formato === 'vitrine') document.documentElement.dataset.formato = 'vitrine'; else delete document.documentElement.dataset.formato;
+    if (formato !== antes) document.dispatchEvent(new CustomEvent('banca:formato', { detail: { formato } }));
     aplicarTema(ficha.tema || null);
     aplicarCabecalho(ficha.tema || null, typeof ficha.nome === 'string' ? ficha.nome : '');
     if (!ehLojaOriginal && completa) aplicarArte(ficha.tipo);
@@ -439,7 +444,7 @@ export async function iniciarTema() {
             return feirasCruas.map((f) => ({ ...f, lojas: (f.lojas || []).filter((l) => { const v = vivas.get(l && l.id); return !(v && v.ativo === false); })
                 .map((l) => { const v = vivas.get(l.id); return v ? { ...l, nome: v.nome || l.nome, cor: (v.tema && v.tema.primaria) || l.cor } : l; }) }));
         };
-        const guardar = (feiras) => { try { localStorage.setItem(K, JSON.stringify({ v: 3, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, feiras: ficha.feiras || null, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '' }, feiras })); } catch (_) { /* cheio */ } };
+        const guardar = (feiras) => { try { localStorage.setItem(K, JSON.stringify({ v: 3, ficha: ficha && { nome: ficha.nome, subtitulo: ficha.subtitulo, nota: ficha.nota, tema: ficha.tema, feiraId: ficha.feiraId, feiras: ficha.feiras || null, tipo: ficha.tipo || '', modulos: ficha.modulos || null, busca: ficha.busca || '', formato: formatoDaFicha(ficha) }, feiras })); } catch (_) { /* cheio */ } };
         // veio pelo link da feira: escolher a banca precisa saber quem está bloqueada (aqui ainda espera a conferência)
         if (entrando && await irParaBancaDaFeira(doLink, comVivas(await conferir))) return null;
         // ESTA banca foi BLOQUEADA pela plataforma: cliente de feira (pelo link ou lembrado no aparelho, ou que caiu aqui

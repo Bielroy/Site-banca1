@@ -34,11 +34,14 @@ export const MODULO_DA_ABA = { pdv: 'pdv', estoque: 'estoque', compras: 'estoque
 const ligada = (aba, modulos) => !(modulos && MODULO_DA_ABA[aba] && modulos[MODULO_DA_ABA[aba]] === false);
 
 /** Abas que o papel pode abrir, na ordem em que aparecem. `todas` = ids das abas; `modulos` = ficha.modulos da loja. */
-export function abasDoPapel(papel, todas, modulos) {
+// Loja "só vitrine" (js/formato-lib.js): sem pedido, o painel fica só com o que muda o catálogo.
+export const ABAS_DA_VITRINE = ['produtos', 'categorias', 'comunicados', 'aparencia', 'equipe', 'config'];
+/** `formato` = 'vitrine' esconde as abas de pedido, caixa, impressora e estoque; qualquer outro valor não muda nada. */
+export function abasDoPapel(papel, todas, modulos, formato) {
     const base = ehGestor(papel) ? todas.filter((a) => a !== 'equipe' || cuidaDaEquipe(papel)) : (ABAS_DA_EQUIPE[papel] || []).filter((a) => todas.includes(a));
-    return base.filter((a) => ligada(a, modulos));
+    return base.filter((a) => ligada(a, modulos) && (formato !== 'vitrine' || ABAS_DA_VITRINE.includes(a)));
 }
-export const podeAbrir = (papel, aba, todas, modulos) => abasDoPapel(papel, todas, modulos).includes(aba);
+export const podeAbrir = (papel, aba, todas, modulos, formato) => abasDoPapel(papel, todas, modulos, formato).includes(aba);
 export const rotuloDoPapel = (papel) => (papel === 'plataforma' ? 'Plataforma' : (PAPEIS[papel] || ['Equipe'])[0]);
 
 /**
