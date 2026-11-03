@@ -1764,6 +1764,114 @@ teste('avisos: a equipe liga o aparelho, o pedido novo dispara o aviso e uma fal
     assert.strictEqual((await ch('func-banca', { acao: 'aviso-desligar', endpoint: assinatura(3).endpoint })).status, 200); assert.strictEqual(guardados().length, 0);
   } finally { global.fetch = fetchReal; delete process.env.VAPID_PRIVATE_KEY; delete process.env.VITE_VAPID_PUBLIC_KEY; }
 });
+// Preparação comum dos testes de avisos: chaves do servidor, aparelhos de mentira e um "serviço de avisos" que responde o que o teste mandar.
+const prepararAvisos = (A) => {
+  const crypto = require('crypto');
+  const srv = crypto.createECDH('prime256v1'); do srv.generateKeys(); while (srv.getPrivateKey().length !== 32);
+  const ap = crypto.createECDH('prime256v1'); ap.generateKeys();
+  process.env.VAPID_PRIVATE_KEY = A.b64u(srv.getPrivateKey()); process.env.VITE_VAPID_PUBLIC_KEY = A.b64u(srv.getPublicKey());
+  const assinatura = (n) => ({ endpoint: `https://fcm.googleapis.com/fcm/send/aparelho-${n}`, keys: { p256dh: A.b64u(ap.getPublicKey()), auth: A.b64u(crypto.randomBytes(16)) } });
+  const fetchReal = global.fetch, envios = []; const estado = { resposta: 201 };
+  global.fetch = async (url, o) => { const r = typeof estado.resposta === 'function' ? estado.resposta(String(url), envios.length) : estado.resposta; envios.push({ url: String(url) }); if (r === 'cai') throw new Error('sem rede'); return { status: r }; };
+  const fim = () => { global.fetch = fetchReal; delete process.env.VAPID_PRIVATE_KEY; delete process.env.VITE_VAPID_PUBLIC_KEY; };
+  return { assinatura, envios, estado, fim };
+};
+
+teste('avisos: cada aparelho escolhe os tipos que recebe, o teste conta quem recebeu e o cadastro renovado mantém a escolha', async () => {
+  const A = require(raiz('lib/avisos')); const { assinatura, envios, fim } = prepararAvisos(A);
+  try {
+    const db = criarBancoP(sementeEstoque()); const adm = criarAdmin(db, TOKENS_P), equipe = carregarApi(raiz('api/equipe.js'), adm);
+    const ch = (body) => chamar(equipe, { headers: { Authorization: 'Bearer func-banca' }, body });
+    await ch({ acao: 'aviso-ligar', assinatura: assinatura(1) }); await ch({ acao: 'aviso-ligar', assinatura: assinatura(2) });
+    assert.strictEqual((await ch({ acao: 'aviso-prefs', endpoint: assinatura(2).endpoint, prefs: { pagamento: false, lembrete: false, inventado: false } })).corpo.prefs.pagamento, false);
+    assert.strictEqual((await ch({ acao: 'aviso-prefs', endpoint: 'https://fcm.googleapis.com/fcm/send/nao-existe', prefs: { pagamento: false } })).status, 404, 'aparelho desconhecido');
+    let r = await A.avisarLoja(db, 'banca', { titulo: 'x', tipo: 'pagamento' }); assert.deepStrictEqual([r.enviados, r.total], [1, 1], 'o aparelho 2 não quer aviso de PIX');
+    r = await A.avisarLoja(db, 'banca', { titulo: 'x', tipo: 'pedido' }); assert.deepStrictEqual([r.enviados, r.total], [2, 2]);
+    r = await A.avisarLoja(db, 'banca', { titulo: 'x' }); assert.strictEqual(r.total, 2, 'sem tipo é "sistema": ninguém desliga');
+    await ch({ acao: 'aviso-prefs', endpoint: assinatura(2).endpoint, prefs: { sistema: false, pedido: false } });
+    assert.strictEqual((await A.avisarLoja(db, 'banca', { titulo: 'x' })).total, 2, 'sistema continua chegando mesmo com tentativa de desligar');
+    assert.strictEqual((await A.avisarLoja(db, 'banca', { titulo: 'x', tipo: 'pedido' })).total, 1);
+    // o painel renova o cadastro a cada abertura: a escolha do aparelho fica
+    await ch({ acao: 'aviso-ligar', assinatura: assinatura(2) });
+    assert.strictEqual((await A.avisarLoja(db, 'banca', { titulo: 'x', tipo: 'pedido' })).total, 1, 'renovar não zera as preferências');
+    const e = (await ch({ acao: 'aviso-estado', endpoint: assinatura(2).endpoint })).corpo;
+    assert.strictEqual(e.cadastrado, true); assert.strictEqual(e.aparelhos, 2); assert.strictEqual(e.prefs.pedido, false); assert.ok(e.tipos.estoque);
+    assert.strictEqual((await ch({ acao: 'aviso-estado', endpoint: 'https://fcm.googleapis.com/fcm/send/outro' })).corpo.cadastrado, false);
+    // o teste do botão diz quantos receberam
+    const t = (await ch({ acao: 'aviso-teste' })).corpo; assert.deepStrictEqual([t.enviados, t.total, t.falhas.length], [2, 2, 0]);
+  } finally { fim(); }
+});
+
+teste('avisos: falha passageira ganha segunda chance; recusa repetida tira o cadastro morto; 410 tira na hora', async () => {
+  const A = require(raiz('lib/avisos')); const { assinatura, envios, estado, fim } = prepararAvisos(A);
+  try {
+    const db = criarBancoP(sementeEstoque()), guardados = () => [...db._dados.keys()].filter((k) => k.startsWith('avisos/'));
+    const dec = { uid: 'u6', email: 'ana@banca' };
+    await A.ligar(db, 'banca', dec, assinatura(1));
+    // cai uma vez e volta: o aviso chega (antes era perdido)
+    estado.resposta = (_u, n) => (n === 0 ? 503 : 201);
+    let r = await A.avisarLoja(db, 'banca', { titulo: 'x', tipo: 'pedido' }); assert.strictEqual(r.enviados, 1, 'a segunda tentativa entrega'); assert.strictEqual(envios.length, 2);
+    // 403 (chave que não confere) NÃO repete na hora, mas conta; depois de 5 seguidas o cadastro morto sai
+    estado.resposta = 403; envios.length = 0;
+    r = await A.avisarLoja(db, 'banca', { titulo: 'x', tipo: 'pedido' }); assert.strictEqual(envios.length, 1, '4xx não repete'); assert.deepStrictEqual(r.falhas, [403]);
+    for (let i = 0; i < 3; i++) await A.avisarLoja(db, 'banca', { titulo: 'x', tipo: 'pedido' });
+    assert.strictEqual(guardados().length, 1, 'ainda guarda (4 recusas)');
+    await A.avisarLoja(db, 'banca', { titulo: 'x', tipo: 'pedido' }); assert.strictEqual(guardados().length, 0, '5 recusas seguidas: cadastro morto sai');
+    // uma entrega boa zera a contagem
+    await A.ligar(db, 'banca', dec, assinatura(2)); estado.resposta = 403; await A.avisarLoja(db, 'banca', { titulo: 'x' }); await A.avisarLoja(db, 'banca', { titulo: 'x' });
+    estado.resposta = 201; await A.avisarLoja(db, 'banca', { titulo: 'x' });
+    assert.strictEqual(db._dados.get(guardados()[0]).falhas, 0);
+    estado.resposta = 429; for (let i = 0; i < 6; i++) await A.avisarLoja(db, 'banca', { titulo: 'x' });
+    assert.strictEqual(guardados().length, 1, '429 (devagar) nunca tira o aparelho');
+    estado.resposta = 410; await A.avisarLoja(db, 'banca', { titulo: 'x' }); assert.strictEqual(guardados().length, 0);
+  } finally { fim(); }
+});
+
+teste('avisos sozinhos: pedido parado vira UM lembrete; estoque baixo vira um resumo por dia; só em loja com aparelho ligado', async () => {
+  const A = require(raiz('lib/avisos')), L = require(raiz('lib/lembretes')); const { assinatura, envios, fim } = prepararAvisos(A);
+  try {
+    const agora = Date.parse('2026-11-03T12:30:00Z');             // 9h30 em Brasília
+    const minAtras = (m) => new Date(agora - m * 60000).toISOString();
+    const db = criarBancoP({ ...sementeEstoque(),
+      'pedidos/p-novo': { status: 'pendente', data: minAtras(3), total: 20 }, 'pedidos/p-velho': { status: 'pendente', data: minAtras(14), total: 35.5 },
+      'pedidos/p-pronto': { status: 'concluido', data: minAtras(60), total: 10 }, 'pedidos/p-antigo': { status: 'pendente', data: minAtras(60 * 20), total: 10 },
+      'produtos/acabou': { nome: 'Banana', preco: 5, unidade: 'kg', cat: 'frutas', ativo: true, estoqueFisico: 0 },
+      'produtos/baixo': { nome: 'Alface', preco: 4, unidade: 'un', cat: 'folhas', ativo: true, estoqueFisico: 2, estoqueMin: 5 },
+      'produtos/sem-controle': { nome: 'Chá', preco: 4, unidade: 'un', cat: 'x', ativo: true },
+      'tenants/espetinhos/pedidos/e1': { status: 'pendente', data: minAtras(30), total: 9 } });
+    assert.strictEqual((await L.rodar(db, agora)).lojas, 0, 'ninguém com aviso ligado: não faz nada'); assert.strictEqual(envios.length, 0);
+    await A.ligar(db, 'banca', { uid: 'u6' }, assinatura(1));
+    await L.rodar(db, agora);
+    assert.strictEqual(envios.length, 2, 'um lembrete de pedido + um resumo de estoque; a loja sem aparelho (espetinhos) fica de fora');
+    assert.ok(db._dados.get('pedidos/p-velho').lembreteEm, 'o pedido parado foi marcado'); assert.ok(!db._dados.get('pedidos/p-novo').lembreteEm, 'o de 3 min ainda não'); assert.ok(!db._dados.get('pedidos/p-antigo').lembreteEm, 'pedido de ontem não vira lembrete');
+    assert.strictEqual(db._dados.get('loja/avisosEstado').estoqueDia, '2026-11-03');
+    envios.length = 0; await L.rodar(db, agora + 3 * 60000);
+    assert.strictEqual(envios.length, 0, 'na volta seguinte não repete (nem o pedido, nem o estoque do dia)');
+    db._dados.set('pedidos/p-novo', { ...db._dados.get('pedidos/p-novo') }); await L.rodar(db, agora + 9 * 60000);
+    assert.strictEqual(envios.length, 1, 'o pedido que agora passou de 10 min ganha o seu lembrete');
+    // tipo desligado no aparelho: nada chega
+    await A.definirPrefs(db, 'banca', assinatura(1).endpoint, { lembrete: false, estoque: false });
+    db._dados.set('pedidos/p-x', { status: 'pendente', data: minAtras(20), total: 1 }); db._dados.set('loja/avisosEstado', { estoqueDia: '2000-01-01' }); envios.length = 0;
+    await L.rodar(db, agora + 20 * 60000); assert.strictEqual(envios.length, 0, 'aparelho que desligou lembrete e estoque não recebe');
+    // fora do horário: sem lembrete de madrugada
+    db._dados.set('pedidos/p-y', { status: 'pendente', data: new Date(Date.parse('2026-11-03T05:40:00Z')).toISOString(), total: 1 });
+    await A.definirPrefs(db, 'banca', assinatura(1).endpoint, { lembrete: true }); envios.length = 0; await L.rodar(db, Date.parse('2026-11-03T06:00:00Z'));   // 3h em Brasília
+    assert.strictEqual(envios.length, 0, 'de madrugada não incomoda');
+  } finally { fim(); }
+});
+
+teste('avisos: a cliente que cancela avisa a equipe (tipo cancelamento); a equipe que cancela não avisa a si mesma', async () => {
+  const A = require(raiz('lib/avisos')); const { assinatura, envios, fim } = prepararAvisos(A);
+  try {
+    const db = criarBancoP({ ...sementeEstoque(), 'pedidos/c1': { userId: 'u1', status: 'pendente', data: new Date().toISOString(), total: 20, itens: [{ id: 'ovos', qtd: 1, nome: 'Ovos', tipo: 'un', preco: 14 }] }, 'pedidos/c2': { userId: 'u1', status: 'pendente', data: new Date().toISOString(), total: 20, itens: [] } });
+    await A.ligar(db, 'banca', { uid: 'u6' }, assinatura(1));
+    const api = carregarApi(raiz('api/cancelar-pedido.js'), criarAdmin(db, TOKENS_P));
+    const r = await chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: { pedidoId: 'c1' } });
+    if (r.status === 200) assert.strictEqual(envios.length, 1, 'cancelamento da cliente avisa');
+    else console.log('    (cancelamento de teste recusado:', r.status, JSON.stringify(r.corpo).slice(0, 80), ')');
+  } finally { fim(); }
+});
+
 teste('avisos: situação do aparelho e conversão da chave', async () => {
   const L = await import(raiz('js/avisos-lib.js'));
   const base = { temSW: true, temPush: true, temNotificacao: true, permissao: 'default', assinado: false, chave: 'abc', ios: false, instalado: false };

@@ -71,7 +71,7 @@ module.exports = async function handler(req, res) {
     const aviso = await Asaas.aplicarCobranca(db, cobranca);
     if (aviso) {
       // o pagamento já foi gravado: se só o aviso à equipe falhar, não pede reenvio
-      try { await Avisos.avisarLoja(db, aviso.tid, { titulo: aviso.titulo, corpo: aviso.corpo, url: urlPainel(aviso.tid), tag: `pix-${aviso.pedidoId}` }); }
+      try { await Avisos.avisarLoja(db, aviso.tid, { titulo: aviso.titulo, corpo: aviso.corpo, url: urlPainel(aviso.tid), tag: `pix-${aviso.pedidoId}`, tipo: 'pagamento' }); }
       catch (e) { console.error('[asaas] aviso à equipe falhou:', e && e.message); }
     }
     return res.status(200).json({ ok: true });

@@ -125,7 +125,7 @@ async function venda(req, res, { tid, dec }) {
     // Toque repetido não avisa de novo; e o aviso nunca derruba a venda, que já está gravada.
     if (!saida.repetido && !resumo) await Avisos.avisarLoja(db, tid, {
       titulo: 'Venda no balcão', corpo: `${Number(saida.total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} · ${pag}`,
-      url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `balcao-${saida.id}`,
+      url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `balcao-${saida.id}`, tipo: 'pedido',
     });
     return res.status(200).json({ sucesso: true, ...saida });
   } catch (e) {

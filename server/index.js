@@ -210,6 +210,18 @@ if (require.main === module) {
   // (o padrão do Node é 5 min). Fica acima dos dois tempos de cima para não cortar conexão boa do Caddy.
   servidor.requestTimeout = 140000;
   servidor.listen(porta, () => console.log(`[servidor] no ar na porta ${porta} com: ${Object.keys(listarFuncoes()).join(', ')}`));
+  // Avisos que o servidor manda sozinho (pedido esperando há 10 min, estoque baixo de manhã): lib/lembretes.js. De 3 em 3 min,
+  // só se os avisos estiverem ligados (VAPID) e o Firebase configurado. Falha aqui nunca derruba o servidor.
+  if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY && process.env.VAPID_PRIVATE_KEY && process.env.LEMBRETES !== '0') {
+    const volta = () => {
+      try {
+        const adm = require('firebase-admin');
+        if (!adm.apps.length) adm.initializeApp({ credential: adm.credential.cert({ projectId: process.env.FIREBASE_PROJECT_ID, clientEmail: process.env.FIREBASE_CLIENT_EMAIL, privateKey: String(process.env.FIREBASE_PRIVATE_KEY).replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() }) });
+        require('../lib/lembretes').rodar(adm.firestore()).catch((e) => console.error('[lembretes]', e && e.message));
+      } catch (e) { console.error('[lembretes]', e && e.message); }
+    };
+    setTimeout(volta, 60000).unref(); setInterval(volta, 3 * 60000).unref();
+  }
   // Ao desligar (atualização, reinício), termina as respostas em andamento antes de sair (no máximo 8 s).
   for (const sinal of ['SIGTERM', 'SIGINT']) {
     process.on(sinal, () => {

@@ -274,13 +274,15 @@ module.exports = async function handler(req, res) {
   }
   // Avisos de pedido novo neste aparelho: qualquer pessoa da equipe que vê os pedidos pode ligar o seu.
   const acaoAviso = (req.body || {}).acao;
-  if (acaoAviso === 'aviso-ligar' || acaoAviso === 'aviso-desligar' || acaoAviso === 'aviso-teste') {
+  if (['aviso-ligar', 'aviso-desligar', 'aviso-teste', 'aviso-estado', 'aviso-prefs'].includes(acaoAviso)) {
     if (!T.temPapel(dec, tid, ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa'])) return res.status(403).json({ error: 'Sua conta não recebe avisos de pedido nesta loja.' });
     try {
       if (!A.ligado()) return res.status(503).json({ error: 'Os avisos ainda não estão ligados no servidor.' });
       if (acaoAviso === 'aviso-ligar') await A.ligar(db, tid, dec, (req.body || {}).assinatura);
       else if (acaoAviso === 'aviso-desligar') await A.desligar(db, tid, (req.body || {}).endpoint);
-      else return res.status(200).json({ sucesso: true, ...(await A.avisarLoja(db, tid, { titulo: 'Aviso de teste', corpo: 'É assim que o pedido novo vai aparecer.', url: '/admin.html', tag: 'teste' })) });
+      else if (acaoAviso === 'aviso-estado') return res.status(200).json({ sucesso: true, ...(await A.estado(db, tid, (req.body || {}).endpoint)) });
+      else if (acaoAviso === 'aviso-prefs') return res.status(200).json({ sucesso: true, prefs: await A.definirPrefs(db, tid, (req.body || {}).endpoint, (req.body || {}).prefs) });
+      else return res.status(200).json({ sucesso: true, ...(await A.avisarLoja(db, tid, { titulo: 'Aviso de teste', corpo: 'É assim que o pedido novo vai aparecer.', url: '/admin.html', tag: 'teste', tipo: 'sistema' })) });
       return res.status(200).json({ sucesso: true });
     } catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[avisos]', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
   }

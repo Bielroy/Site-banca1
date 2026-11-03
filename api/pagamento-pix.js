@@ -91,7 +91,7 @@ async function conferir(res, tid, pedidoId, dec, token) {
     if (!order || !(order.charges || []).some((c) => c && c.status === 'PAID')) continue;
     const aviso = await PagBank.aplicarOrdem(db, order);
     if (aviso) {
-      try { await Avisos.avisarLoja(db, aviso.tid, { titulo: aviso.titulo, corpo: aviso.corpo, url: aviso.tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${aviso.tid}`, tag: `pix-${aviso.pedidoId}` }); }
+      try { await Avisos.avisarLoja(db, aviso.tid, { titulo: aviso.titulo, corpo: aviso.corpo, url: aviso.tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${aviso.tid}`, tag: `pix-${aviso.pedidoId}`, tipo: 'pagamento' }); }
       catch (e) { console.error('[pix] aviso à equipe falhou:', e && e.message); }
     }
     break;
@@ -115,7 +115,7 @@ async function conferirAsaas(res, tid, pedidoId, dec, cfg) {
     if (!cobranca || !Asaas.PAGOS.includes(cobranca.status)) continue;
     const aviso = await Asaas.aplicarCobranca(db, cobranca);
     if (aviso) {
-      try { await Avisos.avisarLoja(db, aviso.tid, { titulo: aviso.titulo, corpo: aviso.corpo, url: aviso.tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${aviso.tid}`, tag: `pix-${aviso.pedidoId}` }); }
+      try { await Avisos.avisarLoja(db, aviso.tid, { titulo: aviso.titulo, corpo: aviso.corpo, url: aviso.tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${aviso.tid}`, tag: `pix-${aviso.pedidoId}`, tipo: 'pagamento' }); }
       catch (e) { console.error('[pix] aviso à equipe falhou:', e && e.message); }
     }
     break;

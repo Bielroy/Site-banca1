@@ -244,7 +244,7 @@ const aplicarPapel = () => {
     const lp = document.getElementById('link-plataforma'); if (lp) lp.hidden = !(papelAtual === 'plataforma' || (papelAtual === 'proprietario' && ehLojaOriginal));
     document.querySelectorAll('.tab').forEach((t) => { t.hidden = !minhas.includes(t.dataset.aba); });
     const ba = document.getElementById('btn-avisos');   // quem não vê pedidos (produção, estoque) não recebe aviso de pedido
-    if (ba) { ba.hidden = !['plataforma', 'proprietario', 'administrador', 'gerente', 'funcionario', 'caixa'].includes(papelAtual); if (!ba.hidden) TELAS.avisos().then((m) => m.marcarBotaoDeAvisos()).catch(() => {}); }
+    if (ba) { ba.hidden = !['plataforma', 'proprietario', 'administrador', 'gerente', 'funcionario', 'caixa'].includes(papelAtual); if (!ba.hidden) TELAS.avisos().then((m) => m.iniciarAvisos()).catch(() => {}); }
     document.body.classList.toggle('so-equipe', !gestor);
     if (['plataforma', 'proprietario'].includes(papelAtual)) import('./admin-maquininha.js').then((m) => m.iniciarMaquininha()).catch((e) => console.warn('[maquininha]', e && e.message));
     if (['plataforma', 'proprietario'].includes(papelAtual)) import('./admin-copia.js').then((m) => m.iniciarCopia()).catch((e) => console.warn('[copia]', e && e.message));
@@ -734,7 +734,8 @@ const iniciarRealTimeSync = () => {
     });
     unsubscribes.push(unsubPedidos);
 
-    try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch (_) { /* navegador sem suporte */ }
+    // pede a permissão e, dada, já CADASTRA o aparelho no servidor (antes só dava a permissão e o aviso com o painel fechado nunca chegava)
+    try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().then(() => TELAS.avisos().then((m) => m.iniciarAvisos())).catch(() => {}); } catch (_) { /* navegador sem suporte */ }
 };
 
 document.getElementById('admin-busca-input')?.addEventListener('input', (e) => {

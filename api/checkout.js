@@ -625,7 +625,7 @@ module.exports = async function handler(req, res) {
     await Avisos.avisarLoja(db, tid, {
       titulo: resultado.temItensAPesar ? 'Pedido novo (tem item a pesar)' : 'Pedido novo',
       corpo: `${nome} · ${Number(resultado.total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}${resultado.temItensAPesar ? ' + itens a pesar' : ''}`,
-      url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `pedido-${resultado.id}`,
+      url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `pedido-${resultado.id}`, tipo: 'pedido',
     });
 
     // o crachá vai num cookie que só o servidor lê; a página só fica sabendo que a conta existe

@@ -97,7 +97,7 @@ async function avaliar(req, res, { tid, uid, pedidoId, peloCracha }) {
       return { nome: Cofre.abrir(pedido.nome, tid, 'nome') || 'Cliente' };
     });
     try { require('../lib/catalogo').extrasMudaram(db, tid, 5000); } catch (_) { /* a nota nova entra na próxima atualização da vitrine */ }
-    if (nota <= 3) await Avisos.avisarLoja(db, tid, { titulo: `Avaliação ${nota} de 5`, corpo: `${saida.nome}${texto ? ': ' + texto.slice(0, 90) : ' não ficou satisfeita com o pedido.'}`, url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `avaliacao-${pedidoId}` });
+    if (nota <= 3) await Avisos.avisarLoja(db, tid, { titulo: `Avaliação ${nota} de 5`, corpo: `${saida.nome}${texto ? ': ' + texto.slice(0, 90) : ' não ficou satisfeita com o pedido.'}`, url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `avaliacao-${pedidoId}`, tipo: 'avaliacao' });
     return res.status(200).json({ sucesso: true });
   } catch (e) { return res.status(400).json({ error: e.message || 'Não foi possível guardar a avaliação.' }); }
 }
@@ -279,6 +279,10 @@ module.exports = async function handler(req, res) {
       return { itensDevolvidos: devolucoes.length, estavaPago: !!(pedido.pagamento && pedido.pagamento.status === 'PAID') };
     });
 
+    // A cliente cancelou: a equipe fica sabendo (antes o pedido sumia da fila sem ninguém ver). Quando é a própria equipe
+    // que cancela no painel, não avisa. O aviso nunca derruba o cancelamento, que já está gravado.
+    if (!daEquipe && !resultado.jaEstornado) await Avisos.avisarLoja(db, tid, { titulo: 'Pedido cancelado pela cliente', corpo: resultado.itensDevolvidos ? 'O estoque dos itens já voltou.' : 'Tira da fila: não precisa separar.',
+      url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `cancelado-${pedidoId}`, tipo: 'cancelamento' });
     return res.status(200).json({ sucesso: true, ...resultado });
   } catch (error) {
     return res.status(400).json({ error: error.message || 'Não foi possível cancelar o pedido.' });
