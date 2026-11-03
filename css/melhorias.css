@@ -132,11 +132,11 @@ main.layout { min-height: 100vh; }
 }
 .ia-msg { max-width: 88%; padding: 12px 14px; font-size: .94rem; line-height: 1.5; box-shadow: var(--shadow-sm); animation: cardEntra .3s ease both; overflow-wrap: anywhere; }
 .ia-msg p { margin: 0; }
-.ia-msg--bot { --text-dark: #26241f; --text-mid: #5a5649; --text-light: #7a7566; align-self: flex-start; background: #fffaf0; color: #26241f; border: 1px solid #eadfc8; border-radius: 4px 18px 18px 18px; }
+.ia-msg--bot { align-self: flex-start; background: #fffaf0; border: 1px solid #eadfc8; border-radius: 4px 18px 18px 18px; }
 .ia-msg--eu { align-self: flex-end; background: var(--forest-mid); color: var(--sobre-primaria); border-radius: 18px 4px 18px 18px; }
 .ia-msg--erro { color: var(--text-mid); }
 /* erro solto no chat (sem balão em volta): ganha o próprio balão creme, com tinta escura, em qualquer tema */
-.ia-corpo > .ia-msg--erro { align-self: flex-start; max-width: 88%; padding: 12px 14px; background: #fffaf0; color: #5a5649; border: 1px solid #eadfc8; border-radius: 4px 18px 18px 18px; font-size: .94rem; line-height: 1.5; }
+.ia-corpo > .ia-msg--erro { align-self: flex-start; max-width: 88%; padding: 12px 14px; background: #fffaf0; border: 1px solid #eadfc8; border-radius: 4px 18px 18px 18px; font-size: .94rem; line-height: 1.5; }
 .ia-corpo > .ia-msg--erro.fatal { color: #b42318; }
 .ia-msg--erro.fatal { color: var(--danger); }
 .ia-etiquetas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
@@ -269,6 +269,8 @@ main.layout { min-height: 100vh; }
 /* as janelas (produto, montar, sacola, checkout...) usam o mesmo fundo dos cards: a mesma tinta legível vale nelas */
 .ap-card-contraste .produto-card,
 .ap-card-contraste .carrinho-item,
+.ap-card-contraste .carrinho-topo,
+.ap-card-contraste .carrinho-rodape,
 .ap-card-contraste .modal { --text-dark: var(--tc-dark); --text-mid: var(--tc-mid); --text-light: var(--tc-light); --linha: var(--tc-linha); --forest-texto: var(--tc-forest); color: var(--tc-dark); }
 /* Card de SEÇÃO COLORIDA no jeito "faixa" (css/secoes.css): o fundo dele é sempre CLARO (a cor da seção misturada com branco),
    então a tinta é escura, mesmo quando o tema tem card escuro (a tinta clara do tema deixava o nome invisível). */
@@ -278,10 +280,7 @@ main.layout { min-height: 100vh; }
 /* os "papéis" claros de dentro da JANELA (caixa da quantidade, do total, faixas) viram um tom do próprio fundo.
    Só na janela: no card, --warm-white é o fundo do próprio card e não pode ser recalculado. */
 .ap-card-contraste .modal { --foam: color-mix(in srgb, var(--tc-dark) 9%, var(--superficie)); --parchment: color-mix(in srgb, var(--tc-dark) 6%, var(--superficie)); --warm-white: color-mix(in srgb, var(--tc-dark) 4%, var(--superficie)); }
-/* o número de itens na sacola: no card escuro a bolinha (cor principal) sumia no fundo; aqui ela vira clara, com tinta escura */
-.ap-card-contraste .carrinho-titulo-badge { background: var(--sobre-primaria, #fff); color: var(--forest, #1a1a18); }
 /* botões redondos claros por cima da foto (fechar, etiqueta da categoria): tinta escura sempre */
-.ap-card-contraste .modal .btn-fechar, .ap-card-contraste .modal .md-tag, .ap-card-contraste .modal .mt-fechar { color: #1a1a18; }
 
 /* Loja bloqueada pela plataforma (js/loja.js mostrarLojaBloqueada): sem sacola, busca e categorias, só o aviso */
 body.loja-bloqueada #btn-carrinho-mobile, body.loja-bloqueada #carrinho, body.loja-bloqueada #carrinho-overlay,

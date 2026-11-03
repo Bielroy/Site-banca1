@@ -87,6 +87,13 @@ export function variaveisDoTema(tema) {
     // A cor principal também é usada como COR DE TEXTO (nome do produto, preço, botões de contorno). Num fundo
     // escuro, um vermelho-escuro some: aqui ela é clareada (ou escurecida) só o necessário para ler bem.
     if (p) v['--forest-texto'] = corLegivel(p, [sup || '#ffffff', f || '#faf7f2']);
+    // sem cor secundária num tema de CARD ESCURO: os tons claros padrão (verde-clarinho do campo de quantidade, faixas) ficavam
+    // claros sob a tinta clara do tema. Sem secundária, eles saem da cor principal misturada com a superfície escura.
+    if (!s && p && sup && contraste(sup, '#ffffff') >= 4.5) { v['--mint'] = mix(p, 62, superf); v['--mint-dark'] = mix(p, 78, tx || '#000000'); v['--sage'] = mix(p, 38, superf); v['--foam'] = mix(p, 14, superf); }
+    // tintas para pôr SOBRE fundos que não são do tema (etiqueta branca em cima da foto) e para o botão na cor de destaque
+    if (p) v['--forest-no-claro'] = corLegivel(p, ['#ffffff']);
+    // etiquetas do Ajudante ficam sobre a superfície; o botão Enviar tem a cor de destaque como fundo
+    if (d) { v['--earth-texto'] = corLegivel(d, [sup || '#ffffff']); v['--earth-botao'] = d; v['--sobre-earth-botao'] = legivelSobre(d); }
     if (s) { v['--leaf'] = s; v['--mint'] = mix(s, 62, superf); v['--mint-dark'] = mix(s, 78, tx || '#000000'); v['--sage'] = mix(s, 38, superf); v['--foam'] = mix(s, 14, superf); }
     if (d) { v['--earth'] = d; v['--earth-light'] = mix(d, 70, superf); v['--earth-forte'] = mix(d, 72, tx || '#000000'); v['--manga'] = d; }
     if (f) { v['--cream'] = f; v['--parchment'] = mix(f, 90, tx || '#000000'); }

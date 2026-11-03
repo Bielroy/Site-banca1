@@ -2394,7 +2394,7 @@ document.body.addEventListener('click', async (e) => {
                 }
             } else { delete img.dataset.original; img.removeAttribute('src'); img.style.visibility = 'hidden'; }
             img.alt = p.nome;
-            document.getElementById('md-tag').textContent = p.cat || '';
+            document.getElementById('md-tag').textContent = p.cat ? (nomeDaCategoria(p.cat) || p.cat) : '';
             document.getElementById('md-desc').textContent = p.descricao || "Produto fresco, selecionado no dia.";
             { let ms = document.getElementById('md-selos'); if (!ms) { ms = document.createElement('div'); ms.id = 'md-selos'; document.getElementById('md-tag').after(ms); } ms.innerHTML = selosHtml(p, true); }
             document.getElementById('md-preco').innerHTML =

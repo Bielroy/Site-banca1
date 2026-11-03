@@ -2435,7 +2435,7 @@ const cenarioAcai = () => {
 const textosIlegiveis = (pagina, sel) => pagina.evaluate((sel) => {
   const lum = (c) => c.slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
   const cor = (s) => { const n = (s.match(/[\d.]+/g) || []).map(Number); return /^color\(srgb/.test(s) ? n.map((v, i) => (i < 3 ? v * 255 : v)) : n; };
-  const fundoDe = (el) => { for (let e = el; e; e = e.parentElement) { const c = cor(getComputedStyle(e).backgroundColor); if (c.length >= 3 && (c.length < 4 || c[3] > 0.85) && getComputedStyle(e).backgroundImage === 'none') return c; if (getComputedStyle(e).backgroundImage !== 'none' && e !== el) return null; } return [255, 255, 255]; };
+  const fundoDe = (el) => { for (let e = el; e; e = e.parentElement) { const c = cor(getComputedStyle(e).backgroundColor); if (c.length >= 3 && (c.length < 4 || c[3] > 0.85) && getComputedStyle(e).backgroundImage === 'none') return c; if (getComputedStyle(e).backgroundImage !== 'none') return null; } return [255, 255, 255]; };
   const ruins = [];
   document.querySelectorAll(`${sel} *`).forEach((el) => {
     const txt = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join(' ').trim();
@@ -2444,7 +2444,7 @@ const textosIlegiveis = (pagina, sel) => pagina.evaluate((sel) => {
     const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return;
     const f = fundoDe(el); if (!f) return;
     const c = cor(cs.color), a = lum(c), b = lum(f), k = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-    if (k < 3) ruins.push(`"${txt.slice(0, 30)}" ${k.toFixed(1)}`);
+    if (k < 3) ruins.push(`"${txt.slice(0, 30)}" ${k.toFixed(1)}` + (window.__DETALHE ? ` <${el.tagName.toLowerCase()}.${String(el.className).replace(/ /g, '.')}> ${cs.color} sobre rgb(${f.slice(0, 3).join(',')})` : ''));
   });
   return ruins;
 }, sel);
@@ -2469,6 +2469,83 @@ teste('tema de card escuro em página clara: as janelas do produto e do montar f
   ruins = await textosIlegiveis(pagina, '.mt-overlay .mt-modal');
   assert.ok(!ruins.length, 'texto ilegível na tela de montar: ' + ruins.join(' | '));
   semErros(erros); await fechar();
+});
+
+// Mede também o que o cliente DIGITA (campo de texto): a cor das letras contra o fundo do próprio campo
+const camposIlegiveis = (pagina, sel) => pagina.evaluate((sel) => {
+  const lum = (c) => c.slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const cor = (s) => { const n = (s.match(/[\d.]+/g) || []).map(Number); return /^color\(srgb/.test(s) ? n.map((v, i) => (i < 3 ? v * 255 : v)) : n; };
+  const fundoDe = (el) => { for (let e = el; e; e = e.parentElement) { const c = cor(getComputedStyle(e).backgroundColor); if (c.length >= 3 && (c.length < 4 || c[3] > 0.85) && getComputedStyle(e).backgroundImage === 'none') return c; if (getComputedStyle(e).backgroundImage !== 'none') return null; } return [255, 255, 255]; };
+  const ruins = [];
+  document.querySelectorAll(`${sel} input:not([type=checkbox]):not([type=radio]):not([type=hidden]), ${sel} textarea, ${sel} select`).forEach((el) => {
+    if (!el.getClientRects().length || el.offsetParent === null) return;
+    const f = fundoDe(el); if (!f) return;
+    const a = lum(cor(getComputedStyle(el).color)), b = lum(f), k = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    if (k < 3) ruins.push(`campo ${el.id || el.name || el.placeholder || el.tagName} ${k.toFixed(1)}` + (window.__DETALHE ? ` ${getComputedStyle(el).color} sobre rgb(${f.slice(0, 3).join(',')})` : ''));
+  });
+  return ruins;
+}, sel);
+
+// TEMAS QUE JÁ DERAM TEXTO INVISÍVEL: cada um passa por TODAS as telas do cliente (vitrine, produto, sacola com
+// sugestão, finalizar, ajudante com balões, sugestões e erro). Qualquer texto ou campo com contraste baixo derruba.
+// Regra que este teste guarda: elemento com FUNDO FIXO (creme, branco) declara a própria tinta; nunca herda a do tema.
+const TEMAS_CONTRASTE = {
+  'card escuro em página clara (Moe Coe)': { primaria: '#1c201f', destaque: '#ffde59', fundo: '#fbf4e2', superficie: '#1c1d1f', texto: '#1c201f', botao: '#fbe27a', sobrePrimaria: '#ffffff' },
+  'tudo escuro': { primaria: '#f2c14e', destaque: '#f2c14e', fundo: '#121212', superficie: '#1e1e1e', texto: '#f2f2f2', sobrePrimaria: '#111111', botao: '#f2c14e' },
+  'página escura e card claro': { primaria: '#2C5E47', destaque: '#E8873A', fundo: '#161a18', superficie: '#ffffff', texto: '#f5f5f5', sobrePrimaria: '#ffffff' },
+  'padrão (sem tema)': null,
+};
+teste('CONTRASTE em todos os temas: vitrine, produto, sacola, finalizar e ajudante sem texto invisível', async () => {
+  const falhas = [];
+  for (const [nomeTema, tema] of Object.entries(TEMAS_CONTRASTE)) {
+    const c = cenarioPadrao();
+    const prod = (nome, cat, preco) => ({ nome, preco, unidade: 'un', cat, ativo: true, descricao: 'Feito na hora.' });
+    c.lojas.contraste = { ficha: { nome: 'Loja Contraste', ativo: true, tipo: 'Pastelaria', modulos: { ia: true }, ...(tema ? { tema } : {}) },
+      produtos: { p1: prod('Pastel de carne', 'pasteis', 12), p2: prod('Pastel de queijo', 'pasteis', 12), s1: prod('La Fruit uva lata', 'sucos', 8), s2: prod('Maracujá', 'sucos', 12) },
+      categorias: [{ chave: 'pasteis', nome: 'Pastéis', ordem: 1 }, { chave: 'sucos', nome: 'Sucos', ordem: 2 }],
+      config: { lojaAberta: true, diasAbertos: [0, 1, 2, 3, 4, 5, 6], minimo: 0, wpp: '5562999990000' } };
+    const { pagina, erros, ctx, fechar } = await abrir('/?loja=contraste', c, { antes: process.env.DETALHE ? () => { window.__DETALHE = 1; } : undefined });
+    let vez = 0;
+    await ctx.route('**/api/assistente', (r) => { vez++; if (vez > 1) return r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"caiu"}' });
+      r.fulfill({ status: 200, contentType: 'text/event-stream', body: 'data: {"text":"Boa! Leva um pastel e um suco."}\n\ndata: {"text":"\\n[SUGESTOES:p1,s2]"}\n\ndata: [DONE]\n\n' }); });
+    const olhar = async (onde, sel) => { for (const r of [...await textosIlegiveis(pagina, sel), ...await camposIlegiveis(pagina, sel)]) falhas.push(`[${nomeTema}] ${onde}: ${r}`); };
+    await cards(pagina).first().waitFor({ timeout: 8000 }); await pagina.waitForTimeout(600);
+    await olhar('vitrine', '#lista-produtos');
+    // janela do produto
+    await cards(pagina).first().locator('.produto-nome').click();
+    await pagina.waitForSelector('#modal-detalhe-produto.aberto', { timeout: 4000 }); await pagina.waitForTimeout(500);
+    await olhar('janela do produto', '#modal-detalhe-produto .modal');
+    await pagina.keyboard.press('Escape'); await pagina.waitForTimeout(400);
+    // sacola (com a sugestão "Que tal levar?")
+    await cards(pagina).filter({ hasText: 'La Fruit' }).locator('[data-action="add"]').first().click();
+    await pagina.waitForTimeout(300);
+    await pagina.evaluate(() => document.getElementById('btn-carrinho-mobile').click()); await pagina.waitForTimeout(700);
+    await olhar('sacola', '#carrinho');
+    // finalizar
+    await pagina.click('#btn-abrir-checkout');
+    await pagina.waitForSelector('#modal-checkout.active, #modal-checkout.aberto, #modal-checkout[aria-hidden="false"]', { timeout: 4000 }); await pagina.waitForTimeout(500);
+    await olhar('finalizar', '#modal-checkout');
+    await pagina.keyboard.press('Escape'); await pagina.waitForTimeout(300);
+    await pagina.evaluate(() => { document.querySelectorAll('.aberto, .active').forEach((e) => { if (/carrinho|modal-checkout/.test(e.id)) e.classList.remove('aberto', 'active'); }); });
+    // ajudante: saudação, resposta com sugestões e depois um erro
+    await pagina.evaluate(() => document.getElementById('btn-ia-flutuante').click());
+    await pagina.waitForSelector('#modal-ia-chat.aberto', { timeout: 3000 }); await pagina.waitForTimeout(500);
+    await pagina.fill('#input-ia-mensagem', 'me ajuda a montar');
+    await pagina.click('#btn-ia-enviar');
+    await pagina.locator('#ia-sugestoes-container .ia-pill').first().waitFor({ timeout: 4000 }); await pagina.waitForTimeout(400);
+    await pagina.fill('#input-ia-mensagem', 'texto digitado');
+    if (process.env.FOTO) await pagina.screenshot({ path: `/tmp/moe/contraste-pilulas-${Object.keys(TEMAS_CONTRASTE).indexOf(nomeTema)}.png` });
+    await olhar('ajudante (sugestões)', '#modal-ia-chat');
+    await pagina.fill('#input-ia-mensagem', 'e agora?');
+    await pagina.click('#btn-ia-enviar');
+    await pagina.waitForTimeout(1200);
+    await pagina.fill('#input-ia-mensagem', 'texto digitado');
+    if (process.env.FOTO) await pagina.screenshot({ path: `/tmp/moe/contraste-${Object.keys(TEMAS_CONTRASTE).indexOf(nomeTema)}.png` });
+    await olhar('ajudante', '#modal-ia-chat');
+    erros.length = 0; await fechar();
+  }
+  if (falhas.length) console.log('    ' + falhas.join('\n    '));
+  assert.ok(!falhas.length, `${falhas.length} textos ilegíveis (lista acima)`);
 });
 
 teste('tema de card escuro + seção colorida no jeito "faixa": o nome do produto (card claro da seção) continua legível', async () => {

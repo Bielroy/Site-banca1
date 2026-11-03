@@ -1,0 +1,40 @@
+/* =====================================================================
+   css/contraste.css — TEXTO SEMPRE LEGÍVEL, em qualquer tema de loja.
+   Carregado POR ÚLTIMO (css/loja-tudo.css).
+
+   A regra que evita o "texto sumido" (já aconteceu no Ajudante, na sacola e na janela do produto):
+     1. Fundo FIXO (creme, branco, preto translúcido) => a tinta também é FIXA, declarada aqui.
+        Nunca herdar --text-dark do tema num papel de cor fixa: o tema pode ter tinta clara.
+     2. Fundo do TEMA (--forest, --earth, --superficie) => a tinta é a calculada para ELE pelo js/tema.js
+        (--sobre-primaria, --sobre-earth-botao, --text-dark, --forest-no-claro, --earth-texto).
+   O teste de tela "CONTRASTE em todos os temas" passa por todas as telas em 4 temas e mede cada texto.
+   ===================================================================== */
+
+/* 1. papéis creme do Ajudante: balão, sugestão (pílula) e erro solto */
+.ia-msg--bot, .ia-pill, .ia-corpo > .ia-msg--erro {
+    --text-dark: #26241f; --text-mid: #5a5649; --text-light: #7a7566; --forest-texto: #1f4a36; color: #26241f; }
+.ia-corpo > .ia-msg--erro.fatal { color: #b42318; }
+/* botões redondos BRANCOS por cima da foto: tinta escura sempre */
+.md-fechar-flutuante, .mt-fechar { color: #1a1a18; }
+.md-tag { color: var(--forest-no-claro, #1f5c3d); }
+
+/* 2. fundos do tema */
+/* faixa do topo do Ajudante (cor principal): tudo na tinta "sobre a principal" */
+.ia-topo .ia-topo-sub, .ia-topo .ia-topo-info h2 { color: var(--sobre-primaria); }
+.ia-topo .ia-topo-sub { opacity: .82; }
+.modal .ia-topo .btn-fechar { color: var(--sobre-primaria); background: color-mix(in srgb, var(--sobre-primaria) 16%, transparent); }
+.ia-topo-cesto { color: var(--sobre-primaria); background: color-mix(in srgb, var(--sobre-primaria) 14%, transparent); }
+/* campo de mensagem: fundo e letra do mesmo par (a letra preta padrão sumia no campo escuro) */
+.ia-form input[type=text], .ia-form input[type=text]:focus { background: var(--superficie); color: var(--text-dark); }
+.ia-form input[type=text]::placeholder { color: var(--text-light); opacity: 1; }
+/* Enviar e etiquetas do Ajudante na cor de destaque, com a tinta calculada para ela */
+.ia-enviar { background: var(--earth-botao, var(--earth-forte)); color: var(--sobre-earth-botao, var(--sobre-primaria)); }
+.ia-etiqueta, .ia-tentar { color: var(--earth-texto, var(--earth-forte)); }
+/* sacola: caixa do total e numerozinho ficam na cor principal => tinta "sobre a principal" */
+.total-label { color: color-mix(in srgb, var(--sobre-primaria) 75%, transparent); }
+.carrinho-titulo-badge { background: var(--forest); color: var(--sobre-primaria); }
+.ap-card-contraste .carrinho-titulo-badge { background: var(--sobre-primaria, #fff); color: var(--forest, #1a1a18); }
+/* topo e rodapé da sacola em tema de card escuro (ou claro em página escura): os "papéis" internos (botão fechar,
+   caixas) saem da superfície da sacola, não do fundo da página */
+.ap-card-contraste .carrinho-topo, .ap-card-contraste .carrinho-rodape {
+    --parchment: color-mix(in srgb, var(--tc-dark) 10%, var(--superficie)); --foam: color-mix(in srgb, var(--tc-dark) 9%, var(--superficie)); }
