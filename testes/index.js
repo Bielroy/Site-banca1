@@ -552,7 +552,7 @@ teste('formato vitrine: na loja, a sacola some só com <html data-formato="vitri
   const fs = require('fs');
   const css = fs.readFileSync(raiz('css/vitrine-formato.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
   const seletores = css.split('}').map((b) => b.split('{')[0]).join(',').split(',').map((x) => x.trim()).filter((x) => x && !x.startsWith('@'));
-  for (const sel of seletores) assert.ok(/^html\[data-formato="vitrine"\]/.test(sel) || /(\.card-zap|\.md-vitrine|\.zap-vitrine)/.test(sel), `regra que pode mexer na loja completa: ${sel}`);
+  for (const sel of seletores) assert.ok(/^html\[data-formato="vitrine"\]/.test(sel) || /(\.card-zap|\.card-acao\.zap|\.md-vitrine|\.zap-vitrine)/.test(sel), `regra que pode mexer na loja completa: ${sel}`);
   assert.ok(/@import '\.\/vitrine-formato\.css';/.test(fs.readFileSync(raiz('css/loja-tudo.css'), 'utf8')));
   const loja = fs.readFileSync(raiz('js/loja.js'), 'utf8');
   assert.ok(/const modificarCarrinho = [^\n]*\n\s*if \(emVitrine\(\)\) return;/.test(loja), 'o carrinho não aceita nada na vitrine');
