@@ -19,7 +19,7 @@ import { SEGMENTOS, segmentar, filtrar, podeContatar, mensagemSugerida } from '.
 import { mensagemDoLink, foneParaWhats, foneBonito } from './conta-lib.js';
 import { feiraDeUmCliente } from './plataforma-lib.js';
 
-const S = { feiras: [], feira: '', seg: null, produtos: [], filtro: 'todos', produtoId: '', busca: '', contatos: {}, geradoEm: '', ligado: false, estado: 'carregando', atual: null, nomeLoja: ehLojaOriginal ? 'Banca Adair e Pedrina' : 'loja' };
+const S = { mostrar: 150, feiras: [], feira: '', seg: null, produtos: [], filtro: 'todos', produtoId: '', busca: '', contatos: {}, geradoEm: '', ligado: false, estado: 'carregando', atual: null, nomeLoja: ehLojaOriginal ? 'Banca Adair e Pedrina' : 'loja' };
 const el = () => document.getElementById('crm-conteudo');
 const $ = (id) => document.getElementById(id);
 const haDias = (n) => (n <= 0 ? 'hoje' : n === 1 ? 'ontem' : `há ${n} dias`);
@@ -48,12 +48,12 @@ function render() {
         <select id="crm-produto" aria-label="Clientes que compram um produto"><option value="">Que compram qualquer produto</option>${comprados.map(([id, n]) => `<option value="${escapeHTML(id)}"${id === S.produtoId ? ' selected' : ''}>Que compram ${escapeHTML(n)}</option>`).join('')}</select>
     </div>
     <p class="config-sub crm-conta">${lista.length} cliente${lista.length === 1 ? '' : 's'} neste filtro</p>
-    <div class="crm-lista">${lista.slice(0, 150).map((x) => `
+    <div class="crm-lista">${lista.slice(0, S.mostrar).map((x) => `
         <button class="crm-item" data-crm-id="${escapeHTML(x.id)}">
             <span class="crm-nome">${escapeHTML(x.nome || 'Sem nome')}<small>${escapeHTML(linhaEndereco(x, { curto: true }) || 'sem endereço')}</small></span>
             <span class="crm-num"><b>${x.gasto ? fmt(x.gasto) : '–'}</b><small>${x.ped || x.n} pedido${(x.ped || x.n) > 1 ? 's' : ''} · ${haDias(x.semComprar)}</small></span>
         </button>`).join('') || '<p class="config-sub">Nenhum cliente neste filtro.</p>'}</div>
-    ${lista.length > 150 ? '<p class="config-sub">Mostrando os 150 primeiros. Use a busca para achar os demais.</p>' : ''}`;
+    ${lista.length > S.mostrar ? `<button class="btn-sec" data-crm-mais>Mostrar mais (${lista.length - S.mostrar} restantes)</button>` : ''}`;
 }
 
 function garantirModal() {
@@ -174,13 +174,14 @@ async function enviar() {
 function ligar() {
     if (S.ligado) return; S.ligado = true;
     el().addEventListener('click', (e) => {
-        const s = e.target.closest('[data-crm-seg]'); if (s) { S.filtro = s.dataset.crmSeg; render(); return; }
+        if (e.target.closest('[data-crm-mais]')) { S.mostrar += 150; render(); return; }
+        const s = e.target.closest('[data-crm-seg]'); if (s) { S.filtro = s.dataset.crmSeg; S.mostrar = 150; render(); return; }
         const i = e.target.closest('[data-crm-id]'); if (i) { const x = S.seg.lista.find((c) => c.id === i.dataset.crmId); if (x) abrirCliente(x); }
     });
     el().addEventListener('change', (e) => { if (e.target.id === 'crm-produto') { S.produtoId = e.target.value; render(); } else if (e.target.id === 'crm-feira') { S.feira = e.target.value; render(); } });
     el().addEventListener('input', (e) => {
         if (e.target.id !== 'crm-busca') return;
-        S.busca = e.target.value; const pos = e.target.selectionStart; render(); const b = $('crm-busca'); b.focus(); b.setSelectionRange(pos, pos);
+        S.busca = e.target.value; S.mostrar = 150; const pos = e.target.selectionStart; render(); const b = $('crm-busca'); b.focus(); b.setSelectionRange(pos, pos);
     });
 }
 

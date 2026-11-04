@@ -249,7 +249,10 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     pri: isoDeDia(m.primeiroDia), cada: m.nuMed, gasto: m.gasto, ticket: m.ticket, ped: m.nPedidos,
     tp: Object.entries(m.prod || {}).sort((a, b) => (b[1].n || 0) - (a[1].n || 0)).slice(0, 6).map(([id]) => id),
     tel: m.aceitaOfertas ? m.telefone : '', oferta: m.aceitaOfertas === true }))
-    .sort((a, b) => b.n - a.n).slice(0, 600);
+    .sort((a, b) => (b.n - a.n) || (Number(b.gasto) || 0) - (Number(a.gasto) || 0));
+  // o índice vai num documento só (teto de 1 MB no Firestore): corta pelo TAMANHO, não por um número fixo de clientes.
+  // Os que mais compram ficam primeiro; só os de 1 visita só ficam de fora se a loja for muito grande.
+  { let tam = 0, fim = 0; while (fim < indiceClientes.length && (tam += JSON.stringify(indiceClientes[fim]).length * 1.4) < 560000) fim++; indiceClientes.length = fim; }
 
   // CUSTO DA FALTA: nos dias em que o produto acabou (últimos 30), quanto deixou de vender.
   // Esperado = média do MESMO dia da semana nas 8 semanas anteriores, sem dias de falta nem loja fechada.
