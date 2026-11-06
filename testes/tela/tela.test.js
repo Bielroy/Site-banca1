@@ -2511,6 +2511,7 @@ teste('CONTRASTE em todos os temas: vitrine, produto, sacola, finalizar e ajudan
     const olhar = async (onde, sel) => { for (const r of [...await textosIlegiveis(pagina, sel), ...await camposIlegiveis(pagina, sel)]) falhas.push(`[${nomeTema}] ${onde}: ${r}`); };
     await cards(pagina).first().waitFor({ timeout: 8000 }); await pagina.waitForTimeout(600);
     await olhar('vitrine', '#lista-produtos');
+    await pagina.fill('#busca-input', 'Pastel de frango'); await olhar('busca (texto digitado)', '.busca-wrap'); await pagina.fill('#busca-input', '');
     // janela do produto
     await cards(pagina).first().locator('.produto-nome').click();
     await pagina.waitForSelector('#modal-detalhe-produto.aberto', { timeout: 4000 }); await pagina.waitForTimeout(500);
@@ -2697,14 +2698,25 @@ teste('montar pedido no painel: modelo de açaí, ajusta, salva no produto; "Esc
   await g2.locator('.mt-ad-nome').fill('Cobertura');
   await g2.locator('[data-mt-tipo="uma"]').click();
   await pagina.locator('#montar-corpo .mt-ad-grupo').nth(1).locator('li').first().locator('[data-mt-acao="ativo"]').click();
+  // "já vem marcada": no grupo de várias escolhas dá para marcar uma opção ou todas de uma vez; em "Escolhe 1" o botão não vale
+  const g1 = pagina.locator('#montar-corpo .mt-ad-grupo').nth(0);
+  await g1.locator('li').first().locator('[data-mt-acao="marcado"]').click();
+  assert.match(await g1.locator('li').first().locator('[data-mt-acao="marcado"]').innerText(), /✓ marcada/);
+  await g1.locator('[data-mt-acao="marcar-todas"]').click();
+  assert.strictEqual(await g1.locator('[data-mt-acao="marcado"][aria-checked="true"]').count(), await g1.locator('li').count(), 'todas marcadas');
+  assert.match(await g1.locator('[data-mt-acao="marcar-todas"]').innerText(), /Desmarcar todas/);
+  if (process.env.FOTO) { await g1.screenshot({ path: '/tmp/claude-0/-home-claude/b759b5ba-8389-52cc-8199-944208cd91bb/scratchpad/montar-admin.png' }); }
   await pagina.click('#btn-salvar-produto');
   await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /^produtos\/a$/.test(g.path)), null, { timeout: 4000 });
   const salvo = (await gravadosDe(pagina, /^produtos\/a$/)).pop().montar;
   assert.strictEqual(salvo.grupos.length, 2);
-  assert.strictEqual(salvo.grupos[0].nome, 'Complementos'); assert.strictEqual(salvo.grupos[0].max, 4);
+  assert.strictEqual(salvo.grupos[0].nome, 'Complementos'); assert.strictEqual(salvo.grupos[0].max, salvo.grupos[0].opcoes.length, 'marcar todas sobe o limite para todas caberem');
   assert.deepStrictEqual([salvo.grupos[1].nome, salvo.grupos[1].min, salvo.grupos[1].max], ['Cobertura', 1, 1]);
   assert.strictEqual(salvo.grupos[1].opcoes[0].ativo, false);
   assert.strictEqual(salvo.grupos[1].opcoes[0].preco, 4);
+  assert.ok(salvo.grupos[0].opcoes.every((o) => o.marcado === true), 'todas as opções do grupo gravadas como já marcadas');
+  assert.ok(salvo.grupos[1].opcoes.every((o) => !o.marcado), 'o grupo de escolher 1 não marca nada');
+  assert.ok(salvo.grupos[0].max >= salvo.grupos[0].opcoes.length, 'o limite do grupo acompanha: todas marcadas cabem');
   semErros(erros); await fechar();
 });
 
@@ -2840,5 +2852,37 @@ teste('painel: "Sai em quais dias?" grava os dias do produto; palavras da busca 
   const salvo = (await gravadosDe(pagina, /^produtos\/alface$/)).pop();
   assert.deepStrictEqual(salvo.dias, [3, 6]);
   assert.deepStrictEqual(salvo.palavras, ['pé de alface', 'verdinha']);
+  semErros(erros); await fechar();
+});
+
+// ------------------------------------------------------------------ OPÇÃO "JÁ VEM MARCADA" (pastel X-Tudo)
+teste('montar pedido: opções "já marcadas" (pastel X-Tudo) abrem marcadas, o cliente tira o que não quer e o Alterar respeita o que ele tirou', async () => {
+  const cen = cenarioPastelaria();
+  cen.lojas.banca.produtos.xt = { nome: 'Pastel X-Tudo', preco: 14, unidade: 'un', cat: 'pasteis', ativo: true, montar: { grupos: [
+    { id: 'recheio', nome: 'Recheio', min: 0, max: 6, gratis: 0, opcoes: [
+      { id: 'carne', nome: 'Carne', preco: 0, marcado: true }, { id: 'frango', nome: 'Frango', preco: 0, marcado: true }, { id: 'queijo', nome: 'Queijo', preco: 0, marcado: true },
+      { id: 'ovo', nome: 'Ovo', preco: 0, marcado: true }, { id: 'bacon', nome: 'Bacon', preco: 3, marcado: true }, { id: 'milho', nome: 'Milho', preco: 0, marcado: true, ativo: false },
+      { id: 'catupiry', nome: 'Catupiry', preco: 2 }] },
+  ] } };
+  const { pagina, erros, fechar } = await abrir('/', cen);
+  const card = pagina.locator('#lista-produtos .produto-card[data-id="xt"]');
+  await card.waitFor({ timeout: 8000 });
+  await card.locator('.card-add--montar').click();
+  await pagina.waitForSelector('#modal-montar.aberto', { timeout: 3000 });
+  const on = () => pagina.$$eval('#modal-montar .mt-op.on', (bs) => bs.map((b) => b.dataset.o).sort());
+  assert.deepStrictEqual(await on(), ['bacon', 'carne', 'frango', 'ovo', 'queijo'], 'abre com tudo marcado (menos o que acabou e o que não é "marcada")');
+  assert.match(await pagina.locator('#mt-ok').innerText(), /Pôr na sacola[\s\S]*17,00/, 'o bacon marcado já entra na conta');
+  await pagina.click('#modal-montar .mt-op[data-o="ovo"]');
+  await pagina.click('#modal-montar .mt-op[data-o="bacon"]');
+  assert.deepStrictEqual(await on(), ['carne', 'frango', 'queijo'], 'o cliente tira o que não gosta');
+  assert.match(await pagina.locator('#mt-ok').innerText(), /14,00/);
+  await pagina.click('#mt-ok');
+  await pagina.waitForFunction(() => !document.querySelector('#modal-montar.aberto'), null, { timeout: 3000 });
+  await pagina.evaluate(() => document.getElementById('btn-carrinho-mobile').click()); await pagina.waitForTimeout(600);
+  const texto = await pagina.locator('#carrinho-itens .carrinho-item--montado .item-adicionais').first().innerText();
+  assert.ok(/Carne/.test(texto) && /Queijo/.test(texto) && !/Ovo/.test(texto) && !/Bacon/.test(texto), texto);
+  await pagina.locator('#carrinho-itens [data-action="montar"]').first().click();
+  await pagina.waitForSelector('#modal-montar.aberto', { timeout: 3000 });
+  assert.deepStrictEqual(await on(), ['carne', 'frango', 'queijo'], 'ao Alterar, vale o que ele escolheu (não volta a marcar tudo)');
   semErros(erros); await fechar();
 });

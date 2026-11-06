@@ -38,3 +38,9 @@
    caixas) saem da superfície da sacola, não do fundo da página */
 .ap-card-contraste .carrinho-topo, .ap-card-contraste .carrinho-rodape {
     --parchment: color-mix(in srgb, var(--tc-dark) 10%, var(--superficie)); --foam: color-mix(in srgb, var(--tc-dark) 9%, var(--superficie)); }
+/* campo de busca da vitrine: fechado ele usa o "papel" da página; ao focar, vira a cor do card (superficie).
+   A letra precisa acompanhar cada fundo (antes ficava preta do navegador e sumia no card escuro) */
+.busca-input { color: var(--text-dark, #1a1a18); caret-color: currentColor; transition: border-color .2s, box-shadow .2s; }
+.busca-input::placeholder { color: var(--text-light, #6b6b66); opacity: 1; }
+.ap-card-contraste .busca-input:focus { color: var(--tc-dark); }
+.ap-card-contraste .busca-input:focus::placeholder { color: var(--tc-light); }

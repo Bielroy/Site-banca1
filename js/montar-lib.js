@@ -6,7 +6,7 @@
 //      id, nome,            "complementos", "Complementos"
 //      min, max,            quantas opções escolher (min 0 = opcional; max 1 = escolha única)
 //      gratis,              as N primeiras escolhas saem de graça (as mais caras primeiro, a favor do cliente)
-//      opcoes: [ { id, nome, preco, ativo } ]   preco = quanto a opção acrescenta (0 = grátis)
+//      opcoes: [ { id, nome, preco, ativo, marcado } ]   marcado = já vem marcada na loja (o cliente só tira o que não quer)   preco = quanto a opção acrescenta (0 = grátis)
 //  } ] }
 //
 //  O navegador manda só os ids escolhidos ({ grupoId: [opcaoId, ...] }).
@@ -53,7 +53,7 @@ export function montarDoProduto(p) {
             const on = texto(o.nome, 40); if (!on) continue;
             const oid = typeof o.id === 'string' && ID.test(o.id) && !opUsadas.has(o.id) ? o.id : idDe(on, opUsadas);
             opUsadas.add(oid);
-            opcoes.push({ id: oid, nome: on, preco: centavos(o.preco) / 100, ativo: o.ativo !== false });
+            opcoes.push({ id: oid, nome: on, preco: centavos(o.preco) / 100, ativo: o.ativo !== false, marcado: o.marcado === true });
         }
         if (!opcoes.length) continue;
         const max = inteiro(g.max, 1, opcoes.length, Math.min(opcoes.length, 1));

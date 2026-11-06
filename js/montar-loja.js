@@ -158,6 +158,13 @@ export function abrirMontar({ produto, linha = null, inicial = null, fmt, foto =
     const escolhas = new Map(montar.grupos.map((g) => [g.id, []]));
     const marcadas = linha && linha.opcoes ? linha.opcoes : (inicial && typeof inicial === 'object' ? inicial : null);
     if (marcadas) for (const g of montar.grupos) escolhas.set(g.id, (Array.isArray(marcadas[g.id]) ? marcadas[g.id] : []).filter((id) => g.opcoes.some((o) => o.id === id && o.ativo)).slice(0, g.max));
+    // opções que o dono deixou "já marcadas" (ex.: pastel X-Tudo vem com tudo e o cliente só tira o que não quer).
+    // Vale para pedido novo e para grupo que o Ajudante não mexeu; ao ALTERAR um item da sacola vale o que a cliente escolheu.
+    for (const g of montar.grupos) {
+        if (linha && linha.opcoes) continue;
+        if (marcadas && Array.isArray(marcadas[g.id])) continue;
+        escolhas.set(g.id, g.opcoes.filter((o) => o.marcado && o.ativo).map((o) => o.id).slice(0, g.max));
+    }
     // escolha única obrigatória com uma opção só: já vem marcada
     for (const g of montar.grupos) { const vivas = g.opcoes.filter((o) => o.ativo); if (g.min === 1 && g.max === 1 && vivas.length === 1 && !escolhas.get(g.id).length) escolhas.set(g.id, [vivas[0].id]); }
     atual = { p: produto, montar, escolhas, qtd: linha ? Math.max(1, Math.round(Number(linha.qtd) || 1)) : 1, linha, fmt, aoConfirmar, rotulo: rotuloBotao };

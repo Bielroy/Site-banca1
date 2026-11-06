@@ -5135,6 +5135,17 @@ teste('montar pedido: a conta do navegador e a do servidor são iguais, e as reg
   assert.strictEqual(l1.linha, l2.linha); assert.strictEqual(l1.preco, 26); assert.match(l1.adicionais, /Tamanho: 500 ml/);
 });
 
+teste('montar pedido: opção "marcada" (já vem marcada na loja) passa igual no navegador e no servidor e é só um recado: o servidor continua cobrando o que o cliente mandar', async () => {
+  const S = require(raiz('lib/montar.js')); const N = await import(raiz('js/montar-lib.js'));
+  const p = { unidade: 'un', preco: 14, montar: { grupos: [{ id: 'r', nome: 'Recheio', max: 4, opcoes: [{ id: 'carne', nome: 'Carne', marcado: true }, { id: 'ovo', nome: 'Ovo', preco: 2, marcado: 'sim' }, { id: 'milho', nome: 'Milho' }] }] } };
+  const m = S.montarDoProduto(p);
+  assert.deepStrictEqual(m, N.montarDoProduto(p));
+  assert.deepStrictEqual(m.grupos[0].opcoes.map((o) => o.marcado), [true, false, false], 'só true de verdade marca; o resto é "não marcada"');
+  assert.strictEqual(S.conferirEscolha(m, { r: ['carne'] }).extraC, 0, 'tirar as outras não muda a conta');
+  assert.strictEqual(S.conferirEscolha(m, { r: ['carne', 'ovo'] }).extraC, 200);
+  assert.strictEqual(S.conferirEscolha(m, {}).ok, true, 'o cliente pode tirar tudo: marcar é só o ponto de partida');
+});
+
 teste('montar pedido no checkout: servidor cobra as escolhas, aceita o mesmo produto montado de dois jeitos e baixa o estoque somado', async () => {
   const S = require(raiz('lib/montar.js'));
   const sem = semente();

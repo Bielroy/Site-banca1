@@ -71,11 +71,13 @@ function pintar() {
                 <li data-oi="${oi}"${o.ativo === false ? ' class="acabou"' : ''}>
                     <input type="text" data-campo="op-nome" value="${escapeHTML(o.nome)}" maxlength="40" placeholder="Opção (ex.: Granola)" aria-label="Nome da opção">
                     <input type="text" inputmode="decimal" data-campo="op-preco" value="${precoTexto(o.preco)}" placeholder="grátis" aria-label="Preço a mais de ${escapeHTML(o.nome || 'opção')}">
+                    <button type="button" class="mt-ad-tem mt-ad-marc${o.marcado ? ' on' : ''}" data-mt-acao="marcado" role="switch" aria-checked="${!!o.marcado}" title="${o.marcado ? 'Já vem marcada: o cliente só tira se não quiser' : 'Não vem marcada: o cliente marca se quiser'}">${o.marcado ? '✓ marcada' : 'marcada'}</button>
                     <button type="button" class="mt-ad-tem${o.ativo === false ? '' : ' on'}" data-mt-acao="ativo" role="switch" aria-checked="${o.ativo !== false}" title="${o.ativo === false ? 'Acabou hoje' : 'Tem hoje'}">${o.ativo === false ? 'acabou' : 'tem'}</button>
                     <button type="button" class="mt-ad-x" data-mt-acao="tirar-op" aria-label="Apagar opção">×</button>
                 </li>`).join('')}
             </ul>
             <button type="button" class="mt-ad-mais" data-mt-acao="op" ${g.opcoes.length >= MAX_OPCOES ? 'disabled' : ''}>+ Opção</button>
+            ${t === 'varias' && g.opcoes.length > 1 ? `<button type="button" class="mt-ad-mais" data-mt-acao="marcar-todas">${g.opcoes.every((o) => o.marcado) ? 'Desmarcar todas' : 'Já vêm todas marcadas'}</button>` : ''}
             <p class="mt-ad-previa" data-previa="${gi}"></p>
         </fieldset>`;
     }).join('') + `<button type="button" class="bt bt-sec mt-ad-novo" data-mt-acao="grupo" ${grupos.length >= MAX_GRUPOS ? 'disabled' : ''}>+ Grupo de escolha</button>`;
@@ -93,6 +95,9 @@ function pintarPrevias() {
 
 const usados = () => new Set(grupos.map((g) => g.id));
 function novoGrupo() { grupos.push({ id: idDe('grupo', usados()), nome: '', min: 0, max: 3, gratis: 0, opcoes: [{ id: 'op', nome: '', preco: 0, ativo: true }] }); }
+
+// "Já vem marcada" só faz sentido em grupo de escolher várias, e não pode passar do limite do grupo
+function limitarMarcadas(g) { if (g.max === 1) g.opcoes.forEach((o) => { o.marcado = false; }); }
 
 function aoClicar(e) {
     const modelo = e.target.closest('[data-mt-modelo]');
@@ -115,6 +120,8 @@ function aoClicar(e) {
     else if (acao === 'op' && g) { g.opcoes.push({ id: idDe('op', new Set(g.opcoes.map((o) => o.id))), nome: '', preco: 0, ativo: true }); pintar(); document.querySelector(`#montar-corpo [data-gi="${gi}"] li:last-child input`)?.focus(); return; }
     else if (acao === 'tirar-op' && g) g.opcoes.splice(oi, 1);
     else if (acao === 'ativo' && g && g.opcoes[oi]) g.opcoes[oi].ativo = g.opcoes[oi].ativo === false;
+    else if (acao === 'marcado' && g && g.opcoes[oi]) { g.opcoes[oi].marcado = !g.opcoes[oi].marcado; limitarMarcadas(g); }
+    else if (acao === 'marcar-todas' && g) { const todas = g.opcoes.every((o) => o.marcado); g.opcoes.forEach((o) => { o.marcado = !todas; }); if (!todas) g.max = Math.max(g.max, g.opcoes.length); limitarMarcadas(g); }
     pintar();
 }
 
@@ -140,7 +147,7 @@ function aoMudar(e) {
     // ao sair de um campo de regra: corrige o que não faz sentido (mínimo maior que o máximo...)
     if (e.target.dataset && ['max', 'min', 'gratis'].includes(e.target.dataset.campo)) {
         const g = grupos[Number(e.target.closest('[data-gi]')?.dataset.gi)];
-        if (g) { g.max = Math.max(1, Math.min(MAX_OPCOES, g.max)); g.min = Math.min(g.min, g.max); g.gratis = Math.min(g.gratis, g.max); pintar(); }
+        if (g) { g.max = Math.max(1, Math.min(MAX_OPCOES, g.max)); g.min = Math.min(g.min, g.max); g.gratis = Math.min(g.gratis, g.max); limitarMarcadas(g); pintar(); }
     }
 }
 
