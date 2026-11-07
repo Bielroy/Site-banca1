@@ -41,6 +41,7 @@ export const ICONES = {
     equipe:     p('M9.2 7H7.5A1.5 1.5 0 0 0 6 8.5V19a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 18 19V8.5A1.5 1.5 0 0 0 16.5 7h-1.7') + p('M9.2 7.6L12 3.4l2.8 4.2') + semente(12, 12, 2.3) + p('M9 17.2h6'),
     config:     p('M4 7h8.6') + p('M17.4 7H20') + bola(15, 7, 2.2) + p('M4 12h2.6') + p('M11.4 12H20') + semente(9, 12, 2.3) + p('M4 17h10.6') + p('M19.4 17h.6') + bola(17, 17, 2.2),
     // ----- ações e avisos -----
+    broto:      p('M12 20.5v-8') + p('M12 12.5c0-4.2-3-6.5-7-6.5 0 4.2 3 6.5 7 6.5z') + s('M12 14.5c0-3.6 2.6-5.6 6.6-5.6 0 3.6-2.6 5.6-6.6 5.6z'),   // selo "Chegou hoje"
     impressora: p('M7 8.5V4h10v4.5') + p('M7 16.5H5.5A1.5 1.5 0 0 1 4 15v-5a1.5 1.5 0 0 1 1.5-1.5h13A1.5 1.5 0 0 1 20 10v5a1.5 1.5 0 0 1-1.5 1.5H17') + s('M7 13.5h10V20H7z') + p('M7 13.5h10V20H7z'),
     etiqueta:   p('M3.6 12V5.1a1.5 1.5 0 0 1 1.5-1.5H12l8.3 8.3a1.5 1.5 0 0 1 0 2.1l-6.2 6.2a1.5 1.5 0 0 1-2.1 0z') + semente(8, 8, 1.8),
     sair:       p('M14 4.5H6.5A1.5 1.5 0 0 0 5 6v12a1.5 1.5 0 0 0 1.5 1.5H14') + p('M10.5 12H20') + p('M16.5 8.5L20 12l-3.5 3.5'),
@@ -73,6 +74,8 @@ export const ICONES = {
     menu:       s('M4 4h6.5v6.5H4z') + p('M4 4h6.5v6.5H4z') + p('M13.5 4H20v6.5h-6.5z') + p('M4 13.5h6.5V20H4z') + p('M13.5 13.5H20V20h-6.5z'),
     mais:       p('M12 5v14') + p('M5 12h14'),
     copiar:     p('M9 8.5h9.5A1.5 1.5 0 0 1 20 10v9a1.5 1.5 0 0 1-1.5 1.5H9A1.5 1.5 0 0 1 7.5 19v-9A1.5 1.5 0 0 1 9 8.5z') + p('M16.5 8.5V5A1.5 1.5 0 0 0 15 3.5H5.5A1.5 1.5 0 0 0 4 5v9.5A1.5 1.5 0 0 0 5.5 16h2'),
+    conversa:   p('M12 4c4.7 0 8.5 3.2 8.5 7.2s-3.8 7.2-8.5 7.2c-1 0-2-.1-2.9-.4L4.5 20l1.2-3.8C4.3 14.9 3.5 13.1 3.5 11.2 3.5 7.2 7.3 4 12 4z') + semente(8.4, 11.2, 1.15) + semente(12, 11.2, 1.15) + semente(15.6, 11.2, 1.15),
+    camera:     p('M4.5 8h3l1.6-2.5h5.8L16.5 8h3A1.5 1.5 0 0 1 21 9.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5v-9A1.5 1.5 0 0 1 4.5 8z') + bola(12, 13.6, 3.6) + semente(12, 13.6, 1.6),
     vazio:      p('M4 13.5l2.4-8h11.2l2.4 8') + p('M4 13.5h4.6l1 2.5h4.8l1-2.5H20V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z'),
 };
 // nomes alternativos (o mesmo desenho serve a mais de um lugar)
@@ -84,7 +87,8 @@ export const ico = (nome, classe = '') => `<svg class="ic${classe ? ` ${classe}`
 
 /** Troca as marcas <i class="ic" data-i="..."> que estiverem dentro de `raiz` pelos desenhos. */
 export function hidratar(raiz = document) {
-    const marcas = raiz.querySelectorAll ? raiz.querySelectorAll('i.ic[data-i]') : [];
+    // raiz pode ser null: a marca foi trocada de novo antes do vigia chegar nela (tela que se redesenha rápido)
+    const marcas = raiz && raiz.querySelectorAll ? raiz.querySelectorAll('i.ic[data-i]') : [];
     marcas.forEach((m) => {
         if (!desenho(m.dataset.i)) return;
         const molde = document.createElement('template');

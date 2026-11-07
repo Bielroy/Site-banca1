@@ -1,4 +1,5 @@
 'use strict';
+const { ehPagamento } = require('../analytics/externalFactors');
 // =====================================================================
 //  testes/mundo-simulado.js — uma loja de MENTIRA com regras conhecidas
 //  (dia da semana, chuva, calor, dias de pagamento, oferta, falta, dia fechado).
@@ -50,7 +51,7 @@ function gerar({ seed = 1, dias = 150, efeitos = true, nProd = 32, dia0 = 20000,
     const d = dia0 + t, dw = (((d + 4) % 7) + 7) % 7, dm = new Date(d * 86400000).getUTCDate();
     if (efeitos && r() < 0.015) { fechados.add(d); continue; }                 // loja não abriu
     const c = clima.get(d), ant = tmaxs.slice(Math.max(0, t - 30), t).sort((a, b) => a - b), med = ant.length ? ant[ant.length >> 1] : c.tmax;
-    const st = { chuva: c.chuva >= 5, calor: c.tmax >= med + 3, frio: c.tmax <= med - 4, pag: dm >= 5 && dm <= 10 };
+    const st = { chuva: c.chuva >= 5, calor: c.tmax >= med + 3, frio: c.tmax <= med - 4, pag: ehPagamento(d) };     // a mesma regra do motor (5º dia útil)
     estados.set(d, st);
     for (const p of produtos) {
       if (t < p.nasce) continue;

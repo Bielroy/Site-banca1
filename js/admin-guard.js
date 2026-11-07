@@ -57,7 +57,7 @@ export let papelAtual = null;
 /** Bancas que esta conta pode abrir (seletor "Trocar de banca" no menu do painel). */
 export let bancasDaPessoa = [];
 // Toda a equipe entra; cada papel vê só as suas abas (js/papeis-lib.js). O servidor e as regras do banco conferem de novo.
-const PODEM_ENTRAR = ['plataforma', 'proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque'];
+const PODEM_ENTRAR = ['plataforma', 'proprietario', 'administrador', 'gerente', 'funcionario', 'caixa', 'producao', 'estoque'];
 
 const TELA_BLOQUEIO_ID = 'admin-bloqueio-acesso';
 

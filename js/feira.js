@@ -68,7 +68,9 @@ async function abrir() {
 
     if (!bancas.length) return aviso('Nenhuma banca desta feira está atendendo pelo aplicativo agora.');
     // vai direto para a banca (a faixa do topo dela mostra as outras bancas da feira)
-    const ultima = lerUltimaBanca(fid), destino = bancas.find((b) => b.id === ultima) || bancas[0];
+    // o cartaz de uma banca pode mandar direto para ela (/feira/id?loja=banca); senão, a última aberta, senão a primeira
+    let pedida = ''; try { pedida = new URLSearchParams(location.search).get('loja') || ''; } catch (_) { /* endereço estranho */ }
+    const ultima = lerUltimaBanca(fid), destino = bancas.find((b) => b.id === pedida) || bancas.find((b) => b.id === ultima) || bancas[0];
     location.replace(comFeira(urlDaLoja(destino.id), fid));
     // se o navegador não sair daqui (raro), a lista fica de reserva
     setTimeout(() => { const lista = $('fe-lista'); lista.textContent = ''; bancas.forEach((b) => lista.appendChild(cartao(fid, b))); }, 3000);

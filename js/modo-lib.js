@@ -12,6 +12,8 @@
 //    2º  o que a loja marcou no cadastro (campo "Mostrar primeiro");
 //    3º  unidade.
 // =====================================================================
+import { nomesDaUnidade, emPalavras } from './pacote-lib.js';
+
 const QUILO = ['kg', 'kilo', 'quilograma'];
 const MODOS = ['un', 'kg'];
 /** Passo do quilo no card: meio quilo por toque (na tela do produto dá para ajustar fino). */
@@ -44,7 +46,8 @@ export const precoDaUnidade = (p) => { const pm = Number(p && p.pesoMedio) || 0;
 export function botoesDoCard(p, memoria) {
     const un = precoDaUnidade(p);
     const B = {
-        un: { modo: 'un', titulo: '+ 1 unidade', preco: un == null ? 'pesamos na hora' : `≈ ${reais(un)}`, fala: `Adicionar 1 unidade de ${p.nome}` },
+        // "como chamar 1 unidade" do cadastro: "+ 1 batata" diz na hora que é UMA batata (e não um pacote)
+        un: { modo: 'un', titulo: `+ 1 ${nomesDaUnidade(p.nomeUn).um}`, preco: un == null ? 'pesamos na hora' : `≈ ${reais(un)}`, fala: `Adicionar 1 ${nomesDaUnidade(p.nomeUn).um} de ${p.nome}` },
         kg: { modo: 'kg', titulo: '+ 1 kg', preco: reais(p.preco), fala: `Adicionar 1 quilo de ${p.nome}` },
     };
     return modoPreferido(p, memoria) === 'kg' ? [B.kg, B.un] : [B.un, B.kg];
@@ -56,7 +59,9 @@ export function textoNoPedido(p, item) {
     const qtd = Number(item && item.qtd) || 0;
     if (item && item.tipo === 'kg') return { titulo: `${virgula(qtd)} kg`, curto: `${virgula(qtd)} kg`, valor: reais(Number(p.preco) * qtd) };
     const un = precoDaUnidade(p);
-    return { titulo: `${Math.round(qtd)} ${Math.round(qtd) === 1 ? 'unidade' : 'unidades'}`, curto: `${Math.round(qtd)} un`, valor: un == null ? 'a pesar' : `≈ ${reais(un * qtd)}` };
+    const nomes = nomesDaUnidade(p.nomeUn), titulo = emPalavras(Math.round(qtd), nomes);
+    // card estreito: "2 un"; com nome curto da loja ("batata"), o nome cabe e diz melhor que "un"
+    return { titulo, curto: p.nomeUn && titulo.length <= 10 ? titulo : `${Math.round(qtd)} un`, valor: un == null ? 'a pesar' : `≈ ${reais(un * qtd)}` };
 }
 
 /** Próxima quantidade ao tocar em + ou − no card. 0 = sai do pedido. */

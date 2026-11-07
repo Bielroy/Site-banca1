@@ -10,7 +10,7 @@
     <meta name="description" content="Compre frutas, verduras e hortaliças frescas com entrega rápida no seu condomínio.">
     <meta name="theme-color" content="#1a3a2a">
 
-    <link rel="canonical" href="https://site-banca1.vercel.app/">
+    <link rel="canonical" href="https://usebanca.com/">
     <meta name="robots" content="index, follow">
 
     <!-- Compartilhamento em WhatsApp, Facebook e Instagram.
@@ -21,9 +21,9 @@
     <meta property="og:title" content="Banca Adair e Pedrina | Frescor Todo Dia">
     <meta property="og:description" content="Frutas, verduras e legumes frescos, escolhidos no dia e entregues no seu condomínio.">
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://site-banca1.vercel.app/">
+    <meta property="og:url" content="https://usebanca.com/">
     <meta property="og:locale" content="pt_BR">
-    <meta property="og:image" content="https://site-banca1.vercel.app/og-image.png">
+    <meta property="og:image" content="https://usebanca.com/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="Banca Adair e Pedrina — hortifruti com entrega no condomínio">
@@ -31,10 +31,14 @@
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Banca Adair e Pedrina | Frescor Todo Dia">
     <meta name="twitter:description" content="Frutas, verduras e legumes frescos, escolhidos no dia.">
-    <meta name="twitter:image" content="https://site-banca1.vercel.app/og-image.png">
+    <meta name="twitter:image" content="https://usebanca.com/og-image.png">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Os produtos vêm do banco do Firebase, e a entrada anônima do cliente vem do login do Google.
+         Abrir essas duas conexões já na chegada adianta a vitrine (o código só pede depois de carregar). -->
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
     <!-- Letras da banca (Fraunces e Figtree). Baixadas cedo, mas SEM segurar a primeira tela (media="print"):
          js/tema.js liga (media="all") quando a loja usa estas letras. Loja com outras letras nem baixa estas. -->
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Fraunces:opsz,wght,SOFT@9..144,500..900,0..100&display=swap">
@@ -51,8 +55,8 @@
       "@type": "GroceryStore",
       "name": "Banca Adair e Pedrina",
       "description": "Hortifruti com frutas, verduras e legumes frescos e entrega em condomínios.",
-      "url": "https://site-banca1.vercel.app/",
-      "image": "https://site-banca1.vercel.app/og-image.png",
+      "url": "https://usebanca.com/",
+      "image": "https://usebanca.com/og-image.png",
       "priceRange": "$",
       "currenciesAccepted": "BRL",
       "paymentAccepted": "Dinheiro, PIX, Cartão",
@@ -60,16 +64,9 @@
     }
     </script>
 
-    <link rel="stylesheet" href="./css/variables.css">
-    <link rel="stylesheet" href="./css/shared.css">
-    <link rel="stylesheet" href="./css/loja.css">
-    <!-- NOVO: estilos do seletor de quantidade (peso × unidade).
-         Precisa vir DEPOIS do loja.css para prevalecer. -->
-    <link rel="stylesheet" href="./css/produto-modal.css">
-    <link rel="stylesheet" href="./css/melhorias.css">
-    <!-- Visual novo (etiqueta de preço, seletor no card, animações). Vem por ÚLTIMO de propósito. -->
-    <link rel="stylesheet" href="./css/visual.css">
-    <link rel="stylesheet" href="./css/aparencia-loja.css">
+    <!-- Estilos da loja: UM arquivo (css/loja-tudo.css junta os 14 na ordem certa; o build do Vite os emenda num só).
+         Antes eram 14 pedidos que seguravam a primeira tela. A ORDEM de lá importa: o visual.css vem depois do loja.css etc. -->
+    <link rel="stylesheet" href="./css/loja-tudo.css">
 
     <link rel="icon" href="./icon-192.png">
     <!-- O <link rel="manifest"> não é escrito aqui. O vite-plugin-pwa
@@ -84,7 +81,9 @@
          ícone genérico (um print da página) em vez da logo da banca. -->
     <link rel="apple-touch-icon" href="./icon-192.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <!-- iPhone com a loja na tela inicial: o topo colorido da loja vai até em cima (atrás do relógio e da bateria),
+         em vez de uma faixa branca. As margens da área segura estão em css/encaixe.css. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Banca Adair">
 </head>
 <body>
@@ -128,7 +127,7 @@
         <nav class="header-acoes" aria-label="Endereço e pedidos">
             <button class="chip-header" id="btn-endereco" data-action="open-endereco">
                 <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>
-                <span id="endereco-resumo">Escolha onde entregar</span>
+                <span id="endereco-resumo">Onde entregar?</span>
             </button>
             <button class="chip-header btn-historico" data-action="open-historico">
                 <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10a2 2 0 0 1 2 2v14l-3-2-2 2-2-2-2 2-3-2V6a2 2 0 0 1 2-2z"/><path d="M9 9h6M9 13h6"/></svg>
@@ -139,6 +138,17 @@
                 <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/></svg>
                 <span>Instalar o app</span>
             </button>
+            <!-- Ajudante: botão redondo do cabeçalho (antes flutuava por cima dos produtos e tampava preço e botões) -->
+            <button type="button" id="btn-ia-flutuante" class="chip-header chip-rede btn-ajudante" aria-label="Falar com o Ajudante da Banca" title="Ajudante da Banca">
+                <svg class="ico" viewBox="0 0 48 48" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M8 20h32l-3.4 17.2a4 4 0 0 1-3.9 3.2H15.3a4 4 0 0 1-3.9-3.2L8 20Z" fill="rgba(255,255,255,.18)"/>
+                    <path d="M16 20c0-6 3.6-10 8-10s8 4 8 10"/>
+                    <path d="M17 27v8M24 27v8M31 27v8"/>
+                    <path d="M30 10c3-.2 5.4-1.6 6.4-4.2-3.2-.6-6 .8-6.4 4.2Z" fill="currentColor" stroke="none"/>
+                </svg>
+            </button>
+            <!-- Instagram e WhatsApp da loja (Configurações → Atendimento). Preenchidos por js/loja.js -->
+            <span class="header-redes" id="header-redes" hidden></span>
         </nav>
     </div>
 </header>
@@ -164,7 +174,13 @@
     <div class="vitrine">
         <!-- "Seus de sempre": o que este cliente costuma levar (ou o último pedido). Preenchida por js/loja.js -->
         <!-- Atalhos de quem volta: pedir de novo, lista da semana, avaliar. Preenchidos por js/loja.js -->
+        <!-- "Para quando é o pedido? Hoje | Amanhã" (js/loja.js, pintarEscolhaDia). Some quando a loja não tem produto de dia certo. -->
+        <!-- iPhone: como pôr a loja na tela de início (só para quem já pediu; js/loja.js, pintarConviteApp) -->
+        <section class="convite-app" id="convite-app" aria-label="Pôr a loja na tela de início" hidden></section>
+        <div class="escolha-dia" id="escolha-dia" hidden></div>
         <nav class="atalhos" id="atalhos" aria-label="Atalhos de compra" hidden></nav>
+        <!-- "Chegou hoje" (o dono marca no painel). Preenchida por js/loja.js -->
+        <div class="faixas-extra" id="faixas-topo"></div>
         <!-- Ofertas de hoje: produtos com preço antigo riscado. Preenchida por js/loja.js -->
         <section class="faixa-sempre faixa-ofertas" id="faixa-ofertas" aria-labelledby="ofertas-titulo" hidden>
             <h2 id="ofertas-titulo">Ofertas de hoje</h2>
@@ -176,6 +192,8 @@
             <p class="faixa-sub" id="faixa-sub">O que você mais leva, a um toque.</p>
             <div class="faixa-rolo" id="faixa-lista"></div>
         </section>
+        <!-- "Da estação", "Os mais pedidos", "Kits prontos". Preenchida por js/loja.js -->
+        <div class="faixas-extra" id="faixas-meio"></div>
         <section class="produtos-grid" id="lista-produtos" aria-label="Lista de Produtos"></section>
     </div>
 
@@ -192,12 +210,23 @@
 
     <aside class="carrinho" id="carrinho" aria-label="Seu Carrinho de Compras" tabindex="-1">
         <header class="carrinho-topo">
-            <h3 class="carrinho-titulo">Meu Pedido <span class="carrinho-titulo-badge" id="qtd-badge">0</span></h3>
+            <h3 class="carrinho-titulo">Minha sacola <span class="carrinho-titulo-badge" id="qtd-badge">0</span></h3>
             <button class="btn-limpar" id="btn-limpar-carrinho">Esvaziar</button>
+            <!-- celular: fechar a sacola e voltar a escolher -->
+            <button type="button" class="carrinho-fechar" id="btn-fechar-sacola" aria-label="Fechar a sacola e continuar comprando">&times;</button>
         </header>
 
+        <!-- a parte que rola: os itens, a sugestão e a lista da semana. O total e o botão ficam sempre à vista. -->
+        <div class="carrinho-rolo" id="carrinho-rolo">
         <div class="carrinho-itens" id="carrinho-itens"></div>
         <div id="upsell-container"></div>
+        <!-- LISTA DA SEMANA: guardar o que está na sacola e repetir num toque (antes era um link escondido no pé) -->
+        <div class="lista-semana-card" id="lista-semana-card" hidden>
+            <span class="lista-semana-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M7 4h10a2 2 0 0 1 2 2v14l-3-2-2 2-2-2-2 2-3-2V6a2 2 0 0 1 2-2z"/><path d="M9 9h6M9 13h4"/></svg></span>
+            <span class="lista-semana-txt"><b id="lista-semana-titulo">Compra isso toda semana?</b><small id="lista-semana-sub">Guarde como sua lista e repita num toque.</small></span>
+            <button type="button" class="lista-semana-bt" id="btn-guardar-lista" data-action="guardar-lista">Guardar lista</button>
+        </div>
+        </div>
 
         <footer class="carrinho-rodape">
             <div class="min-progresso" id="min-progresso" hidden>
@@ -214,45 +243,71 @@
                 <span class="total-valor" id="total-val">R$ 0,00</span>
             </div>
             <button class="btn-finalizar" id="btn-abrir-checkout" disabled>Finalizar Pedido</button>
-            <button type="button" class="btn-guardar-lista" id="btn-guardar-lista" data-action="guardar-lista" hidden>Guardar como minha lista da semana</button>
+            <button type="button" class="carrinho-continuar" id="btn-continuar-comprando">‹ Continuar comprando</button>
         </footer>
     </aside>
 </main>
 
 <!-- Rodapé com o link da política de privacidade. A LGPD pede que a
      informação esteja acessível de onde os dados são coletados. -->
+<!-- "Fale com a loja": Instagram e WhatsApp, no fim da página. Preenchido por js/loja.js -->
+<section class="fale-loja" id="fale-loja" aria-labelledby="fale-loja-titulo" hidden></section>
+
 <footer class="site-rodape">
     <a href="/privacidade.html">Privacidade</a>
     <span aria-hidden="true">·</span>
     <span data-nome-loja>Banca Adair e Pedrina</span>
+    <span aria-hidden="true">·</span>
+    <!-- avisa a loja de defeito no desenho da tela (js/vigia-tela.js): só opções fixas, nada do cliente -->
+    <button type="button" class="link-relato" data-relatar-tela>Algo estranho na tela?</button>
 </footer>
 
 <div class="modal-overlay" id="modal-checkout" role="dialog" aria-modal="true" aria-labelledby="checkout-titulo">
     <div class="modal">
         <header class="modal-head">
-            <h2 id="checkout-titulo">Dados da entrega</h2>
+            <h2 id="checkout-titulo">Confira e envie</h2>
             <button class="btn-fechar" data-fechar="modal-checkout" aria-label="Fechar">&times;</button>
         </header>
         <div class="modal-body">
+            <!-- COMANDA: o pedido do jeito que a banca recebe (js/loja.js, renderComanda) -->
+            <section class="comanda" id="comanda" aria-label="Seu pedido"></section>
+            <!-- Entrega em casa ou retirada na banca. Só aparece se a loja ligou a retirada (js/loja.js, pintarModo) -->
+            <fieldset class="form-group troca-grupo modo-grupo" id="grupo-modo" hidden>
+                <legend>Como prefere receber?</legend>
+                <div class="troca-ops">
+                    <label class="troca-op"><input type="radio" name="cli-modo" value="entrega" checked><span id="rot-modo-entrega">Entrega em casa</span></label>
+                    <label class="troca-op"><input type="radio" name="cli-modo" value="retirada"><span id="rot-modo-retirada">Retirar na banca</span></label>
+                </div>
+                <p class="checkout-entrega" id="retirada-local" hidden></p>
+            </fieldset>
+            <!-- CLIENTE QUE VOLTA: o resumo no lugar dos campos (js/conhecido-lib.js). "Mudar meus dados" abre os campos. -->
+            <section class="ck-conhecido" id="ck-conhecido" aria-label="Seus dados" hidden>
+                <p class="ck-conhecido-titulo" id="ck-conhecido-titulo"></p>
+                <p class="ck-conhecido-linha" id="ck-conhecido-end"></p>
+                <p class="ck-conhecido-linha" id="ck-conhecido-tel"></p>
+                <button type="button" class="ck-conhecido-mudar" id="ck-conhecido-mudar">Mudar meus dados</button>
+            </section>
+            <h3 class="checkout-sub" id="checkout-sub-titulo">Dados da entrega</h3>
             <!-- Condomínio + quadra/lote (ou rua/número). Montado por js/endereco.js -->
             <div id="checkout-endereco"></div>
-            <div class="form-group"><label for="cli-nome">Como devemos te chamar?</label><input type="text" id="cli-nome" placeholder="Seu nome" autocomplete="name"></div>
+            <div id="ck-pessoais">
+            <div class="form-group"><label for="cli-nome">Como devemos te chamar?</label><input type="text" id="cli-nome" placeholder="Seu nome" autocomplete="name" autocapitalize="words" enterkeyhint="next"></div>
             <div class="form-group">
                 <label for="cli-telefone">WhatsApp (para avisarmos quando ficar pronto)</label>
-                <input type="tel" id="cli-telefone" inputmode="numeric" placeholder="62 9 9999-9999" autocomplete="tel">
+                <input type="tel" id="cli-telefone" inputmode="tel" placeholder="62 9 9999-9999" autocomplete="tel" enterkeyhint="next">
+            </div>
             </div>
             <label class="chk-oferta"><input type="checkbox" id="cli-ofertas"> Quero receber ofertas e novidades da loja no WhatsApp</label>
             <p class="checkout-entrega" id="checkout-entrega" hidden></p>
-            <div class="form-group" id="grupo-horario" hidden>
-                <label for="cli-horario">Quando prefere receber? (opcional)</label>
-                <select id="cli-horario"></select>
-            </div>
-            <div class="form-group">
-                <label for="cli-pagamento">Forma de Pagamento</label>
-                <select id="cli-pagamento">
-                    <option value="PIX">PIX (Chave via WhatsApp)</option>
-                    <option value="Cartão">Cartão (Levamos a maquininha)</option>
-                    <option value="Dinheiro">Dinheiro</option>
+            <!-- Pagamento: botões de um toque (js/checkout-teclado.js monta a partir do select, que continua sendo o valor lido no envio) -->
+            <div class="form-group pag-grupo">
+                <label for="cli-pagamento" id="cli-pagamento-rotulo">Como vai pagar?</label>
+                <div class="pag-chips" id="pag-chips" role="radiogroup" aria-labelledby="cli-pagamento-rotulo"></div>
+                <p class="pag-nota" id="pag-nota">Nada é cobrado pelo site agora: você paga direto para a banca.</p>
+                <select id="cli-pagamento" class="pag-select">
+                    <option value="PIX">PIX (chave pelo WhatsApp)</option>
+                    <option value="Cartão">Cartão (na maquininha)</option>
+                    <option value="Dinheiro">Dinheiro (em mãos)</option>
                 </select>
             </div>
 
@@ -264,22 +319,38 @@
                 </div>
                 <div id="input-troco-area" style="display:none;">
                     <label for="cli-troco" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);">Troco para quanto</label>
-                    <input type="text" inputmode="decimal" id="cli-troco" placeholder="Troco para quanto? Ex: 50,00">
+                    <input type="text" inputmode="decimal" id="cli-troco" placeholder="Troco para quanto? Ex: 50,00" enterkeyhint="done">
                 </div>
             </div>
 
-            <div class="form-group" style="margin-bottom: 0;">
-                <label for="cli-obs">Observações (opcional)</label>
-                <textarea id="cli-obs" rows="2" placeholder="Ex: tomates bem maduros, deixar na portaria..."></textarea>
+            <div class="form-group" id="grupo-horario" hidden>
+                <label for="cli-horario" id="cli-horario-rotulo">Quando prefere receber? (opcional)</label>
+                <select id="cli-horario"></select>
             </div>
 
-            <div class="form-group">
-                <label for="cli-cupom">Cupom de desconto (opcional)</label>
-                <input type="text" id="cli-cupom" placeholder="Digite o código, se tiver" autocapitalize="characters" autocomplete="off" spellcheck="false" style="text-transform: uppercase;">
-            </div>
+            <!-- O que é opcional fica recolhido: menos rolagem com o teclado aberto -->
+            <details class="checkout-mais" id="checkout-mais">
+                <summary><b>Observação, troca e cupom</b> <small id="checkout-mais-resumo">opcional</small></summary>
+                <div class="form-group">
+                    <label for="cli-obs">Observações</label>
+                    <textarea id="cli-obs" rows="2" placeholder="Ex: tomates bem maduros, deixar na portaria..."></textarea>
+                </div>
+                <!-- Se faltar algum item: a escolha vai junto na observação do pedido (js/vitrine-lib.js, obsComTroca) -->
+                <fieldset class="form-group troca-grupo">
+                    <legend>Se faltar algum item</legend>
+                    <div class="troca-ops">
+                        <label class="troca-op"><input type="radio" name="cli-troca" value="trocar"><span>Pode trocar por um parecido</span></label>
+                        <label class="troca-op"><input type="radio" name="cli-troca" value="nao"><span>Não trocar, só tirar</span></label>
+                    </div>
+                </fieldset>
+                <div class="form-group" style="margin-bottom:0">
+                    <label for="cli-cupom">Cupom de desconto</label>
+                    <input type="text" id="cli-cupom" placeholder="Digite o código, se tiver" autocapitalize="characters" autocomplete="off" spellcheck="false" style="text-transform: uppercase;" enterkeyhint="done">
+                </div>
+            </details>
         </div>
         <footer class="modal-footer">
-            <button class="btn-finalizar" id="btn-enviar-pedido">Enviar pedido</button>
+            <button class="btn-finalizar" id="btn-enviar-pedido">Enviar pedido para a banca</button>
         </footer>
     </div>
 </div>
@@ -319,23 +390,24 @@
             <p class="text-success" id="sucesso-texto" style="color: var(--text-mid); margin-bottom: 18px; line-height: 1.5; font-size: 1.05rem;">Você será redirecionado para o nosso WhatsApp para finalizar. Caso a janela não abra, clique no botão abaixo.</p>
             <div id="sucesso-whatsapps" class="sucesso-whatsapps"></div>
             <p id="sucesso-entrega" class="sucesso-entrega" hidden></p>
+            <p id="sucesso-pag" class="sucesso-pag" hidden></p>
             <p id="sucesso-dica-acesso" class="sucesso-dica" hidden>Guarde a mensagem do WhatsApp: o link no fim dela traz seus dados de volta se você trocar de celular.</p>
             <div id="sucesso-pix" class="sucesso-pix" hidden></div>
+            <button type="button" class="btn-lista-sucesso" id="btn-lista-sucesso" data-action="guardar-lista-pedido" hidden>Guardar este pedido como minha lista da semana</button>
             <button class="btn-finalizar" data-fechar="modal-sucesso">Voltar para a loja</button>
             <button type="button" class="btn-indicar" data-action="indicar">Indicar a loja para um vizinho</button>
         </div>
     </div>
 </div>
 
-<button id="btn-ia-flutuante" class="ia-fab" aria-label="Falar com o Ajudante da Banca">
-    <svg viewBox="0 0 48 48" width="30" height="30" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M8 20h32l-3.4 17.2a4 4 0 0 1-3.9 3.2H15.3a4 4 0 0 1-3.9-3.2L8 20Z" fill="rgba(255,255,255,.18)"/>
-        <path d="M16 20c0-6 3.6-10 8-10s8 4 8 10"/>
-        <path d="M17 27v8M24 27v8M31 27v8"/>
-        <path d="M30 10c3-.2 5.4-1.6 6.4-4.2-3.2-.6-6 .8-6.4 4.2Z" fill="currentColor" stroke="none"/>
-    </svg>
-    <span class="ia-fab-rotulo">Ajuda</span>
-</button>
+
+
+<!-- PLANO B: o servidor não respondeu. O pedido vai pronto para o WhatsApp da banca (js/loja.js, oferecerPedidoPeloWhatsApp). -->
+<div class="modal-overlay modal-reserva" id="modal-reserva" role="dialog" aria-modal="true" aria-labelledby="reserva-titulo">
+    <div class="modal modal-center">
+        <div class="modal-body reserva-corpo" id="reserva-corpo"></div>
+    </div>
+</div>
 
 <div class="modal-overlay" id="modal-ia-chat" role="dialog" aria-modal="true" aria-labelledby="ia-titulo">
     <div class="modal ia-modal">

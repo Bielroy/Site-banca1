@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously } from "firebase/auth";
+import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously, signInWithCustomToken } from "firebase/auth";
 import { 
     initializeFirestore, 
     persistentLocalCache, 
@@ -30,7 +30,10 @@ const db = initializeFirestore(app, {
     localCache: ehApple ? memoryLocalCache() : persistentLocalCache({tabManager: persistentMultipleTabManager()})
 });
 
-const auth = getAuth(app);
+// Mesmas persistências do getAuth, SEM o "popupRedirectResolver": o site só entra por link de e-mail e anônimo,
+// nunca por janela do Google. Com o resolver, o navegador baixava apis.google.com/js/api.js à toa (a política de
+// segurança do site bloqueia e o console enchia de erro).
+const auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence] });
 
 // O armazenamento de arquivos (Firebase Storage) fica em js/firebase-arquivos.js: só o painel usa,
 // e aqui ele ia junto para todo cliente que abre a loja.
@@ -38,6 +41,6 @@ export {
     app, db, auth,
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
     query, orderBy, limit, writeBatch, where, updateDoc, deleteField,
-    sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously,
+    sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously, signInWithCustomToken,
     terminate, clearIndexedDbPersistence
 };

@@ -25,24 +25,38 @@ const txt = (v, o = {}) => ({ t: 'txt', v: limpo(v), ...o });
 const SEP = { t: 'sep' }, CORTE = { t: 'corte' };
 
 export function enderecoTxt(p) {
+    if (p && p.modo === 'retirada') return [p.feiraId ? 'RETIRADA NA FEIRA' : 'RETIRADA NA BANCA', limpo(p.retiradaLocal, 60)].filter(Boolean).join(' - ');   // e onde (cada feira num lugar)
     const a = limpo(p.quadra, 60), b = limpo(p.lote, 30), f = p.formatoEndereco || 'ql';
     const resto = f === 'rua' ? [a, b && `nº ${b}`] : f === 'livre' ? [a, b] : [a && `Quadra ${a}`, b && `Lote ${b}`];
     return [limpo(p.condominio, 60), resto.filter(Boolean).join(f === 'ql' ? ' · ' : ', ')].filter(Boolean).join(' - ');
 }
 
+/** Como o pedido chega ao cliente, em letra grande no papel: quem separa vê de cara se é para entregar ou se o cliente busca. */
+export function modoTxt(p) {
+    if (!p || p.origem === 'balcao') return '';                                   // venda no balcão: o cliente já está ali
+    if (p.modo === 'retirada') return p.feiraId ? 'RETIRADA NA FEIRA' : 'RETIRADA NA BANCA';
+    return limpo(p.quadra) || limpo(p.condominio) ? 'ENTREGA' : '';
+}
+/** Linha de "onde": na retirada, o local (o tipo já saiu grande em cima); na entrega, o endereço. */
+const ondeTxt = (p) => (p && p.modo === 'retirada' ? (limpo(p.retiradaLocal, 60) ? `Local: ${limpo(p.retiradaLocal, 60)}` : '') : enderecoTxt(p));
+
 /** Cupom completo de um pedido (da loja on-line ou do balcão). */
-export function cupomDoPedido(p, { loja = '' } = {}) {
+export function cupomDoPedido(p, { loja = '', aviso = '' } = {}) {
     const L = [], itens = Array.isArray(p.itens) ? p.itens : [];
     if (loja) L.push(txt(loja, { al: 'c', b: true, g: true }));
-    L.push(txt(`${p.origem === 'balcao' ? 'Venda no balcão' : 'Pedido'}${p.id ? ` ${String(p.id).slice(-6).toUpperCase()}` : ''}`, { al: 'c' }), txt(dataHora(p.data), { al: 'c' }), SEP);
+    L.push(txt(`${p.origem === 'balcao' ? 'Venda no balcão' : 'Pedido'}${p.id ? ` ${numeroDoPedido(p)}` : ''}`, { al: 'c' }), txt(dataHora(p.data), { al: 'c' }));
+    if (limpo(aviso)) L.push(txt(aviso, { al: 'c', b: true }));            // ex.: "CUPOM ATUALIZADO (depois da balança)"
+    const modo = modoTxt(p); if (modo) L.push(SEP, txt(modo, { al: 'c', b: true, g: true }));
+    L.push(SEP);
     if (limpo(p.nome)) L.push(txt(p.nome, { b: true }));
-    const end = enderecoTxt(p); if (end) L.push(txt(end));
+    const end = ondeTxt(p); if (end) L.push(txt(end));
     if (limpo(p.telefone)) L.push(txt(`Tel: ${limpo(p.telefone, 20)}`));
     if (limpo(p.nome) || end) L.push(SEP);
     let soma = 0, aPesar = 0;
     itens.forEach((i) => {
         if (i.aPesar) { aPesar++; L.push({ t: 'par', e: `${qtdTxt(i)} ${limpo(i.nome, 60)}`, d: 'a pesar' }); }
         else { soma += Number(i.subtotal) || 0; L.push({ t: 'par', e: `${qtdTxt(i)} ${limpo(i.nome, 60)}`, d: reais(i.subtotal) }); }
+        if (i.adicionais) L.push(txt(`  + ${limpo(i.adicionais, 200)}`));   // montar pedido: o que o cliente escolheu
     });
     L.push(SEP);
     const desc = p.cupom && Number(p.cupom.desconto) > 0 ? Number(p.cupom.desconto) : 0;
@@ -55,9 +69,23 @@ export function cupomDoPedido(p, { loja = '' } = {}) {
     const pago = p.pagamento && p.pagamento.status === 'PAID';
     if (limpo(p.pag)) L.push(txt(`Pagamento: ${limpo(p.pag, 30)}${pago ? ' (PAGO)' : ''}`));
     if (limpo(p.troco)) L.push(txt(`Troco para: ${limpo(p.troco, 30)}`, { b: true }));
-    if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`Entregar: ${limpo(p.entrega.horario, 40)}`, { b: true }));
+    if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`${p.modo === 'retirada' ? 'Retirar' : 'Entregar'}: ${limpo(p.entrega.horario, 40)}`, { b: true }));
     if (limpo(p.obs)) L.push(SEP, txt(`Obs: ${limpo(p.obs, 300)}`));
     L.push(SEP, txt('Obrigado pela preferência!', { al: 'c' }), CORTE);
+    return L;
+}
+
+/** Número curto do pedido, o mesmo no cupom, na etiqueta e no aviso de cancelado. */
+export const numeroDoPedido = (p) => String((p && p.id) || '').slice(-6).toUpperCase();
+
+/** Aviso de pedido CANCELADO depois que o cupom já tinha saído: para ninguém separar ou entregar. */
+export function avisoDeCancelamento(p, { loja = '' } = {}) {
+    const L = [];
+    if (loja) L.push(txt(loja, { al: 'c' }));
+    L.push(txt('PEDIDO CANCELADO', { al: 'c', b: true, g: true }), txt(`Pedido ${numeroDoPedido(p)}`, { al: 'c', b: true }), txt(`Cancelado em ${dataHora(p.canceladoEm)}`, { al: 'c' }), SEP);
+    if (limpo(p.nome)) L.push(txt(p.nome, { b: true }));
+    const end = enderecoTxt(p); if (end) L.push(txt(end));
+    L.push(SEP, txt('Não separe nem entregue este pedido. Se já separou, volte os itens para a banca.'), CORTE);
     return L;
 }
 
@@ -66,10 +94,11 @@ export function etiquetaDeEntrega(p, { loja = '', volume = 1, volumes = 1 } = {}
     const L = [], itens = Array.isArray(p.itens) ? p.itens : [], pago = p.pagamento && p.pagamento.status === 'PAID';
     if (loja) L.push(txt(loja, { al: 'c' }));
     L.push(txt(p.nome || 'Cliente', { al: 'c', b: true, g: true }));
-    const end = enderecoTxt(p); if (end) L.push(txt(end, { al: 'c', b: true }));
+    const modo = modoTxt(p); if (modo) L.push(txt(modo, { al: 'c', b: true, g: true }));
+    const end = ondeTxt(p); if (end) L.push(txt(end, { al: 'c', b: true }));
     if (p.feiraId && /^\d{4}-\d{2}-\d{2}$/.test(String(p.entregaDia || '')) && p.paraHoje === false) L.push(txt(`PARA ${String(p.entregaDia).slice(8, 10)}/${String(p.entregaDia).slice(5, 7)}`, { al: 'c', b: true }));   // pedido para a próxima feira
-    if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`Entregar: ${limpo(p.entrega.horario, 40)}`, { al: 'c' }));
-    L.push(SEP, { t: 'par', e: `${itens.length} item(ns)`, d: volumes > 1 ? `Volume ${volume}/${volumes}` : '' });
+    if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`${p.modo === 'retirada' ? 'Retirar' : 'Entregar'}: ${limpo(p.entrega.horario, 40)}`, { al: 'c' }));
+    L.push(SEP, { t: 'par', e: `${itens.length} item(ns)${p.id ? ` - Pedido ${numeroDoPedido(p)}` : ''}`, d: volumes > 1 ? `Volume ${volume}/${volumes}` : '' });
     L.push(txt(pago ? 'JÁ PAGO' : `Cobrar ${reais(p.total)} - ${limpo(p.pag, 20) || 'a combinar'}`, { b: true }));
     if (!pago && limpo(p.troco)) L.push(txt(`Troco para: ${limpo(p.troco, 30)}`));
     if (limpo(p.obs)) L.push(txt(`Obs: ${limpo(p.obs, 120)}`));
@@ -88,6 +117,60 @@ export function etiquetaDeLote(r, { loja = '' } = {}) {
     L.push(CORTE);
     return L;
 }
+
+// ---------------------------------------------------------------- pedido que chegou por mensagem (WhatsApp)
+// Emoji e figurinha não existem na térmica (sairiam como "?"): saem do texto antes de imprimir.
+const semEmoji = (s) => String(s == null ? '' : s).replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}\u{FE0E}\u{FE0F}\u{200D}\u{20E3}]/gu, '');
+// *negrito*, _itálico_ e ~riscado~ do WhatsApp: os sinais saem, a palavra fica.
+const FORMATO_WHATS = /(^|[\s(])[*_~]+|[*_~]+(?=[\s),.;:!?]|$)/g;
+// "acrescentar: 1 repolho" → "1 repolho" (o cliente mandou mais itens numa segunda mensagem)
+const PREFIXO_MAIS = /^(?:acrescentar|acrescenta|adicionar|adiciona|incluir|inclui|e mais|mais|tamb[eé]m)\s*:\s*/i;
+/** Separa os itens pelo ";" (o jeito comum de listar numa linha só), menos o que está entre parênteses. */
+function porPontoEVirgula(l) {
+    const out = []; let atual = '', fundo = 0;
+    for (const ch of l) {
+        if (ch === '(') fundo++; else if (ch === ')' && fundo > 0) fundo--;
+        if (ch === ';' && fundo === 0) { out.push(atual); atual = ''; } else atual += ch;
+    }
+    out.push(atual);
+    return out;
+}
+/**
+ * Texto colado do WhatsApp → linhas limpas de itens.
+ * Tira o carimbo "[12:30, 16/10/2026] Maria: " que o WhatsApp põe ao copiar, os emojis, a formatação
+ * (*negrito*, _itálico_), marcadores ("- ", "• ", "* ") e linhas vazias. Uma linha com vários itens
+ * separados por ";" vira um item por linha. NADA é cortado no meio: antes cada linha parava em 120 letras
+ * e o resto do pedido sumia do papel. No máximo 120 itens de 300 letras (o papel quebra a linha).
+ */
+export function linhasDoWhats(texto) {
+    return String(texto == null ? '' : texto).split(/\r?\n/)
+        .map((l) => semEmoji(l).replace(/^\s*\[[^\]]{3,40}\]\s*[^:]{1,40}:\s*/, ''))
+        .flatMap(porPontoEVirgula)
+        .map((l) => l.replace(FORMATO_WHATS, '$1').replace(/^\s*(?:[-•*·–]|\d{1,2}[.)](?=\s))\s*/, '').replace(/^\s+/, '').replace(PREFIXO_MAIS, '')
+            .replace(/\(\s+/g, '(').replace(/\s+\)/g, ')'))
+        .map((l) => limpo(l, 300)).filter(Boolean).slice(0, 120);
+}
+/**
+ * Papel de um pedido que chegou por mensagem e não está no sistema.
+ * d = { nome, telefone, endereco, itens (texto colado), obs, pagamento, entrega }. Sai com "Pedido do WhatsApp" e a hora.
+ */
+export function pedidoAvulso(d = {}, { loja = '', agora = Date.now() } = {}) {
+    const L = [], itens = linhasDoWhats(d.itens), c = (v, n) => limpo(semEmoji(v), n);
+    if (loja) L.push(txt(loja, { al: 'c', b: true, g: true }));
+    L.push(txt('Pedido do WhatsApp', { al: 'c' }), txt(dataHora(new Date(agora).toISOString()), { al: 'c' }), SEP);
+    if (c(d.nome, 80)) L.push(txt(c(d.nome, 80), { b: true, g: true }));
+    if (c(d.endereco, 160)) L.push(txt(c(d.endereco, 160), { b: true }));
+    if (c(d.telefone, 20)) L.push(txt(`Tel: ${c(d.telefone, 20)}`));
+    if (c(d.nome, 80) || c(d.endereco, 160) || c(d.telefone, 20)) L.push(SEP);
+    if (itens.length) { itens.forEach((i) => L.push(txt(i))); L.push(SEP, txt(`${itens.length} ${itens.length === 1 ? 'item' : 'itens'}`)); }
+    if (c(d.entrega, 60)) L.push(txt(`Entregar: ${c(d.entrega, 60)}`, { b: true }));
+    if (c(d.pagamento, 60)) L.push(txt(`Pagamento: ${c(d.pagamento, 60)}`, { b: true }));
+    if (c(d.obs, 300)) L.push(SEP, txt(`Obs: ${c(d.obs, 300)}`));
+    L.push(CORTE);
+    return L;
+}
+/** Tem alguma coisa para imprimir? (nome, endereço ou pelo menos um item) */
+export const avulsoTemConteudo = (d = {}) => !!(linhasDoWhats(d.itens).length || limpo(semEmoji(d.nome)) || limpo(semEmoji(d.endereco)));
 
 export function paginaDeTeste({ loja = '', largura = 58, modo = '' } = {}) {
     return [txt(loja || 'Teste de impressão', { al: 'c', b: true, g: true }), txt('Teste de impressão', { al: 'c' }), SEP,

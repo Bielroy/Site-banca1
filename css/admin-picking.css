@@ -396,3 +396,10 @@
   .cupom-form { padding: 16px; }
   .cupom-card-topo { flex-wrap: wrap; }
 }
+
+/* dia sem aviso: uma linha só, com "Escrever" */
+.com-dia.fechado { padding-top: 12px; padding-bottom: 12px; }
+.com-dia.fechado .com-dia-topo { margin-bottom: 0; }
+.com-dia.fechado textarea, .com-dia.fechado .com-validade { display: none; }
+.com-dia .com-sem { display: block; margin: 2px 0 0; font-size: .78rem; font-weight: 600; color: var(--text-light, #8a8a80); }
+.com-escrever { margin-left: auto; margin-right: 10px; min-height: 38px; padding: 0 14px; border-radius: 999px; border: 1.5px solid #d9d3c6; background: #fff; color: var(--forest, #1a3a2a); font-weight: 700; font-size: .84rem; font-family: inherit; cursor: pointer; }

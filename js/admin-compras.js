@@ -12,6 +12,7 @@ import { tcol, tdoc, chave } from './tenant.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal } from './utils.js';
 import { fmtQtd } from './estoque-lib.js';
 import { listaDeCompras, textoDaLista } from './compras-lib.js';
+import { avisosDoClima, dicasEtileno } from './dicas-compra-lib.js';
 import { carregarApoio, apoio, movimentar, movimentosRecentes } from './admin-estoque.js';
 import { hojeBR, addDias, dataLonga } from './fechamento-lib.js';
 
@@ -45,8 +46,9 @@ async function carregarFechamento() {
 
 function render() {
     if (!el()) return;
-    const { previsto, perdas } = apoio();
-    const L = S.lista = listaDeCompras({ produtos: S.produtos, previsto, perdas, acabou: S.acabou });
+    const { previsto, perdas, clima } = apoio();
+    const avisosClima = avisosDoClima(clima), etileno = dicasEtileno(S.produtos);
+    const L = S.lista = listaDeCompras({ produtos: S.produtos, previsto, perdas, acabou: S.acabou, hoje: hojeBR() });
     const marcados = lerMarcados(), nMarc = L.comprar.filter((l) => marcados.has(l.id)).length;
     const linha = (l, comEntrada) => `
         <label class="cp-item${marcados.has(l.id) ? ' feito' : ''}">
@@ -59,10 +61,12 @@ function render() {
         <div><h3>Comprar hoje</h3><p class="config-sub">${S.proximaCompra ? `<b class="cp-dia-compra">${S.proximaCompra === hojeBR() ? 'Hoje é dia de compra.' : `Próxima compra marcada: ${dataLonga(S.proximaCompra)}.`}</b> ` : ''}${dataLonga(hojeBR())}${L.total !== null ? ` · cerca de <b>${fmt(L.total)}</b>${L.semCusto ? ` (${L.semCusto} sem custo cadastrado)` : ''}` : ''}</p></div>
         <div class="cp-botoes"><button class="btn-outline" data-cp-acao="copiar">Copiar lista</button><button class="btn-outline" data-cp-acao="historico">Histórico</button></div>
     </div>
+    ${avisosClima.length ? `<div class="cp-clima"><b>Previsão do tempo</b><ul>${avisosClima.map((a) => `<li>${escapeHTML(a.texto)}</li>`).join('')}</ul>${avisosClima.some((a) => a.aprendido) ? '<small>A quantidade sugerida já conta com isso.</small>' : ''}</div>` : ''}
     ${L.comprar.length ? `<div class="cp-lista">${L.comprar.map((l) => linha(l, true)).join('')}</div>`
         : `<div class="cp-vazio"><b>Nada para comprar agora.</b><span>${S.produtos.some((p) => p.estoqueMin != null && p.estoqueMin !== '') ? 'Todos os produtos com mínimo definido estão em dia.' : 'A lista aparece quando os produtos têm estoque contado e um mínimo definido. Comece pela aba Estoque: "Contar" e depois "Limites".'}</span></div>`}
     ${L.conferir.length ? `<h4 class="cp-sub">Conferir</h4><div class="cp-lista">${L.conferir.map((l) => linha(l, false)).join('')}</div>` : ''}
     ${L.produzir.length ? `<h4 class="cp-sub">Produzir</h4><ul class="cp-produzir">${L.produzir.map((l) => `<li><span>${escapeHTML(l.nome)}<small>${escapeHTML(l.motivo)}; os ingredientes já estão na lista acima</small></span><b>${l.qtd} un</b></li>`).join('')}</ul><p class="config-sub">Para registrar a produção, use o botão Produzir na aba Estoque.</p>` : ''}
+    ${etileno ? `<details class="cp-etileno"><summary>Na hora de guardar</summary><p>Guarde <b>${escapeHTML(etileno.emissores.join(', '))}</b> longe de <b>${escapeHTML(etileno.sensiveis.join(', '))}</b>.</p><p class="config-sub">As primeiras soltam gás etileno, que amadurece o que está perto: as folhas amarelam, murcham ou amargam mais rápido. Separe em caixas ou prateleiras diferentes, de preferência com ar circulando.</p></details>` : ''}
     ${nMarc ? `<div class="cp-rodape"><button class="btn-salvar-config" data-cp-acao="entrada">Dar entrada no estoque (${nMarc})</button></div>` : ''}`;
 }
 
