@@ -2940,3 +2940,40 @@ teste('loja: com 12 seções coloridas cada uma fica na sua posição e os produ
   assert.strictEqual(seq.filter((s) => s.t === 'c' && s.i === 2).length, 2, 'queijo tem os seus 2 produtos');
   semErros(erros); await fechar();
 });
+
+teste('vigia da tela: produto "montar" (X-Tudo) em card estreito (faixa de rolar e grade) não corta "Montar o seu" nas larguras de celular que deram erro', async () => {
+  const c = cenarioPadrao();
+  const prod = (nome, cat, preco = 18, extra = {}) => ({ nome, preco, unidade: 'un', cat, ativo: true, ...extra });
+  const produtos = {}; ['Pizza', 'Carne com jiló e cebola', 'Frango com pequi', 'Frango com catupiry', 'Queijo com calabresa', 'Queijo com calabresa e tomate'].forEach((n, i) => { produtos['p' + i] = prod(n, i < 2 ? 'carne' : i < 4 ? 'frango' : 'queijo', 18, i % 2 ? { precoDe: 22 } : {}); });
+  produtos.xt = prod('Pastel X-Tudo', 'queijo', 14, { precoDe: 20, montar: { grupos: [{ id: 'r', nome: 'Recheio', min: 0, max: 5, gratis: 0, opcoes: [{ id: 'a', nome: 'Carne', preco: 0, marcado: true }, { id: 'b', nome: 'Frango', preco: 0, marcado: true }] }] } });
+  c.lojas.bie = { ficha: { nome: 'Pastel Moe Coe', ativo: true, tipo: 'Pastel e açaí', tema: { primaria: '#1c201f', destaque: '#ffde59', fundo: '#fbf4e2', superficie: '#1c1d1f', texto: '#1c201f', botao: '#ffde59', etiqueta: 'selo' } },
+    produtos, categorias: [{ chave: 'carne', nome: 'Carne', ordem: 1 }, { chave: 'frango', nome: 'Frango', ordem: 2 }, { chave: 'queijo', nome: 'Queijo', ordem: 3 }],
+    config: { lojaAberta: true, diasAbertos: [0, 1, 2, 3, 4, 5, 6], minimo: 0, wpp: '5562999990000', vitrine: { secoes: [] } } };
+  for (const w of [360, 384, 414, 443]) {
+    const { pagina, erros, fechar } = await abrir('/?loja=bie', c, { contexto: { viewport: { width: w, height: 900 }, isMobile: true, hasTouch: true } });
+    await cards(pagina).first().waitFor({ timeout: 8000 }); await pagina.waitForTimeout(1200);
+    const achados = await pagina.evaluate(async () => (await import('/js/vigia-tela.js')).verificarTela());
+    assert.deepStrictEqual(achados.map((a) => `${a.nome} (${a.detalhe})`), [], `${w}px: o vigia não acha nada cortado`);
+    const rotulos = await pagina.$$eval('.card-add--montar span', (ss) => ss.map((s) => s.scrollWidth <= s.clientWidth));
+    assert.ok(rotulos.length >= 2 && rotulos.every(Boolean), `${w}px: "Montar o seu" inteiro, sem reticências`);
+    await fechar();
+  }
+});
+
+teste('vigia da tela: página sem tela (largura 0 / aba escondida) não gera aviso falso de "tela de 0px"', async () => {
+  const { pagina, erros, fechar } = await abrir('/', cenarioPadrao());
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  const r = await pagina.evaluate(async () => {
+    const m = await import('/js/vigia-tela.js'); const antes = m.verificarTela().length;
+    const w = Object.getOwnPropertyDescriptor(window, 'innerWidth'); Object.defineProperty(window, 'innerWidth', { configurable: true, get: () => 0 });
+    const d = Object.getOwnPropertyDescriptor(document.documentElement, 'clientWidth'); Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, get: () => 0 });
+    const semLargura = m.verificarTela().length;
+    if (w) Object.defineProperty(window, 'innerWidth', w); else delete window.innerWidth;
+    if (d) Object.defineProperty(document.documentElement, 'clientWidth', d); else delete document.documentElement.clientWidth;
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    const escondida = m.verificarTela().length;
+    return { antes, semLargura, escondida };
+  });
+  assert.deepStrictEqual(r, { antes: 0, semLargura: 0, escondida: 0 });
+  semErros(erros); await fechar();
+});

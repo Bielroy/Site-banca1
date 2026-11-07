@@ -92,3 +92,9 @@
 .item-alterar { border: 0; background: none; padding: 0 0 6px; font: inherit; font-size: .8rem; font-weight: 700; color: var(--forest-texto, var(--forest)); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 
 @media (prefers-reduced-motion: reduce) { .mt-foto img, .mt-op.pulo .mt-marca, .mt-op.treme, .mt-grupo.chama { animation: none; } }
+/* card estreito (faixa de rolar, 2 colunas em celular pequeno): "Montar o seu" + ícone não cabem e o texto era cortado com "…".
+   Sem o ícone e com menos folga nas laterais o rótulo cabe inteiro. */
+@container card-info (max-width: 160px) {
+    .card-acao.montar .card-add--montar { padding: 0 8px; gap: 6px; }
+    .card-add--montar .ico { display: none; }
+}

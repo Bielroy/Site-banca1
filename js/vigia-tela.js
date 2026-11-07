@@ -172,6 +172,9 @@ export function verificarTela() {
     };
     const modal = umModalAberto();
     const W = larguraDaTela();
+    // Página sem tela de verdade (aba em segundo plano, navegador "apagado", janela de 0 px): tudo mede 0 e o vigia acusaria
+    // o cabeçalho inteiro ("142px numa tela de 0px"). Não é defeito do site: não confere agora.
+    if (document.hidden || !(W >= 200) || !(innerHeight >= 200)) return [];
 
     // 1. a página mais larga que a tela: aponta o elemento mais "fundo" que passou da borda
     const raiz = document.scrollingElement || document.documentElement;
