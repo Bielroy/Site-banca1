@@ -34,6 +34,9 @@
 .vt-foto-mini img { width: 100%; height: 100%; object-fit: cover; }
 .vt-foto-bts { display: flex; gap: 8px; flex-wrap: wrap; }
 .vt-enviar { cursor: pointer; min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 999px; }
+.vt-ordem { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.vt-mover { min-height: 44px; padding: 0 14px; border: 1.5px solid var(--linha, #d8d1c1); border-radius: 10px; background: none; color: var(--forest); font: inherit; font-weight: 700; cursor: pointer; }
+.vt-mover:disabled { opacity: .4; cursor: default; }
 .vt-tirar, .vt-remover { min-height: 44px; padding: 0 14px; border: 0; background: none; color: var(--danger); font: inherit; font-weight: 700; cursor: pointer; }
 .vt-quadro { border: 1.5px solid var(--parchment); border-radius: 14px; padding: 12px 14px 6px; margin: 0 0 12px; min-width: 0; }
 .vt-quadro legend { font-weight: 800; padding: 0 4px; }

@@ -1842,6 +1842,34 @@ teste('painel: Vitrine monta uma seção colorida (categoria, cor pelo código, 
   semErros(erros); await fechar();
 });
 
+teste('painel: Vitrine muda a ordem das seções coloridas (primeira, subir, descer) e a loja segue essa ordem ao gravar', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/testes/tela/painel-aparencia.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForSelector('#vt-gravar', { timeout: 8000 });
+  for (const t of ['Carne', 'Frango', 'Pastéis']) {
+    await pagina.click('[data-acao-vt="mais-secao"]');
+    const i = (await pagina.locator('.vt-secao').count()) - 1;
+    const opcoes = await pagina.$$eval(`select[data-sc="${i}"][data-campo="cat"] option`, (os) => os.map((o) => o.value).filter(Boolean));
+    await pagina.selectOption(`select[data-sc="${i}"][data-campo="cat"]`, opcoes[i % opcoes.length]);
+    await pagina.fill(`input[data-sc="${i}"][data-campo="titulo"]`, t);
+  }
+  const titulos = () => pagina.$$eval('.vt-secao input[data-campo="titulo"]', (is) => is.map((x) => x.value));
+  assert.deepStrictEqual(await titulos(), ['Carne', 'Frango', 'Pastéis']);
+  assert.ok(await pagina.locator('.vt-secao').first().locator('[data-para="sobe"]').isDisabled(), 'a primeira não sobe mais');
+  assert.ok(await pagina.locator('.vt-secao').last().locator('[data-para="desce"]').isDisabled(), 'a última não desce mais');
+  await pagina.locator('.vt-secao').nth(2).locator('[data-para="primeira"]').click();
+  assert.deepStrictEqual(await titulos(), ['Pastéis', 'Carne', 'Frango'], 'Pastéis foi para o início, com o que foi digitado');
+  await pagina.locator('.vt-secao').nth(1).locator('[data-para="desce"]').click();
+  assert.deepStrictEqual(await titulos(), ['Pastéis', 'Frango', 'Carne']);
+  await pagina.locator('.vt-secao').nth(2).locator('[data-para="sobe"]').click();
+  assert.deepStrictEqual(await titulos(), ['Pastéis', 'Carne', 'Frango']);
+  await pagina.click('#vt-gravar');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config'), null, { timeout: 4000 });
+  const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config').dados);
+  assert.deepStrictEqual(g.vitrine.secoes.map((x) => x.titulo), ['Pastéis', 'Carne', 'Frango'], 'grava na ordem escolhida');
+  semErros(erros); await fechar();
+});
+
 teste('loja: quadro e "quem escolhe" entram no meio da vitrine, selos aparecem e o botão do quadro abre a categoria', async () => {
   const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
   const cen = cenarioPadrao();

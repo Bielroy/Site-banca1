@@ -68,7 +68,12 @@ function render() {
             <div class="ap-sec-corpo">
                 ${v.secoes.map((x, i) => `
                 <fieldset class="vt-quadro vt-secao" data-sc-i="${i}">
-                    <legend>Seção ${i + 1}</legend>
+                    <legend>Seção ${i + 1}${x.titulo ? ` · ${escapeHTML(x.titulo)}` : ''}</legend>
+                    ${v.secoes.length > 1 ? `<div class="vt-ordem" role="group" aria-label="Ordem da seção ${i + 1}">
+                        <button type="button" class="vt-mover" data-mover-secao="${i}" data-para="primeira" ${i === 0 ? 'disabled' : ''}>⤒ Primeira</button>
+                        <button type="button" class="vt-mover" data-mover-secao="${i}" data-para="sobe" ${i === 0 ? 'disabled' : ''}>↑ Subir</button>
+                        <button type="button" class="vt-mover" data-mover-secao="${i}" data-para="desce" ${i === v.secoes.length - 1 ? 'disabled' : ''}>↓ Descer</button>
+                    </div>` : ''}
                     <div class="form-group"><label>Categoria</label><select data-sc="${i}" data-campo="cat"><option value="">Escolha a categoria</option>${cats}</select></div>
                     <div class="form-group"><label>Título</label><input type="text" maxlength="40" data-sc="${i}" data-campo="titulo" value="${escapeHTML(x.titulo || '')}" placeholder="Ex.: Pastéis"></div>
                     <div class="form-group"><label>Frase (opcional)</label><input type="text" maxlength="160" data-sc="${i}" data-campo="texto" value="${escapeHTML(x.texto || '')}" placeholder="Ex.: Crocantes, na hora, direto da fritadeira."></div>
@@ -262,6 +267,14 @@ function ligar() {
         if (b.dataset.acaoVt === 'mais-faixa' && estado.faixas.length < MAX_FAIXAS_LOJA) { estado.faixas.push({ titulo: '', texto: '', cat: '' }); render(); return; }
         if (b.dataset.acaoVt === 'mais-secao' && estado.secoes.length < MAX_SECOES) { estado.secoes.push({ cat: '', titulo: '', texto: '', cor: '#efb94a', icone: '', estilo: 'fundo' }); render(); return; }
         if (b.dataset.acaoVt === 'sugerir-secoes') { estado.secoes = secoesSugeridas(categorias); render(); return; }
+        if (b.dataset.moverSecao !== undefined) {
+            const de = Number(b.dataset.moverSecao), l = estado.secoes; if (!l[de]) return;
+            const para = b.dataset.para === 'primeira' ? 0 : b.dataset.para === 'sobe' ? de - 1 : de + 1;
+            if (para < 0 || para >= l.length || para === de) return;
+            const [x] = l.splice(de, 1); l.splice(para, 0, x); render();
+            const nova = raiz.querySelector(`[data-sc-i="${para}"]`); if (nova) nova.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            return;
+        }
         if (b.dataset.removerSecao !== undefined) { estado.secoes.splice(Number(b.dataset.removerSecao), 1); render(); return; }
         if (b.dataset.removerFaixa !== undefined) { estado.faixas.splice(Number(b.dataset.removerFaixa), 1); render(); return; }
         if (b.dataset.tirarFoto) { const a = b.dataset.tirarFoto; const d = a === 'donos' ? estado.donos : estado.quadros[Number(a.slice(1))]; if (d) { delete d.img; previas.delete(d); } render(); }
