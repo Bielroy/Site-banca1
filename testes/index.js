@@ -4138,7 +4138,7 @@ teste('vitrine: texto do bloco dos pacotes e faixas da loja por categoria, dentr
   const um = V.faixasDaVitrine([{ id: 'm1', cat: 'molhos' }], { proprias: [{ titulo: 'Molhos', cat: 'molhos' }] });
   assert.deepStrictEqual(um, [], 'faixa com 1 produto só não aparece');
 });
-teste('vitrine: seções coloridas por categoria (cor válida, até 8, fundo imersivo ou faixa, texto legível, sugestão para pastel e açaí, ordem que não se mistura)', async () => {
+teste('vitrine: seções coloridas por categoria (cor válida, até 20, fundo imersivo ou faixa, texto legível, sugestão para pastel e açaí, ordem que não se mistura)', async () => {
   const V = await import(raiz('js/vitrine-lib.js')), P = await import(raiz('js/pacote-lib.js')), Ap = await import(raiz('js/aparencia-lib.js'));
   const v = V.vitrineSegura({ secoes: [
     { cat: 'pasteis', titulo: ' Pastéis <b> ', texto: 'crocantes', cor: '#EFB94A', icone: 'pastel' },
@@ -4146,9 +4146,9 @@ teste('vitrine: seções coloridas por categoria (cor válida, até 8, fundo ime
     { cat: '', titulo: 'Sem categoria' }, { cat: 'x', titulo: '' },
     { cat: 'a', titulo: 'A' }, { cat: 'b', titulo: 'B' }, { cat: 'c', titulo: 'C' } ] });
   assert.deepStrictEqual(v.secoes.map((x) => x.titulo), ['Pastéis <b>', 'Açaí', 'A', 'B', 'C'], 'sem categoria ou sem título some');
-  const muitas = V.vitrineSegura({ secoes: Array.from({ length: 12 }, (_, i) => ({ cat: 'c' + i, titulo: 'S' + i })) }).secoes;
+  const muitas = V.vitrineSegura({ secoes: Array.from({ length: 30 }, (_, i) => ({ cat: 'c' + i, titulo: 'S' + i })) }).secoes;
   assert.strictEqual(muitas.length, V.MAX_SECOES, 'no máximo MAX_SECOES');
-  assert.strictEqual(V.MAX_SECOES, 8);
+  assert.strictEqual(V.MAX_SECOES, 20);
   // jeito da seção: 'fundo' (imersivo) é o padrão; 'faixa' só quando escolhido; valor estranho vira 'fundo'
   assert.deepStrictEqual(V.vitrineSegura({ secoes: [{ cat: 'a', titulo: 'A' }, { cat: 'b', titulo: 'B', estilo: 'faixa' }, { cat: 'c', titulo: 'C', estilo: 'url(x)' }] }).secoes.map((x) => x.estilo), ['fundo', 'faixa', 'fundo']);
   for (let i = 0; i < 7; i++) assert.ok(P.ordemNaVitrine(0, 'secao', i) < P.ordemDaSecao(i + 1) - 1, `seção ${i} não encosta na ${i + 1}`);

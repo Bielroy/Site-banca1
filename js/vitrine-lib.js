@@ -146,7 +146,7 @@ export function iconeDaCategoria(nome) {
 // ---------------------------------------------------------------------
 export const MAX_QUADROS = 4;
 /** SEÇÕES COLORIDAS: cada categoria ganha uma faixa de cor com desenho (ex.: Pastéis dourado, Açaí roxo). */
-export const MAX_SECOES = 8;
+export const MAX_SECOES = 20;
 /** Jeito da seção: 'fundo' = a cor toma o fundo inteiro da seção e os produtos ficam soltos sobre ela (imersivo); 'faixa' = só a faixa do título. */
 export const ESTILOS_SECAO = ['fundo', 'faixa'];
 export const ICONES_SECAO = Object.keys(ARTES);
