@@ -2914,3 +2914,29 @@ teste('montar pedido: opções "já marcadas" (pastel X-Tudo) abrem marcadas, o 
   assert.deepStrictEqual(await on(), ['carne', 'frango', 'queijo'], 'ao Alterar, vale o que ele escolheu (não volta a marcar tudo)');
   semErros(erros); await fechar();
 });
+
+// ------------------------------------------------------------------ MUITAS SEÇÕES COLORIDAS (mais de 8)
+teste('loja: com 12 seções coloridas cada uma fica na sua posição e os produtos não se misturam entre seções (queijo em 3º, cremes no fim)', async () => {
+  const c = cenarioPadrao();
+  const nomes = ['Carne', 'Frango', 'Queijo', 'Doces', 'Pizza', 'Especiais', 'Salgados', 'Vegetais', 'Combos', 'Bebidas', 'Sucos', 'Cremes'];
+  const chaves = nomes.map((n) => n.toLowerCase());
+  const produtos = {};
+  chaves.forEach((k, i) => { for (let j = 0; j < 2; j++) produtos[`${k}${j}`] = { nome: `${nomes[i]} ${j + 1}`, preco: 10 + i, unidade: 'un', cat: k, ativo: true }; });
+  c.lojas.bie = { ficha: { nome: 'Pastel do Bié', ativo: true, tema: { primaria: '#4a1650', fundo: '#fff6e4', superficie: '#ffffff', texto: '#2a1230', sobrePrimaria: '#ffffff' } },
+    produtos, categorias: chaves.map((k, i) => ({ chave: k, nome: nomes[i], ordem: i + 1 })),
+    config: { lojaAberta: true, diasAbertos: [0, 1, 2, 3, 4, 5, 6], minimo: 0, wpp: '5562999990000',
+      vitrine: { secoes: chaves.map((k, i) => ({ cat: k, titulo: 'Seção ' + nomes[i], cor: ['#7a2b22', '#b7791f', '#2f5d4a', '#5a1f6b', '#1f5560', '#8c3b2a', '#4a3b1f', '#2f4f2f', '#5e2a3a', '#1f3b5e', '#6b4a1f', '#3b1f5e'][i], icone: '', estilo: i % 2 ? 'faixa' : 'fundo' })) } } };
+  const { pagina, erros, fechar } = await abrir('/?loja=bie', c);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForSelector('.bloco-secao[data-i="11"]', { state: 'attached', timeout: 4000 });
+  await pagina.waitForTimeout(800);
+  const seq = await pagina.evaluate(() => [...document.querySelectorAll('#lista-produtos .bloco-secao, #lista-produtos .produto-card[data-secao]')]
+    .filter((e) => e.offsetParent && e.getClientRects().length)
+    .map((e) => { const r = e.getBoundingClientRect(); return { t: e.classList.contains('bloco-secao') ? 'h' : 'c', i: Number(e.dataset.i ?? e.dataset.secao), y: Math.round(r.top + scrollY), x: Math.round(r.left) }; })
+    .sort((a, b) => a.y - b.y || a.x - b.x));
+  assert.ok(seq.filter((s) => s.t === 'h').length === 12, 'as 12 seções têm título: ' + JSON.stringify(seq.filter((s) => s.t === 'h').map((s) => s.i)));
+  const ordem = seq.map((s) => s.i);
+  assert.deepStrictEqual(ordem, [...ordem].sort((a, b) => a - b), 'seções na ordem da lista e sem produto de uma dentro da outra: ' + ordem.join(','));
+  assert.strictEqual(seq.filter((s) => s.t === 'c' && s.i === 2).length, 2, 'queijo tem os seus 2 produtos');
+  semErros(erros); await fechar();
+});

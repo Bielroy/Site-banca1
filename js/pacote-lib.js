@@ -43,9 +43,12 @@ export const ehPotinho = (p, cfg) => ehTempero(p, cfg) && !fracionavel(p.unidade
 // ORDEM NA VITRINE (CSS "order"): faixas que NUNCA se encostam. A nota da lista inteligente vai de 0 a 1000.
 //   soltos 0–1000 · cabeçalho dos pacotes 1999 · pacotes 2000–3000 · cabeçalho dos temperos 4999 · temperos 5000–6000
 // (antes os temperos começavam em 3000: o pacote menos pedido, com 3000, caía dentro do cantinho dos temperos)
-//   seções coloridas (até 4): ficam ANTES dos soltos, cada uma numa faixa de 2000: -8000, -6000, -4000, -2000 (cabeçalho = faixa - 1)
+//   seções coloridas (até 20): ficam ANTES dos soltos, cada uma numa faixa de 2000: -42000, -40000 ... -4000 (cabeçalho = faixa - 1)
 export const ORDEM_PACOTES = 2000, ORDEM_TEMPEROS = 5000;
-export const ordemDaSecao = (i) => -16000 + 2000 * Math.max(0, Math.min(7, Number(i) || 0));
+// UMA faixa de 2000 para cada uma das MAX_SECOES (20, js/vitrine-lib.js) seções: da -42000 à -4000, sempre antes dos soltos.
+// Se esta conta tiver menos faixas que seções, as últimas dividem a mesma faixa e os produtos se misturam entre elas.
+export const FAIXAS_DE_SECAO = 20;
+export const ordemDaSecao = (i) => -2000 * (FAIXAS_DE_SECAO + 1) + 2000 * Math.max(0, Math.min(FAIXAS_DE_SECAO - 1, Number(i) || 0));
 /** `p` = chance de o cliente levar (0 a 1); `tipo` = 'pacote' | 'tempero' | 'secao' | ''; `secao` = posição da seção (0 a 3). */
 export function ordemNaVitrine(p, tipo = '', secao = 0) {
     const n = Number(p), nota = Math.min(1000, Math.max(0, Math.round((1 - (Number.isFinite(n) ? n : 0.3)) * 1000)));

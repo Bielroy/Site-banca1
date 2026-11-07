@@ -4151,8 +4151,10 @@ teste('vitrine: seções coloridas por categoria (cor válida, até 20, fundo im
   assert.strictEqual(V.MAX_SECOES, 20);
   // jeito da seção: 'fundo' (imersivo) é o padrão; 'faixa' só quando escolhido; valor estranho vira 'fundo'
   assert.deepStrictEqual(V.vitrineSegura({ secoes: [{ cat: 'a', titulo: 'A' }, { cat: 'b', titulo: 'B', estilo: 'faixa' }, { cat: 'c', titulo: 'C', estilo: 'url(x)' }] }).secoes.map((x) => x.estilo), ['fundo', 'faixa', 'fundo']);
-  for (let i = 0; i < 7; i++) assert.ok(P.ordemNaVitrine(0, 'secao', i) < P.ordemDaSecao(i + 1) - 1, `seção ${i} não encosta na ${i + 1}`);
-  assert.ok(P.ordemNaVitrine(0, 'secao', 7) < P.ordemDaSecao(7) + 1999 && P.ordemDaSecao(7) + 1999 < 0, 'até a 8ª seção (e o fim dela) vem antes dos soltos');
+  for (let i = 0; i < V.MAX_SECOES - 1; i++) assert.ok(P.ordemNaVitrine(0, 'secao', i) < P.ordemDaSecao(i + 1) - 1, `seção ${i} não encosta na ${i + 1}`);
+  assert.strictEqual(P.FAIXAS_DE_SECAO, V.MAX_SECOES, 'uma faixa de ordem para cada seção possível (senão as últimas se misturam)');
+  assert.strictEqual(new Set(Array.from({ length: V.MAX_SECOES }, (_, i) => P.ordemDaSecao(i))).size, V.MAX_SECOES, 'cada seção tem a sua faixa, nenhuma repetida');
+  const ult = V.MAX_SECOES - 1; assert.ok(P.ordemNaVitrine(0, 'secao', ult) < P.ordemDaSecao(ult) + 1999 && P.ordemDaSecao(ult) + 1999 < 0, 'até a última seção (e o fim dela) vem antes dos soltos');
   assert.strictEqual(v.secoes[0].cor, '#efb94a', 'cor em minúscula');
   assert.strictEqual(v.secoes[1].cor, '#efb94a', 'cor inválida volta ao padrão (nunca vai para o CSS)');
   assert.strictEqual(v.secoes[1].icone, '', 'desenho que não existe some');
