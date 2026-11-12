@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Estudo de Design System UseBanca</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: relatório de leitura em coluna única, com as imagens dos protótipos mais largas que o texto.
+   Identidade: a do próprio UseBanca (verde-mata, creme, Fraunces + Figtree). */
+:root {
+  --fundo: #faf7f2; --sup: #ffffff; --sup2: #f2ede3; --linha: #e4dfd3;
+  --tx: #1a1a18; --tx2: #4f4f48; --tx3: #6b6b62;
+  --pri: #1a3a2a; --folha: #3f8a5e; --manga: #f2b33d; --sobre-pri: #ffffff;
+  --ok: #157538; --ok-f: #e1f5e7; --al: #9a5503; --al-f: #fdf0cf; --er: #b91c1c; --er-f: #fdeaea; --in: #0b6aa2; --in-f: #e2f1fa;
+  --mesa: #ece7db;
+  --titulo: 'Fraunces', Georgia, serif; --texto: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --fundo: #0f1612; --sup: #17201b; --sup2: #1e2a23; --linha: #2b3a31; --tx: #ecf1ec; --tx2: #b9c4bb; --tx3: #8d998f;
+  --pri: #7ec8a0; --folha: #7ec8a0; --sobre-pri: #0f1612;
+  --ok: #6fd193; --ok-f: #173524; --al: #f2b33d; --al-f: #3a2e12; --er: #f58a8a; --er-f: #3d1c1c; --in: #7cc4ee; --in-f: #15303f;
+  --mesa: #232b26; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --fundo: #0f1612; --sup: #17201b; --sup2: #1e2a23; --linha: #2b3a31; --tx: #ecf1ec; --tx2: #b9c4bb; --tx3: #8d998f;
+  --pri: #7ec8a0; --folha: #7ec8a0; --sobre-pri: #0f1612;
+  --ok: #6fd193; --ok-f: #173524; --al: #f2b33d; --al-f: #3a2e12; --er: #f58a8a; --er-f: #3d1c1c; --in: #7cc4ee; --in-f: #15303f;
+  --mesa: #232b26; color-scheme: dark }
+* { box-sizing: border-box; }
+body { background: var(--fundo); color: var(--tx); font: 400 16px/1.6 var(--texto); padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.col { max-width: 760px; margin-inline: auto; display: grid; gap: 18px; }
+.larga { max-width: 1120px; margin-inline: auto; }
+h1, h2, h3 { font-family: var(--titulo); font-weight: 700; letter-spacing: -.01em; text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(30px, 6vw, 44px); }
+h2 { font-size: clamp(23px, 4vw, 29px); margin-top: 30px; padding-top: 26px; border-top: 1px solid var(--linha); }
+h3 { font-size: 19px; margin-top: 8px; }
+p, ul, ol { margin: 0; } ul, ol { padding-left: 22px; display: grid; gap: 7px; }
+a { color: var(--pri); text-underline-offset: 3px; }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--pri); outline-offset: 3px; border-radius: 4px; }
+code { font: 500 .9em ui-monospace, 'SF Mono', Menlo, Consolas, monospace; background: var(--sup2); padding: 1px 5px; border-radius: 5px; }
+.rot { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--tx3); }
+.sub { color: var(--tx2); }
+.aviso { background: var(--al-f); color: var(--tx); border-radius: 14px; padding: 14px 16px; display: grid; gap: 4px; }
+.aviso b { color: var(--al); }
+.resumo { background: var(--sup); border: 1px solid var(--linha); border-radius: 16px; padding: 20px; display: grid; gap: 12px; }
+.resumo li::marker { color: var(--folha); }
+.pil { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.pil.ok { background: var(--ok-f); color: var(--ok); } .pil.al { background: var(--al-f); color: var(--al); }
+.pil.er { background: var(--er-f); color: var(--er); } .pil.in { background: var(--in-f); color: var(--in); }
+.rolagem { overflow-x: auto; border: 1px solid var(--linha); border-radius: 14px; background: var(--sup); }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; line-height: 1.45; }
+th { text-align: left; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--tx3); padding: 10px 12px; border-bottom: 1px solid var(--linha); white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--linha); vertical-align: top; min-width: 110px; }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 700; min-width: 130px; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+figure { margin: 6px 0; display: grid; gap: 8px; }
+figcaption { font-size: 14px; color: var(--tx2); max-width: 760px; margin-inline: auto; }
+figcaption b { color: var(--tx); }
+.quadro { border-radius: 16px; overflow-x: auto; border: 1px solid var(--linha); background: var(--mesa); }
+.quadro img { display: block; width: 100%; min-width: 720px; height: auto; }
+.fones { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; background: var(--mesa); border: 1px solid var(--linha); border-radius: 16px; padding: 18px; }
+.fones div { display: grid; gap: 8px; justify-items: center; align-content: start; }
+.fones img { display: block; width: 100%; max-width: 330px; height: auto; border-radius: 30px; }
+.fones span { font-size: 13.5px; font-weight: 600; color: var(--tx2); text-align: center; }
+.arraste { font-size: 12.5px; color: var(--tx3); text-align: right; }
+@media (min-width: 760px) { .arraste { display: none; } }
+.cam { display: grid; gap: 10px; }
+.cam div { display: grid; grid-template-columns: 150px 1fr; gap: 12px; padding: 12px 14px; border: 1px solid var(--linha); border-radius: 12px; background: var(--sup); }
+.cam b { font-family: var(--titulo); }
+@media (max-width: 560px) { .cam div { grid-template-columns: 1fr; gap: 2px; } }
+.decide { counter-reset: d; list-style: none; padding: 0; }
+.decide li { counter-increment: d; display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; padding: 12px 14px; border: 1px solid var(--linha); border-radius: 12px; background: var(--sup); }
+.decide li::before { content: counter(d); width: 30px; height: 30px; border-radius: 50%; background: var(--pri); color: var(--sobre-pri); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+footer { color: var(--tx3); font-size: 13.5px; margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--linha); }
+</style>
+</head>
+<body style="margin:0">
+<div class="col">
+  <p class="rot">UseBanca · estudo de 12 de novembro de 2026</p>
+  <h1>Design system para o UseBanca: o que as 28 referências ensinam e o que vale trazer</h1>
+  <p class="sub">Pesquisa em 28 repositórios de código aberto, com licenças conferidas, tamanhos medidos e uma proposta visual única para o painel, a loja e a plataforma.</p>
+
+  <div class="aviso"><p><b>Nada foi alterado no site.</b> Nenhum arquivo do UseBanca mudou, nenhuma biblioteca foi instalada e nada foi publicado. Este relatório e as imagens ficam numa branch separada (<code>pesquisa-design-system</code>) esperando a sua decisão.</p></div>
+
+  <div class="resumo">
+    <h3 style="margin:0">O que eu recomendo</h3>
+    <ul>
+      <li><b>Não adotar nenhum framework pronto</b> (Bootstrap, Bulma, Tabler, CoreUI, AdminLTE, Flowbite, daisyUI, Preline). Cada um pesa quase o mesmo que todo o CSS do painel de hoje e brigaria com o visual que o UseBanca já tem.</li>
+      <li><b>Construir um design system próprio</b>, pequeno, em cima dos tokens que já existem em <code>css/variables.css</code>: mesmas cores e letras, com escala única, tema escuro e cerca de 20 componentes.</li>
+      <li><b>Usar as referências como modelo de desenho</b>, não como código: Tabler, Carbon, Cal.com, Plane e Twenty mostram como resolver tabela, estado vazio, carregamento e navegação.</li>
+      <li><b>Trazer só três peças de código</b>, todas pequenas e de licença livre: ícones do Lucide, DOMPurify (só se aparecer texto com formatação) e, se você quiser gráficos interativos, Chart.js carregado só na aba de relatórios.</li>
+      <li><b>Não usar Lenis, ECharts nem FingerprintJS</b> agora. Os motivos estão nas seções 3 e 8.</li>
+    </ul>
+  </div>
+
+  <h2>Como a pesquisa foi feita, e os limites dela</h2>
+  <ul>
+    <li><b>Licenças:</b> baixei cada um dos 28 repositórios do GitHub em 12/11/2026 e li o arquivo de licença e o <code>package.json</code> de cada um. A tabela da seção 4 traz o que está escrito lá hoje.</li>
+    <li><b>Tamanhos:</b> onde o arquivo pronto para uso está no repositório, eu medi o tamanho comprimido (gzip). Onde não está, o valor aparece como "publicado, não medido".</li>
+    <li><b>Imagens:</b> são protótipos que eu desenhei para o UseBanca, inspirados nos padrões das referências. Não são capturas dos sites delas: daqui eu não consigo abrir sites externos num navegador. Os links de cada projeto estão no fim para você conferir ao vivo.</li>
+    <li><b>Análise visual:</b> vem do código e da documentação dos projetos, que eu conheço bem, e não de uma navegação tela a tela feita hoje.</li>
+    <li><b>Dados nas telas:</b> nomes, pedidos e valores são exemplos inventados para o desenho. As fotos de produto são marcadores coloridos.</li>
+  </ul>
+
+  <h2>A proposta em imagens</h2>
+  <p>Sete pranchas. Todas usam os mesmos tokens, então o painel, a loja e a plataforma parecem um produto só.</p>
+</div>
+
+<div class="larga">
+  <figure>
+    <div class="quadro"><img src="img/01-fundamentos.png" alt="Prancha de fundamentos: paleta de cores da marca, cores de estado, tema escuro, botões, pílulas, escala de letra, campos, cantos, espaços e ícones" width="2560" height="1926"></div>
+    <p class="arraste">Arraste para o lado para ver inteira →</p>
+    <figcaption><b>1. Fundamentos.</b> As cores e as letras são as de hoje. Muda a organização: uma escala de letra, quatro cantos, sete espaços, cores de estado com contraste suficiente para leitura e um tema escuro que troca só os tokens.</figcaption>
+  </figure>
+  <figure>
+    <div class="quadro"><img src="img/02-painel-vendas.png" alt="Painel de vendas no computador: menu lateral verde, quatro indicadores com minigráfico, gráfico de vendas por dia, mais vendidos e tabela de pedidos" width="2560" height="1918"></div>
+    <p class="arraste">Arraste para o lado para ver inteira →</p>
+    <figcaption><b>2. Painel de vendas no computador.</b> Menu lateral, indicadores com minigráfico, gráfico por dia e tabela de pedidos com a ação na própria linha. Modelo: os painéis do Tabler e do CoreUI, e a tabela do Carbon.</figcaption>
+  </figure>
+  <figure>
+    <div class="quadro"><img src="img/03-painel-escuro.png" alt="O mesmo painel de vendas no tema escuro" width="2560" height="1920"></div>
+    <p class="arraste">Arraste para o lado para ver inteira →</p>
+    <figcaption><b>3. O mesmo painel no tema escuro.</b> Nenhum componente foi redesenhado. Só os valores dos tokens mudaram, que é o jeito do daisyUI e do Web Awesome de fazer temas.</figcaption>
+  </figure>
+  <figure>
+    <div class="fones">
+      <div><img src="img/04-admin-celular-1.png" alt="Início do painel no celular com resumo do dia, alerta de estoque, atalhos e pedidos esperando" width="746" height="1522"><span>Início: resumo do dia e atalhos grandes</span></div>
+      <div><img src="img/04-admin-celular-2.png" alt="Lista de pedidos no celular em cards com filtros em chips" width="746" height="1522"><span>A tabela de pedidos vira lista de cards</span></div>
+      <div><img src="img/04-admin-celular-3.png" alt="Cadastro rápido de produto no celular" width="746" height="1522"><span>Cadastro rápido: foto, nome, preço</span></div>
+    </div>
+    <figcaption><b>4. Painel no celular.</b> Barra de navegação embaixo com cinco destinos, botões de pelo menos 44 px e campos com letra de 16 px, que é a regra que evita o zoom sozinho do iPhone.</figcaption>
+  </figure>
+  <figure>
+    <div class="fones">
+      <div><img src="img/05-estados-1.png" alt="Tela de clientes carregando, com blocos cinzas no lugar dos dados" width="746" height="1522"><span>Carregando: o desenho vem antes dos dados</span></div>
+      <div><img src="img/05-estados-2.png" alt="Tela de pedidos vazia no tema escuro, com explicação e botão para mandar o link da loja" width="746" height="1522"><span>Tela vazia, no tema escuro</span></div>
+      <div><img src="img/05-estados-3.png" alt="Aviso rápido no topo e gaveta de confirmação na parte de baixo" width="746" height="1522"><span>Aviso rápido e confirmação em gaveta</span></div>
+    </div>
+    <figcaption><b>5. Estados.</b> Carregamento em esqueleto, tela vazia que diz o próximo passo, aviso que some sozinho e confirmação ao alcance do polegar. Modelo: as diretrizes do Carbon e as telas vazias do Plane.</figcaption>
+  </figure>
+  <figure>
+    <div class="fones">
+      <div><img src="img/06-cliente-1.png" alt="Lobby da feira com capa do condomínio, busca, filtros e cartões das bancas" width="746" height="1522"><span>Lobby da feira: um link, todas as bancas</span></div>
+      <div><img src="img/06-cliente-2.png" alt="Loja do Zesildo com tema marrom e dourado, produtos em grade e barra do pedido" width="746" height="1522"><span>Loja com tema próprio (exemplo do Zesildo)</span></div>
+      <div><img src="img/06-cliente-3.png" alt="Tela de finalizar pedido com resumo, nome, endereço, prévia da mensagem e botão de enviar pelo WhatsApp" width="746" height="1522"><span>Modo “só cai no WhatsApp”</span></div>
+    </div>
+    <figcaption><b>6. Lado do cliente.</b> As três ideias que você pediu, já no mesmo sistema: o lobby da feira, a loja gourmet e o pedido que vai somado para o WhatsApp do dono. Hoje o link da feira já existe (<code>feira.html</code>), mas ele leva direto para uma banca; a lista de bancas só aparece se der erro.</figcaption>
+  </figure>
+  <figure>
+    <div class="quadro"><img src="img/07-plataforma.png" alt="Tela da plataforma com tabela de lojas, cadastro de feira em passos e escolha do modo de funcionamento da loja" width="2560" height="1594"></div>
+    <p class="arraste">Arraste para o lado para ver inteira →</p>
+    <figcaption><b>7. Plataforma.</b> Gestão de lojas em tabela, cadastro de feira em quatro passos e a escolha dos três jeitos de a loja funcionar. Modelo: o passo a passo de configuração do Cal.com e as tabelas do Twenty.</figcaption>
+  </figure>
+</div>
+
+<div class="col">
+  <h2>1. Os 15 melhores componentes encontrados</h2>
+  <div class="rolagem"><table>
+    <thead><tr><th>Componente</th><th>Onde está o melhor exemplo</th><th>Uso no UseBanca</th><th>Caminho</th></tr></thead>
+    <tbody>
+      <tr><td>Tabela que vira cards no celular</td><td>Tabler, Carbon</td><td>Pedidos, clientes, lojas, mensalidades</td><td><span class="pil al">adaptar</span></td></tr>
+      <tr><td>Indicador com minigráfico</td><td>Tabler, CoreUI</td><td>Início do painel, relatórios</td><td><span class="pil al">adaptar</span></td></tr>
+      <tr><td>Menu lateral que recolhe + barra inferior</td><td>CoreUI, AdminLTE, Fluent UI</td><td>Navegação do painel e da plataforma</td><td><span class="pil al">adaptar</span></td></tr>
+      <tr><td>Gaveta de baixo (bottom sheet)</td><td>Web Awesome, Flowbite</td><td>Confirmações e detalhes no celular</td><td><span class="pil al">adaptar</span> o projeto já tem gavetas</td></tr>
+      <tr><td>Esqueleto de carregamento</td><td>Carbon, daisyUI, Web Awesome</td><td>Listas de pedidos, clientes, produtos</td><td><span class="pil al">adaptar</span></td></tr>
+      <tr><td>Tela vazia com próximo passo</td><td>Carbon, Plane</td><td>Loja nova, dia sem pedido, busca sem resultado</td><td><span class="pil al">adaptar</span></td></tr>
+      <tr><td>Aviso rápido (toast)</td><td>Flowbite, Web Awesome</td><td>"Salvo", "Preço atualizado"</td><td><span class="pil al">adaptar</span></td></tr>
+      <tr><td>Passo a passo</td><td>Flowbite, Cal.com</td><td>Primeiros passos da loja, cadastro de feira</td><td><span class="pil al">adaptar</span></td></tr>
+      <tr><td>Filtros em chips com contagem</td><td>HyperUI, Preline, Plane</td><td>Pedidos por estado, clientes por tipo</td><td><span class="pil al">adaptar</span></td></tr>
+      <tr><td>Pílula de estado + linha do tempo</td><td>Tabler</td><td>Estado do pedido, da loja, da mensalidade</td><td><span class="pil al">adaptar</span></td></tr>
+      <tr><td>Campo com ajuda e erro no lugar</td><td>Carbon, Bootstrap, Cal.com</td><td>Todos os formulários</td><td><span class="pil al">adaptar</span></td></tr>
+      <tr><td>Controle segmentado e cartão de escolha</td><td>daisyUI, Fluent UI</td><td>Período do relatório, modo da loja</td><td><span class="pil al">adaptar</span></td></tr>
+      <tr><td>Busca geral por teclado</td><td>Twenty, Plane, Cal.com</td><td>Achar pedido, cliente ou produto no painel</td><td><span class="pil in">só a ideia</span> código é AGPL</td></tr>
+      <tr><td>Botões e chaves com microinteração</td><td>Uiverse</td><td>Botão que mostra "salvando", chave liga/desliga</td><td><span class="pil ok">reaproveitar</span> conferindo cada peça</td></tr>
+      <tr><td>Ícones em traço</td><td>Lucide, Phosphor</td><td>Painel, loja e plataforma</td><td><span class="pil ok">reaproveitar</span></td></tr>
+    </tbody></table></div>
+
+  <h2>2. Os 10 melhores exemplos de painel</h2>
+  <ol>
+    <li><b>Tabler.</b> O mais próximo do que o UseBanca precisa: indicadores, tabelas densas e legíveis, estados de pedido. É a melhor referência de composição.</li>
+    <li><b>CoreUI (versão gratuita).</b> Menu lateral que recolhe e cabeçalho com busca, bem resolvidos em telas médias.</li>
+    <li><b>AdminLTE 4.</b> Organização de painéis com muitos módulos, útil para o menu da plataforma.</li>
+    <li><b>Flowbite.</b> Bons blocos de painel e de formulário; mostra como ficam passo a passo e avisos.</li>
+    <li><b>Preline UI.</b> Layouts de aplicação e filtros de lista bem acabados.</li>
+    <li><b>Twenty.</b> Um CRM: tabela editável, visão em quadros e busca geral. Referência para gestão de clientes.</li>
+    <li><b>Plane.</b> Listas com filtros, agrupamento e telas vazias muito cuidadas.</li>
+    <li><b>Cal.com.</b> Configurações e primeiros passos em linguagem simples, o melhor modelo para o dono que "não sabe mexer".</li>
+    <li><b>Appsmith.</b> Painéis internos montados por blocos; referência de tabela com ações.</li>
+    <li><b>Carbon Design System.</b> Não é um painel pronto, mas é a documentação mais completa de tabela, carregamento e tela vazia.</li>
+  </ol>
+  <p class="sub">A ordem é pelo quanto cada um ajuda o UseBanca, não por qualidade geral. Dos dez, só os cinco primeiros são HTML e CSS; os outros são aplicações em React e servem como modelo de desenho.</p>
+
+  <h2>3. Compatibilidade com HTML, CSS e JavaScript puro</h2>
+  <p>O site aceita script só do próprio endereço (<code>script-src 'self'</code> na política de segurança). Então qualquer biblioteca teria de ser copiada para dentro do repositório, sem CDN. Isso pesa a favor de trazer pouco.</p>
+  <div class="rolagem"><table>
+    <thead><tr><th>Projeto</th><th>Funciona sem framework?</th><th>Veredito para o UseBanca</th></tr></thead>
+    <tbody>
+      <tr><td>Lucide</td><td>Sim. São arquivos SVG.</td><td><span class="pil ok">usar</span> copiando só os ícones necessários</td></tr>
+      <tr><td>Phosphor Icons</td><td>Sim. SVG em seis pesos.</td><td><span class="pil in">alternativa</span> ao Lucide; escolher um só</td></tr>
+      <tr><td>DOMPurify</td><td>Sim. Um arquivo, zero dependências.</td><td><span class="pil ok">usar quando precisar</span> de texto com formatação</td></tr>
+      <tr><td>Chart.js</td><td>Sim. Desenha em canvas.</td><td><span class="pil in">opcional</span> só na aba de relatórios</td></tr>
+      <tr><td>Motion</td><td>Sim, tem API para JavaScript puro.</td><td><span class="pil in">opcional</span> o CSS do projeto já cobre</td></tr>
+      <tr><td>Uiverse</td><td>Sim. Trechos de HTML e CSS.</td><td><span class="pil ok">usar</span> peça por peça</td></tr>
+      <tr><td>Web Awesome</td><td>Sim. Componentes web nativos.</td><td><span class="pil in">referência</span> difícil de vestir com o tema próprio</td></tr>
+      <tr><td>Bootstrap, Bulma, CoreUI, AdminLTE, Tabler</td><td>Sim, mas trazem o próprio CSS inteiro.</td><td><span class="pil al">só referência</span> pesam e conflitam</td></tr>
+      <tr><td>Flowbite, daisyUI, HyperUI, Preline</td><td>Feitos para Tailwind, que exige etapa de montagem.</td><td><span class="pil al">só referência</span></td></tr>
+      <tr><td>Apache ECharts</td><td>Sim.</td><td><span class="pil er">não usar</span> pesado demais para celular</td></tr>
+      <tr><td>Lenis</td><td>Sim.</td><td><span class="pil er">não usar</span> troca a rolagem nativa, risco alto no iPhone</td></tr>
+      <tr><td>FingerprintJS</td><td>Sim.</td><td><span class="pil er">não usar agora</span> ver seção de segurança</td></tr>
+      <tr><td>Carbon, Fluent UI</td><td>Em parte (têm componentes web, o foco é React).</td><td><span class="pil al">só referência</span></td></tr>
+      <tr><td>Cal.com, Twenty, Appsmith, Plane, AFFiNE</td><td>Não. São aplicações em React.</td><td><span class="pil al">só referência</span> de desenho</td></tr>
+      <tr><td>OWASP ASVS e Cheat Sheets</td><td>São documentos.</td><td><span class="pil ok">usar</span> como lista de conferência</td></tr>
+    </tbody></table></div>
+
+  <h2>4. Comparação de licenças</h2>
+  <p>Lido dos arquivos de licença em 12/11/2026. "Atribuição" quer dizer manter o aviso de direitos autorais junto do código copiado.</p>
+  <div class="rolagem"><table>
+    <thead><tr><th>Projeto</th><th>Licença</th><th>Uso comercial</th><th>Parte paga</th><th>Cuidados</th></tr></thead>
+    <tbody>
+      <tr><td>OWASP Cheat Sheet Series</td><td>CC BY-SA 4.0</td><td>Sim</td><td>Não</td><td>Se copiar texto, citar a fonte e manter a mesma licença no texto copiado. Consultar não exige nada.</td></tr>
+      <tr><td>OWASP ASVS</td><td>CC BY-SA 4.0</td><td>Sim</td><td>Não</td><td>Igual ao anterior.</td></tr>
+      <tr><td>DOMPurify 3.4</td><td>Apache 2.0 ou MPL 2.0, à escolha</td><td>Sim</td><td>Não</td><td>Manter o aviso de licença. Zero dependências.</td></tr>
+      <tr><td>FingerprintJS 5.3</td><td>MIT</td><td>Sim</td><td>Sim: a versão precisa (Fingerprint Identification) é fechada e paga</td><td>O próprio projeto avisa que a versão livre tem precisão bem menor.</td></tr>
+      <tr><td>Web Awesome 3.14</td><td>MIT</td><td>Sim</td><td>Existe plano Pro; não conferi o que entra nele</td><td>Atribuição.</td></tr>
+      <tr><td>Tabler</td><td>MIT</td><td>Sim</td><td>Não confirmei</td><td>Atribuição. Construído sobre Bootstrap.</td></tr>
+      <tr><td>Flowbite 4.0</td><td>MIT</td><td>Sim</td><td>Sim, Flowbite Pro</td><td>Depende de Tailwind e Popper.</td></tr>
+      <tr><td>Uiverse (galaxy)</td><td>MIT</td><td>Sim</td><td>Não</td><td>Peças feitas pela comunidade: conferir cada uma antes de copiar.</td></tr>
+      <tr><td>HyperUI</td><td>MIT</td><td>Sim</td><td>Não</td><td>Atribuição. Escrito para Tailwind.</td></tr>
+      <tr><td>Preline UI 5.1</td><td>MIT + "Fair Use License" própria</td><td>Sim, com condições</td><td>Sim, modelos pagos</td><td><b>Atenção:</b> proíbe produto concorrente e exige atribuição com link ao redistribuir. Melhor não copiar código.</td></tr>
+      <tr><td>daisyUI</td><td>MIT</td><td>Sim</td><td>Não no núcleo</td><td>Atribuição. Extensão de Tailwind.</td></tr>
+      <tr><td>Bootstrap</td><td>MIT</td><td>Sim</td><td>Não</td><td>Atribuição. A branch principal já é a 6 alfa.</td></tr>
+      <tr><td>Bulma 1.0</td><td>MIT</td><td>Sim</td><td>Não</td><td>Atribuição. Só CSS.</td></tr>
+      <tr><td>AdminLTE 4</td><td>MIT</td><td>Sim</td><td>Não confirmei</td><td>Atribuição. Exige Bootstrap.</td></tr>
+      <tr><td>CoreUI 5.9</td><td>MIT</td><td>Sim</td><td>Sim, CoreUI Pro</td><td>Atribuição. Exige Popper.</td></tr>
+      <tr><td>Carbon</td><td>Apache 2.0</td><td>Sim</td><td>Não</td><td>Manter avisos. A marca IBM não pode ser usada.</td></tr>
+      <tr><td>Fluent UI</td><td>MIT</td><td>Sim</td><td>Não</td><td>Atribuição. Fontes e marcas da Microsoft ficam fora da licença.</td></tr>
+      <tr><td>Lucide</td><td>ISC (parte herdada do Feather em MIT)</td><td>Sim</td><td>Não</td><td>Manter o aviso de licença junto dos ícones copiados.</td></tr>
+      <tr><td>Phosphor Icons 2.1</td><td>MIT</td><td>Sim</td><td>Não</td><td>Atribuição.</td></tr>
+      <tr><td>Chart.js 4.6</td><td>MIT</td><td>Sim</td><td>Não</td><td>Atribuição. Uma dependência pequena.</td></tr>
+      <tr><td>Apache ECharts 6.1</td><td>Apache 2.0</td><td>Sim</td><td>Não</td><td>Manter LICENSE e NOTICE.</td></tr>
+      <tr><td>Motion</td><td>MIT</td><td>Sim</td><td>Sim, exemplos e extras pagos</td><td>Atribuição.</td></tr>
+      <tr><td>Lenis 1.3</td><td>MIT</td><td>Sim</td><td>Não</td><td>Atribuição.</td></tr>
+      <tr><td>Cal.com</td><td>MIT</td><td>Sim</td><td>O produto comercial é separado</td><td>O repositório hoje se apresenta como "Cal.diy", sem o código empresarial.</td></tr>
+      <tr><td>Twenty</td><td>AGPL 3.0, com arquivos comerciais e alguns pacotes MIT</td><td>Com obrigação</td><td>Sim</td><td><b>Não copiar código:</b> a AGPL obrigaria a abrir o código do UseBanca. Só olhar o desenho.</td></tr>
+      <tr><td>Appsmith</td><td>Apache 2.0</td><td>Sim</td><td>Sim, edição empresarial</td><td>Manter avisos.</td></tr>
+      <tr><td>Plane</td><td>AGPL 3.0</td><td>Com obrigação</td><td>Sim</td><td><b>Não copiar código</b>, pelo mesmo motivo do Twenty.</td></tr>
+      <tr><td>AFFiNE</td><td>MIT na maior parte; o servidor tem licença própria</td><td>Sim, na parte MIT</td><td>Edição empresarial anunciada</td><td>Conferir a pasta de origem antes de copiar qualquer coisa.</td></tr>
+    </tbody></table></div>
+  <p class="sub">Isto é uma leitura técnica das licenças, não um parecer jurídico. Para a venda do UseBanca como produto, vale uma conferência com advogado antes de copiar código de terceiros.</p>
+
+  <h2>5. Arquitetura visual recomendada</h2>
+  <div class="cam">
+    <div><b>Tokens</b><span>Um arquivo só, evoluindo <code>css/variables.css</code>: cor, letra, espaço (4, 8, 12, 16, 24, 32, 48), cantos (8, 14, 20, pílula), três sombras e três tempos de animação. Componente nenhum escreve cor direta.</span></div>
+    <div><b>Paleta</b><span>Fica a de hoje: verde-mata <code>#1a3a2a</code>, folha <code>#4a9467</code>, manga <code>#f2b33d</code>, creme <code>#faf7f2</code>. As cores de estado escurecem um pouco para dar leitura em texto pequeno.</span></div>
+    <div><b>Letra</b><span>Fraunces em títulos e números, Figtree no resto, como já é. Escala fixa: 34, 26, 20, 16, 14 e 12.</span></div>
+    <div><b>Tema escuro</b><span>Hoje não existe. Entra trocando só os tokens, primeiro no painel. A loja do cliente continua com o tema que cada dono escolhe.</span></div>
+    <div><b>Componentes</b><span>Cerca de 20, com um nome só cada: botão, campo, card, pílula, chip, tabela, lista, gaveta, aviso, esqueleto, tela vazia, passo a passo, navegação lateral e inferior, indicador.</span></div>
+    <div><b>Ícones</b><span>Um conjunto só. O projeto já desenha ícones em traço à mão (<code>js/icones.js</code> e <code>js/icones-admin.js</code>); o Lucide tem o mesmo estilo e 2.052 desenhos prontos.</span></div>
+    <div><b>Animação</b><span>CSS e as transições de tela que o projeto já usa, com a curva "mola" que já existe. Só <code>transform</code> e <code>opacity</code>, e tudo desliga para quem pede menos movimento.</span></div>
+    <div><b>Regras do iPhone</b><span>Viram regra do sistema: campo com 16 px ou mais, área segura nas barras fixas, nada de <code>content-visibility</code> em card, largura da foto sempre escrita. Cada componente novo entra na suíte de testes de iPhone.</span></div>
+    <div><b>Loja do cliente</b><span>O tema de cada loja (cores e letras do dono) continua mandando. O design system define a forma dos componentes; a cor vem do dono, como na prancha 6.</span></div>
+  </div>
+
+  <h2>6. O que pode ser reaproveitado como está</h2>
+  <ul>
+    <li><b>Ícones do Lucide.</b> Copiar só os usados (uns 40) para o formato que <code>js/icones.js</code> já tem. Cada ícone tem em média 0,4 kB.</li>
+    <li><b>DOMPurify.</b> Um arquivo de 11,4 kB comprimido. O projeto hoje escapa texto com <code>escapeHTML</code>, que basta enquanto não houver texto com formatação. Se entrar descrição rica ou recado com negrito e link, é a peça certa.</li>
+    <li><b>Chart.js.</b> Se você quiser gráfico com toque e detalhe, carregado só ao abrir relatórios. Para barras simples como as da prancha 2, um SVG feito à mão resolve com zero peso.</li>
+    <li><b>Trechos do Uiverse.</b> Botão com estado de carregando, chave liga/desliga, pequenos efeitos. Cada peça é de um autor, então confiro a licença de cada uma antes.</li>
+    <li><b>OWASP ASVS e Cheat Sheets.</b> Como lista de conferência para as correções de segurança que já estão combinadas.</li>
+  </ul>
+
+  <h2>7. O que precisa ser adaptado (reescrito no jeito do UseBanca)</h2>
+  <ul>
+    <li><b>Tabela que vira cards</b> (Tabler, Carbon): reescrever em CSS próprio para pedidos, clientes, lojas e mensalidades.</li>
+    <li><b>Navegação</b> (CoreUI, AdminLTE): menu lateral no computador e barra inferior no celular, respeitando a área segura do iPhone.</li>
+    <li><b>Esqueleto, tela vazia e aviso rápido</b> (Carbon, Plane, Flowbite): padrões simples, escritos do zero com os tokens.</li>
+    <li><b>Passo a passo</b> (Cal.com, Flowbite): para os primeiros passos da loja e o cadastro de feira.</li>
+    <li><b>Indicadores e minigráficos</b> (Tabler): em SVG, sem biblioteca.</li>
+    <li><b>Busca geral</b> (Twenty, Plane): só a ideia. O código deles é AGPL e não entra.</li>
+    <li><b>Lobby da feira e modo WhatsApp:</b> telas novas, desenhadas nas pranchas 6 e 7.</li>
+  </ul>
+
+  <h2>8. Estimativa de impacto no desempenho</h2>
+  <p>Ponto de partida, medido no repositório: todo o CSS do UseBanca soma <b>109 kB</b> comprimido em 34 arquivos, e o painel carrega 15 deles, <b>49 kB</b>. O projeto não usa framework de interface, nem biblioteca de gráficos ou de ícones.</p>
+  <div class="rolagem"><table>
+    <thead><tr><th>Peça</th><th class="n">Tamanho comprimido</th><th>Como foi obtido</th><th>Leitura</th></tr></thead>
+    <tbody>
+      <tr><td>Bulma (CSS)</td><td class="n">63,6 kB</td><td>medido</td><td>Mais que todo o CSS do painel de hoje</td></tr>
+      <tr><td>Bootstrap 6 alfa (CSS + JS)</td><td class="n">50,4 + 58,4 kB</td><td>medido</td><td>Dobraria o peso do painel</td></tr>
+      <tr><td>CoreUI (CSS + JS)</td><td class="n">41,8 + 30,6 kB</td><td>medido</td><td>Idem</td></tr>
+      <tr><td>AdminLTE (CSS + JS)</td><td class="n">41,9 + 7,8 kB</td><td>medido</td><td>E ainda exige o Bootstrap junto</td></tr>
+      <tr><td>Apache ECharts completo</td><td class="n">359,2 kB</td><td>medido</td><td>Inviável em celular intermediário</td></tr>
+      <tr><td>Apache ECharts versão simples</td><td class="n">164,9 kB</td><td>medido</td><td>Ainda pesado</td></tr>
+      <tr><td>Chart.js completo</td><td class="n">cerca de 70 kB</td><td>publicado, não medido</td><td>Aceitável se carregar só nos relatórios</td></tr>
+      <tr><td>DOMPurify</td><td class="n">11,4 kB</td><td>medido</td><td>Leve</td></tr>
+      <tr><td>Lucide, 40 ícones</td><td class="n">cerca de 5 kB</td><td>estimado de 0,4 kB por ícone, antes de comprimir 16 kB</td><td>Leve</td></tr>
+      <tr><td>Lenis</td><td class="n">poucos kB</td><td>segundo o próprio projeto</td><td>Leve, mas o risco é de comportamento, não de peso</td></tr>
+      <tr><td>Motion</td><td class="n">de 2 a 20 kB conforme o uso</td><td>publicado, não medido</td><td>Dispensável hoje</td></tr>
+      <tr><td>Design system próprio (tokens + 20 componentes)</td><td class="n">de 8 a 12 kB</td><td>estimativa minha</td><td>Substitui regras repetidas; o total tende a cair</td></tr>
+    </tbody></table></div>
+  <ul>
+    <li><b>Celular intermediário:</b> o que trava não é só o download, é o tempo de o aparelho ler o script. Por isso a proposta não acrescenta nenhum script ao abrir a loja.</li>
+    <li><b>PWA:</b> tudo que entrar fica no próprio repositório e no cache do aplicativo, sem CDN.</li>
+    <li><b>Acessibilidade:</b> contraste das cores de estado conferido para texto pequeno, foco visível, alvos de toque de 44 px e respeito a "reduzir movimento".</li>
+    <li><b>Vídeo no catálogo:</b> a política de segurança hoje só aceita mídia do próprio site. Para vídeo vindo do R2 será preciso liberar esse endereço, com teste.</li>
+  </ul>
+
+  <h2>Segurança: o que as referências de segurança trazem</h2>
+  <ul>
+    <li><b>OWASP ASVS</b> é uma lista de requisitos em três níveis. Serve para transformar os "19 pontos" numa conferência com critério, item por item. O nível 1 é o alvo razoável agora.</li>
+    <li><b>OWASP Cheat Sheets</b> dão o como fazer de cada item: CSRF, sessão, upload de arquivo, cabeçalhos, SSRF. É a base para as correções que você ainda vai autorizar.</li>
+    <li><b>DOMPurify</b> é a defesa padrão contra script escondido em texto com formatação. Hoje não é necessário; passa a ser se entrar descrição rica.</li>
+    <li><b>FingerprintJS</b> identifica o aparelho do visitante. A licença é livre, mas o próprio projeto diz que a precisão da versão aberta é baixa, e identificar aparelho é tratar dado pessoal: pela LGPD precisa de base legal e de aviso na política de privacidade. O servidor já tem controle de risco e limite de tentativas. Recomendo não incluir agora.</li>
+  </ul>
+
+  <h2>Como eu faria, em etapas</h2>
+  <ol>
+    <li><b>Tokens e tema escuro</b> no painel, sem mudar nenhuma tela de lugar. Risco baixo.</li>
+    <li><b>Componentes base</b> (botão, campo, card, pílula, chip, aviso, gaveta, esqueleto, tela vazia), com testes de tela e de iPhone.</li>
+    <li><b>Início do painel e pedidos</b> no celular, que é onde o dono mais usa.</li>
+    <li><b>Produtos, clientes e relatórios.</b></li>
+    <li><b>Plataforma:</b> lojas, feiras, mensalidades.</li>
+    <li><b>Lado do cliente:</b> lobby da feira e modo WhatsApp.</li>
+  </ol>
+  <p>Cada etapa sai numa branch própria, com os testes passando, e só vai para o site quando você aprovar.</p>
+
+  <h2>O que eu preciso que você decida</h2>
+  <ol class="decide">
+    <li><span><b>A direção visual das pranchas está aprovada?</b> Se algo não agradou (cor, cantos, densidade), diga qual prancha e o quê.</span></li>
+    <li><span><b>Tema escuro:</b> só no painel, também na plataforma, ou não quer?</span></li>
+    <li><span><b>Ícones:</b> trocar os desenhados à mão pelos do Lucide, ou manter os atuais e só completar o que falta?</span></li>
+    <li><span><b>Gráficos:</b> SVG simples sem biblioteca (recomendo), ou Chart.js com toque e detalhe?</span></li>
+    <li><span><b>Por onde começar:</b> painel no celular (recomendo) ou lobby da feira e modo WhatsApp, que o Zesildo já pediu?</span></li>
+  </ol>
+
+  <h2>Fontes</h2>
+  <p class="sub">Repositórios lidos em 12/11/2026:</p>
+  <ul style="font-size:14.5px;gap:4px">
+    <li><a href="https://github.com/OWASP/CheatSheetSeries">OWASP Cheat Sheet Series</a> · <a href="https://github.com/OWASP/ASVS">OWASP ASVS</a> · <a href="https://github.com/cure53/DOMPurify">DOMPurify</a> · <a href="https://github.com/fingerprintjs/fingerprintjs">FingerprintJS</a></li>
+    <li><a href="https://github.com/shoelace-style/webawesome">Web Awesome</a> · <a href="https://github.com/tabler/tabler">Tabler</a> · <a href="https://github.com/themesberg/flowbite">Flowbite</a> · <a href="https://github.com/uiverse-io/galaxy">Uiverse</a> · <a href="https://github.com/markmead/hyperui">HyperUI</a> · <a href="https://github.com/htmlstreamofficial/preline">Preline UI</a> · <a href="https://github.com/saadeghi/daisyui">daisyUI</a></li>
+    <li><a href="https://github.com/twbs/bootstrap">Bootstrap</a> · <a href="https://github.com/jgthms/bulma">Bulma</a> · <a href="https://github.com/ColorlibHQ/AdminLTE">AdminLTE</a> · <a href="https://github.com/coreui/coreui">CoreUI</a> · <a href="https://github.com/carbon-design-system/carbon">Carbon</a> · <a href="https://github.com/microsoft/fluentui">Fluent UI</a></li>
+    <li><a href="https://github.com/lucide-icons/lucide">Lucide</a> · <a href="https://github.com/phosphor-icons/core">Phosphor Icons</a> · <a href="https://github.com/chartjs/Chart.js">Chart.js</a> · <a href="https://github.com/apache/echarts">Apache ECharts</a> · <a href="https://github.com/motiondivision/motion">Motion</a> · <a href="https://github.com/darkroomengineering/lenis">Lenis</a></li>
+    <li><a href="https://github.com/calcom/cal.com">Cal.com</a> · <a href="https://github.com/twentyhq/twenty">Twenty</a> · <a href="https://github.com/appsmithorg/appsmith">Appsmith</a> · <a href="https://github.com/makeplane/plane">Plane</a> · <a href="https://github.com/toeverything/AFFiNE">AFFiNE</a></li>
+  </ul>
+  <footer>Os ícones das pranchas são do Lucide (licença ISC). As letras são Fraunces e Figtree (licença OFL), as mesmas que o site já usa.</footer>
+</div>
+
+</body>
+</html>
