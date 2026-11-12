@@ -2977,3 +2977,54 @@ teste('vigia da tela: página sem tela (largura 0 / aba escondida) não gera avi
   assert.deepStrictEqual(r, { antes: 0, semLargura: 0, escondida: 0 });
   semErros(erros); await fechar();
 });
+
+teste('painel: tema escuro pelo menu "Mais opções" fica guardado no aparelho, o claro continua o padrão e todo texto se lê', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, ctx, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForSelector('.tab[data-aba="produtos"]', { state: 'attached', timeout: 15000 });
+  // padrão: claro, sem o atributo (nenhuma regra do escuro vale)
+  assert.strictEqual(await pagina.evaluate(() => document.documentElement.dataset.painelTema || ''), '');
+  const fundoClaro = await pagina.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await pagina.click('#btn-mais'); await pagina.click('#btn-tema');
+  assert.strictEqual(await pagina.evaluate(() => document.documentElement.dataset.painelTema), 'escuro');
+  assert.strictEqual(await pagina.getAttribute('#btn-tema', 'aria-pressed'), 'true');
+  assert.strictEqual((await pagina.textContent('#btn-tema-texto')).trim(), 'Tema claro', 'o botão diz o que faz');
+  assert.notStrictEqual(await pagina.evaluate(() => getComputedStyle(document.body).backgroundColor), fundoClaro);
+  // contraste: nenhum texto visível abaixo de 4:1 nas abas do dia a dia (papel da impressora e etiqueta "HOJE" são iguais ao claro)
+  const medir = () => pagina.evaluate(() => {
+    const num = (c) => { const m = c.match(/[\d.]+/g).map(Number); return { r: m[0], g: m[1], b: m[2], a: m[3] === undefined ? 1 : m[3] }; };
+    const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+    const sobre = (c, f) => ({ r: c.r * c.a + f.r * (1 - c.a), g: c.g * c.a + f.g * (1 - c.a), b: c.b * c.a + f.b * (1 - c.a), a: 1 });
+    const fundoDe = (el) => { const pilha = []; for (let e = el; e; e = e.parentElement) { const s = getComputedStyle(e); if (/gradient|url/.test(s.backgroundImage)) return null; const c = num(s.backgroundColor); if (c.a > 0) { pilha.push(c); if (c.a >= 0.999) break; } } let f = { r: 15, g: 22, b: 18, a: 1 }; for (const c of pilha.reverse()) f = sobre(c, f); return f; };
+    const ruins = [];
+    for (const el of document.querySelectorAll('body *')) {
+      if (!el.offsetParent || el.closest('svg, .ipr-papel, .com-hoje-tag')) continue;
+      if (![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 1)) continue;
+      const s = getComputedStyle(el); if (s.visibility === 'hidden' || +s.opacity < 0.5) continue;
+      const f = fundoDe(el); if (!f) continue; const c = sobre(num(s.color), f); const a = lum(c), b = lum(f);
+      const k = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); if (k < 4) ruins.push(`${k.toFixed(2)} "${el.textContent.trim().slice(0, 30)}"`);
+    }
+    return ruins;
+  });
+  for (const aba of ['produtos', 'relatorios', 'pdv', 'estoque', 'cupons', 'comunicados', 'aparencia', 'config']) {
+    await pagina.evaluate((a) => document.querySelector(`.tab[data-aba="${a}"]`).click(), aba);
+    await pagina.waitForTimeout(500);
+    await pagina.evaluate(() => document.querySelectorAll('details').forEach((d) => { d.open = true; }));
+    const ruins = await medir();
+    assert.deepStrictEqual(ruins, [], `aba ${aba}: texto difícil de ler no escuro`);
+  }
+  // a escolha fica no aparelho: recarregar abre escuro
+  await pagina.reload(); await pagina.waitForSelector('.tab[data-aba="produtos"]', { state: 'attached', timeout: 15000 });
+  assert.strictEqual(await pagina.evaluate(() => document.documentElement.dataset.painelTema), 'escuro');
+  assert.strictEqual(await pagina.evaluate(() => document.querySelector('meta[name="theme-color"]').content), '#0f1612');
+  // voltar ao claro
+  await pagina.click('#btn-mais'); await pagina.click('#btn-tema');
+  assert.strictEqual(await pagina.evaluate(() => document.documentElement.dataset.painelTema || ''), '');
+  assert.strictEqual(await pagina.evaluate(() => getComputedStyle(document.body).backgroundColor), fundoClaro, 'o claro volta igual ao original');
+  // a loja do cliente não pega o tema do painel, mesmo com a escolha guardada
+  const loja = await ctx.newPage(); await loja.goto(pagina.url().replace(/\/admin\.html.*$/, '/'));
+  await loja.evaluate(() => localStorage.setItem('painel-tema', 'escuro')); await loja.reload();
+  await loja.waitForSelector('#lista-produtos .produto-card', { timeout: 8000 });
+  assert.strictEqual(await loja.evaluate(() => document.documentElement.dataset.painelTema || ''), '');
+  semErros(erros); await fechar();
+});

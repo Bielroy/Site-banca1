@@ -1,0 +1,7 @@
+/* Acertos à mão do tema escuro do painel. Entra no fim de css/admin-escuro.css (ver lib/tema-escuro.js). */
+html[data-painel-tema="escuro"] { color-scheme: dark; background: #0f1612;
+  /* variáveis que só servem de TEXTO: valem para o que é escrito com style="" dentro do JavaScript */
+  --text-dark: #eaedeb; --text-mid: #c3ccc6; --text-light: #a5b3aa; }
+/* texto verde-escuro da marca escrito com style="" (o verde como FUNDO continua igual) */
+html[data-painel-tema="escuro"] [style*="color:var(--forest)"]:not([style*="background"]),
+html[data-painel-tema="escuro"] [style*="color: var(--forest)"]:not([style*="background"]) { color: #a3d6bd !important; }

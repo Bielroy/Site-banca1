@@ -37,6 +37,9 @@
     <link rel="stylesheet" href="./css/admin-impressora.css">
     <link rel="stylesheet" href="./css/admin-cadastro.css">
     <link rel="stylesheet" href="./css/admin-montar.css">
+    <!-- tema escuro do painel: só vale com html[data-painel-tema="escuro"] (js/painel-tema.js). Gerado por scripts/gerar-tema-escuro.js -->
+    <link rel="stylesheet" href="./css/admin-escuro.css">
+    <script type="module" src="./js/painel-tema.js"></script>
 </head>
 <body>
 
@@ -84,6 +87,7 @@
                 <a id="link-plataforma" href="./admin-plataforma" hidden>Plataforma (todas as lojas)</a>
                 <button type="button" id="btn-instalar-painel" hidden>Instalar o painel no celular</button>
                 <button type="button" id="btn-impressora"><i class="ic" data-i="impressora"></i> Impressora</button>
+                <button type="button" id="btn-tema" aria-pressed="false"><i class="ic" data-i="lua"></i> <span id="btn-tema-texto">Tema escuro</span></button>
                 <button type="button" id="btn-logout"><i class="ic" data-i="sair"></i> Sair</button>
             </div>
         </header>

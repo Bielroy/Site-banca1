@@ -5281,3 +5281,32 @@ teste('velocidade: estilos da loja num arquivo só e arquivos estáticos fora da
   // o passo do build escreve o arquivo
   assert.ok(/_routes\.json/.test(fs.readFileSync(raiz('scripts/cloudflare-arquivos.js'), 'utf8')));
 });
+
+teste('painel: tema escuro gerado está em dia, só vale com o atributo e não toca a loja do cliente', async () => {
+  const fs = require('fs');
+  const T = require(raiz('lib/tema-escuro.js'));
+  const ler = (a) => fs.readFileSync(raiz(a), 'utf8');
+  const esperado = T.gerar(ler, ler('css/admin-escuro-extra.css'));
+  assert.strictEqual(ler('css/admin-escuro.css'), esperado, 'css/admin-escuro.css desatualizado: rode node scripts/gerar-tema-escuro.js');
+  // toda regra do arquivo só vale no tema escuro (o claro, que é o original, não muda)
+  const semCom = esperado.replace(/\/\*[\s\S]*?\*\//g, '');
+  const seletores = [...semCom.matchAll(/(^|[{};])\s*([^{};@]+)\{/g)].map((m) => m[2].trim()).filter(Boolean);
+  assert.ok(seletores.length > 300, 'o gerador cobre o painel');
+  for (const s of seletores) for (const parte of s.split(',')) assert.ok(parte.trim().startsWith(T.ATRIBUTO), `regra fora do tema escuro: ${parte.trim().slice(0, 80)}`);
+  // o painel lista os mesmos arquivos que o gerador lê, e carrega o tema por último
+  const admin = ler('admin.html');
+  const links = [...admin.matchAll(/<link rel="stylesheet" href="\.\/(css\/[^"]+)">/g)].map((m) => m[1]);
+  assert.deepStrictEqual(links.slice(0, -1), T.ARQUIVOS, 'admin.html e lib/tema-escuro.js com a mesma lista de CSS');
+  assert.strictEqual(links[links.length - 1], 'css/admin-escuro.css');
+  assert.ok(/<script type="module" src="\.\/js\/painel-tema\.js"><\/script>\s*<\/head>/.test(admin), 'o tema entra no <head> (a tela já abre na cor certa)');
+  assert.ok(/id="btn-tema"/.test(admin), 'botão no menu Mais opções');
+  // a loja do cliente e a plataforma não carregam o tema do painel
+  for (const p of ['index.html', 'plataforma.html', 'feira.html']) assert.ok(!/admin-escuro|painel-tema/.test(ler(p)), `${p} não usa o tema do painel`);
+  assert.ok(!/admin-escuro/.test(ler('css/loja-tudo.css')));
+  // troca de cor pelo papel
+  const c = (h) => T.lerCor(h);
+  assert.ok(T.contraste(T.trocar(c('#1a1a18'), 'texto'), T.trocar(c('#ffffff'), 'fundo')) >= 7, 'texto principal legível no card');
+  assert.ok(T.contraste(T.trocar(c('#707065'), 'texto'), T.trocar(c('#faf7f2'), 'fundo')) >= 4.5, 'texto apagado ainda legível');
+  assert.strictEqual(T.trocar(c('#ffffff'), 'texto'), null, 'texto branco (em cima de cor) fica');
+  assert.strictEqual(T.trocar(c('#dc2626'), 'fundo'), null, 'fundo de cor forte fica');
+});
