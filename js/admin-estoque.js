@@ -15,6 +15,7 @@ import { marcarProdutoLocal, marcarCustoLocal } from './painel-catalogo.js';
 import { lerPainel } from './painel-cache.js';
 import { sobrasPereciveis } from './alertas-lib.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
 import { numeroDeCampo } from './aparencia-lib.js';
 import { temControle, situacao, sugestaoCompra, fmtQtd, ROTULO_TIPO, MOTIVOS_PERDA, custoDaFicha, margem, UNIDADES_RECEITA, paraEstoque, taxasDePerda, comFolgaDePerda } from './estoque-lib.js';
 
@@ -136,7 +137,7 @@ function render() {
                 ${ficha && ficha.valida ? `<button class="es-forte" data-es-acao="produzir" data-id="${escapeHTML(p.id)}">Produzir</button>` : ''}
                 <button data-es-acao="historico" data-id="${escapeHTML(p.id)}">Histórico</button>
             </div>
-        </article>`).join('') : '<p class="config-sub">Nenhum produto neste filtro.</p>'}
+        </article>`).join('') : estadoVazio({ icone: 'estoque', titulo: 'Nenhum produto neste filtro', texto: 'Toque em "Todos" ou mude a busca.', compacto: true })}
     </div>`;
 }
 
@@ -348,7 +349,7 @@ async function abrirHistorico(p) {
     garantirModal(); S.acao = null; $('es-m-corpo').oninput = null; $('es-m-corpo').onchange = null; $('es-m-corpo').onclick = null;
     $('es-m-titulo').textContent = p ? `Histórico de ${p.nome}` : 'Últimas movimentações';
     $('es-m-rodape').hidden = true;
-    $('es-m-corpo').innerHTML = '<p class="config-sub">Carregando...</p>';
+    $('es-m-corpo').innerHTML = esqueleto('Carregando...', 3);
     openModal('modal-estoque');
     try {
         const movs = p ? await movimentosRecentes('produtoId', p.id, 60) : (await getDocs(query(tcol('estoque_mov'), orderBy('em', 'desc'), limit(60)))).docs.map((d) => d.data());

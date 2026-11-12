@@ -37,6 +37,7 @@
     <link rel="stylesheet" href="./css/admin-impressora.css">
     <link rel="stylesheet" href="./css/admin-cadastro.css">
     <link rel="stylesheet" href="./css/admin-montar.css">
+    <link rel="stylesheet" href="./css/painel-base.css">
     <!-- tema escuro do painel: só vale com html[data-painel-tema="escuro"] (js/painel-tema.js). Gerado por scripts/gerar-tema-escuro.js -->
     <link rel="stylesheet" href="./css/admin-escuro.css">
     <script type="module" src="./js/painel-tema.js"></script>
@@ -133,7 +134,7 @@
             <div class="pl-cats" id="pl-cats" role="group" aria-label="Categoria" hidden></div>
             <div class="pl-filtros" id="pl-filtros" role="group" aria-label="Mostrar"></div>
             <div class="pl-cabeca" id="pl-cabeca"></div>
-            <div id="lista-produtos" class="pl-lista">Carregando os produtos...</div>
+            <div id="lista-produtos" class="pl-lista"><div class="pn-esqueleto" role="status" aria-busy="true"><span class="pn-oculto">Carregando os produtos...</span><div class="pn-esq-linha"><i></i><span></span><em></em></div><div class="pn-esq-linha" style="--l1:48%;--l2:55%"><i></i><span></span><em></em></div><div class="pn-esq-linha" style="--l1:70%;--l2:35%"><i></i><span></span><em></em></div><div class="pn-esq-linha" style="--l1:54%;--l2:46%"><i></i><span></span><em></em></div></div></div>
             <div class="pl-lote" id="pl-lote" role="region" aria-label="Produtos marcados" hidden></div>
             <div class="pl-extras">
                 <button class="bt bt-sec" id="btn-varias-fotos">Enviar várias fotos</button>
@@ -185,7 +186,7 @@
                 </div>
             </div>
             <input type="search" class="ped-busca" id="pedido-busca-input" placeholder="Buscar por cliente, condomínio, quadra ou lote..." aria-label="Buscar pedido">
-            <div id="lista-historico">Carregando os pedidos...</div>
+            <div id="lista-historico"><div class="pn-esqueleto" role="status" aria-busy="true"><span class="pn-oculto">Carregando os pedidos...</span><div class="pn-esq-linha"><i></i><span></span><em></em></div><div class="pn-esq-linha" style="--l1:48%;--l2:55%"><i></i><span></span><em></em></div><div class="pn-esq-linha" style="--l1:70%;--l2:35%"><i></i><span></span><em></em></div></div></div>
 
             <details class="ped-mais" id="ped-mais">
                 <summary>Números dos pedidos em andamento</summary>

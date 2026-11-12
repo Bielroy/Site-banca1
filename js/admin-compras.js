@@ -10,6 +10,7 @@
 import { getDoc } from './firebase.js';
 import { tcol, tdoc, chave } from './tenant.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
 import { fmtQtd } from './estoque-lib.js';
 import { listaDeCompras, textoDaLista } from './compras-lib.js';
 import { avisosDoClima, dicasEtileno } from './dicas-compra-lib.js';
@@ -127,7 +128,7 @@ async function lancar() {
 
 async function abrirHistorico() {
     garantirModal(); $('cp-m-titulo').textContent = 'Histórico de compras'; $('cp-m-rodape').hidden = true;
-    $('cp-m-corpo').innerHTML = '<p class="config-sub">Carregando...</p>'; openModal('modal-compras');
+    $('cp-m-corpo').innerHTML = esqueleto('Carregando...', 3); openModal('modal-compras');
     try {
         const movs = await movimentosRecentes('tipo', 'compra', 300);
         const dias = new Map();
@@ -135,7 +136,7 @@ async function abrirHistorico() {
         $('cp-m-corpo').innerHTML = dias.size ? [...dias.entries()].slice(0, 30).map(([d, ms]) => {
             const total = ms.reduce((s, m) => s + (Number(m.valor) || 0), 0);
             return `<section class="cp-dia"><h4>${dataLonga(d)}${total ? `<b>${fmt(total)}</b>` : ''}</h4><ul class="es-hist">${ms.map((m) => `<li class="pos"><div><b>${escapeHTML(m.nome)}</b><small>${m.custoUnit ? `${fmt(m.custoUnit)} por ${escapeHTML(m.unidade || 'un')}` : 'sem preço informado'}${m.obs && m.obs !== 'Lista de compras' ? ` · ${escapeHTML(m.obs)}` : ''}</small></div><div class="es-hist-num"><b>${fmtQtd(m.qtd, m.unidade)}</b>${m.valor ? `<small>${fmt(m.valor)}</small>` : ''}</div></li>`).join('')}</ul></section>`;
-        }).join('') : '<p class="config-sub">Nenhuma compra registrada ainda.</p>';
+        }).join('') : estadoVazio({ icone: 'compras', titulo: 'Nenhuma compra registrada ainda', compacto: true });
     } catch (e) { $('cp-m-corpo').innerHTML = `<p class="config-sub">${e && e.code === 'permission-denied' ? 'Sem permissão para ler o histórico. Publique as regras novas do Firestore.' : 'Não consegui carregar o histórico. Confira a internet.'}</p>`; }
 }
 

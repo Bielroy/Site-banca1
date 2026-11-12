@@ -933,6 +933,22 @@ html[data-painel-tema="escuro"] .ped-adicionais { color: #c3ccc6; }
 html[data-painel-tema="escuro"] #montar-corpo input[type="text"], html[data-painel-tema="escuro"] #montar-corpo input[type="number"], html[data-painel-tema="escuro"] #montar-corpo select { border: 1.5px solid #304138; background: #0f1713; color: #eaedeb; }
 html[data-painel-tema="escuro"] #montar-corpo input:focus, html[data-painel-tema="escuro"] #montar-corpo select:focus { border-color: #87c9a8; background: #19221d; }
 
+/* ---- css/painel-base.css ---- */
+html[data-painel-tema="escuro"] .pn-vazio { color: #bac5be; }
+html[data-painel-tema="escuro"] .pn-vazio-ico { background: #1a3c2a; color: #a3d6bd; }
+html[data-painel-tema="escuro"] .pn-vazio > b { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .pn-vazio p { color: #bac5be; }
+html[data-painel-tema="escuro"] .pn-vazio.erro .pn-vazio-ico { background: #3e1919; color: #ea7b7b; }
+html[data-painel-tema="escuro"] .pn-esq-linha { border: 1px solid #304138; background: #19221d; }
+html[data-painel-tema="escuro"] .pn-esq-linha i, html[data-painel-tema="escuro"] .pn-esq-linha em { background: #28362f; }
+html[data-painel-tema="escuro"] .pn-esq-linha span::before, html[data-painel-tema="escuro"] .pn-esq-linha span::after { background: #28362f; }
+html[data-painel-tema="escuro"] .pn-pil { background: #233029; color: #bac5be; }
+html[data-painel-tema="escuro"] .pn-pil.ok { background: #193e24; color: #8febb0; }
+html[data-painel-tema="escuro"] .pn-pil.atencao { background: #3e3319; color: #eab77b; }
+html[data-painel-tema="escuro"] .pn-pil.erro { background: #3e1919; color: #ea7b7b; }
+html[data-painel-tema="escuro"] .pn-pil.aviso { background: #19303e; color: #7bc1ea; }
+html[data-painel-tema="escuro"] #dashboard :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible, html[data-painel-tema="escuro"] .modal :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible { outline: 3px solid #8ac7a2; }
+
 /* ---- css/admin-escuro-extra.css (acertos à mão) ---- */
 /* Acertos à mão do tema escuro do painel. Entra no fim de css/admin-escuro.css (ver lib/tema-escuro.js). */
 html[data-painel-tema="escuro"] { color-scheme: dark; background: #0f1612;

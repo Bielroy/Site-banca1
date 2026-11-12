@@ -14,6 +14,7 @@
 import { getDocs, setDoc, deleteDoc, query, limit } from './firebase.js';
 import { tcol, tdoc } from './tenant.js';
 import { escapeHTML, showToast, openModal, closeModal, customConfirm } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
 import { hojeBR, dataLonga, DIAS_CURTOS } from './fechamento-lib.js';
 import { TIPOS, TIPOS_DE_DEMANDA, ocorrencias, gradeDoMes, somarDias, validarEntrada } from './calendario-lib.js';
 
@@ -41,7 +42,8 @@ const itemHtml = (o, comData) => `
 function render() {
     if (!el()) return;
     if (S.estado !== 'ok') {
-        el().innerHTML = `<div class="es-topo"><div><h3>Calendário</h3></div></div><div class="cp-vazio"><b>${S.estado === 'carregando' ? 'Carregando o calendário...' : 'Não consegui carregar o calendário.'}</b><span>${S.estado === 'erro' ? 'Confira a internet e abra a aba de novo. Se o painel acabou de ser atualizado, publique as regras novas do Firestore.' : ''}</span></div>`;
+        el().innerHTML = `<div class="es-topo"><div><h3>Calendário</h3></div></div>${S.estado === 'carregando' ? esqueleto('Carregando o calendário...', 3)
+            : estadoVazio({ erro: true, titulo: 'Não consegui carregar o calendário.', texto: 'Confira a internet e abra a aba de novo. Se o painel acabou de ser atualizado, publique as regras novas do Firestore.' })}`;
         return;
     }
     const [ano, mes] = S.mes.split('-').map(Number), hoje = hojeBR(), grade = gradeDoMes(ano, mes);

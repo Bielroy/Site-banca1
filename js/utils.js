@@ -77,6 +77,7 @@ export const showToast = (msg, isError = false) => {
   if (!t) { t = document.createElement('div'); t.className = 'toast'; t.id = 'toast'; t.setAttribute('role', 'alert'); document.body.appendChild(t); }
   t.textContent = msg;
   t.style.background = isError ? 'var(--danger)' : 'var(--forest)';
+  t.dataset.tipo = isError ? 'erro' : 'ok';   // o painel mostra um ícone de certo/erro (css/painel-base.css); a loja não usa
   t.classList.add('visivel');
   hapticFeedback(isError ? 'heavy' : 'light');
   clearTimeout(toastTimer);

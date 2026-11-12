@@ -11,6 +11,7 @@
 import { db, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch } from './firebase.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { escapeHTML, showToast, customConfirm } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
 import { pedirCatalogo } from './pedir-catalogo.js';
 
 const S = { cats: [], numeros: [], padrao: '', getProdutos: () => [], configPronta: false, erro: '' };
@@ -238,7 +239,7 @@ function render(forcar = false) {
 
         <div class="cg-lista">${S.cats.length
             ? S.cats.map((c, i) => linhaCategoria(c, i, S.cats.length, qtd.get(norm(c.chave)) || 0)).join('')
-            : '<p class="cg-vazio">Nenhuma categoria cadastrada ainda. Enquanto estiver vazio, a loja usa as categorias dos produtos, como sempre.</p>'}</div>
+            : estadoVazio({ icone: 'categorias', titulo: 'Nenhuma categoria cadastrada ainda', texto: 'Enquanto estiver vazio, a loja usa as categorias dos produtos, como sempre.', compacto: true })}</div>
 
         <h3 class="cg-titulo cg-titulo2" id="cg-numeros">Números de WhatsApp</h3>
         <p class="config-sub">Cada categoria manda o pedido para um número. O que não tiver número próprio vai para o <b>número padrão</b>${S.padrao ? ` (<b>${escapeHTML(fmtTel(S.padrao))}</b>)` : ''}, que se troca na aba <i class="ic" data-i="ajustes"></i> Configurações.</p>

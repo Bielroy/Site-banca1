@@ -3028,3 +3028,39 @@ teste('painel: tema escuro pelo menu "Mais opções" fica guardado no aparelho, 
   assert.strictEqual(await loja.evaluate(() => document.documentElement.dataset.painelTema || ''), '');
   semErros(erros); await fechar();
 });
+
+teste('painel: telas vazias no mesmo padrão (título, explicação, próximo passo), aviso com ícone e carregando em esqueleto', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForSelector('.tab[data-aba="produtos"]', { state: 'attached', timeout: 15000 });
+  // pedidos: fila vazia no padrão novo
+  await pagina.evaluate(() => document.querySelector('.tab[data-aba="relatorios"]').click());
+  const vazioPedidos = pagina.locator('#lista-historico .pn-vazio');
+  await vazioPedidos.waitFor({ timeout: 8000 });
+  assert.match(await vazioPedidos.innerText(), /Nenhum pedido na fila/);
+  assert.ok(await vazioPedidos.locator('.pn-vazio-ico svg').count(), 'o ícone foi desenhado');
+  // cupons: o botão da tela vazia leva ao campo do código
+  await pagina.evaluate(() => document.querySelector('.tab[data-aba="cupons"]').click());
+  const bt = pagina.locator('.pn-vazio button[data-pn-focar="cup-codigo"]');
+  await bt.waitFor({ timeout: 8000 }); await bt.click();
+  assert.strictEqual(await pagina.evaluate(() => document.activeElement && document.activeElement.id), 'cup-codigo');
+  // aviso rápido: tipo marcado (ícone de certo / de erro), texto igual
+  const tipo = await pagina.evaluate(async () => { const u = await import('/js/utils.js'); u.showToast('Teste certo'); const a = document.getElementById('toast').dataset.tipo; u.showToast('Teste erro', true); return [a, document.getElementById('toast').dataset.tipo, document.getElementById('toast').textContent]; });
+  assert.deepStrictEqual(tipo, ['ok', 'erro', 'Teste erro']);
+  // esqueleto: lê-se "Carregando..." para leitor de tela, sem aparecer
+  const esq = await pagina.evaluate(async () => { const m = await import('/js/painel-ui.js'); const d = document.createElement('div'); d.innerHTML = m.esqueleto('Carregando os clientes...', 3); document.body.appendChild(d);
+    const r = { linhas: d.querySelectorAll('.pn-esq-linha').length, texto: d.textContent, visivel: d.querySelector('.pn-oculto').getBoundingClientRect().width }; d.remove(); return r; });
+  assert.deepStrictEqual(esq, { linhas: 3, texto: 'Carregando os clientes...', visivel: 1 });
+  // nos dois temas, o texto da tela vazia se lê (contraste >= 4.5)
+  for (const tema of ['claro', 'escuro']) {
+    await pagina.evaluate((t) => { if (t === 'escuro') document.documentElement.dataset.painelTema = 'escuro'; else delete document.documentElement.dataset.painelTema; }, tema);
+    await pagina.evaluate(() => document.querySelector('.tab[data-aba="relatorios"]').click());
+    const k = await pagina.evaluate(() => {
+      const num = (c) => c.match(/[\d.]+/g).map(Number); const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const fundo = (el) => { for (let e = el; e; e = e.parentElement) { const c = num(getComputedStyle(e).backgroundColor); if (c[3] === undefined || c[3] > 0.9) return c; } return [255, 255, 255]; };
+      return [...document.querySelectorAll('#lista-historico .pn-vazio b, #lista-historico .pn-vazio p')].map((el) => { const a = lum(num(getComputedStyle(el).color)), b = lum(fundo(el)); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); });
+    });
+    assert.ok(k.length >= 2 && k.every((x) => x >= 4.5), `tema ${tema}: contraste ${k.map((x) => x.toFixed(2)).join(', ')}`);
+  }
+  semErros(erros); await fechar();
+});

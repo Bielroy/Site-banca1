@@ -9,6 +9,7 @@ import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
 import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm, focarCampo } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
 import { hojeDaLoja, iconeDaCategoria } from './vitrine-lib.js';
@@ -833,7 +834,10 @@ const renderProdutos = () => {
         </article>`;
     }).join('');
 
-    document.getElementById('lista-produtos').innerHTML = html || `<p class="pl-vazio">${produtosAtuais.length ? 'Nenhum produto aqui. Toque em "Todos" para ver a lista inteira.' : 'Nenhum produto cadastrado ainda. Toque em "Novo produto".'}</p>`;
+    document.getElementById('lista-produtos').innerHTML = html || (produtosAtuais.length
+        ? estadoVazio({ icone: 'produtos', titulo: 'Nenhum produto aqui', texto: 'Toque em "Todos" para ver a lista inteira, ou mude a busca.', compacto: true })
+        : estadoVazio({ icone: 'produtos', titulo: 'Nenhum produto cadastrado ainda', texto: 'Cadastre o primeiro: foto, nome e preço. Ele já aparece na loja.',
+            acao: { texto: '+ Novo produto', atributos: 'data-action="novo-produto"' } }));
     pintarLote();
 };
 document.getElementById('pl-filtros')?.addEventListener('click', (e) => { const b = e.target.closest('[data-pl-filtro]'); if (!b) return; adminFiltro = b.dataset.plFiltro; renderProdutos(); });
@@ -2236,15 +2240,8 @@ const acoplarRelatorioIADemanda = (historicoMap) => {
 const renderRelatoriosMaster = async () => {
     const listDiv = document.getElementById('lista-historico');
     if (pedidosGerais.length === 0) {
-        listDiv.innerHTML = `
-            <div style="text-align:center; padding:40px 20px; color:var(--text-light);">
-                <div style="font-size:2.5rem; margin-bottom:10px;"><i class="ic" data-i="vazio"></i></div>
-                <p style="font-weight:700; color:var(--text-mid); font-size:1.05rem;">Nenhum pedido na fila</p>
-                <p style="font-size:.88rem; margin-top:6px; line-height:1.6;">
-                    Só aparecem aqui pedidos em andamento.<br>
-                    Os já concluídos ficam em <b>Balanço</b>.
-                </p>
-            </div>`;
+        listDiv.innerHTML = estadoVazio({ icone: 'vazio', titulo: 'Nenhum pedido na fila',
+            texto: 'Só aparecem aqui pedidos em andamento. Quando um cliente pedir, o pedido aparece aqui e o celular avisa. Os já concluídos ficam em <b>Balanço</b>.' });
         document.getElementById('stat-pedidos').textContent = "0";
         document.getElementById('stat-receita').textContent = "R$ 0,00";
         return;
@@ -2412,12 +2409,8 @@ const renderCupons = () => {
     if (!alvo) return;
 
     if (cuponsAtuais.length === 0) {
-        alvo.innerHTML = `
-            <div style="text-align:center; padding:30px 20px; color:var(--text-light);">
-                <div style="font-size:2rem; margin-bottom:8px;"><i class="ic" data-i="cupom"></i></div>
-                <p style="font-weight:700; color:var(--text-mid);">Nenhum cupom criado</p>
-                <p style="font-size:.86rem; margin-top:6px;">Crie um acima para começar a oferecer desconto.</p>
-            </div>`;
+        alvo.innerHTML = estadoVazio({ icone: 'cupons', titulo: 'Nenhum cupom criado', texto: 'Crie um acima para começar a oferecer desconto.',
+            acao: { texto: 'Criar o primeiro cupom', atributos: 'data-pn-focar="cup-codigo"' } });
         return;
     }
 

@@ -5292,7 +5292,8 @@ teste('painel: tema escuro gerado está em dia, só vale com o atributo e não t
   const semCom = esperado.replace(/\/\*[\s\S]*?\*\//g, '');
   const seletores = [...semCom.matchAll(/(^|[{};])\s*([^{};@]+)\{/g)].map((m) => m[2].trim()).filter(Boolean);
   assert.ok(seletores.length > 300, 'o gerador cobre o painel');
-  for (const s of seletores) for (const parte of s.split(',')) assert.ok(parte.trim().startsWith(T.ATRIBUTO), `regra fora do tema escuro: ${parte.trim().slice(0, 80)}`);
+  const partes = (sel) => { const r = []; let p = 0, ini = 0; for (let i = 0; i < sel.length; i++) { const ch = sel[i]; if (ch === '(') p++; else if (ch === ')') p--; else if (ch === ',' && !p) { r.push(sel.slice(ini, i)); ini = i + 1; } } r.push(sel.slice(ini)); return r; };
+  for (const s of seletores) for (const parte of partes(s)) assert.ok(parte.trim().startsWith(T.ATRIBUTO), `regra fora do tema escuro: ${parte.trim().slice(0, 80)}`);
   // o painel lista os mesmos arquivos que o gerador lê, e carrega o tema por último
   const admin = ler('admin.html');
   const links = [...admin.matchAll(/<link rel="stylesheet" href="\.\/(css\/[^"]+)">/g)].map((m) => m[1]);

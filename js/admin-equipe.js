@@ -5,6 +5,7 @@
 import { auth, signInWithCustomToken } from './firebase.js';
 import { numeroDoAparelho } from './admin-aparelho.js';
 import { escapeHTML, showToast, customConfirm } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
 import { sairELimpar } from './admin-guard.js';
 import { PAPEIS, ATRIBUIVEIS } from './papeis-lib.js';
 
@@ -18,8 +19,8 @@ const registrosHtml = () => (S.registros === null ? '' : (S.registros.length
 // APARELHOS que entraram no painel desta loja (lib/aparelhos.js): o proprietário vê e desconecta o que não reconhece
 const COMO = { 'link-outro-aparelho': 'entrou por um link aberto em OUTRO aparelho', passkey: 'entrou com Face ID/digital', link: 'entrou pelo link do e-mail' };
 const aparelhosHtml = () => {
-    if (S.aparelhos === null) return '<p class="config-sub">Carregando os aparelhos...</p>';
-    if (!S.aparelhos.length) return '<p class="config-sub">Nenhum aparelho registrado ainda. Eles aparecem aqui conforme cada pessoa abre o painel.</p>';
+    if (S.aparelhos === null) return esqueleto('Carregando os aparelhos...', 2);
+    if (!S.aparelhos.length) return estadoVazio({ icone: 'cadeado', titulo: 'Nenhum aparelho registrado ainda', texto: 'Eles aparecem aqui conforme cada pessoa abre o painel.', compacto: true });
     return `<ul class="eq-lista eq-aparelhos">${S.aparelhos.map((a) => `
         <li class="eq-item${a.bloqueado ? ' eq-bloqueado' : ''}${a.pendente && !a.bloqueado ? ' eq-pendente' : ''}${a.como === 'link-outro-aparelho' ? ' eq-suspeito' : ''}">
             <span><b>${escapeHTML(a.nome)}${a.meu ? ' <em class="eq-fixo">você</em>' : ''}</b>
@@ -56,7 +57,8 @@ function render() {
                 ${m.papel === 'proprietario' ? '<em class="eq-fixo">Proprietário</em>' : `<select data-eq-papel="${escapeHTML(m.uid)}" aria-label="Papel de ${escapeHTML(m.email)}">${opcoes(m.papel)}</select>
                 <button type="button" class="cal-apagar" data-eq-remover="${escapeHTML(m.uid)}" aria-label="Tirar o acesso de ${escapeHTML(m.email)}">&times;</button>`}
             </li>`).join('')}</ul>` : '<p class="config-sub">Ninguém além de você por enquanto.</p>')
-        : `<div class="cp-vazio"><b>${S.estado === 'carregando' ? 'Carregando a equipe...' : 'Não consegui carregar a equipe.'}</b><span>${S.estado === 'erro' ? escapeHTML(S.erro || '') : ''}</span></div>`;
+        : S.estado === 'carregando' ? esqueleto('Carregando a equipe...', 2)
+        : estadoVazio({ erro: true, titulo: 'Não consegui carregar a equipe.', texto: escapeHTML(S.erro || 'Confira a internet e abra a aba de novo.') });
     el().innerHTML = `
     <div class="es-topo"><div><h3>Equipe</h3><p class="config-sub">Cada pessoa entra com o próprio e-mail e vê só o que o papel dela permite.</p></div></div>
     <div class="eq-novo">
