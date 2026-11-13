@@ -740,6 +740,37 @@ teste('loja SÓ VITRINE: mostra produto e preço, cada card leva ao WhatsApp com
   semErros(erros); await fechar();
 });
 
+teste('loja SACOLA NO WHATSAPP: adiciona como na loja completa, o único jeito de fechar é o WhatsApp do dono com a mensagem pronta, e só esvazia quando a pessoa diz que mandou', async () => {
+  const cen = cenarioPadrao();
+  cen.lojas['paes-da-lucia'].ficha = { ...cen.lojas['paes-da-lucia'].ficha, formato: 'whatsapp' };
+  const { pagina, erros, fechar } = await abrir('/?loja=paes-da-lucia', cen);
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForFunction(() => document.documentElement.dataset.formato === 'whatsapp', null, { timeout: 8000 });
+  assert.strictEqual(await pagina.locator('.card-zap').count(), 0, 'não é vitrine: tem botão de adicionar');
+  const card = cards(pagina).first();
+  await card.locator('[data-action="add"]').first().click();
+  await pagina.locator('#btn-carrinho-mobile').click();
+  await pagina.waitForFunction(() => /WhatsApp/.test(document.getElementById('btn-abrir-checkout')?.textContent || ''), null, { timeout: 4000 });
+  assert.strictEqual((await pagina.locator('#btn-abrir-checkout').innerText()).trim(), 'Finalizar no WhatsApp');
+  await pagina.locator('#btn-abrir-checkout').click();
+  await pagina.locator('#modal-reserva #sz-nome').waitFor({ timeout: 4000 });
+  assert.ok(!(await pagina.locator('#modal-checkout').evaluate((m) => m.classList.contains('active') || m.classList.contains('aberto'))), 'não abre a tela de entrega e pagamento');
+  assert.strictEqual(await pagina.locator('#sz-zap').getAttribute('aria-disabled'), 'true', 'sem nome, o botão fica apagado');
+  await pagina.locator('#sz-nome').fill('Maria');
+  await pagina.locator('#sz-obs').fill('bem passado');
+  const href = await pagina.locator('#sz-zap').getAttribute('href');
+  assert.ok(/^https:\/\/wa\.me\/5562\d+\?text=/.test(href), href);
+  const msg = decodeURIComponent(href.split('text=')[1]);
+  assert.ok(msg.includes('Quero fazer este pedido') && msg.includes('Nome: Maria') && msg.includes('Obs.: bem passado') && /R\$/.test(msg), msg);
+  if (process.env.FOTO_SACOLA_ZAP) { await pagina.waitForTimeout(1200); await pagina.screenshot({ path: process.env.FOTO_SACOLA_ZAP }); }
+  // tocar no WhatsApp (sem abrir de verdade) mostra "Pronto, mandei"; aí a sacola esvazia
+  await pagina.evaluate(() => { const a = document.getElementById('sz-zap'); a.removeAttribute('target'); a.addEventListener('click', (e) => e.preventDefault()); });
+  await pagina.locator('#sz-zap').click();
+  await pagina.locator('#reserva-depois:not([hidden]) .reserva-pronto').click();
+  await pagina.waitForFunction(() => document.getElementById('btn-abrir-checkout')?.disabled === true && !document.querySelector('#carrinho-itens [id^="cart-row-"]'), null, { timeout: 4000 });   // sacola vazia
+  semErros(erros); await fechar();
+});
+
 teste('cliente da feira que cai numa banca BLOQUEADA (link da feira, última banca usada) vai para outra banca ativa da mesma feira', async () => {
   const cen = cenarioPadrao();
   cen.lojas['paes-da-lucia'].ficha = { ...cen.lojas['paes-da-lucia'].ficha, ativo: false };
