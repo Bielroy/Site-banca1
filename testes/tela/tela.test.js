@@ -1979,10 +1979,89 @@ const cartao = (p, nome) => p.locator('.card-pedido', { hasText: nome });
 teste('painel: pedido pesado sai de "Pesar os itens"; item por unidade aparece em "un", não "kg"', async () => {
   const { pagina, erros, fechar } = await abrirFila(cenarioFila());
   const novo = await cartao(pagina, 'Cliente Novo').innerText(), pesado = await cartao(pagina, 'Namorada').innerText();
-  assert.ok(/2 un Tomate/.test(novo) && /Pesar os itens/.test(novo), 'pedido a pesar: "2 un" e o botão de pesar\n' + novo);
+  assert.ok(/2 un\s+Tomate/.test(novo) && /Pesar os itens/.test(novo), 'pedido a pesar: "2 un" e o botão de pesar\n' + novo);
   assert.ok(!/2 kg/.test(novo), 'pedido por unidade não aparece em kg');
   assert.ok(/SEPARANDO/.test(pesado) && /3 un \(0,9 kg\)/.test(pesado) && !/Pesar os itens/.test(pesado), 'já pesado vai para Separando\n' + pesado);
   assert.ok(await pagina.locator('#faixa-fila-copia').count() === 0, 'com o banco respondendo, sem faixa de fila desatualizada');
+  semErros(erros); await fechar();
+});
+
+teste('painel: faltou um item → tira do pedido, o cartão muda na hora e a mensagem ao cliente já vai com o pedido de desculpas; acrescentar item pelo painel', async () => {
+  const agora = Date.now(), hoje = new Date(agora - 3 * 3600000).toISOString().slice(0, 10);
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  cen.lojas.banca.pedidos = {
+    'ped-marina': { nome: 'Marina Souza', telefone: '62999990001', condominio: 'Jardins Florença', quadra: '3', lote: '12', pag: 'Dinheiro', status: 'preparando', total: 33.52, data: new Date(agora - 600000).toISOString(), entregaDia: hoje,
+      itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 4, unidade: 'kg', tipo: 'un', pesoFinal: 0.62, precoOriginal: 8.9, subtotal: 5.52 }, { id: 'ovos', nome: 'Ovos caipiras', qtd: 2, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 28 }] },
+    'ped-lucia': { nome: 'Dona Lúcia', quadra: '10', lote: '7', pag: 'Cartão', status: 'enviado', total: 42, data: new Date(agora - 3600000).toISOString(), entregaDia: hoje, itens: [{ id: 'ovos', nome: 'Ovos caipiras', qtd: 3, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 42 }] },
+  };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false }, antes: () => { window.__abertos = []; window.open = (u) => { window.__abertos.push(String(u)); return null; }; } });
+  await pagina.locator('.tab[data-aba="relatorios"]').click();
+  await pagina.locator('.card-pedido').first().waitFor({ timeout: 8000 });
+  // a caminho: os itens não mudam mais (sem o botão); separando: tem
+  assert.strictEqual(await cartao(pagina, 'Dona Lúcia').locator('[data-action="itens-pedido"]').count(), 0, 'pedido a caminho não muda de itens');
+  await cartao(pagina, 'Marina Souza').locator('[data-action="itens-pedido"]').click();
+  await pagina.locator('#modal-pedido-itens.aberto').waitFor({ timeout: 5000 });
+  assert.strictEqual(await pagina.locator('#pi-itens li').count(), 2);
+  await pagina.locator('[data-pi-tirar="0"]').click();
+  await pagina.locator('#btn-confirm-ok').click();
+  await pagina.waitForFunction(() => document.querySelectorAll('#pi-itens li').length === 1, null, { timeout: 5000 });
+  const chamada = servidor.chamadas.filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ajuste').pop();
+  assert.deepStrictEqual([chamada.corpo.op, chamada.corpo.pedidoId, chamada.corpo.indice, chamada.corpo.itemId], ['tirar', 'ped-marina', 0, 'tomate']);
+  assert.match(await pagina.locator('#pi-total').innerText(), /R\$\s*28,00/);
+  assert.ok(await pagina.locator('[data-pi-tirar="0"]').isDisabled(), 'o último item não sai: aí é cancelar o pedido');
+  // o cartão por trás já mudou, sem esperar o banco
+  const card = await cartao(pagina, 'Marina Souza').innerText();
+  assert.ok(/R\$\s*28,00/.test(card) && !/Tomate italiano\s+R\$/.test(card) && /Saiu do pedido \(em falta\): Tomate italiano/.test(card), card);
+  // avisar o cliente: a mensagem pronta, com as desculpas, para o telefone do pedido
+  await pagina.locator('#pi-avisar').click();
+  const link = decodeURIComponent((await pagina.evaluate(() => window.__abertos)).pop());
+  assert.ok(link.startsWith('https://wa.me/5562999990001?text='), link.slice(0, 60));
+  for (const pedaco of ['Olá, Marina!', 'em falta hoje e saiu do pedido', '*Tomate italiano*', 'Pedimos desculpas pelo transtorno.', '*Novo total: R$ 28,00*']) assert.ok(link.includes(pedaco), `falta "${pedaco}" em:\n${link}`);
+  // acrescentar: busca, escolhe e manda só o id e a quantidade (o preço é do servidor)
+  await pagina.locator('#pi-busca').fill('ovo');
+  await pagina.locator('[data-pi-escolher]').first().click();
+  await pagina.locator('#pi-qtd').fill('1');
+  await pagina.locator('#pi-acrescentar').click();
+  await pagina.waitForFunction(() => document.querySelectorAll('#pi-itens li').length === 2, null, { timeout: 5000 });
+  const mais = servidor.chamadas.filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ajuste').pop().corpo;
+  assert.strictEqual(mais.op, 'acrescentar'); assert.deepStrictEqual(Object.keys(mais.item).sort(), ['id', 'qtd', 'tipo']); assert.strictEqual(mais.item.qtd, 1);
+  assert.match(await pagina.locator('#pi-feito').innerText(), /Saiu: Tomate italiano[\s\S]*Entrou: Ovos caipira/);
+  semErros(erros); await fechar();
+});
+
+teste('painel: marcou "Entregue" sem querer → acha o pedido em "Ver os entregues" e volta uma etapa; a mensagem muda conforme a etapa', async () => {
+  const agora = Date.now(), hoje = new Date(agora - 3 * 3600000).toISOString().slice(0, 10);
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const item = { id: 'ovos', nome: 'Ovos caipiras', qtd: 3, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 42 };
+  cen.lojas.banca.pedidos = {
+    'ped-rafael': { nome: 'Rafael', telefone: '62999990002', quadra: '1', lote: '2', pag: 'PIX', status: 'arquivado', total: 42, data: new Date(agora - 60000).toISOString(), entregaDia: hoje, itens: [item] },
+    'ped-balcao': { nome: 'Balcão', origem: 'balcao', pag: 'Dinheiro', status: 'arquivado', total: 14, data: new Date(agora - 60000).toISOString(), itens: [item] },
+    'ped-lucia': { nome: 'Dona Lúcia', telefone: '62999990003', quadra: '10', lote: '7', pag: 'Cartão', status: 'enviado', total: 42, data: new Date(agora - 3600000).toISOString(), entregaDia: hoje, itens: [item] },
+  };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, antes: () => { window.__abertos = []; window.open = (u) => { window.__abertos.push(String(u)); return null; }; } });
+  await pagina.waitForSelector('.tab[data-aba="produtos"]', { state: 'attached', timeout: 15000 });
+  await pagina.evaluate(() => document.querySelector('.tab[data-aba="relatorios"]').click());
+  await pagina.locator('.card-pedido').first().waitFor({ timeout: 8000 });
+  // mensagem do pedido a caminho
+  await pagina.locator('.kb-col:not([hidden]) [data-action="mensagem-pedido"]').first().click();
+  let link = decodeURIComponent((await pagina.evaluate(() => window.__abertos)).pop());
+  assert.ok(link.includes('5562999990003') && link.includes('Seu pedido saiu para entrega.'), link.slice(0, 200));
+  // entregues: só aparecem quando a pessoa pede; venda de balcão não entra
+  assert.strictEqual(await pagina.locator('.pc-feitos-lista').count(), 0);
+  await pagina.locator('[data-action="ver-entregues"]').click();
+  await pagina.locator('.pc-feitos-lista .card-pedido').first().waitFor({ timeout: 6000 });
+  assert.strictEqual(await pagina.locator('.pc-feitos-lista .card-pedido').count(), 1, 'só o pedido da loja; a venda de balcão não volta');
+  const feito = pagina.locator('.pc-feitos-lista .card-pedido');
+  assert.match(await feito.innerText(), /Rafael[\s\S]*ENTREGUE/);
+  assert.strictEqual(await feito.locator('[data-action="itens-pedido"], [data-action="cancelar-pedido-painel"]').count(), 0, 'pedido entregue: sem mexer em item nem cancelar por aqui');
+  await feito.locator('[data-action="voltar-pedido"]').click();
+  assert.match(await pagina.locator('#confirm-title').innerText(), /Voltar o pedido de Rafael para "A caminho"\?/);
+  await pagina.locator('#btn-confirm-ok').click();
+  await pagina.waitForFunction(() => [...document.querySelectorAll('.kb-col:not([hidden]) .card-pedido')].some((c) => /Rafael/.test(c.innerText) && /A CAMINHO/.test(c.innerText)), null, { timeout: 6000 });
+  const volta = servidor.chamadas.filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ajuste').pop().corpo;
+  assert.deepStrictEqual([volta.op, volta.pedidoId, volta.de], ['voltar', 'ped-rafael', 'arquivado']);
+  assert.strictEqual(await pagina.locator('.pc-feitos-lista .card-pedido').count(), 0, 'saiu da lista de entregues');
+  assert.ok(await pagina.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'nada vaza para o lado no celular');
   semErros(erros); await fechar();
 });
 
@@ -2418,10 +2497,20 @@ teste('painel: "Vários de uma vez" cria os pastéis com o mesmo preço (preço 
   semErros(erros); await fechar();
 });
 
+// ajuste de pedido (de mentira): responde como o api/pdv.js de verdade (lib/ajuste.js)
+const ajusteFalso = (c) => {
+  if (c.op === 'voltar') return { sucesso: true, status: { arquivado: 'enviado', enviado: 'preparando', preparando: 'pendente' }[c.de] || 'pendente', de: c.de };
+  if (c.op === 'tirar') return { sucesso: true, total: 28, status: 'preparando', diferencaDoPago: 0, tirado: { op: 'tirou', nome: 'Tomate italiano', qtd: '0,62 kg', valor: 5.52 },
+    itens: [{ id: 'ovos', nome: 'Ovos caipiras', qtd: 2, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 28 }] };
+  if (c.op === 'acrescentar') return { sucesso: true, total: 42, status: 'preparando', diferencaDoPago: 0, acrescentado: { op: 'acrescentou', nome: 'Ovos caipira (dúzia)', qtd: '1 un', valor: 14 },
+    itens: [{ id: 'ovos', nome: 'Ovos caipiras', qtd: 2, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 28 }, { id: 'ovos', nome: 'Ovos caipira (dúzia)', qtd: 1, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 14, acrescentado: true }] };
+  return { __status: 400, error: 'Ação desconhecida.' };
+};
+
 (async () => {
   servidor = await subir({
     // pesagem (de mentira): devolve o pedido pesado como o api/pdv.js de verdade
-    '/api/pdv': (c) => (c.acao === 'impressao' ? { sucesso: true, ok: true } : c.acao === 'ponte' ? ponteFalsa(c) : c.acao === 'mensagem' ? { sucesso: true, id: c.chave, total: 24.3, itens: c.itens.length, aPesar: c.itens.filter((i) => i.id === 'banana' && i.tipo === 'un').length } : c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
+    '/api/pdv': (c) => (c.acao === 'ajuste' ? ajusteFalso(c) : c.acao === 'impressao' ? { sucesso: true, ok: true } : c.acao === 'ponte' ? ponteFalsa(c) : c.acao === 'mensagem' ? { sucesso: true, id: c.chave, total: 24.3, itens: c.itens.length, aPesar: c.itens.filter((i) => i.id === 'banana' && i.tipo === 'un').length } : c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
     // ranking (de mentira) da banca, ao contrário da ordem do cadastro, chegando 1,5 s depois
     '/api/analytics': (c) => (c.acao === 'painel' ? (c.atualizar
         // com "atualizar" o servidor confere pedido novo e recalcula: demora 2 s e traz 1 cliente a mais

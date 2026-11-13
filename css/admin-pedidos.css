@@ -1,0 +1,109 @@
+/* =====================================================================
+   css/admin-pedidos.css — CARTÃO DE PEDIDO do painel e a tela "Itens do pedido".
+   (js/admin.js → cartaoDoPedido; js/admin-pedido-itens.js)
+
+   O cartão era montado com estilo escrito dentro do JavaScript. Agora tem classes:
+   a etapa (data-etapa) dá a cor da faixa, da pílula e do botão principal.
+     novo · pix · pesar · prep (separando) · env (a caminho) · feito (entregue)
+   Cores por extenso de propósito: o tema escuro sai sozinho (scripts/gerar-tema-escuro.js).
+   ===================================================================== */
+.pc { --pd-cor: #1a3a2a; --pd-suave: #e8f5ee; --pd-tinta: #1a3a2a; position: relative; display: grid; gap: 10px; margin: 0 0 14px; padding: 14px 14px 12px 18px; background: #ffffff; border: 1px solid #e4dfd3; border-radius: 14px; overflow: hidden; }
+.pc::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--pd-cor); }
+.pc[data-etapa="pix"]   { --pd-cor: #0b6aa2; --pd-suave: #e2f1fa; --pd-tinta: #0a557f; }
+.pc[data-etapa="pesar"] { --pd-cor: #9a5503; --pd-suave: #fdf0cf; --pd-tinta: #7a4302; }
+.pc[data-etapa="prep"]  { --pd-cor: #9a5503; --pd-suave: #fdf0cf; --pd-tinta: #7a4302; }
+.pc[data-etapa="env"]   { --pd-cor: #2c5f45; --pd-suave: #e1f5e7; --pd-tinta: #1f4a34; }
+.pc[data-etapa="feito"] { --pd-cor: #6b6b62; --pd-suave: #efece4; --pd-tinta: #4a4a44; }
+
+.pc-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.pc-topo > div { min-width: 0; }
+.pc-topo h3 { margin: 0; font-family: var(--fonte-titulo); font-size: 1.12rem; line-height: 1.2; color: #1a3a2a; overflow-wrap: anywhere; }
+.pc-onde { display: flex; align-items: flex-start; gap: 4px; margin: 3px 0 0; font-size: .86rem; line-height: 1.35; color: #4a4a44; }
+.pc-onde .ic { width: 15px; height: 15px; flex: none; margin-top: 2px; }
+.pc-total { flex: none; font-family: var(--fonte-titulo); font-size: 1.18rem; color: #1a3a2a; white-space: nowrap; }
+
+.pc-marcas { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .78rem; }
+.pc-etapa { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; font-weight: 700; letter-spacing: .02em; background: var(--pd-suave); color: var(--pd-tinta); }
+.pc-etapa .ic { width: 14px; height: 14px; }
+.pc-pago { display: inline-flex; align-items: center; gap: 3px; padding: 3px 9px; border-radius: 999px; font-weight: 700; background: #e1f5e7; color: #157538; }
+.pc-pago .ic { width: 13px; height: 13px; }
+.pc-hora { color: #6b6b62; margin-left: auto; }
+
+.pc-itens { list-style: none; margin: 0; padding: 4px 12px; background: #faf7f2; border: 1px solid #ece7dc; border-radius: 10px; }
+.pc-itens li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: baseline; padding: 7px 0; font-size: .93rem; line-height: 1.35; color: #1a1a18; border-bottom: 1px dashed #e4dfd3; }
+.pc-itens li:last-child { border-bottom: 0; }
+.pc-itens li > b { font-weight: 700; color: #1a3a2a; white-space: nowrap; }
+.pc-itens li > span { min-width: 0; overflow-wrap: anywhere; }
+.pc-itens li > span small { display: block; font-size: .82rem; color: #4a4a44; }
+.pc-itens li > i { font-style: normal; font-variant-numeric: tabular-nums; color: #4a4a44; white-space: nowrap; }
+.pc-itens li > em { font-style: normal; font-size: .76rem; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: #fdf0cf; color: #7a4302; white-space: nowrap; }
+.pc-itens .pc-novo { display: inline-block; font-size: .7rem; font-weight: 700; padding: 1px 6px; margin-left: 4px; border-radius: 999px; background: #e2f1fa; color: #0a557f; vertical-align: middle; }
+
+.pc-nota { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: .86rem; line-height: 1.4; color: #4a4a44; }
+.pc-nota .ic { width: 16px; height: 16px; flex: none; margin-top: 2px; }
+.pc-nota.entrega { color: #1a3a2a; font-weight: 600; }
+.pc-nota.troco { color: #7a4302; }
+.pc-nota.obs { font-style: italic; }
+.pc-nota.falta { color: #8a1c1c; font-weight: 600; }
+.pc-acerto { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 9px 11px; border-radius: 10px; font-size: .88rem; line-height: 1.4; }
+.pc-acerto .ic { width: 17px; height: 17px; flex: none; margin-top: 1px; }
+.pc-acerto.cobrar { background: #fdf0cf; color: #5c3a02; }
+.pc-acerto.devolver { background: #fdeaea; color: #8a1c1c; }
+
+.pc-botao { width: 100%; min-height: 50px; padding: 12px 16px; border: 0; border-radius: 12px; font: 700 1rem var(--fonte-texto); color: #ffffff; background: var(--pd-cor); cursor: pointer; transition: transform .12s ease, filter .12s ease; }
+.pc-botao:hover { filter: brightness(1.08); }
+.pc-botao:active { transform: scale(.985); }
+.pc-botao:disabled { opacity: .55; cursor: default; }
+
+.pc-acoes { display: flex; flex-wrap: wrap; gap: 6px; }
+.pc-acoes button { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px 12px; border: 1.5px solid #e0dcd4; border-radius: 10px; background: #ffffff; color: #1a1a18; font: 600 .84rem/1.2 var(--fonte-texto); cursor: pointer; }
+.pc-acoes button .ic { width: 16px; height: 16px; flex: none; }
+.pc-acoes button:hover { background: #f6f2e9; }
+.pc-acoes button:disabled { opacity: .5; cursor: default; }
+.pc-acoes .pc-voltar { color: #0a557f; border-color: #c5dfef; }
+.pc-acoes .pc-cancelar { flex: 1 0 100%; min-height: 40px; border-color: transparent; background: transparent; color: #b3261e; }
+
+/* entregues de hoje e de ontem */
+.pc-feitos { display: grid; gap: 12px; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e4dfd3; }
+.pc-feitos > .bt { justify-self: start; }
+.pc-feitos-dica { margin: 0; font-size: .88rem; color: #4a4a44; }
+.pc-feitos-lista { display: grid; gap: 0; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); column-gap: 14px; }
+
+/* ---------- tela "Itens do pedido" ---------- */
+.pi-total { margin: 0 0 10px; font-size: .95rem; color: #4a4a44; }
+.pi-total b { font-family: var(--fonte-titulo); font-size: 1.15rem; color: #1a3a2a; }
+.pi-itens { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 8px; }
+.pi-itens li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e4dfd3; border-radius: 12px; background: #ffffff; }
+.pi-item { flex: 1; min-width: 0; font-size: .95rem; line-height: 1.35; color: #1a1a18; overflow-wrap: anywhere; }
+.pi-item b { color: #1a3a2a; }
+.pi-item small { display: block; font-size: .82rem; color: #4a4a44; }
+.pi-item span { display: block; font-size: .84rem; color: #4a4a44; font-variant-numeric: tabular-nums; }
+.pi-tirar { flex: none; min-height: 44px; padding: 8px 12px; border: 1.5px solid #f1c9c5; border-radius: 10px; background: #ffffff; color: #b3261e; font: 600 .84rem var(--fonte-texto); cursor: pointer; }
+.pi-tirar:disabled { opacity: .45; cursor: default; }
+.pi-mais { display: grid; gap: 8px; padding: 14px; border-radius: 14px; background: #f6f2e9; }
+.pi-mais h3, .pi-feito h3 { margin: 0; font-family: var(--fonte-titulo); font-size: 1.02rem; color: #1a3a2a; }
+.pi-dica { margin: 0; font-size: .84rem; line-height: 1.4; color: #4a4a44; }
+.pi-mais input[type="search"], .pi-linha input { width: 100%; min-height: 48px; padding: 10px 12px; border: 1.5px solid #d9d3c5; border-radius: 10px; background: #ffffff; color: #1a1a18; font: 400 16px var(--fonte-texto); }
+.pi-achados { display: grid; gap: 6px; }
+.pi-achados button { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 46px; padding: 8px 12px; border: 1px solid #e4dfd3; border-radius: 10px; background: #ffffff; color: #1a1a18; font: 400 .93rem var(--fonte-texto); text-align: left; cursor: pointer; }
+.pi-achados button b { flex: none; color: #1a3a2a; }
+.pi-achados button small { color: #6b6b62; }
+.pi-nada { margin: 0; font-size: .9rem; color: #6b6b62; }
+.pi-escolhido { display: grid; gap: 8px; padding: 12px; border: 1.5px solid #b8dfc8; border-radius: 12px; background: #ffffff; }
+.pi-nome { display: flex; justify-content: space-between; gap: 10px; margin: 0; font-size: .98rem; color: #1a1a18; }
+.pi-nome span { flex: none; color: #4a4a44; }
+.pi-tipos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.pi-tipos button { min-height: 44px; padding: 6px 8px; border: 1.5px solid #d9d3c5; border-radius: 10px; background: #ffffff; color: #1a1a18; font: 600 .84rem/1.2 var(--fonte-texto); cursor: pointer; }
+.pi-tipos button.on { border-color: #1a3a2a; background: #e8f5ee; color: #1a3a2a; }
+.pi-rot { font-size: .82rem; font-weight: 700; color: #4a4a44; }
+.pi-linha { display: grid; grid-template-columns: minmax(72px, 96px) 1fr; gap: 8px; }
+.pi-linha .btn { min-height: 48px; }
+.pi-previsto { margin: 0; min-height: 1.2em; font-size: .84rem; color: #4a4a44; }
+.pi-feito { display: grid; gap: 8px; margin-top: 16px; padding: 14px; border: 1.5px solid #b8dfc8; border-radius: 14px; background: #f1faf4; }
+.pi-feito ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: .92rem; color: #1a1a18; }
+.pi-feito li.saiu::marker { color: #b3261e; }
+.pi-feito li.entrou::marker { color: #157538; }
+.pi-feito .btn { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.pi-feito .btn .ic { width: 18px; height: 18px; }
+
+@media (prefers-reduced-motion: reduce) { .pc-botao { transition: none; } }

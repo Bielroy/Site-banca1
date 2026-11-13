@@ -982,6 +982,61 @@ html[data-painel-tema="escuro"] .rs-ver-todos { color: #a3d6bd; }
 html[data-painel-tema="escuro"] .rs-nota { color: #a5b3aa; }
 html[data-painel-tema="escuro"] .rs-esq { background: #28362f; }
 
+/* ---- css/admin-pedidos.css ---- */
+html[data-painel-tema="escuro"] .pc { background: #19221d; border: 1px solid #304138; }
+html[data-painel-tema="escuro"] .pc-topo h3 { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .pc-onde { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .pc-total { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .pc-pago { background: #193e24; color: #8febb0; }
+html[data-painel-tema="escuro"] .pc-hora { color: #a9b5ad; }
+html[data-painel-tema="escuro"] .pc-itens { background: #0f1713; border: 1px solid #2d3d35; }
+html[data-painel-tema="escuro"] .pc-itens li { color: #eaedeb; border-bottom: 1px dashed #304138; }
+html[data-painel-tema="escuro"] .pc-itens li > b { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .pc-itens li > span small { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .pc-itens li > i { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .pc-itens li > em { background: #3e3319; color: #ecc18d; }
+html[data-painel-tema="escuro"] .pc-itens .pc-novo { background: #19303e; color: #8dcaec; }
+html[data-painel-tema="escuro"] .pc-nota { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .pc-nota.entrega { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .pc-nota.troco { color: #ecc18d; }
+html[data-painel-tema="escuro"] .pc-nota.falta { color: #e58080; }
+html[data-painel-tema="escuro"] .pc-acerto.cobrar { background: #3e3319; color: #ecc88d; }
+html[data-painel-tema="escuro"] .pc-acerto.devolver { background: #3e1919; color: #e58080; }
+html[data-painel-tema="escuro"] .pc-botao { color: #ffffff; }
+html[data-painel-tema="escuro"] .pc-acoes button { border: 1.5px solid #304139; background: #19221d; color: #eaedeb; }
+html[data-painel-tema="escuro"] .pc-acoes button:hover { background: #222e28; }
+html[data-painel-tema="escuro"] .pc-acoes .pc-voltar { color: #8dcaec; border-color: #315972; }
+html[data-painel-tema="escuro"] .pc-acoes .pc-cancelar { color: #e9827c; }
+html[data-painel-tema="escuro"] .pc-feitos { border-top: 1px solid #304138; }
+html[data-painel-tema="escuro"] .pc-feitos-dica { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .pi-total { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .pi-total b { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .pi-itens li { border: 1px solid #304138; background: #19221d; }
+html[data-painel-tema="escuro"] .pi-item { color: #eaedeb; }
+html[data-painel-tema="escuro"] .pi-item b { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .pi-item small { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .pi-item span { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .pi-tirar { border: 1.5px solid #723731; background: #19221d; color: #e9827c; }
+html[data-painel-tema="escuro"] .pi-mais { background: #222e28; }
+html[data-painel-tema="escuro"] .pi-mais h3, html[data-painel-tema="escuro"] .pi-feito h3 { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .pi-dica { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .pi-mais input[type="search"], html[data-painel-tema="escuro"] .pi-linha input { border: 1.5px solid #34463d; background: #19221d; color: #eaedeb; }
+html[data-painel-tema="escuro"] .pi-achados button { border: 1px solid #304138; background: #19221d; color: #eaedeb; }
+html[data-painel-tema="escuro"] .pi-achados button b { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .pi-achados button small { color: #a9b5ad; }
+html[data-painel-tema="escuro"] .pi-nada { color: #a9b5ad; }
+html[data-painel-tema="escuro"] .pi-escolhido { border: 1.5px solid #33704c; background: #19221d; }
+html[data-painel-tema="escuro"] .pi-nome { color: #eaedeb; }
+html[data-painel-tema="escuro"] .pi-nome span { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .pi-tipos button { border: 1.5px solid #34463d; background: #19221d; color: #eaedeb; }
+html[data-painel-tema="escuro"] .pi-tipos button.on { border-color: #87c9a8; background: #1a3c2a; color: #a3d6bd; }
+html[data-painel-tema="escuro"] .pi-rot { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .pi-previsto { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .pi-feito { border: 1.5px solid #33704c; background: #193e25; }
+html[data-painel-tema="escuro"] .pi-feito ul { color: #eaedeb; }
+html[data-painel-tema="escuro"] .pi-feito li.saiu::marker { color: #e9827c; }
+html[data-painel-tema="escuro"] .pi-feito li.entrou::marker { color: #8febb0; }
+
 /* ---- css/admin-escuro-extra.css (acertos à mão) ---- */
 /* Acertos à mão do tema escuro do painel. Entra no fim de css/admin-escuro.css (ver lib/tema-escuro.js). */
 html[data-painel-tema="escuro"] { color-scheme: dark; background: #0f1612;
@@ -993,3 +1048,11 @@ html[data-painel-tema="escuro"] [style*="color: var(--forest)"]:not([style*="bac
 /* Resumo: no escuro as barras dos outros dias ficam apagadas, para "Hoje" saltar aos olhos */
 html[data-painel-tema="escuro"] .rs-barra { fill: #31503f; }
 html[data-painel-tema="escuro"] .rs-barra.hoje { fill: #7ec8a0; }
+/* Cartão de pedido: a pílula da etapa usa variáveis próprias; no escuro elas ganham os tons escuros */
+html[data-painel-tema="escuro"] .pc { --pd-cor: #2f7a55; --pd-suave: #1e3328; --pd-tinta: #a3d6bd; }
+html[data-painel-tema="escuro"] .pc[data-etapa="pix"] { --pd-cor: #1c6f9f; --pd-suave: #19303e; --pd-tinta: #8dcaec; }
+html[data-painel-tema="escuro"] .pc[data-etapa="pesar"], html[data-painel-tema="escuro"] .pc[data-etapa="prep"] { --pd-cor: #a8650f; --pd-suave: #3e3319; --pd-tinta: #ecc18d; }
+html[data-painel-tema="escuro"] .pc[data-etapa="env"] { --pd-cor: #2f7a55; --pd-suave: #193e24; --pd-tinta: #8febb0; }
+html[data-painel-tema="escuro"] .pc[data-etapa="feito"] { --pd-cor: #5d6a62; --pd-suave: #26302b; --pd-tinta: #c3ccc6; }
+html[data-painel-tema="escuro"] .pi-mais { background: #1b2620; }
+html[data-painel-tema="escuro"] .pi-feito { background: #17281f; border-color: #2f5a44; }

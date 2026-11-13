@@ -735,6 +735,38 @@ teste('mexer no pedido: tirar item que faltou (estoque volta), acrescentar o que
   assert.strictEqual(ped().total, 40.8, 'voltar etapa não mexe no valor');
 });
 
+teste('mensagens ao cliente (WhatsApp): pedido pronto com peso e conta, aviso de item em falta com desculpas, acréscimo e acerto de pedido já pago', async () => {
+  const M = await import(raiz('js/mensagem-lib.js'));
+  const pedido = { nome: 'marina souza', telefone: '(62) 99999-0001', pag: 'PIX', total: 44.52, cupom: { codigo: 'DEZ', desconto: 2 }, entrega: { horario: '17h às 18h', taxa: 5 }, obs: 'tocar o interfone',
+    itens: [{ nome: 'Tomate italiano', qtd: 4, unidade: 'kg', tipo: 'un', pesoFinal: 0.62, precoOriginal: 8.9, subtotal: 5.52 }, { nome: 'Ovos caipiras', qtd: 2, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 28 }, { nome: 'Queijo', qtd: 0.5, unidade: 'kg', tipo: 'kg', precoOriginal: 16, subtotal: 8, adicionais: 'meia cura' }] };
+  const t = M.mensagemPedidoPronto({ loja: 'Queijos do Zesildo', pedido, endereco: 'Jardins Florença · Qd 3 · Lt 12' });
+  for (const pedaco of ['*Queijos do Zesildo*', 'Olá, Marina! Seu pedido está separado e conferido.', '• *Tomate italiano*', '4 un · 0,62 kg × R$ 8,90 · *R$ 5,52*', '2 × R$ 14,00 · *R$ 28,00*', '0,5 kg × R$ 16,00', '_meia cura_', 'Itens: R$ 41,52', 'Cupom DEZ: − R$ 2,00', 'Entrega: R$ 5,00', '*Total: R$ 44,52*', 'Pagamento: PIX', 'Entrega: 17h às 18h', 'Endereço: Jardins Florença', 'Observação: tocar o interfone', 'Obrigado pela preferência!'])
+    assert.ok(t.includes(pedaco), `falta "${pedaco}" em:\n${t}`);
+  assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(t), 'mensagem sóbria: sem emoji');
+  assert.ok(!t.includes('Ficou de fora'), 'sem item tirado não há pedido de desculpas');
+  // faltou um item: a mensagem do pedido pronto também avisa
+  const comFalta = { ...pedido, ajustes: [{ op: 'tirou', nome: 'Alface crespa', qtd: '2 un', valor: 7 }, { op: 'voltou' }] };
+  assert.match(M.mensagemPedidoPronto({ loja: 'X', pedido: comFalta }), /_Ficou de fora: Alface crespa\. Estava em falta hoje e não conseguimos enviar\. Pedimos desculpas pelo transtorno\._/);
+  assert.match(M.mensagemPedidoPronto({ loja: 'X', pedido: { ...pedido, ajustes: [{ op: 'tirou', nome: 'Alface' }, { op: 'tirou', nome: 'Rúcula' }, { op: 'tirou', nome: 'Coentro' }] } }), /Ficaram de fora: Alface, Rúcula e Coentro\. Estavam em falta/);
+  // aviso de ajuste
+  const aj = M.mensagemDeAjuste({ loja: 'Queijos do Zesildo', pedido, tirados: [{ nome: 'Alface crespa', qtd: '2 un', valor: 7 }], total: 37.52 });
+  for (const pedaco of ['Precisamos avisar de uma mudança no seu pedido.', 'o item abaixo está em falta hoje e saiu do pedido', '• *Alface crespa* (2 un) · − R$ 7,00', 'Pedimos desculpas pelo transtorno.', '*Novo total: R$ 37,52*', 'Se preferir trocar por outro produto'])
+    assert.ok(aj.includes(pedaco), `falta "${pedaco}" em:\n${aj}`);
+  const mais = M.mensagemDeAjuste({ loja: 'X', pedido: { ...pedido, pagamento: { status: 'PAID', valorC: 4452 } }, acrescentados: [{ nome: 'Alface', qtd: '1 un', valor: 4 }, { nome: 'Manga', qtd: '2 un', aPesar: true }], total: 48.52, diferenca: 4 });
+  for (const pedaco of ['Atualizamos o seu pedido.', '• *Alface* (1 un) · + R$ 4,00', '• *Manga* (2 un) · valor depois da balança', 'Falta acertar na entrega: *R$ 4,00*'])
+    assert.ok(mais.includes(pedaco), `falta "${pedaco}" em:\n${mais}`);
+  assert.match(M.mensagemDeAjuste({ loja: 'X', pedido: { ...pedido, pagamento: { status: 'PAID' } }, tirados: [{ nome: 'A' }], total: 30, diferenca: -7 }), /Vamos devolver a diferença: \*R\$ 7,00\*/);
+  // a caminho e retirada
+  assert.match(M.mensagemACaminho({ loja: 'X', pedido, endereco: 'Qd 3' }), /Seu pedido saiu para entrega\.[\s\S]*\*Total: R\$ 44,52\*/);
+  assert.match(M.mensagemACaminho({ loja: 'X', pedido: { ...pedido, modo: 'retirada', feiraId: 'f', retiradaLocal: 'Praça central' } }), /pronto para retirada\.[\s\S]*Retirada na feira: Praça central/);
+  // link do WhatsApp: põe o 55, e DDD 55 (Santa Maria/RS) não vira código do país
+  assert.ok(M.linkDoWhatsApp('(62) 99999-0001', 'oi').startsWith('https://wa.me/5562999990001?text=oi'));
+  assert.ok(M.linkDoWhatsApp('55 99999-0001', 'oi').startsWith('https://wa.me/5555999990001?'));
+  assert.ok(M.linkDoWhatsApp('5562999990001', 'oi').startsWith('https://wa.me/5562999990001?'));
+  assert.ok(M.linkDoWhatsApp('', 'a b').startsWith('https://wa.me/?text=a%20b'));
+  assert.strictEqual(M.primeiroNome('  JOÃO pedro'), 'João');
+});
+
 teste('mexer no pedido (contas): cupom em % e entrega grátis são refeitos; pedido já pago mostra a diferença; venda de balcão e cancelado não mudam', () => {
   const A = require(raiz('lib/ajuste.js'));
   const ped = { status: 'preparando', total: 99, cupom: { codigo: 'DEZ', percentual: 10, desconto: 10 }, entrega: { taxaCheia: 8, gratisAcima: 80, taxa: 0 },

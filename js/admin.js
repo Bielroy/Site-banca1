@@ -27,6 +27,7 @@ import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel, mexeNa
 import { formatoDaFicha } from './formato-lib.js';
 import { ico } from './icones-admin.js';          // também liga a troca das marcas <i class="ic"> pelos desenhos
 import { linhaEndereco } from './endereco.js';
+import { mensagemPedidoPronto, mensagemACaminho, linkDoWhatsApp } from './mensagem-lib.js';   // textos do WhatsApp para o cliente
 import { abrirPrevisao } from './admin-previsao.js';
 import { abrirFechamento } from './admin-fechamento.js';
 
@@ -41,7 +42,7 @@ const TELAS = {
     crm: () => import('./admin-crm.js'), copiloto: () => import('./admin-copiloto.js'), calendario: () => import('./admin-calendario.js'),
     equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'), impressora: () => import('./admin-impressora.js'), avisos: () => import('./admin-avisos.js'),
     impressaoAuto: () => import('./impressao-auto.js'),
-    resumo: () => import('./admin-resumo.js'),
+    resumo: () => import('./admin-resumo.js'), pedidoItens: () => import('./admin-pedido-itens.js'),
     varios: () => import('./admin-varios.js'), precosDia: () => import('./admin-precos-dia.js'), vitrine: () => import('./admin-vitrine.js'), rotulos: () => import('./admin-rotulos.js'),
 };
 const comImpressao = async (fn) => { try { await fn(await TELAS.impressao()); } catch (e) { console.error(e); showToast('Não consegui abrir a impressão. Confira a internet e toque de novo.', true); } };
@@ -1486,104 +1487,13 @@ const abrirEsteira = (pedido) => {
 // e um emoji por produto para facilitar a leitura no celular.
 // =====================================================================
 
-// Emoji por tipo de produto. A busca é por pedaço do nome já sem acento,
-// então "Tomate Saladete" e "tomatinho cereja" caem os dois em 🍅.
-const EMOJI_PRODUTO = [
-    ['batata doce', '🍠'], ['batata', '🥔'], ['alho', '🧄'], ['cebola', '🧅'],
-    ['tomatinho', '🍅'], ['tomate', '🍅'], ['cenoura', '🥕'], ['alface', '🥬'], ['couve', '🥬'],
-    ['repolho', '🥬'], ['rucula', '🥬'], ['espinafre', '🥬'], ['agriao', '🥬'],
-    ['banana', '🍌'], ['maca', '🍎'], ['laranja', '🍊'], ['tangerina', '🍊'],
-    ['mexerica', '🍊'], ['limao', '🍋'], ['uva', '🍇'], ['morango', '🍓'],
-    ['melancia', '🍉'], ['melao', '🍈'], ['abacaxi', '🍍'], ['manga', '🥭'],
-    ['abacate', '🥑'], ['pepino', '🥒'], ['pimentao', '🫑'], ['pimenta', '🌶️'],
-    ['milho', '🌽'], ['brocolis', '🥦'], ['couve-flor', '🥦'], ['berinjela', '🍆'],
-    ['cogumelo', '🍄'], ['champignon', '🍄'], ['ovo', '🥚'], ['coco', '🥥'],
-    ['pera', '🍐'], ['pessego', '🍑'], ['ameixa', '🍑'], ['cereja', '🍒'],
-    ['kiwi', '🥝'], ['abobora', '🎃'], ['moranga', '🎃'], ['gengibre', '🫚'],
-    ['salsa', '🌿'], ['cheiro verde', '🌿'], ['coentro', '🌿'], ['manjericao', '🌿'],
-    ['hortela', '🌿'], ['cebolinha', '🌿'], ['feijao', '🫘'], ['ervilha', '🫛'],
-    ['vagem', '🫛'], ['mandioca', '🥔'], ['inhame', '🥔'], ['beterraba', '🥬'],
-    ['chuchu', '🥒'], ['quiabo', '🥒'], ['maracuja', '🍈'], ['goiaba', '🍈'],
-    ['mamao', '🧡'], ['acerola', '🍒'], ['kit', '🧺'], ['cesta', '🧺']
-];
-
-const emojiDoProduto = (nome) => {
-    const limpo = String(nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const achou = EMOJI_PRODUTO.find(([chave]) => limpo.includes(chave));
-    return achou ? achou[1] : '🥬';
-};
-
-// "said" -> "Said" | "maria clara" -> "Maria"
-const primeiroNomeBonito = (nomeCompleto) => {
-    const primeiro = String(nomeCompleto || '').trim().split(/\s+/)[0] || '';
-    return primeiro.charAt(0).toUpperCase() + primeiro.slice(1).toLowerCase();
-};
-
-const kgBonito = (valor) => String(valor).replace('.', ',');
-
+// O texto mora em js/mensagem-lib.js (um estilo só para todas as mensagens ao cliente, testado).
 const montarMensagemCliente = () => {
-    const p = ESTEIRA.pedido;
-    const risco = '━━━━━━━━━━━━━━';
-    const L = [];
-
-    L.push(`${ehLojaOriginal ? '🥬 ' : ''}*${nomeDaLoja}*`);          // cada loja assina com o próprio nome
-    L.push('');
-    L.push(`Olá, ${primeiroNomeBonito(p.nome)}! 👋`);
-    L.push('');
-    L.push('Seu pedido já foi separado e pesado com sucesso.');
-    L.push('');
-    L.push(risco);
-    L.push('📦 *ITENS DO PEDIDO*');
-    L.push('');
-
-    ESTEIRA.itens.forEach(item => {
-        const unid = String(item.unidade || '').toLowerCase();
-        const porPeso = ['kg', 'g', 'grama', 'quilo', 'l', 'litro'].includes(unid);
-
-        L.push(`${emojiDoProduto(item.nome)} *${item.nome}*`);
-
-        if (ehItemDeBalanca(item)) {
-            // Pediu por unidade, mas foi para a balança: mostra os dois dados
-            L.push(`• Quantidade: ${item.qtd} un`);
-            L.push(`• Peso: ${kgBonito(item.pesoFinal)} kg`);
-        } else if (porPeso) {
-            L.push(`• Peso: ${kgBonito(item.qtd)} ${unid}`);
-        } else {
-            L.push(`• Quantidade: ${item.qtd}`);
-        }
-
-        L.push(`• Valor: ${fmt(valorDoItem(item))}`);
-        L.push('');
+    const conta = contaDaEsteira();
+    return mensagemPedidoPronto({
+        loja: nomeDaLoja, pedido: ESTEIRA.pedido, endereco: linhaEndereco(ESTEIRA.pedido), itens: ESTEIRA.itens.map((i) => ({ ...i, subtotal: valorDoItem(i) })),
+        conta: { itens: conta.itens, desconto: ESTEIRA.desconto ?? conta.desconto, entrega: ESTEIRA.entrega ?? conta.entrega, total: ESTEIRA.totalFechado ?? conta.total },
     });
-
-    L.push(risco);
-    if (ESTEIRA.desconto > 0) L.push(`🎁 Desconto do cupom: -${fmt(ESTEIRA.desconto)}`);
-    if (ESTEIRA.entrega > 0) L.push(`🛵 Entrega: ${fmt(ESTEIRA.entrega)}`);
-    const rotuloHora = p.modo === 'retirada' ? 'Retirada' : 'Entrega';
-    if (p.entrega?.horario) L.push(`🕒 ${rotuloHora}: ${p.entrega.horario}`);
-    else if (p.entrega?.horarioACombinar) L.push(`🕒 ${rotuloHora}: horário a combinar`);
-    L.push(`💰 *Total: ${fmt(ESTEIRA.totalFechado ?? contaDaEsteira().total)}*`);
-    L.push('');
-    L.push(`💳 Pagamento: ${p.pag || 'a combinar'}`);
-
-    if (p.troco) {
-        L.push(`💵 Troco para: ${p.troco}`);
-    }
-
-    L.push('');
-    if (p.modo === 'retirada') L.push(`📍 *${p.feiraId ? 'Retirada na feira' : 'Retirada na banca'}* (o cliente busca)${p.retiradaLocal ? `: ${p.retiradaLocal}` : ''}`);
-    else { L.push('📍 *Endereço de entrega:*'); L.push(linhaEndereco(p)); }
-
-    if (p.obs) {
-        L.push('');
-        L.push(`📝 *Observação:* ${p.obs}`);
-    }
-
-    L.push('');
-    L.push('🌱 Obrigado pela preferência!');
-    L.push('Qualquer dúvida ou alteração, é só chamar.');
-
-    return L.join('\n');
 };
 
 const finalizarEsteira = async (btn, enviarWhats) => {
@@ -1613,13 +1523,11 @@ const finalizarEsteira = async (btn, enviarWhats) => {
         if (enviarWhats) {
             const msg = montarMensagemCliente();
             const fone = String(ESTEIRA.pedido.telefone || '').replace(/\D/g, '');
+            const url = linkDoWhatsApp(fone, msg);
             // Se o pedido tem telefone, abre a conversa direto.
             // Se não tem, abre o WhatsApp para escolher o contato — e o
             // texto já vai copiado para colar.
             try { await navigator.clipboard.writeText(msg); } catch (_) {}
-            const url = fone
-                ? `https://wa.me/${fone.startsWith('55') ? fone : '55' + fone}?text=${encodeURIComponent(msg)}`
-                : `https://wa.me/?text=${encodeURIComponent(msg)}`;
             window.open(url, '_blank', 'noopener');
             showToast(fone ? `Pesagem salva (${fmt(fechado.total || 0)}). Pedido em Separando.` : 'Pesagem salva. Texto copiado — escolha a conversa da cliente.', false);
         } else {
@@ -1779,8 +1687,52 @@ document.body.addEventListener('click', async (e) => {
             }
         }
 
+        else if (action === 'ver-entregues') {
+            ENTREGUES.aberto = !ENTREGUES.aberto;
+            if (ENTREGUES.aberto) await carregarEntregues(); else redesenharFila();
+        }
+
+        else if (action === 'itens-pedido') {      // faltou um produto, ou o cliente pediu mais um pelo WhatsApp (js/admin-pedido-itens.js)
+            const pedido = acharPedido(target.dataset.id);
+            if (!pedido) return showToast('Pedido não encontrado', true);
+            (await TELAS.pedidoItens()).abrirItensDoPedido(pedido, { produtos: produtosAtuais, loja: nomeDaLoja,
+                aoMudar: (novo) => { pedidosGerais = pedidosGerais.map((p) => (p.id === novo.id ? { ...p, ...novo } : p)); redesenharFila(); } });
+        }
+
+        else if (action === 'mensagem-pedido') {   // a mensagem certa para a etapa; nada sai sem a pessoa tocar em enviar no WhatsApp
+            const pedido = acharPedido(target.dataset.id);
+            if (!pedido) return showToast('Pedido não encontrado', true);
+            const dados = { loja: nomeDaLoja, pedido, endereco: linhaEndereco(pedido) };
+            const pagoC = pedido.pagamento?.status === 'PAID' && Number.isFinite(Number(pedido.pagamento.valorC)) ? Number(pedido.pagamento.valorC) : null;
+            const msg = pedido.status === 'enviado' ? mensagemACaminho(dados) : mensagemPedidoPronto({ ...dados, diferenca: pagoC === null ? 0 : (Math.round((Number(pedido.total) || 0) * 100) - pagoC) / 100 });
+            // abre ANTES de qualquer espera: o iPhone bloqueia janela aberta depois de um "await"
+            window.open(linkDoWhatsApp(pedido.telefone, msg), '_blank', 'noopener');
+            try { navigator.clipboard.writeText(msg).catch(() => {}); } catch (_) { /* o link já leva o texto */ }
+            showToast(pedido.telefone ? 'Abrindo a conversa com o cliente.' : 'Texto copiado: escolha a conversa do cliente.');
+        }
+
+        else if (action === 'voltar-pedido') {     // marcou a etapa errada: volta uma (o servidor confere e registra quem voltou)
+            const pedido = acharPedido(target.dataset.id);
+            if (!pedido) return showToast('Pedido não encontrado', true);
+            const para = etapaDeVolta(pedido);
+            if (!para) return showToast('Este pedido não tem etapa anterior.', true);
+            if (!(await customConfirm(`Voltar o pedido de ${pedido.nome || 'cliente'} para "${NOME_DA_ETAPA[para]}"?`,
+                'Use quando a etapa foi marcada por engano. O valor e os itens não mudam, e nenhuma mensagem é enviada ao cliente: se precisar avisar, use o botão Mensagem.', { ok: 'Voltar etapa', nao: 'Deixar como está' }))) return;
+            target.disabled = true;
+            try {
+                const d = await chamarAjuste({ op: 'voltar', pedidoId: pedido.id, de: pedido.status });
+                // muda na hora: o entregue volta para a fila; os outros trocam de coluna
+                if (ENTREGUES.lista) ENTREGUES.lista = ENTREGUES.lista.filter((p) => p.id !== pedido.id);
+                const novo = { ...pedido, status: d.status };
+                pedidosGerais = pedidosGerais.some((p) => p.id === pedido.id) ? pedidosGerais.map((p) => (p.id === pedido.id ? novo : p)) : [novo, ...pedidosGerais];
+                kbEtapa = { enviado: 'env', preparando: 'prep' }[d.status] || 'novos';
+                redesenharFila();
+                showToast(`Pedido de volta em "${NOME_DA_ETAPA[d.status] || d.status}".`);
+            } catch (e) { showToast(e.message, true); target.disabled = false; }
+        }
+
         else if (action === 'imprimir-pedido') {
-            const pedido = pedidosGerais.find(p => p.id === target.dataset.id);
+            const pedido = acharPedido(target.dataset.id);
             if (!pedido) return showToast("Pedido não encontrado", true);
             target.disabled = true;
             // cupom impresso à mão entra na fila como impresso: o automático não imprime de novo
@@ -1789,7 +1741,7 @@ document.body.addEventListener('click', async (e) => {
         }
 
         else if (action === 'cancelar-pedido-painel') {
-            const pedido = pedidosGerais.find(p => p.id === target.dataset.id);
+            const pedido = acharPedido(target.dataset.id);
             if (!pedido) return showToast("Pedido não encontrado", true);
             const pago = pedido.pagamento?.status === 'PAID';
             if (!(await customConfirm(`Cancelar o pedido de ${pedido.nome || 'cliente'}?`,
@@ -1807,9 +1759,10 @@ document.body.addEventListener('click', async (e) => {
 
         else if (action === 'excluir-pedido') {
             const id = target.dataset.id;
-            if (await customConfirm("Concluir e Arquivar", "Deseja finalizar este pedido e retirá-lo da logística visual? (Os dados financeiros serão mantidos).")) {
+            if (await customConfirm('Marcar como entregue?', 'O pedido sai da fila e continua contando no caixa e no Balanço. Se marcar por engano, dá para voltar em "Ver os entregues".', { ok: 'Entregue', nao: 'Ainda não' })) {
                 await setDoc(tdoc("pedidos", id), { status: 'arquivado' }, { merge: true });
-                showToast("Pedido concluído e arquivado!");
+                showToast('Pedido entregue. Se marcou sem querer, ele está em "Ver os entregues".');
+                if (ENTREGUES.aberto) carregarEntregues(); else ENTREGUES.lista = null;   // a lista de entregues mostra o que acabou de sair da fila
             }
         }
     } catch (err) {
@@ -2067,15 +2020,98 @@ const extrairEstatisticas = (pedidos) => {
 // ==========================================
 // KANBAN DE PEDIDOS
 // ==========================================
-const renderHtmlPedidos = (pedidos) => {
-    const dicsStatus = {
-        'pendente':             { tag: '<i class="ic" data-i="sino"></i> NOVO',        cor: 'var(--forest)',  btn: 'Aceitar e separar',      proximo: 'preparando' },
-        'aguardando_pagamento': { tag: '<i class="ic" data-i="pix"></i> AGUARDA PIX', cor: 'var(--info)',    btn: 'Recebi o PIX',   proximo: 'preparando' },
-        'aguardando_pesagem':   { tag: '<i class="ic" data-i="balanca"></i> A PESAR',     cor: 'var(--earth)',   btn: 'Pesar os itens', proximo: null },
-        'preparando':           { tag: '<i class="ic" data-i="caixa"></i> SEPARANDO',  cor: 'var(--earth)', btn: 'Saiu para entrega',     proximo: 'enviado' },
-        'enviado':              { tag: '<i class="ic" data-i="entrega"></i> A CAMINHO',   cor: 'var(--leaf)',    btn: 'Entregue',    proximo: 'arquivado' }
-    };
+// Etapa do cartão (cor da faixa e do botão): css/admin-pedidos.css → .pc[data-etapa]
+const ETAPA_DO_STATUS = { pendente: 'novo', aguardando_pagamento: 'pix', aguardando_pesagem: 'pesar', preparando: 'prep', enviado: 'env', arquivado: 'feito' };
+const PEDIDO_STATUS = {
+    'pendente':             { tag: '<i class="ic" data-i="sino"></i> NOVO',          btn: 'Aceitar e separar',  proximo: 'preparando' },
+    'aguardando_pagamento': { tag: '<i class="ic" data-i="pix"></i> AGUARDA PIX',    btn: 'Recebi o PIX',       proximo: 'preparando' },
+    'aguardando_pesagem':   { tag: '<i class="ic" data-i="balanca"></i> A PESAR',    btn: 'Pesar os itens',     proximo: null },
+    'preparando':           { tag: '<i class="ic" data-i="caixa"></i> SEPARANDO',    btn: 'Saiu para entrega',  proximo: 'enviado' },
+    'enviado':              { tag: '<i class="ic" data-i="entrega"></i> A CAMINHO',  btn: 'Entregue',           proximo: 'arquivado' },
+    'arquivado':            { tag: '<i class="ic" data-i="certo"></i> ENTREGUE',     btn: '',                   proximo: null },
+};
+// já pesado (nenhum item a pesar): mesmo se o status ainda disser "a pesar", o cartão vai para Separando
+const etapaDoPedido = (p) => {
+    const temAPesar = p.itens && p.itens.some(i => i.aPesar);
+    return (temAPesar && p.status === 'pendente') ? 'aguardando_pesagem' : (p.status === 'aguardando_pesagem' && !temAPesar) ? 'preparando' : p.status;
+};
+// quanto vale a linha no cartão: o peso da balança × preço, ou o valor fechado
+const valorDaLinha = (i) => (i.aPesar && !(Number(i.pesoFinal) > 0) ? 0 : (Number(i.subtotal) > 0 ? Number(i.subtotal) : (Number(i.pesoFinal) > 0 ? Number(i.pesoFinal) : Number(i.qtd) || 0) * (Number(i.precoOriginal ?? i.preco) || 0)));
 
+// UM cartão de pedido. Serve à fila (Novos, Separando, A caminho) e à lista de entregues.
+const cartaoDoPedido = (p) => {
+    const dateObj = new Date(p.data);
+    const dataFmt = isNaN(dateObj.getTime()) ? '' : dateObj.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const stKey = etapaDoPedido(p), st = PEDIDO_STATUS[stKey] || PEDIDO_STATUS.pendente, etapa = ETAPA_DO_STATUS[stKey] || 'novo', id = escapeHTML(p.id);
+    const daLoja = p.origem !== 'balcao';
+    const podeMexer = daLoja && ['pendente', 'aguardando_pesagem', 'aguardando_pagamento', 'preparando'].includes(p.status);   // lib/ajuste.js: depois de sair para entrega os itens não mudam
+    const temVolta = daLoja && ['preparando', 'enviado', 'arquivado'].includes(p.status);
+    const temBalanca = (p.itens || []).some((i) => i.tipo === 'un' && Number(i.pesoFinal) > 0);
+
+    const itensHtml = (p.itens || []).map((i) => `<li${i.acrescentado ? ' class="mais"' : ''}><b>${qtdDoItem(i)}</b><span>${escapeHTML(i.nome)}${i.acrescentado ? ' <small class="pc-novo">acrescentado</small>' : ''}${i.adicionais ? `<small class="ped-adicionais">↳ ${escapeHTML(i.adicionais)}</small>` : ''}</span>${i.aPesar ? '<em>a pesar</em>' : `<i>${fmt(valorDaLinha(i))}</i>`}</li>`).join('');
+
+    // Botão de ação: pesagem tem fluxo próprio; arquivar pede confirmação; o resto avança o status.
+    let botao = '';
+    if (stKey === 'aguardando_pesagem') botao = `<button class="pc-botao" data-action="iniciar-separacao" data-id="${id}">${st.btn}</button>`;
+    else if (st.proximo === 'arquivado') botao = `<button class="pc-botao" data-action="excluir-pedido" data-id="${id}">${st.btn}</button>`;
+    else if (st.proximo) botao = `<button class="pc-botao" data-action="avancar-pedido" data-next="${st.proximo}" data-id="${id}">${st.btn}</button>`;
+
+    // fila de impressão (lib/impressao.js): o que já saiu no papel, e quando
+    const imp = p.impressao || {}, horaImp = imp.saiuEm ? new Date(imp.saiuEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+    const infoImp = imp.saiu ? `<span class="ped-impresso" title="${imp.vezes > 1 ? `Saiu ${Number(imp.vezes)} vezes` : 'Saiu no papel'}"><i class="ic" data-i="impressora"></i> Impresso${horaImp ? ` ${horaImp}` : ''}${imp.saiu === 'pesado' ? ' (pesado)' : ''}</span>`
+        : (imp.estado === 'reservado' && Date.now() - (Date.parse(imp.em) || 0) < 90000 ? '<span class="ped-impresso fila"><i class="ic" data-i="impressora"></i> Imprimindo…</span>' : '');
+    const pago = p.pagamento?.status === 'PAID';
+    const infoPag = pago ? '<span class="pc-pago"><i class="ic" data-i="certo"></i> PAGO</span>' : '';
+    const retirada = p.modo === 'retirada';
+    const infoEntrega = retirada || (p.entrega && (p.entrega.horario || p.entrega.horarioACombinar || Number(p.entrega.taxa) > 0))
+        ? `<p class="pc-nota entrega"><i class="ic" data-i="${retirada ? 'caixa' : 'entrega'}"></i> ${escapeHTML([retirada ? `${p.feiraId ? 'RETIRADA NA FEIRA' : 'RETIRADA NA BANCA'}${p.retiradaLocal ? ` (${p.retiradaLocal})` : ''}` : '', p.entrega?.horario || (p.entrega?.horarioACombinar ? 'horário a combinar' : ''), Number(p.entrega?.taxa) > 0 ? `entrega ${fmt(p.entrega.taxa)}` : ''].filter(Boolean).join(' · '))}</p>` : '';
+    const infoTroco = p.troco ? `<p class="pc-nota troco"><i class="ic" data-i="dinheiro"></i> Troco para: ${escapeHTML(p.troco)}</p>` : '';
+    // pedido para outro dia (cliente da feira pediu fora do dia da feira) e feira cancelada nesse dia
+    const ehFuturo = p.entregaDia && p.entregaDia !== diaBR(p.data);
+    const cancelada = p.feiraId && p.entregaDia && (SEM_FEIRA.get(p.feiraId) || new Set()).has(p.entregaDia);
+    const infoDia = ehFuturo || cancelada ? `<div class="ped-para-dia${cancelada ? ' cancelada' : ''}"><i class="ic" data-i="calendario"></i> Para ${escapeHTML(textoDoDia(p.entregaDia))}${cancelada ? ' · <b>feira cancelada neste dia: avise o cliente</b>' : ''}</div>` : '';
+    const infoObs = p.obs ? `<p class="pc-nota obs"><i class="ic" data-i="nota"></i> ${escapeHTML(p.obs)}</p>` : '';
+    // o que mudou no pedido depois que chegou (lib/ajuste.js) e, se já estava pago, o acerto
+    const tirados = (Array.isArray(p.ajustes) ? p.ajustes : []).filter((a) => a && a.op === 'tirou' && a.nome);
+    const infoFalta = tirados.length ? `<p class="pc-nota falta"><i class="ic" data-i="alerta"></i> Saiu do pedido (em falta): ${escapeHTML([...new Set(tirados.map((a) => a.nome))].join(', '))}</p>` : '';
+    const pagoC = pago && Number.isFinite(Number(p.pagamento.valorC)) ? Number(p.pagamento.valorC) : null;
+    const difC = pagoC === null ? 0 : Math.round((Number(p.total) || 0) * 100) - pagoC;
+    const infoAcerto = difC > 0 ? `<p class="pc-acerto cobrar"><i class="ic" data-i="dinheiro"></i><span>Já pagou ${fmt(pagoC / 100)} pelo site. <b>Falta cobrar ${fmt(difC / 100)} na entrega.</b></span></p>`
+        : difC < 0 ? `<p class="pc-acerto devolver"><i class="ic" data-i="dinheiro"></i><span>Já pagou ${fmt(pagoC / 100)} pelo site. <b>Devolva ${fmt(-difC / 100)} ao cliente.</b></span></p>` : '';
+    const onde = [linhaEndereco(p, { curto: true }), p.pag].filter(Boolean).join(' · ');
+
+    return `
+        <article class="card-pedido pc" data-etapa="${etapa}">
+            <header class="pc-topo">
+                <div><h3>${escapeHTML(p.nome)}</h3>${onde ? `<p class="pc-onde"><i class="ic" data-i="pino"></i> ${escapeHTML(onde)}</p>` : ''}</div>
+                <strong class="pc-total">${fmt(p.total || 0)}</strong>
+            </header>
+            <div class="pc-marcas">
+                <span class="pc-etapa">${st.tag}</span>
+                ${infoPag}
+                ${infoImp}
+                ${dataFmt ? `<span class="pc-hora">${dataFmt}</span>` : ''}
+            </div>
+            ${infoDia}
+            ${infoAcerto}
+            <ul class="pc-itens">${itensHtml}</ul>
+            ${infoEntrega}${infoTroco}${infoObs}${infoFalta}
+            ${p.avaliacao && p.avaliacao.nota ? `<p class="pedido-avaliacao${p.avaliacao.nota <= 3 ? ' baixa' : ''}"><b>Nota ${Number(p.avaliacao.nota)} de 5</b> ${p.avaliacao.texto ? escapeHTML(p.avaliacao.texto) : 'sem comentário'}</p>` : ''}
+            ${botao ? `<div class="pc-principal">${botao}</div>` : ''}
+            <div class="pc-acoes">
+                ${podeMexer ? `<button type="button" data-action="itens-pedido" data-id="${id}"><i class="ic" data-i="lapis"></i> Itens: faltou ou acrescentar</button>` : ''}
+                ${podeMexer && temBalanca && stKey !== 'aguardando_pesagem' ? `<button type="button" data-action="iniciar-separacao" data-id="${id}"><i class="ic" data-i="balanca"></i> Corrigir pesos</button>` : ''}
+                ${daLoja && stKey !== 'aguardando_pesagem' ? `<button type="button" data-action="mensagem-pedido" data-id="${id}"><i class="ic" data-i="conversa"></i> Mensagem</button>` : ''}
+                <button type="button" data-action="imprimir-pedido" data-tipo="cupom" data-id="${id}"><i class="ic" data-i="impressora"></i> Cupom</button>
+                ${stKey !== 'aguardando_pesagem' ? `<button type="button" data-action="imprimir-pedido" data-tipo="recibo" data-id="${id}"><i class="ic" data-i="nota"></i> Recibo do cliente</button>` : ''}
+                <button type="button" data-action="imprimir-pedido" data-tipo="etiqueta" data-id="${id}"><i class="ic" data-i="etiqueta"></i> Etiqueta</button>
+                ${temVolta ? `<button type="button" class="pc-voltar" data-action="voltar-pedido" data-id="${id}"><i class="ic" data-i="repetir"></i> Voltar etapa</button>` : ''}
+                ${p.status !== 'arquivado' ? `<button type="button" class="pc-cancelar" data-action="cancelar-pedido-painel" data-id="${id}"><i class="ic" data-i="lixeira"></i> Cancelar pedido</button>` : ''}
+            </div>
+        </article>`;
+};
+
+const renderHtmlPedidos = (pedidos) => {
     let colNovos = '', colPrep = '', colEnv = '';
     let nNovos = 0, nPrep = 0, nEnv = 0;
 
@@ -2085,76 +2121,7 @@ const renderHtmlPedidos = (pedidos) => {
         : pedidos;
 
     filtrados.forEach(p => {
-        const dateObj = new Date(p.data);
-        const dataFmt = isNaN(dateObj.getTime()) ? "Desconhecida" : dateObj.toLocaleString('pt-BR');
-
-        const itensStr = p.itens ? p.itens.map(i => {
-            const extra = i.aPesar ? ' <span style="color:var(--earth);font-weight:bold;">(A Pesar)</span>' : '';
-            return `${qtdDoItem(i)} ${escapeHTML(i.nome)}${extra}${i.adicionais ? `<br><small class="ped-adicionais">↳ ${escapeHTML(i.adicionais)}</small>` : ''}`;
-        }).join('<br> • ') : '';
-
-        const temAPesar = p.itens && p.itens.some(i => i.aPesar);
-        // já pesado (nenhum item a pesar): mesmo se o status ainda disser "a pesar", o cartão vai para Separando
-        const stKey = (temAPesar && p.status === 'pendente') ? 'aguardando_pesagem'
-            : (p.status === 'aguardando_pesagem' && !temAPesar) ? 'preparando' : p.status;
-        const st = dicsStatus[stKey] || dicsStatus['pendente'];
-
-        // Botão de ação: pesagem tem fluxo próprio; arquivar pede confirmação;
-        // o resto avança o status pelo handler 'avancar-pedido'.
-        let botao;
-        if (stKey === 'aguardando_pesagem') {
-            botao = `<button class="btn-outline flex-1" style="background:${st.cor};color:white;border:none;width:100%;padding:12px;" data-action="iniciar-separacao" data-id="${escapeHTML(p.id)}">${st.btn}</button>`;
-        } else if (st.proximo === 'arquivado') {
-            botao = `<button class="btn-outline flex-1" style="border-color:var(--success);color:var(--success);width:100%;padding:12px;" data-action="excluir-pedido" data-id="${escapeHTML(p.id)}">${st.btn}</button>`;
-        } else {
-            botao = `<button class="btn-outline flex-1" style="background:${st.cor};color:white;border:none;width:100%;padding:12px;" data-action="avancar-pedido" data-next="${st.proximo}" data-id="${escapeHTML(p.id)}">${st.btn}</button>`;
-        }
-
-        // fila de impressão (lib/impressao.js): o que já saiu no papel, e quando
-        const imp = p.impressao || {}, horaImp = imp.saiuEm ? new Date(imp.saiuEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
-        const infoImp = imp.saiu ? `<span class="ped-impresso" title="${imp.vezes > 1 ? `Saiu ${Number(imp.vezes)} vezes` : 'Saiu no papel'}"><i class="ic" data-i="impressora"></i> Impresso${horaImp ? ` ${horaImp}` : ''}${imp.saiu === 'pesado' ? ' (pesado)' : ''}</span>`
-            : (imp.estado === 'reservado' && Date.now() - (Date.parse(imp.em) || 0) < 90000 ? '<span class="ped-impresso fila"><i class="ic" data-i="impressora"></i> Imprimindo…</span>' : '');
-        const infoPag = p.pagamento?.status === 'PAID'
-            ? `<span style="background:var(--success);color:white;padding:3px 8px;border-radius:12px;font-size:0.72rem;font-weight:700;">✓ PAGO</span>` : '';
-        const retirada = p.modo === 'retirada';
-        const infoEntrega = retirada || (p.entrega && (p.entrega.horario || p.entrega.horarioACombinar || Number(p.entrega.taxa) > 0))
-            ? `<div style="font-size:0.82rem;color:var(--forest);margin-top:4px;font-weight:600;"><i class="ic" data-i="${retirada ? 'caixa' : 'entrega'}"></i> ${escapeHTML([retirada ? `${p.feiraId ? 'RETIRADA NA FEIRA' : 'RETIRADA NA BANCA'}${p.retiradaLocal ? ` (${p.retiradaLocal})` : ''}` : '', p.entrega?.horario || (p.entrega?.horarioACombinar ? 'horário a combinar' : ''), Number(p.entrega?.taxa) > 0 ? `entrega ${fmt(p.entrega.taxa)}` : ''].filter(Boolean).join(' · '))}</div>` : '';
-        const infoTroco = p.troco ? `<div style="font-size:0.82rem;color:var(--earth);margin-top:4px;"><i class="ic" data-i="dinheiro"></i> Troco para: ${escapeHTML(p.troco)}</div>` : '';
-        // pedido para outro dia (cliente da feira pediu fora do dia da feira) e feira cancelada nesse dia
-        const ehFuturo = p.entregaDia && p.entregaDia !== diaBR(p.data);
-        const cancelada = p.feiraId && p.entregaDia && (SEM_FEIRA.get(p.feiraId) || new Set()).has(p.entregaDia);
-        const infoDia = ehFuturo || cancelada ? `<div class="ped-para-dia${cancelada ? ' cancelada' : ''}"><i class="ic" data-i="calendario"></i> Para ${escapeHTML(textoDoDia(p.entregaDia))}${cancelada ? ' · <b>feira cancelada neste dia: avise o cliente</b>' : ''}</div>` : '';
-        const infoObs = p.obs ? `<div style="font-size:0.82rem;color:var(--text-mid);margin-top:4px;font-style:italic;"><i class="ic" data-i="nota"></i> ${escapeHTML(p.obs)}</div>` : '';
-
-        const cardHtml = `
-        <article class="card-pedido" style="border-left: 5px solid ${st.cor}; background: var(--warm-white); border-radius: 8px; padding: 15px; margin-bottom: 15px; border-right: 1px solid var(--parchment); border-top: 1px solid var(--parchment); border-bottom: 1px solid var(--parchment);">
-            <div style="display:flex; justify-content: space-between; gap:8px; margin-bottom: 5px;">
-                <h3 style="font-size: 1.1rem; color: var(--forest); margin: 0;">${escapeHTML(p.nome)}</h3>
-                <strong style="font-size: 1.1rem; white-space:nowrap;">${fmt(p.total || 0)}</strong>
-            </div>
-            <p style="font-size: 0.85rem; color: var(--text-mid); margin-bottom: 8px;"><i class="ic" data-i="pino"></i> ${escapeHTML(linhaEndereco(p, { curto: true }))} • ${escapeHTML(p.pag || '')}</p>
-            <div style="margin-bottom: 10px; font-size: 0.8rem; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                <span style="background: ${st.cor}; color: white; padding: 3px 8px; border-radius: 12px; font-weight: bold;">${st.tag}</span>
-                ${infoPag}
-                ${infoImp}
-                <span><i class="ic" data-i="calendario"></i> ${dataFmt}</span>
-            </div>
-            ${infoDia}
-            <div style="font-size: 0.9rem; color: var(--text-dark); margin-bottom: 12px; background: white; padding: 10px; border-radius: 6px; border: 1px solid #eee;">
-                • ${itensStr}
-                ${infoEntrega}
-                ${p.avaliacao && p.avaliacao.nota ? `<p class="pedido-avaliacao${p.avaliacao.nota <= 3 ? ' baixa' : ''}"><b>Nota ${Number(p.avaliacao.nota)} de 5</b> ${p.avaliacao.texto ? escapeHTML(p.avaliacao.texto) : 'sem comentário'}</p>` : ''}
-                ${infoTroco}
-                ${infoObs}
-            </div>
-            <div style="display: flex; gap: 8px;">${botao}</div>
-            <div class="ped-imprimir">
-                <button type="button" data-action="imprimir-pedido" data-tipo="cupom" data-id="${escapeHTML(p.id)}"><i class="ic" data-i="impressora"></i> Cupom</button>
-                <button type="button" data-action="imprimir-pedido" data-tipo="etiqueta" data-id="${escapeHTML(p.id)}"><i class="ic" data-i="etiqueta"></i> Etiqueta da sacola</button>
-                <button type="button" class="ped-cancelar" data-action="cancelar-pedido-painel" data-id="${escapeHTML(p.id)}"><i class="ic" data-i="lixeira"></i> Cancelar pedido</button>
-            </div>
-        </article>`;
-
+        const stKey = etapaDoPedido(p), cardHtml = cartaoDoPedido(p);
         if (['pendente', 'aguardando_pesagem', 'aguardando_pagamento'].includes(stKey)) { colNovos += cardHtml; nNovos++; }
         else if (stKey === 'preparando') { colPrep += cardHtml; nPrep++; }
         else if (stKey === 'enviado') { colEnv += cardHtml; nEnv++; }
@@ -2170,7 +2137,53 @@ const renderHtmlPedidos = (pedidos) => {
     </div>
     <div class="kb">
         ${etapas.map(([k, rot, html, n, vazio]) => `<div class="kb-col" data-kb-col="${k}"${kbEtapa === k ? '' : ' hidden'}><h3>${rot} <i>${n}</i></h3>${html || `<p class="kb-vazio">${vazio}</p>`}</div>`).join('')}
-    </div>`;
+    </div>${blocoEntregues()}`;
+};
+
+// ---------------------------------------------------------------------
+// ENTREGUES DE HOJE E DE ONTEM
+// O pedido entregue sai da fila. Se a pessoa marcou "Entregue" sem querer, é aqui que ela
+// acha o pedido e volta uma etapa. Só carrega quando alguém abre (uma consulta), para não
+// gastar leitura à toa.
+// ---------------------------------------------------------------------
+const ENTREGUES = { aberto: false, carregando: false, lista: null, erro: false };
+const blocoEntregues = () => {
+    let corpo = '';
+    if (ENTREGUES.aberto) {
+        if (ENTREGUES.carregando && !ENTREGUES.lista) corpo = esqueleto('Buscando os pedidos entregues...', 2);
+        else if (ENTREGUES.erro) corpo = estadoVazio({ erro: true, compacto: true, titulo: 'Não consegui buscar os entregues', texto: 'Confira a internet e toque de novo.' });
+        else if (!(ENTREGUES.lista || []).length) corpo = estadoVazio({ icone: 'certo', compacto: true, titulo: 'Nenhum pedido entregue hoje nem ontem', texto: 'Os mais antigos ficam em <b>Balanço</b>.' });
+        else corpo = `<p class="pc-feitos-dica">Marcou "Entregue" sem querer? Toque em <b>Voltar etapa</b> e o pedido volta para A caminho.</p><div class="pc-feitos-lista">${ENTREGUES.lista.map(cartaoDoPedido).join('')}</div>`;
+    }
+    return `<section class="pc-feitos" aria-label="Pedidos entregues">
+        <button type="button" class="bt bt-sec" data-action="ver-entregues" aria-expanded="${ENTREGUES.aberto}"><i class="ic" data-i="certo"></i> ${ENTREGUES.aberto ? 'Esconder os entregues' : 'Ver os entregues de hoje e de ontem'}</button>
+        ${corpo}
+    </section>`;
+};
+const redesenharFila = () => { if (document.getElementById('aba-relatorios')?.classList.contains('active')) renderRelatoriosMaster(); };
+const carregarEntregues = async () => {
+    ENTREGUES.carregando = true; ENTREGUES.erro = false; redesenharFila();
+    try {
+        const { getDocs } = await import('./firebase.js');
+        const desde = new Date(Date.now() - 3 * 86400000).toISOString();
+        const snap = await getDocs(query(tcol('pedidos'), where('data', '>=', desde), orderBy('data', 'desc'), limit(400)));
+        const hoje = diaBR(new Date().toISOString()), ontem = diaBR(new Date(Date.now() - 86400000).toISOString());
+        const doDia = (p) => (/^\d{4}-\d{2}-\d{2}$/.test(String(p.entregaDia || '')) ? p.entregaDia : diaBR(p.data));
+        const feitos = snap.docs.map((d) => ({ ...d.data(), id: d.id })).filter((p) => p.status === 'arquivado' && p.origem !== 'balcao' && [hoje, ontem].includes(doDia(p)));
+        ENTREGUES.lista = await abrirPedidos(feitos);
+    } catch (e) { console.error('[entregues]', e); ENTREGUES.erro = true; }
+    ENTREGUES.carregando = false; redesenharFila();
+};
+// pedido da fila ou da lista de entregues
+const acharPedido = (id) => pedidosGerais.find((p) => p.id === id) || (ENTREGUES.lista || []).find((p) => p.id === id);
+const NOME_DA_ETAPA = { pendente: 'Novos', aguardando_pesagem: 'Novos (a pesar)', preparando: 'Separando', enviado: 'A caminho' };
+const etapaDeVolta = (p) => (p.status === 'arquivado' ? 'enviado' : p.status === 'enviado' ? 'preparando' : p.status === 'preparando' ? ((p.itens || []).some((i) => i.aPesar) ? 'aguardando_pesagem' : 'pendente') : '');
+const chamarAjuste = async (corpo) => {
+    const token = await auth.currentUser?.getIdToken();
+    const r = await fetch('/api/pdv', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ acao: 'ajuste', ...corpo }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || 'Não foi possível mudar o pedido.');
+    return d;
 };
 let kbEtapa = 'novos';
 document.getElementById('lista-historico')?.addEventListener('click', (e) => {
@@ -2245,7 +2258,7 @@ const renderRelatoriosMaster = async () => {
     const listDiv = document.getElementById('lista-historico');
     if (pedidosGerais.length === 0) {
         listDiv.innerHTML = estadoVazio({ icone: 'vazio', titulo: 'Nenhum pedido na fila',
-            texto: 'Só aparecem aqui pedidos em andamento. Quando um cliente pedir, o pedido aparece aqui e o celular avisa. Os já concluídos ficam em <b>Balanço</b>.' });
+            texto: 'Só aparecem aqui pedidos em andamento. Quando um cliente pedir, o pedido aparece aqui e o celular avisa. Os já concluídos ficam em <b>Balanço</b>.' }) + blocoEntregues();
         document.getElementById('stat-pedidos').textContent = "0";
         document.getElementById('stat-receita').textContent = "R$ 0,00";
         return;

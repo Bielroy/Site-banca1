@@ -8,3 +8,11 @@ html[data-painel-tema="escuro"] [style*="color: var(--forest)"]:not([style*="bac
 /* Resumo: no escuro as barras dos outros dias ficam apagadas, para "Hoje" saltar aos olhos */
 html[data-painel-tema="escuro"] .rs-barra { fill: #31503f; }
 html[data-painel-tema="escuro"] .rs-barra.hoje { fill: #7ec8a0; }
+/* Cartão de pedido: a pílula da etapa usa variáveis próprias; no escuro elas ganham os tons escuros */
+html[data-painel-tema="escuro"] .pc { --pd-cor: #2f7a55; --pd-suave: #1e3328; --pd-tinta: #a3d6bd; }
+html[data-painel-tema="escuro"] .pc[data-etapa="pix"] { --pd-cor: #1c6f9f; --pd-suave: #19303e; --pd-tinta: #8dcaec; }
+html[data-painel-tema="escuro"] .pc[data-etapa="pesar"], html[data-painel-tema="escuro"] .pc[data-etapa="prep"] { --pd-cor: #a8650f; --pd-suave: #3e3319; --pd-tinta: #ecc18d; }
+html[data-painel-tema="escuro"] .pc[data-etapa="env"] { --pd-cor: #2f7a55; --pd-suave: #193e24; --pd-tinta: #8febb0; }
+html[data-painel-tema="escuro"] .pc[data-etapa="feito"] { --pd-cor: #5d6a62; --pd-suave: #26302b; --pd-tinta: #c3ccc6; }
+html[data-painel-tema="escuro"] .pi-mais { background: #1b2620; }
+html[data-painel-tema="escuro"] .pi-feito { background: #17281f; border-color: #2f5a44; }
