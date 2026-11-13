@@ -926,7 +926,7 @@ teste('painel: tirar produto da loja acontece na hora, sem pergunta, e o aviso t
   const aviso = pagina.locator('#toast.visivel .toast-desfazer');
   await aviso.waitFor({ timeout: 3000 });
   assert.match(await pagina.locator('#toast').innerText(), /Produto fora da loja/);
-  await aviso.hover(); await pagina.waitForTimeout(6500);
+  await pagina.waitForTimeout(500); await aviso.hover(); await pagina.waitForTimeout(6500);   // espera o aviso parar de deslizar
   assert.ok(await aviso.isVisible(), 'com o mouse em cima, o aviso não some');
   await aviso.click();
   await pagina.waitForFunction(() => (window.__gravados || []).filter((g) => /produtos\/tomate$/.test(g.path)).pop()?.dados.ativo === true, null, { timeout: 4000 });
