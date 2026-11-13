@@ -430,7 +430,7 @@ teste('painel: Configurações guarda a retirada na banca (ligada, horários e l
   await pagina.click('#btn-salvar-config');
   await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config' && g.dados && g.dados.entrega), null, { timeout: 4000 });
   const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config' && x.dados.entrega).dados);
-  assert.deepStrictEqual(g.entrega, { taxa: 5, gratisAcima: 0, horarios: ['Manhã'], agenda: [], retirada: { ativa: true, dias: [], horarios: ['Das 7h às 11h', 'Das 15h às 18h'], local: 'Na banca, no portão 2' } });
+  assert.deepStrictEqual(g.entrega, { taxa: 5, gratisAcima: 0, horarios: ['Manhã'], vagas: 0, antecedenciaMin: 0, agenda: [], retirada: { ativa: true, dias: [], horarios: ['Das 7h às 11h', 'Das 15h às 18h'], local: 'Na banca, no portão 2' } });
   semErros(erros); await fechar();
 });
 
