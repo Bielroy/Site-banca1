@@ -2,7 +2,7 @@
 //  js/impressao-lib.js — O QUE vai no papel (sem falar com impressora nenhuma).
 //
 //  Tudo o que se imprime vira primeiro uma lista de "linhas" simples:
-//     { t:'txt', v:'texto', al:'e'|'c'|'d', b:true (negrito), g:true (grande), a:true (alta: mesma largura, o dobro da altura) }
+//     { t:'txt', v:'texto', al:'e'|'c'|'d', b:true (negrito), g:true (grande), a:true (destaque: um pouco maior na página; na térmica sai em negrito do tamanho normal, sem esticar) }
 //     { t:'logo', src:'https://…' }   logo da loja (só na página comum; a térmica pula e segue com o nome em letra grande)
 //     { t:'par', e:'esquerda', d:'direita', b }     ex.: "Tomate ........ R$ 8,00"
 //     { t:'item', nome, e:'detalhe (peso x preço)', d:'valor', foto:'https://…' }   linha de recibo: na página comum leva foto; na térmica vira nome + detalhe e valor
@@ -307,7 +307,7 @@ const Buffer_ = (b64) => { const bin = atob(b64), out = new Array(bin.length); f
 export function paraEscPos(linhas, { largura = 58, acentos = false, cortar = true } = {}) {
     const b = [0x1b, 0x40];                                   // ESC @  → zera a impressora
     if (acentos) b.push(0x1b, 0x74, 0x03);                    // ESC t 3 → tabela 860
-    let negrito = false, tamanho = 0;                         // GS ! → 0x11 = dobro de largura e altura; 0x01 = só o dobro da altura
+    let negrito = false, tamanho = 0;                         // GS ! → 0x11 = dobro de largura e altura (só o "grande"). Nunca 0x01 (só a altura): a letra sai esticada
     compor(linhas, colunasDe(largura)).forEach((l) => {
         if (l.img) {                                                                                     // desenho do UseBanca: GS v 0 (imagem em pontos), centralizado
             const w = MARCA_BITS.w / 8, bytes = Buffer_(MARCA_BITS.b64);
@@ -315,8 +315,9 @@ export function paraEscPos(linhas, { largura = 58, acentos = false, cortar = tru
             return;
         }
         if (l.corte) { b.push(0x0a, 0x0a, 0x0a); if (cortar) b.push(0x1d, 0x56, 0x42, 0x00); return; }   // GS V 66 0 → corte (quem não tem guilhotina ignora)
-        if (!!l.b !== negrito) { negrito = !!l.b; b.push(0x1b, 0x45, negrito ? 1 : 0); }                 // ESC E
-        const tam = l.g ? 0x11 : l.a ? 0x01 : 0x00;
+        const querNegrito = !!(l.b || l.a);                                                              // destaque (a) = negrito do tamanho normal
+        if (querNegrito !== negrito) { negrito = querNegrito; b.push(0x1b, 0x45, negrito ? 1 : 0); }     // ESC E
+        const tam = l.g ? 0x11 : 0x00;                                                                  // nunca só a altura (0x01): a letra sai esticada
         if (tam !== tamanho) { tamanho = tam; b.push(0x1d, 0x21, tam); }
         b.push(...codificar(l.s.replace(/\s+$/, ''), acentos), 0x0a);
     });
