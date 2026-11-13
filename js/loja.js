@@ -22,6 +22,7 @@ import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
 import { podePagarPix } from './pix-lib.js';
 import { lerEntrega, previaDaEntrega, horariosDoModo, opcoesDoDia } from './entrega-lib.js';
+import { lerVagas, chaveHorario, estadoDoHorario, agoraMinBR } from './vagas-lib.js';   // vagas por horário e antecedência (como o Cal.com)
 import { ehIOS, navegadorIOS, deveConvidar } from './instalar-lib.js';
 import { falhaDoServidor, tentarDeNovo, textoPedidoReserva } from './pedido-reserva-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
@@ -1421,12 +1422,28 @@ const pintarPagamentoDaLoja = () => {
 };
 
 // Horário de entrega (ou de retirada): o campo só aparece se a loja cadastrou horários para o modo e o dia do pedido.
+// VAGAS: horário lotado ou que já fechou para hoje aparece desligado ("lotado", "fechou"); com poucas vagas, "restam 2".
+// A contagem vem de {loja}/vagas/{dia} (o servidor confere de novo na hora do pedido). Lida uma vez por dia aberto.
+const VAGAS = { dia: '', usados: {}, lendo: false };
+const lerVagasDoDia = (dia) => {
+    if (VAGAS.lendo || VAGAS.dia === dia) return;
+    VAGAS.lendo = true;
+    getDoc(tdoc('vagas', dia)).then((s) => { VAGAS.dia = dia; VAGAS.usados = s.exists() ? s.data() || {} : {}; }).catch(() => { VAGAS.dia = dia; VAGAS.usados = {}; })
+        .finally(() => { VAGAS.lendo = false; pintarHorariosDeEntrega(); });
+};
 const pintarHorariosDeEntrega = () => {
     const grupo = document.getElementById('grupo-horario'), campo = document.getElementById('cli-horario'); if (!grupo || !campo) return;
     const horarios = horariosDoModo(lerEntrega(STATE.config), modoEscolhido(), { feira: feiraAqui(), dow: diaDoPreco() }), atual = campo.value;
     grupo.hidden = !horarios.length;
-    campo.innerHTML = horarios.length ? '<option value="">Tanto faz (a combinar)</option>' + horarios.map((h) => `<option value="${escapeHTML(h)}">${escapeHTML(h)}</option>`).join('') : '';
-    if (horarios.includes(atual)) campo.value = atual;
+    const cfgV = lerVagas((STATE.config || {}).entrega), ent = entregaDoPedido(), dia = ent ? ent.dia : diaBR(agoraLoja()).dia, paraHoje = !ent || ent.hoje !== false;
+    const comVagas = modoEscolhido() !== 'retirada' && (cfgV.vagas > 0 || cfgV.antecedenciaMin > 0);
+    if (comVagas && cfgV.vagas > 0) lerVagasDoDia(dia);
+    const estado = (h) => (comVagas ? estadoDoHorario({ horario: h, vagas: cfgV.vagas, usados: ((VAGAS.dia === dia ? VAGAS.usados : {})[chaveHorario(h)] || {}).n, paraHoje, agoraMin: agoraMinBR(agoraLoja()), antecedenciaMin: cfgV.antecedenciaMin }) : { ok: true, restam: null });
+    campo.innerHTML = horarios.length ? '<option value="">Tanto faz (a combinar)</option>' + horarios.map((h) => {
+        const e = estado(h), extra = e.lotado ? ' (lotado)' : e.fechado ? ' (fechou para hoje)' : e.restam !== null && e.restam <= 3 ? ` (resta${e.restam > 1 ? 'm' : ''} ${e.restam})` : '';
+        return `<option value="${escapeHTML(h)}"${e.ok ? '' : ' disabled'}>${escapeHTML(h + extra)}</option>`;
+    }).join('') : '';
+    if (horarios.includes(atual) && estado(atual).ok) campo.value = atual;
 };
 
 const renderCategorias = () => {
@@ -3005,6 +3022,8 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
         
 
     } catch(err) {
+        // horário lotou ou fechou enquanto a pessoa preenchia: relê as vagas e a lista mostra o que ainda serve
+        if (err && /lotou|fechou para hoje/.test(String(err.message || ''))) { VAGAS.dia = ''; pintarHorariosDeEntrega(); }
         // O dia virou (horário limite, meia-noite, relógio do celular): o pedido NÃO foi criado. Acerta o relógio,
         // refaz os preços e a data na tela e deixa a pessoa conferir antes de enviar de novo.
         if (err && err.dados && err.dados.codigo === 'dia-mudou') {

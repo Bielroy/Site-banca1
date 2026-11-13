@@ -107,6 +107,7 @@ const Formato = require('../lib/formato');
 const Avisos = require('../lib/avisos');
 const P = require('../lib/prudencia');
 const Entrega = require('../lib/entrega');
+const Vagas = require('../lib/vagas');
 const E = require('../lib/estoque');
 const Conta = require('../lib/conta');
 const Cofre = require('../lib/cofre');
@@ -428,6 +429,10 @@ module.exports = async function handler(req, res) {
       // transação tem que acontecer antes da primeira escrita.
       const codigoCupom = cupom;                 // já conferido e em maiúsculas lá em cima
       const cupomSnap = codigoCupom ? await t.get(T.docDe(db, tid, `cupons/${codigoCupom}`)) : null;
+      // VAGAS POR HORÁRIO (lib/vagas.js): a contagem do dia é lida aqui, junto com as outras leituras da transação
+      const cfgVagas = Vagas.lerVagas(configCfg.entrega), diaDaVaga = entrega ? entrega.dia : Feira.hojeBR();
+      const vagasRef = T.docDe(db, tid, `vagas/${diaDaVaga}`);
+      const vagasSnap = cfgVagas.vagas > 0 || cfgVagas.antecedenciaMin > 0 ? await t.get(vagasRef) : null;
 
       // ---- Cálculo (ainda sem escrever) ----
       let totalExatoCentavos = 0;
@@ -574,6 +579,15 @@ module.exports = async function handler(req, res) {
       // Com item a pesar, o valor ainda sobe na balança: a pesagem reavalia a entrega grátis.
       // horários: os do modo, da feira do cliente e do dia do pedido
       const horarioEntrega = Entrega.horarioValido(cfgEntrega, req.body && req.body.horarioEntrega, modoPedido, ctxHorario);
+      // horário lotado, ou que já fechou para hoje (antecedência): recusa com o motivo; a tela mostra a lista de novo
+      let chaveVaga = '';
+      if (horarioEntrega && vagasSnap) {
+        chaveVaga = Vagas.chaveHorario(horarioEntrega);
+        const usados = vagasSnap.exists ? Number(((vagasSnap.data() || {})[chaveVaga] || {}).n) || 0 : 0;
+        const est = Vagas.estadoDoHorario({ horario: horarioEntrega, vagas: cfgVagas.vagas, usados, paraHoje: entrega ? entrega.hoje !== false : true, agoraMin: Vagas.agoraMinBR(), antecedenciaMin: cfgVagas.antecedenciaMin });
+        if (!est.ok) throw new Error(Vagas.motivo(est, horarioEntrega));
+        if (!(cfgVagas.vagas > 0)) chaveVaga = '';                    // só antecedência: nada a contar
+      }
       // cupom de 100% (família, cortesia): o pedido sai de graça, entrega incluída
       const cortesia = !!cupomAplicado && cupomAplicado.percentual >= 100;
       const taxaEntregaC = cortesia || retirada ? 0 : Entrega.taxaC(cfgEntrega, totalExatoCentavos);   // retirada: sem taxa
@@ -620,6 +634,10 @@ module.exports = async function handler(req, res) {
       E.registrarMovs(t, db, tid, estoqueUpdates.map(([, , m]) => ({ ...m, tipo: 'venda', pedidoId: pedidoRef.id })), admin.firestore.FieldValue);
       if (cupomAplicado) {
         t.update(cupomAplicado.ref, { usos: admin.firestore.FieldValue.increment(1) });
+      }
+      if (chaveVaga) {
+        dadosPedido.entrega = { ...dadosPedido.entrega, vaga: chaveVaga };      // o cancelamento devolve esta vaga
+        t.set(vagasRef, { [chaveVaga]: { n: admin.firestore.FieldValue.increment(1), horario: horarioEntrega } }, { merge: true });
       }
       t.set(pedidoRef, Cofre.fecharCampos(dadosPedido, tid));   // nome, telefone, endereço e observação vão cifrados
       conta.escrever(t, dadosPedido); codigoConta = conta.codigo;

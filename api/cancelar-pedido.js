@@ -246,6 +246,9 @@ module.exports = async function handler(req, res) {
       devolucoes.forEach(([ref, patch]) => t.update(ref, patch));
       E.registrarMovs(t, db, tid, devolucoes.map(([, , m]) => ({ ...m, tipo: 'cancelamento', pedidoId: String(pedidoId) })), admin.firestore.FieldValue);
       if (cupomRef) t.update(cupomRef, { usos: admin.firestore.FieldValue.increment(-1) });
+      // devolve a vaga do horário (lib/vagas.js), uma vez só (a mesma trava do estoque)
+      const vaga = !jaEstornado && pedido.entrega && typeof pedido.entrega.vaga === 'string' && /^[a-z0-9-]{1,60}$/.test(pedido.entrega.vaga) && /^\d{4}-\d{2}-\d{2}$/.test(String(pedido.entregaDia || '')) ? pedido.entrega.vaga : '';
+      if (vaga) t.set(T.docDe(db, tid, `vagas/${pedido.entregaDia}`), { [vaga]: { n: admin.firestore.FieldValue.increment(-1) } }, { merge: true });
 
       t.update(pedidoRef, {
         status: 'cancelado',

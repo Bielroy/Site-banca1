@@ -517,6 +517,14 @@ teste('trilha do painel: a equipe só ACRESCENTA linha em nome próprio, com a h
   }
 });
 
+teste('vagas por horário: qualquer um lê a contagem da loja no ar; ninguém grava pelo navegador (só o servidor conta)', async () => {
+  for (const loja of ['loja-a', 'banca']) {
+    await pode(getDoc(d(anonimo(), cam(loja, 'vagas/2026-11-13'))));
+    await nega(setDoc(d(anonimo(), cam(loja, 'vagas/2026-11-13')), { 'manha': { n: 0 } }));
+    await nega(setDoc(d(de(loja, 'proprietario'), cam(loja, 'vagas/2026-11-13')), { 'manha': { n: 0 } }));
+  }
+});
+
 (async () => {
   setLogLevel('silent');
   env = await initializeTestEnvironment({

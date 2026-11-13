@@ -209,7 +209,8 @@ service cloud.firestore {
       match /calendario/{id}  { allow read: if equipe(tid); allow write: if gestor(tid); }           // calendário operacional
       match /equipe/{id}      { allow read: if gestor(tid); allow write: if false; }                // espelho da equipe: só o servidor grava
       match /crm/{id}         { allow read, write: if gestor(tid); }                         // anotação de quando cada cliente recebeu mensagem
-      match /auditoria/{id}   { allow create: if trilhaOk(tid, id); }                              // trilha: só acrescenta (ler, mudar e apagar: negado)
+      match /auditoria/{id}   { allow create: if trilhaOk(tid, id); }
+      match /vagas/{dia}      { allow get: if vitrine(tid); allow write: if false; }               // vagas por horário (lib/vagas.js): a loja lê; só o servidor conta                              // trilha: só acrescenta (ler, mudar e apagar: negado)
       // avisos, uso_ia, maquininha, analytics_* e tudo o mais: só o servidor (a regra final nega).
     }
 
@@ -259,6 +260,7 @@ service cloud.firestore {
     match /calendario/{id}  { allow read: if equipe('banca'); allow write: if gestor('banca'); }
     match /equipe/{id}      { allow read: if gestor('banca'); allow write: if false; }
     match /auditoria/{id}   { allow create: if trilhaOk('banca', id); }
+    match /vagas/{dia}      { allow get: if vitrine('banca'); allow write: if false; }
 
     // Qualquer outro caminho: negado (o servidor usa a conta de serviço e não passa por aqui).
     // Isto cobre: plataforma/* (chaves e segredos), backups, limites, auditoria e o que for criado no futuro.

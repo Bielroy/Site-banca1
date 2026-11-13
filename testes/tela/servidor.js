@@ -39,6 +39,7 @@ function ler(p) {
   if (resto === 'loja/comunicados') return f.comunicados || null;
   if (resto === 'loja/avaliacoes') return f.avaliacoes || null;
   if (resto.startsWith('loja/')) return null;
+  if (resto.startsWith('vagas/')) return (f.vagas || {})[resto.slice(6)] || null;   // vagas por horário (lib/vagas.js): { 'AAAA-MM-DD': { chave: { n } } }
   return null;
 }
 function lista(p) {

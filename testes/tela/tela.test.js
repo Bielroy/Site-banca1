@@ -244,6 +244,18 @@ const abrirCheckoutComOvos = async (pagina) => {
   await pagina.waitForSelector('#modal-checkout.active, #modal-checkout.aberto, #modal-checkout[aria-hidden="false"]', { timeout: 4000 });
 };
 const opcoesDe = (pagina, sel) => pagina.$$eval(`${sel} option`, (os) => os.map((o) => o.textContent.trim()));
+teste('vagas por horário: na entrega, o horário lotado aparece desligado e o quase cheio mostra "resta 1"', async () => {
+  const c = cenarioPadrao(), hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  c.lojas.banca.config = { lojaAberta: true, diasAbertos: [0, 1, 2, 3, 4, 5, 6], minimo: 0, wpp: '5562999990000', entrega: { horarios: ['Manhã (8h às 12h)', 'Tarde (14h às 18h)'], vagas: 2 } };
+  c.lojas.banca.vagas = { [hoje]: { 'manha-8h-as-12h': { n: 2 }, 'tarde-14h-as-18h': { n: 1 } } };
+  const { pagina, erros, fechar } = await abrir('/', c);
+  await abrirCheckoutComOvos(pagina);
+  await pagina.waitForFunction(() => /resta 1/.test(document.getElementById('cli-horario')?.innerText || ''), null, { timeout: 5000 });
+  assert.deepStrictEqual(await opcoesDe(pagina, '#cli-horario'), ['Tanto faz (a combinar)', 'Manhã (8h às 12h) (lotado)', 'Tarde (14h às 18h) (resta 1)']);
+  assert.strictEqual(await pagina.locator('#cli-horario option[value="Manhã (8h às 12h)"]').isDisabled(), true, 'lotado não pode ser escolhido');
+  semErros(erros); await fechar();
+});
+
 
 // ---------------------------------------------------------------- PLANO B: servidor fora do ar
 const preencherPedido = async (pagina, nome) => {
@@ -418,7 +430,7 @@ teste('painel: Configurações guarda a retirada na banca (ligada, horários e l
   await pagina.click('#btn-salvar-config');
   await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'loja/config' && g.dados && g.dados.entrega), null, { timeout: 4000 });
   const g = await pagina.evaluate(() => window.__gravados.find((x) => x.path === 'loja/config' && x.dados.entrega).dados);
-  assert.deepStrictEqual(g.entrega, { taxa: 5, gratisAcima: 0, horarios: ['Manhã'], agenda: [], retirada: { ativa: true, dias: [], horarios: ['Das 7h às 11h', 'Das 15h às 18h'], local: 'Na banca, no portão 2' } });
+  assert.deepStrictEqual(g.entrega, { taxa: 5, gratisAcima: 0, horarios: ['Manhã'], vagas: 0, antecedenciaMin: 0, agenda: [], retirada: { ativa: true, dias: [], horarios: ['Das 7h às 11h', 'Das 15h às 18h'], local: 'Na banca, no portão 2' } });
   semErros(erros); await fechar();
 });
 
