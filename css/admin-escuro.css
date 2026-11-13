@@ -584,6 +584,10 @@ html[data-painel-tema="escuro"] .regra-entrega .agenda-dica { color: #adb9b1; }
 html[data-painel-tema="escuro"] .regra-entrega.com-erro { border-color: #dc7a74; box-shadow: 0 0 0 2px rgba(179, 38, 30, .18); }
 html[data-painel-tema="escuro"] .regra-entrega.com-erro .agenda-dica { color: #e9827c; }
 html[data-painel-tema="escuro"] #btn-avisos.pede::after { background: #e8873a; box-shadow: 0 0 0 2px #0f1713; }
+html[data-painel-tema="escuro"] .es-espera { border-left: 4px solid #74b6dc; background: #192e3e; }
+html[data-painel-tema="escuro"] .es-espera > b { color: #8dcaec; }
+html[data-painel-tema="escuro"] .es-espera-item { border-top: 1px solid #315972; }
+html[data-painel-tema="escuro"] .es-espera li small { color: #c3ccc6; }
 
 /* ---- css/admin-icones.css ---- */
 html[data-painel-tema="escuro"] .ic .s { fill: #eabd7b; }
@@ -1036,6 +1040,7 @@ html[data-painel-tema="escuro"] .pi-feito { border: 1.5px solid #33704c; backgro
 html[data-painel-tema="escuro"] .pi-feito ul { color: #eaedeb; }
 html[data-painel-tema="escuro"] .pi-feito li.saiu::marker { color: #e9827c; }
 html[data-painel-tema="escuro"] .pi-feito li.entrou::marker { color: #8febb0; }
+html[data-painel-tema="escuro"] .pc-acerto.preco { background: #19303e; color: #8dc8ec; }
 
 /* ---- css/admin-escuro-extra.css (acertos à mão) ---- */
 /* Acertos à mão do tema escuro do painel. Entra no fim de css/admin-escuro.css (ver lib/tema-escuro.js). */
@@ -1056,3 +1061,6 @@ html[data-painel-tema="escuro"] .pc[data-etapa="env"] { --pd-cor: #2f7a55; --pd-
 html[data-painel-tema="escuro"] .pc[data-etapa="feito"] { --pd-cor: #5d6a62; --pd-suave: #26302b; --pd-tinta: #c3ccc6; }
 html[data-painel-tema="escuro"] .pi-mais { background: #1b2620; }
 html[data-painel-tema="escuro"] .pi-feito { background: #17281f; border-color: #2f5a44; }
+html[data-painel-tema="escuro"] .es-espera { background: #14232d; border-left-color: #3a8cc0; }
+html[data-painel-tema="escuro"] .es-espera > b { color: #8dcaec; }
+html[data-painel-tema="escuro"] .es-espera-item { border-top-color: #24394a; }

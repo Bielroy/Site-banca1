@@ -1711,6 +1711,19 @@ document.body.addEventListener('click', async (e) => {
             showToast(pedido.telefone ? 'Abrindo a conversa com o cliente.' : 'Texto copiado: escolha a conversa do cliente.');
         }
 
+        else if (action === 'precos-pedido') {     // pedido para o dia da feira: cada item passa ao preço de hoje do cadastro (o servidor faz a conta)
+            const pedido = acharPedido(target.dataset.id);
+            if (!pedido) return showToast('Pedido não encontrado', true);
+            target.disabled = true; target.textContent = 'Conferindo...';
+            try {
+                const d = await chamarAjuste({ op: 'precos', pedidoId: pedido.id });
+                pedidosGerais = pedidosGerais.map((p) => (p.id === pedido.id ? { ...p, itens: d.itens, total: d.total, precoNoDia: false } : p));
+                redesenharFila();
+                const n = (d.mudou || []).length;
+                showToast(n ? `${n === 1 ? '1 preço mudou' : `${n} preços mudaram`}. Novo total: ${fmt(d.total)}.` : 'Os preços continuam os mesmos.');
+            } catch (e) { showToast(e.message, true); target.disabled = false; target.textContent = 'Confirmar os preços de hoje'; }
+        }
+
         else if (action === 'voltar-pedido') {     // marcou a etapa errada: volta uma (o servidor confere e registra quem voltou)
             const pedido = acharPedido(target.dataset.id);
             if (!pedido) return showToast('Pedido não encontrado', true);
@@ -2079,6 +2092,10 @@ const cartaoDoPedido = (p) => {
     const infoAcerto = difC > 0 ? `<p class="pc-acerto cobrar"><i class="ic" data-i="dinheiro"></i><span>Já pagou ${fmt(pagoC / 100)} pelo site. <b>Falta cobrar ${fmt(difC / 100)} na entrega.</b></span></p>`
         : difC < 0 ? `<p class="pc-acerto devolver"><i class="ic" data-i="dinheiro"></i><span>Já pagou ${fmt(pagoC / 100)} pelo site. <b>Devolva ${fmt(-difC / 100)} ao cliente.</b></span></p>` : '';
     const onde = [linhaEndereco(p, { curto: true }), p.pag].filter(Boolean).join(' · ');
+    // pedido feito antes para o dia da feira: os valores são os do dia em que o cliente pediu. No dia, confirma o preço de hoje.
+    const hojeBRp = diaBR(new Date().toISOString());
+    const confirmarPreco = podeMexer && p.precoNoDia && !pago && /^\d{4}-\d{2}-\d{2}$/.test(String(p.entregaDia || '')) && p.entregaDia <= hojeBRp;
+    const infoPreco = confirmarPreco ? `<div class="pc-acerto preco"><i class="ic" data-i="etiqueta"></i><span>Pedido feito antes, com os preços daquele dia. <b>Confirme os preços de hoje antes de separar.</b></span><button type="button" class="bt bt-sec" data-action="precos-pedido" data-id="${id}">Confirmar os preços de hoje</button></div>` : '';
 
     return `
         <article class="card-pedido pc" data-etapa="${etapa}">
@@ -2093,6 +2110,7 @@ const cartaoDoPedido = (p) => {
                 ${dataFmt ? `<span class="pc-hora">${dataFmt}</span>` : ''}
             </div>
             ${infoDia}
+            ${infoPreco}
             ${infoAcerto}
             <ul class="pc-itens">${itensHtml}</ul>
             ${infoEntrega}${infoTroco}${infoObs}${infoFalta}

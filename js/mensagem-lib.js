@@ -9,6 +9,7 @@
 //    mensagemPedidoPronto(d)   pedido separado, pesado e conferido
 //    mensagemDeAjuste(d)       item que faltou e saiu / item acrescentado depois
 //    mensagemACaminho(d)       pedido saiu para entrega (ou está pronto para retirada)
+//    mensagemProdutoVoltou(d)  produto em falta voltou (lista de espera "Avise-me")
 //
 //  d = { loja, pedido, endereco, conta?: { itens, desconto, entrega, total } }
 //  Os itens e os registros (pedido.ajustes) vêm do pedido como o servidor gravou.
@@ -150,6 +151,12 @@ export function mensagemACaminho({ loja, pedido, endereco = '' }) {
     const L = [...cabecalho(loja, pedido, retirada ? 'Seu pedido está pronto para retirada.' : 'Seu pedido saiu para entrega.')];
     L.push('', `*Total: ${dinheiro(pedido.total)}*`, ...linhasDaEntrega(pedido, endereco), ...FECHO);
     return L.join('\n');
+}
+
+/** Produto que estava em falta voltou: aviso para quem pediu "Avise-me" na loja (mesmo texto de lib/avise.js). */
+export function mensagemProdutoVoltou({ loja, cliente, produto }) {
+    const nome = primeiroNome(cliente);
+    return [`*${String(loja || 'Nossa loja').trim()}*`, '', `Olá${nome ? `, ${nome}` : ''}! Você pediu para ser avisado: *${String(produto || '').trim()}* voltou.`, '', 'Se quiser, é só fazer o pedido pela loja ou responder esta mensagem.'].join('\n');
 }
 
 /** Link do WhatsApp com o texto. Sem telefone, abre a escolha de contato. */

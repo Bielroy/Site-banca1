@@ -1,0 +1,15 @@
+/* "Em falta hoje" + "Avise-me" (js/avise-loja.js). Discreto: fica DEPOIS da vitrine, com fotos apagadas. */
+.faixa-falta { margin: 28px 0 8px; padding: 18px 16px; border-radius: 20px; background: var(--warm-white, #fffdf8); border: 1px dashed #d9d3c5; }
+.faixa-falta h2 { margin: 0; font-family: var(--fonte-titulo, 'Fraunces', serif); font-size: 1.15rem; color: var(--text-dark, #1a1a18); }
+.faixa-falta-sub { margin: 4px 0 12px; font-size: .9rem; color: #55554e; line-height: 1.45; }
+.faixa-falta-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
+.faixa-falta-lista li { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 6px 8px 6px 6px; border-radius: 14px; background: #f4f1ea; }
+.ff-foto { flex: none; width: 44px; height: 44px; border-radius: 10px; overflow: hidden; background: #e6e0d4; }
+.ff-foto img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1); opacity: .75; display: block; }
+.ff-nome { flex: 1; min-width: 0; font-size: .93rem; font-weight: 600; color: #4a4a44; overflow-wrap: anywhere; }
+.ff-bt { flex: none; min-height: 44px; padding: 8px 14px; border: 1.5px solid var(--forest, #1a3a2a); border-radius: 999px; background: #fff; color: var(--forest, #1a3a2a); font: 700 .86rem var(--fonte-texto, 'Figtree', sans-serif); cursor: pointer; }
+.ff-bt:active { transform: scale(.97); }
+.ff-ok { flex: none; padding: 6px 10px; border-radius: 999px; background: #e1f5e7; color: #157538; font-size: .8rem; font-weight: 700; }
+.avise-prod { margin: 0 0 14px; font-size: 1rem; line-height: 1.45; }
+.avise-nota { margin: 6px 0 0; font-size: .84rem; color: #55554e; }
+#modal-avise input { font-size: 16px; }

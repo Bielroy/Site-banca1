@@ -526,7 +526,7 @@ const atualizarRodapeCarrinhoDOM = () => {
     if (bannerFeira) {
         const futuro = lojaAberta && ent && !ent.hoje;
         bannerFeira.textContent = foraHoje ? `Esta banca não está na feira hoje. Você pode olhar os produtos${foraHoje.volta ? `; os pedidos voltam ${textoDoDia(foraHoje.volta)}` : ''}.`
-            : futuro ? `Hoje não tem feira. Seu pedido vai para ${textoDoDia(ent.dia)}.` : '';
+            : futuro ? `Hoje não tem feira. Seu pedido vai para ${textoDoDia(ent.dia)}, com o preço do dia da feira.` : '';
         bannerFeira.classList.toggle('visivel', !!(foraHoje || futuro));
     }
 
@@ -671,7 +671,9 @@ const nomeDoDiaDoPedido = () => { const e = entregaDoPedido(); return e && e.ama
 /** Aviso "seu pedido é para..." dentro da tela de envio. */
 const pintarAvisoDeEntrega = () => {
     const ent = entregaDoPedido(), aviso = document.getElementById('checkout-entrega'); if (!aviso) return;
-    aviso.textContent = !ent ? '' : ent.amanha ? `📅 Seu pedido é para amanhã, ${textoDoDia(ent.dia)}.` : ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.`;
+    // pedido para OUTRO dia: o valor mostrado é o de hoje; o que vale é o preço do dia da entrega (a banca confirma no dia)
+    const outroDia = ent && !ent.hoje && !ent.amanha ? ' Os valores são os de hoje: o preço que vale é o do dia da feira, e a banca confirma com você.' : '';
+    aviso.textContent = !ent ? '' : ent.amanha ? `📅 Seu pedido é para amanhã, ${textoDoDia(ent.dia)}.` : ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.${outroDia}`;
     aviso.hidden = !ent;
 };
 let _escolhaDiaHtml = null;
@@ -1075,11 +1077,18 @@ const contarFunil = async (etapa) => {
     } catch (_) { /* contar nunca atrapalha a compra */ }
 };
 
+// "EM FALTA HOJE": só com a vitrine livre (sem busca, em "Todas"), e nunca na loja só vitrine. O módulo só é baixado se houver o que mostrar.
+const pintarFalta = () => {
+    const lista = emVitrine() ? [] : (STATE.esgotados || []), livre = !semAcento(STATE.busca).trim() && STATE.catAtiva === 'todas';
+    if (!lista.length && !document.getElementById('faixa-falta')) return;
+    import('./avise-loja.js').then((m) => m.pintarEmFalta(lista, { livre })).catch(() => { /* sem a faixa, a loja segue */ });
+};
+
 const renderLoja = (forcarRebuild = false) => {
     const grid = document.getElementById('lista-produtos');
     if (!STATE.catalogoChegou) return;     // produtos ainda a caminho: fica o carregando, e não um falso "sem produtos"
     if(!STATE.lojaRenderizada || forcarRebuild) construirCardsIniciais();
-    renderFaixaSempre(); renderFaixaOfertas(forcarRebuild); renderFaixasExtras(forcarRebuild); renderAtalhos();
+    renderFaixaSempre(); renderFaixaOfertas(forcarRebuild); renderFaixasExtras(forcarRebuild); renderAtalhos(); pintarFalta();
     const termo = semAcento(STATE.busca).trim();
     const cards = grid.querySelectorAll('.produto-card');
     let itensVisiveis = 0, soltosVisiveis = 0;
@@ -1518,6 +1527,7 @@ const iniciarRealTimeSync = () => {
         if (!_catsDoBanco) { definirCategorias(ex.categorias); _catsProntas = true; }
         if (!_notaDoBanco) pintarNota(ex.avaliacoes);
         usarComunicado(ex.comunicados);
+        STATE.esgotados = ex.esgotados || []; pintarFalta();       // "Em falta hoje" + Avise-me (js/avise-loja.js)
     };
     const unsubProdutos = ouvirVitrine({ onSnapshot, query, where, docCatalogo: tdoc('loja', 'catalogo'), colProdutos: tcol('produtos') }, { forcarAntigo: EM_PREVIA, aoExtras: usarExtras, aoMudar: (lista) => {
         _produtosChegaram = true;
@@ -2120,8 +2130,14 @@ const copiarLinkDaLoja = async (botao) => {
 };
 
 // "Indicar para um vizinho": abre o compartilhar do celular (WhatsApp, etc.) com um recado pronto e o link da loja.
+// O LINK CERTO DA LOJA: o endereço limpo desta loja (sem "entrar", sem rastros de busca), com a feira junto se o
+// cliente veio por ela (assim quem recebe cai na mesma feira, com a faixa das outras bancas).
+const linkParaCompartilhar = () => {
+    try { const f = lerFeiraCliente(), u = new URL(urlDaLoja(TENANT), location.origin); if (f && feiraDoClienteAqui()) u.searchParams.set('feira', f); return u.toString(); }
+    catch (_) { return location.href.split('#')[0]; }
+};
 const indicarLoja = async () => {
-    const nome = (document.getElementById('header-nome')?.textContent || 'a loja').trim(), url = location.href.split('#')[0];
+    const nome = (document.getElementById('header-nome')?.textContent || 'a loja').trim(), url = linkParaCompartilhar();
     const texto = ehLojaOriginal ? `Estou pedindo na ${nome} e entregam aqui no condomínio. Dá uma olhada:` : `Estou pedindo na ${nome} pelo celular. Dá uma olhada:`;
     try { if (navigator.share) { await navigator.share({ title: nome, text: texto, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
     window.open(`https://wa.me/?text=${encodeURIComponent(texto + ' ' + url)}`, '_blank', 'noopener');

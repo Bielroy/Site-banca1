@@ -752,6 +752,45 @@ teste('cliente da feira que cai numa banca BLOQUEADA (link da feira, última ban
 
 // ---------------------------------------------------------------- VELOCIDADE / TELA ESTÁVEL
 const medirPulos = () => { window.__pulos = 0; new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__pulos += e.value; }).observe({ type: 'layout-shift', buffered: true }); };
+// ---------------------------------------------------------------- EM FALTA HOJE + AVISE-ME (js/avise-loja.js)
+teste('loja: "Em falta hoje" embaixo da vitrine com "Avise-me"; o cliente deixa nome e WhatsApp e o aparelho lembra; some na busca; botão Compartilhar manda o link limpo da loja', async () => {
+  const c = cenarioPadrao(), agora = Date.now(), b = c.lojas.banca;
+  const entrada = (id, d) => ({ id, ...d });
+  b.catalogo = { v: 1, geradoEm: agora - 60e3, assinatura: 't', n: 2, produtos: [entrada('banana', b.produtos.banana), entrada('ovos', b.produtos.ovos)], categorias: [],
+    esgotados: [{ id: 'queijo', nome: 'Queijo canastra', cat: 'queijos', foto: '' }, { id: 'doce', nome: 'Doce de leite', cat: 'doces', foto: '' }] };
+  const { pagina, erros, fechar } = await abrir('/', c, { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, antes: () => { window.__compartilhado = []; navigator.share = async (d) => { window.__compartilhado.push(d); }; } });
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.locator('#faixa-falta').waitFor({ timeout: 5000 });
+  assert.match(await pagina.locator('#faixa-falta').innerText(), /Em falta hoje[\s\S]*Queijo canastra[\s\S]*Doce de leite/);
+  assert.ok(await pagina.evaluate(() => { const g = document.getElementById('lista-produtos'), f = document.getElementById('faixa-falta'); return !!(g.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING); }), 'fica depois da vitrine');
+  await pagina.locator('[data-avise="queijo"]').click();
+  await pagina.locator('#modal-avise.aberto, #modal-avise.active, #modal-avise[style*="flex"]').first().waitFor({ timeout: 4000 }).catch(() => {});
+  await pagina.locator('#avise-nome').fill('Marina');
+  await pagina.locator('#avise-tel').fill('62 99999-0001');
+  await pagina.locator('#avise-enviar').click();
+  await pagina.waitForFunction(() => /Você será avisado/.test(document.getElementById('faixa-falta')?.innerText || ''), null, { timeout: 5000 });
+  const ch = servidor.chamadas.filter((x) => x.caminho === '/api/checkout' && x.corpo.acao === 'avise-me').pop();
+  assert.deepStrictEqual([ch.corpo.produtoId, ch.corpo.nome, ch.corpo.telefone], ['queijo', 'Marina', '62999990001']);
+  assert.strictEqual(await pagina.locator('[data-avise="doce"]').count(), 1, 'o outro produto continua com o botão');
+  // telefone sem DDD não vai ao servidor
+  const antes = servidor.chamadas.length;
+  await pagina.locator('[data-avise="doce"]').click();
+  await pagina.locator('#avise-tel').fill('99990001');
+  await pagina.locator('#avise-enviar').click(); await pagina.waitForTimeout(300);
+  assert.strictEqual(servidor.chamadas.filter((x, i) => i >= antes && x.corpo.acao === 'avise-me').length, 0);
+  await pagina.locator('[data-fechar="modal-avise"]').click();
+  // na busca, a faixa some (como as outras faixas)
+  await pagina.locator('#busca-input').fill('ban'); await pagina.waitForTimeout(400);
+  assert.ok(await pagina.locator('#faixa-falta').isHidden());
+  await pagina.locator('#busca-input').fill(''); await pagina.waitForTimeout(400);
+  // compartilhar: o link limpo da loja
+  await pagina.locator('.btn-compartilhar').click(); await pagina.waitForTimeout(200);
+  const comp = await pagina.evaluate(() => window.__compartilhado);
+  assert.strictEqual(comp.length, 1); assert.ok(!/entrar=|#/.test(comp[0].url), comp[0].url);
+  assert.ok(await pagina.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'nada vaza para o lado');
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- VITRINE NUM DOCUMENTO SÓ (lib/catalogo.js, js/catalogo-loja.js)
 teste('vitrine num documento só: a loja lê o catálogo + só os produtos mudados há pouco (não lê um por um); mudança recente do painel vale por cima', async () => {
   const c = cenarioPadrao(), agora = Date.now(), b = c.lojas.banca;
@@ -2618,7 +2657,7 @@ const ajusteFalso = (c) => {
         ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, meta: { geradoEm: '2026-10-26T15:00:00.000Z' }, indiceClientes: [{ id: 'c1', nome: 'Ana Lima', condominio: 'Alfa', quadra: '1', lote: '2', n: 2, ult: '2026-10-20', pri: '2026-09-01', gasto: 50 }, { id: 'c2', nome: 'Bruno Reis', condominio: 'Alfa', quadra: '3', lote: '4', n: 1, ult: '2026-10-25', pri: '2026-10-25', gasto: 20 }] }), 2000))
         : { sucesso: true, meta: { geradoEm: '2026-10-26T10:00:00.000Z' }, indiceClientes: [{ id: 'c1', nome: 'Ana Lima', condominio: 'Alfa', quadra: '1', lote: '2', n: 2, ult: '2026-10-20', pri: '2026-09-01', gasto: 50 }] })
       : c.acao === 'ranking' ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, nivel: 'popular', itens: ['ovos', 'banana', 'alface', 'tomate'].map((id, i) => ({ id, p: 0.9 - i * 0.2 })) }), 1500)) : {}),
-    '/api/checkout': (c) => (c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),
+    '/api/checkout': (c) => (c.acao === 'avise-me' ? { sucesso: true, jaEstava: false } : c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),
     '/api/plataforma': (c) => (c.acao === 'situacao' ? { sucesso: true, temDono: true, souEu: true }
       : c.acao === 'erros' ? { sucesso: true, erros: [{ id: 'e1', assinatura: 'e'.repeat(20), tipo: 'erro', msg: "Cannot read properties of undefined (reading 'preco')", vezes: 3, ultimo: new Date().toISOString(), onde: '/assets/main-X.js:10:5', paginas: ['/'], navegadores: ['Android · Chrome 129'], lojas: ['banca'], pilha: 'at x' },
         { id: 'v1', assinatura: 'a'.repeat(20), tipo: 'visual', msg: 'Texto cortado ou vazando: faixa › card de produto › preço', vezes: 12, dias: ['2026-10-22', '2026-10-23'], telas: ['320px · letra 200%', '375px · letra 150%'], ultimo: new Date().toISOString(), onde: '.faixa-rolo .produto-card .etq-preco', paginas: ['/'], navegadores: ['iPhone · Safari 17'], lojas: ['banca'], pilha: 'cortado sem "..."' },

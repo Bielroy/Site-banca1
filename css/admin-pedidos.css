@@ -107,3 +107,6 @@
 .pi-feito .btn .ic { width: 18px; height: 18px; }
 
 @media (prefers-reduced-motion: reduce) { .pc-botao { transition: none; } }
+.pc-acerto.preco { flex-wrap: wrap; background: #e2f1fa; color: #0a3f5f; }
+.pc-acerto.preco span { flex: 1 1 200px; }
+.pc-acerto.preco .bt { flex: 1 0 100%; min-height: 44px; }

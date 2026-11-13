@@ -16,3 +16,6 @@ html[data-painel-tema="escuro"] .pc[data-etapa="env"] { --pd-cor: #2f7a55; --pd-
 html[data-painel-tema="escuro"] .pc[data-etapa="feito"] { --pd-cor: #5d6a62; --pd-suave: #26302b; --pd-tinta: #c3ccc6; }
 html[data-painel-tema="escuro"] .pi-mais { background: #1b2620; }
 html[data-painel-tema="escuro"] .pi-feito { background: #17281f; border-color: #2f5a44; }
+html[data-painel-tema="escuro"] .es-espera { background: #14232d; border-left-color: #3a8cc0; }
+html[data-painel-tema="escuro"] .es-espera > b { color: #8dcaec; }
+html[data-painel-tema="escuro"] .es-espera-item { border-top-color: #24394a; }
