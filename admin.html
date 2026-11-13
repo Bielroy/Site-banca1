@@ -455,6 +455,29 @@
 
                 <div class="op-salvar"><button class="btn-salvar-config" id="btn-salvar-config">Salvar configurações</button></div>
 
+                <details class="op-secao frete-bloco" id="frete-bloco">
+                    <summary><span><b>Entrega fora do dia da feira (frete)</b><small>Receber hoje pagando o frete, por distância e peso</small></span></summary>
+                    <div class="op-corpo">
+                    <p class="dica-campo">Quem é de feira e pede num dia sem feira escolhe: esperar a feira (sem frete) ou receber hoje pagando o frete. O frete vai do ponto de saída até o condomínio do cliente. Dois pedidos perto um do outro dividem a viagem.</p>
+                    <label class="chk-linha" for="frete-ligado"><input type="checkbox" id="frete-ligado"> Oferecer entrega hoje com frete</label>
+                    <div class="form-group" style="width:100%"><label for="frete-origem">Ponto de saída (latitude, longitude)</label>
+                        <div class="frete-origem-linha"><input type="text" id="frete-origem" inputmode="decimal" autocomplete="off" placeholder="-16.680000, -49.250000"><button type="button" class="btn-outline" id="frete-gps">Usar a minha localização</button></div>
+                        <small class="dica-campo">Fica só no painel: o cliente não vê. No Google Maps, toque e segure no lugar e copie os números.</small></div>
+                    <div class="grid-2">
+                        <div class="form-group"><label for="frete-base">Saída (R$)</label><input type="number" id="frete-base" min="0" step="0.5" inputmode="decimal" placeholder="5"></div>
+                        <div class="form-group"><label for="frete-km">Por km (R$)</label><input type="number" id="frete-km" min="0" step="0.1" inputmode="decimal" placeholder="1.5"></div>
+                        <div class="form-group"><label for="frete-kg">Por kg a mais (R$)</label><input type="number" id="frete-kg" min="0" step="0.1" inputmode="decimal" placeholder="0.5"></div>
+                        <div class="form-group"><label for="frete-kg-livre">Quilos sem cobrar peso</label><input type="number" id="frete-kg-livre" min="0" step="1" inputmode="decimal" placeholder="5"></div>
+                        <div class="form-group"><label for="frete-margem">Pelo tempo de entrega (%)</label><input type="number" id="frete-margem" min="0" max="100" step="1" inputmode="decimal" placeholder="5"></div>
+                        <div class="form-group"><label for="frete-minimo">Frete mínimo (R$)</label><input type="number" id="frete-minimo" min="0" step="0.5" inputmode="decimal" placeholder="8"></div>
+                        <div class="form-group"><label for="frete-raio">Entrega até (km)</label><input type="number" id="frete-raio" min="0" step="1" inputmode="decimal" placeholder="15"></div>
+                        <div class="form-group"><label for="frete-juntar">Juntar pedidos a até (km)</label><input type="number" id="frete-juntar" min="0" step="0.5" inputmode="decimal" placeholder="2"></div>
+                    </div>
+                    <small class="dica-campo">Conta: saída + km × preço do km (até o mais longe da rota, dividido entre os pedidos pela distância de cada um) + peso acima do livre, mais a porcentagem do tempo. Arredonda para cima de 50 em 50 centavos.</small>
+                    <div class="op-salvar"><button class="btn-salvar-config" id="btn-salvar-frete">Salvar frete</button></div>
+                    </div>
+                </details>
+
                 <p class="op-titulo so-dono">Só o dono da loja vê o que vem abaixo</p>
                 <!-- Maquininha (PagBank): aparece só para o proprietário (js/admin-maquininha.js) -->
                 <div class="copia-box" id="maq-box" hidden>

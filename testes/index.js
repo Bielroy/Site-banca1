@@ -449,6 +449,35 @@ teste('feira: a data da entrega é a mesma na loja e no servidor (dias, horário
   assert.deepStrictEqual(F.limparDatas(['2026-10-20', 'lixo', '2026-10-20', '2020-01-01', '2026-02-31x'], t('2026-10-13T15:00:00Z')), ['2026-10-20'], 'datas: só válidas, de hoje em diante, sem repetir');
   assert.strictEqual(F.limparHora('7:30'), ''); assert.strictEqual(F.limparHora('07:30'), '07:30'); assert.strictEqual(F.limparHora('24:00'), '');
 });
+teste('frete: "hoje não tem feira" + receber hoje: o servidor cota, cobra no total, guarda a rota e o segundo pedido de perto paga menos', async () => {
+  const hojeDow = new Date(Date.now() - 3 * 3600000).getUTCDay(), outroDia = (hojeDow + 2) % 7;
+  const base = semente();
+  base['feiras/feira-x'] = { nome: 'Feira X', dias: [outroDia], lojas: [{ id: 'banca' }], conds: [{ id: 'munique', nome: 'Jardins Munique', formato: 'ql', lat: -16.70, lng: -49.27 }] };
+  base['loja/frete'] = { ligado: true, origem: { lat: -16.68, lng: -49.25 }, base: 5, porKm: 1.5, porKg: 0, margem: 5, minimo: 4, raioKm: 15, juntarKm: 2 };
+  const db = criarBanco(base); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  const F = require(raiz('lib/feira')), hoje = F.hojeBR();
+  const cot = await chamar(api, { headers: ip(), body: { acao: 'frete', feira: 'feira-x', condominio: 'jardins munique', itens: [{ id: 'tomate', qtd: 2, tipo: 'kg' }] } });
+  assert.strictEqual(cot.status, 200, JSON.stringify(cot.corpo)); assert.ok(cot.corpo.ok && cot.corpo.valor > 0 && cot.corpo.rota === 1, JSON.stringify(cot.corpo));
+  assert.ok(!db._dados.has(`fretes/${hoje}`), 'cotar não grava nada');
+  const p1 = pedido({ feira: 'feira-x', receberHoje: true }), r1 = await chamar(api, { headers: ip(), body: p1 });
+  assert.strictEqual(r1.status, 200, JSON.stringify(r1.corpo));
+  const g1 = db._dados.get(`pedidos/${p1.idempotencyKey}`);
+  assert.strictEqual(g1.entregaDia, hoje); assert.strictEqual(g1.paraHoje, true, 'é para hoje');
+  assert.strictEqual(g1.entrega.frete.valor, cot.corpo.valor, 'cobra o que a cotação mostrou'); assert.strictEqual(g1.entrega.taxa, 0, 'frete no lugar da taxa');
+  assert.ok(Math.abs(g1.total - (g1.itens.reduce((s2, i) => s2 + i.subtotal, 0) + cot.corpo.valor)) < 0.01, 'o frete entra no total');
+  assert.ok(db._dados.get(`fretes/${hoje}`).pedidos[p1.idempotencyKey].km > 0, 'a rota de hoje guarda este pedido');
+  assert.ok(decodeURIComponent(r1.corpo.pedido.whatsappMsg).includes('Entrega HOJE fora da feira'), 'a banca fica sabendo pelo WhatsApp');
+  const p2 = pedido({ feira: 'feira-x', receberHoje: true }), r2 = await chamar(api, { headers: ip(), body: p2 });
+  const g2 = db._dados.get(`pedidos/${p2.idempotencyKey}`);
+  assert.strictEqual(r2.status, 200); assert.strictEqual(g2.entrega.frete.rota, 2); assert.ok(g2.entrega.frete.valor < g1.entrega.frete.valor, 'mesmo condomínio, mesma viagem: paga a parte dele');
+  // sem pedir "receber hoje", segue para a feira, sem frete
+  const p3 = pedido({ feira: 'feira-x' }); await chamar(api, { headers: ip(), body: p3 });
+  assert.notStrictEqual(db._dados.get(`pedidos/${p3.idempotencyKey}`).entregaDia, hoje); assert.ok(!db._dados.get(`pedidos/${p3.idempotencyKey}`).entrega.frete);
+  // condomínio sem ponto no mapa: recusa com o motivo, nada é criado
+  const p4 = pedido({ feira: 'feira-x', receberHoje: true, condominio: 'Outro Lugar' }), r4 = await chamar(api, { headers: ip(), body: p4 });
+  assert.notStrictEqual(r4.status, 200); assert.match(r4.corpo.error, /calcular o frete/); assert.ok(!db._dados.has(`pedidos/${p4.idempotencyKey}`));
+});
+
 teste('feira: pedido fora do dia vai para a próxima feira (caixa do dia certo, mensagem com a data); loja fora da feira segue como sempre', async () => {
   const hojeDow = new Date(Date.now() - 3 * 3600000).getUTCDay(), outroDia = (hojeDow + 2) % 7;
   const base = semente();
@@ -1981,6 +2010,30 @@ teste('vagas por horário (como o Cal.com): lotou, o servidor recusa e a loja mo
   r = await chamar(carregarApi(raiz('api/checkout.js'), criarAdmin(db2, TOKENS_P)), { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: HOR[0] }) });
   assert.match(r.corpo.error || '', /fechou para hoje/);
   assert.ok(![...db2._dados.keys()].some((k) => k.startsWith('vagas/')), 'só antecedência: não conta vaga');
+});
+
+teste('frete fora do dia da feira: distância até o condomínio, peso, 5% pelo tempo, rota junta dividida; o servidor cobra e guarda a rota', async () => {
+  const F = require(raiz('lib/frete'));
+  const cfg = F.lerConfig({ ligado: true, origem: { lat: -16.68, lng: -49.25 }, base: 5, porKm: 1.5, porKg: 0.5, kgLivre: 5, margem: 5, minimo: 8, raioKm: 15, juntarKm: 2 });
+  assert.deepStrictEqual(F.lerConfig({}), { ligado: false, origem: null, base: 0, porKm: 0, porKg: 0, kgLivre: 5, margem: 5, minimo: 0, raioKm: 15, juntarKm: 2 }, 'padrão: 5% de margem, 5 kg livres, 15 km, junta a 2 km');
+  const perto = { lat: -16.70, lng: -49.27 };              // ~3,8 km de rua
+  const km = F.kmEntre(cfg.origem, perto); assert.ok(km > 3.5 && km < 4.2, String(km));
+  let r = F.cotar(cfg, perto, 3);
+  assert.ok(r.ok && r.rota === 1); assert.strictEqual(r.valor, Math.ceil(((5 + 1.5 * km) * 1.05) * 2 - 1e-9) / 2, 'saída + km, +5%, arredonda de 50 em 50 centavos');
+  assert.strictEqual(F.cotar(cfg, perto, 9).valor, Math.ceil(((5 + 1.5 * km + 0.5 * 4) * 1.05) * 2 - 1e-9) / 2, '4 kg acima dos 5 livres');
+  const vizinho = { lat: -16.705, lng: -49.272, km: F.kmEntre(cfg.origem, { lat: -16.705, lng: -49.272 }) };
+  const junto = F.cotar(cfg, perto, 3, [vizinho, { lat: -16.9, lng: -49.5, km: 40 }]);
+  assert.strictEqual(junto.rota, 2, 'junta só com quem está perto'); assert.ok(junto.valor < r.valor && junto.valor >= 8, 'dividindo a viagem, fica mais barato (sem passar do mínimo)');
+  assert.strictEqual(F.cotar(cfg, { lat: -17.5, lng: -49.25 }).motivo, 'longe');
+  assert.strictEqual(F.cotar({ ...cfg, ligado: false }, perto).motivo, 'desligado'); assert.strictEqual(F.cotar(cfg, null).motivo, 'sem-destino');
+  assert.strictEqual(F.cotar(cfg, { lat: -16.6801, lng: -49.2501 }).valor, 8, 'pertinho: o mínimo');
+  assert.strictEqual(F.quilos([{ unidade: 'kg', qtd: 1.5 }, { unidade: 'g', qtd: 500 }, { unidade: 'kg', tipo: 'un', qtd: 4 }, { unidade: 'un', qtd: 12 }]), 3, '1,5 + 0,5 + 4 × 250 g; ovo não pesa');
+  assert.strictEqual(F.condominioNaFeira({ conds: [{ id: 'm', nome: 'Jardins Madri', lat: 1, lng: 2, apelidos: ['Madri'] }] }, 'jardins  madrí').id, 'm');
+  assert.strictEqual(F.condominioNaFeira({ conds: [{ id: 'm', nome: 'Jardins Madri', apelidos: ['Madri'] }] }, 'Madri').id, 'm', 'nome antigo também acha');
+  // condomínio com ponto: o cadastro guarda e a feira copia
+  const C = require(raiz('lib/condominios'));
+  assert.deepStrictEqual(C.limparLista([{ nome: 'Jardins Madri', lat: -16.7, lng: -49.27 }, { nome: 'Sem Ponto', lat: 0, lng: 0 }, { nome: 'Lixo', lat: 'x', lng: 999 }]).map((c) => [c.nome, c.lat]), [['Jardins Madri', -16.7], ['Lixo', undefined], ['Sem Ponto', undefined]]);
+  assert.strictEqual(C.copiaParaFeira([{ id: 'm', nome: 'Jardins Madri', formato: 'ql', lat: -16.7, lng: -49.27 }]).conds[0].lat, -16.7);
 });
 
 // ------------------------------------------------------------------ entrega (taxa e horário)

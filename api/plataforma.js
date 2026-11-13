@@ -403,6 +403,9 @@ async function feira(req, res) {
 async function condominio(req, res) {
   const b = req.body || {}, lista = await Cond.garantir(db, T);
   const nome = texto(b.nome, 80), formato = Cond.FORMATOS.includes(b.formato) ? b.formato : 'ql', id = String(b.id || '');
+  // ponto no mapa (opcional): "lat, lng" colado do Google Maps ou o GPS do celular. Vazio = tira o ponto.
+  const ponto = (() => { const m = String(b.ponto == null ? '' : b.ponto).match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/); return m ? { lat: Number(m[1]), lng: Number(m[2]) } : null; })();
+  if (String(b.ponto || '').trim() && !ponto) throw falha(400, 'Localização: cole no formato "-16.68, -49.25" (latitude, longitude).');
   const feirasSnap = await db.collection('feiras').get();
   const usam = (cid) => feirasSnap.docs.filter((d) => Cond.idsDaFeira(lista, d.data()).includes(cid));
   if (b.remover === true) {
@@ -417,7 +420,7 @@ async function condominio(req, res) {
   if (id) {
     const atual = lista.find((c) => c.id === id); if (!atual) throw falha(404, 'Condomínio não encontrado.');
     // o nome antigo vira apelido: cliente com o endereço antigo guardado continua caindo na feira
-    const nova = lista.map((c) => (c.id === id ? { ...c, nome, formato, apelidos: Cond.normCond(c.nome) === Cond.normCond(nome) ? c.apelidos || [] : [c.nome, ...(c.apelidos || [])] } : c));
+    const nova = lista.map((c) => { if (c.id !== id) return c; const { lat, lng, ...resto } = c; return { ...resto, nome, formato, ...(b.ponto === undefined ? { lat, lng } : ponto || {}), apelidos: Cond.normCond(c.nome) === Cond.normCond(nome) ? c.apelidos || [] : [c.nome, ...(c.apelidos || [])] }; });
     await Cond.salvar(db, nova);
     // as feiras que usam este condomínio passam a ter o nome e o formato novos
     const lote = db.batch(); let n = 0;
@@ -426,7 +429,7 @@ async function condominio(req, res) {
     return res.status(200).json({ sucesso: true });
   }
   if (lista.length >= Cond.MAX) throw falha(400, `O cadastro chegou a ${Cond.MAX} condomínios.`);
-  await Cond.salvar(db, [...lista, { nome, formato }]);
+  await Cond.salvar(db, [...lista, { nome, formato, ...(ponto || {}) }]);
   return res.status(200).json({ sucesso: true });
 }
 

@@ -33,3 +33,5 @@
 .item-fora button { border: 0; background: none; padding: 0; margin-left: 4px; font: inherit; font-weight: 800; color: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .empty-state .btn-nao-achei .ico { width: 22px; height: 22px; margin: 0; opacity: 1; color: #fff; stroke: #fff; }
 .empty-state .btn-nao-achei .ico path[fill="currentColor"] { fill: #fff; }
+/* "Hoje não tem feira no seu condomínio": esperar a feira ou receber hoje com frete (js/loja.js pintarFreteHoje) */
+.frete-hoje .frete-nota { flex-basis: 100%; margin: 2px 0 0; font-size: .9rem; line-height: 1.4; color: var(--text-mid); }

@@ -2126,7 +2126,10 @@ const cartaoDoPedido = (p) => {
     const pago = p.pagamento?.status === 'PAID';
     const infoPag = pago ? '<span class="pc-pago"><i class="ic" data-i="certo"></i> PAGO</span>' : '';
     const retirada = p.modo === 'retirada';
-    const infoEntrega = retirada || (p.entrega && (p.entrega.horario || p.entrega.horarioACombinar || Number(p.entrega.taxa) > 0))
+    // ENTREGA HOJE FORA DA FEIRA (lib/frete.js): o cliente pagou o frete para não esperar a feira
+    const fr = p.entrega && p.entrega.frete;
+    const infoFrete = fr ? `<p class="pc-nota entrega frete"><i class="ic" data-i="entrega"></i> ${escapeHTML(`HOJE, fora da feira · frete ${fmt(fr.valor)} · ${String(fr.km).replace('.', ',')} km${fr.rota > 1 ? ` · rota com ${fr.rota}` : ''}`)}</p>` : '';
+    const infoEntrega = infoFrete + (retirada || (p.entrega && (p.entrega.horario || p.entrega.horarioACombinar || Number(p.entrega.taxa) > 0)))
         ? `<p class="pc-nota entrega"><i class="ic" data-i="${retirada ? 'caixa' : 'entrega'}"></i> ${escapeHTML([retirada ? `${p.feiraId ? 'RETIRADA NA FEIRA' : 'RETIRADA NA BANCA'}${p.retiradaLocal ? ` (${p.retiradaLocal})` : ''}` : '', p.entrega?.horario || (p.entrega?.horarioACombinar ? 'horário a combinar' : ''), Number(p.entrega?.taxa) > 0 ? `entrega ${fmt(p.entrega.taxa)}` : ''].filter(Boolean).join(' · '))}</p>` : '';
     const infoTroco = p.troco ? `<p class="pc-nota troco"><i class="ic" data-i="dinheiro"></i> Troco para: ${escapeHTML(p.troco)}</p>` : '';
     // pedido para outro dia (cliente da feira pediu fora do dia da feira) e feira cancelada nesse dia
@@ -3054,6 +3057,47 @@ function pintarAgenda({ manter = false } = {}) {
         agendaMexida = true; pintarAgenda();
     });
 })();
+
+// FRETE FORA DO DIA DA FEIRA (lib/frete.js): fica em loja/frete, que só a equipe lê (o ponto de saída pode ser a casa do dono)
+const FRETE_CAMPOS = [['frete-base', 'base'], ['frete-km', 'porKm'], ['frete-kg', 'porKg'], ['frete-kg-livre', 'kgLivre'], ['frete-margem', 'margem'], ['frete-minimo', 'minimo'], ['frete-raio', 'raioKm'], ['frete-juntar', 'juntarKm']];
+let freteCarregado = false;
+async function carregarFrete() {
+    if (freteCarregado || !document.getElementById('frete-ligado')) return;
+    try {
+        const s = await getDoc(tdoc('loja', 'frete')), f = s.exists() ? s.data() : {};
+        document.getElementById('frete-ligado').checked = f.ligado === true;
+        document.getElementById('frete-origem').value = f.origem && Number.isFinite(f.origem.lat) ? `${f.origem.lat}, ${f.origem.lng}` : '';
+        const padrao = { margem: 5, kgLivre: 5, raioKm: 15, juntarKm: 2 };
+        FRETE_CAMPOS.forEach(([id, k]) => { const el = document.getElementById(id); if (el) el.value = f[k] !== undefined ? f[k] : (padrao[k] !== undefined ? padrao[k] : ''); });
+        freteCarregado = true;
+    } catch (e) { /* sem permissão (papel sem configuração) ou sem internet: o bloco fica em branco */ }
+}
+document.querySelector('.tab[data-aba="config"]')?.addEventListener('click', () => { carregarFrete(); });
+document.getElementById('frete-gps')?.addEventListener('click', () => {
+    if (!navigator.geolocation) return showToast('Este aparelho não informa a localização. Cole o ponto do Google Maps.', true);
+    showToast('Pegando a localização...');
+    navigator.geolocation.getCurrentPosition((pos) => {
+        document.getElementById('frete-origem').value = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`;
+        showToast('Ponto marcado. Toque em "Salvar frete".');
+    }, () => showToast('Não deu para pegar a localização. Libere o GPS ou cole o ponto do Google Maps.', true), { enableHighAccuracy: true, timeout: 15000 });
+});
+document.getElementById('btn-salvar-frete')?.addEventListener('click', async () => {
+    const bt = document.getElementById('btn-salvar-frete');
+    try {
+        const t = document.getElementById('frete-origem').value.trim(), m = t.match(/^(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/);
+        if (t && !m) throw new Error('Ponto de saída: cole no formato "-16.68, -49.25" ou toque em "Usar a minha localização".');
+        const ligado = document.getElementById('frete-ligado').checked;
+        if (ligado && !m) throw new Error('Para ligar o frete, marque o ponto de onde a entrega sai.');
+        const dados = { ligado, origem: m ? { lat: Number(m[1]), lng: Number(m[2]) } : null, atualizadoEm: Date.now() };
+        FRETE_CAMPOS.forEach(([id, k]) => { const v = Number(String(document.getElementById(id)?.value || '').replace(',', '.')); dados[k] = Number.isFinite(v) && v >= 0 ? v : 0; });
+        if (dados.margem > 100) throw new Error('Margem: no máximo 100%.');
+        bt.disabled = true;
+        await setDoc(tdoc('loja', 'frete'), dados);
+        anotar('frete', `${ligado ? 'ligado' : 'desligado'} · base ${fmt(dados.base)} + ${fmt(dados.porKm)}/km`);
+        showToast(ligado ? 'Frete salvo. Quem é de feira já pode receber hoje pagando o frete.' : 'Frete salvo (desligado).');
+    } catch (e) { showToast(e.message || 'Não consegui salvar o frete.', true); }
+    finally { bt.disabled = false; }
+});
 
 document.getElementById('btn-salvar-config').addEventListener('click', async () => {
     const btn = document.getElementById('btn-salvar-config');

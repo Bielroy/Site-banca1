@@ -108,6 +108,7 @@ const Avisos = require('../lib/avisos');
 const P = require('../lib/prudencia');
 const Entrega = require('../lib/entrega');
 const Vagas = require('../lib/vagas');
+const Frete = require('../lib/frete');
 const E = require('../lib/estoque');
 const Conta = require('../lib/conta');
 const Cofre = require('../lib/cofre');
@@ -132,6 +133,7 @@ function montarTextoWhatsApp(pedido, numero) {
   // pedido para outro dia: o preço pode mudar até lá; a banca confirma no dia (painel → "Confirmar os preços de hoje")
   if (pedido.precoNoDia) msg += `_Valores de hoje. O preço que vale é o do dia da entrega._\n`;
   const rotuloHora = pedido.modo === 'retirada' ? 'Retirada' : 'Entrega';
+  if (pedido.entrega && pedido.entrega.frete) msg += `🚚 *Entrega HOJE fora da feira* · frete ${fmtBRL(pedido.entrega.frete.valor)} (${String(pedido.entrega.frete.km).replace('.', ',')} km${pedido.entrega.frete.rota > 1 ? `, rota com ${pedido.entrega.frete.rota}` : ''})\n`;
   if (pedido.entrega && pedido.entrega.horario) msg += `🕒 ${rotuloHora}: ${pedido.entrega.horario}\n`;
   else if (pedido.entrega && pedido.entrega.horarioACombinar) msg += `🕒 ${rotuloHora}: horário a combinar\n`;
   msg += `💳 Pagamento: ${pedido.pag || 'A combinar'}\n`;
@@ -219,6 +221,29 @@ module.exports = async function handler(req, res) {
     } catch (e) {
       if (e && e.status && e.status < 500) return res.status(e.status).json({ error: e.message });
       console.error('[avise-me]', e && e.message); return res.status(500).json({ error: 'Não consegui anotar agora. Tente de novo em instantes.' });
+    }
+  }
+
+  // FRETE FORA DO DIA DA FEIRA (lib/frete.js): quanto fica para receber HOJE, sem esperar a feira. Só cota: nada é gravado.
+  if (req.body && req.body.acao === 'frete') {
+    if (H.passouNaMemoria(`frete:${ip}`, 30, 60000)) return res.status(429).json({ error: 'Muitas consultas seguidas. Aguarde um minuto.' });
+    try { bootFirebase(); } catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
+    try {
+      const { tid: lojaF } = await T.resolverLoja(db, req);
+      const feira = await Feira.daLoja(db, lojaF, req.body.feira);
+      const prox = feira ? Feira.proximaEntrega(feira, Date.now()) : null;
+      if (!feira || !prox || prox.hoje) return res.status(200).json({ sucesso: true, ok: false, motivo: 'tem-feira' });
+      const [cfgS, dia] = await Promise.all([T.docDe(db, lojaF, 'loja/frete').get(), Promise.resolve(Feira.hojeBR())]);
+      const cfg = Frete.lerConfig(cfgS.exists ? cfgS.data() : {}), cond = Frete.condominioNaFeira(feira, sanitizeString(req.body.condominio, 60));
+      const itensF = (Array.isArray(req.body.itens) ? req.body.itens : []).slice(0, 80);
+      const prods = await Promise.all(itensF.map((i) => (H.idSeguro(i && i.id, 1, 120) ? T.docDe(db, lojaF, `produtos/${i.id}`).get().catch(() => null) : null)));
+      const kg = Frete.quilos(itensF.map((i, k) => ({ qtd: Number(i && i.qtd) || 0, tipo: i && i.tipo, unidade: prods[k] && prods[k].exists ? prods[k].data().unidade : '' })));
+      const fs = await T.docDe(db, lojaF, `fretes/${dia}`).get();
+      const r = Frete.cotar(cfg, cond, kg, Object.values((fs.exists && fs.data().pedidos) || {}));
+      return res.status(200).json({ sucesso: true, ...r, proximaFeira: prox.dia, ...(r.ok ? {} : { aviso: Frete.MOTIVOS[r.motivo] || '' }) });
+    } catch (e) {
+      if (e && e.status && e.status < 500) return res.status(e.status).json({ error: e.message });
+      console.error('[frete]', e && e.message); return res.status(500).json({ error: 'Não consegui calcular o frete agora.' });
     }
   }
 
@@ -383,6 +408,8 @@ module.exports = async function handler(req, res) {
       if (feiraDoPedido) {
         entrega = Feira.proximaEntrega(feiraDoPedido, Date.now());
         if (!entrega) throw new Error('Esta feira está sem data marcada. Fale com a banca pelo WhatsApp.');
+        // "Hoje não tem feira no seu condomínio": o cliente escolheu RECEBER HOJE pagando o frete (lib/frete.js)
+        if (req.body && req.body.receberHoje === true && entrega.hoje === false && !querRetirada) entrega = { dia: Feira.hojeBR(), dow: agoraBrasilia().getUTCDay(), hoje: true, frete: true };
       } else if (req.body && req.body.paraAmanha === true) {
         // "Para quando? Amanhã": vale se a loja não desligou e amanhã é dia de abrir. Preço, vitrine e caixa são os de amanhã.
         if (!Dias.amanhaPermitido(configSnap.exists ? configSnap.data() : {}, Date.now())) throw new Error('A loja não está aceitando pedido para amanhã. Escolha "Hoje" e envie de novo.');
@@ -433,6 +460,9 @@ module.exports = async function handler(req, res) {
       const cfgVagas = Vagas.lerVagas(configCfg.entrega), diaDaVaga = entrega ? entrega.dia : Feira.hojeBR();
       const vagasRef = T.docDe(db, tid, `vagas/${diaDaVaga}`);
       const vagasSnap = cfgVagas.vagas > 0 || cfgVagas.antecedenciaMin > 0 ? await t.get(vagasRef) : null;
+      // frete de hoje: a configuração (privada) da banca e os pedidos de frete do dia, para juntar a rota
+      const freteRef = entrega && entrega.frete ? T.docDe(db, tid, `fretes/${entrega.dia}`) : null;
+      const [freteCfgSnap, fretesSnap] = freteRef ? await Promise.all([t.get(T.docDe(db, tid, 'loja/frete')), t.get(freteRef)]) : [null, null];
 
       // ---- Cálculo (ainda sem escrever) ----
       let totalExatoCentavos = 0;
@@ -590,8 +620,16 @@ module.exports = async function handler(req, res) {
       }
       // cupom de 100% (família, cortesia): o pedido sai de graça, entrega incluída
       const cortesia = !!cupomAplicado && cupomAplicado.percentual >= 100;
-      const taxaEntregaC = cortesia || retirada ? 0 : Entrega.taxaC(cfgEntrega, totalExatoCentavos);   // retirada: sem taxa
-      totalExatoCentavos += taxaEntregaC;
+      // FRETE de hoje (fora do dia da feira): substitui a taxa de entrega. O preço fica fechado aqui.
+      let frete = null;
+      if (freteRef) {
+        const condF = Frete.condominioNaFeira(feiraDoPedido, condominio);
+        const r = Frete.cotar(Frete.lerConfig(freteCfgSnap && freteCfgSnap.exists ? freteCfgSnap.data() : {}), condF, Frete.quilos(itensValidados), Object.values((fretesSnap && fretesSnap.exists && fretesSnap.data().pedidos) || {}));
+        if (!r.ok) throw new Error(Frete.MOTIVOS[r.motivo] || 'Não deu para calcular o frete.');
+        frete = { valor: r.valor, km: r.km, rota: r.rota, ponto: { lat: condF.lat, lng: condF.lng } };
+      }
+      const taxaEntregaC = cortesia || retirada || frete ? 0 : Entrega.taxaC(cfgEntrega, totalExatoCentavos);   // retirada: sem taxa; frete: no lugar da taxa
+      totalExatoCentavos += taxaEntregaC + (frete && !cortesia ? paraCentavos(frete.valor) : 0);
 
       const totalExato = paraFlutuante(totalExatoCentavos);
       const temItensAPesar = itensValidados.some((i) => i.aPesar);
@@ -634,6 +672,10 @@ module.exports = async function handler(req, res) {
       E.registrarMovs(t, db, tid, estoqueUpdates.map(([, , m]) => ({ ...m, tipo: 'venda', pedidoId: pedidoRef.id })), admin.firestore.FieldValue);
       if (cupomAplicado) {
         t.update(cupomAplicado.ref, { usos: admin.firestore.FieldValue.increment(1) });
+      }
+      if (frete) {
+        dadosPedido.entrega = { ...dadosPedido.entrega, frete: { valor: cortesia ? 0 : frete.valor, km: frete.km, rota: frete.rota } };
+        t.set(freteRef, { pedidos: { [pedidoRef.id]: { ...frete.ponto, km: frete.km } }, atualizadoEm: new Date().toISOString() }, { merge: true });
       }
       if (chaveVaga) {
         dadosPedido.entrega = { ...dadosPedido.entrega, vaga: chaveVaga };      // o cancelamento devolve esta vaga
