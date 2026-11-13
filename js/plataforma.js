@@ -132,8 +132,10 @@ function abaCondominios() {
     <ul class="pf-lista">${conds.map((c) => {
         const em = feirasDoCond(c.id);
         if (S.editandoCond === c.id) return `<li class="pf-cond editando" data-cond="${escapeHTML(c.id)}"><div class="pf-form-linha"><input type="text" data-cond-nome maxlength="80" value="${escapeHTML(c.nome)}" aria-label="Nome do condomínio">${formatoSelect('', c.formato, 'data-cond-formato')}</div>
+            <div class="pf-form-linha"><input type="text" data-cond-ponto inputmode="decimal" autocomplete="off" placeholder="Localização: -16.68, -49.25" value="${Number.isFinite(c.lat) ? escapeHTML(`${c.lat}, ${c.lng}`) : ''}" aria-label="Localização do condomínio (latitude, longitude), para o frete"><button type="button" class="pf-bt" data-pf="cond-gps">Estou aqui</button></div>
+            <small class="pf-dica">Para o frete fora do dia da feira: toque em "Estou aqui" na portaria, ou cole o ponto do Google Maps.</small>
             <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="cancelar-cond">Cancelar</button><button type="button" class="pf-bt pri" data-pf="salvar-cond">Salvar</button></div></li>`;
-        return `<li class="pf-cond" data-cond="${escapeHTML(c.id)}"><span class="pf-linha-txt"><b>${escapeHTML(c.nome)}</b><small>${FORMATOS[c.formato] || FORMATOS.ql}. ${em.length ? `Usado em: ${escapeHTML(em.map((f) => f.nome).join(', '))}.` : 'Ainda não está em nenhuma feira.'}</small></span>
+        return `<li class="pf-cond" data-cond="${escapeHTML(c.id)}"><span class="pf-linha-txt"><b>${escapeHTML(c.nome)}</b><small>${FORMATOS[c.formato] || FORMATOS.ql}${Number.isFinite(c.lat) ? ', no mapa' : ''}. ${em.length ? `Usado em: ${escapeHTML(em.map((f) => f.nome).join(', '))}.` : 'Ainda não está em nenhuma feira.'}</small></span>
             <span class="pf-cond-bts"><button type="button" class="pf-bt mini" data-pf="editar-cond">Mudar</button><button type="button" class="pf-bt mini perigo" data-pf="tirar-cond"${em.length ? ' disabled title="Tire das feiras antes"' : ''}>Tirar</button></span></li>`;
     }).join('') || `<li class="pf-nada">${d.condominios.length ? 'Nenhum condomínio com esse nome.' : 'Nenhum condomínio cadastrado.'}</li>`}</ul>`;
 }
@@ -562,11 +564,19 @@ async function agir(b) {
         }
         case 'editar-cond': S.editandoCond = b.closest('[data-cond]').dataset.cond; render(); el().querySelector('[data-cond-nome]')?.focus(); return;
         case 'cancelar-cond': S.editandoCond = ''; return render();
+        case 'cond-gps': {
+            const campo = b.closest('[data-cond]')?.querySelector('[data-cond-ponto]'); if (!campo) return;
+            if (!navigator.geolocation) return showToast('Este aparelho não informa a localização. Cole o ponto do Google Maps.', true);
+            showToast('Pegando a localização...');
+            navigator.geolocation.getCurrentPosition((pos) => { campo.value = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`; showToast('Ponto marcado. Toque em Salvar.'); },
+                () => showToast('Não deu para pegar a localização. Libere o GPS ou cole o ponto do Google Maps.', true), { enableHighAccuracy: true, timeout: 15000 });
+            return;
+        }
         case 'salvar-cond': {
             const li = b.closest('[data-cond]'), nome = li.querySelector('[data-cond-nome]').value.trim();
             if (normCond(nome).length < 2) return showToast('Escreva o nome do condomínio.', true);
             const id = li.dataset.cond, em = feirasDoCond(id);
-            if (await fazer({ acao: 'condominio', id, nome, formato: li.querySelector('[data-cond-formato]').value }, em.length ? `Salvo. ${em.length === 1 ? 'A feira que usa este condomínio já mostra' : 'As feiras que usam este condomínio já mostram'} o nome novo.` : 'Salvo.')) { S.editandoCond = ''; render(); }
+            if (await fazer({ acao: 'condominio', id, nome, formato: li.querySelector('[data-cond-formato]').value, ponto: li.querySelector('[data-cond-ponto]')?.value.trim() || '' }, em.length ? `Salvo. ${em.length === 1 ? 'A feira que usa este condomínio já mostra' : 'As feiras que usam este condomínio já mostram'} o nome novo.` : 'Salvo.')) { S.editandoCond = ''; render(); }
             return;
         }
         case 'tirar-cond': {

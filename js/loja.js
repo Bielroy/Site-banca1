@@ -657,7 +657,9 @@ const normNome = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f
 document.addEventListener('feiras-da-loja', () => pintarListaDeCondominios());
 document.addEventListener('feira-do-cliente', () => pintarListaDeCondominios());
 /** Para quando é o pedido de um cliente da feira (null = não é cliente de feira desta banca). */
-const entregaDaFeira = () => { const f = feiraDoClienteAqui(); return f ? proximaEntrega(f, agoraLoja()) : null; };
+const entregaDaFeiraBase = () => { const f = feiraDoClienteAqui(); return f ? proximaEntrega(f, agoraLoja()) : null; };
+// "Hoje não tem feira no seu condomínio" + o cliente escolheu RECEBER HOJE pagando o frete (lib/frete.js): o pedido é de hoje
+const entregaDaFeira = () => { const b = entregaDaFeiraBase(); if (b && !b.hoje && STATE.receberHoje) { const h = diaBR(agoraLoja()); return { dia: h.dia, dow: h.dow, hoje: true, frete: true }; } return b; };
 /** Dia da semana que decide o preço: o da entrega da feira do cliente, ou hoje (Brasília). Mesmo critério do servidor. */
 // PEDIDO PARA AMANHÃ (quem não é cliente de feira): "Para quando? Hoje | Amanhã" no alto da vitrine. A escolha vale até a
 // meia-noite (guarda a DATA de amanhã; no dia seguinte volta sozinha para "hoje"). Aparece quando a loja tem produto que não sai
@@ -676,9 +678,39 @@ const pintarAvisoDeEntrega = () => {
     const ent = entregaDoPedido(), aviso = document.getElementById('checkout-entrega'); if (!aviso) return;
     // pedido para OUTRO dia: o valor mostrado é o de hoje; o que vale é o preço do dia da entrega (a banca confirma no dia)
     const outroDia = ent && !ent.hoje && !ent.amanha ? ' Os valores são os de hoje: o preço que vale é o do dia da feira, e a banca confirma com você.' : '';
-    aviso.textContent = !ent ? '' : ent.amanha ? `📅 Seu pedido é para amanhã, ${textoDoDia(ent.dia)}.` : ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.${outroDia}`;
+    aviso.textContent = !ent ? '' : ent.frete ? '🚚 Seu pedido é para hoje, com frete.' : ent.amanha ? `📅 Seu pedido é para amanhã, ${textoDoDia(ent.dia)}.` : ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.${outroDia}`;
     aviso.hidden = !ent;
 };
+// FRETE HOJE (fora do dia da feira): a loja pergunta ao servidor quanto fica e oferece as duas opções.
+// O preço que vale é o do servidor na hora do pedido (pode ser menor se outro pedido de perto já estiver na rota).
+const FRETE = { chave: '', cotacao: null, lendo: false };
+const pintarFreteHoje = () => {
+    const box = document.getElementById('frete-hoje'); if (!box) return;
+    const base = entregaDaFeiraBase(), retirada = modoEscolhido() === 'retirada';
+    if (!base || base.hoje || retirada) { box.hidden = true; box.innerHTML = ''; if (STATE.receberHoje && (retirada || !base || base.hoje)) escolherFreteHoje(false); return; }
+    const cond = (endCheckout.ler() || {}).condominio || '';
+    const chaveCot = `${feiraAqui()}|${cond}|${assinaturaDoCarrinho()}`;
+    if (chaveCot !== FRETE.chave && !FRETE.lendo && cond) {
+        FRETE.lendo = true; FRETE.chave = chaveCot;
+        chamarApi('/api/checkout', { acao: 'frete', feira: feiraAqui(), condominio: cond, itens: STATE.carrinho.map((i) => ({ id: i.id, qtd: i.qtd, tipo: i.tipo })) })
+            .then((r) => { FRETE.cotacao = r; }).catch(() => { FRETE.cotacao = { ok: false, aviso: 'Não consegui calcular o frete agora.' }; })
+            .finally(() => { FRETE.lendo = false; pintarFreteHoje(); });
+    }
+    const c = FRETE.chave === chaveCot ? FRETE.cotacao : null, hoje = !!STATE.receberHoje;
+    if (c && !c.ok && hoje) escolherFreteHoje(false);
+    const opFeira = `<button type="button" class="ed-op${hoje ? '' : ' on'}" role="radio" aria-checked="${!hoje}" data-frete-hoje="nao"><b>Esperar a feira</b><small>${escapeHTML(textoDoDia(base.dia))} · sem frete</small></button>`;
+    const opHoje = c && c.ok ? `<button type="button" class="ed-op${hoje ? ' on' : ''}" role="radio" aria-checked="${hoje}" data-frete-hoje="sim"><b>Receber hoje</b><small>frete ${fmt(c.valor)}${c.rota > 1 ? ' · rota dividida' : ''}</small></button>` : '';
+    const nota = !cond ? 'Escolha o condomínio para ver se dá para receber hoje.' : !c ? 'Calculando o frete...' : !c.ok ? (c.aviso || '') : hoje ? `O frete de ${fmt(c.valor)} entra no total. Se outro pedido de perto entrar na mesma rota antes do seu, o valor pode cair; nunca sobe.` : '';
+    box.innerHTML = `<span class="ed-rot">Hoje não tem feira no seu condomínio</span><div class="ed-ops" role="radiogroup" aria-label="Quando receber">${opFeira}${opHoje}</div>${nota ? `<p class="frete-nota" role="status">${escapeHTML(nota)}</p>` : ''}`;
+    box.hidden = false;
+};
+const escolherFreteHoje = (sim) => {
+    if (!!STATE.receberHoje === !!sim) return;
+    STATE.receberHoje = !!sim;
+    document.dispatchEvent(new CustomEvent('feira-do-cliente'));   // vitrine, preços e sacola passam a ser os de hoje (ou voltam para o dia da feira)
+    pintarAvisoDeEntrega(); pintarHorariosDeEntrega(); renderComanda(); pintarFreteHoje();
+};
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-frete-hoje]'); if (b) escolherFreteHoje(b.dataset.freteHoje === 'sim'); });
 let _escolhaDiaHtml = null;
 const pintarEscolhaDia = () => {
     const box = document.getElementById('escolha-dia'); if (!box) return;
@@ -1384,7 +1416,7 @@ const pintarModo = () => {
     pintarHorariosDeEntrega();
     pintarPagamentoDaLoja();
 };
-document.addEventListener('change', (e) => { if (e.target && e.target.name === 'cli-modo') pintarModo(); });
+document.addEventListener('change', (e) => { if (e.target && e.target.name === 'cli-modo') { pintarModo(); pintarFreteHoje(); } if (e.target && e.target.closest && e.target.closest('#checkout-endereco')) pintarFreteHoje(); });
 
 // Com "pagamento só na entrega", os botões dizem que tudo é pago na hora de receber (ou de retirar).
 // Formas que a loja aceita (Painel → Configurações → Pagamento). Sem a configuração, aceita as três, como sempre.
@@ -2746,6 +2778,7 @@ document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
     lembrarPagamento();
     _dadosAbertos = false; pintarConhecido();
     pintarAvisoDeEntrega();
+    pintarFreteHoje();
     lerTrocaGuardada();
     renderComanda();
     openModal('modal-checkout');
@@ -2954,6 +2987,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             modo: retirada ? 'retirada' : 'entrega',
             diaPreco: STATE.diaDoPreco, ...(ent ? { entregaDia: ent.dia } : {}),   // o dia que a loja mostrou: o servidor confere
             ...(ent && ent.amanha ? { paraAmanha: true } : {}),                    // "Para quando? Amanhã" (quem não é de feira)
+            ...(ent && ent.frete ? { receberHoje: true } : {}),                    // hoje não tem feira: receber hoje pagando o frete
             nome, quadra, lote, telefone, pag, troco: trocoRaw, obs, cupom,
             condominio: endereco.condominio, condominioId: endereco.condominioId, formatoEndereco: endereco.formatoEndereco,
             aceitaOfertas: !!document.getElementById('cli-ofertas')?.checked,

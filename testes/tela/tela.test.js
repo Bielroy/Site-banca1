@@ -699,6 +699,39 @@ teste('cliente da feira num dia futuro (hoje não tem feira): a agenda daquele d
   semErros(erros); await fechar();
 });
 
+teste('hoje não tem feira no condomínio: a loja oferece "Esperar a feira" ou "Receber hoje" com o frete do servidor, e o pedido vai com receberHoje', async () => {
+  const dow = new Date(Date.now() - 3 * 3600000).getUTCDay(), futuro = (dow + 2) % 7;
+  const k = cenarioPadrao();
+  k.feiras = { ...k.feiras, florenca: { ...k.feiras.florenca, dias: [futuro] } };
+  const { pagina, ctx, erros, fechar } = await abrir('/?feira=florenca', k);
+  const cotacoes = [];
+  await ctx.route('**/api/checkout', async (r) => {
+    const c = JSON.parse(r.request().postData() || '{}');
+    if (c.acao === 'frete') { cotacoes.push(c); return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ sucesso: true, ok: true, valor: 12.5, km: 3.8, rota: 1 }) }); }
+    return r.continue();
+  });
+  await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
+  await abrirCheckoutComOvos(pagina);
+  const caixa = pagina.locator('#frete-hoje');
+  await caixa.waitFor({ timeout: 5000 });
+  assert.match(await caixa.innerText(), /Hoje não tem feira no seu condomínio/);
+  assert.match(await caixa.innerText(), /Escolha o condomínio/, 'sem condomínio, ainda não dá para cotar');
+  await preencherPedido(pagina, 'Cliente do Frete');
+  await pagina.locator('#cli-nome').blur();
+  await pagina.waitForSelector('[data-frete-hoje="sim"]', { timeout: 5000 });
+  assert.match(await pagina.locator('[data-frete-hoje="sim"]').innerText(), /Receber hoje[\s\S]*R\$\s?12,50/);
+  assert.strictEqual(await pagina.locator('[data-frete-hoje="nao"]').getAttribute('aria-checked'), 'true', 'começa esperando a feira (sem frete)');
+  assert.ok(cotacoes.length >= 1 && cotacoes[0].feira === 'florenca' && cotacoes[0].itens.length === 1, JSON.stringify(cotacoes));
+  await pagina.click('[data-frete-hoje="sim"]');
+  await pagina.waitForFunction(() => /para hoje, com frete/.test(document.getElementById('checkout-entrega')?.textContent || ''), null, { timeout: 4000 });
+  assert.strictEqual(await pagina.locator('[data-frete-hoje="sim"]').getAttribute('aria-checked'), 'true');
+  await pagina.click('#btn-enviar-pedido');
+  await pagina.waitForFunction(() => document.querySelector('#sucesso-whatsapps .btn-wpp, #modal-sucesso.aberto, #modal-sucesso.active'), null, { timeout: 8000 }).catch(() => {});
+  const enviado = pedidosEnviados().pop()?.corpo;
+  assert.ok(enviado && enviado.receberHoje === true, JSON.stringify(enviado && { receberHoje: enviado.receberHoje, entregaDia: enviado.entregaDia }));
+  semErros(erros); await fechar();
+});
+
 teste('outra loja abre com o nome, as cores e os produtos dela', async () => {
   const { pagina, erros, fechar } = await abrir('/?loja=paes-da-lucia');
   await cards(pagina).first().waitFor({ timeout: 8000 });
