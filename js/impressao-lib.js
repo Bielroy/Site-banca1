@@ -142,7 +142,7 @@ export function reciboDoCliente(p, { loja = '', logo = '', fotos = {}, assinatur
     const fora = [...new Set((Array.isArray(p.ajustes) ? p.ajustes : []).filter((a) => a && a.op === 'tirou' && limpo(a.nome)).map((a) => limpo(a.nome, 60)))];
     if (fora.length) L.push(SEP, txt(`Em falta hoje (${fora.length === 1 ? 'saiu' : 'saíram'} do pedido): ${fora.join(', ')}. Pedimos desculpas.`));
     L.push(SEP, txt('Obrigado pela preferência!', { al: 'c', b: true, ser: true }), { t: 'marca' });
-    if (limpo(assinatura)) L.push(txt(assinatura, { al: 'c' }));
+    limpo(assinatura).split(' · ').filter(Boolean).forEach((s) => L.push(txt(s, { al: 'c' })));
     L.push(CORTE);
     return L;
 }
@@ -328,6 +328,8 @@ export function paraBase64(bytes) { let s = ''; bytes.forEach((x) => { s += Stri
 
 // ---------------------------------------------------------------- página comum
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+/** "R$ 8,90" não se parte no fim da linha. */
+const semQuebra = (s) => esc(s).replace(/R\$ /g, () => 'R$\u00a0');   // função: no replace, "$&" seria o trecho achado
 /** Página pronta para a impressão do aparelho. largura: 58 | 80 | 'a4'. Várias folhas = várias listas. */
 export function paraHtml(folhas, { largura = 58 } = {}) {
     const a4 = largura === 'a4', L = LARGURAS[largura] || LARGURAS[58];
@@ -337,12 +339,13 @@ export function paraHtml(folhas, { largura = 58 } = {}) {
         if (l.t === 'logo') return /^https:\/\/[^\s"'<>]+$/.test(String(l.src || '')) ? `<p class="c"><img class="logo" src="${esc(l.src)}" alt=""></p>` : '';
         if (l.t === 'marca') return `<p class="c marca">${MARCA_SVG}</p>`;
         if (l.t === 'item') {
-            const foto = /^https:\/\/[^\s"'<>]+$/.test(String(l.foto || '')) ? `<img src="${esc(l.foto)}" alt="">` : '';
-            return `<div class="it">${foto}<div class="nm"><b>${esc(l.nome)}</b><small>${esc(String(l.e || '').trim())}</small></div><span class="vl">${esc(l.d || '')}</span></div>`;
+            const foto = /^https:\/\/[^\s"'<>]+$/.test(String(l.foto || '')) ? `<img src="${esc(l.foto)}" alt="" width="42" height="42" decoding="sync">` : '';
+            // o nome usa a largura toda; embaixo, o peso/preço e o valor na mesma linha (no papel de 58 mm não sobra espaço para três colunas)
+            return `<div class="it">${foto}<div class="nm"><b>${esc(l.nome)}</b><div class="ln"><small>${semQuebra(String(l.e || '').trim())}</small><span class="vl">${semQuebra(l.d || '')}</span></div></div></div>`;
         }
         if (l.t === 'esp') return '<br>'.repeat(l.n || 1);
         if (l.t === 'txt') return `<p class="${l.al || 'e'}${c}">${esc(l.v)}</p>`;
-        if (l.t === 'par') return `<p class="par${c}"><span>${esc(l.e)}</span><span>${esc(l.d || '')}</span></p>`;
+        if (l.t === 'par') return `<p class="par${c}"><span>${esc(l.e)}</span><span>${semQuebra(l.d || '')}</span></p>`;
         return '';
     }).join('')}</section>`;
     return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Impressão</title><style>
@@ -355,8 +358,9 @@ p { overflow-wrap: anywhere; } .c { text-align: center; } .d { text-align: right
 .marca { margin: 2.5mm 0 1mm; } .marca svg { width: 16mm; height: 16mm; }
 .it { display: flex; align-items: center; gap: 2.4mm; padding: 1.6mm 0; border-bottom: .25mm dotted #000; break-inside: avoid; } .it:last-of-type { border-bottom: 0; }
 .it img { flex: none; width: 11mm; height: 11mm; object-fit: cover; border-radius: 1.6mm; border: .25mm solid #000; filter: grayscale(1) contrast(1.15); }
-.it .nm { flex: 1; min-width: 0; line-height: 1.25; overflow-wrap: anywhere; } .it .nm b { display: block; } .it .nm small { display: block; font-size: .86em; }
-.it .vl { flex: none; font-weight: 700; white-space: nowrap; }
+.it .nm { flex: 1; min-width: 0; line-height: 1.25; overflow-wrap: anywhere; } .it .nm b { display: block; }
+.it .ln { display: flex; align-items: baseline; justify-content: space-between; gap: 2mm; margin-top: .4mm; } .it .ln small { min-width: 0; font-size: .86em; }
+.it .vl { flex: none; font-weight: 700; white-space: nowrap; }${L.mm === 58 && !a4 ? ' .it img { width: 9mm; height: 9mm; } .it { gap: 1.8mm; }' : ''}
 .tot { border-top: .6mm double #000; border-bottom: .6mm double #000; padding: 1.4mm 0; margin: 1.5mm 0; }
 .logo { display: inline-block; max-width: 26mm; max-height: 26mm; margin: 0 auto 1.5mm; object-fit: contain; }
 .par { display: flex; justify-content: space-between; gap: 3mm; } .par span:last-child { white-space: nowrap; }

@@ -102,7 +102,9 @@ const carregarChart = async () => {
 
 let produtosAtuais = [];
 /** { idDoProduto: endereço https da foto pequena } — o recibo impresso mostra a foto de cada item na página comum. */
-const fotosDosProdutos = () => Object.fromEntries(produtosAtuais.map((p) => [p.id, p.fotoMini || p.foto]).filter(([id, u]) => id && /^https:\/\//i.test(String(u || ''))));
+// pelo redutor (128 px): o mesmo endereço da lista de produtos, que já está no cache do navegador — o recibo abre sem esperar foto grande
+const fotosDosProdutos = () => Object.fromEntries(produtosAtuais.map((p) => [p.id, p.fotoMini || p.foto]).filter(([id, u]) => id && https(u))
+    .map(([id, u]) => { try { return [id, new URL(miniatura(u, 128), location.href).href]; } catch (_) { return [id, u]; } }).filter(([, u]) => https(u)));
 let nomeDaLoja = ehLojaOriginal ? 'Banca Adair e Pedrina' : 'Nossa loja';   // trocado pelo nome da ficha da loja ao entrar
 let pedidosGerais = [];
 let filaRecebida = false;          // a fila já chegou do banco pelo menos uma vez (a impressão automática espera por ela)

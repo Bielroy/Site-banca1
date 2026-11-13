@@ -3188,6 +3188,7 @@ teste('impressão: recibo elegante — marca do UseBanca, foto de cada item na p
   const html = I.paraHtml([rec], { largura: 58 });
   assert.ok(html.includes('<img src="https://fotos.usebanca.com/a/tomate.jpg"'), 'a foto do produto vai na página comum');
   assert.ok(!html.includes('javascript:alert'), 'foto que não é https é descartada');
+  assert.ok(html.includes('R$\u00a05,52') && !/R\$\s*nbsp|RR\$/.test(html), 'o valor não se parte no fim da linha e não sai com sujeira');
   assert.match(html, /class="par[^"]*\btot\b/, 'o total é uma caixa em destaque'); assert.ok(html.includes('<svg') && html.includes('class="c marca"'), 'a marca do UseBanca vai na página comum');
   assert.ok(!t.includes('<svg') && !I.paraTexto(rec, 32).includes('marca'), 'a prévia em texto não leva o desenho');
   // térmica: o desenho vai em pontos (GS v 0), centralizado, e a letra volta ao normal depois
