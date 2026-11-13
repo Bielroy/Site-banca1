@@ -3159,7 +3159,7 @@ teste('iPhone e tela desatualizada: recarga busca no servidor, pedido não fica 
   assert.ok(loja.includes('if (haVersaoNova()) return recarregarComPedidoGuardado('), 'tela velha se atualiza ANTES de abrir a tela de entrega');
   assert.ok(/conferirVersaoAgora\(\)\.then\(\(velha\)/.test(loja), 'pedido recusado numa tela velha: atualiza e deixa enviar de novo');
   assert.ok(/Promise\.race\(\[usuario\.getIdToken\(\)/.test(loja), 'renovar o login não segura o envio do pedido');
-  assert.ok(/ehApple \? memoryLocalCache\(\) : persistentLocalCache/.test(fb), 'no iPhone o banco lê sempre da internet (sem cópia velha da configuração)');
+  assert.ok(/semCopia = ehApple \|\| usarSoMemoria/.test(fb) && /semCopia \? memoryLocalCache\(\) : persistentLocalCache/.test(fb), 'no iPhone o banco lê sempre da internet (sem cópia velha da configuração)');
   assert.ok(/touch-action: manipulation/.test(css), 'dois toques rápidos no + não dão zoom no iPhone');
   assert.ok(!/^\.card-add:hover/m.test(css), 'efeito de mouse não gruda no celular depois do toque');
   assert.ok(loja.includes("ehIphone() ? 'Pedido recebido! Agora toque no botão verde"), 'no iPhone a tela pede o toque no botão do WhatsApp em vez de prometer abrir sozinho');
@@ -5892,4 +5892,20 @@ teste('painel: tema escuro gerado está em dia, só vale com o atributo e não t
   assert.ok(T.contraste(T.trocar(c('#707065'), 'texto'), T.trocar(c('#faf7f2'), 'fundo')) >= 4.5, 'texto apagado ainda legível');
   assert.strictEqual(T.trocar(c('#ffffff'), 'texto'), null, 'texto branco (em cima de cor) fica');
   assert.strictEqual(T.trocar(c('#dc2626'), 'fundo'), null, 'fundo de cor forte fica');
+});
+
+teste('banco travado no aparelho: a marca "sem cópia" vale 7 dias, some depois e não quebra sem localStorage', async () => {
+  const B = await import(raiz('js/banco-travado-lib.js'));
+  const guardado = new Map();
+  const ls = { getItem: (k) => (guardado.has(k) ? guardado.get(k) : null), setItem: (k, v) => guardado.set(k, String(v)), removeItem: (k) => guardado.delete(k) };
+  const agora = 1_700_000_000_000;
+  assert.strictEqual(B.usarSoMemoria(ls, agora), false, 'sem marca: usa a cópia');
+  assert.strictEqual(B.marcarSoMemoria(ls, agora), true);
+  assert.strictEqual(B.usarSoMemoria(ls, agora + 6 * 24 * 3600e3), true, 'dentro de 7 dias: sem cópia');
+  assert.strictEqual(B.usarSoMemoria(ls, agora + 8 * 24 * 3600e3), false, 'depois de 7 dias: tenta a cópia de novo');
+  assert.ok(!guardado.has(B.CHAVE), 'a marca vencida é apagada');
+  const quebrado = { getItem: () => { throw new Error('bloqueado'); }, setItem: () => { throw new Error('bloqueado'); } };
+  assert.strictEqual(B.usarSoMemoria(quebrado), false);
+  assert.strictEqual(B.usarSoMemoria(null), false);
+  assert.strictEqual(B.marcarSoMemoria(quebrado), false);
 });
