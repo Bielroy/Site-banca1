@@ -16,7 +16,7 @@ import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_
 import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, chavePromo, contaDaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO, ehTempero, ehPotinho, NOMES_POTE, TEMPEROS_PADRAO, ORDEM_PACOTES, ORDEM_TEMPEROS, ordemDaSecao } from './pacote-lib.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
-import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras, condominioTravado, condominioUnicoDaFeira } from './tema.js';
+import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras, condominioTravado, condominioUnicoDaFeira, bancaForaDaFeiraHoje } from './tema.js';
 import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
@@ -521,9 +521,19 @@ const atualizarRodapeCarrinhoDOM = () => {
     const foraDoDia = STATE.carrinho.filter((i) => i.foraDoDia);
     pintarEscolhaDia();
     const bannerFeira = document.getElementById('banner-feira');
-    if (bannerFeira) { const futuro = lojaAberta && ent && !ent.hoje; bannerFeira.textContent = futuro ? `Hoje não tem feira. Seu pedido vai para ${textoDoDia(ent.dia)}.` : ''; bannerFeira.classList.toggle('visivel', !!futuro); }
-    
-    if (!lojaAberta || !hojePermitido) {
+    // a feira é hoje e esta banca não veio (o cliente chegou pela página da feira): a loja abre só para olhar
+    const foraHoje = lojaAberta ? bancaForaDaFeiraHoje(agoraLoja()) : null;
+    if (bannerFeira) {
+        const futuro = lojaAberta && ent && !ent.hoje;
+        bannerFeira.textContent = foraHoje ? `Esta banca não está na feira hoje. Você pode olhar os produtos${foraHoje.volta ? `; os pedidos voltam ${textoDoDia(foraHoje.volta)}` : ''}.`
+            : futuro ? `Hoje não tem feira. Seu pedido vai para ${textoDoDia(ent.dia)}.` : '';
+        bannerFeira.classList.toggle('visivel', !!(foraHoje || futuro));
+    }
+
+    if (foraHoje) {
+        btnF.disabled = true; btnF.textContent = 'Banca fora da feira hoje';
+        bannerMin.classList.remove('visivel'); bannerFechado.classList.remove('visivel');
+    } else if (!lojaAberta || !hojePermitido) {
         btnF.disabled = true; btnF.textContent = "Loja Fechada";
         bannerMin.classList.remove('visivel'); bannerFechado.classList.add('visivel');
     } else { 

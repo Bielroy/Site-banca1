@@ -39,7 +39,10 @@ async function abrir(caminho, cenario = cenarioPadrao(), opcoes = {}) {
 }
 // pedidos enviados (o mesmo endereço também atende a conta do cliente, com "acao")
 const pedidosEnviados = () => servidor.chamadas.filter((c) => c.caminho === '/api/checkout' && !c.corpo.acao);
-const semErros = (erros) => assert.deepStrictEqual(erros, [], 'a página teve erro de código:\n  ' + erros.join('\n  '));
+// A animação de troca de página (@view-transition) cancelada pelo navegador numa ida automática de uma página para outra
+// não é defeito do site: o próprio site já trata (js/erros-site.js → rejeicaoDoNavegador). Aqui ela também não conta.
+const AVISO_DO_NAVEGADOR = /Transition was aborted because of invalid state|ViewTransition opt-in disabled/;
+const semErros = (erros) => { const reais = erros.filter((e) => !AVISO_DO_NAVEGADOR.test(e)); assert.deepStrictEqual(reais, [], 'a página teve erro de código:\n  ' + reais.join('\n  ')); };
 const cards = (p) => p.locator('#lista-produtos .produto-card');
 // a busca e as categorias ESCONDEM os cards (não tiram da página): conta só os visíveis
 const visiveis = (p) => p.evaluate(() => [...document.querySelectorAll('#lista-produtos .produto-card')].filter((c) => c.offsetParent !== null).map((c) => c.querySelector('.produto-nome').textContent.trim()));
@@ -527,7 +530,7 @@ teste('retirada por dia e horários de entrega por dia: no dia sem retirada a es
   semErros(erros); await fechar();
   // CLIENTE DA FEIRA (entrou pelo link da feira do Florença, que hoje acontece): hoje a agenda da banca diz "só retirada na feira"
   const cenFeira = (linha) => { const k = cenarioPadrao(); k.feiras = { ...k.feiras, florenca: { ...k.feiras.florenca, dias: [hoje] } }; k.lojas.banca.config = { ...k.lojas.banca.config, entrega: { horarios: ['Geral'], agenda: [{ feira: 'florenca', dia: hoje, ...linha }] } }; return k; };
-  ({ pagina, erros, fechar } = await abrir('/feira/florenca', cenFeira({ entrega: false, retirada: true, horariosRetirada: ['Das 7h às 11h'], local: 'Na feira do Florença, banca verde' })));
+  ({ pagina, erros, fechar } = await abrir('/?feira=florenca', cenFeira({ entrega: false, retirada: true, horariosRetirada: ['Das 7h às 11h'], local: 'Na feira do Florença, banca verde' })));
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   await abrirCheckoutComOvos(pagina);
   assert.strictEqual(await pagina.locator('#grupo-modo').isVisible(), true);
@@ -546,7 +549,7 @@ teste('retirada por dia e horários de entrega por dia: no dia sem retirada a es
   assert.ok((await pagina.locator('#sucesso-entrega').innerText()).includes('Retirada na feira: Das 7h às 11h'));
   semErros(erros); await fechar();
   // a mesma feira num dia "só entrega, de manhã": nada para escolher e só o horário da manhã
-  ({ pagina, erros, fechar } = await abrir('/feira/florenca', cenFeira({ entrega: true, horariosEntrega: ['Manhã (8h às 11h)'], retirada: false })));
+  ({ pagina, erros, fechar } = await abrir('/?feira=florenca', cenFeira({ entrega: true, horariosEntrega: ['Manhã (8h às 11h)'], retirada: false })));
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   await abrirCheckoutComOvos(pagina);
   assert.strictEqual(await pagina.locator('#grupo-modo').isVisible(), false, 'só entrega');
@@ -554,7 +557,7 @@ teste('retirada por dia e horários de entrega por dia: no dia sem retirada a es
   assert.deepStrictEqual(await opcoesDe(pagina, '#cli-horario'), ['Tanto faz (a combinar)', 'Manhã (8h às 11h)'], 'o horário do dia da feira, não a lista geral');
   semErros(erros); await fechar();
   // entrega e retirada no mesmo dia: o cliente escolhe
-  ({ pagina, erros, fechar } = await abrir('/feira/florenca', cenFeira({ entrega: true, horariosEntrega: ['Tarde'], retirada: true, horariosRetirada: ['Das 16h às 20h'], local: 'Feira' })));
+  ({ pagina, erros, fechar } = await abrir('/?feira=florenca', cenFeira({ entrega: true, horariosEntrega: ['Tarde'], retirada: true, horariosRetirada: ['Das 16h às 20h'], local: 'Feira' })));
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   await abrirCheckoutComOvos(pagina);
   assert.strictEqual(await pagina.locator('#rot-modo-entrega').isVisible(), true); assert.strictEqual(await pagina.locator('input[name="cli-modo"][value="entrega"]').isChecked(), true);
@@ -672,7 +675,7 @@ teste('cliente da feira num dia futuro (hoje não tem feira): a agenda daquele d
   const k = cenarioPadrao();
   k.feiras = { ...k.feiras, florenca: { ...k.feiras.florenca, dias: [futuro] } };
   k.lojas.banca.config = { ...k.lojas.banca.config, entrega: { horarios: ['Geral'], agenda: [{ feira: 'florenca', dia: futuro, entrega: true, horariosEntrega: ['Das 18h às 22h'], retirada: true, horariosRetirada: ['Das 17h às 22h'], local: 'Banca do Adair' }] } };
-  const { pagina, erros, fechar } = await abrir('/feira/florenca', k);
+  const { pagina, erros, fechar } = await abrir('/?feira=florenca', k);
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   await abrirCheckoutComOvos(pagina);
   assert.strictEqual(await pagina.locator('#grupo-modo').isVisible(), true, 'o dia da feira é daqui a 2 dias e tem retirada: o cliente escolhe');
@@ -922,22 +925,89 @@ teste('letras: a banca liga as letras dela; loja com outras letras não baixa as
 });
 
 // ---------------------------------------------------------------- FEIRA
-teste('link da feira abre direto na banca, com a faixa das bancas no topo, e lembra a última', async () => {
-  const { pagina, erros, fechar } = await abrir('/feira/florenca');
+// ---------------------------------------------------------------- PÁGINA DE ENTRADA DA FEIRA (feira.html)
+// dia da semana de hoje em Brasília e uma feira que acontece hoje, com uma banca que só vem noutro dia
+const dowHoje = () => new Date(Date.now() - 3 * 3600000).getUTCDay();
+const cenHud = (mudar = {}) => {
+  const cen = cenarioPadrao(), d = dowHoje();
+  cen.feiras = { ...cen.feiras, florenca: { nome: 'Feira Florença', dias: [d, (d + 3) % 7], hud: { local: 'Praça central', horario: 'das 17h às 21h', texto: 'Peça pelo celular e receba em casa.', fotos: ['https://fotos.exemplo.com/a.jpg'] },
+    lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', cor: '#1a3a2a' }, { id: 'paes-da-lucia', nome: 'Pães da Lúcia', cor: '#5a3a22', dias: [(d + 3) % 7] }], ...mudar } };
+  return cen;
+};
+teste('link da feira abre a PÁGINA DA FEIRA: "hoje tem feira", como funciona, bancas de hoje com cor e as que não vêm apagadas; tocar na banca abre a loja com a faixa', async () => {
+  const { pagina, erros, fechar } = await abrir('/feira/florenca', cenHud(), { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } });
+  await pagina.locator('.fe-banca').first().waitFor({ timeout: 8000 });
+  assert.ok(/\/feira\.html\?feira=florenca/.test(pagina.url()), 'o link da feira para na página da feira (não cai direto numa banca): ' + pagina.url());
+  assert.strictEqual((await pagina.locator('#fe-nome').innerText()).trim(), 'Feira Florença');
+  assert.match(await pagina.locator('#fe-status').innerText(), /Hoje tem feira · das 17h às 21h/);
+  assert.ok(await pagina.locator('#fe-status').evaluate((el) => el.classList.contains('hoje')));
+  assert.match(await pagina.locator('#fe-local').innerText(), /Praça central/);
+  assert.match(await pagina.locator('#fe-como').innerText(), /Escolha a banca[\s\S]*Monte o pedido[\s\S]*Receba ou retire[\s\S]*Peça pelo celular e receba em casa\./);
+  assert.strictEqual(await pagina.locator('#fe-fotos img').count(), 1);
+  assert.strictEqual((await pagina.locator('#fe-tit-hoje').innerText()).trim(), 'Bancas de hoje');
+  assert.deepStrictEqual((await pagina.locator('#fe-lista .fe-banca b').allInnerTexts()).map((t) => t.trim()), ['Banca Adair e Pedrina']);
+  assert.match(await pagina.locator('#fe-lista .fe-chip').innerText(), /Hoje na feira/);
+  // a banca que não vem hoje aparece apagada, com o dia em que volta
+  assert.ok(await pagina.locator('#fe-fora').isVisible());
+  assert.deepStrictEqual((await pagina.locator('#fe-lista-fora .fe-banca b').allInnerTexts()).map((t) => t.trim()), ['Pães da Lúcia']);
+  assert.match(await pagina.locator('#fe-lista-fora .fe-chip').innerText(), /^Volta /);
+  assert.match(await pagina.locator('#fe-lista-fora .fe-banca-capa').evaluate((el) => getComputedStyle(el).filter), /grayscale/);
+  assert.ok(await pagina.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'nada vaza para o lado no celular');
+  assert.match(await pagina.locator('#fe-ir').innerText(), /Ver a banca de hoje/);
+  // tocar na banca: abre a loja dela, como sempre foi, com a faixa das bancas da feira no topo
+  await pagina.locator('#fe-lista .fe-banca').click();
   await pagina.waitForSelector('#feira-lojas:not([hidden]) a', { timeout: 8000 });
-  assert.ok(!pagina.url().includes('entrar='), 'o "entrar" sai do endereço');
-  const nomes = await pagina.locator('#feira-lojas a').allInnerTexts();
-  assert.deepStrictEqual(nomes.map((n) => n.trim()), ['Banca Adair e Pedrina', 'Pães da Lúcia']);
-  // selo discreto no cabeçalho: o cliente vê de qual feira entrou
+  assert.deepStrictEqual((await pagina.locator('#feira-lojas a').allInnerTexts()).map((n) => n.trim()), ['Banca Adair e Pedrina', 'Pães da Lúcia']);
   await pagina.waitForSelector('#selo-feira', { timeout: 4000 });
   assert.strictEqual((await pagina.locator('#selo-feira').innerText()).trim(), 'Feira Florença');
-  assert.ok(await pagina.evaluate(() => document.getElementById('selo-feira').nextElementSibling.id === 'header-nome'), 'fica logo acima do nome da banca');
-  await pagina.click('#feira-lojas a:not(.atual)');
-  await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 6000 });
-  // a loja grava "a última banca desta feira" depois de abrir: espera essa gravação antes de voltar ao link
-  await pagina.waitForFunction(() => /paes-da-lucia/.test(localStorage.getItem('banca_feira_ultima') || ''), null, { timeout: 6000 });
+  // quem já esteve numa banca volta ao link e vê as bancas ANTES do "como funciona", com "Você esteve aqui"
+  await pagina.waitForFunction(() => /banca/.test(localStorage.getItem('banca_feira_ultima') || ''), null, { timeout: 6000 });
   await pagina.goto(servidor.base + '/feira/florenca');
-  await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 6000 });
+  await pagina.locator('.fe-banca').first().waitFor({ timeout: 8000 });
+  assert.match(await pagina.locator('#fe-lista .fe-chip').innerText(), /Você esteve aqui/);
+  assert.ok(await pagina.evaluate(() => !!(document.getElementById('fe-bancas').compareDocumentPosition(document.getElementById('fe-como')) & Node.DOCUMENT_POSITION_FOLLOWING)), 'as bancas vêm antes do "como funciona"');
+  semErros(erros); await fechar();
+});
+teste('página da feira em dia SEM feira: diz quando é a próxima e as bancas aparecem todas com cor, com o dia do pedido; link antigo (?entrar=1) cai na página da feira', async () => {
+  const d = dowHoje();
+  const { pagina, erros, fechar } = await abrir('/feira/florenca', cenHud({ dias: [(d + 2) % 7], lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', cor: '#1a3a2a' }, { id: 'paes-da-lucia', nome: 'Pães da Lúcia', cor: '#5a3a22' }] }));
+  await pagina.locator('.fe-banca').first().waitFor({ timeout: 8000 });
+  assert.match(await pagina.locator('#fe-status').innerText(), /^Próxima feira: /);
+  assert.ok(!(await pagina.locator('#fe-status').evaluate((el) => el.classList.contains('hoje'))));
+  assert.strictEqual((await pagina.locator('#fe-tit-hoje').innerText()).trim(), 'Bancas da feira');
+  assert.strictEqual(await pagina.locator('#fe-lista .fe-banca').count(), 2);
+  assert.ok(await pagina.locator('#fe-fora').isHidden(), 'fora do dia de feira nenhuma banca fica apagada');
+  assert.match((await pagina.locator('#fe-lista .fe-chip').allInnerTexts()).join(' | '), /Pedidos para /);
+  assert.match(await pagina.locator('#fe-nota').innerText(), /Você já pode deixar o seu pedido feito para /);
+  // "hoje tem feira" marcado à mão (dia extra): a página passa a dizer que tem feira hoje
+  const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+  const extra = await abrir('/feira/florenca', cenHud({ dias: [(d + 2) % 7], datasExtras: [hoje] }));
+  await extra.pagina.locator('.fe-banca').first().waitFor({ timeout: 8000 });
+  assert.match(await extra.pagina.locator('#fe-status').innerText(), /Hoje tem feira/);
+  assert.strictEqual(await extra.pagina.locator('#fe-lista .fe-banca').count(), 2, 'em dia extra todas as bancas vêm');
+  semErros(extra.erros); await extra.fechar();
+  // link antigo
+  await pagina.goto(servidor.base + '/?feira=florenca&entrar=1');
+  await pagina.waitForURL(/\/feira\.html\?feira=florenca/, { timeout: 6000 });
+  semErros(erros); await fechar();
+});
+teste('banca que não veio à feira de hoje abre só para olhar: aviso com o dia em que volta e o pedido não fecha; a banca que veio fecha normal', async () => {
+  const { pagina, erros, fechar } = await abrir('/?loja=paes-da-lucia&feira=florenca', cenHud());
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForFunction(() => /não está na feira hoje/.test(document.getElementById('banner-feira')?.textContent || ''), null, { timeout: 6000 });
+  assert.match(await pagina.locator('#banner-feira').innerText(), /Esta banca não está na feira hoje\. Você pode olhar os produtos; os pedidos voltam /);
+  assert.ok(await pagina.locator('#btn-abrir-checkout').isDisabled());
+  assert.match(await pagina.locator('#btn-abrir-checkout').evaluate((b) => b.textContent), /Banca fora da feira hoje/);
+  await pagina.goto(servidor.base + '/?loja=banca&feira=florenca');
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForTimeout(600);
+  assert.ok(!/não está na feira/.test(await pagina.locator('#banner-feira').evaluate((b) => b.textContent)), 'a banca que veio não mostra o aviso');
+  semErros(erros); await fechar();
+});
+teste('cartaz de UMA banca pelo link da feira (/feira/id?loja=banca) vai direto para ela, sem parar na página da feira', async () => {
+  const { pagina, erros, fechar } = await abrir('/feira.html?feira=florenca&loja=paes-da-lucia');
+  await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 8000 });
+  await pagina.waitForSelector('#selo-feira', { timeout: 6000 });
   semErros(erros); await fechar();
 });
 teste('cartaz de uma banca: /?loja=banca&feira=id cai NESSA banca (não na primeira da feira), com o selo da feira', async () => {
@@ -961,7 +1031,7 @@ teste('feira: cliente que entrou pelo link não troca o condomínio no topo (só
     florenca: { ...cen.feiras.florenca, conds: [{ id: 'jf', nome: 'Jardins Florença', formato: 'ql' }, { id: 'vf', nome: 'Vila Florença', formato: 'ql' }] },
     madri: { nome: 'Feira Madri', dias: [3], lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', cor: '#1a3a2a' }], conds: [{ id: 'sm', nome: 'Solar Madri', formato: 'ql' }] } };
   cen.lojas.banca.ficha = { ...cen.lojas.banca.ficha, feiras: ['florenca', 'madri'] };
-  const { pagina, erros, fechar } = await abrir('/feira/florenca', cen);
+  const { pagina, erros, fechar } = await abrir('/?feira=florenca', cen);
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   assert.strictEqual((await pagina.locator('#endereco-resumo').innerText()).trim(), 'Onde entregar?');
   await pagina.click('#btn-endereco');
@@ -981,7 +1051,7 @@ teste('feira: cliente que entrou pelo link não troca o condomínio no topo (só
   const salvo = await pagina.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => /^banca_endereco/.test(k)))));
   assert.strictEqual(salvo.condominio, 'Jardins Florença'); assert.strictEqual(salvo.lote, '14');
   // o link da OUTRA feira destrava e mostra os condomínios dela
-  await pagina.goto(servidor.base + '/feira/madri');
+  await pagina.goto(servidor.base + '/?feira=madri');
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   assert.match(await pagina.locator('#selo-feira').innerText(), /Madri/);
   assert.notStrictEqual((await pagina.locator('#endereco-resumo').innerText()).trim().startsWith('Entregar:'), true, 'condomínio de outra feira: não fica travado');
@@ -996,7 +1066,7 @@ teste('feira com um só condomínio: o condomínio já vem travado, sem escolher
     florenca: { ...cen.feiras.florenca, conds: [{ id: 'jf', nome: 'Jardins Florença', formato: 'ql' }, { id: 'vf', nome: 'Vila Florença', formato: 'ql' }] },
     madri: { nome: 'Feira Madri', dias: [3], lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', cor: '#1a3a2a' }], conds: [{ id: 'sm', nome: 'Solar Madri', formato: 'ql' }] } };
   cen.lojas.banca.ficha = { ...cen.lojas.banca.ficha, feiras: ['florenca', 'madri'] };
-  const { pagina, erros, fechar } = await abrir('/feira/madri', cen);
+  const { pagina, erros, fechar } = await abrir('/?feira=madri', cen);
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   assert.strictEqual((await pagina.locator('#endereco-resumo').innerText()).trim(), 'Onde entregar?');
   await pagina.click('#btn-endereco');
@@ -1009,7 +1079,7 @@ teste('feira com um só condomínio: o condomínio já vem travado, sem escolher
   const salvo = await pagina.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => /^banca_endereco/.test(k)))));
   assert.strictEqual(salvo.condominio, 'Solar Madri', 'o pedido leva o condomínio da feira sem a pessoa escolher');
   // a feira com DOIS condomínios: escolhe entre os dois (e o endereço do Solar Madri, de outra feira, não vale aqui)
-  await pagina.goto(servidor.base + '/feira/florenca');
+  await pagina.goto(servidor.base + '/?feira=florenca');
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   await pagina.click('#btn-endereco');
   assert.strictEqual(await pagina.locator('#end-cond').isVisible(), true);

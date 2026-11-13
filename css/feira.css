@@ -1,24 +1,102 @@
-/* Tela de entrada da feira (feira.html): as bancas da feira, uma embaixo da outra. */
+/* =====================================================================
+   css/feira.css — PÁGINA DE ENTRADA DA FEIRA (feira.html, endereço /feira/id).
+
+   É o que abre quando alguém toca no link da feira no grupo do condomínio:
+   a capa com o toldo, se tem feira hoje, como funciona e as bancas.
+   Layout: uma coluna no celular; a partir de 720px a lista de bancas ganha
+   três colunas e a capa fica mais alta. As cores são as do UseBanca
+   (css/variables.css); cada banca entra com a cor dela.
+   ===================================================================== */
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
-body { margin: 0; min-height: 100vh; background: var(--cream); color: var(--text-dark); font-family: 'Figtree', system-ui, -apple-system, sans-serif; }
-.fe { max-width: 560px; margin: 0 auto; padding: max(28px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom)); }
-.fe-topo { padding: 22px 20px 24px; border-radius: 24px; background: var(--forest); color: var(--cream); }
-.fe-selo { display: inline-block; padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, .14); font-size: .74rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.fe-topo h1 { margin: 12px 0 6px; font-family: 'Fraunces', serif; font-size: clamp(1.6rem, 6vw, 2.1rem); line-height: 1.12; font-weight: 700; overflow-wrap: anywhere; }
-.fe-dias { margin: 0; font-size: .95rem; opacity: .85; }
-.fe-dias:empty { display: none; }
-.fe-lista { display: grid; gap: 12px; margin-top: 18px; }
-.fe-banca { display: flex; align-items: center; gap: 14px; min-height: 76px; padding: 14px 16px; border-radius: 18px; background: var(--warm-white); border: 1px solid #e6e0d4; box-shadow: var(--shadow-sm); color: inherit; text-decoration: none; transition: transform .12s ease, box-shadow .12s ease; }
-.fe-banca:hover, .fe-banca:focus-visible { box-shadow: var(--shadow-md); transform: translateY(-1px); }
-.fe-banca:active { transform: scale(.99); }
-.fe-cor { flex: none; width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; color: #fff; font-family: 'Fraunces', serif; font-weight: 700; font-size: 1.25rem; background: var(--forest); }
-.fe-txt { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.fe-txt b { font-size: 1.06rem; overflow-wrap: anywhere; }
-.fe-txt small { color: var(--text-light); font-size: .86rem; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.fe-seta { flex: none; color: var(--text-light); font-size: 1.4rem; }
-.fe-esqueleto { min-height: 76px; border-radius: 18px; background: linear-gradient(90deg, #efe9dd 25%, #f6f2ea 50%, #efe9dd 75%); background-size: 200% 100%; animation: fe-brilho 1.2s linear infinite; }
+body { margin: 0; min-height: 100vh; background: var(--cream); color: var(--text-dark); font-family: 'Figtree', system-ui, -apple-system, sans-serif; line-height: 1.5; }
+.fe { max-width: 880px; margin: 0 auto; padding: 0 0 max(36px, env(safe-area-inset-bottom)); }
+.fe h2 { margin: 0 0 4px; font-family: 'Fraunces', serif; font-size: 1.32rem; line-height: 1.2; font-weight: 700; color: var(--forest); }
+
+/* ---------- capa ---------- */
+.fe-hero { position: relative; display: grid; align-content: end; min-height: clamp(250px, 46vh, 400px); padding: 64px 20px 26px; overflow: hidden; color: #ffffff; isolation: isolate;
+  background: radial-gradient(120% 90% at 85% 0%, #2f6a4c 0%, #1a3a2a 58%, #12281d 100%); border-radius: 0 0 28px 28px; }
+.fe-capa { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; }
+/* a foto escurece embaixo, onde fica o texto; sem foto, o véu não aparece */
+.fe-hero.com-foto::after { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(10, 24, 17, .18) 0%, rgba(10, 24, 17, .3) 38%, rgba(10, 24, 17, .86) 100%); }
+/* toldo listrado com a barra em meia-lua: o "ar de feira" */
+.fe-toldo { position: absolute; inset: 0 0 auto 0; height: calc(38px + env(safe-area-inset-top, 0px)); z-index: 1;
+  background: repeating-linear-gradient(90deg, #f2b33d 0 28px, #fff7e3 28px 56px);
+  -webkit-mask: linear-gradient(#000 0 0) top / 100% calc(100% - 13px) no-repeat, radial-gradient(circle at 14px 0, #000 13px, transparent 13.6px) bottom left / 28px 14px repeat-x;
+          mask: linear-gradient(#000 0 0) top / 100% calc(100% - 13px) no-repeat, radial-gradient(circle at 14px 0, #000 13px, transparent 13.6px) bottom left / 28px 14px repeat-x;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .22)); }
+.fe-hero-txt { display: grid; gap: 8px; justify-items: start; }
+.fe-selo { display: inline-block; padding: 4px 11px; border-radius: 999px; background: rgba(255, 255, 255, .18); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.fe-hero h1 { margin: 0; font-family: 'Fraunces', serif; font-size: clamp(1.9rem, 8vw, 2.9rem); line-height: 1.06; font-weight: 700; letter-spacing: -.01em; overflow-wrap: anywhere; text-wrap: balance; text-shadow: 0 2px 14px rgba(0, 0, 0, .28); }
+.fe-status { display: inline-flex; align-items: center; gap: 8px; margin: 4px 0 0; padding: 7px 14px 7px 11px; border-radius: 999px; background: #ffffff; color: #1a3a2a; font-size: .95rem; font-weight: 700; line-height: 1.25; }
+.fe-status::before { content: ''; flex: none; width: 10px; height: 10px; border-radius: 50%; background: #9a9a8e; }
+.fe-status.hoje::before { background: #1f9d55; box-shadow: 0 0 0 0 rgba(31, 157, 85, .55); animation: fe-pulsa 1.8s ease-out infinite; }
+@keyframes fe-pulsa { to { box-shadow: 0 0 0 9px rgba(31, 157, 85, 0); } }
+.fe-ir { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin-top: 6px; padding: 9px 18px; border-radius: 999px; background: #f2b33d; color: #2b1d02; font-weight: 700; font-size: .95rem; text-decoration: none; }
+.fe-ir::after { content: '↓'; font-size: 1.05rem; }
+.fe-ir:focus-visible { outline: 3px solid #ffffff; outline-offset: 2px; }
+.fe-sec { scroll-margin-top: 12px; }
+.fe-local { margin: 0; font-size: .95rem; font-weight: 500; opacity: .95; text-shadow: 0 1px 8px rgba(0, 0, 0, .3); }
+
+/* ---------- avisos ---------- */
+.fe-aviso { margin: 16px 16px 0; padding: 16px; border-radius: 16px; background: var(--warning-light); color: #7a4a06; font-weight: 600; }
+.fe-nota { margin: 14px 16px 0; padding: 12px 14px; border-radius: 14px; background: #e8f5ee; color: #1a3a2a; font-size: .93rem; }
+
+/* ---------- como funciona ---------- */
+.fe-como, .fe-sec { margin: 26px 16px 0; }
+.fe-passos { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; counter-reset: passo; }
+.fe-passos li { position: relative; display: grid; gap: 4px; justify-items: center; align-content: start; padding: 16px 8px 14px; border-radius: 18px; background: var(--warm-white); border: 1px solid #e6e0d4; text-align: center; counter-increment: passo; }
+.fe-passos li::before { content: counter(passo); position: absolute; top: 8px; left: 10px; font: 700 .78rem 'Fraunces', serif; color: #8a8a7e; }
+.fe-passo-ico { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 15px; background: #fdf0cf; color: #7a4302; margin-bottom: 4px; }
+.fe-passo-ico svg { width: 25px; height: 25px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.fe-passos b { font-size: .92rem; line-height: 1.2; color: var(--forest); }
+.fe-passos small { font-size: .78rem; line-height: 1.35; color: #55554e; }
+.fe-texto { margin: 12px 2px 0; font-size: .95rem; color: #3f3f39; }
+
+/* ---------- fotos ---------- */
+.fe-fotos { display: flex; gap: 10px; margin: 22px 0 0; padding: 0 16px 4px; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.fe-fotos::-webkit-scrollbar { display: none; }
+.fe-fotos { scroll-padding-inline: 16px; }
+.fe-fotos img { flex: none; width: min(72vw, 300px); height: 190px; object-fit: cover; border-radius: 18px; scroll-snap-align: start; background: #e9e3d6; }
+
+/* ---------- bancas ---------- */
+.fe-dica { margin: 0 0 2px; font-size: .9rem; color: #55554e; }
+.fe-lista { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.fe-banca { position: relative; display: grid; grid-template-rows: auto 1fr; border-radius: 20px; overflow: hidden; background: var(--warm-white); border: 1px solid #e6e0d4; box-shadow: var(--shadow-sm); color: inherit; text-decoration: none; transition: transform .16s ease, box-shadow .16s ease; }
+.fe-banca:hover, .fe-banca:focus-visible { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.fe-banca:focus-visible { outline: 3px solid #f2b33d; outline-offset: 2px; }
+.fe-banca:active { transform: scale(.985); }
+.fe-banca-capa { position: relative; display: block; aspect-ratio: 4 / 3; background: var(--forest); overflow: hidden; }
+.fe-banca-capa img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* sem foto de capa: a cor da banca com a inicial grande, como um letreiro */
+.fe-banca-capa .fe-letra { position: absolute; inset: 0; display: grid; place-items: center; font: 700 3.2rem 'Fraunces', serif; color: rgba(255, 255, 255, .92); background: radial-gradient(90% 90% at 80% 10%, rgba(255, 255, 255, .22), transparent 60%); }
+.fe-banca-logo { position: absolute; left: 12px; bottom: -22px; width: 48px; height: 48px; border-radius: 50%; overflow: hidden; background: #ffffff; border: 3px solid #ffffff; box-shadow: 0 2px 8px rgba(0, 0, 0, .18); }
+.fe-banca-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fe-txt { display: grid; gap: 3px; align-content: start; padding: 12px 12px 14px; min-width: 0; }
+.fe-banca.com-logo .fe-txt { padding-top: 28px; }
+.fe-txt b { font-family: 'Fraunces', serif; font-size: 1.04rem; line-height: 1.2; color: var(--forest); overflow-wrap: anywhere; }
+.fe-txt small { color: #55554e; font-size: .82rem; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.fe-chip { justify-self: start; margin-top: 5px; padding: 3px 9px; border-radius: 999px; font-size: .74rem; font-weight: 700; font-style: normal; background: #e1f5e7; color: #157538; }
+.fe-chip.depois { background: #fdf0cf; color: #7a4302; }
+.fe-chip.ultima { background: #e2f1fa; color: #0a557f; }
+/* banca que não vem hoje: sem cor, para se ver que está "desligada" */
+.fe-lista.fora .fe-banca { background: #f3f0e9; box-shadow: none; }
+.fe-lista.fora .fe-banca-capa { filter: grayscale(1) contrast(.85) brightness(1.05); opacity: .78; }
+.fe-lista.fora .fe-banca-logo { filter: grayscale(1); }
+.fe-lista.fora .fe-txt b { color: #55554e; }
+.fe-lista.fora .fe-chip { background: #e4e0d6; color: #4a4a44; }
+
+.fe-esqueleto { min-height: 190px; border-radius: 20px; background: linear-gradient(90deg, #efe9dd 25%, #f6f2ea 50%, #efe9dd 75%); background-size: 200% 100%; animation: fe-brilho 1.2s linear infinite; }
 @keyframes fe-brilho { to { background-position: -200% 0; } }
-@media (prefers-reduced-motion: reduce) { .fe-esqueleto { animation: none; } .fe-banca { transition: none; } }
-.fe-aviso { margin: 18px 0 0; padding: 16px; border-radius: 16px; background: var(--warning-light); color: #7a4a06; font-weight: 600; line-height: 1.5; }
-.fe-rodape { margin: 22px 4px 0; color: var(--text-light); font-size: .86rem; line-height: 1.5; }
+.fe-rodape { margin: 26px 20px 0; color: #6b6b62; font-size: .86rem; text-align: center; }
+
+@media (min-width: 720px) {
+  .fe { padding-top: 20px; }
+  .fe-hero { border-radius: 28px; min-height: 420px; padding: 80px 36px 34px; }
+  .fe-lista { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .fe-fotos img { height: 230px; }
+  .fe-passos li { padding: 20px 14px 18px; }
+  .fe-passos b { font-size: 1rem; } .fe-passos small { font-size: .86rem; }
+}
+@media (max-width: 340px) { .fe-lista { grid-template-columns: 1fr; } .fe-passos { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .fe-esqueleto, .fe-status.hoje::before { animation: none; } .fe-banca { transition: none; } }

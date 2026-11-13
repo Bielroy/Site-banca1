@@ -18,7 +18,8 @@
 //  POST { acao: 'link-entrada', id, email }                 gera o link de entrada no painel da loja SEM mandar e-mail (para mandar pelo WhatsApp)
 //  POST { acao: 'condominio', id?, nome, formato, remover? }  cadastro de condomínios da plataforma
 //  POST { acao: 'assinatura', id, valor, dia, obs }        mensalidade da banca (valor vazio = tira)
-//  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids], condominiosIds: [ids do cadastro], horaLimite: 'HH:MM', semFeira: ['AAAA-MM-DD'] }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
+//  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids], condominiosIds: [ids do cadastro], horaLimite: 'HH:MM', semFeira: ['AAAA-MM-DD'],
+//         datasExtras: ['AAAA-MM-DD'], lojasDias: { lojaId: [0..6] }, hud: { texto, local, horario, capa, fotos } }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
 //
 //  O primeiro acesso de plataforma ainda é dado pelo terminal
 //  (scripts/plataforma.js): não existe tela que promova alguém a dono de tudo.
@@ -105,7 +106,10 @@ async function lojas(res) {
     return { id, nome: f.nome || id, tipo: f.tipo || '', formato: Formato.formatoDaFicha(f), ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, campos: camposMarcados(f), mes, donos, assinatura: assinaturas.get(id) || null };
   }));
   const condominios = await Cond.garantir(db, T);   // sem o cadastro, a tela não abre (senão salvar uma feira apagaria os condomínios dela)
-  const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, condominiosIds: Cond.idsDaFeira(condominios, d.data()), dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira) }));
+  const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, condominiosIds: Cond.idsDaFeira(condominios, d.data()), dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira),
+    // página de entrada da feira (HUD): datas extras ("hoje tem feira"), dias de cada banca e o que a página mostra
+    datasExtras: Feira.limparDatas(d.data().datasExtras), hud: Feira.limparHud(d.data().hud),
+    lojasDias: Object.fromEntries((d.data().lojas || []).filter((l) => l && Feira.limparDias(l.dias).length).map((l) => [l.id, Feira.limparDias(l.dias)])) }));
   const seg = await db.collection('plataforma').doc('segredos').get();
   const r2 = !!R2.config(), fotos = r2;                           // fotos no Cloudflare R2 (lib/r2.js)
   const imgbbGuardada = !!(seg.exists && seg.data().imgbb);       // chave antiga do ImgBB, que não é mais usada: a tela oferece apagar
@@ -355,7 +359,15 @@ async function feira(req, res) {
   const condominios = doCadastro ? doCadastro.condominios : limparCondominios(b.condominios), conds = doCadastro ? doCadastro.conds : [];
   // horário limite do pedido para o mesmo dia (vazio = aceita o dia todo) e datas sem feira (chuva, feriado)
   const horaLimite = Feira.limparHora(b.horaLimite), semFeira = Feira.limparDatas(b.semFeira);
-  if (ids.length) lote.set(refFeira, { nome, dias, condominios, conds, horaLimite, semFeira, lojas: fichas.map(([id, f]) => ({ id, nome: f.nome || NOME_ORIGINAL, cor: (f.tema && f.tema.primaria) || '#1a3a2a' })), atualizadoEm: new Date().toISOString() });
+  // PÁGINA DE ENTRADA (HUD). Tela antiga que não manda estes campos não apaga o que já estava gravado.
+  const antes = antiga.exists ? antiga.data() : {};
+  const datasExtras = Feira.limparDatas(b.datasExtras !== undefined ? b.datasExtras : antes.datasExtras).filter((d) => !semFeira.includes(d));
+  const hud = Feira.limparHud(b.hud !== undefined ? b.hud : antes.hud);
+  // dias em que cada banca vem (só os que são dias da feira; vazio = vem em todos)
+  const diasAntes = Object.fromEntries((Array.isArray(antes.lojas) ? antes.lojas : []).filter((l) => l && l.id).map((l) => [l.id, l.dias]));
+  const diasDe = (id) => { const d = Feira.limparDias(b.lojasDias && typeof b.lojasDias === 'object' ? b.lojasDias[id] : diasAntes[id]).filter((n) => !dias.length || dias.includes(n)); return d.length && (!dias.length || d.length < dias.length) ? d : []; };
+  if (ids.length) lote.set(refFeira, { nome, dias, condominios, conds, horaLimite, semFeira, datasExtras, hud,
+    lojas: fichas.map(([id, f]) => { const d = diasDe(id); return { id, nome: f.nome || NOME_ORIGINAL, cor: (f.tema && f.tema.primaria) || '#1a3a2a', ...(d.length ? { dias: d } : {}) }; }), atualizadoEm: new Date().toISOString() });
   else lote.delete(refFeira);
   await lote.commit();
   saem.concat(ids).forEach((id) => T._cacheFichas.delete(id));

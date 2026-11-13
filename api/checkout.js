@@ -325,6 +325,11 @@ module.exports = async function handler(req, res) {
   // Ela decide PARA QUANDO é o pedido (hoje, ou o próximo dia de feira).
   // A feira vale para entrega E para retirada: a agenda da banca diz o que cada dia de cada feira tem.
   const feiraDoPedido = await Feira.daLoja(db, tid, req.body && req.body.feira);
+  // a feira acontece hoje e esta banca não veio: a loja abre só para olhar (página da feira), e o pedido não fecha
+  if (feiraDoPedido && feiraDoPedido.foraHoje) {
+    const volta = Feira.proximaEntrega(feiraDoPedido);
+    return res.status(400).json({ error: `Esta banca não está na feira hoje.${volta ? ` Os pedidos voltam ${Feira.textoDoDia(volta.dia)}.` : ''}` });
+  }
 
   try {
     const resultado = await db.runTransaction(async (t) => {
