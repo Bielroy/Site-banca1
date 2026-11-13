@@ -2,7 +2,8 @@
 //  js/impressao-lib.js — O QUE vai no papel (sem falar com impressora nenhuma).
 //
 //  Tudo o que se imprime vira primeiro uma lista de "linhas" simples:
-//     { t:'txt', v:'texto', al:'e'|'c'|'d', b:true (negrito), g:true (grande) }
+//     { t:'txt', v:'texto', al:'e'|'c'|'d', b:true (negrito), g:true (grande), a:true (alta: mesma largura, o dobro da altura) }
+//     { t:'logo', src:'https://…' }   logo da loja (só na página comum; a térmica pula e segue com o nome em letra grande)
 //     { t:'par', e:'esquerda', d:'direita', b }     ex.: "Tomate ........ R$ 8,00"
 //     { t:'sep' }   linha tracejada      { t:'esp', n }   linhas em branco      { t:'corte' }
 //  Depois a mesma lista é transformada em:
@@ -31,6 +32,10 @@ export function enderecoTxt(p) {
     return [limpo(p.condominio, 60), resto.filter(Boolean).join(f === 'ql' ? ' · ' : ', ')].filter(Boolean).join(' - ');
 }
 
+const kgTxt = (n) => String(Math.round((Number(n) || 0) * 1000) / 1000).replace('.', ',');
+/** "0,62 kg x R$ 8,90/kg" para o item pedido em unidades que foi à balança ('' para os outros). */
+const pesoTxt = (i) => (Number(i.pesoFinal) > 0 && i.tipo === 'un' && PESO.includes(String(i.unidade || '').toLowerCase()) ? `${kgTxt(i.pesoFinal)} kg x ${reais(i.precoOriginal)}/kg` : '');
+
 /** Como o pedido chega ao cliente, em letra grande no papel: quem separa vê de cara se é para entregar ou se o cliente busca. */
 export function modoTxt(p) {
     if (!p || p.origem === 'balcao') return '';                                   // venda no balcão: o cliente já está ali
@@ -48,14 +53,16 @@ export function cupomDoPedido(p, { loja = '', aviso = '' } = {}) {
     if (limpo(aviso)) L.push(txt(aviso, { al: 'c', b: true }));            // ex.: "CUPOM ATUALIZADO (depois da balança)"
     const modo = modoTxt(p); if (modo) L.push(SEP, txt(modo, { al: 'c', b: true, g: true }));
     L.push(SEP);
-    if (limpo(p.nome)) L.push(txt(p.nome, { b: true }));
+    if (limpo(p.nome)) L.push(txt(p.nome, { b: true, a: true }));
     const end = ondeTxt(p); if (end) L.push(txt(end));
     if (limpo(p.telefone)) L.push(txt(`Tel: ${limpo(p.telefone, 20)}`));
     if (limpo(p.nome) || end) L.push(SEP);
     let soma = 0, aPesar = 0;
+    // os itens saem em letra ALTA (mesma largura, o dobro da altura): é o que se lê de longe na hora de separar
     itens.forEach((i) => {
-        if (i.aPesar) { aPesar++; L.push({ t: 'par', e: `${qtdTxt(i)} ${limpo(i.nome, 60)}`, d: 'a pesar' }); }
-        else { soma += Number(i.subtotal) || 0; L.push({ t: 'par', e: `${qtdTxt(i)} ${limpo(i.nome, 60)}`, d: reais(i.subtotal) }); }
+        if (i.aPesar) { aPesar++; L.push({ t: 'par', e: `${qtdTxt(i)} ${limpo(i.nome, 60)}`, d: 'a pesar', a: true }); }
+        else { soma += Number(i.subtotal) || 0; L.push({ t: 'par', e: `${qtdTxt(i)} ${limpo(i.nome, 60)}`, d: reais(i.subtotal), a: true }); }
+        const peso = pesoTxt(i); if (peso) L.push(txt(`  ${peso}`));                // o que a balança marcou
         if (i.adicionais) L.push(txt(`  + ${limpo(i.adicionais, 200)}`));   // montar pedido: o que o cliente escolheu
     });
     L.push(SEP);
@@ -72,6 +79,53 @@ export function cupomDoPedido(p, { loja = '', aviso = '' } = {}) {
     if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`${p.modo === 'retirada' ? 'Retirar' : 'Entregar'}: ${limpo(p.entrega.horario, 40)}`, { b: true }));
     if (limpo(p.obs)) L.push(SEP, txt(`Obs: ${limpo(p.obs, 300)}`));
     L.push(SEP, txt('Obrigado pela preferência!', { al: 'c' }), CORTE);
+    return L;
+}
+
+/**
+ * RECIBO DO CLIENTE: o papel que vai NA SACOLA, depois da balança. Mais caprichado que o cupom de separar:
+ * logo (na página comum) e nome da loja em cima, cada item com o peso certo e o valor, o total em letra grande,
+ * o que ficou de fora (se faltou algo) e a assinatura do UseBanca no pé.
+ *   opções: { loja, logo (https), assinatura (texto do pé; '' tira) }
+ */
+export function reciboDoCliente(p, { loja = '', logo = '', assinatura = 'Pedido feito pelo UseBanca · usebanca.com' } = {}) {
+    const L = [], itens = Array.isArray(p.itens) ? p.itens : [];
+    if (/^https:\/\/[^\s"'<>]+$/.test(String(logo || ''))) L.push({ t: 'logo', src: String(logo) });
+    if (loja) L.push(txt(loja, { al: 'c', b: true, g: true }));
+    L.push(txt(`Recibo do pedido${p.id ? ` ${numeroDoPedido(p)}` : ''}`, { al: 'c', b: true }), txt(dataHora(p.pesadoEm || p.data), { al: 'c' }), SEP);
+    if (limpo(p.nome)) L.push(txt(p.nome, { b: true, a: true }));
+    const end = enderecoTxt(p); if (end) L.push(txt(end));
+    if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`${p.modo === 'retirada' ? 'Retirada' : 'Entrega'}: ${limpo(p.entrega.horario, 40)}`));
+    L.push(SEP);
+    let soma = 0, aPesar = 0;
+    itens.forEach((i) => {
+        L.push(txt(limpo(i.nome, 80), { b: true, a: true }));
+        if (i.aPesar) { aPesar++; L.push({ t: 'par', e: `  ${qtdTxt(i)}`, d: 'a pesar' }); }
+        else {
+            soma += Number(i.subtotal) || 0;
+            const preco = Number(i.precoOriginal ?? i.preco) || 0, porQuilo = PESO.includes(String(i.unidade || '').toLowerCase());
+            const detalhe = pesoTxt(i) || (porQuilo && i.tipo !== 'un' ? `${qtdTxt(i)} x ${reais(preco)}` : (Number(i.qtd) > 1 && preco > 0 && !i.promo ? `${Math.round(Number(i.qtd))} x ${reais(preco)}` : qtdTxt(i)));
+            L.push({ t: 'par', e: `  ${detalhe}`, d: reais(i.subtotal) });
+        }
+        if (i.adicionais) L.push(txt(`  + ${limpo(i.adicionais, 200)}`));
+    });
+    L.push(SEP);
+    const desc = p.cupom && Number(p.cupom.desconto) > 0 ? Number(p.cupom.desconto) : 0;
+    const taxa = p.entrega && Number(p.entrega.taxa) > 0 ? Number(p.entrega.taxa) : 0;
+    if (desc || taxa) L.push({ t: 'par', e: 'Itens', d: reais(soma) });
+    if (desc) L.push({ t: 'par', e: `Cupom ${limpo(p.cupom.codigo, 20)}`, d: `-${reais(desc)}` });
+    if (taxa) L.push({ t: 'par', e: 'Entrega', d: reais(taxa) });
+    L.push({ t: 'par', e: aPesar ? 'PARCIAL' : 'TOTAL', d: reais(p.total), b: true, g: true });
+    if (aPesar) L.push(txt(`Falta pesar ${aPesar} item(ns): o total muda depois da balança.`));
+    const pago = p.pagamento && p.pagamento.status === 'PAID';
+    if (limpo(p.pag)) L.push(txt(`Pagamento: ${limpo(p.pag, 30)}${pago ? ' (já recebido)' : ''}`));
+    if (!pago && limpo(p.troco)) L.push(txt(`Troco para: ${limpo(p.troco, 30)}`));
+    // o que faltou e saiu do pedido: o cliente lê no papel o mesmo aviso que recebeu no WhatsApp
+    const fora = [...new Set((Array.isArray(p.ajustes) ? p.ajustes : []).filter((a) => a && a.op === 'tirou' && limpo(a.nome)).map((a) => limpo(a.nome, 60)))];
+    if (fora.length) L.push(SEP, txt(`Em falta hoje (${fora.length === 1 ? 'saiu' : 'saíram'} do pedido): ${fora.join(', ')}. Pedimos desculpas.`));
+    L.push(SEP, txt('Obrigado pela preferência!', { al: 'c', b: true }));
+    if (limpo(assinatura)) L.push(txt(assinatura, { al: 'c' }));
+    L.push(CORTE);
     return L;
 }
 
@@ -202,10 +256,10 @@ export function compor(linhas, colunas) {
         if (l.t === 'sep') out.push({ s: '-'.repeat(colunas) });
         else if (l.t === 'esp') for (let i = 0; i < (l.n || 1); i++) out.push({ s: '' });
         else if (l.t === 'corte') out.push({ corte: true });
-        else if (l.t === 'txt') quebrar(l.v, n).forEach((s) => out.push({ s: alinhar(s, n, l.al), b: l.b, g: l.g }));
+        else if (l.t === 'txt') quebrar(l.v, n).forEach((s) => out.push({ s: alinhar(s, n, l.al), b: l.b, g: l.g, a: l.a && !l.g }));
         else if (l.t === 'par') {
             const d = String(l.d || ''), livre = Math.max(4, n - d.length - (d ? 1 : 0)), partes = quebrar(l.e, livre);
-            partes.forEach((s, i) => out.push({ s: i === partes.length - 1 && d ? s.padEnd(n - d.length) + d : s, b: l.b, g: l.g }));
+            partes.forEach((s, i) => out.push({ s: i === partes.length - 1 && d ? s.padEnd(n - d.length) + d : s, b: l.b, g: l.g, a: l.a && !l.g }));
         }
     });
     return out;
@@ -227,11 +281,12 @@ function codificar(s, acentos) {
 export function paraEscPos(linhas, { largura = 58, acentos = false, cortar = true } = {}) {
     const b = [0x1b, 0x40];                                   // ESC @  → zera a impressora
     if (acentos) b.push(0x1b, 0x74, 0x03);                    // ESC t 3 → tabela 860
-    let negrito = false, grande = false;
+    let negrito = false, tamanho = 0;                         // GS ! → 0x11 = dobro de largura e altura; 0x01 = só o dobro da altura
     compor(linhas, colunasDe(largura)).forEach((l) => {
         if (l.corte) { b.push(0x0a, 0x0a, 0x0a); if (cortar) b.push(0x1d, 0x56, 0x42, 0x00); return; }   // GS V 66 0 → corte (quem não tem guilhotina ignora)
         if (!!l.b !== negrito) { negrito = !!l.b; b.push(0x1b, 0x45, negrito ? 1 : 0); }                 // ESC E
-        if (!!l.g !== grande) { grande = !!l.g; b.push(0x1d, 0x21, grande ? 0x11 : 0x00); }              // GS !  → dobro de largura e altura
+        const tam = l.g ? 0x11 : l.a ? 0x01 : 0x00;
+        if (tam !== tamanho) { tamanho = tam; b.push(0x1d, 0x21, tam); }
         b.push(...codificar(l.s.replace(/\s+$/, ''), acentos), 0x0a);
     });
     b.push(0x1b, 0x45, 0, 0x1d, 0x21, 0);
@@ -246,8 +301,9 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 export function paraHtml(folhas, { largura = 58 } = {}) {
     const a4 = largura === 'a4', L = LARGURAS[largura] || LARGURAS[58];
     const folha = (linhas) => `<section>${linhas.map((l) => {
-        const c = `${l.b ? ' b' : ''}${l.g ? ' g' : ''}`;
+        const c = `${l.b ? ' b' : ''}${l.g ? ' g' : l.a ? ' a' : ''}`;
         if (l.t === 'sep') return '<hr>';
+        if (l.t === 'logo') return /^https:\/\/[^\s"'<>]+$/.test(String(l.src || '')) ? `<p class="c"><img class="logo" src="${esc(l.src)}" alt=""></p>` : '';
         if (l.t === 'esp') return '<br>'.repeat(l.n || 1);
         if (l.t === 'txt') return `<p class="${l.al || 'e'}${c}">${esc(l.v)}</p>`;
         if (l.t === 'par') return `<p class="par${c}"><span>${esc(l.e)}</span><span>${esc(l.d || '')}</span></p>`;
@@ -258,7 +314,8 @@ export function paraHtml(folhas, { largura = 58 } = {}) {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font: ${a4 ? '12pt' : L.mm === 58 ? '9.5pt' : '10.5pt'}/1.35 Arial, Helvetica, sans-serif; color: #000; ${a4 ? 'max-width: 90mm;' : `width: ${L.util}mm; padding: 2mm 0 6mm; margin: 0 auto;`} }
 section { break-after: page; page-break-after: always; } section:last-child { break-after: auto; page-break-after: auto; }
-p { overflow-wrap: anywhere; } .c { text-align: center; } .d { text-align: right; } .b { font-weight: 700; } .g { font-size: 1.5em; line-height: 1.2; }
+p { overflow-wrap: anywhere; } .c { text-align: center; } .d { text-align: right; } .b { font-weight: 700; } .g { font-size: 1.5em; line-height: 1.2; } .a { font-size: 1.22em; line-height: 1.25; }
+.logo { display: inline-block; max-width: 26mm; max-height: 26mm; margin: 0 auto 1.5mm; object-fit: contain; }
 .par { display: flex; justify-content: space-between; gap: 3mm; } .par span:last-child { white-space: nowrap; }
 hr { border: 0; border-top: 1px dashed #000; margin: 1.5mm 0; }
 </style></head><body>${folhas.map(folha).join('')}</body></html>`;
