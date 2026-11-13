@@ -518,6 +518,11 @@ button, a, input, select, textarea, label, summary, [data-action], .produto-card
 .reserva-txt { margin: 0 0 18px; color: var(--text-mid, #555); line-height: 1.5; }
 .reserva-zap { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; padding: 0 18px; border-radius: 999px; background: #1f9d55; color: #fff; font-weight: 800; font-size: 1.05rem; text-decoration: none; }
 .reserva-zap:active { transform: scale(.98); }
+/* sacola no WhatsApp (formato 'whatsapp'): nome e observação antes de mandar */
+.reserva-campo { display: grid; gap: 6px; margin: 0 0 14px; text-align: left; font-weight: 700; font-size: .92rem; color: var(--text-dark, #1a1a18); }
+.reserva-campo small { font-weight: 500; color: var(--text-mid, #555); }
+.reserva-campo input, .reserva-campo textarea { width: 100%; min-height: 48px; padding: 10px 12px; border: 1.5px solid var(--border, #d9d3c5); border-radius: 12px; background: var(--surface, #fff); color: inherit; font: 400 16px var(--font-body, inherit); resize: vertical; }
+.reserva-zap.off { opacity: .5; }
 .reserva-depois { margin-top: 14px; padding: 12px; border-radius: 14px; background: color-mix(in srgb, var(--forest) 6%, transparent); }
 .reserva-depois[hidden] { display: none; }
 .reserva-depois p { margin: 0 0 8px; font-size: .95rem; }

@@ -9,7 +9,7 @@ import { fmt, escapeHTML, isFracionavel, fixFloat, formatarQuantidadeVisual, sho
 import { initIA } from './ia.js';
 import { iniciarRanking, aplicarOrdem, scoreDe, destaques, maisPedidos } from './ranking-loja.js';
 import { contatoDaLoja, telefoneBonito, linkWhatsapp, normalizarWhatsapp, saudacaoComSacola } from './contato-lib.js';
-import { mensagemDoProduto } from './formato-lib.js';
+import { mensagemDoProduto, mensagemDaSacola } from './formato-lib.js';
 import { hojeDaLoja, selosDe, faixasDaVitrine, pesoAproximado, iconeDaCategoria, vitrineSegura, blocosDaVitrine, SACOLA_VAZIA, obsComTroca, tintaSobre, botaoSobre } from './vitrine-lib.js';
 import { ARTES } from './arte-lib.js';
 import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_POTE } from './vitrine-arte.js';
@@ -290,6 +290,8 @@ const produtoPorId = (id) => { if (_mapaDe !== STATE.produtos) { _mapaDe = STATE
 // LOJA "SÓ VITRINE" (Plataforma → Lojas → Formato; js/formato-lib.js): sem carrinho. Cada produto ganha
 // "Pedir no WhatsApp" com o nome e o preço na mensagem. O js/tema.js marca <html data-formato="vitrine"> ao ler a ficha.
 const emVitrine = () => document.documentElement.dataset.formato === 'vitrine';
+// SACOLA NO WHATSAPP (formato 'whatsapp'): a sacola funciona como na loja completa, mas fechar é só pelo WhatsApp do dono
+const emSacolaZap = () => document.documentElement.dataset.formato === 'whatsapp';
 // número da vitrine: o WhatsApp de atendimento ou, sem ele, o que recebe pedidos (mesmo com o botão do topo desligado)
 const zapDaVitrine = () => { const c = STATE.config || {}, k = c.contato && typeof c.contato === 'object' ? c.contato : {}; return normalizarWhatsapp(k.whatsapp) || normalizarWhatsapp(c.wpp); };
 const nomeDaLojaNaTela = () => (document.getElementById('header-nome')?.textContent || '').trim();
@@ -545,7 +547,7 @@ const atualizarRodapeCarrinhoDOM = () => {
             btnF.disabled = true; btnF.textContent = `Faltam ${fmt(falta)}`;
             bannerMin.textContent = `Pedido mínimo: ${fmt(minimo)}`; bannerMin.classList.add('visivel'); 
         } else { 
-            btnF.disabled = STATE.carrinho.length === 0; btnF.textContent = "Finalizar Pedido";
+            btnF.disabled = STATE.carrinho.length === 0; btnF.textContent = emSacolaZap() ? 'Finalizar no WhatsApp' : "Finalizar Pedido";
             bannerMin.classList.remove('visivel'); 
         }
     }
@@ -1451,6 +1453,7 @@ let _contatoDe = '';
 document.addEventListener('banca:formato', () => {
     document.querySelectorAll('[data-acao]').forEach((area) => pintarAcao(area, area.dataset.acao));
     pintarZapFixo();
+    try { renderCarrinhoCompleto(); } catch (_) { /* sacola ainda não montada */ }   // "Finalizar no WhatsApp" ou "Finalizar Pedido"
     if (emVitrine() && document.getElementById('carrinho')?.classList.contains('aberto')) document.getElementById('btn-fechar-sacola')?.click();
 });
 const pintarContato = () => {
@@ -2707,6 +2710,7 @@ const lembrarPagamento = () => {
 };
 
 document.getElementById('btn-abrir-checkout').addEventListener('click', () => {
+    if (emSacolaZap()) { abrirSacolaNoWhatsApp(); return; }
     // TELA DESATUALIZADA: fechar o pedido numa tela velha é onde dá problema (campo que não existe mais,
     // regra que mudou). Se já sabemos que há versão nova, atualiza ANTES de abrir a tela de entrega.
     if (haVersaoNova()) return recarregarComPedidoGuardado('A loja foi atualizada. Um instante: seu pedido continua na sacola.');
@@ -2822,6 +2826,48 @@ function oferecerPedidoPeloWhatsApp(d) {
     document.getElementById('reserva-zap').addEventListener('click', () => { const dp = document.getElementById('reserva-depois'); if (dp) dp.hidden = false; });
     openModal('modal-reserva');
     return true;
+}
+// SACOLA NO WHATSAPP: sem tela de entrega nem pagamento. Pede só o nome (o dono precisa saber quem é), a mensagem sai
+// pronta e o único botão de fechar é o do WhatsApp. A sacola só esvazia quando a pessoa diz que mandou.
+function abrirSacolaNoWhatsApp() {
+    const c = STATE.config || {}, numero = normalizarWhatsapp(c.wpp) || contatoDaLoja(c).whatsapp;
+    const caixa = document.getElementById('reserva-corpo');
+    if (!caixa || !STATE.carrinho.length) return;
+    if (!numero) { showToast('Esta loja ainda não cadastrou o WhatsApp dos pedidos.', true); return; }
+    let total = 0, aproximado = false;
+    const itens = STATE.carrinho.map((i) => {
+        const aPesar = i.tipo === 'un' && isFracionavel(i.unidade), sub = aPesar ? 0 : subtotalDoItem(i);
+        if (aPesar || i.tipo === 'kg') aproximado = true;
+        total += sub;
+        return { nome: i.nome, qtd: i.qtd, tipo: i.tipo, aPesar, subtotal: sub, adicionais: i.adicionais || '' };
+    });
+    const nomeGuardado = (lerLista('banca_clientes')[0] || {}).nome || '';
+    caixa.innerHTML = `
+        <div class="reserva-ico" aria-hidden="true">${ICO_ZAP_RESERVA}</div>
+        <h2 class="reserva-tit" id="reserva-titulo">Finalizar no WhatsApp</h2>
+        <p class="reserva-txt">Seu pedido vai pronto para o WhatsApp da loja: ${STATE.carrinho.length} ${STATE.carrinho.length === 1 ? 'item' : 'itens'}, ${aproximado ? 'cerca de ' : ''}${escapeHTML(fmt(total))}. A loja responde por lá com o valor final e o PIX.</p>
+        <label class="reserva-campo"><span>Seu nome</span><input type="text" id="sz-nome" maxlength="60" autocomplete="name" value="${escapeHTML(nomeGuardado)}" placeholder="Como a loja te chama"></label>
+        <label class="reserva-campo"><span>Observação <small>(opcional)</small></span><textarea id="sz-obs" rows="2" maxlength="300" placeholder="Ex.: queijo mais curado, entregar depois das 18h"></textarea></label>
+        <a class="reserva-zap" id="sz-zap" href="#" target="_blank" rel="noopener noreferrer" aria-disabled="true">${ICO_ZAP_RESERVA}<span>Enviar o pedido no WhatsApp</span></a>
+        <div class="reserva-depois" id="reserva-depois" hidden>
+            <p>Mandou a mensagem? Então a loja já recebeu.</p>
+            <button type="button" class="reserva-pronto" data-action="reserva-pronto">Pronto, mandei</button>
+        </div>
+        <button type="button" class="reserva-site" data-fechar="modal-reserva">Voltar para a sacola</button>`;
+    const nome = document.getElementById('sz-nome'), obs = document.getElementById('sz-obs'), zap = document.getElementById('sz-zap');
+    const atualizar = () => {
+        const ok = nome.value.trim().length >= 2;
+        zap.setAttribute('aria-disabled', String(!ok)); zap.classList.toggle('off', !ok);
+        zap.href = ok ? linkWhatsapp(numero, mensagemDaSacola({ loja: nomeDaLojaNaTela(), itens, total, aproximado, nome: nome.value, obs: obs.value })) : '#';
+    };
+    nome.addEventListener('input', atualizar); obs.addEventListener('input', atualizar); atualizar();
+    zap.addEventListener('click', (e) => {
+        if (zap.getAttribute('aria-disabled') === 'true') { e.preventDefault(); nome.focus(); showToast('Escreva o seu nome para a loja saber quem pediu.', true); return; }
+        try { const lista = lerLista('banca_clientes'), n = nome.value.trim(); if (!lista.length || lista[0].nome !== n) localStorage.setItem(chave('banca_clientes'), JSON.stringify([{ ...(lista[0] || {}), nome: n }, ...lista.slice(1)].slice(0, 5))); } catch (_) { /* só conveniência */ }
+        const dp = document.getElementById('reserva-depois'); if (dp) dp.hidden = false;
+    });
+    openModal('modal-reserva');
+    if (!nome.value) setTimeout(() => nome.focus(), 200);
 }
 const pedidoReservaMandado = () => {
     closeModal('modal-reserva'); closeModal('modal-checkout');

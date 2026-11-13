@@ -250,6 +250,7 @@ module.exports = async function handler(req, res) {
   catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
   // loja "só vitrine" (lib/formato.js): mostra o catálogo e não recebe pedido pelo site
   if (Formato.ehVitrine(fichaDaLoja)) return res.status(403).json({ error: Formato.MSG_VITRINE });
+  if (Formato.semPedidoNoSite(fichaDaLoja)) return res.status(403).json({ error: Formato.MSG_WHATSAPP });   // sacola no WhatsApp
 
   // Limite de verdade: contado no banco (vale para todas as cópias do servidor e não zera sozinho).
   // 60 pedidos em 10 minutos, por conexão, em cada loja. Era 20 (e antes 8): operadora de celular e Wi-Fi da feira põem

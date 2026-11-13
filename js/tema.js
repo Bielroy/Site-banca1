@@ -190,7 +190,7 @@ function aplicarFicha(ficha, completa = true) {
     if (!ficha) return;
     // FORMATO (js/formato-lib.js): "só vitrine" tira a sacola da loja (js/loja.js escuta 'banca:formato')
     const formato = formatoDaFicha(ficha), antes = document.documentElement.dataset.formato || 'loja';
-    if (formato === 'vitrine') document.documentElement.dataset.formato = 'vitrine'; else delete document.documentElement.dataset.formato;
+    if (formato === 'vitrine' || formato === 'whatsapp') document.documentElement.dataset.formato = formato; else delete document.documentElement.dataset.formato;
     if (formato !== antes) document.dispatchEvent(new CustomEvent('banca:formato', { detail: { formato } }));
     aplicarTema(ficha.tema || null);
     aplicarCabecalho(ficha.tema || null, typeof ficha.nome === 'string' ? ficha.nome : '');

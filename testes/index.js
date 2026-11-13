@@ -512,6 +512,29 @@ teste('formato: só "vitrine" exato vira vitrine; o resto (sem ficha, sem campo,
   assert.strictEqual(F.mensagemDoProduto('', { nome: 'Bolo' }), 'Oi! Vi no catálogo e quero: Bolo');
   assert.strictEqual(F.mensagemDoProduto('Doces da Ana', null), 'Oi, Doces da Ana! Vi o catálogo e quero fazer um pedido.');
 });
+teste('formato sacola no WhatsApp: monta a sacola, fecha só no WhatsApp; o servidor recusa pedido pelo site e o painel fica sem abas de pedido', async () => {
+  const F = await import(raiz('js/formato-lib.js')); const S = require(raiz('lib/formato')); const P = await import(raiz('js/papeis-lib.js'));
+  for (const f of [{ formato: 'whatsapp' }, { formato: 'WhatsApp' }, { formato: 'zap' }]) assert.strictEqual(F.formatoDaFicha(f), S.formatoDaFicha(f), JSON.stringify(f));
+  assert.strictEqual(F.formatoDaFicha({ formato: 'whatsapp' }), 'whatsapp'); assert.ok(!F.ehVitrine({ formato: 'whatsapp' }));
+  assert.ok(S.formatoValido('whatsapp') && S.semPedidoNoSite({ formato: 'whatsapp' }) && S.semPedidoNoSite({ formato: 'vitrine' }) && !S.semPedidoNoSite({}));
+  const todas = ['relatorios', 'pdv', 'impressora', 'produtos', 'categorias', 'estoque', 'comunicados', 'aparencia', 'equipe', 'config'];
+  assert.deepStrictEqual(P.abasDoPapel('proprietario', todas, null, 'whatsapp'), P.abasDoPapel('proprietario', todas, null, 'vitrine'));
+  // a mensagem: itens com quantidade e valor, item a pesar, total estimado, nome e observação
+  const m = F.mensagemDaSacola({ loja: 'Queijos do Zesildo', nome: 'Maria', obs: 'mais curado',
+    itens: [{ nome: 'Queijo canastra', qtd: 0.5, tipo: 'kg', subtotal: 22.5 }, { nome: 'Doce de leite', qtd: 2, tipo: 'un', subtotal: 30 }, { nome: 'Queijo minas', qtd: 1, tipo: 'un', aPesar: true }], total: 52.5, aproximado: true });
+  for (const pedaco of ['Oi, Queijos do Zesildo! Quero fazer este pedido:', '• 0,5 kg Queijo canastra — R$ 22,50', '• 2x Doce de leite — R$ 30,00', '• 1x Queijo minas (a pesar)', '*Total estimado: ≈ R$ 52,50*', 'Nome: Maria', 'Obs.: mais curado'])
+    assert.ok(m.includes(pedaco), `falta "${pedaco}" em:\n${m}`);
+  assert.ok(!F.mensagemDaSacola({ itens: [{ nome: 'X', qtd: 1, tipo: 'un', subtotal: 5 }], total: 5 }).includes('Nome:'), 'sem nome, sem a linha');
+  // o servidor não aceita pedido pelo site desta loja
+  const sem = semente();
+  sem['tenants/queijos-z'] = { nome: 'Queijos do Zesildo', ativo: true, formato: 'whatsapp' };
+  sem['tenants/queijos-z/produtos/tomate'] = { nome: 'Queijo', preco: 10, unidade: 'un', cat: 'q', ativo: true };
+  sem['tenants/queijos-z/loja/config'] = { wpp: '5562977770000', lojaAberta: true, diasAbertos: [0, 1, 2, 3, 4, 5, 6] };
+  const db = criarBanco(sem); const api = carregarApi(raiz('api/checkout.js'), criarAdmin(db, TOKENS));
+  const r = await chamar(api, { headers: { ...ip(), 'X-Loja': 'queijos-z' }, body: pedido({ itens: [{ id: 'tomate', qtd: 1, tipo: 'un' }] }) });
+  assert.strictEqual(r.status, 403, JSON.stringify(r.corpo)); assert.match(r.corpo.error, /WhatsApp/);
+  assert.ok(![...db._dados.keys()].some((k) => k.startsWith('tenants/queijos-z/pedidos/')), 'nenhum pedido gravado');
+});
 teste('formato vitrine: o painel fica só com produtos, categorias, comunicados, aparência, equipe e configurações; loja completa não muda', async () => {
   const P = await import(raiz('js/papeis-lib.js'));
   const todas = ['relatorios', 'pdv', 'fechamento', 'calendario', 'impressora', 'produtos', 'categorias', 'estoque', 'compras', 'balanco', 'previsao', 'crm', 'cupons', 'comunicados', 'copiloto', 'aparencia', 'equipe', 'config'];

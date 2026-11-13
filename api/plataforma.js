@@ -10,7 +10,7 @@
 //  POST { acao: 'criar-loja', id, nome, modelo, tipoNome?, emailDono? }   (modelo = aparência inicial; tipoNome = tipo escrito à mão)
 //  POST { acao: 'imgbb' }                                      apaga a chave antiga do ImgBB (as fotos agora vão para o Cloudflare R2)
 //  POST { acao: 'tipo', id, tipo }                              muda o tipo de negócio de uma loja
-//  POST { acao: 'formato', id, formato }                        'loja' (carrinho e pedidos) ou 'vitrine' (só catálogo, lib/formato.js)
+//  POST { acao: 'formato', id, formato }                        'loja' (carrinho e pedidos), 'whatsapp' (sacola enviada no WhatsApp) ou 'vitrine' (só catálogo, lib/formato.js)
 //  POST { acao: 'ativo', id, ativo }                        bloquear / liberar
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
 //  POST { acao: 'campos', id, campos: { duracao: false, ... } }   campos do cadastro de produto (lib/campos.js)
