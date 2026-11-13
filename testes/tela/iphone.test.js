@@ -300,8 +300,29 @@ teste('iPhone: virar a tela (em pé → deitado → em pé) com faixa rolada nã
   semErros(erros); await fechar();
 });
 
+teste('iPhone: página da feira (toldo, "hoje tem feira", bancas, fotos que deslizam) cabe na tela pequena e grande, e tocar na banca abre a loja', async () => {
+  for (const aparelho of ['iPhone SE / zoom', 'iPhone 13']) {
+    const cen = cenario(), d = new Date(Date.now() - 3 * 3600000).getUTCDay();
+    cen.feiras = { ...cen.feiras, florenca: { ...cen.feiras.florenca, dias: [d], hud: { local: 'Praça central do Jardins Florença', horario: 'das 17h às 21h', texto: 'Toda semana as bancas se reúnem na praça.', fotos: ['https://img.exemplo.test/banana.jpg', 'https://img.exemplo.test/kit.jpg'] } } };
+    const { pagina, erros, fechar } = await abrir('/', { aparelho, cen });      // abre a loja (o ajudante espera os produtos) e vai para o link da feira
+    await pagina.goto(servidor.base + '/feira/florenca');
+    await pagina.locator('.fe-banca').first().waitFor({ timeout: 10000 });
+    await pagina.waitForTimeout(400);
+    const folga = await pagina.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.ok(folga <= 1, `${aparelho}: a página da feira rola ${folga}px para o lado`);
+    assert.match(await pagina.locator('#fe-status').innerText(), /Hoje tem feira/);
+    // o toldo fica atrás do relógio do iPhone (área segura), sem cobrir o título
+    const [toldo, titulo] = await pagina.evaluate(() => [document.querySelector('.fe-toldo').getBoundingClientRect().bottom, document.getElementById('fe-nome').getBoundingClientRect().top]);
+    assert.ok(toldo < titulo, `${aparelho}: o toldo cobre o título`);
+    await pagina.locator('.fe-banca').first().tap();
+    await pagina.waitForURL(/feira=florenca/, { timeout: 8000 });
+    await pagina.locator('#lista-produtos .produto-card').first().waitFor({ timeout: 10000 });
+    semErros(erros); await fechar();
+  }
+});
+
 teste('iPhone: outras listas que rolam para o lado (categorias, bancas da feira, atalhos, sugestões da sacola) não passam da tela', async () => {
-  const { pagina, erros, fechar } = await abrir('/?feira=florenca&entrar=1');
+  const { pagina, erros, fechar } = await abrir('/?feira=florenca');
   const listas = ['#categorias', '.feira-lojas', '.atalhos', '.ia-sugestoes'];
   for (const sel of listas) {
     const el = pagina.locator(sel).first();
