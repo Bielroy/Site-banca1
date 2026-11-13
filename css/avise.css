@@ -13,3 +13,7 @@
 .avise-prod { margin: 0 0 14px; font-size: 1rem; line-height: 1.45; }
 .avise-nota { margin: 6px 0 0; font-size: .84rem; color: #55554e; }
 #modal-avise input { font-size: 16px; }
+
+/* botão Compartilhar do topo: em tela estreita ou com letra grande, sai só o ícone (o nome fica no aria-label) para não cortar as outras */
+@media (max-width: 360px) { .btn-compartilhar span { display: none; } }
+.texto-grande .btn-compartilhar span { display: none; }
