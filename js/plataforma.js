@@ -105,12 +105,20 @@ function abaFeiras() {
 
 function abaLojas() {
     const d = S.dados, termo = normCond(S.busca.lojas);
-    const lojas = d.lojas.filter((l) => !termo || normCond(`${l.nome} ${l.id}`).includes(termo));
+    const achou = d.lojas.filter((l) => !termo || normCond(`${l.nome} ${l.id}`).includes(termo));
+    const lojas = achou.filter((l) => !l.excluida), lixeira = achou.filter((l) => l.excluida);
     return `<div class="pf-topo-aba"><input type="search" class="pf-busca" data-busca="lojas" placeholder="Buscar loja" value="${escapeHTML(S.busca.lojas)}" aria-label="Buscar loja"><button type="button" class="pf-bt pri" data-pf="nova-loja">Nova loja</button></div>
     <ul class="pf-lista">${lojas.map((l) => `<li class="pf-linha-wrap"><button type="button" class="pf-linha${l.ativo ? '' : ' bloq'}" data-pf="abrir-loja" data-loja="${escapeHTML(l.id)}">
         ${ponto(l.cor)}<span class="pf-linha-txt"><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.original ? 'Loja original' : NOMES_MODELO[l.tipo] || l.tipo || 'Loja')}${l.formato === 'vitrine' ? ', só vitrine' : l.formato === 'whatsapp' ? ', sacola no WhatsApp' : ''}${feirasDaLoja(l.id).length ? `, em ${feirasDaLoja(l.id).length} feira${feirasDaLoja(l.id).length > 1 ? 's' : ''}` : ''}${l.donos.length ? '' : ', sem proprietário'}</small></span>
         <span class="pf-linha-num"><b>${l.mes ? fmt(l.mes.receita) : '–'}</b><small>${l.ativo ? `${l.mes ? l.mes.pedidos : 0} pedidos no mês` : 'Bloqueada'}</small></span>
-    </button><a class="pf-bt mini pf-painel" href="${escapeHTML(urlDaLoja(l.id, '/admin'))}" aria-label="Abrir o painel de ${escapeHTML(l.nome)}">Painel</a></li>`).join('') || '<li class="pf-nada">Nenhuma loja com esse nome.</li>'}</ul>`;
+    </button><a class="pf-bt mini pf-painel" href="${escapeHTML(urlDaLoja(l.id, '/admin'))}" aria-label="Abrir o painel de ${escapeHTML(l.nome)}">Painel</a></li>`).join('') || '<li class="pf-nada">Nenhuma loja com esse nome.</li>'}</ul>
+    ${lixeira.length ? `<h3 class="pf-rot pf-lixeira-tit">Lixeira (restaura em até 30 dias)</h3><ul class="pf-lista pf-lixeira">${lixeira.map((l) => `<li class="pf-linha-wrap"><span class="pf-linha bloq">${ponto(l.cor)}<span class="pf-linha-txt"><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(diasNaLixeira(l.excluidaEm))}</small></span></span><button type="button" class="pf-bt mini" data-pf="restaurar" data-loja="${escapeHTML(l.id)}">Restaurar</button></li>`).join('')}</ul>` : ''}`;
+}
+/** "Excluída há 3 dias · restaura até 12/12" (prazo de 30 dias contado no servidor). */
+function diasNaLixeira(iso) {
+    const t = Date.parse(iso || ''); if (!Number.isFinite(t)) return 'Na lixeira';
+    const dias = Math.max(0, Math.floor((Date.now() - t) / 864e5)), ate = new Date(t + 30 * 864e5);
+    return `Excluída ${dias === 0 ? 'hoje' : dias === 1 ? 'ontem' : `há ${dias} dias`} · restaura até ${ate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`;
 }
 
 function abaCondominios() {
@@ -366,7 +374,8 @@ function folhaLoja(l) {
     <section class="pf-sec"><span class="pf-rot">Campos no cadastro de produto</span><small class="pf-dica">O que esta loja vê ao criar ou editar um produto. Nome, preço, unidade, categoria e foto sempre aparecem. Muda na hora, ao tocar.</small>
         <div class="pf-toggles">${(() => { const lig = camposDaLoja({ tipo: l.tipo, campos: l.campos || {} }, l.original); return Object.entries(S.dados.campos || CAMPOS_PRODUTO).map(([k, rot]) => `<label><input type="checkbox" data-pf-campo="${k}"${lig[k] ? ' checked' : ''}> ${escapeHTML(rot)}</label>`).join(''); })()}</div></section>
     <section class="pf-sec"><span class="pf-rot">Feiras</span>${fs.length ? `<ul class="pf-mini-lista">${fs.map((f) => `<li>${escapeHTML(f.nome)}<small>${escapeHTML(diasEmTexto(f.dias))}</small></li>`).join('')}</ul>` : '<p class="pf-dica">Não está em nenhuma feira.</p>'}<small class="pf-dica">Para colocar ou tirar de uma feira, use a aba Feiras.</small></section>
-    <section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt${l.ativo ? ' perigo' : ' pri'}" data-pf="${l.ativo ? 'bloquear' : 'liberar'}">${l.ativo ? 'Bloquear a loja' : 'Liberar a loja'}</button><small class="pf-dica">Bloqueada, a loja para de receber pedidos e some das feiras, e o painel dela fecha com o aviso "Sua assinatura foi interrompida por falta de pagamento. Pague e volte a usar", mostrando a mensalidade. Nada se perde: ao liberar, tudo volta.</small></section>`;
+    <section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt${l.ativo ? ' perigo' : ' pri'}" data-pf="${l.ativo ? 'bloquear' : 'liberar'}">${l.ativo ? 'Bloquear a loja' : 'Liberar a loja'}</button><small class="pf-dica">Bloqueada, a loja para de receber pedidos e some das feiras, e o painel dela fecha com o aviso "Sua assinatura foi interrompida por falta de pagamento. Pague e volte a usar", mostrando a mensalidade. Nada se perde: ao liberar, tudo volta.</small></section>
+    ${l.original ? '' : `<section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt perigo" data-pf="excluir">Excluir a loja</button><small class="pf-dica">A loja vai para a lixeira: fica bloqueada e some das listas. Dá para restaurar por 30 dias. Para confirmar, você digita o nome da loja.</small></section>`}`;
     return [l.nome, corpo, '<button type="button" class="pf-bt" data-pf="fechar-folha">Fechar</button>'];
 }
 
@@ -519,6 +528,12 @@ async function agir(b) {
             return fazer({ acao: 'ativo', id: lojaId, ativo: false }, 'Loja bloqueada.');
         }
         case 'liberar': return fazer({ acao: 'ativo', id: lojaId, ativo: true }, 'Loja liberada.');
+        case 'excluir': {
+            if (!(await confirmar(`Excluir ${loja.nome}?`, 'A loja para de receber pedidos, sai das feiras e o painel dela fecha. Ela fica 30 dias na lixeira, onde dá para restaurar; depois disso não volta mais.', { ok: 'Excluir', nao: 'Voltar', digitar: loja.nome }))) return;
+            if (await fazer({ acao: 'excluir', id: lojaId, confirmar: loja.nome }, `${loja.nome} foi para a lixeira.`)) fecharFolha(true);
+            return;
+        }
+        case 'restaurar': return fazer({ acao: 'restaurar', id: lojaId }, `${loja.nome} saiu da lixeira. Ela continua bloqueada: libere quando quiser.`);
         case 'mudar-tipo': {
             const novo = $('pf-l-tipo').value.trim();
             if (novo.length < 2) return showToast('Escreva o tipo de negócio.', true);

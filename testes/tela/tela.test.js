@@ -916,6 +916,24 @@ teste('painel num documento só: abre os produtos e os custos do documento (não
   semErros(erros); await fechar();
 });
 
+teste('painel: tirar produto da loja acontece na hora, sem pergunta, e o aviso traz "Desfazer" que põe de volta; o aviso espera enquanto o dedo está nele', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForSelector('[data-action="toggle-estoque"][data-id="tomate"]', { timeout: 8000 });
+  await pagina.click('[data-action="toggle-estoque"][data-id="tomate"]');
+  assert.ok(!(await pagina.locator('#overlay-confirm.aberto').count()), 'não pergunta "tem certeza?"');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /produtos\/tomate$/.test(g.path) && g.dados.ativo === false), null, { timeout: 4000 });
+  const aviso = pagina.locator('#toast.visivel .toast-desfazer');
+  await aviso.waitFor({ timeout: 3000 });
+  assert.match(await pagina.locator('#toast').innerText(), /Produto fora da loja/);
+  await aviso.hover(); await pagina.waitForTimeout(6500);
+  assert.ok(await aviso.isVisible(), 'com o mouse em cima, o aviso não some');
+  await aviso.click();
+  await pagina.waitForFunction(() => (window.__gravados || []).filter((g) => /produtos\/tomate$/.test(g.path)).pop()?.dados.ativo === true, null, { timeout: 4000 });
+  await pagina.waitForFunction(() => /Desfeito/.test(document.getElementById('toast').innerText), null, { timeout: 3000 });
+  semErros(erros); await fechar();
+});
+
 teste('painel num documento só: sem documento (ou caixa antes das regras novas) o painel lê os produtos como antes', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
@@ -1384,6 +1402,34 @@ const faceIdFalso = () => {
     create: async (o) => { window.__criou = o; return { id: 'cred-novo', rawId: buf('cred-novo'), type: 'public-key', response: { clientDataJSON: buf('{"x":2}'), attestationObject: buf('att') } }; },
   } });
 };
+teste('plataforma: "Excluir a loja" só confirma com o nome digitado e manda para a lixeira; a lixeira mostra "Restaurar"', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
+  const { pagina, ctx, erros, fechar } = await abrir('/plataforma.html', cen, { antes: `try { localStorage.setItem('pf_aba', 'lojas'); } catch (_) {}` });
+  const chamadas = []; let lixo = false;
+  await ctx.route('**/api/plataforma', async (r) => {
+    const corpo = JSON.parse(r.request().postData() || '{}'); chamadas.push(corpo);
+    if (corpo.acao === 'excluir') lixo = true;
+    if (corpo.acao === 'lojas') return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ sucesso: true, lojas: lojasDaPlataforma(3).map((l) => ({ ...l, donos: [], modulos: {}, campos: {}, formato: 'loja', excluida: lixo && l.id === 'loja-2', excluidaEm: lixo && l.id === 'loja-2' ? new Date().toISOString() : '' })), feiras: [], modelos: [], modulos: {}, campos: {}, condominios: [] }) });
+    return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ sucesso: true }) });
+  });
+  await pagina.reload();
+  await pagina.waitForSelector('[data-pf="abrir-loja"][data-loja="loja-2"]', { timeout: 8000 });
+  await pagina.click('[data-pf="abrir-loja"][data-loja="loja-2"]');
+  await pagina.click('[data-pf="excluir"]');
+  await pagina.waitForSelector('#overlay-confirm.aberto #confirm-digitar-campo', { timeout: 3000 });
+  assert.ok(await pagina.locator('#btn-confirm-ok').isDisabled(), 'sem digitar, o botão fica apagado');
+  await pagina.fill('#confirm-digitar-campo', 'loja 3');
+  assert.ok(await pagina.locator('#btn-confirm-ok').isDisabled(), 'nome errado não acende');
+  await pagina.fill('#confirm-digitar-campo', 'LOJA 2 ');
+  assert.ok(await pagina.locator('#btn-confirm-ok').isEnabled(), 'nome certo (sem diferença de maiúscula) acende');
+  await pagina.click('#btn-confirm-ok');
+  await pagina.waitForFunction(() => document.querySelector('.pf-lixeira [data-pf="restaurar"][data-loja="loja-2"]'), null, { timeout: 6000 });
+  const ex = chamadas.find((c) => c.acao === 'excluir');
+  assert.ok(ex && ex.id === 'loja-2' && ex.confirmar === 'Loja 2', JSON.stringify(ex));
+  assert.match(await pagina.locator('.pf-lixeira').innerText(), /Excluída hoje · restaura até/);
+  semErros(erros); await fechar();
+});
+
 teste('login do painel: e-mail da última vez já preenchido e "Entrar com Face ID ou digital" entra sem link (token do Firebase)', async () => {
   const cen = cenarioPadrao({ semLogin: true });
   const pedidos = [];

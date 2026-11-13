@@ -2455,7 +2455,21 @@ teste('plataforma: só o dono da plataforma entra; cria loja, dono, módulos, bl
   assert.strictEqual((await chamar(carregarApi(raiz('api/pdv.js'), adm), { headers: cab, body: { ...venda, chave: 'chave-de-teste-2' } })).status, 403, 'loja bloqueada não vende');
   const api3 = carregarApi(raiz('api/plataforma.js'), adm), ch3 = (body) => chamar(api3, { headers: { authorization: 'Bearer super' }, body });
   assert.strictEqual((await ch3({ acao: 'ativo', id: 'nao-existe', ativo: false })).status, 404);
-  // feira
+  // EXCLUIR: vai para a lixeira (bloqueada e escondida), só com o nome digitado; restaurar volta bloqueada
+  const nomeE = db._dados.get('tenants/espetinhos').nome || 'espetinhos';
+  assert.strictEqual((await ch3({ acao: 'excluir', id: 'espetinhos', confirmar: 'outro nome' })).status, 400, 'sem o nome certo não exclui');
+  assert.strictEqual((await ch3({ acao: 'excluir', id: 'espetinhos' })).status, 400);
+  assert.strictEqual((await ch3({ acao: 'excluir', id: 'banca', confirmar: 'Banca Adair e Pedrina' })).status, 400, 'a loja original nunca é excluída');
+  assert.strictEqual((await ch3({ acao: 'excluir', id: 'espetinhos', confirmar: `  ${nomeE.toUpperCase()} ` })).status, 200, 'maiúscula e espaço não atrapalham');
+  let fe = db._dados.get('tenants/espetinhos'); assert.ok(fe.excluida === true && fe.ativo === false && fe.excluidaEm, 'na lixeira: bloqueada, com a data');
+  assert.ok(!(await ch3({ acao: 'lojas-leve' })).corpo.lojas.some((x) => x.id === 'espetinhos'), 'some da troca de lojas');
+  assert.strictEqual((await ch3({ acao: 'lojas' })).corpo.lojas.find((x) => x.id === 'espetinhos').excluida, true, 'a tela de lojas mostra na lixeira');
+  assert.strictEqual((await ch3({ acao: 'ativo', id: 'espetinhos', ativo: true })).status, 400, 'liberar loja da lixeira: restaure antes');
+  assert.strictEqual((await chamar(api3, { headers: { authorization: 'Bearer dono' }, body: { acao: 'excluir', id: 'espetinhos', confirmar: 'x' } })).status, 403, 'só a plataforma exclui');
+  assert.strictEqual((await ch3({ acao: 'restaurar', id: 'espetinhos' })).status, 200);
+  fe = db._dados.get('tenants/espetinhos'); assert.ok(fe.excluida === false && fe.ativo === false, 'restaurada, continua bloqueada');
+  assert.strictEqual((await ch3({ acao: 'restaurar', id: 'espetinhos' })).status, 400, 'não está na lixeira');
+    // feira
   assert.strictEqual((await ch3({ acao: 'feira', fid: 'jardins', nome: 'F', lojas: ['banca'] })).status, 400, 'feira sem nome não entra');
   assert.strictEqual((await ch3({ acao: 'feira', fid: 'jardins', nome: 'Feira', lojas: ['banca', 'fantasma'] })).status, 404);
   assert.strictEqual((await ch3({ acao: 'feira', fid: 'jardins', nome: 'Feira do Jardins', lojas: ['banca', 'espetinhos', 'jantinha-da-lu'] })).status, 200);
@@ -5591,6 +5605,8 @@ teste('busca da loja: "folhas" acha a alface, perdoa plural, acento e uma letra 
   assert.deepStrictEqual(achados('pastéis', ps), ['Pastel de carne']);
   assert.deepStrictEqual(achados('alfase', ps), ['Alface crespa'], 'uma letra errada em palavra comprida');
   assert.deepStrictEqual(achados('pepa', ps), [], 'palavra curta não "adivinha"');
+  assert.deepStrictEqual(achados('tomtae', ps), ['Tomate italiano'], 'duas letras vizinhas invertidas contam como um erro só');
+  assert.deepStrictEqual(achados('tmoaet', ps), [], 'dois erros não passam');
   assert.deepStrictEqual(achados('salada pronta', ps), ['Mix especial'], 'palavra cadastrada pela loja');
   assert.deepStrictEqual(achados('hortifruti', ps), ['Maracujá'], 'nome da categoria');
   assert.deepStrictEqual(achados('quero ovos', ps), ['Ovos caipira'], 'palavras vazias não atrapalham');

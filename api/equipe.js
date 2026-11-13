@@ -259,7 +259,7 @@ module.exports = async function handler(req, res) {
     if (!T.temPapel(dec, tidM, ['proprietario'])) return res.status(403).json({ error: 'Só o proprietário vê a mensalidade desta loja.' });
     try {
       const ficha = await T.fichaDaLoja(db, tidM);
-      return res.status(200).json({ sucesso: true, assinatura: await Assinatura.ler(db, tidM), bloqueada: !!(ficha && ficha.ativo === false) });
+      return res.status(200).json({ sucesso: true, assinatura: await Assinatura.ler(db, tidM), bloqueada: !!(ficha && ficha.ativo === false), excluida: !!(ficha && ficha.excluida === true) });
     } catch (e) { console.error('[equipe] assinatura', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
   }
   try { ({ tid } = await T.resolverLoja(db, req)); }
