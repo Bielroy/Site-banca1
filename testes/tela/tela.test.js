@@ -934,6 +934,31 @@ teste('painel: tirar produto da loja acontece na hora, sem pergunta, e o aviso t
   semErros(erros); await fechar();
 });
 
+teste('painel: Ctrl+K abre a paleta, "tomat" + Enter abre Produtos já filtrado; "p" vai para Pedidos e "/" abre a paleta; em campo de texto as teclas não disparam', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForSelector('[data-action="toggle-estoque"][data-id="tomate"]', { timeout: 8000 });
+  await pagina.keyboard.press('Control+k');
+  await pagina.waitForSelector('#cmd-paleta[open] #cmd-texto', { timeout: 3000 });
+  assert.ok(await pagina.evaluate(() => document.activeElement.id === 'cmd-texto'), 'o cursor vai para a busca');
+  await pagina.keyboard.type('tomat');
+  await pagina.waitForFunction(() => /Tomate/.test(document.querySelector('#cmd-lista [aria-selected="true"]')?.innerText || ''), null, { timeout: 3000 });
+  assert.match(await pagina.getAttribute('#cmd-texto', 'aria-activedescendant'), /^cmd-op-/);
+  await pagina.keyboard.press('Enter');
+  await pagina.waitForFunction(() => !document.querySelector('#cmd-paleta[open]') && document.getElementById('admin-busca-input').value === 'Tomate italiano', null, { timeout: 3000 });
+  await pagina.locator('#admin-busca-input').focus();
+  await pagina.keyboard.press('p');
+  assert.ok(!(await pagina.locator('.tab.active[data-aba="relatorios"]').count()), 'digitando num campo, "p" é só uma letra');
+  await pagina.locator('#admin-busca-input').blur();
+  await pagina.keyboard.press('p');
+  await pagina.waitForSelector('.tab.active[data-aba="relatorios"]', { timeout: 3000 });
+  await pagina.keyboard.press('/');
+  await pagina.waitForSelector('#cmd-paleta[open]', { timeout: 3000 });
+  await pagina.keyboard.press('Escape');
+  await pagina.waitForFunction(() => !document.querySelector('#cmd-paleta[open]'), null, { timeout: 3000 });
+  semErros(erros); await fechar();
+});
+
 teste('painel num documento só: sem documento (ou caixa antes das regras novas) o painel lê os produtos como antes', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
@@ -3481,4 +3506,39 @@ teste('painel: telas vazias no mesmo padrão (título, explicação, próximo pa
     assert.ok(k.length >= 2 && k.every((x) => x >= 4.5), `tema ${tema}: contraste ${k.map((x) => x.toFixed(2)).join(', ')}`);
   }
   semErros(erros); await fechar();
+});
+
+// ------------------------------------------------------------------ ACESSIBILIDADE (axe-core)
+// O axe-core (MPL-2.0, Deque) confere cada página contra as regras de acessibilidade (WCAG 2.2 A e AA):
+// botão sem nome, campo sem rótulo, contraste, ordem de títulos, ARIA errado...
+// Ele vem de testes/tela/package.json (o GitHub instala). Sem ele instalado, o teste é pulado.
+// AGORA SÓ AVISA: lista o que achou e grava testes/tela/acessibilidade.json. Com AXE_TRAVA=1, problema
+// "sério" ou "crítico" derruba o teste (vira obrigatório depois que os achados da primeira rodada forem consertados).
+teste('acessibilidade (axe-core): loja, feira, painel e plataforma sem problema sério ou crítico', async () => {
+  let fonteAxe = null;
+  for (const onde of ['axe-core', path.join(__dirname, 'node_modules', 'axe-core')]) { try { fonteAxe = require('fs').readFileSync(require.resolve(path.join(onde, 'axe.min.js')), 'utf8'); break; } catch (_) { /* tenta o outro */ } }
+  if (!fonteAxe) { console.log('        (axe-core não instalado aqui: pulado; o GitHub roda)'); return; }
+  const contaDona = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const contaPf = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
+  const paginas = [
+    ['loja', '/', cenarioPadrao(), '.card-produto, .produto-card, [data-id]'],
+    ['feira', '/feira.html?feira=florenca', cenarioPadrao(), 'main'],
+    ['painel: produtos', '/admin.html', contaDona, '[data-action="toggle-estoque"]'],
+    ['plataforma', '/plataforma.html', contaPf, '.pf-lista, .pf-topo-aba, main'],
+  ];
+  const achados = [];
+  for (const [nome, url, cen, esperar] of paginas) {
+    const { pagina, fechar } = await abrir(url, cen, { contexto: { bypassCSP: true } });
+    await pagina.waitForSelector(esperar, { timeout: 10000 }).catch(() => {});
+    await pagina.waitForTimeout(600);
+    await pagina.addScriptTag({ content: fonteAxe });
+    const r = await pagina.evaluate(() => window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] }, resultTypes: ['violations'] }));
+    r.violations.forEach((v) => achados.push({ pagina: nome, regra: v.id, impacto: v.impact, ajuda: v.help, onde: v.nodes.slice(0, 4).map((n) => n.target.join(' ')).join(' | '), vezes: v.nodes.length }));
+    await fechar();
+  }
+  require('fs').writeFileSync(path.join(__dirname, 'acessibilidade.json'), JSON.stringify(achados, null, 2));
+  achados.forEach((a) => console.log(`        [${a.impacto}] ${a.pagina} · ${a.regra} (${a.vezes}x): ${a.ajuda} → ${a.onde}`));
+  const graves = achados.filter((a) => a.impacto === 'serious' || a.impacto === 'critical');
+  if (process.env.AXE_TRAVA === '1') assert.strictEqual(graves.length, 0, `${graves.length} problema(s) sério(s) ou crítico(s) de acessibilidade`);
+  else if (graves.length) console.log(`        AVISO: ${graves.length} problema(s) sério(s) ou crítico(s) de acessibilidade (ainda não trava; AXE_TRAVA=1 trava)`);
 });

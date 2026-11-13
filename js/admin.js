@@ -9,6 +9,7 @@ import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
 import { textoDeBusca, combinaBusca } from './busca-lib.js';
+import { iniciarComandos } from './admin-comandos.js';   // Ctrl+K, "/" e atalhos de uma tecla
 import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm, focarCampo, avisoComDesfazer } from './utils.js';
 import { estadoVazio, esqueleto } from './painel-ui.js';
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
@@ -3098,3 +3099,6 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         btn.textContent = "Salvar configurações"; btn.disabled = false;
     }
 });
+
+// PALETA DE COMANDOS (Ctrl+K, "/"): acha tela, produto, pedido ou ação com as listas que o painel já tem
+iniciarComandos({ produtos: () => produtosAtuais, pedidos: () => pedidosGerais });

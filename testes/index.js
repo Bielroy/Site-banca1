@@ -5593,6 +5593,20 @@ teste('dias da semana: a conta do navegador e a do servidor são iguais (produto
   assert.strictEqual(S.amanhaPermitido({ diasAbertos: [3] }, terca), true); assert.strictEqual(S.amanhaPermitido({ pedidoAmanha: false }, terca), false);
 });
 
+teste('paleta de comandos (Ctrl+K): acha tela, produto (com erro de digitação) e pedido pelo cliente ou condomínio, sem repetir cliente', async () => {
+  const C = await import(raiz('js/admin-comandos.js'));
+  const telas = [{ rotulo: 'Pedidos', aba: 'relatorios' }, { rotulo: 'Estoque', aba: 'estoque' }];
+  const produtos = [{ nome: 'Tomate italiano' }, { nome: 'Alface crespa', ativo: false }];
+  const pedidos = [{ nome: 'Fábio Augusto', condominio: 'Jardins Madri', quadra: '10', lote: '11' }, { nome: 'Fábio Augusto', condominio: 'Jardins Madri' }, { nome: 'Lúcia', condominio: 'Atenas' }];
+  const r = (t) => C.resultados(t, { telas, produtos, pedidos, extras: [{ grupo: 'Ações', rotulo: 'Novo produto' }] });
+  assert.deepStrictEqual(r('').map((x) => x.rotulo), ['Pedidos', 'Estoque', 'Novo produto'], 'vazio: as telas e as ações');
+  assert.deepStrictEqual(r('estoq').map((x) => `${x.grupo}:${x.rotulo}`), ['Telas:Estoque']);
+  assert.deepStrictEqual(r('tomtae').map((x) => x.rotulo), ['Tomate italiano'], 'letras invertidas');
+  assert.strictEqual(r('alface')[0].dica, 'fora da loja');
+  assert.deepStrictEqual(r('madri').map((x) => x.rotulo), ['Fábio Augusto'], 'pelo condomínio, cliente sem repetir');
+  assert.match(r('fabio')[0].dica, /Jardins Madri · Q 10 · L 11/);
+});
+
 teste('busca da loja: "folhas" acha a alface, perdoa plural, acento e uma letra errada, e usa as palavras cadastradas', async () => {
   const B = await import(raiz('js/busca-lib.js'));
   const achados = (termo, lista) => lista.filter((p) => B.combinaBusca(B.textoDeBusca(p, p.catNome || ''), termo)).map((p) => p.nome);
