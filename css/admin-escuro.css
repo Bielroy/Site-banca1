@@ -22,6 +22,9 @@ html[data-painel-tema="escuro"] .form-group label { color: #c3ccc6; }
 html[data-painel-tema="escuro"] .form-group input, html[data-painel-tema="escuro"] .form-group select, html[data-painel-tema="escuro"] .form-group textarea { border: 1.5px solid #304138; background: #25322b; color: #eaedeb; }
 html[data-painel-tema="escuro"] .form-group input:focus, html[data-painel-tema="escuro"] .form-group select:focus, html[data-painel-tema="escuro"] .form-group textarea:focus { border-color: #87c9a8; background: #19221d; box-shadow: 0 0 0 3px rgba(26,58,42,0.1); }
 html[data-painel-tema="escuro"] .toast { background: #275840; color: var(--sobre-primaria); }
+html[data-painel-tema="escuro"] .confirm-digitar { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .confirm-digitar input { border: 2px solid #33453c; color: #eaedeb; background: #19221d; }
+html[data-painel-tema="escuro"] .confirm-digitar input:focus-visible { outline: 3px solid #87c9a8; }
 
 /* ---- css/admin.css ---- */
 html[data-painel-tema="escuro"] #login-screen { background: #275840; }

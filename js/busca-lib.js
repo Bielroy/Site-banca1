@@ -62,9 +62,14 @@ export function textoDeBusca(p, nomeCategoria = '') {
     return norm([nome, ...limparPalavras(p && p.palavras), nomeCategoria, ...palavrasAutomaticas(nome)].join(' '));
 }
 
-// uma letra trocada, sobrando ou faltando (só em palavra comprida, para "pera" não achar "pepa")
+// uma letra trocada, sobrando ou faltando, ou DUAS VIZINHAS INVERTIDAS ("tmoate" → "tomate", como o uFuzzy aceita)
+// (só em palavra comprida, para "pera" não achar "pepa")
 function quase(a, b) {
     if (Math.abs(a.length - b.length) > 1) return false;
+    if (a.length === b.length) {                       // vizinhas invertidas contam como um erro só
+        const dif = []; for (let k = 0; k < a.length && dif.length <= 2; k++) if (a[k] !== b[k]) dif.push(k);
+        if (dif.length === 2 && dif[1] === dif[0] + 1 && a[dif[0]] === b[dif[1]] && a[dif[1]] === b[dif[0]]) return true;
+    }
     let i = 0, j = 0, erros = 0;
     while (i < a.length && j < b.length) {
         if (a[i] === b[j]) { i++; j++; continue; }

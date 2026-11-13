@@ -75,6 +75,8 @@ export const showToast = (msg, isError = false) => {
   let t = document.getElementById('toast');
   // página sem a caixinha de aviso (era o caso da Plataforma): cria na hora, senão o aviso some calado
   if (!t) { t = document.createElement('div'); t.className = 'toast'; t.id = 'toast'; t.setAttribute('role', 'alert'); document.body.appendChild(t); }
+  if (desfazerAtual) desfazerAtual.fechar(false);
+  t.classList.remove('com-acao');
   t.textContent = msg;
   t.style.background = isError ? 'var(--danger)' : 'var(--forest)';
   t.dataset.tipo = isError ? 'erro' : 'ok';   // o painel mostra um ícone de certo/erro (css/painel-base.css); a loja não usa
@@ -84,6 +86,47 @@ export const showToast = (msg, isError = false) => {
   // erro e texto comprido ficam mais tempo na tela (3 s não dava para ler)
   const tempo = Math.min(7000, Math.max(isError ? 4500 : 3000, String(msg).length * 55));
   toastTimer = setTimeout(() => t.classList.remove('visivel'), tempo);
+};
+
+// ---------------------------------------------------------------------
+// AVISO COM DESFAZER (como o sonner): a ação acontece NA HORA e o aviso traz o botão "Desfazer" por alguns
+// segundos. Troca o "Tem certeza?" das ações que voltam atrás sem perder nada (tirar da loja, marcar entregue).
+// O tempo PARA enquanto o dedo ou o mouse está no aviso e enquanto a aba está escondida (quem saiu não perde a chance).
+// desfazer: função (pode ser async) que volta o que foi feito. Devolve uma Promise: true se a pessoa desfez.
+let desfazerAtual = null;
+export const avisoComDesfazer = (msg, desfazer, { tempo = 6000 } = {}) => {
+  if (desfazerAtual) desfazerAtual.fechar(false);          // um aviso novo encerra o anterior (a ação dele fica valendo)
+  let t = document.getElementById('toast');
+  if (!t) { t = document.createElement('div'); t.className = 'toast'; t.id = 'toast'; t.setAttribute('role', 'alert'); document.body.appendChild(t); }
+  clearTimeout(toastTimer);
+  t.textContent = '';
+  const texto = document.createElement('span'); texto.textContent = msg;
+  const bt = document.createElement('button'); bt.type = 'button'; bt.className = 'toast-desfazer'; bt.textContent = 'Desfazer';
+  t.append(texto, bt);
+  t.style.background = 'var(--forest)'; t.dataset.tipo = 'ok'; t.classList.add('visivel', 'com-acao');
+  hapticFeedback('light');
+  return new Promise((resolve) => {
+    let restante = tempo, inicio = Date.now(), timer = null, fechado = false;
+    const parar = () => { if (timer) { clearTimeout(timer); timer = null; restante -= Date.now() - inicio; } };
+    const seguir = () => { if (fechado || timer || document.hidden) return; inicio = Date.now(); timer = setTimeout(() => fechar(false), Math.max(800, restante)); };
+    const naVisibilidade = () => (document.hidden ? parar() : seguir());
+    const fechar = (desfez) => {
+      if (fechado) return; fechado = true; parar();
+      t.removeEventListener('pointerenter', parar); t.removeEventListener('pointerleave', seguir); t.removeEventListener('focusin', parar); t.removeEventListener('focusout', seguir);
+      document.removeEventListener('visibilitychange', naVisibilidade);
+      t.classList.remove('visivel', 'com-acao'); if (desfazerAtual && desfazerAtual.fechar === fechar) desfazerAtual = null;
+      resolve(desfez);
+    };
+    bt.addEventListener('click', async () => {
+      bt.disabled = true;
+      try { await desfazer(); fechar(true); showToast('Desfeito.'); }
+      catch (e) { fechar(false); showToast('Não deu para desfazer. Confira e tente de novo.', true); }
+    }, { once: true });
+    t.addEventListener('pointerenter', parar); t.addEventListener('pointerleave', seguir); t.addEventListener('focusin', parar); t.addEventListener('focusout', seguir);
+    document.addEventListener('visibilitychange', naVisibilidade);
+    desfazerAtual = { fechar };
+    seguir();
+  });
 };
 
 export const animarFeedbackBtn = (btn) => {
@@ -238,6 +281,7 @@ const ensureConfirmModal = () => {
         <div class="modal-body" style="padding: 30px 24px;">
           <h2 id="confirm-title" style="color: var(--forest); margin-bottom: 12px; font-size: 1.5rem;">Atenção</h2>
           <p id="confirm-msg" style="color: var(--text-mid); font-size: 1.05rem;">Confirma a operação?</p>
+          <label id="confirm-digitar" class="confirm-digitar" hidden><span id="confirm-digitar-rot"></span><input id="confirm-digitar-campo" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
           <div style="display:flex; gap:12px; margin-top:24px;">
             <button class="btn btn-outline" id="btn-confirm-cancel" style="flex:1; border-color:#e0dcd4; color:var(--text-dark);">Cancelar</button>
             <button class="btn" id="btn-confirm-ok" style="flex:1; background:var(--danger); color:white; border-color:var(--danger);">Confirmar</button>
@@ -264,11 +308,22 @@ export const customConfirm = (title, msg, rotulos = {}) => {
 
   const okBtn = document.getElementById('btn-confirm-ok');
   const cancelBtn = document.getElementById('btn-confirm-cancel');
-  setTimeout(() => okBtn.focus({ preventScroll: true }), 60);
+  // CONFIRMAÇÃO DIGITADA (ações que não voltam, como excluir uma loja): o botão só acende quando a pessoa
+  // digita exatamente o texto pedido (sem diferença de maiúscula, acento ou espaço sobrando)
+  const caixaDig = document.getElementById('confirm-digitar'), campoDig = document.getElementById('confirm-digitar-campo');
+  const igual = (a) => String(a || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const pede = rotulos.digitar ? igual(rotulos.digitar) : '';
+  const naDigitacao = () => { okBtn.disabled = !!pede && igual(campoDig.value) !== pede; };
+  if (caixaDig) {
+    caixaDig.hidden = !pede; campoDig.value = '';
+    document.getElementById('confirm-digitar-rot').textContent = pede ? `Para confirmar, digite: ${rotulos.digitar}` : '';
+  }
+  okBtn.disabled = !!pede;
+  setTimeout(() => (pede ? campoDig : okBtn).focus({ preventScroll: true }), 60);
 
   return new Promise((resolve) => {
     const finalizar = (valor) => { cleanup(); resolve(valor); };
-    const onOk = () => finalizar(true);
+    const onOk = () => { if (!okBtn.disabled) finalizar(true); };
     const onCancel = () => finalizar(false);
     const onOverlay = (e) => { if (e.target === overlay) finalizar(false); };
     const onKey = (e) => { if (e.key === 'Escape') finalizar(false); };
@@ -277,7 +332,9 @@ export const customConfirm = (title, msg, rotulos = {}) => {
       overlay.classList.remove('aberto');
       overlay.setAttribute('aria-hidden', 'true');
       soltarRolagem();
-      okBtn.removeEventListener('click', onOk);
+      okBtn.removeEventListener('click', onOk); okBtn.disabled = false;
+      if (campoDig) campoDig.removeEventListener('input', naDigitacao);
+      if (caixaDig) caixaDig.hidden = true;
       cancelBtn.removeEventListener('click', onCancel);
       overlay.removeEventListener('click', onOverlay);
       document.removeEventListener('keydown', onKey);
@@ -285,6 +342,7 @@ export const customConfirm = (title, msg, rotulos = {}) => {
     };
 
     okBtn.addEventListener('click', onOk);
+    if (campoDig) campoDig.addEventListener('input', naDigitacao);
     cancelBtn.addEventListener('click', onCancel);
     overlay.addEventListener('click', onOverlay);
     document.addEventListener('keydown', onKey);

@@ -8,7 +8,8 @@ import { prepararPorteiro, provaPara } from './porteiro-cliente.js';
 import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
-import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm, focarCampo } from './utils.js';
+import { textoDeBusca, combinaBusca } from './busca-lib.js';
+import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm, focarCampo, avisoComDesfazer } from './utils.js';
 import { estadoVazio, esqueleto } from './painel-ui.js';
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
@@ -782,7 +783,8 @@ let adminCategoria = (() => { try { return sessionStorage.getItem(PL_CAT) || TOD
 const plSel = { ligado: false, ids: new Set(), preco: false, precoTexto: '' };
 const arteDaCategoria = (nome) => ARTE_CATEGORIA[iconeDaCategoria(nome)] || ARTE_CATEGORIA.cesta;
 const renderProdutos = () => {
-    const daBusca = produtosAtuais.filter(p => !adminBuscaTermo || normalizar(p.nome).includes(adminBuscaTermo) || normalizar(nomeDaCategoria(p.cat)).includes(adminBuscaTermo) || normalizar(p.cat).includes(adminBuscaTermo));
+    // a mesma busca da loja (js/busca-lib.js): perdoa acento, plural, letra trocada e vizinhas invertidas, e acha pelas palavras do produto
+    const daBusca = produtosAtuais.filter(p => !adminBuscaTermo || normalizar(p.nome).includes(adminBuscaTermo) || normalizar(nomeDaCategoria(p.cat)).includes(adminBuscaTermo) || normalizar(p.cat).includes(adminBuscaTermo) || combinaBusca(textoDeBusca(p, nomeDaCategoria(p.cat)), adminBuscaTermo));
     const cats = categoriasDaLista(daBusca, ordemDasCategorias(), nomeDaCategoria);
     if (adminCategoria !== TODAS && !cats.some((c) => c.chave === adminCategoria)) adminCategoria = TODAS;
     const caixaCats = document.getElementById('pl-cats');
@@ -885,7 +887,8 @@ async function aplicarLote(acao, bt) {
     if (acao === 'preco' && !(preco > 0)) { showToast('Escreva o novo preço. Ex.: 16 ou 16,50', true); document.getElementById('pl-lote-preco')?.focus(); return; }
     const mud = mudancasEmLote(escolhidos, acao, hojeDaLoja(), Date.now(), preco);
     if (!mud.length) { showToast(acao === 'preco' ? `Os marcados já custam ${fmt(preco)}.` : acao === 'fora' ? 'Os marcados já estão fora da loja.' : 'Os marcados já estão assim.'); return; }
-    if (acao === 'fora' && !(await customConfirm(`Tirar ${mud.length === 1 ? '1 produto' : `${mud.length} produtos`} da loja?`, 'Os clientes não vão ver até você pôr de volta.', { ok: 'Tirar da loja', nao: 'Voltar' }))) return;
+    // "tirar da loja" não pergunta mais: acontece na hora e o aviso traz Desfazer (volta cada um como estava)
+    const antes = acao === 'fora' ? mud.map(({ id }) => { const p = produtosAtuais.find((x) => x.id === id); return { id, ativo: p ? p.ativo !== false : true }; }) : null;
     bt.disabled = true;
     try {
         for (let i = 0; i < mud.length; i += 400) {            // o banco aceita até 500 por vez
@@ -896,7 +899,15 @@ async function aplicarLote(acao, bt) {
         mud.forEach(({ id, dados }) => produtoSalvo(id, dados));    // painel já mostra; servidor remenda só esses
         const q = mud.length === 1 ? '1 produto' : `${mud.length} produtos`;
         if (acao === 'preco') plSel.precoTexto = '';
-        showToast(acao === 'preco' ? `${q} agora por ${fmt(preco)}.` : acao === 'chegou' ? `${q} na loja com "Chegou hoje" até o fim do dia.` : acao === 'loja' ? `${q} de volta na loja.` : `${q} fora da loja.`);
+        if (acao === 'fora') avisoComDesfazer(`${q} fora da loja.`, async () => {
+            for (let i = 0; i < antes.length; i += 400) {
+                const lote = writeBatch(db);
+                antes.slice(i, i + 400).forEach(({ id, ativo }) => lote.set(tdoc('produtos', id), { ativo, ultimaModificacao: Date.now() }, { merge: true }));
+                await lote.commit();
+            }
+            antes.forEach(({ id, ativo }) => produtoSalvo(id, { ativo }));
+        });
+        else showToast(acao === 'preco' ? `${q} agora por ${fmt(preco)}.` : acao === 'chegou' ? `${q} na loja com "Chegou hoje" até o fim do dia.` : `${q} de volta na loja.`);
         sairDaSelecao();
     } catch (e) { console.error('[lote]', e); showToast('Não consegui salvar. Confira a internet e tente de novo.', true); bt.disabled = false; }
 }
@@ -1635,13 +1646,13 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'toggle-estoque') {
             const id = target.dataset.id;
             const novoStatus = target.dataset.status === 'true';
-            if (!novoStatus) {
-                const confirmado = await customConfirm("Tirar da loja?", "Os clientes não vão ver este produto até você tocar em Voltar a vender.");
-                if (!confirmado) return;
-            }
             const mud = { ativo: novoStatus, ultimaModificacao: Date.now() };
             await setDoc(tdoc("produtos", id), mud, { merge: true }); produtoSalvo(id, mud);
-            showToast(novoStatus ? "Produto de volta na loja." : "Produto fora da loja.");
+            if (novoStatus) showToast("Produto de volta na loja.");
+            else avisoComDesfazer("Produto fora da loja.", async () => {             // sem pergunta antes: Desfazer põe de volta
+                const volta = { ativo: true, ultimaModificacao: Date.now() };
+                await setDoc(tdoc("produtos", id), volta, { merge: true }); produtoSalvo(id, volta);
+            });
         }
 
         // --- AÇÕES DE LOGÍSTICA KANBAN ---
@@ -1779,11 +1790,20 @@ document.body.addEventListener('click', async (e) => {
 
         else if (action === 'excluir-pedido') {
             const id = target.dataset.id;
-            if (await customConfirm('Marcar como entregue?', 'O pedido sai da fila e continua contando no caixa e no Balanço. Se marcar por engano, dá para voltar em "Ver os entregues".', { ok: 'Entregue', nao: 'Ainda não' })) {
-                await setDoc(tdoc("pedidos", id), { status: 'arquivado' }, { merge: true });
-                showToast('Pedido entregue. Se marcou sem querer, ele está em "Ver os entregues".');
-                if (ENTREGUES.aberto) carregarEntregues(); else ENTREGUES.lista = null;   // a lista de entregues mostra o que acabou de sair da fila
-            }
+            // sem pergunta: marca na hora e o aviso traz Desfazer. Desfazer usa o mesmo "Voltar etapa" do servidor
+            // (as regras do banco só deixam o status andar para frente; quem volta é o servidor, e ele registra quem voltou)
+            const pedidoAntes = pedidosGerais.find((p) => p.id === id);
+            await setDoc(tdoc("pedidos", id), { status: 'arquivado' }, { merge: true });
+            if (ENTREGUES.aberto) carregarEntregues(); else ENTREGUES.lista = null;   // a lista de entregues mostra o que acabou de sair da fila
+            avisoComDesfazer('Pedido entregue.', async () => {
+                const d = await chamarAjuste({ op: 'voltar', pedidoId: id, de: 'arquivado' });
+                if (ENTREGUES.lista) ENTREGUES.lista = ENTREGUES.lista.filter((p) => p.id !== id);
+                if (pedidoAntes) {
+                    const novo = { ...pedidoAntes, status: d.status };
+                    pedidosGerais = pedidosGerais.some((p) => p.id === id) ? pedidosGerais.map((p) => (p.id === id ? novo : p)) : [novo, ...pedidosGerais];
+                    redesenharFila();
+                }
+            });
         }
     } catch (err) {
         console.error("Ação Falhou:", err);
