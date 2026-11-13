@@ -580,6 +580,9 @@ const iniciarRealTimeSync = () => {
             if (document.activeElement?.id !== 'config-taxa') document.getElementById('config-taxa').value = Number(ent.taxa) > 0 ? ent.taxa : '';
             if (document.activeElement?.id !== 'config-gratis') document.getElementById('config-gratis').value = Number(ent.gratisAcima) > 0 ? ent.gratisAcima : '';
             if (campoHor && document.activeElement !== campoHor) campoHor.value = (Array.isArray(ent.horarios) ? ent.horarios : []).join('\n');
+            { const v = document.getElementById('config-vagas'), a = document.getElementById('config-antecedencia');
+              if (v && document.activeElement !== v) v.value = Number(ent.vagas) > 0 ? ent.vagas : '';
+              if (a && document.activeElement !== a) a.value = Number(ent.antecedenciaMin) > 0 ? String(Math.round(ent.antecedenciaMin / 30) / 2) : ''; }
             // agenda das feiras (não redesenha enquanto a pessoa mexe nela, para não apagar o que ela digitou)
             if (!agendaMexida) {
                 agenda = (Array.isArray(ent.agenda) ? ent.agenda : []).slice(0, 40).filter((r) => r && typeof r === 'object').map((r) => ({
@@ -3085,7 +3088,11 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         const linhasAgenda = lerAgenda(), erroAgenda = conferirAgenda(linhasAgenda);
         destacarLinhaDaAgenda(erroAgenda ? erroAgenda.i : -1);
         if (erroAgenda) throw new Error(erroAgenda.msg);
-        const entrega = { taxa, gratisAcima, horarios: horariosDoTexto(document.getElementById('config-horarios').value), retirada,
+        // vagas por horário e antecedência (js/vagas-lib.js): número inteiro de vagas; antecedência em horas, gravada em minutos
+        const vagas = Math.floor(Number(document.getElementById('config-vagas')?.value) || 0), antecedenciaH = Number(document.getElementById('config-antecedencia')?.value) || 0;
+        if (vagas < 0 || vagas > 500) throw new Error('Vagas por horário: de 0 a 500.');
+        if (antecedenciaH < 0 || antecedenciaH > 24) throw new Error('Fechar o horário: de 0 a 24 horas antes.');
+        const entrega = { taxa, gratisAcima, horarios: horariosDoTexto(document.getElementById('config-horarios').value), retirada, vagas, antecedenciaMin: Math.round(antecedenciaH * 60),
             agenda: linhasAgenda.map((r) => ({ feira: r.feira, dia: r.dia, entrega: r.entrega, horariosEntrega: r.entrega ? r.horariosEntrega : [], retirada: r.retirada, horariosRetirada: r.retirada ? r.horariosRetirada : [], local: r.retirada ? r.local : '' })) };
         // Chave PIX da loja (copia e cola). Vazia = desligado. Preenchida, tem de ser válida para o tipo escolhido.
         const pixTipo = document.getElementById('config-pix-tipo').value, pixBruta = document.getElementById('config-pix-chave').value.trim();

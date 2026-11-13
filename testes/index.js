@@ -1947,6 +1947,42 @@ teste('versão: percebe que a página no ar mudou, ignora resposta estranha e n�
   assert.ok(!/globPatterns:[^\n]*html/.test(cfg), 'html fora da cópia guardada'); assert.ok(cfg.includes("request.mode === 'navigate'") && cfg.includes('navigateFallback: null'));
 });
 
+teste('vagas por horário (como o Cal.com): lotou, o servidor recusa e a loja mostra; cancelar devolve a vaga; antecedência fecha o horário de hoje', async () => {
+  const V = require(raiz('lib/vagas')), VJ = await import(raiz('js/vagas-lib.js'));
+  for (const [t, m] of [['Manhã (8h às 12h)', 480], ['Tarde (14h às 18h)', 840], ['das 7:30 às 9h', 450], ['Noite', -1], ['25h', -1]]) { assert.strictEqual(V.inicioMin(t), m, t); assert.strictEqual(VJ.inicioMin(t), m, `site: ${t}`); }
+  assert.strictEqual(V.chaveHorario('Manhã (8h às 12h)'), 'manha-8h-as-12h'); assert.strictEqual(VJ.chaveHorario('Manhã (8h às 12h)'), 'manha-8h-as-12h');
+  assert.deepStrictEqual(V.lerVagas({ vagas: '6', antecedenciaMin: 90 }), { vagas: 6, antecedenciaMin: 90 }); assert.deepStrictEqual(V.lerVagas({ vagas: -2, antecedenciaMin: 'x' }), { vagas: 0, antecedenciaMin: 0 });
+  assert.deepStrictEqual(VJ.lerVagas({ vagas: 9999 }), { vagas: 500, antecedenciaMin: 0 });
+  const caso = { horario: 'Tarde (14h às 18h)', vagas: 3, usados: 2, paraHoje: true, agoraMin: 11 * 60, antecedenciaMin: 120 };
+  assert.deepStrictEqual(V.estadoDoHorario(caso), { ok: true, lotado: false, fechado: false, restam: 1 }); assert.deepStrictEqual(VJ.estadoDoHorario(caso), V.estadoDoHorario(caso));
+  assert.ok(V.estadoDoHorario({ ...caso, usados: 3 }).lotado); assert.ok(V.estadoDoHorario({ ...caso, agoraMin: 12 * 60 + 1 }).fechado, 'meio-dia e um: o das 14h com 2 h de antecedência fechou');
+  assert.ok(V.estadoDoHorario({ ...caso, agoraMin: 23 * 60, paraHoje: false }).ok, 'pedido para outro dia não fecha por hora');
+  assert.strictEqual(V.estadoDoHorario({ horario: 'Tarde', vagas: 0 }).restam, null);
+
+  const HOR = ['Manhã (8h às 12h)', 'Tarde (14h às 18h)'];
+  const db = criarBancoP({ ...sementeEstoque(), 'loja/config': { ...(sementeEstoque()['loja/config'] || {}), entrega: { horarios: HOR, vagas: 1 } } }); const adm = criarAdmin(db, TOKENS_P);
+  const checkout = carregarApi(raiz('api/checkout.js'), adm), cancelar = carregarApi(raiz('api/cancelar-pedido.js'), adm);
+  const p1 = pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: HOR[1] });
+  let r = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: p1 });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  const dia = db._dados.get(`pedidos/${p1.idempotencyKey}`).entregaDia;
+  assert.deepStrictEqual(db._dados.get(`vagas/${dia}`)['tarde-14h-as-18h'], { n: 1, horario: HOR[1] });
+  assert.strictEqual(db._dados.get(`pedidos/${p1.idempotencyKey}`).entrega.vaga, 'tarde-14h-as-18h');
+  r = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: HOR[1] }) });
+  assert.notStrictEqual(r.status, 200); assert.match(r.corpo.error, /lotou/);
+  r = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }] }) });
+  assert.strictEqual(r.status, 200, 'sem escolher horário ("a combinar") o pedido entra');
+  r = await chamar(cancelar, { headers: { Authorization: 'Bearer cliente' }, body: { pedidoId: p1.idempotencyKey } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(db._dados.get(`vagas/${dia}`)['tarde-14h-as-18h'].n, 0, 'cancelou: a vaga volta');
+  r = await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: HOR[1] }) });
+  assert.strictEqual(r.status, 200, 'com a vaga de volta, entra');
+  // antecedência de 24 h: nenhum horário de hoje serve
+  const db2 = criarBancoP({ ...sementeEstoque(), 'loja/config': { ...(sementeEstoque()['loja/config'] || {}), entrega: { horarios: HOR, antecedenciaMin: 1440 } } });
+  r = await chamar(carregarApi(raiz('api/checkout.js'), criarAdmin(db2, TOKENS_P)), { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: pedido({ itens: [{ id: 'ovos', qtd: 1, tipo: 'un' }], horarioEntrega: HOR[0] }) });
+  assert.match(r.corpo.error || '', /fechou para hoje/);
+  assert.ok(![...db2._dados.keys()].some((k) => k.startsWith('vagas/')), 'só antecedência: não conta vaga');
+});
+
 // ------------------------------------------------------------------ entrega (taxa e horário)
 teste('entrega: taxa calculada no servidor, grátis acima de um valor, horário conferido e pesagem reavalia', async () => {
   const Ent = require(raiz('lib/entrega')), L = await import(raiz('js/entrega-lib.js'));
@@ -3537,7 +3573,7 @@ teste('retirada na banca: a conta do cliente não perde o endereço de entrega, 
   // painel (campos de retirada, salvos dentro de "entrega") e site (escolha só aparece com a retirada ligada)
   const fs = require('fs'), admin = fs.readFileSync(raiz('js/admin.js'), 'utf8'), adminHtml = fs.readFileSync(raiz('admin.html'), 'utf8'), loja = fs.readFileSync(raiz('js/loja.js'), 'utf8'), html = fs.readFileSync(raiz('index.html'), 'utf8');
   for (const id of ['config-retirada-ativa', 'config-retirada-horarios', 'config-retirada-local']) { assert.ok(adminHtml.includes(`id="${id}"`), id); assert.ok(admin.includes(`'${id}'`), `${id} é lido e salvo`); }
-  assert.ok(/entrega = \{ taxa, gratisAcima, horarios: [^\n]*, retirada,\n\s+agenda: linhasAgenda\.map/.test(admin), 'a retirada e a agenda são gravadas dentro de "entrega"');
+  assert.ok(/entrega = \{ taxa, gratisAcima, horarios: [^\n]*, retirada, vagas, antecedenciaMin: [^\n]*,\n\s+agenda: linhasAgenda\.map/.test(admin), 'a retirada e a agenda são gravadas dentro de "entrega"');
   assert.ok(/id="grupo-modo"[^>]*hidden/.test(html) && /name="cli-modo" value="retirada"/.test(html), 'a escolha nasce escondida');
   assert.ok(/const opcoesDeHoje = \(\) => opcoesDoDia\(lerEntrega\(STATE\.config\), feiraAqui\(\), diaDoPreco\(\)\)/.test(loja), 'a escolha vem da agenda da feira do cliente (ou da regra geral) para o dia do pedido');
   assert.ok(/const faltaEndereco = retirada \? '' : endCheckout\.validar\(\)/.test(loja) && /feira: lerFeiraCliente\(\),/.test(loja) && /modo: retirada \? 'retirada' : 'entrega'/.test(loja));
