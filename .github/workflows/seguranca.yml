@@ -3,12 +3,17 @@
 #   2. as REGRAS do banco e do armazenamento (firestore.rules / storage.rules) no
 #      emulador oficial do Firebase, tentando ler e gravar o que não pode.
 # Não usa nenhuma chave nem toca no site que está no ar.
+#
+# TESTES INTELIGENTES (scripts/testes-inteligentes.js): o primeiro trabalho olha os arquivos que mudaram e
+# liga só as baterias que eles podem afetar (ex.: mexeu só no painel → sem matriz e sem iPhone; só texto → nada).
+# Na dúvida, roda tudo. Para rodar TUDO de propósito: Actions → "Testes de segurança" → "Run workflow" (escolha a branch).
 name: Testes de segurança
 
 on:
   push:
     branches: [main, rota-cloudflare]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,8 +23,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  escolha:
+    name: Escolher os testes (o que a mudança pode afetar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      servidor: ${{ steps.e.outputs.servidor }}
+      build: ${{ steps.e.outputs.build }}
+      regras: ${{ steps.e.outputs.regras }}
+      tela: ${{ steps.e.outputs.tela }}
+      matriz: ${{ steps.e.outputs.matriz }}
+      iphone: ${{ steps.e.outputs.iphone }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: e
+        env:
+          EVENTO: ${{ github.event_name }}
+          BASE_PR: ${{ github.event.pull_request.base.sha }}
+          ANTES: ${{ github.event.before }}
+        run: |
+          if [ "$EVENTO" = "workflow_dispatch" ]; then
+            node scripts/testes-inteligentes.js --tudo --github
+          elif [ "$EVENTO" = "pull_request" ]; then
+            node scripts/testes-inteligentes.js --base "$BASE_PR" --github
+          elif [ -n "$ANTES" ] && [ "$ANTES" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$ANTES" 2>/dev/null; then
+            node scripts/testes-inteligentes.js --base "$ANTES" --github
+          else
+            node scripts/testes-inteligentes.js --tudo --github
+          fi
+
   testes:
     name: Testes do projeto (banco de mentira)
+    needs: escolha
+    if: needs.escolha.outputs.servidor == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -62,6 +101,8 @@ jobs:
 
   build:
     name: Instalação travada e build do site
+    needs: escolha
+    if: needs.escolha.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -88,6 +129,8 @@ jobs:
 
   regras:
     name: Regras do banco no emulador do Firebase
+    needs: escolha
+    if: needs.escolha.outputs.regras == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -128,6 +171,8 @@ jobs:
 
   tela:
     name: Testes de tela (navegador de verdade)
+    needs: escolha
+    if: needs.escolha.outputs.tela == 'true'
     runs-on: ubuntu-24.04   # versão fixa: o "latest" virou Ubuntu 26 e a instalação do navegador de teste (--with-deps) falha nele
     timeout-minutes: 15
     steps:
@@ -169,6 +214,8 @@ jobs:
 
   matriz:
     name: Matriz de telas (tamanhos de tela e de letra, dados de pior caso)
+    needs: escolha
+    if: needs.escolha.outputs.matriz == 'true'
     runs-on: ubuntu-24.04   # versão fixa: o "latest" virou Ubuntu 26 e a instalação do navegador de teste (--with-deps) falha nele
     timeout-minutes: 20
     steps:
@@ -217,6 +264,8 @@ jobs:
 
   iphone:
     name: Loja no motor do iPhone (WebKit, o do Safari)
+    needs: escolha
+    if: needs.escolha.outputs.iphone == 'true'
     # versão fixa do Ubuntu: o motor do Safari do teste precisa das bibliotecas desta versão
     runs-on: ubuntu-24.04
     timeout-minutes: 40
