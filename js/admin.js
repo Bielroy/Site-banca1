@@ -41,6 +41,7 @@ const TELAS = {
     crm: () => import('./admin-crm.js'), copiloto: () => import('./admin-copiloto.js'), calendario: () => import('./admin-calendario.js'),
     equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'), impressora: () => import('./admin-impressora.js'), avisos: () => import('./admin-avisos.js'),
     impressaoAuto: () => import('./impressao-auto.js'),
+    resumo: () => import('./admin-resumo.js'),
     varios: () => import('./admin-varios.js'), precosDia: () => import('./admin-precos-dia.js'), vitrine: () => import('./admin-vitrine.js'), rotulos: () => import('./admin-rotulos.js'),
 };
 const comImpressao = async (fn) => { try { await fn(await TELAS.impressao()); } catch (e) { console.error(e); showToast('Não consegui abrir a impressão. Confira a internet e toque de novo.', true); } };
@@ -50,6 +51,7 @@ let condominiosAtuais = [];
 const ABRIR = {
     aparencia: (m) => { m.abrirAparencia(); TELAS.vitrine().then((v) => v.abrirVitrine(categoriasComProduto())).catch((e) => console.error(e)); }, estoque: (m) => m.abrirEstoque(produtosAtuais), compras: (m) => m.abrirCompras(produtosAtuais),
     pdv: (m) => { m.definirCondominiosPdv(condominiosAtuais); m.abrirPdv(produtosAtuais); }, crm: (m) => m.abrirCrm(produtosAtuais), copiloto: (m) => m.abrirCopiloto(), calendario: (m) => m.abrirCalendario({ podeEditar: ehGestor(papelAtual) }), equipe: (m) => m.abrirEquipe(), impressora: (m) => m.abrirAbaImpressora(produtosAtuais),
+    resumo: (m) => m.abrirResumo({ produtos: produtosAtuais, fila: pedidosGerais, abas: abasDoPapel(papelAtual, TODAS_AS_ABAS, modulosDaLoja, formatoDaLoja), nome: auth.currentUser?.displayName || '' }),
 };
 // categorias que têm produto à venda (para o botão "Ver Frutas" dos quadros da vitrine)
 const categoriasComProduto = () => [...new Set(produtosAtuais.filter((p) => p.ativo && !p.soInsumo && p.cat).map((p) => p.cat))]
@@ -296,7 +298,7 @@ const recolherMenu = (sim) => {
 // É o desenho dos painéis de loja mais usados (Shopify, Square, iFood): o que se abre
 // dez vezes por dia fica sempre ao alcance do polegar. Respeita o papel de quem entrou.
 // ---------------------------------------------------------------------
-const ORDEM_DA_BARRA = ['relatorios', 'pdv', 'fechamento', 'produtos', 'estoque', 'compras', 'calendario', 'previsao', 'balanco'];
+const ORDEM_DA_BARRA = ['resumo', 'relatorios', 'pdv', 'produtos', 'fechamento', 'estoque', 'compras', 'calendario', 'previsao', 'balanco'];
 const montarBarra = (minhas) => {
     const barra = document.getElementById('barra'); if (!barra) return;
     const cabeTudo = minhas.length <= 5;
@@ -531,6 +533,7 @@ const iniciarRealTimeSync = () => {
         renderProdutos();
         const abaAberta = (n) => document.getElementById(`aba-${n}`)?.classList.contains('active');
         ['estoque', 'compras', 'pdv'].forEach((n) => { if (abaAberta(n)) abrirTela(n); });
+        if (abaAberta('resumo')) TELAS.resumo().then((m) => m.atualizarResumo({ produtos: produtosAtuais })).catch(() => {});
         if (abaAberta('impressora')) import('./admin-impressora.js').then((m) => m.definirProdutosImpressora(produtosAtuais)).catch(() => { /* tela ainda não carregou */ });
     };
     // Produtos e custos vêm de UM documento cada (loja/painel e loja/custos, montados pelo servidor), mais o que
@@ -659,6 +662,7 @@ const iniciarRealTimeSync = () => {
         if (document.getElementById('aba-relatorios')?.classList.contains('active')) {
             renderRelatoriosMaster();
         }
+        if (document.getElementById('aba-resumo')?.classList.contains('active')) TELAS.resumo().then((m) => m.atualizarResumo({ fila: docs })).catch(() => {});   // "esperando você" se mexe sozinho
     };
 
     // No Android, "new Notification()" lança erro (lá só funciona via service

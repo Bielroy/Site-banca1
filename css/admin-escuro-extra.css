@@ -5,3 +5,6 @@ html[data-painel-tema="escuro"] { color-scheme: dark; background: #0f1612;
 /* texto verde-escuro da marca escrito com style="" (o verde como FUNDO continua igual) */
 html[data-painel-tema="escuro"] [style*="color:var(--forest)"]:not([style*="background"]),
 html[data-painel-tema="escuro"] [style*="color: var(--forest)"]:not([style*="background"]) { color: #a3d6bd !important; }
+/* Resumo: no escuro as barras dos outros dias ficam apagadas, para "Hoje" saltar aos olhos */
+html[data-painel-tema="escuro"] .rs-barra { fill: #31503f; }
+html[data-painel-tema="escuro"] .rs-barra.hoje { fill: #7ec8a0; }

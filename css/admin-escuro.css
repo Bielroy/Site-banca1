@@ -949,6 +949,39 @@ html[data-painel-tema="escuro"] .pn-pil.erro { background: #3e1919; color: #ea7b
 html[data-painel-tema="escuro"] .pn-pil.aviso { background: #19303e; color: #7bc1ea; }
 html[data-painel-tema="escuro"] #dashboard :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible, html[data-painel-tema="escuro"] .modal :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible { outline: 3px solid #8ac7a2; }
 
+/* ---- css/admin-resumo.css ---- */
+html[data-painel-tema="escuro"] .rs-ola { color: #bac5be; }
+html[data-painel-tema="escuro"] .rs-titulo { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .rs-num { background: #19221d; border: 1px solid #304138; }
+html[data-painel-tema="escuro"] .rs-rot { color: #bac5be; }
+html[data-painel-tema="escuro"] .rs-grande { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .rs-comp { color: #bac5be; }
+html[data-painel-tema="escuro"] .rs-comp.sobe { color: #92e7b2; }
+html[data-painel-tema="escuro"] .rs-comp.desce { color: #ea977b; }
+html[data-painel-tema="escuro"] .rs-grafico { background: #19221d; border: 1px solid #304138; }
+html[data-painel-tema="escuro"] .rs-grafico figcaption { color: #bac5be; }
+html[data-painel-tema="escuro"] .rs-grafico figcaption b { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .rs-barra { fill: #b8dfc8; }
+html[data-painel-tema="escuro"] .rs-barra.hoje { fill: #a4d5bc; }
+html[data-painel-tema="escuro"] .rs-dia { fill: #a5b3aa; }
+html[data-painel-tema="escuro"] .rs-dia.hoje { fill: #a3d6bd; }
+html[data-painel-tema="escuro"] .rs-alerta { color: #eccf8d; background: #3e3619; border: 1px solid #726031; }
+html[data-painel-tema="escuro"] .rs-alerta > .ic { color: #eaa57b; }
+html[data-painel-tema="escuro"] .rs-alerta small { color: #e8cd91; }
+html[data-painel-tema="escuro"] .rs-seta { color: #eaa57b; }
+html[data-painel-tema="escuro"] .rs-atalho { color: #eaedeb; }
+html[data-painel-tema="escuro"] .rs-atalho-ico { background: #1a3c2a; color: #a3d6bd; }
+html[data-painel-tema="escuro"] .rs-tit { color: #bac5be; }
+html[data-painel-tema="escuro"] .rs-conta { color: #ffffff; background: #b91c1c; }
+html[data-painel-tema="escuro"] .rs-ped { background: #19221d; border: 1px solid #304138; }
+html[data-painel-tema="escuro"] .rs-ped-topo > b:first-child { color: #eaedeb; }
+html[data-painel-tema="escuro"] .rs-ped-topo > b:first-child span { color: #bac5be; }
+html[data-painel-tema="escuro"] .rs-ped-valor { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .rs-ped p { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .rs-ver-todos { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .rs-nota { color: #a5b3aa; }
+html[data-painel-tema="escuro"] .rs-esq { background: #28362f; }
+
 /* ---- css/admin-escuro-extra.css (acertos à mão) ---- */
 /* Acertos à mão do tema escuro do painel. Entra no fim de css/admin-escuro.css (ver lib/tema-escuro.js). */
 html[data-painel-tema="escuro"] { color-scheme: dark; background: #0f1612;
@@ -957,3 +990,6 @@ html[data-painel-tema="escuro"] { color-scheme: dark; background: #0f1612;
 /* texto verde-escuro da marca escrito com style="" (o verde como FUNDO continua igual) */
 html[data-painel-tema="escuro"] [style*="color:var(--forest)"]:not([style*="background"]),
 html[data-painel-tema="escuro"] [style*="color: var(--forest)"]:not([style*="background"]) { color: #a3d6bd !important; }
+/* Resumo: no escuro as barras dos outros dias ficam apagadas, para "Hoje" saltar aos olhos */
+html[data-painel-tema="escuro"] .rs-barra { fill: #31503f; }
+html[data-painel-tema="escuro"] .rs-barra.hoje { fill: #7ec8a0; }

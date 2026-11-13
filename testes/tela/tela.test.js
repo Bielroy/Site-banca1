@@ -3029,6 +3029,67 @@ teste('painel: tema escuro pelo menu "Mais opções" fica guardado no aparelho, 
   semErros(erros); await fechar();
 });
 
+teste('painel: aba Resumo no celular (vendido, pedidos, gráfico, quem espera, atalhos) sem tirar Produtos da primeira tela', async () => {
+  const agora = Date.now(), hojeBR = new Date(agora - 3 * 3600000).toISOString().slice(0, 10);
+  const iso = (diasAtras, horaUTC = 15) => { const d = new Date(`${hojeBR}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - diasAtras); d.setUTCHours(horaUTC); return d.toISOString(); };
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  cen.lojas.banca.pedidos = {
+    p1: { nome: 'Marina', condominio: 'Jardins Florença', quadra: '3', lote: '12', status: 'pendente', total: 96, data: new Date(agora - 120000).toISOString(), entregaDia: hojeBR, itens: [{ nome: 'Queijo canastra', qtd: 1 }, { nome: 'Goiabada', qtd: 1 }, { nome: 'Doce de leite', qtd: 2 }] },
+    p2: { nome: 'Paulo', modo: 'retirada', status: 'arquivado', total: 54.5, data: new Date(agora - 3600000).toISOString(), entregaDia: hojeBR, itens: [{ nome: 'Pão de queijo', qtd: 1 }] },
+    p3: { nome: 'Cancelado', status: 'cancelado', total: 500, data: new Date(agora - 600000).toISOString(), entregaDia: hojeBR, itens: [] },
+    p4: { nome: 'Ontem', status: 'arquivado', total: 100, data: iso(1), itens: [] },
+  };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } });
+  await pagina.waitForSelector('.tab[data-aba="produtos"]', { state: 'attached', timeout: 15000 });
+  await pagina.waitForTimeout(400);
+  assert.ok(await pagina.evaluate(() => document.getElementById('aba-produtos').classList.contains('active')), 'o painel continua abrindo em Produtos');
+  // a barra de baixo traz o Resumo primeiro, e Produtos continua nela
+  const barra = await pagina.evaluate(() => [...document.querySelectorAll('#barra [data-ir-aba]')].map((b) => b.dataset.irAba));
+  assert.deepStrictEqual(barra, ['resumo', 'relatorios', 'pdv', 'produtos']);
+  await pagina.locator('#barra [data-ir-aba="resumo"]').click();
+  const rs = pagina.locator('#resumo-conteudo .rs-nums .rs-grande');
+  await rs.first().waitFor({ timeout: 8000 });
+  const nums = await rs.allInnerTexts();
+  assert.match(nums[0].replace(/\s/g, ' '), /R\$ 150,50/, 'vendido hoje: 96 + 54,50, sem o cancelado');
+  assert.strictEqual(nums[1].trim(), '2');
+  assert.match(await pagina.locator('.rs-num').first().innerText(), /a mais que ontem/);
+  assert.strictEqual(await pagina.locator('.rs-grafico rect').count(), 7, 'gráfico de 7 dias');
+  assert.match(await pagina.locator('#topo-secao').innerText(), /Resumo/);
+  const ped = pagina.locator('.rs-ped');
+  assert.strictEqual(await ped.count(), 1, 'só o pedido novo espera alguém');
+  assert.match(await ped.innerText(), /Marina[\s\S]*Queijo canastra, Goiabada \+1/);
+  // sem rolagem para o lado no celular
+  assert.ok(await pagina.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'nada vaza para o lado');
+  // atalhos respeitam o papel; "Abrir na fila" leva aos pedidos
+  const atalhos = await pagina.locator('.rs-atalho').allInnerTexts();
+  assert.deepStrictEqual(atalhos.map((t) => t.trim()), ['Novo produto', 'Pedidos', 'Balcão', 'Fechar o dia']);
+  // nos dois temas, os números e o pedido se leem (contraste >= 4.5)
+  for (const tema of ['claro', 'escuro']) {
+    await pagina.evaluate((t) => { if (t === 'escuro') document.documentElement.dataset.painelTema = 'escuro'; else delete document.documentElement.dataset.painelTema; }, tema);
+    const k = await pagina.evaluate(() => {
+      const num = (c) => c.match(/[\d.]+/g).map(Number); const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const fundo = (el) => { for (let e = el; e; e = e.parentElement) { const c = num(getComputedStyle(e).backgroundColor); if (c[3] === undefined || c[3] > 0.9) return c; } return [255, 255, 255]; };
+      return [...document.querySelectorAll('.rs-titulo, .rs-rot, .rs-grande, .rs-comp, .rs-ped b, .rs-ped p, .rs-atalho > span:last-child, .rs-tit')].map((el) => { const a = lum(num(getComputedStyle(el).color)), b = lum(fundo(el)); return [el.className || el.tagName, (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)]; });
+    });
+    const ruins = k.filter(([, x]) => x < 4.5);
+    assert.ok(k.length >= 8 && !ruins.length, `tema ${tema}: ${ruins.map(([n, x]) => `${n} ${x.toFixed(2)}`).join(', ')}`);
+  }
+  await pagina.evaluate(() => { delete document.documentElement.dataset.painelTema; });
+  await pagina.locator('.rs-ped button[data-ir-aba="relatorios"]').click();
+  assert.ok(await pagina.evaluate(() => document.getElementById('aba-relatorios').classList.contains('active')), '"Abrir na fila" leva à fila de pedidos');
+  semErros(erros); await fechar();
+});
+
+teste('painel: funcionário não vê a aba Resumo nem o atalho dela', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'func', email: 'func@teste.com', isAnonymous: false, claims: { tenants: { banca: 'funcionario' } } } });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } });
+  await pagina.waitForSelector('.tab[data-aba="relatorios"]', { state: 'attached', timeout: 15000 });
+  await pagina.waitForTimeout(500);
+  assert.ok(await pagina.evaluate(() => document.querySelector('.tab[data-aba="resumo"]').hidden), 'a aba fica escondida');
+  assert.strictEqual(await pagina.locator('#barra [data-ir-aba="resumo"]').count(), 0);
+  semErros(erros); await fechar();
+});
+
 teste('painel: telas vazias no mesmo padrão (título, explicação, próximo passo), aviso com ícone e carregando em esqueleto', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });

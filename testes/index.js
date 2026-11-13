@@ -2848,7 +2848,7 @@ teste('ícones: todo ícone pedido no painel existe, e nenhuma tela do painel vo
   });
   assert.ok(usados > 60, `ícones em uso: ${usados}`);
   const abas = [...fs.readFileSync(raiz('admin.html'), 'utf8').matchAll(/class="tab[^"]*" data-aba="([a-z]+)"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="([a-z]+)">/g)];
-  assert.strictEqual(abas.length, 18); abas.forEach((m) => assert.strictEqual(m[1] === 'relatorios' ? 'pedidos' : m[1], m[2], 'cada aba usa o ícone com o próprio nome (a de pedidos usa o de pedidos)'));
+  assert.strictEqual(abas.length, 19); abas.forEach((m) => assert.strictEqual(m[1] === 'relatorios' ? 'pedidos' : m[1], m[2], 'cada aba usa o ícone com o próprio nome (a de pedidos usa o de pedidos)'));
   for (const [nome, d] of Object.entries(I.ICONES)) { assert.ok(!/<script|on\w+=|href/i.test(d), nome); assert.ok((d.match(/class="s"/g) || []).length <= 3, `${nome}: semente demais`); }
 });
 
@@ -5280,6 +5280,48 @@ teste('velocidade: estilos da loja num arquivo só e arquivos estáticos fora da
   for (const f of funcoes) assert.ok(rotaDe[f] && r.include.includes(rotaDe[f]), `functions/${f} precisa de rota no _routes.json (lib/cloudflare-arquivos.js)`);
   // o passo do build escreve o arquivo
   assert.ok(/_routes\.json/.test(fs.readFileSync(raiz('scripts/cloudflare-arquivos.js'), 'utf8')));
+});
+
+teste('resumo do painel: vendido e pedidos de hoje pelo dia da entrega, cancelado fora, gráfico de 7 dias, acabando e quem espera', async () => {
+  const R = await import(raiz('js/resumo-lib.js'));
+  const hoje = '2026-11-12';
+  const pedidos = [
+    { total: 100, status: 'arquivado', data: '2026-11-12T13:00:00.000Z' },                       // hoje (10h em Brasília)
+    { total: 50.5, status: 'pendente', data: '2026-11-10T13:00:00.000Z', entregaDia: '2026-11-12' }, // feito antes, entrega hoje: conta hoje
+    { total: 999, status: 'cancelado', data: '2026-11-12T14:00:00.000Z' },                        // cancelado não conta
+    { total: 80, status: 'arquivado', data: '2026-11-12T01:00:00.000Z' },                         // 22h de ontem em Brasília
+    { total: 30, status: 'arquivado', data: '2026-11-12T15:00:00.000Z', origem: 'balcao', resumoDoDia: true },   // resumo do balcão: soma, mas fora da média
+    { total: 70, status: 'arquivado', data: '2026-11-05T15:00:00.000Z' },                         // fora dos 7 dias
+  ];
+  const r = R.resumoDoDia(pedidos, hoje);
+  assert.strictEqual(r.vendido, 180.5); assert.strictEqual(r.pedidos, 3); assert.strictEqual(r.ontem, 80);
+  assert.strictEqual(r.variacao, 126); assert.strictEqual(r.ticket, 75.25);
+  assert.strictEqual(r.serie.length, 7); assert.strictEqual(r.serie[6].dia, hoje); assert.ok(r.serie[6].hoje);
+  assert.strictEqual(r.serie[0].dia, '2026-11-06'); assert.strictEqual(r.serie[5].valor, 80);
+  assert.strictEqual(R.resumoDoDia([], hoje).variacao, null, 'sem venda ontem não inventa porcentagem');
+  assert.strictEqual(R.resumoDoDia(null, hoje).vendido, 0);
+  const ac = R.produtosAcabando([
+    { id: 'a', nome: 'Queijo', estoqueFisico: 2, estoqueMin: 5 }, { id: 'b', nome: 'Doce', estoqueFisico: 0 },
+    { id: 'c', nome: 'Sem controle' }, { id: 'd', nome: 'Desligado', estoqueFisico: 0, ativo: false }, { id: 'e', nome: 'Insumo', estoqueFisico: 0, soInsumo: true },
+    { id: 'f', nome: 'Em dia', estoqueFisico: 9, estoqueMin: 5 },
+  ]);
+  assert.deepStrictEqual(ac.map((x) => x.id), ['b', 'a'], 'zerado primeiro; desligado, insumo e sem controle ficam fora');
+  const fila = [{ id: 2, status: 'pendente', data: '2026-11-12T12:00:00Z' }, { id: 1, status: 'aguardando_pesagem', data: '2026-11-12T11:00:00Z' }, { id: 3, status: 'preparando', data: '2026-11-12T10:00:00Z' }];
+  assert.deepStrictEqual(R.pedidosEsperando(fila).map((p) => p.id), [1, 2], 'quem chegou primeiro aparece primeiro; em preparo não está esperando');
+  assert.strictEqual(R.saudacao(Date.parse('2026-11-12T12:00:00Z')), 'Bom dia');
+  assert.strictEqual(R.saudacao(Date.parse('2026-11-12T18:00:00Z')), 'Boa tarde');
+  assert.strictEqual(R.saudacao(Date.parse('2026-11-12T23:30:00Z')), 'Boa noite');
+});
+
+teste('resumo do painel: só quem é gestor vê a aba, loja só vitrine não tem, e Produtos continua sendo a primeira tela', async () => {
+  const P = await import(raiz('js/papeis-lib.js')), fs = require('fs');
+  const html = fs.readFileSync(raiz('admin.html'), 'utf8');
+  const todas = [...html.matchAll(/class="tab[^"]*" data-aba="([a-z]+)"/g)].map((m) => m[1]);
+  assert.ok(todas.includes('resumo'));
+  assert.match(html, /class="tab active" data-aba="produtos"/, 'o painel continua abrindo em Produtos');
+  for (const papel of ['proprietario', 'administrador', 'gerente']) assert.ok(P.abasDoPapel(papel, todas).includes('resumo'), papel);
+  for (const papel of ['funcionario', 'caixa', 'producao', 'estoque']) assert.ok(!P.abasDoPapel(papel, todas).includes('resumo'), `${papel} não vê quanto a loja vendeu`);
+  assert.ok(!P.abasDoPapel('proprietario', todas, null, 'vitrine').includes('resumo'), 'loja só vitrine não tem pedido para resumir');
 });
 
 teste('painel: tema escuro gerado está em dia, só vale com o atributo e não toca a loja do cliente', async () => {

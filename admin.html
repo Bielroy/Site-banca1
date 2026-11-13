@@ -38,6 +38,7 @@
     <link rel="stylesheet" href="./css/admin-cadastro.css">
     <link rel="stylesheet" href="./css/admin-montar.css">
     <link rel="stylesheet" href="./css/painel-base.css">
+    <link rel="stylesheet" href="./css/admin-resumo.css">
     <!-- tema escuro do painel: só vale com html[data-painel-tema="escuro"] (js/painel-tema.js). Gerado por scripts/gerar-tema-escuro.js -->
     <link rel="stylesheet" href="./css/admin-escuro.css">
     <script type="module" src="./js/painel-tema.js"></script>
@@ -97,6 +98,7 @@
             <button type="button" class="tabs-atual" id="tabs-atual" aria-expanded="false" aria-controls="tabs-lista"><span class="tabs-atual-ico" id="tabs-atual-ico" aria-hidden="true"></span><b id="tabs-atual-nome">Produtos</b><span class="tabs-atual-trocar"><i class="ic" data-i="menu"></i>Menu<i class="tabs-ponto" id="tabs-ponto" hidden></i></span></button>
             <div class="tabs-lista" id="tabs-lista">
                 <span class="tabs-grupo">Dia a dia</span>
+                <button class="tab" data-aba="resumo"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="resumo"></i></span><span class="tab-txt">Resumo</span></button>
                 <button class="tab" data-aba="relatorios"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="pedidos"></i></span><span class="tab-txt">Pedidos</span></button>
                 <button class="tab" data-aba="pdv"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="pdv"></i></span><span class="tab-txt">Balcão</span></button>
                 <button class="tab" data-aba="fechamento"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="fechamento"></i></span><span class="tab-txt">Fechamento</span></button>
@@ -144,6 +146,9 @@
             </div>
         </section>
 
+        <section id="aba-resumo" class="aba-content">
+            <div id="resumo-conteudo" class="rs"></div>
+        </section>
         <section id="aba-pdv" class="aba-content">
             <div id="pdv-conteudo"></div>
         </section>
