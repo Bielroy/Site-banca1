@@ -3163,7 +3163,7 @@ teste('impressão: itens em letra alta com o peso da balança; recibo do cliente
     assert.ok(t.includes(pedaco), `falta "${pedaco}" em:\n${t}`);
   assert.match(t, /TOTAL\s+R\$ 47,52/);
   assert.ok(!t.includes('Troco'), 'pedido já pago não fala de troco');
-  for (const largura of [58, 80]) I.compor(rec, I.colunasDe(largura)).forEach((l) => { if (!l.corte) assert.ok(l.s.length <= (l.g ? Math.floor(I.colunasDe(largura) / 2) : I.colunasDe(largura)), l.s); });
+  for (const largura of [58, 80]) I.compor(rec, I.colunasDe(largura)).forEach((l) => { if (!l.corte && !l.img) assert.ok(l.s.length <= (l.g ? Math.floor(I.colunasDe(largura) / 2) : I.colunasDe(largura)), l.s); });
   const html = I.paraHtml([rec], { largura: 80 });
   assert.ok(html.includes('<img class="logo" src="https://fotos.exemplo.com/logo.png"'), 'a página comum leva a logo');
   assert.ok(!I.paraHtml([I.reciboDoCliente(p, { logo: 'javascript:alert(1)' })]).includes('<img'), 'endereço que não é https não vira imagem');
@@ -3171,6 +3171,36 @@ teste('impressão: itens em letra alta com o peso da balança; recibo do cliente
   // o celular da banca (app Ponte) aceita o recibo: a logo é pulada e a letra alta continua
   const Ponte = require(raiz('lib/ponte.js'));
   if (typeof Ponte.limparFolhas === 'function') { const f = Ponte.limparFolhas([rec]); assert.ok(f && !f[0].some((l) => l.t === 'logo') && f[0].some((l) => l.a)); }
+});
+teste('impressão: recibo elegante — marca do UseBanca, foto de cada item na página, peso total, parcial com a lista do que falta', async () => {
+  const I = await import(raiz('js/impressao-lib.js'));
+  const p = { id: '-Nabc123456', data: '2026-10-05T16:00:00Z', pesadoEm: '2026-10-05T16:20:00Z', nome: 'Maria Silva', total: 60.4, pag: 'Pix', entrega: { taxa: 5, horario: '17h às 18h' },
+    itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 4, unidade: 'kg', tipo: 'un', pesoFinal: 0.62, precoOriginal: 8.9, subtotal: 5.52 },
+      { id: 'queijo', nome: 'Queijo canastra', qtd: 0.5, unidade: 'kg', tipo: 'kg', precoOriginal: 22, subtotal: 11 },
+      { id: 'alface', nome: 'Alface crespa', qtd: 1, unidade: 'un', tipo: 'un', aPesar: true, precoOriginal: 4, subtotal: 0 }] };
+  const fotos = { tomate: 'https://fotos.usebanca.com/a/tomate.jpg', queijo: 'javascript:alert(1)' };
+  const rec = I.reciboDoCliente(p, { loja: 'Queijos do Zesildo', fotos });
+  const t = I.paraTexto(rec, 48);
+  assert.match(t, /Peso total\s+1,12 kg/, t);                                   // 0,62 kg (balança) + 0,5 kg (por peso)
+  assert.match(t, /PARCIAL\s+R\$ 60,40/, t);
+  assert.ok(t.includes('Falta pesar 1 item(ns): 1x Alface crespa'), t);
+  assert.match(t, /Tomate italiano\n\s*0,62 kg x R\$ 8,90\/kg\s+R\$ 5,52/, 'na térmica o item é o nome e, embaixo, peso e valor');
+  const html = I.paraHtml([rec], { largura: 58 });
+  assert.ok(html.includes('<img src="https://fotos.usebanca.com/a/tomate.jpg"'), 'a foto do produto vai na página comum');
+  assert.ok(!html.includes('javascript:alert'), 'foto que não é https é descartada');
+  assert.match(html, /class="par[^"]*\btot\b/, 'o total é uma caixa em destaque'); assert.ok(html.includes('<svg') && html.includes('class="c marca"'), 'a marca do UseBanca vai na página comum');
+  assert.ok(!t.includes('<svg') && !I.paraTexto(rec, 32).includes('marca'), 'a prévia em texto não leva o desenho');
+  // térmica: o desenho vai em pontos (GS v 0), centralizado, e a letra volta ao normal depois
+  const bytes = [...I.paraEscPos(rec, { largura: 58 })], i = bytes.findIndex((x, k) => x === 0x1d && bytes[k + 1] === 0x76 && bytes[k + 2] === 0x30);
+  assert.ok(i > 0, 'comando de imagem presente'); assert.deepStrictEqual(bytes.slice(i + 3, i + 8), [0, 16, 0, 128, 0], '128 pontos de largura (16 bytes) por 128 de altura');
+  assert.ok(bytes.slice(i + 8, i + 8 + 2048).some((x) => x !== 0) && bytes[i - 3] === 0x1b && bytes[i - 2] === 0x61 && bytes[i - 1] === 1, 'tem desenho e vem centralizado');
+  assert.strictEqual(bytes[i + 8 + 2048], 0x0a);
+  // pedido completo: vira TOTAL e some a lista do que falta
+  const feito = I.paraTexto(I.reciboDoCliente({ ...p, itens: p.itens.slice(0, 2), total: 21.52 }, {}), 48);
+  assert.match(feito, /TOTAL\s+R\$ 21,52/); assert.ok(!feito.includes('PARCIAL') && !feito.includes('Falta pesar'));
+  // celular da banca: o item entra sem a foto
+  const Ponte = require(raiz('lib/ponte.js'));
+  if (typeof Ponte.limparFolhas === 'function') { const f = Ponte.limparFolhas([rec]); assert.ok(f, 'aceita item e marca'); assert.ok(f[0].some((l) => l.t === 'item') && f[0].some((l) => l.t === 'marca') && !JSON.stringify(f).includes('fotos.usebanca')); }
 });
 teste('impressão: comandos da térmica (ESC/POS), acentos e página comum', async () => {
   const I = await import(raiz('js/impressao-lib.js'));

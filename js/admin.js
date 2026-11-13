@@ -101,6 +101,8 @@ const carregarChart = async () => {
 };
 
 let produtosAtuais = [];
+/** { idDoProduto: endereço https da foto pequena } — o recibo impresso mostra a foto de cada item na página comum. */
+const fotosDosProdutos = () => Object.fromEntries(produtosAtuais.map((p) => [p.id, p.fotoMini || p.foto]).filter(([id, u]) => id && /^https:\/\//i.test(String(u || ''))));
 let nomeDaLoja = ehLojaOriginal ? 'Banca Adair e Pedrina' : 'Nossa loja';   // trocado pelo nome da ficha da loja ao entrar
 let pedidosGerais = [];
 let filaRecebida = false;          // a fila já chegou do banco pelo menos uma vez (a impressão automática espera por ela)
@@ -1752,7 +1754,7 @@ document.body.addEventListener('click', async (e) => {
             if (!pedido) return showToast("Pedido não encontrado", true);
             target.disabled = true;
             // cupom impresso à mão entra na fila como impresso: o automático não imprime de novo
-            await comImpressao(async (m) => { const ok = await m.imprimirPedido(pedido, target.dataset.tipo); if (ok && target.dataset.tipo === 'cupom') impAuto?.marcarImpresso(pedido); });
+            await comImpressao(async (m) => { const ok = await m.imprimirPedido(pedido, target.dataset.tipo, { fotos: fotosDosProdutos() }); if (ok && target.dataset.tipo === 'cupom') impAuto?.marcarImpresso(pedido); });
             target.disabled = false;
         }
 

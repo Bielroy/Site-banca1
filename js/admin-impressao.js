@@ -44,9 +44,9 @@ export async function mandar(folhas, opcoes, feito) {
     }
 }
 /** tipo: 'cupom' (para separar) | 'recibo' (vai na sacola do cliente, com logo, peso e total) | 'etiqueta' */
-export async function imprimirPedido(pedido, tipo = 'cupom') {
+export async function imprimirPedido(pedido, tipo = 'cupom', { fotos = {} } = {}) {
     const l = await loja();
-    if (tipo === 'recibo') return mandar([reciboDoCliente(pedido, { loja: l, logo: logoLoja })], { copias: 1 }, 'Recibo enviado para a impressora.');
+    if (tipo === 'recibo') return mandar([reciboDoCliente(pedido, { loja: l, logo: logoLoja, fotos })], { copias: 1 }, 'Recibo enviado para a impressora.');
     return mandar([tipo === 'etiqueta' ? etiquetaDeEntrega(pedido, { loja: l }) : cupomDoPedido(pedido, { loja: l })],
         tipo === 'etiqueta' ? { copias: 1 } : { pedidoId: pedido && pedido.id, tipo: 'cupom' });
 }
