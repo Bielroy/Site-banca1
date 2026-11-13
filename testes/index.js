@@ -1353,6 +1353,87 @@ const sementeEstoque = () => ({ ...semente(),
 const TOKENS_E = { ...TOKENS, 'estoquista-espetinhos': { uid: 'u5', tenants: { espetinhos: 'estoque' } } };
 const movs = (db, prefixo = '') => [...db._dados.entries()].filter(([k]) => k.startsWith(prefixo + 'estoque_mov/')).map(([, v]) => v);
 
+teste('avise-me quando voltar: o produto em falta entra no catálogo da loja; o cliente deixa nome e WhatsApp (uma vez); o painel vê quem espera, sabe quando voltou e tira quem já foi avisado', async () => {
+  const sem = sementeEstoque();
+  sem['produtos/queijo'] = { nome: 'Queijo canastra', preco: 46, unidade: 'un', cat: 'queijos', ativo: false, estoqueFisico: 0, fotoMini: 'https://fotos.exemplo.com/q.webp' };
+  sem['produtos/tirado'] = { nome: 'Tirado da loja', preco: 5, unidade: 'un', ativo: false, estoqueFisico: 4 };      // o dono tirou: não é "em falta"
+  sem['produtos/semconta'] = { nome: 'Sem estoque contado', preco: 5, unidade: 'un', ativo: false };
+  const db = criarBancoP(sem), adm = criarAdmin(db, TOKENS_E);
+  // 1) catálogo: só o que zerou entra em "esgotados" (sem campo de estoque)
+  const C = require(raiz('lib/catalogo.js'));
+  await C.remontar(db, 'banca');
+  assert.deepStrictEqual(db._dados.get('loja/catalogo').esgotados, [{ id: 'queijo', nome: 'Queijo canastra', cat: 'queijos', foto: 'https://fotos.exemplo.com/q.webp' }]);
+  assert.ok(!db._dados.get('loja/catalogo').produtos.some((p) => p.id === 'queijo'), 'continua fora da vitrine');
+  // 2) o cliente pede (sem login)
+  const loja = carregarApi(raiz('api/checkout.js'), adm), pede = (body) => chamar(loja, { headers: ip(), body: { acao: 'avise-me', ...body } });
+  let r = await pede({ produtoId: 'queijo', nome: 'Marina Souza', telefone: '(62) 99999-0001' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(r.corpo.jaEstava, false);
+  r = await pede({ produtoId: 'queijo', nome: 'Marina', telefone: '5562999990001' });
+  assert.strictEqual(r.corpo.jaEstava, true, 'o mesmo telefone não entra duas vezes');
+  assert.strictEqual((await pede({ produtoId: 'queijo', nome: 'Paulo', telefone: '62 98888-0002' })).status, 200);
+  assert.strictEqual((await pede({ produtoId: 'queijo', nome: 'X', telefone: '123' })).status, 400, 'telefone sem DDD');
+  assert.strictEqual((await pede({ produtoId: 'queijo', nome: '', telefone: '62999990003' })).status, 400, 'sem nome');
+  assert.strictEqual((await pede({ produtoId: 'tomate', nome: 'Ana', telefone: '62999990003' })).status, 400, 'produto que está à venda: é só pedir');
+  assert.strictEqual((await pede({ produtoId: 'tirado', nome: 'Ana', telefone: '62999990003' })).status, 400, 'produto que o dono tirou da loja não tem lista de espera');
+  assert.strictEqual((await pede({ produtoId: 'nao-existe', nome: 'Ana', telefone: '62999990003' })).status, 400);
+  const guardado = db._dados.get('espera/queijo');
+  assert.strictEqual(guardado.clientes.length, 2); assert.strictEqual(guardado.nome, 'Queijo canastra');
+  // 3) o painel
+  const est = carregarApi(raiz('api/estoque.js'), adm), painel = (body, quem = 'dona-banca') => chamar(est, { headers: { Authorization: `Bearer ${quem}` }, body });
+  assert.ok([401, 403].includes((await painel({ acao: 'espera' }, 'cliente')).status), 'cliente não vê a lista');
+  r = await painel({ acao: 'espera' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.deepStrictEqual(r.corpo.lista.map((x) => [x.produtoId, x.voltou, x.clientes.map((c) => `${c.nome}:${c.telefone}`)]), [['queijo', false, ['Marina Souza:62999990001', 'Paulo:62988880002']]]);
+  // chegou mais queijo: volta para a loja sozinho e a lista diz "voltou"
+  assert.strictEqual((await painel({ acao: 'movimentar', produtoId: 'queijo', tipo: 'compra', qtd: 6, chave: 'chave-queijo-1' })).status, 200);
+  assert.strictEqual(db._dados.get('produtos/queijo').ativo, true);
+  r = await painel({ acao: 'espera' });
+  assert.strictEqual(r.corpo.lista[0].voltou, true);
+  // avisou a Marina: ela sai; depois limpa o resto
+  r = await painel({ acao: 'espera-tirar', produtoId: 'queijo', telefone: '62999990001' });
+  assert.strictEqual(r.corpo.restam, 1);
+  r = await painel({ acao: 'espera-tirar', produtoId: 'queijo' });
+  assert.strictEqual(r.corpo.restam, 0); assert.ok(!db._dados.has('espera/queijo'), 'lista vazia some');
+  // texto que a banca manda
+  const A = require(raiz('lib/avise.js'));
+  assert.match(A.mensagem('Queijos do Zesildo', 'Marina Souza', 'Queijo canastra'), /^\*Queijos do Zesildo\*\n\nOlá, Marina! Você pediu para ser avisado: \*Queijo canastra\* voltou\./);
+  assert.deepStrictEqual(['(62) 99999-0001', '5562999990001', '6232221111', '62 0999-0001', '999990001', ''].map(A.telefone), ['62999990001', '62999990001', '6232221111', '', '', '']);
+});
+
+teste('pedido para outro dia: no dia, "confirmar os preços" põe o preço de hoje do cadastro em cada item (promoção e pedido pago ficam como estão) e refaz o total', async () => {
+  const A = require(raiz('lib/ajuste.js'));
+  const ped = { status: 'pendente', total: 50, precoNoDia: true, cupom: { codigo: 'DEZ', percentual: 10, desconto: 5.56 },
+    itens: [{ id: 'tomate', nome: 'Tomate', qtd: 2, tipo: 'kg', unidade: 'kg', preco: 8, precoOriginal: 8, subtotal: 16 },
+      { id: 'ovos', nome: 'Ovos', qtd: 2, tipo: 'un', unidade: 'un', preco: 14, precoOriginal: 14, subtotal: 28 },
+      { id: 'manga', nome: 'Manga', qtd: 3, tipo: 'un', unidade: 'kg', preco: 9, precoOriginal: 9, aPesar: true, subtotal: 0 },
+      { id: 'pacote', nome: 'Pacote', qtd: 4, tipo: 'un', unidade: 'un', preco: 3, precoOriginal: 3, subtotal: 10, promo: { qtd: 4, preco: 10 } },
+      { id: 'pastel', nome: 'Pastel', qtd: 1, tipo: 'un', unidade: 'un', preco: 8, precoOriginal: 8, subtotal: 11, adicionais: 'queijo extra' },
+      { id: 'sumiu', nome: 'Sumiu', qtd: 1, tipo: 'un', unidade: 'un', preco: 1.6, precoOriginal: 1.6, subtotal: 1.6 }] };
+  const precos = { tomate: 9.5, ovos: 14, manga: 7, pacote: 99, pastel: 99 };
+  const r = A.reprecificar(ped, (id) => precos[id], { por: 'dona' });
+  assert.deepStrictEqual(r.mudou, [{ nome: 'Tomate', de: 8, para: 9.5 }, { nome: 'Manga', de: 9, para: 7 }], 'ovos não mudaram; promoção, item montado e produto sem cadastro ficam como estão');
+  assert.strictEqual(r.itens[0].subtotal, 19); assert.strictEqual(r.itens[2].precoOriginal, 7); assert.strictEqual(r.itens[2].subtotal, 0, 'o item a pesar só muda o preço por quilo');
+  assert.strictEqual(r.itens[3].subtotal, 10); assert.strictEqual(r.itens[4].subtotal, 11);
+  assert.strictEqual(r.conta.total, 62.64, '19 + 28 + 10 + 11 + 1,60 = 69,60; menos 10%');
+  assert.throws(() => A.reprecificar({ ...ped, pagamento: { status: 'PAID' } }, (id) => precos[id]), /já foi pago/);
+  assert.throws(() => A.reprecificar({ ...ped, status: 'enviado' }, (id) => precos[id]), /saiu para entrega/);
+  // pelo servidor: o pedido deixa de estar marcado e o caixa do dia acompanha a diferença
+  const sem = sementeEstoque(); const db = criarBancoP(sem); const api = carregarApi(raiz('api/pdv.js'), criarAdmin(db, TOKENS_P));
+  const chama = (body) => chamar(api, { headers: { Authorization: 'Bearer func-banca' }, body });
+  const chave = 'prc-' + Math.random().toString(36).slice(2, 12);
+  assert.strictEqual((await chama({ acao: 'mensagem', chave, pag: 'Dinheiro', cliente: { nome: 'Viviane', endereco: 'Qd10 Lt7' }, itens: [{ id: 'tomate', qtd: 2, tipo: 'kg' }, { id: 'ovos', qtd: 1, tipo: 'un' }] })).status, 200);
+  const dia = db._dados.get(`pedidos/${chave}`).entregaDia, caixa0 = db._dados.get(`resumos/${dia}`).receita;
+  db._dados.set(`pedidos/${chave}`, { ...db._dados.get(`pedidos/${chave}`), precoNoDia: true });
+  db._dados.set('produtos/tomate', { ...db._dados.get('produtos/tomate'), preco: 10 });
+  const x = await chama({ acao: 'ajuste', op: 'precos', pedidoId: chave });
+  assert.strictEqual(x.status, 200, JSON.stringify(x.corpo));
+  const p = db._dados.get(`pedidos/${chave}`);
+  assert.strictEqual(p.total, 34); assert.strictEqual(p.precoNoDia, false); assert.ok(p.precoConfirmadoEm);
+  assert.deepStrictEqual(x.corpo.mudou, [{ nome: 'Tomate', de: 8.9, para: 10 }]);
+  assert.strictEqual(Math.round((db._dados.get(`resumos/${dia}`).receita - caixa0) * 100) / 100, 2.2);
+  assert.strictEqual(p.ajustes.pop().op, 'precos');
+});
+
 teste('estoque: conta de cada tipo de movimentação', () => {
   const E = require(raiz('lib/estoque'));
   assert.deepStrictEqual(E.calcularMovimento({ atual: 11, tipo: 'compra', qtd: 24 }), { delta: 24, novo: 35 });

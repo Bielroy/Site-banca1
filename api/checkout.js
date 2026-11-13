@@ -111,6 +111,7 @@ const E = require('../lib/estoque');
 const Conta = require('../lib/conta');
 const Cofre = require('../lib/cofre');
 const Feira = require('../lib/feira');
+const Avise = require('../lib/avise');
 const Pac = require('../lib/pacote');   // pacote fechado e promoção "4 por R$ 10" (mesma conta de js/pacote-lib.js)
 const Montar = require('../lib/montar');   // montar pedido: complementos e adicionais (mesma conta de js/montar-lib.js)
 const Dias = require('../lib/dias');   // produto por dia da semana e pedido para amanhã (mesma conta de js/dias-lib.js)
@@ -127,6 +128,8 @@ function montarTextoWhatsApp(pedido, numero) {
   msg += `📍 ${linhaEndereco(pedido)}${pedido.modo === 'retirada' && pedido.retiradaLocal ? ` (${pedido.retiradaLocal})` : ''}\n`;
   // pedido feito fora do dia da feira: vai para o próximo dia de feira
   if (pedido.entregaDia && pedido.paraHoje === false) msg += `📅 Para: *${Feira.textoDoDia(pedido.entregaDia)}*\n`;
+  // pedido para outro dia: o preço pode mudar até lá; a banca confirma no dia (painel → "Confirmar os preços de hoje")
+  if (pedido.precoNoDia) msg += `_Valores de hoje. O preço que vale é o do dia da entrega._\n`;
   const rotuloHora = pedido.modo === 'retirada' ? 'Retirada' : 'Entrega';
   if (pedido.entrega && pedido.entrega.horario) msg += `🕒 ${rotuloHora}: ${pedido.entrega.horario}\n`;
   else if (pedido.entrega && pedido.entrega.horarioACombinar) msg += `🕒 ${rotuloHora}: horário a combinar\n`;
@@ -203,6 +206,20 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
 
   const ip = H.ipDe(req);
+
+  // "AVISE-ME QUANDO VOLTAR" (lib/avise.js): o cliente deixa nome e WhatsApp num produto em falta. Sem login, com freio por IP.
+  if (req.body && req.body.acao === 'avise-me') {
+    if (H.passouNaMemoria(`avise:${ip}`, 12, 60000)) return res.status(429).json({ error: 'Muitos pedidos seguidos. Aguarde um minuto.' });
+    try { bootFirebase(); } catch (e) { return res.status(500).json({ error: 'Erro interno de configuração.' }); }
+    try {
+      const { tid: lojaDoAviso } = await T.resolverLoja(db, req);
+      const r = await Avise.pedir(db, lojaDoAviso, { produtoId: req.body.produtoId, nome: req.body.nome, telefone: req.body.telefone });
+      return res.status(200).json({ sucesso: true, jaEstava: !!r.jaEstava });
+    } catch (e) {
+      if (e && e.status && e.status < 500) return res.status(e.status).json({ error: e.message });
+      console.error('[avise-me]', e && e.message); return res.status(500).json({ error: 'Não consegui anotar agora. Tente de novo em instantes.' });
+    }
+  }
 
   // CONTA DO CLIENTE (crachá, link pessoal, link gerado pelo painel): mesma função, outras ações. Ver lib/conta.js.
   const acaoConta = req.body && Conta.ehAcao(req.body.acao) ? req.body.acao : '';
@@ -589,6 +606,8 @@ module.exports = async function handler(req, res) {
         data: new Date().toISOString(),
         // PARA QUANDO é o pedido. Caixa do dia, fechamento e previsão contam por esta data.
         entregaDia: entrega ? entrega.dia : Feira.hojeBR(),
+        // pedido para OUTRO dia: os valores são os de hoje; a banca confirma o preço do dia no painel (lib/ajuste.js → reprecificar)
+        ...(entrega && entrega.hoje === false ? { precoNoDia: true } : {}),
         ...(entrega && feiraDoPedido ? { feiraId: feiraDoPedido.id, paraHoje: entrega.hoje } : {}),
         ...(entrega && entrega.amanha ? { paraHoje: false, paraAmanha: true } : {}),
         origem: 'whatsapp',

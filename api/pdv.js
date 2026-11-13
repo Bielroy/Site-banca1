@@ -18,7 +18,7 @@
 //      (Antes o painel gravava o total direto: o cupom se perdia e o estoque
 //      dos itens por quilo nunca baixava.)
 //
-//  POST { acao: 'ajuste', op: 'tirar' | 'acrescentar' | 'voltar', pedidoId, indice?, item?: { id, qtd, tipo }, motivo? }
+//  POST { acao: 'ajuste', op: 'tirar' | 'acrescentar' | 'voltar' | 'precos', pedidoId, indice?, item?: { id, qtd, tipo }, motivo? }
 //      Mexer no pedido depois que ele chegou (lib/ajuste.js): tirar um item que faltou (o estoque volta),
 //      acrescentar o que o cliente pediu depois pelo WhatsApp (preço do cadastro) ou voltar o pedido uma etapa.
 //      Tirar e acrescentar só antes de sair para entrega. Tudo fica registrado no pedido (quem e quando).
@@ -280,7 +280,7 @@ async function pesagem(req, res, { tid, dec }) {
 async function ajuste(req, res, { tid, dec }) {
   const b = req.body || {}, pedidoId = String(b.pedidoId || ''), op = String(b.op || ''), por = dec.email || dec.uid;
   if (!/^[\w-]{6,80}$/.test(pedidoId)) return res.status(400).json({ error: 'Pedido inválido.' });
-  if (!['tirar', 'acrescentar', 'voltar'].includes(op)) return res.status(400).json({ error: 'Ação desconhecida.' });
+  if (!['tirar', 'acrescentar', 'voltar', 'precos'].includes(op)) return res.status(400).json({ error: 'Ação desconhecida.' });
   const item = b.item && typeof b.item === 'object' ? b.item : {};
   if (op === 'acrescentar' && (!/^[\w-]{1,80}$/.test(String(item.id || '')) || !['kg', 'un'].includes(item.tipo))) return res.status(400).json({ error: 'Escolha o produto e a quantidade.' });
   try {
@@ -324,6 +324,18 @@ async function ajuste(req, res, { tid, dec }) {
         E.registrarMovs(t, db, tid, movs, admin.firestore.FieldValue);
         fecharCaixa(r.conta.total);
         return { total: r.conta.total, itens: r.itens, tirado: r.registro, diferencaDoPago: Ajuste.diferencaDoPago(ped, r.conta.total), status: semBalanca ? 'pendente' : ped.status };
+      }
+
+      if (op === 'precos') {
+        // pedido feito para outro dia: cada item passa a valer o preço do cadastro no dia da entrega
+        const ids = [...new Set((ped.itens || []).map((i) => i && i.id).filter((id) => /^[\w-]{1,80}$/.test(String(id || ''))))].slice(0, 120);
+        const snaps = await Promise.all(ids.map((id) => t.get(T.tdoc(db, tid, 'produtos', String(id)))));
+        const dowDia = new Date(`${dia}T12:00:00-03:00`).getUTCDay(), precos = new Map();
+        snaps.forEach((ps) => { if (ps.exists) precos.set(ps.id, Feira.precoDoDia(ps.data(), dowDia)); });
+        const r = Ajuste.reprecificar(ped, (id) => precos.get(id), { por, agora });
+        t.update(pedidoRef, { ...campos(r), precoNoDia: false, precoConfirmadoEm: agora.toISOString() });
+        fecharCaixa(r.conta.total);
+        return { total: r.conta.total, itens: r.itens, mudou: r.mudou, status: ped.status };
       }
 
       // acrescentar: o preço é o do cadastro, no dia da entrega do pedido
