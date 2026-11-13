@@ -130,6 +130,17 @@ service cloud.firestore {
     }
     // Documentos de `loja` que o CLIENTE precisa ler para comprar. O resto (banco de fotos etc.) é só de quem administra.
     // 'catalogo': a vitrine inteira num documento só, montada pelo SERVIDOR (lib/catalogo.js). Uma leitura por visita.
+    // TRILHA DO PAINEL (js/admin-trilha.js): quem é da equipe pode ACRESCENTAR uma linha, só em nome dela mesma,
+    // com a hora do servidor. Ninguém lê, muda ou apaga pelo navegador (o proprietário lê pela aba Equipe, via servidor).
+    function trilhaOk(tid, id) {
+      let d = request.resource.data;
+      return equipe(tid) && id.matches('^[0-9]{13}-[0-9a-f]{8}$')
+        && d.keys().hasOnly(['em', 'acao', 'quem', 'uid', 'detalhe', 'noServidor', 'doPainel']) && d.keys().hasAll(['em', 'acao', 'quem', 'uid', 'detalhe', 'noServidor', 'doPainel'])
+        && d.uid == request.auth.uid && d.quem == request.auth.token.get('email', request.auth.uid)
+        && d.noServidor == request.time && d.doPainel == true
+        && d.acao is string && d.acao.matches('^painel-[a-z-]{2,30}$')
+        && d.detalhe is string && d.detalhe.size() <= 200 && d.em is string && d.em.size() <= 30;
+    }
     function lojaPublica(docId) { return docId in ['config', 'comunicados', 'avaliacoes', 'catalogo']; }
     // Loja NO AR: a plataforma não desligou (ficha.ativo != false). Loja bloqueada não mostra catálogo
     // nem configuração para o público; a equipe dela continua vendo tudo no painel.
@@ -198,7 +209,8 @@ service cloud.firestore {
       match /calendario/{id}  { allow read: if equipe(tid); allow write: if gestor(tid); }           // calendário operacional
       match /equipe/{id}      { allow read: if gestor(tid); allow write: if false; }                // espelho da equipe: só o servidor grava
       match /crm/{id}         { allow read, write: if gestor(tid); }                         // anotação de quando cada cliente recebeu mensagem
-      // auditoria, avisos, uso_ia, maquininha, analytics_* e tudo o mais: só o servidor (a regra final nega).
+      match /auditoria/{id}   { allow create: if trilhaOk(tid, id); }                              // trilha: só acrescenta (ler, mudar e apagar: negado)
+      // avisos, uso_ia, maquininha, analytics_* e tudo o mais: só o servidor (a regra final nega).
     }
 
     // Feiras: grupos de lojas que aparecem juntas na faixa do topo.
@@ -246,6 +258,7 @@ service cloud.firestore {
     match /crm/{id}         { allow read, write: if gestor('banca'); }
     match /calendario/{id}  { allow read: if equipe('banca'); allow write: if gestor('banca'); }
     match /equipe/{id}      { allow read: if gestor('banca'); allow write: if false; }
+    match /auditoria/{id}   { allow create: if trilhaOk('banca', id); }
 
     // Qualquer outro caminho: negado (o servidor usa a conta de serviço e não passa por aqui).
     // Isto cobre: plataforma/* (chaves e segredos), backups, limites, auditoria e o que for criado no futuro.

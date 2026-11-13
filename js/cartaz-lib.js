@@ -9,7 +9,7 @@
 import { qrDe, qrCaminho } from './qr-lib.js';
 import { urlImagem, contraste, ehEscura } from './aparencia-lib.js';
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+import { escapeHTML as esc } from './escape-lib.js';   // a única função de escape do site
 
 /** O link sem "https://", para mostrar escrito embaixo do QR. */
 export const linkCurto = (link) => String(link || '').replace(/^https?:\/\//i, '');

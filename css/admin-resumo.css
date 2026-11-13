@@ -78,3 +78,20 @@ button.rs-alerta { cursor: pointer; min-height: 56px; }
   .rs-esq { animation: none; }
   .rs-atalho-ico { transition: none; }
 }
+
+/* PRIMEIROS PASSOS da banca nova (js/admin-resumo.js blocoPassos) */
+.rs-passos { margin: 0 0 18px; padding: 16px; border-radius: 18px; background: var(--superficie, #fff); border: 1px solid var(--linha-fina, #e8e2d6); }
+.rs-passos-topo { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rs-passos-topo .rs-tit { margin: 0; }
+.rs-passos-esconder { min-height: 44px; padding: 0 10px; border: 0; background: none; color: var(--text-mid); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.rs-passos-barra { height: 8px; margin: 10px 0 12px; border-radius: 99px; background: var(--foam); overflow: hidden; }
+.rs-passos-barra i { display: block; height: 100%; border-radius: inherit; background: var(--forest); }
+.rs-passos-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.rs-passos-lista li { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.rs-passo-num { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: var(--foam); color: var(--forest); }
+.rs-passos-lista li.feito .rs-passo-num { background: var(--forest); color: var(--sobre-primaria); }
+.rs-passo-txt { display: grid; gap: 2px; min-width: 0; }
+.rs-passo-txt small { color: var(--text-mid); }
+.rs-passos-lista li.feito .rs-passo-txt b { color: var(--text-mid); }
+.rs-passos-lista .bt { min-height: 44px; white-space: nowrap; }
+@media (max-width: 420px) { .rs-passos-lista li { grid-template-columns: 32px minmax(0, 1fr); } .rs-passos-lista .bt { grid-column: 2; justify-self: start; } }

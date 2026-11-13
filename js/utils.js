@@ -17,11 +17,8 @@
 const REAIS = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 export const fmt = (n) => REAIS.format(Number(n) || 0);
 
-export const escapeHTML = (str) => {
-  if (str === null || str === undefined) return '';
-  return String(str).replace(/[&<>'"]/g, (m) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[m]));
-};
+import { escapeHTML } from './escape-lib.js';   // a única (js/escape-lib.js)
+export { escapeHTML };
 
 export const isFracionavel = (unidade) => {
   const u = (unidade || '').toLowerCase();

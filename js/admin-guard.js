@@ -27,6 +27,7 @@
 // =====================================================================
 
 import { auth, db, signOut, terminate, clearIndexedDbPersistence } from './firebase.js';
+import { escapeHTML as esc } from './escape-lib.js';
 
 /**
  * SAIR DE VERDADE. Além de encerrar o login, apaga a cópia dos dados que o painel guarda no aparelho
@@ -99,7 +100,6 @@ export async function mostrarSuspensa(ehDono) {
     } catch (_) { /* sem a mensalidade, fica só o aviso */ }
   }
   const reais = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const texto = ehDono && excluida
     ? `<p style="opacity:.85;line-height:1.6;margin:0 0 22px;">Esta loja foi excluída pela plataforma. Os dados ficam guardados por 30 dias: se foi engano, fale com o UseBanca para restaurar.</p>`
     : ehDono

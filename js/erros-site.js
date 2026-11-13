@@ -82,6 +82,16 @@ if (!desligado && typeof window !== 'undefined' && !window.__errosSite) {
     // troca de página com animação (@view-transition no CSS): o aviso de animação cancelada fica tratado aqui
     const calar = (e) => { const t = e && e.viewTransition; if (t) { for (const k of ['ready', 'finished', 'updateCallbackDone']) t[k] && t[k].catch(() => {}); } };
     window.addEventListener('pageswap', calar); window.addEventListener('pagereveal', calar);
+    // BLOQUEIO DA CSP (OWASP CSP Cheat Sheet: "saiba quando a política bloqueia"): a regra de segurança da página
+    // barrou um script, estilo, foto ou conexão. Pode ser ataque (código injetado) ou coisa nossa nova que esqueceu de
+    // entrar na lista. Vai para a aba Erros com o que foi barrado e por qual regra; extensão do navegador fica de fora.
+    window.addEventListener('securitypolicyviolation', (e) => {
+        if (!e) return;
+        const bloqueado = String(e.blockedURI || '');
+        if (/^(chrome|moz|safari)-extension|^about$/.test(bloqueado) || /extension/i.test(String(e.sourceFile || ''))) return;
+        const diretiva = String(e.effectiveDirective || e.violatedDirective || '').split(' ')[0];
+        avisarErro({ tipo: 'csp', msg: `Bloqueado pela CSP (${diretiva}): ${bloqueado || 'código na própria página'}`, arquivo: e.sourceFile || bloqueado, linha: e.lineNumber || 0, coluna: e.columnNumber || 0 });
+    });
     window.addEventListener('unhandledrejection', (e) => {
         const r = e && e.reason, msg = mensagemDaRejeicao(r);
         if (rejeicaoDeRede(msg) || rejeicaoDoNavegador(r)) return;   // internet, animação cancelada, registro do app: não é defeito do site

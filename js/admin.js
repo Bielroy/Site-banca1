@@ -9,7 +9,8 @@ import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
 import { textoDeBusca, combinaBusca } from './busca-lib.js';
-import { iniciarComandos } from './admin-comandos.js';   // Ctrl+K, "/" e atalhos de uma tecla
+import { iniciarComandos } from './admin-comandos.js';
+import { anotar } from './admin-trilha.js';                // trilha: quem mudou preço, produto e pedido   // Ctrl+K, "/" e atalhos de uma tecla
 import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm, focarCampo, avisoComDesfazer } from './utils.js';
 import { estadoVazio, esqueleto } from './painel-ui.js';
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
@@ -52,10 +53,11 @@ const comImpressao = async (fn) => { try { await fn(await TELAS.impressao()); } 
 document.getElementById('btn-impressora')?.addEventListener('click', () => comImpressao((m) => m.abrirImpressora('whats')));
 document.getElementById('btn-avisos')?.addEventListener('click', async () => { try { (await TELAS.avisos()).abrirAvisos(); } catch (e) { console.error(e); showToast('Não consegui abrir os avisos. Confira a internet e toque de novo.', true); } });
 let condominiosAtuais = [];
+let configAtual = null;                                   // loja/config (os "Primeiros passos" do Resumo leem daqui)
 const ABRIR = {
     aparencia: (m) => { m.abrirAparencia(); TELAS.vitrine().then((v) => v.abrirVitrine(categoriasComProduto())).catch((e) => console.error(e)); }, estoque: (m) => m.abrirEstoque(produtosAtuais), compras: (m) => m.abrirCompras(produtosAtuais),
     pdv: (m) => { m.definirCondominiosPdv(condominiosAtuais); m.abrirPdv(produtosAtuais); }, crm: (m) => m.abrirCrm(produtosAtuais), copiloto: (m) => m.abrirCopiloto(), calendario: (m) => m.abrirCalendario({ podeEditar: ehGestor(papelAtual) }), equipe: (m) => m.abrirEquipe(), impressora: (m) => m.abrirAbaImpressora(produtosAtuais),
-    resumo: (m) => m.abrirResumo({ produtos: produtosAtuais, fila: pedidosGerais, abas: abasDoPapel(papelAtual, TODAS_AS_ABAS, modulosDaLoja, formatoDaLoja), nome: auth.currentUser?.displayName || '' }),
+    resumo: (m) => m.abrirResumo({ produtos: produtosAtuais, fila: pedidosGerais, abas: abasDoPapel(papelAtual, TODAS_AS_ABAS, modulosDaLoja, formatoDaLoja), nome: auth.currentUser?.displayName || '', config: configAtual, link: new URL(urlDaLoja(TENANT, '/'), location.origin).href }),
 };
 // categorias que têm produto à venda (para o botão "Ver Frutas" dos quadros da vitrine)
 const categoriasComProduto = () => [...new Set(produtosAtuais.filter((p) => p.ativo && !p.soInsumo && p.cat).map((p) => p.cat))]
@@ -565,6 +567,8 @@ const iniciarRealTimeSync = () => {
     pedirCatalogo('se-faltar', null, 1500);   // painel abriu: se a vitrine da loja ainda não tem o documento (ou está velho), monta
 
     const unsubConfig = onSnapshot(tdoc("loja", "config"), (snap) => {
+        configAtual = snap.exists() ? snap.data() : {};
+        if (document.getElementById('aba-resumo')?.classList.contains('active')) TELAS.resumo().then((m) => m.atualizarResumo({ config: configAtual })).catch(() => {});
         if (snap.exists()) {
             const data = snap.data();
             document.getElementById('config-wpp').value = data.wpp || '';
@@ -899,6 +903,8 @@ async function aplicarLote(acao, bt) {
         }
         mud.forEach(({ id, dados }) => produtoSalvo(id, dados));    // painel já mostra; servidor remenda só esses
         const q = mud.length === 1 ? '1 produto' : `${mud.length} produtos`;
+        const nomesLote = mud.slice(0, 6).map(({ id }) => (produtosAtuais.find((x) => x.id === id) || {}).nome || id).join(', ') + (mud.length > 6 ? ` e mais ${mud.length - 6}` : '');
+        anotar(acao === 'preco' ? 'preco-em-lote' : acao === 'fora' ? 'fora-da-loja' : acao === 'chegou' ? 'chegou-hoje' : 'de-volta', `${acao === 'preco' ? `${fmt(preco)}: ` : ''}${nomesLote}`);
         if (acao === 'preco') plSel.precoTexto = '';
         if (acao === 'fora') avisoComDesfazer(`${q} fora da loja.`, async () => {
             for (let i = 0; i < antes.length; i += 400) {
@@ -1649,10 +1655,13 @@ document.body.addEventListener('click', async (e) => {
             const novoStatus = target.dataset.status === 'true';
             const mud = { ativo: novoStatus, ultimaModificacao: Date.now() };
             await setDoc(tdoc("produtos", id), mud, { merge: true }); produtoSalvo(id, mud);
+            const nomeP = (produtosAtuais.find((x) => x.id === id) || {}).nome || id;
+            anotar(novoStatus ? 'de-volta' : 'fora-da-loja', nomeP);
             if (novoStatus) showToast("Produto de volta na loja.");
             else avisoComDesfazer("Produto fora da loja.", async () => {             // sem pergunta antes: Desfazer põe de volta
                 const volta = { ativo: true, ultimaModificacao: Date.now() };
                 await setDoc(tdoc("produtos", id), volta, { merge: true }); produtoSalvo(id, volta);
+                anotar('desfez', `${nomeP} de volta na loja`);
             });
         }
 
@@ -1671,6 +1680,7 @@ document.body.addEventListener('click', async (e) => {
             const nextStatus = target.dataset.next;
             target.disabled = true;
             await setDoc(tdoc("pedidos", id), { status: nextStatus }, { merge: true });
+            anotar('status-pedido', `${(pedidosGerais.find((p) => p.id === id) || {}).nome || id}: ${nextStatus}`);
             showToast(`Pedido movido para: ${nextStatus.toUpperCase()}`);
         }
 
@@ -1795,6 +1805,7 @@ document.body.addEventListener('click', async (e) => {
             // (as regras do banco só deixam o status andar para frente; quem volta é o servidor, e ele registra quem voltou)
             const pedidoAntes = pedidosGerais.find((p) => p.id === id);
             await setDoc(tdoc("pedidos", id), { status: 'arquivado' }, { merge: true });
+            anotar('status-pedido', `${(pedidoAntes && pedidoAntes.nome) || id}: entregue`);
             if (ENTREGUES.aberto) carregarEntregues(); else ENTREGUES.lista = null;   // a lista de entregues mostra o que acabou de sair da fila
             avisoComDesfazer('Pedido entregue.', async () => {
                 const d = await chamarAjuste({ op: 'voltar', pedidoId: id, de: 'arquivado' });
@@ -1995,6 +2006,8 @@ const salvarProduto = async (outro = false) => {
 
         await setDoc(tdoc("produtos", id), pData, { merge: true });
         produtoSalvo(id, pData);
+        if (!antigo) anotar('criou-produto', `${pData.nome}: ${fmt(pData.preco)}`);
+        else if (Number(antigo.preco) !== Number(pData.preco)) anotar('preco', `${pData.nome}: ${fmt(antigo.preco)} → ${fmt(pData.preco)}`);
         if (estoqueFinal !== null && mexeuNoEstoque && estoqueFinal !== estoqueAntes) {
             try { await (await TELAS.estoque()).contarEstoque(id, estoqueFinal, 'Alterado no cadastro do produto'); }
             catch (e) { throw new Error(`Produto guardado, mas o estoque não mudou: ${e.message}`); }
@@ -2033,6 +2046,7 @@ document.getElementById('btn-excluir-produto').addEventListener('click', async (
     if (await customConfirm("Apagar este produto?", "Ele some da loja e do painel. Não dá para desfazer.", { ok: "Apagar", nao: "Não apagar" })) {
         const idApagado = document.getElementById('edit-id').value;
         await deleteDoc(tdoc("produtos", idApagado));
+        anotar('apagou-produto', (produtosAtuais.find((x) => x.id === idApagado) || {}).nome || idApagado);
         marcarApagadoLocal(idApagado); pedirCatalogo('tudo');       // some já daqui; o servidor tira da vitrine e do painel
         closeModal('modal-produto'); showToast("Produto apagado.");
     }

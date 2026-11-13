@@ -657,7 +657,7 @@ html[data-painel-tema="escuro"] .pl-lote-acoes .bt-pri { background: #19221d; co
 html[data-painel-tema="escuro"] .pl-lote-acoes .bt-sec { color: #fff; border: 1.5px solid rgba(43, 59, 51, 0.45); }
 html[data-painel-tema="escuro"] .pl-lista { background: #19221d; border: 1.5px solid #2f3f37; }
 html[data-painel-tema="escuro"] .pl-item { border-bottom: 1px solid #2c3b33; }
-html[data-painel-tema="escuro"] .pl-sem-foto { color: #a5b3aa; }
+html[data-painel-tema="escuro"] .pl-sem-foto { color: #c3ccc6; }
 html[data-painel-tema="escuro"] .pl-abrir:hover, html[data-painel-tema="escuro"] .pl-abrir:focus-visible { background: #0f1713; }
 html[data-painel-tema="escuro"] .pl-foto { background: #1a3c2a; }
 html[data-painel-tema="escuro"] .pl-txt b { color: #eaedeb; }
@@ -1002,6 +1002,14 @@ html[data-painel-tema="escuro"] .rs-ped p { color: #c3ccc6; }
 html[data-painel-tema="escuro"] .rs-ver-todos { color: #a3d6bd; }
 html[data-painel-tema="escuro"] .rs-nota { color: #a5b3aa; }
 html[data-painel-tema="escuro"] .rs-esq { background: #28362f; }
+html[data-painel-tema="escuro"] .rs-passos { background: #19221d; border: 1px solid #2f3f37; }
+html[data-painel-tema="escuro"] .rs-passos-esconder { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .rs-passos-barra { background: #1a3c2a; }
+html[data-painel-tema="escuro"] .rs-passos-barra i { background: #275840; }
+html[data-painel-tema="escuro"] .rs-passo-num { background: #1a3c2a; color: #a3d6bd; }
+html[data-painel-tema="escuro"] .rs-passos-lista li.feito .rs-passo-num { background: #275840; color: var(--sobre-primaria); }
+html[data-painel-tema="escuro"] .rs-passo-txt small { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .rs-passos-lista li.feito .rs-passo-txt b { color: #c3ccc6; }
 
 /* ---- css/admin-pedidos.css ---- */
 html[data-painel-tema="escuro"] .pc { background: #19221d; border: 1px solid #304138; }
