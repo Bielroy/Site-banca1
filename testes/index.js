@@ -441,7 +441,7 @@ teste('feira: a data da entrega é a mesma na loja e no servidor (dias, horário
   assert.strictEqual(F.proximaEntrega({ dias: [] }, t('2026-10-13T15:00:00Z')).hoje, true, 'feira sem dia marcado (ferragista): todo dia');
   assert.strictEqual(F.textoDoDia('2026-10-14'), 'quarta, 14/10');
   // a loja e o servidor dão SEMPRE a mesma resposta
-  const feiras = [quarta, terca, { dias: [0, 6], horaLimite: '09:30', semFeira: ['2026-10-17'] }, { dias: [] , horaLimite: '23:59' }, { dias: [1, 3, 5] }];
+  const feiras = [quarta, terca, { dias: [0, 6], horaLimite: '09:30', semFeira: ['2026-10-17'] }, { dias: [] , horaLimite: '23:59' }, { dias: [1, 3, 5] }, { dias: [3], datasExtras: ['2026-10-16', '2026-10-21'], semFeira: ['2026-10-14'], horaLimite: '12:00' }];
   for (let h = 0; h < 24 * 21; h += 1.25) for (const f of feiras) {
     const ag = t('2026-10-10T00:00:00Z') + h * 3600000;
     assert.deepStrictEqual(L.proximaEntrega(f, ag), F.proximaEntrega(f, ag), `diferença em ${new Date(ag).toISOString()} ${JSON.stringify(f)}`);
@@ -616,6 +616,38 @@ teste('plataforma: horário limite e dias sem feira ficam guardados (limpos)', a
   assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
   const f = db._dados.get('feiras/f-1'); assert.strictEqual(f.horaLimite, '11:30'); assert.deepStrictEqual(f.semFeira, [futuro]);
 });
+teste('plataforma: página de entrada da feira (capa, fotos, local, recado), dia extra e dias de cada banca ficam guardados; tela antiga não apaga o que já estava', async () => {
+  const db = criarBanco(semente()); const api = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, TOKENS));
+  const pf = (body) => chamar(api, { headers: { Authorization: 'Bearer plataforma' }, body });
+  const futuro = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10), outro = new Date(Date.now() + 12 * 86400000).toISOString().slice(0, 10);
+  let r = await pf({ acao: 'feira', fid: 'f-hud', nome: 'Feira HUD', dias: [3, 6], lojas: ['banca', 'espetinhos'], semFeira: [outro], datasExtras: [futuro, outro, '2001-01-01'],
+    lojasDias: { espetinhos: [6, 1], banca: [3, 6], intruso: [3] },
+    hud: { texto: 'Toda quarta na praça <script>', local: 'Praça central', horario: 'das 17h às 21h', capa: 'https://fotos.exemplo.com/capa.webp', fotos: ['https://fotos.exemplo.com/1.webp', 'http://x.com/2.jpg'] } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  let f = db._dados.get('feiras/f-hud');
+  assert.deepStrictEqual(f.datasExtras, [futuro], 'data extra: só de hoje em diante, e nunca num dia marcado "sem feira"');
+  assert.deepStrictEqual(f.lojas.map((l) => [l.id, l.dias || null]), [['banca', null], ['espetinhos', [6]]], 'banca que vem em todos os dias não guarda restrição; dia fora da feira não entra');
+  assert.deepStrictEqual(f.hud, { texto: 'Toda quarta na praça script', local: 'Praça central', horario: 'das 17h às 21h', capa: 'https://fotos.exemplo.com/capa.webp', fotos: ['https://fotos.exemplo.com/1.webp'] });
+  // tela antiga (não manda os campos novos): o que estava gravado continua
+  r = await pf({ acao: 'feira', fid: 'f-hud', nome: 'Feira HUD', dias: [3, 6], lojas: ['banca', 'espetinhos'] });
+  assert.strictEqual(r.status, 200); f = db._dados.get('feiras/f-hud');
+  assert.strictEqual(f.hud.capa, 'https://fotos.exemplo.com/capa.webp'); assert.deepStrictEqual(f.datasExtras, [futuro]); assert.deepStrictEqual(f.lojas[1].dias, [6]);
+  // a lista da Plataforma devolve tudo para o editor
+  const lista = (await pf({ acao: 'lojas' })).corpo.feiras.find((x) => x.id === 'f-hud');
+  assert.deepStrictEqual(lista.lojasDias, { espetinhos: [6] }); assert.strictEqual(lista.hud.local, 'Praça central'); assert.deepStrictEqual(lista.datasExtras, [futuro]);
+  // quem não é da plataforma não mexe
+  assert.strictEqual((await chamar(api, { headers: { Authorization: 'Bearer dono-espetinhos' }, body: { acao: 'feira', fid: 'f-hud', nome: 'X', lojas: ['espetinhos'], hud: { texto: 'meu' } } })).status, 403);
+});
+teste('feira: a banca que não veio hoje não fecha pedido (a loja abre só para olhar); o servidor diz quando ela volta', async () => {
+  const F = require(raiz('lib/feira')), hoje = F.hojeBR(), dow = new Date(`${hoje}T12:00:00Z`).getUTCDay();
+  const feira = { nome: 'Feira', dias: [dow, (dow + 3) % 7], lojas: [{ id: 'veio' }, { id: 'faltou', dias: [(dow + 3) % 7] }] };
+  const db = { collection: () => ({ doc: () => ({ get: async () => ({ exists: true, data: () => feira }) }) }) };
+  const veio = await F.daLoja(db, 'veio', 'f-1'), faltou = await F.daLoja(db, 'faltou', 'f-1');
+  assert.strictEqual(veio.foraHoje, false); assert.strictEqual(F.proximaEntrega(veio).hoje, true);
+  assert.strictEqual(faltou.foraHoje, true); assert.deepStrictEqual(faltou.dias, [(dow + 3) % 7]); assert.strictEqual(F.proximaEntrega(faltou).hoje, false);
+  assert.strictEqual(await F.daLoja(db, 'de-fora', 'f-1'), null, 'loja que não é da feira: o pedido segue como sempre');
+  assert.ok(/foraHoje/.test(require('fs').readFileSync(raiz('api/checkout.js'), 'utf8')), 'o checkout recusa o pedido da banca que não veio');
+});
 teste('preço por dia: a loja e o servidor dão o mesmo preço; oferta vence; dia sem preço usa o normal', async () => {
   const F = require(raiz('lib/feira')), O = await import(raiz('js/oferta-lib.js'));
   const casos = [
@@ -677,6 +709,28 @@ teste('pedido por mensagem (WhatsApp colado): preço do cadastro, kg com peso fe
   const fora = await chamar(api, { headers: { Authorization: 'Bearer cliente' }, body: { acao: 'mensagem', ...corpo, chave: chave + 'x' } });
   assert.strictEqual(fora.status, 403);
 });
+teste('feira: dia extra ("hoje tem feira"), dias de cada banca e página de entrada: loja e servidor dão a mesma resposta; textos e fotos são limpos', async () => {
+  const F = require(raiz('lib/feira')), L = await import(raiz('js/plataforma-lib.js'));
+  const f = { dias: [3, 6], lojas: [{ id: 'a' }, { id: 'b', dias: [6] }, { id: 'c', dias: [1, 3] }], datasExtras: ['2026-11-16'], semFeira: ['2026-11-18'] };
+  // 2026-11-14 = sábado · 16 = segunda (extra) · 17 = terça · 18 = quarta (sem feira) · 21 = sábado · 25 = quarta
+  for (const lib of [F, L]) {
+    assert.deepStrictEqual(['2026-11-14', '2026-11-16', '2026-11-17', '2026-11-18', '2026-11-25', 'lixo'].map((d) => lib.feiraNoDia(f, d)), [true, true, false, false, true, false]);
+    assert.strictEqual(lib.feiraNoDia({ dias: [] }, '2026-11-17'), true, 'feira sem dia marcado: todo dia');
+    assert.deepStrictEqual(['2026-11-14', '2026-11-25', '2026-11-16', '2026-11-18'].map((d) => lib.bancaVemNoDia(f, 'b', d)), [true, false, true, false], 'banca de sábado: não vem na quarta, vem no dia extra, não vem no dia sem feira');
+    assert.strictEqual(lib.bancaVemNoDia(f, 'a', '2026-11-25'), true, 'banca sem dias marcados vem em todos os dias da feira');
+    assert.deepStrictEqual(lib.diasDaBanca(f, 'c'), [3], 'dia que não é da feira não conta para a banca');
+    assert.deepStrictEqual(lib.visaoDaBanca(f, 'b').dias, [6]); assert.strictEqual(lib.visaoDaBanca(f, 'a'), f);
+    // a banca de sábado, numa terça: o pedido vai para o sábado dela, não para a quarta da feira
+    const terca = Date.parse('2026-11-24T15:00:00Z');
+    assert.strictEqual(lib.proximaEntrega(f, terca).dia, '2026-11-25'); assert.strictEqual(lib.proximaEntrega(lib.visaoDaBanca(f, 'b'), terca).dia, '2026-11-28');
+    assert.strictEqual(lib.proximaEntrega(f, Date.parse('2026-11-15T15:00:00Z')).dia, '2026-11-16', 'o dia extra entra na conta');
+  }
+  const hud = F.limparHud({ texto: ' Peça <b>já</b>\n aqui ', local: 'Praça'.repeat(40), horario: 'das 17h às 21h', capa: 'http://sem-s.com/a.jpg', fotos: ['https://a.com/1.jpg', 'https://a.com/1.jpg', 'javascript:alert(1)', 'https://a.com/x.jpg" onerror="x', ...Array.from({ length: 9 }, (_, i) => `https://a.com/f${i}.jpg`)] });
+  assert.strictEqual(hud.texto, 'Peça b já /b aqui'); assert.strictEqual(hud.local.length, 80); assert.strictEqual(hud.capa, '', 'capa só https');
+  assert.strictEqual(hud.fotos.length, 6); assert.ok(hud.fotos.every((u) => /^https:\/\/a\.com\/[\w.]+$/.test(u)), 'nenhuma foto escapa do atributo');
+  assert.deepStrictEqual(F.limparHud(null), { texto: '', local: '', horario: '', capa: '', fotos: [] });
+});
+
 teste('mexer no pedido: tirar item que faltou (estoque volta), acrescentar o que o cliente pediu depois e voltar uma etapa; depois de sair para entrega os itens não mudam', async () => {
   const sem = sementeEstoque();
   sem['produtos/manga'] = { nome: 'Manga palmer', preco: 9, unidade: 'kg', cat: 'frutas', ativo: true };

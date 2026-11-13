@@ -1477,6 +1477,37 @@ teste('plataforma: "Link de entrada" do proprietário gera o link sem e-mail (o 
   semErros(erros); await fechar();
 });
 
+teste('plataforma: o editor de feira guarda a página de entrada (local, horário, recado), o dia extra "hoje tem feira" e os dias de cada banca', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'pf', email: 'plataforma@teste.com', isAnonymous: false, claims: { plataforma: true } } });
+  const { pagina, erros, fechar } = await abrir('/plataforma.html', cen, { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, antes: `try { localStorage.setItem('pf_aba', 'feiras'); } catch (_) {}` });
+  await pagina.locator('[data-pf="editar-feira"]').first().waitFor({ timeout: 10000 });
+  await pagina.locator('[data-pf="editar-feira"][data-feira="feira-do-lago"]').click();
+  await pagina.locator('#pf-h-local').waitFor({ timeout: 5000 });
+  await pagina.locator('#pf-h-local').fill('Praça central');
+  await pagina.locator('#pf-h-horario').fill('das 17h às 21h');
+  await pagina.locator('#pf-h-texto').fill('Peça pelo celular e receba em casa.');
+  assert.match(await pagina.locator('#pf-h-texto-n').innerText(), /35\/400/);
+  // dias de cada banca só aparecem em feira com mais de um dia; todos marcados = sem restrição
+  assert.strictEqual(await pagina.locator('.pf-bancas-dias').count(), 0, 'feira de um dia só: não há o que escolher por banca');
+  await pagina.locator('.pf-semana.editavel:not(.mini) [data-pf-dia="6"]').click();      // a feira passa a ter quinta e sábado
+  const dias = pagina.locator('.pf-bancas-dias li').first().locator('[data-pf-banca-dia]');
+  assert.ok(await dias.count() >= 2, 'a feira do teste tem mais de um dia');
+  await dias.first().click();
+  assert.strictEqual(await dias.first().getAttribute('aria-pressed'), 'false');
+  // dia extra: hoje (se hoje já é dia da feira, a tela avisa e não duplica)
+  await pagina.locator('[data-pf="por-extra-hoje"]').click();
+  assert.ok(await pagina.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'o editor cabe no celular');
+  await pagina.locator('[data-pf="salvar-feira"]').click();
+  await pagina.locator('#btn-confirm-ok').click({ timeout: 4000 }).catch(() => {});      // "Salvar sem condomínio?"
+  await pagina.waitForFunction(() => !document.getElementById('pf-folha').classList.contains('aberto'), null, { timeout: 6000 });
+  const c = servidor.chamadas.filter((x) => x.caminho === '/api/plataforma' && x.corpo.acao === 'feira').pop().corpo;
+  assert.deepStrictEqual(c.dias, [4, 6]);
+  assert.deepStrictEqual([c.hud.local, c.hud.horario, c.hud.texto], ['Praça central', 'das 17h às 21h', 'Peça pelo celular e receba em casa.']);
+  assert.ok(Array.isArray(c.datasExtras) && c.lojasDias && typeof c.lojasDias === 'object');
+  const restritas = Object.values(c.lojasDias).filter((d) => d.length > 0);
+  assert.strictEqual(restritas.length, 1, 'só a banca em que tirei um dia leva restrição: ' + JSON.stringify(c.lojasDias));
+  semErros(erros); await fechar();
+});
 teste('plataforma: "Cartaz com QR" de cada feira manda para a impressão o cartaz com o link DAQUELA feira', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
   const { pagina, erros, fechar } = await abrir('/plataforma.html', cen, { antes: () => { try { localStorage.setItem('pf_aba', 'feiras'); } catch (_) { /* segue */ } } });
