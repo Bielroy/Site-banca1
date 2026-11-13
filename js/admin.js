@@ -27,7 +27,8 @@ import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel, mexeNa
 import { formatoDaFicha } from './formato-lib.js';
 import { ico } from './icones-admin.js';          // também liga a troca das marcas <i class="ic"> pelos desenhos
 import { linhaEndereco } from './endereco.js';
-import { mensagemPedidoPronto, mensagemACaminho, linkDoWhatsApp } from './mensagem-lib.js';   // textos do WhatsApp para o cliente
+import { mensagemPedidoPronto, mensagemACaminho, linkDoWhatsApp } from './mensagem-lib.js';
+import { mostrarVideo, videoParaSalvar, ligarVideo } from './admin-video.js';   // vídeo curto do produto   // textos do WhatsApp para o cliente
 import { abrirPrevisao } from './admin-previsao.js';
 import { abrirFechamento } from './admin-fechamento.js';
 
@@ -1033,6 +1034,7 @@ const limparFormularioProduto = () => {
     preencherDias(null);
     iniciarMontarAdmin({ produtos: () => produtosAtuais }); preencherMontar(null);
     const previa = document.getElementById('preview-foto-wrapper'); if (previa) previa.innerHTML = placeholderSVG;
+    ligarVideo(); mostrarVideo('');
     document.getElementById('btn-excluir-produto').style.display = 'none';
     { const g = document.getElementById('grupo-rotulo-produto'); if (g) g.hidden = true; }
     { const bp = document.getElementById('btn-post-ia'); if (bp) bp.hidden = true; }
@@ -1566,6 +1568,7 @@ document.body.addEventListener('click', async (e) => {
             document.getElementById('edit-cat').value = nomeDaCategoria(p.cat);   // mostra o NOME da categoria; a chave é resolvida ao salvar
             document.getElementById('edit-foto').value = '';
             document.getElementById('edit-foto-url').value = '';
+            ligarVideo(); mostrarVideo(p.video || '');
 
             if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = p.descricao || '';
             // guarda o estoque MOSTRADO ao abrir: se alguém vender enquanto a janela está aberta, gravar o produto não pode devolver o número velho
@@ -1953,6 +1956,9 @@ const salvarProduto = async (outro = false) => {
             const pAntigo = produtosAtuais.find(x => x.id === id);
             if (pAntigo && pAntigo.foto) pData.foto = pAntigo.foto;
         }
+
+        // VÍDEO curto (js/admin-video.js): o arquivo escolhido vai direto ao R2; sem vídeo, o campo fica vazio (null)
+        pData.video = await videoParaSalvar(id, (f) => { btn.textContent = `Enviando o vídeo... ${Math.round(f * 100)}%`; });
 
         // ESTOQUE: a quantidade não é mais gravada direto aqui. Campo vazio = sem controle.
         // Número diferente do atual = contagem, que passa pelo servidor e entra no histórico.

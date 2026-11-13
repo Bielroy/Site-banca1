@@ -110,3 +110,11 @@
 .prod-dia-todos { grid-column: 1 / -1; min-height: 38px; border-radius: 10px; border: 1.5px dashed var(--linha, #d8d1c1); background: none; color: var(--forest); font: inherit; font-weight: 700; cursor: pointer; }
 .prod-dia-todos[hidden] { display: none; }
 #dias-previa.erro { color: var(--danger, #c0392b); font-weight: 700; }
+
+/* vídeo curto do produto (js/admin-video.js) */
+.prod-video { display: grid; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed #e0dcd4; }
+.prod-video .prod-rot small { font-weight: 500; color: #6b6b62; }
+.prod-video-linha { display: flex; gap: 12px; align-items: stretch; }
+.prod-video-previa { width: 96px; height: 128px; flex: none; border-radius: 12px; overflow: hidden; background: #f1ede4; display: grid; place-items: center; }
+.prod-video-previa video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.prod-video-vazio { font-size: 1.6rem; color: #b7b0a1; }

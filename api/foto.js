@@ -3,6 +3,7 @@
 //
 //  POST { acao: 'estado' }                          → { ligado, onde: 'r2' | '' }
 //  POST { imagem: <base64>, nome? }                 → { url }
+//  POST { acao: 'video', tipo, bytes, nome? }       → { put, url, cabecalhos }  (o navegador envia o vídeo direto ao R2)
 //
 //  O painel reduz a foto no próprio aparelho e manda para cá. Daqui ela
 //  vai para o R2 (lib/r2.js) e volta o link, que o painel grava no produto.
@@ -59,6 +60,17 @@ module.exports = async function handler(req, res) {
     const b = req.body || {}, r2 = R2.config();
     if (b.acao === 'estado') return res.status(200).json({ sucesso: true, ligado: !!r2, onde: r2 ? 'r2' : '' });
     if (!r2) return res.status(503).json({ error: 'O envio de fotos pelo servidor está desligado (faltam as chaves do Cloudflare R2 no servidor).', codigo: 'sem-lugar' });
+
+    // VÍDEO de produto: o navegador envia direto ao R2 por um link que vale 10 minutos, só para aquele arquivo e tamanho
+    if (b.acao === 'video') {
+      if (H.passouNaMemoria(`video:${dec.uid}`, 10, 60000) || !(await P.limitar(db, 'video', `${tid}|${dec.uid}`, 40, 3600))) return res.status(429).json({ error: 'Muitos vídeos enviados em pouco tempo. Aguarde alguns minutos.' });
+      const tipo = String(b.tipo || ''), ext = R2.TIPOS_VIDEO[tipo];
+      const nome = String(b.nome || 'video').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'video';
+      try {
+        const link = R2.linkDeVideo(`lojas/${tid}/videos/${nome}-${Date.now().toString(36)}${crypto.randomBytes(4).toString('hex')}.${ext || 'mp4'}`, tipo, Number(b.bytes));
+        return res.status(200).json({ sucesso: true, ...link });
+      } catch (e) { return res.status(400).json({ error: e.message }); }
+    }
 
     // Teto de envios: 300 fotos por hora por pessoa (o cadastro em lote de uma loja inteira cabe com folga).
     if (H.passouNaMemoria(`foto:${dec.uid}`, 40, 60000) || !(await P.limitar(db, 'foto', `${tid}|${dec.uid}`, 300, 3600))) return res.status(429).json({ error: 'Muitas fotos enviadas em pouco tempo. Aguarde alguns minutos.' });

@@ -920,6 +920,10 @@ html[data-painel-tema="escuro"] .prod-dia { border: 1.5px solid #304138; backgro
 html[data-painel-tema="escuro"] .prod-dia.on { background: #275840; border-color: var(--forest); color: #fff; }
 html[data-painel-tema="escuro"] .prod-dia-todos { border: 1.5px dashed #304138; color: #a3d6bd; }
 html[data-painel-tema="escuro"] #dias-previa.erro { color: #ea7b7b; }
+html[data-painel-tema="escuro"] .prod-video { border-top: 1px dashed #304139; }
+html[data-painel-tema="escuro"] .prod-video .prod-rot small { color: #a9b5ad; }
+html[data-painel-tema="escuro"] .prod-video-previa { background: #25322b; }
+html[data-painel-tema="escuro"] .prod-video-vazio { color: #b7b0a1; }
 
 /* ---- css/admin-montar.css ---- */
 html[data-painel-tema="escuro"] .mt-ad-inicio p { color: #c3ccc6; }

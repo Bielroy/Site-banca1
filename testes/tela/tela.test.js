@@ -1732,6 +1732,40 @@ teste('temperos: cantinho no fim (depois dos pacotes), "+ 1 potinho", sacola com
   semErros(erros); await fechar();
 });
 
+teste('vídeo do produto: o painel envia o vídeo direto para o link que o servidor dá e grava o endereço; a loja toca o vídeo sem som por cima da foto', async () => {
+  const cen = cenarioPacotes(); cen.conta = { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } };
+  const { pagina, ctx, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false, hasTouch: false } });
+  const enviados = [];
+  await ctx.route(/r2\.teste\/put/, (r) => { enviados.push({ metodo: r.request().method(), tipo: r.request().headers()['content-type'], bytes: (r.request().postDataBuffer() || Buffer.alloc(0)).length }); r.fulfill({ status: 200, body: '' }); });
+  await pagina.locator('[data-action="editar-produto"][data-id="cb"]').first().click({ timeout: 8000 });
+  await pagina.locator('#edit-video').setInputFiles({ name: 'queijo.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(2048, 1) });
+  assert.match(await pagina.locator('#prod-video-dica').innerText(), /escolhido\. Ele é enviado quando você salvar/);
+  await pagina.click('#btn-salvar-produto');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /produtos\/cb$/.test(g.path)), null, { timeout: 6000 });
+  const g = await pagina.evaluate(() => window.__gravados.filter((x) => /produtos\/cb$/.test(x.path)).pop().dados);
+  assert.strictEqual(g.video, 'https://fotos.teste/lojas/banca/videos/cb-video.mp4');
+  const pedido = servidor.chamadas.filter((c) => c.caminho === '/api/foto' && c.corpo.acao === 'video').pop().corpo;
+  assert.deepStrictEqual([pedido.tipo, pedido.bytes], ['video/mp4', 2048]);
+  assert.deepStrictEqual(enviados, [{ metodo: 'PUT', tipo: 'video/mp4', bytes: 2048 }], 'o arquivo foi direto para o link (não passou pelo servidor)');
+  semErros(erros); await fechar();
+  // na loja
+  const c2 = cenarioPadrao(); c2.lojas.banca.produtos.ovos = { ...c2.lojas.banca.produtos.ovos, video: 'https://fotos.teste/v.mp4' };
+  const loja = await abrir('/', c2);
+  await loja.ctx.route(/fotos\.teste\/v\.mp4/, () => { /* fica carregando: vídeo que não abre some da tela (ver o teste de baixo) */ });
+  await cards(loja.pagina).first().waitFor({ timeout: 8000 });
+  await cards(loja.pagina).filter({ hasText: 'Ovos' }).first().locator('.produto-nome').click();
+  await loja.pagina.waitForSelector('#modal-detalhe-produto.aberto', { timeout: 4000 });
+  const v = await loja.pagina.locator('#md-video').evaluate((el) => ({ src: el.getAttribute('src'), mudo: el.muted, repete: el.loop, noLugar: el.playsInline }));
+  assert.deepStrictEqual(v, { src: 'https://fotos.teste/v.mp4', mudo: true, repete: true, noLugar: true });
+  assert.ok(await loja.pagina.locator('.md-hero.com-video').count(), 'a foto fica por baixo, como capa do vídeo');
+  // produto sem vídeo: nada de vídeo na tela
+  await loja.pagina.locator('[data-fechar="modal-detalhe-produto"]').first().click();
+  await cards(loja.pagina).filter({ hasText: 'Banana' }).first().locator('.produto-nome').click();
+  await loja.pagina.waitForTimeout(400);
+  assert.strictEqual(await loja.pagina.locator('#md-video').count(), 0);
+  semErros(loja.erros.filter((e) => !/fotos\.teste|MEDIA_ERR|DEMUXER|Failed to load resource/.test(e))); await loja.fechar();
+});
+
 teste('pacotes: no painel, peso do pacote em branco é aceito e promoção mais cara é recusada', async () => {
   const cen = cenarioPacotes(); cen.conta = { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } };
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false, hasTouch: false } });
@@ -2657,6 +2691,7 @@ const ajusteFalso = (c) => {
         ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, meta: { geradoEm: '2026-10-26T15:00:00.000Z' }, indiceClientes: [{ id: 'c1', nome: 'Ana Lima', condominio: 'Alfa', quadra: '1', lote: '2', n: 2, ult: '2026-10-20', pri: '2026-09-01', gasto: 50 }, { id: 'c2', nome: 'Bruno Reis', condominio: 'Alfa', quadra: '3', lote: '4', n: 1, ult: '2026-10-25', pri: '2026-10-25', gasto: 20 }] }), 2000))
         : { sucesso: true, meta: { geradoEm: '2026-10-26T10:00:00.000Z' }, indiceClientes: [{ id: 'c1', nome: 'Ana Lima', condominio: 'Alfa', quadra: '1', lote: '2', n: 2, ult: '2026-10-20', pri: '2026-09-01', gasto: 50 }] })
       : c.acao === 'ranking' ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, nivel: 'popular', itens: ['ovos', 'banana', 'alface', 'tomate'].map((id, i) => ({ id, p: 0.9 - i * 0.2 })) }), 1500)) : {}),
+    '/api/foto': (c) => (c.acao === 'video' ? { sucesso: true, put: 'https://r2.teste/put?X-Amz-Signature=x', url: `https://fotos.teste/lojas/banca/videos/${c.nome}.mp4`, cabecalhos: { 'content-type': c.tipo, 'cache-control': 'public, max-age=31536000, immutable' } } : {}),
     '/api/checkout': (c) => (c.acao === 'avise-me' ? { sucesso: true, jaEstava: false } : c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),
     '/api/plataforma': (c) => (c.acao === 'situacao' ? { sucesso: true, temDono: true, souEu: true }
       : c.acao === 'erros' ? { sucesso: true, erros: [{ id: 'e1', assinatura: 'e'.repeat(20), tipo: 'erro', msg: "Cannot read properties of undefined (reading 'preco')", vezes: 3, ultimo: new Date().toISOString(), onde: '/assets/main-X.js:10:5', paginas: ['/'], navegadores: ['Android · Chrome 129'], lojas: ['banca'], pilha: 'at x' },

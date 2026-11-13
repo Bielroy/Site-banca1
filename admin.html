@@ -538,6 +538,20 @@
                         </div>
                     </div>
                     <input type="url" id="edit-foto-url" placeholder="Ou cole aqui o link de uma foto">
+                    <!-- VÍDEO curto (opcional): aparece na tela do produto, sem som, em repetição (js/admin-video.js) -->
+                    <div class="prod-video" id="prod-video">
+                        <span class="prod-rot">Vídeo curto <small>(opcional)</small></span>
+                        <div class="prod-video-linha">
+                            <div class="prod-video-previa" id="prod-video-previa"></div>
+                            <div class="prod-foto-bts">
+                                <label class="btn-outline prod-foto-bt" for="edit-video"><i class="ic" data-i="camera"></i> Escolher vídeo</label>
+                                <input type="file" id="edit-video" accept="video/mp4,video/webm,video/quicktime" class="sr-only">
+                                <button type="button" class="btn-outline" id="btn-tirar-video" hidden>Tirar o vídeo</button>
+                            </div>
+                        </div>
+                        <input type="url" id="edit-video-url" placeholder="Ou cole o link de um vídeo (MP4)">
+                        <small class="dica-campo" id="prod-video-dica">De 5 a 15 segundos, celular em pé, mostrando o produto de perto (o queijo cortado, o pastel abrindo). Até 40 MB. Na loja ele toca sem som.</small>
+                    </div>
                     <details class="guia-foto">
                         <summary>Como tirar uma foto que dá vontade de comprar</summary>
                         <ol>

@@ -165,3 +165,24 @@ domínio de volta.
 - **Firebase grátis (Spark):** limite diário de leituras e gravações. Se o painel avisar que estourou, o plano pago por uso costuma ficar bem barato; ative alertas de orçamento.
 - **Páginas inexistentes:** no Cloudflare Pages, um endereço que não existe abre a página inicial (na Vercel dava erro 404).
 - Os endereços `/admin.html` e `/plataforma.html` passam a abrir como `/admin` e `/plataforma` (o Cloudflare tira o `.html`); parâmetros como `?loja=` são mantidos.
+
+## Vídeo de produto: liberar o envio direto no R2 (uma vez só)
+
+O vídeo do produto vai do celular **direto** para o R2, por um link que o servidor assina (`api/foto.js` → `acao: 'video'`,
+`lib/r2.js` → `linkDeVideo`). Para o navegador poder mandar o arquivo, o bucket precisa aceitar `PUT` vindo do site.
+
+No painel do Cloudflare: **R2 → o bucket das fotos → Settings → CORS Policy → Add CORS policy**, e cole:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://usebanca.com", "https://*.usebanca.com"],
+    "AllowedMethods": ["PUT"],
+    "AllowedHeaders": ["content-type", "cache-control"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+Sem isso, o painel mostra "O envio do vídeo caiu" e a pessoa ainda pode colar o link de um vídeo.
+O vídeo toca na loja porque a política de segurança (`vercel.json`) aceita `media-src https:`.

@@ -1084,6 +1084,31 @@ const pintarFalta = () => {
     import('./avise-loja.js').then((m) => m.pintarEmFalta(lista, { livre })).catch(() => { /* sem a faixa, a loja segue */ });
 };
 
+// VÍDEO CURTO DO PRODUTO (cadastrado no painel, js/admin-video.js): toca por cima da foto, sem som e em repetição.
+// Quem pediu "menos movimento" no aparelho vê a foto, com um botão para tocar. Vídeo que não abre some (fica a foto).
+const pintarVideoDoProduto = (p) => {
+    const hero = document.querySelector('#modal-detalhe-produto .md-hero'); if (!hero) return;
+    let v = document.getElementById('md-video');
+    const src = p && /^https:\/\/[^\s"'<>]+$/.test(String(p.video || '')) ? String(p.video) : '';
+    if (!src) { if (v) { v.pause(); v.remove(); } hero.classList.remove('com-video'); return; }
+    if (!v) {
+        v = document.createElement('video'); v.id = 'md-video'; v.className = 'md-video';
+        v.muted = true; v.loop = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.preload = 'metadata';
+        v.addEventListener('error', () => { v.remove(); hero.classList.remove('com-video'); });
+        v.addEventListener('click', (e) => { e.stopPropagation(); if (v.paused) v.play().catch(() => {}); else v.pause(); });
+        hero.insertBefore(v, hero.firstChild.nextSibling);
+    }
+    if (v.getAttribute('src') !== src) v.src = src;
+    if (p.foto) v.poster = p.foto; else v.removeAttribute('poster');
+    v.setAttribute('aria-label', `Vídeo de ${p.nome}`);
+    hero.classList.add('com-video');
+    const calmo = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    v.controls = calmo;
+    if (!calmo) v.play().catch(() => { v.controls = true; });     // navegador que não deixa tocar sozinho: aparece o botão de tocar
+};
+// fechar a tela do produto para o vídeo (não fica tocando escondido, gastando internet)
+document.addEventListener('click', (e) => { if (e.target.closest('[data-fechar="modal-detalhe-produto"]') || e.target.id === 'modal-detalhe-produto') { const v = document.getElementById('md-video'); if (v) v.pause(); } });
+
 const renderLoja = (forcarRebuild = false) => {
     const grid = document.getElementById('lista-produtos');
     if (!STATE.catalogoChegou) return;     // produtos ainda a caminho: fica o carregando, e não um falso "sem produtos"
@@ -2420,6 +2445,7 @@ document.body.addEventListener('click', async (e) => {
                 }
             } else { delete img.dataset.original; img.removeAttribute('src'); img.style.visibility = 'hidden'; }
             img.alt = p.nome;
+            pintarVideoDoProduto(p);
             document.getElementById('md-tag').textContent = p.cat ? (nomeDaCategoria(p.cat) || p.cat) : '';
             document.getElementById('md-desc').textContent = p.descricao || "Produto fresco, selecionado no dia.";
             { let ms = document.getElementById('md-selos'); if (!ms) { ms = document.createElement('div'); ms.id = 'md-selos'; document.getElementById('md-tag').after(ms); } ms.innerHTML = selosHtml(p, true); }

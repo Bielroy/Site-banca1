@@ -709,6 +709,28 @@ teste('pedido por mensagem (WhatsApp colado): preço do cadastro, kg com peso fe
   const fora = await chamar(api, { headers: { Authorization: 'Bearer cliente' }, body: { acao: 'mensagem', ...corpo, chave: chave + 'x' } });
   assert.strictEqual(fora.status, 403);
 });
+teste('vídeo do produto: o link de envio direto ao R2 bate com o vetor oficial da AWS; vale só para o tipo e o tamanho pedidos; a política de segurança deixa tocar vídeo https', async () => {
+  const R = require(raiz('lib/r2.js'));
+  // vetor de teste da AWS ("Authenticating Requests: Using Query Parameters"): presigned GET de examplebucket/test.txt
+  const v = R.presignar({ metodo: 'GET', host: 'examplebucket.s3.amazonaws.com', caminho: '/test.txt', chave: 'AKIAIOSFODNN7EXAMPLE', segredo: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', regiao: 'us-east-1', quando: new Date('2013-05-24T00:00:00Z'), expira: 86400 });
+  assert.strictEqual(v.assinatura, 'aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404');
+  const antes = { ...process.env };
+  Object.assign(process.env, { R2_ACCOUNT_ID: 'a'.repeat(32), R2_ACCESS_KEY_ID: 'CHAVEDETESTE1234', R2_SECRET_ACCESS_KEY: 'segredo-de-teste-1234', R2_BUCKET: 'fotos-bancas', R2_URL_PUBLICA: 'https://fotos.usebanca.com' });
+  try {
+    const l = R.linkDeVideo('lojas/banca/videos/queijo-video-1.mp4', 'video/mp4', 5_000_000);
+    assert.ok(l.put.startsWith(`https://${'a'.repeat(32)}.r2.cloudflarestorage.com/fotos-bancas/lojas/banca/videos/queijo-video-1.mp4?`));
+    assert.match(l.put, /X-Amz-SignedHeaders=cache-control%3Bcontent-length%3Bcontent-type%3Bhost/, 'o tamanho entra na assinatura: arquivo maior é recusado');
+    assert.match(l.put, /X-Amz-Expires=600/);
+    assert.strictEqual(l.url, 'https://fotos.usebanca.com/lojas/banca/videos/queijo-video-1.mp4');
+    assert.deepStrictEqual(Object.keys(l.cabecalhos).sort(), ['cache-control', 'content-type']);
+    assert.throws(() => R.linkDeVideo('lojas/banca/videos/x.mp4', 'video/avi', 10), /MP4, WebM ou MOV/);
+    assert.throws(() => R.linkDeVideo('lojas/banca/videos/x.mp4', 'video/mp4', 41 * 1024 * 1024), /até 40 MB/);
+    assert.throws(() => R.linkDeVideo('../x.mp4', 'video/mp4', 10), /Nome/);
+  } finally { for (const k of R.NOMES) { if (k in antes) process.env[k] = antes[k]; else delete process.env[k]; } }
+  const csp = JSON.stringify(require(raiz('vercel.json')));
+  assert.strictEqual((csp.match(/media-src 'self' data: blob: https:;/g) || []).length, 2, 'loja e painel tocam vídeo https');
+});
+
 teste('feira: dia extra ("hoje tem feira"), dias de cada banca e página de entrada: loja e servidor dão a mesma resposta; textos e fotos são limpos', async () => {
   const F = require(raiz('lib/feira')), L = await import(raiz('js/plataforma-lib.js'));
   const f = { dias: [3, 6], lojas: [{ id: 'a' }, { id: 'b', dias: [6] }, { id: 'c', dias: [1, 3] }], datasExtras: ['2026-11-16'], semFeira: ['2026-11-18'] };
