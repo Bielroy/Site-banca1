@@ -761,6 +761,11 @@ html[data-painel-tema="escuro"] .pd-chave::after { background: #fff; box-shadow:
 html[data-painel-tema="escuro"] .pd-chave:checked { background: #275840; }
 html[data-painel-tema="escuro"] .pl-fora-do-ar { color: #e9827c; }
 html[data-painel-tema="escuro"] .pl-faixa-fotos { background: #3e1d19; color: #ec958d; }
+@supports selector(:popover-open) {
+  html[data-painel-tema="escuro"] .pn-menu[popover] { border: 1px solid #304139; background: #19221d; box-shadow: 0 12px 32px rgba(20, 30, 20, .18); color: #eaedeb; }
+  html[data-painel-tema="escuro"] .pn-menu[popover] > button:hover, html[data-painel-tema="escuro"] .pn-menu[popover] > span > button:hover, html[data-painel-tema="escuro"] .pn-menu[popover] button:focus-visible { background: #25322b; }
+  html[data-painel-tema="escuro"] .pn-menu[popover]::backdrop { background: rgba(20, 30, 20, .18); }
+}
 
 /* ---- css/admin-vitrine.css ---- */
 html[data-painel-tema="escuro"] .pl-selo.bom { background: #1b3c27; color: #9fdbb8; }

@@ -492,6 +492,26 @@ teste('painel: banco que não responde (cópia travada no Android) não deixa a 
   semErros(erros); await fechar();
 });
 
+teste('painel no celular: Produtos abre com busca, "+ Novo" e "⋯" numa linha; o menu "⋯" traz as ações de vez em quando e fecha com Esc', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen);
+  await pagina.waitForSelector('#lista-produtos .pl-item, #lista-produtos [data-pl-marcar], #lista-produtos .prod-linha', { timeout: 8000 }).catch(() => {});
+  const caixas = await pagina.$$eval('.pl-topo > input, .pl-topo > .bt', (els) => els.filter((e) => e.offsetParent).map((e) => Math.round(e.getBoundingClientRect().top)));
+  assert.strictEqual(caixas.length, 3, 'busca, + Novo e ⋯');
+  assert.ok(Math.max(...caixas) - Math.min(...caixas) < 6, 'tudo na mesma linha: ' + caixas.join(','));
+  assert.ok(!(await pagina.locator('#btn-varias-fotos').isVisible()), 'as ações de vez em quando ficam fora do caminho');
+  await pagina.click('[popovertarget="pl-mais"]');
+  for (const t of ['Vários de uma vez', 'Rótulos', 'Enviar várias fotos', 'Conferir fotos fora do ar']) assert.ok(await pagina.locator('#pl-mais', { hasText: t }).isVisible(), t);
+  const caixa = await pagina.locator('#pl-mais').boundingBox();
+  assert.ok(caixa.x >= 0 && caixa.x + caixa.width <= 390 && caixa.y + caixa.height <= 844, 'o menu cabe na tela do celular: ' + JSON.stringify(caixa));
+  await pagina.keyboard.press('Escape');
+  assert.ok(!(await pagina.locator('#btn-varias-fotos').isVisible()), 'Esc fecha');
+  await pagina.evaluate(() => document.querySelector('.tab[data-aba="relatorios"]').click());
+  await pagina.click('[popovertarget="ped-mais"]');
+  assert.ok(await pagina.locator('#btn-exportar').isVisible() && await pagina.locator('#btn-limpar-hist').isVisible(), 'Exportar e Arquivar todos no menu dos pedidos');
+  semErros(erros); await fechar();
+});
+
 teste('painel: aba Clientes mostra a lista guardada na hora e só depois traz o recálculo (não espera a conferência de pedido novo)', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
@@ -2840,7 +2860,9 @@ teste('painel: produto novo já vem na categoria aberta e na unidade dela; "Salv
 teste('painel: "Vários de uma vez" cria os pastéis com o mesmo preço (preço diferente depois do traço) e "Mudar preço" muda os marcados', async () => {
   const { pagina, erros, fechar } = await abrir('/admin.html', cenarioPastelaria(), { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
   await pagina.locator('#pl-cats [data-pl-cat="pasteis"]').click({ timeout: 8000 });
-  await pagina.locator('[data-action="varios-produtos"]').click();
+  await pagina.locator('[popovertarget="pl-mais"]').click();          // "Vários de uma vez" mora no menu "⋯"
+  await pagina.locator('#pl-mais [data-action="varios-produtos"]').click();
+  assert.ok(!(await pagina.evaluate(() => document.getElementById('pl-mais').matches(':popover-open'))), 'o menu fecha ao tocar na ação');
   await pagina.waitForSelector('#modal-varios.aberto', { timeout: 4000 }); await pagina.waitForTimeout(120);   // o foco automático da janela chega depois de 60 ms
   assert.strictEqual(await pagina.locator('#vv-cats .prod-chip.on').innerText(), 'Pastéis');
   assert.strictEqual(await pagina.locator('#vv-unidades .prod-chip.on').innerText(), 'Unidade');
