@@ -131,16 +131,18 @@
         <section id="aba-produtos" class="aba-content active">
             <div class="pl-topo">
                 <input type="search" id="admin-busca-input" placeholder="Buscar produto..." aria-label="Buscar produto ou categoria">
-                <button class="bt bt-sec pl-rotulos" data-action="rotulos" title="Imprimir rótulos adesivos com a imagem que você quiser"><i class="ic" data-i="etiqueta"></i> Rótulos</button>
-                <button class="bt bt-sec pl-varios" data-action="varios-produtos" title="Criar vários produtos com o mesmo preço, unidade e categoria">+ Vários de uma vez</button>
-                <button class="bt bt-pri" data-action="novo-produto">+ Novo produto</button>
+                <button class="bt bt-pri pl-novo" data-action="novo-produto" aria-label="Novo produto">+ Novo<span class="pl-novo-resto"> produto</span></button>
+                <!-- o que se usa de vez em quando fica no menu "⋯" (popover do navegador; sem suporte, os botões aparecem embaixo da lista) -->
+                <button class="bt bt-sec pn-mais-btn" popovertarget="pl-mais" aria-haspopup="true" title="Mais ações"><span aria-hidden="true">⋯</span><span class="pn-oculto">Mais ações dos produtos</span></button>
             </div>
             <div class="pl-cats" id="pl-cats" role="group" aria-label="Categoria" hidden></div>
             <div class="pl-filtros" id="pl-filtros" role="group" aria-label="Mostrar"></div>
             <div class="pl-cabeca" id="pl-cabeca"></div>
             <div id="lista-produtos" class="pl-lista"><div class="pn-esqueleto" role="status" aria-busy="true"><span class="pn-oculto">Carregando os produtos...</span><div class="pn-esq-linha"><i></i><span></span><em></em></div><div class="pn-esq-linha" style="--l1:48%;--l2:55%"><i></i><span></span><em></em></div><div class="pn-esq-linha" style="--l1:70%;--l2:35%"><i></i><span></span><em></em></div><div class="pn-esq-linha" style="--l1:54%;--l2:46%"><i></i><span></span><em></em></div></div></div>
             <div class="pl-lote" id="pl-lote" role="region" aria-label="Produtos marcados" hidden></div>
-            <div class="pl-extras">
+            <div class="pl-extras pn-menu" id="pl-mais" popover>
+                <button class="bt bt-sec pl-varios" data-action="varios-produtos" title="Criar vários produtos com o mesmo preço, unidade e categoria">+ Vários de uma vez</button>
+                <button class="bt bt-sec pl-rotulos" data-action="rotulos" title="Imprimir rótulos adesivos com a imagem que você quiser"><i class="ic" data-i="etiqueta"></i> Rótulos</button>
                 <button class="bt bt-sec" id="btn-varias-fotos">Enviar várias fotos</button>
                 <button class="bt bt-sec" id="btn-conferir-fotos">Conferir fotos fora do ar</button>
                 <button class="bt bt-sec" id="btn-precos-dia">Dias da semana (preço e o que sai)</button>
@@ -187,7 +189,8 @@
             <!-- Os pedidos vêm primeiro; os números ficam recolhidos no fim. -->
             <div class="ped-topo relatorios-header">
                 <p class="ped-conta"><b id="stat-pedidos">0</b> em andamento · <b id="stat-receita">R$ 0,00</b></p>
-                <div class="ped-acoes relatorios-actions">
+                <button class="bt bt-sec pn-mais-btn" popovertarget="ped-mais" aria-haspopup="true" title="Mais ações"><span aria-hidden="true">⋯</span><span class="pn-oculto">Mais ações dos pedidos</span></button>
+                <div class="ped-acoes relatorios-actions pn-menu" id="ped-mais" popover>
                     <button class="btn-export" id="btn-exportar"><i class="ic" data-i="baixar"></i> Exportar</button>
                     <button class="btn-limpar-hist" id="btn-limpar-hist">Arquivar todos</button>
                 </div>

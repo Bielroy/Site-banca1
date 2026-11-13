@@ -16,6 +16,7 @@ import { anotar } from './admin-trilha.js';                // trilha: quem mudou
 import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm, focarCampo, avisoComDesfazer } from './utils.js';
 import { estadoVazio, esqueleto } from './painel-ui.js';
 import { marcarSoMemoria, ESPERA_MS as ESPERA_LISTA_MS } from './banco-travado-lib.js';
+import './painel-menu.js';   // menu "⋯" (Produtos e Pedidos): o que se usa de vez em quando sai do caminho
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
 import { hojeDaLoja, iconeDaCategoria } from './vitrine-lib.js';
