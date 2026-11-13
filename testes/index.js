@@ -3165,19 +3165,20 @@ teste('impressão: o cupom cabe na largura do papel e traz os valores do pedido'
   const lote = I.paraTexto(I.etiquetaDeLote({ nome: 'Molho de tomate', lote: '261005-01', fabricadoEm: '2026-10-05', validade: '2026-11-04', preco: 18 }), 32);
   assert.ok(lote.includes('261005-01') && lote.includes('04/11/2026') && lote.includes('R$ 18,00'));
 });
-teste('impressão: itens em letra alta com o peso da balança; recibo do cliente com logo, peso, total, o que faltou e a assinatura', async () => {
+teste('impressão: itens em destaque (negrito, sem esticar) com o peso da balança; recibo do cliente com logo, peso, total, o que faltou e a assinatura', async () => {
   const I = await import(raiz('js/impressao-lib.js'));
   const p = { id: 'abcXYZ123456', data: '2026-10-05T15:30:00Z', pesadoEm: '2026-10-05T16:00:00Z', nome: 'Maria Silva', condominio: 'Jardins Munique', quadra: '3', lote: '12', pag: 'PIX', pagamento: { status: 'PAID' }, troco: 'R$ 100',
     entrega: { horario: '17h às 18h', taxa: 5 }, cupom: { codigo: 'DEZ', desconto: 2 }, total: 47.52,
     ajustes: [{ op: 'tirou', nome: 'Alface crespa' }, { op: 'voltou', de: 'enviado', para: 'preparando' }],
     itens: [{ nome: 'Tomate italiano', qtd: 4, unidade: 'kg', tipo: 'un', pesoFinal: 0.62, precoOriginal: 8.9, subtotal: 5.52 }, { nome: 'Ovos caipiras', qtd: 2, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 28 }, { nome: 'Queijo canastra', qtd: 0.5, unidade: 'kg', tipo: 'kg', precoOriginal: 22, subtotal: 11, adicionais: 'meia cura' }] };
-  // cupom de separar: o peso aparece, e os itens saem em letra alta sem perder a largura
+  // cupom de separar: o peso aparece, e os itens saem em destaque (negrito do tamanho normal, sem esticar)
   const cupom = I.cupomDoPedido(p, { loja: 'Queijos do Zesildo' });
   assert.ok(I.paraTexto(cupom, 32).includes('0,62 kg x R$ 8,90/kg'), I.paraTexto(cupom, 32));
   assert.ok(cupom.some((l) => l.t === 'par' && l.a && /Tomate/.test(l.e)));
   for (const largura of [58, 80]) I.compor(cupom, I.colunasDe(largura)).forEach((l) => { if (!l.corte) assert.ok(l.s.length <= (l.g ? Math.floor(I.colunasDe(largura) / 2) : I.colunasDe(largura)), l.s); });
   const bytes = [...I.paraEscPos(cupom, {})];
-  assert.ok(bytes.some((x, i) => x === 0x1d && bytes[i + 1] === 0x21 && bytes[i + 2] === 0x01), 'GS ! 1 = letra alta');
+  assert.ok(!bytes.some((x, i) => x === 0x1d && bytes[i + 1] === 0x21 && bytes[i + 2] === 0x01), 'nada de GS ! 1 (só a altura dobrada): a letra sai esticada');
+  assert.ok(bytes.some((x, i) => x === 0x1b && bytes[i + 1] === 0x45 && bytes[i + 2] === 1), 'os itens saem em negrito (ESC E 1)');
   assert.deepStrictEqual(bytes.slice(-6), [0x1b, 0x45, 0, 0x1d, 0x21, 0], 'no fim a impressora volta ao normal');
   // recibo do cliente
   const rec = I.reciboDoCliente(p, { loja: 'Queijos do Zesildo', logo: 'https://fotos.exemplo.com/logo.png' });
@@ -3208,6 +3209,10 @@ teste('impressão: recibo elegante — marca do UseBanca, foto de cada item na p
   assert.match(t, /PARCIAL\s+R\$ 60,40/, t);
   assert.ok(t.includes('Falta pesar 1 item(ns): 1x Alface crespa'), t);
   assert.match(t, /Tomate italiano\n\s*0,62 kg x R\$ 8,90\/kg\s+R\$ 5,52/, 'na térmica o item é o nome e, embaixo, peso e valor');
+  const esc = [...I.paraEscPos(rec, { largura: 58 })];
+  const tamanhos = esc.flatMap((x, k) => (x === 0x1d && esc[k + 1] === 0x21 ? [esc[k + 2]] : []));
+  assert.ok(!tamanhos.includes(0x01), 'na térmica nenhum texto sai só com o dobro da altura (fica esticado): nome e itens em negrito normal');
+  assert.ok(tamanhos.includes(0x11), 'o nome da banca e o total continuam grandes (dobro dos dois lados)');
   const html = I.paraHtml([rec], { largura: 58 });
   assert.ok(html.includes('<img src="https://fotos.usebanca.com/a/tomate.jpg"'), 'a foto do produto vai na página comum');
   assert.ok(!html.includes('javascript:alert'), 'foto que não é https é descartada');
