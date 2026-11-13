@@ -3897,7 +3897,7 @@ teste('cloudflare: _headers não soma cabeçalhos em nenhum endereço, /previa t
   assert.strictEqual(de('/previa')['X-Frame-Options'], 'SAMEORIGIN'); assert.ok(/frame-ancestors 'self'/.test(de('/previa')['Content-Security-Policy']));
   assert.strictEqual(de('/')['X-Frame-Options'], 'DENY'); assert.ok(/frame-ancestors 'none'/.test(de('/')['Content-Security-Policy']));
   assert.ok(/noindex/.test(de('/admin')['X-Robots-Tag']) && /noindex/.test(de('/plataforma')['X-Robots-Tag']) && !de('/')['X-Robots-Tag']);
-  assert.deepStrictEqual(C.gerarRedirects(vercel).split('\n').slice(1).filter(Boolean), ['/feira/:id /feira.html?feira=:id 302'], '/previa não é reescrita (os cabeçalhos do /index.html vinham junto)');
+  assert.deepStrictEqual(C.gerarRedirects(vercel).split('\n').slice(1).filter(Boolean), ['/feira/:id /?feira=:id&entrar=1 302'], '/previa não é reescrita (os cabeçalhos do /index.html vinham junto)');
   assert.deepStrictEqual(C.copiasDePagina(vercel), [{ de: 'index.html', para: 'previa.html' }, { de: 'plataforma.html', para: 'admin-plataforma.html' }], '/previa vira um arquivo próprio; a plataforma ganha uma cópia dentro do app do painel');
   assert.ok(/noindex/.test(de('/admin-plataforma')['X-Robots-Tag']), 'a plataforma dentro do painel também fica fora do Google');
   assert.ok(!C.ENDERECOS_DO_SITE.some((e) => C.casa(e, '/previa') || C.casa(e, '/previa.html')), 'nenhum trecho "de todas as páginas" vale para a prévia');
