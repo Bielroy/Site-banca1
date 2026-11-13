@@ -905,8 +905,10 @@ teste('painel num documento só: abre os produtos e os custos do documento (não
     fantasma: { nome: 'Só no banco', preco: 3, unidade: 'un', cat: 'outros', ativo: true, ultimaModificacao: agora - 86400e3 } };
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
   await pagina.waitForFunction(() => /Tomate italiano/.test(document.getElementById('lista-produtos')?.innerText || ''), null, { timeout: 8000 });
+  // a mudança recente chega por uma segunda escuta (os produtos mudados há pouco): pode vir um instante depois do documento
+  const veioBanana = await pagina.waitForFunction(() => /Banana nanica/.test(document.getElementById('lista-produtos')?.innerText || ''), null, { timeout: 5000 }).then(() => true, () => false);
   const txt = await pagina.locator('#lista-produtos').innerText();
-  assert.ok(/Banana nanica/.test(txt), 'mudança recente vale por cima do documento');
+  assert.ok(veioBanana && /Banana nanica/.test(txt), 'mudança recente vale por cima do documento');
   assert.ok(/Produto desligado/.test(txt), 'o painel mostra também os desligados');
   assert.ok(!/Só no banco/.test(txt), 'não leu a coleção inteira');
   const ouvidos = await pagina.evaluate(() => window.__ouvidos || []);
