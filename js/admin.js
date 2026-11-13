@@ -1,7 +1,9 @@
 import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
 import { normalizarInstagram, normalizarWhatsapp, telefoneBonito } from './contato-lib.js';
 import { miniatura } from './foto-lib.js';   // foto pelo redutor do site (o i.ibb.co direto não abre em algumas redes)
-import { getDoc, auth, db, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, limit, writeBatch, where, updateDoc } from './firebase.js';
+import { getDoc, auth, db, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, onSnapshot, query, orderBy, limit, where, updateDoc } from './firebase.js';
+// sem internet o painel não fica preso, e o que espera aparece no topo (js/fila-offline.js)
+import { setDoc, deleteDoc, writeBatch, reenviarPendentes } from './fila-offline.js';
 import { iniciarLoginRapido, depoisDeEntrar } from './admin-passkey.js';
 import { vigiarEsteAparelho, anotarComoEntrou, garantirAparelho, numeroDoAparelho } from './admin-aparelho.js';
 import { prepararPorteiro, provaPara } from './porteiro-cliente.js';
@@ -3116,3 +3118,6 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
 
 // PALETA DE COMANDOS (Ctrl+K, "/"): acha tela, produto, pedido ou ação com as listas que o painel já tem
 iniciarComandos({ produtos: () => produtosAtuais, pedidos: () => pedidosGerais });
+
+// o que ficou esperando internet da última vez (painel fechado sem sinal, no iPhone) vai agora
+onAuthStateChanged(auth, (u) => { if (u && !u.isAnonymous) reenviarPendentes().catch(() => {}); });
