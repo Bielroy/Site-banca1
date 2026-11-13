@@ -305,7 +305,7 @@ teste('iPhone: página da feira (toldo, "hoje tem feira", bancas, fotos que desl
     const cen = cenario(), d = new Date(Date.now() - 3 * 3600000).getUTCDay();
     cen.feiras = { ...cen.feiras, florenca: { ...cen.feiras.florenca, dias: [d], hud: { local: 'Praça central do Jardins Florença', horario: 'das 17h às 21h', texto: 'Toda semana as bancas se reúnem na praça.', fotos: ['https://img.exemplo.test/banana.jpg', 'https://img.exemplo.test/kit.jpg'] } } };
     const { pagina, erros, fechar } = await abrir('/', { aparelho, cen });      // abre a loja (o ajudante espera os produtos) e vai para o link da feira
-    await pagina.goto(servidor.base + '/feira/florenca');
+    await pagina.goto(servidor.base + '/feira.html?feira=florenca');
     await pagina.locator('.fe-banca').first().waitFor({ timeout: 10000 });
     await pagina.waitForTimeout(400);
     const folga = await pagina.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

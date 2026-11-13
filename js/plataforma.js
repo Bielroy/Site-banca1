@@ -30,7 +30,8 @@ const NOMES_MODELO = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', janti
 const FORMATOS = { ql: 'Quadra e lote', rua: 'Rua e número', livre: 'Endereço escrito' };
 const LETRAS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'], NOMES_DIA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const corOk = (c) => (/^#[0-9a-fA-F]{6}$/.test(String(c || '')) ? c : '#1a3a2a');
-const linkDaFeira = (fid) => `${location.origin}/feira/${fid}`;
+const linkDaFeira = (fid) => `${location.origin}/feira/${fid}`;                 // QR, fitinha e link copiado: abre direto a banca
+const linkDaPaginaDaFeira = (fid) => `${location.origin}/feira.html?feira=${encodeURIComponent(fid)}`;   // página com todas as bancas
 const reais = (v) => String(Number(v).toFixed(2)).replace('.', ',');
 
 async function api(corpo) {
@@ -339,7 +340,7 @@ function folhaFeira() {
         <div class="pf-hud-fotos">${r.hud.fotos.map((u, i) => `<span class="pf-hud-foto"><img src="${escapeHTML(u)}" alt="Foto ${i + 1} da feira"><button type="button" data-pf="hud-tirar-foto" data-i="${i}" aria-label="Tirar a foto ${i + 1}">&times;</button></span>`).join('')}
             ${r.hud.fotos.length < 6 ? `<label class="pf-bt${r.enviando === 'fotos' ? ' ocupado' : ''}"><input type="file" accept="image/*" multiple data-pf-hud-foto="fotos" hidden${r.enviando ? ' disabled' : ''}>${r.enviando === 'fotos' ? 'Enviando…' : 'Acrescentar fotos'}</label>` : ''}</div>
         <small class="pf-dica">Até 6 fotos bem apetitosas (comida, a praça, o movimento). Elas deslizam para o lado na página.</small>
-        ${nova ? '' : `<div class="pf-linha-bts"><a class="pf-bt" href="${escapeHTML(linkDaFeira(r.id))}" target="_blank" rel="noopener">Ver a página da feira</a></div>`}</section>
+        ${nova ? '' : `<div class="pf-linha-bts"><a class="pf-bt" href="${escapeHTML(linkDaPaginaDaFeira(r.id))}" target="_blank" rel="noopener">Ver a página da feira</a></div>`}</section>
     ${nova ? '' : '<section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt perigo" data-pf="desfazer-feira">Desfazer esta feira</button><small class="pf-dica">As bancas continuam funcionando; o link da feira deixa de abrir.</small></section>'}`;
     const pe = `<button type="button" class="pf-bt" data-pf="fechar-folha">Cancelar</button><button type="button" class="pf-bt pri" data-pf="salvar-feira">${nova ? 'Criar feira' : 'Salvar feira'}</button>`;
     return [nova ? 'Nova feira' : 'Editar feira', corpo, pe];

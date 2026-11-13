@@ -995,6 +995,25 @@ teste('letras: a banca liga as letras dela; loja com outras letras não baixa as
 });
 
 // ---------------------------------------------------------------- FEIRA
+teste('LINK DA PLACA (/feira/id, QR e fitinha): abre direto na banca, com a faixa das bancas no topo, e lembra a última — nunca para na página da feira', async () => {
+  const { pagina, erros, fechar } = await abrir('/feira/florenca');
+  await pagina.waitForSelector('#feira-lojas:not([hidden]) a', { timeout: 8000 });
+  assert.ok(!pagina.url().includes('entrar=') && !pagina.url().includes('feira.html'), 'o "entrar" sai do endereço e não passa pela página da feira');
+  const nomes = await pagina.locator('#feira-lojas a').allInnerTexts();
+  assert.deepStrictEqual(nomes.map((n) => n.trim()), ['Banca Adair e Pedrina', 'Pães da Lúcia']);
+  // selo discreto no cabeçalho: o cliente vê de qual feira entrou
+  await pagina.waitForSelector('#selo-feira', { timeout: 4000 });
+  assert.strictEqual((await pagina.locator('#selo-feira').innerText()).trim(), 'Feira Florença');
+  assert.ok(await pagina.evaluate(() => document.getElementById('selo-feira').nextElementSibling.id === 'header-nome'), 'fica logo acima do nome da banca');
+  await pagina.click('#feira-lojas a:not(.atual)');
+  await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 6000 });
+  // a loja grava "a última banca desta feira" depois de abrir: espera essa gravação antes de voltar ao link
+  await pagina.waitForFunction(() => /paes-da-lucia/.test(localStorage.getItem('banca_feira_ultima') || ''), null, { timeout: 6000 });
+  await pagina.goto(servidor.base + '/feira/florenca');
+  await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 6000 });
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- PÁGINA DE ENTRADA DA FEIRA (feira.html)
 // dia da semana de hoje em Brasília e uma feira que acontece hoje, com uma banca que só vem noutro dia
 const dowHoje = () => new Date(Date.now() - 3 * 3600000).getUTCDay();
@@ -1004,8 +1023,8 @@ const cenHud = (mudar = {}) => {
     lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', cor: '#1a3a2a' }, { id: 'paes-da-lucia', nome: 'Pães da Lúcia', cor: '#5a3a22', dias: [(d + 3) % 7] }], ...mudar } };
   return cen;
 };
-teste('link da feira abre a PÁGINA DA FEIRA: "hoje tem feira", como funciona, bancas de hoje com cor e as que não vêm apagadas; tocar na banca abre a loja com a faixa', async () => {
-  const { pagina, erros, fechar } = await abrir('/feira/florenca', cenHud(), { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } });
+teste('PÁGINA DA FEIRA (feira.html?feira=id): "hoje tem feira", como funciona, bancas de hoje com cor e as que não vêm apagadas; tocar na banca abre a loja com a faixa', async () => {
+  const { pagina, erros, fechar } = await abrir('/feira.html?feira=florenca', cenHud(), { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } });
   await pagina.locator('.fe-banca').first().waitFor({ timeout: 8000 });
   assert.ok(/\/feira\.html\?feira=florenca/.test(pagina.url()), 'o link da feira para na página da feira (não cai direto numa banca): ' + pagina.url());
   assert.strictEqual((await pagina.locator('#fe-nome').innerText()).trim(), 'Feira Florença');
@@ -1032,15 +1051,15 @@ teste('link da feira abre a PÁGINA DA FEIRA: "hoje tem feira", como funciona, b
   assert.strictEqual((await pagina.locator('#selo-feira').innerText()).trim(), 'Feira Florença');
   // quem já esteve numa banca volta ao link e vê as bancas ANTES do "como funciona", com "Você esteve aqui"
   await pagina.waitForFunction(() => /banca/.test(localStorage.getItem('banca_feira_ultima') || ''), null, { timeout: 6000 });
-  await pagina.goto(servidor.base + '/feira/florenca');
+  await pagina.goto(servidor.base + '/feira.html?feira=florenca');
   await pagina.locator('.fe-banca').first().waitFor({ timeout: 8000 });
   assert.match(await pagina.locator('#fe-lista .fe-chip').innerText(), /Você esteve aqui/);
   assert.ok(await pagina.evaluate(() => !!(document.getElementById('fe-bancas').compareDocumentPosition(document.getElementById('fe-como')) & Node.DOCUMENT_POSITION_FOLLOWING)), 'as bancas vêm antes do "como funciona"');
   semErros(erros); await fechar();
 });
-teste('página da feira em dia SEM feira: diz quando é a próxima e as bancas aparecem todas com cor, com o dia do pedido; link antigo (?entrar=1) cai na página da feira', async () => {
+teste('página da feira em dia SEM feira: diz quando é a próxima e as bancas aparecem todas com cor, com o dia do pedido', async () => {
   const d = dowHoje();
-  const { pagina, erros, fechar } = await abrir('/feira/florenca', cenHud({ dias: [(d + 2) % 7], lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', cor: '#1a3a2a' }, { id: 'paes-da-lucia', nome: 'Pães da Lúcia', cor: '#5a3a22' }] }));
+  const { pagina, erros, fechar } = await abrir('/feira.html?feira=florenca', cenHud({ dias: [(d + 2) % 7], lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', cor: '#1a3a2a' }, { id: 'paes-da-lucia', nome: 'Pães da Lúcia', cor: '#5a3a22' }] }));
   await pagina.locator('.fe-banca').first().waitFor({ timeout: 8000 });
   assert.match(await pagina.locator('#fe-status').innerText(), /^Próxima feira: /);
   assert.ok(!(await pagina.locator('#fe-status').evaluate((el) => el.classList.contains('hoje'))));
@@ -1051,14 +1070,11 @@ teste('página da feira em dia SEM feira: diz quando é a próxima e as bancas a
   assert.match(await pagina.locator('#fe-nota').innerText(), /Você já pode deixar o seu pedido feito para /);
   // "hoje tem feira" marcado à mão (dia extra): a página passa a dizer que tem feira hoje
   const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
-  const extra = await abrir('/feira/florenca', cenHud({ dias: [(d + 2) % 7], datasExtras: [hoje] }));
+  const extra = await abrir('/feira.html?feira=florenca', cenHud({ dias: [(d + 2) % 7], datasExtras: [hoje] }));
   await extra.pagina.locator('.fe-banca').first().waitFor({ timeout: 8000 });
   assert.match(await extra.pagina.locator('#fe-status').innerText(), /Hoje tem feira/);
   assert.strictEqual(await extra.pagina.locator('#fe-lista .fe-banca').count(), 2, 'em dia extra todas as bancas vêm');
   semErros(extra.erros); await extra.fechar();
-  // link antigo
-  await pagina.goto(servidor.base + '/?feira=florenca&entrar=1');
-  await pagina.waitForURL(/\/feira\.html\?feira=florenca/, { timeout: 6000 });
   semErros(erros); await fechar();
 });
 teste('banca que não veio à feira de hoje abre só para olhar: aviso com o dia em que volta e o pedido não fecha; a banca que veio fecha normal', async () => {

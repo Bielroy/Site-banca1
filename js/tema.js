@@ -417,11 +417,15 @@ export async function iniciarTema() {
     // veio pelo link da feira (?feira=id): este aparelho passa a ser desta feira
     const doLink = feiraDoEndereco({ search: location.search });
     if (doLink) gravarFeiraCliente(doLink);
-    // LINK ANTIGO DA FEIRA (/?feira=id&entrar=1, de antes de a feira ter página de entrada): manda para a página
-    // da feira (feira.html), onde o cliente vê se tem feira hoje e escolhe a banca. O link de UMA banca
-    // (/?loja=x&feira=id, sem "entrar") continua abrindo a banca direto, sem passar por lá.
+    // LINK DA FEIRA DAS PLACAS (/feira/id manda para cá com &entrar=1; está impresso no QR e na fitinha NFC):
+    // abre DIRETO a banca — a última que o cliente usou nesta feira ou, na primeira vez, esta (conferido mais abaixo).
+    // A página da feira com todas as bancas (feira.html?feira=id) é outro endereço, que só a Plataforma divulga.
     const entrando = !!doLink && new URLSearchParams(location.search).has('entrar');
-    if (entrando) { location.replace(`/feira.html?feira=${encodeURIComponent(doLink)}`); return null; }
+    if (entrando) {
+        try { const u = new URL(location.href); u.searchParams.delete('entrar'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); } catch (_) { /* segue */ }
+        const ultima = lerUltimaBanca(doLink);
+        if (ultima && ultima !== TENANT) { location.replace(comFeira(urlDaLoja(ultima), doLink)); return null; }
+    }
     const K = chave('banca_ficha');
     let guardada = null;
     try { guardada = JSON.parse(localStorage.getItem(K) || 'null'); } catch (_) { /* sem cache */ }
