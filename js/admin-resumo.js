@@ -14,10 +14,13 @@ import { getDocs, query, where, orderBy, limit } from './firebase.js';
 import { tcol } from './tenant.js';
 import { escapeHTML, fmt } from './utils.js';
 import { estadoVazio } from './painel-ui.js';
-import { resumoDoDia, produtosAcabando, pedidosEsperando, saudacao } from './resumo-lib.js';
+import { resumoDoDia, produtosAcabando, pedidosEsperando, saudacao, primeirosPassos } from './resumo-lib.js';
 import { hojeBR, DIAS_CURTOS, diaDaSemana } from './fechamento-lib.js';
 
-const S = { pedidos: null, erro: false, produtos: [], fila: [], abas: [], nome: '', carregando: false, vez: 0 };
+const S = { pedidos: null, erro: false, produtos: [], fila: [], abas: [], nome: '', carregando: false, vez: 0, config: null, link: '' };
+const CHAVE_PASSOS = 'painel_passos_v1';           // { escondido: true, compartilhou: true } neste aparelho
+const lerPassos = () => { try { return JSON.parse(localStorage.getItem(CHAVE_PASSOS) || '{}') || {}; } catch (_) { return {}; } };
+const guardarPassos = (m) => { try { localStorage.setItem(CHAVE_PASSOS, JSON.stringify({ ...lerPassos(), ...m })); } catch (_) { /* sem guardar: só nesta vez */ } };
 const el = () => document.getElementById('resumo-conteudo');
 const aberta = () => document.getElementById('aba-resumo')?.classList.contains('active');
 const LIMITE = 1500;
@@ -112,6 +115,19 @@ function blocoEsperando() {
     return titulo + `<div class="rs-peds">${cartoes}</div>` + mais;
 }
 
+/** Etapas da banca nova: só para quem configura a loja (aba Configurações), até tudo ficar pronto ou a pessoa esconder. */
+function blocoPassos() {
+    if (!S.config || !S.abas.includes('config')) return '';
+    const m = lerPassos(); if (m.escondido) return '';
+    const passos = primeirosPassos({ config: S.config, produtos: S.produtos, podePix: !!document.getElementById('config-pix-chave'), compartilhou: m.compartilhou === true });
+    const feitos = passos.filter((p) => p.feito).length;
+    if (feitos === passos.length) return '';
+    return `<section class="rs-passos" aria-labelledby="rs-passos-tit"><div class="rs-passos-topo"><h3 class="rs-tit" id="rs-passos-tit">Deixe a banca pronta para vender</h3><button type="button" class="rs-passos-esconder" data-rs-passos="esconder">Esconder</button></div>`
+        + `<div class="rs-passos-barra" role="progressbar" aria-valuemin="0" aria-valuemax="${passos.length}" aria-valuenow="${feitos}" aria-label="${feitos} de ${passos.length} passos feitos"><i style="width:${Math.round((feitos / passos.length) * 100)}%"></i></div>`
+        + `<ol class="rs-passos-lista">${passos.map((p, i) => `<li class="${p.feito ? 'feito' : ''}"><span class="rs-passo-num" aria-hidden="true">${p.feito ? '✓' : i + 1}</span><span class="rs-passo-txt"><b>${escapeHTML(p.titulo)}</b><small>${escapeHTML(p.feito ? 'Pronto.' : p.texto)}</small></span>`
+            + (p.feito ? '<span class="pn-oculto">feito</span>' : p.id === 'link' ? `<button type="button" class="bt bt-sec" data-rs-passos="copiar">Copiar o link</button>` : `<button type="button" class="bt bt-sec" data-ir-aba="${escapeHTML(p.aba)}">Fazer agora</button>`) + '</li>').join('')}</ol></section>`;
+}
+
 function pintar() {
     const alvo = el(); if (!alvo) return;
     const topo = `<header class="rs-topo"><div><span class="rs-ola">${saudacao()}${S.nome ? `, ${escapeHTML(S.nome)}` : ''}</span><h2 class="rs-titulo">Hoje na banca</h2></div>`
@@ -129,26 +145,34 @@ function pintar() {
             + `</div>${grafico(r.serie)}`
             + (S.pedidos.length >= LIMITE ? `<p class="rs-nota">Muitos pedidos nesta semana: a conta usa os ${LIMITE} mais recentes. O número exato está no Balanço.</p>` : '');
     }
-    alvo.innerHTML = topo + numeros + blocoAcabando(produtosAcabando(S.produtos)) + atalhos() + blocoEsperando();
+    alvo.innerHTML = topo + blocoPassos() + numeros + blocoAcabando(produtosAcabando(S.produtos)) + atalhos() + blocoEsperando();
 }
 
 /** Abre a aba. `abas` = as abas que este papel pode abrir (os atalhos respeitam). */
-export function abrirResumo({ produtos = [], fila = [], abas = [], nome = '' } = {}) {
-    Object.assign(S, { produtos, fila, abas, nome: String(nome || '').trim().split(/\s+/)[0].slice(0, 24) });
+export function abrirResumo({ produtos = [], fila = [], abas = [], nome = '', config = null, link = '' } = {}) {
+    Object.assign(S, { produtos, fila, abas, config, link, nome: String(nome || '').trim().split(/\s+/)[0].slice(0, 24) });
     pintar();
     buscarPedidos();
 }
 
 /** A fila mudou (pedido chegou, foi aceito...): redesenha sem buscar de novo. */
-export function atualizarResumo({ produtos, fila } = {}) {
+export function atualizarResumo({ produtos, fila, config } = {}) {
     if (produtos) S.produtos = produtos;
     if (fila) S.fila = fila;
+    if (config) S.config = config;
     if (aberta()) pintar();
 }
 
 if (typeof document !== 'undefined') {
     document.addEventListener('click', (e) => {
         if (e.target.closest('#rs-atualizar') && !S.carregando) { buscarPedidos(); pintar(); }
+        const ps = e.target.closest('[data-rs-passos]');
+        if (ps && ps.dataset.rsPassos === 'esconder') { guardarPassos({ escondido: true }); pintar(); }
+        if (ps && ps.dataset.rsPassos === 'copiar') {
+            const link = S.link || location.origin;
+            const ok = () => { guardarPassos({ compartilhou: true }); pintar(); import('./utils.js').then((u) => u.showToast('Link copiado. Cole no grupo do condomínio.')); };
+            (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(ok, () => { window.prompt('Copie o link da loja:', link); ok(); });
+        }
         // "Novo produto": abre o cadastro (data-action, no painel) e deixa a aba Produtos por trás
         const ir = e.target.closest('[data-rs-ir]');
         if (ir) document.querySelector(`.tab[data-aba="${ir.dataset.rsIr}"]`)?.click();

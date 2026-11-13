@@ -76,3 +76,23 @@ export function saudacao(agora = Date.now()) {
     const h = new Date(agora - 3 * 3600000).getUTCHours();
     return h >= 5 && h < 12 ? 'Bom dia' : h >= 12 && h < 18 ? 'Boa tarde' : 'Boa noite';
 }
+
+/**
+ * PRIMEIROS PASSOS de uma banca nova (etapas, como o "stepper" do Flowbite): o que falta para a loja vender.
+ * Cada passo: { id, titulo, texto, feito, aba }. Some do Resumo quando todos estão feitos.
+ *   config: loja/config · produtos: lista do painel · podePix: o papel vê a chave PIX (o gerente não vê) · compartilhou: tocou em "Copiar o link"
+ */
+export function primeirosPassos({ config = {}, produtos = [], podePix = true, compartilhou = false } = {}) {
+    const c = config || {}, ent = c.entrega || {};
+    const temProduto = (produtos || []).some((p) => p && !p.soInsumo && p.ativo !== false);
+    const temWpp = String(c.wpp || '').replace(/\D/g, '').length >= 10;
+    const temPix = !!(c.pix && String(c.pix.chave || '').trim());
+    const temEntrega = Number(ent.taxa) > 0 || (Array.isArray(ent.horarios) && ent.horarios.length > 0) || (ent.retirada && ent.retirada.ativa === true) || (Array.isArray(ent.agenda) && ent.agenda.length > 0);
+    return [
+        { id: 'produto', titulo: 'Cadastre o primeiro produto', texto: 'Nome, preço e uma foto. O resto dá para completar depois.', feito: temProduto, aba: 'produtos' },
+        { id: 'whatsapp', titulo: 'WhatsApp que recebe os pedidos', texto: 'É para onde vai o aviso de cada pedido novo.', feito: temWpp, aba: 'config' },
+        podePix && { id: 'pix', titulo: 'Chave PIX', texto: 'Para o cliente pagar na hora, sem você mandar a chave.', feito: temPix, aba: 'config' },
+        { id: 'entrega', titulo: 'Entrega ou retirada', texto: 'Taxa, horários ou retirada na banca.', feito: temEntrega, aba: 'config' },
+        { id: 'link', titulo: 'Mande o link da loja', texto: 'No grupo do condomínio e para os clientes de sempre.', feito: !!compartilhou, aba: '' },
+    ].filter(Boolean);
+}

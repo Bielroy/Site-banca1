@@ -6,7 +6,7 @@ import {
     persistentMultipleTabManager,
     memoryLocalCache,
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
-    query, orderBy, limit, writeBatch, where, updateDoc, deleteField,
+    query, orderBy, limit, writeBatch, where, updateDoc, deleteField, serverTimestamp,
     terminate, clearIndexedDbPersistence
 } from "firebase/firestore";
 
@@ -40,7 +40,7 @@ const auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, brow
 export { 
     app, db, auth,
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
-    query, orderBy, limit, writeBatch, where, updateDoc, deleteField,
+    query, orderBy, limit, writeBatch, where, updateDoc, deleteField, serverTimestamp,
     sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously, signInWithCustomToken,
     terminate, clearIndexedDbPersistence
 };

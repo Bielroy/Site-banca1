@@ -5593,6 +5593,33 @@ teste('dias da semana: a conta do navegador e a do servidor são iguais (produto
   assert.strictEqual(S.amanhaPermitido({ diasAbertos: [3] }, terca), true); assert.strictEqual(S.amanhaPermitido({ pedidoAmanha: false }, terca), false);
 });
 
+teste('segurança: uma só função de escape no site (js/escape-lib.js) e os bloqueios da CSP chegam à aba Erros', async () => {
+  const fs = require('fs');
+  const { escapeHTML } = await import(raiz('js/escape-lib.js'));
+  assert.strictEqual(escapeHTML(`<img src=x onerror="a('b')">&`), '&lt;img src=x onerror=&quot;a(&#39;b&#39;)&quot;&gt;&amp;');
+  assert.strictEqual(escapeHTML(null), ''); assert.strictEqual(escapeHTML(0), '0');
+  const U = fs.readFileSync(raiz('js/utils.js'), 'utf8'); assert.ok(/import \{ escapeHTML \} from '\.\/escape-lib\.js'/.test(U) && /export \{ escapeHTML \}/.test(U), 'utils reexporta a única');
+  // ninguém escreve outra função de escape (impressao-lib: o servidor copia só aquele arquivo; html-lib: não escapa entidade já escapada)
+  const PODE = new Set(['escape-lib.js', 'impressao-lib.js', 'html-lib.js']);
+  const copias = fs.readdirSync(raiz('js')).filter((f) => f.endsWith('.js') && !PODE.has(f) && /replace\(\/\[&<>/.test(fs.readFileSync(raiz(`js/${f}`), 'utf8')));
+  assert.deepStrictEqual(copias, [], 'escape escrito à mão fora de js/escape-lib.js');
+  const E = require(raiz('lib/erros.js'));
+  const r = E.limparRelato({ tipo: 'csp', msg: 'Bloqueado pela CSP (script-src): https://mal.exemplo/x.js?t=1', arquivo: 'https://mal.exemplo/x.js?t=1' }, 'Mozilla/5.0 (Linux; Android 14) Chrome/129');
+  assert.strictEqual(r.tipo, 'csp'); assert.strictEqual(r.onde, 'mal.exemplo');
+  assert.ok(fs.readFileSync(raiz('js/erros-site.js'), 'utf8').includes("addEventListener('securitypolicyviolation'"));
+});
+
+teste('primeiros passos da banca nova: produto, WhatsApp, PIX (só para quem vê a chave), entrega e o link', async () => {
+  const R = await import(raiz('js/resumo-lib.js'));
+  let ps = R.primeirosPassos({ config: {}, produtos: [] });
+  assert.deepStrictEqual(ps.map((p) => p.id), ['produto', 'whatsapp', 'pix', 'entrega', 'link']); assert.ok(ps.every((p) => !p.feito));
+  ps = R.primeirosPassos({ config: { wpp: '(62) 99999-8888', pix: { chave: 'a@b.com' }, entrega: { retirada: { ativa: true } } }, produtos: [{ nome: 'Ovo', ativo: true }], compartilhou: true });
+  assert.ok(ps.every((p) => p.feito), JSON.stringify(ps));
+  assert.ok(!R.primeirosPassos({ config: {}, produtos: [{ nome: 'Farinha', soInsumo: true }, { nome: 'X', ativo: false }] }).find((p) => p.id === 'produto').feito, 'insumo e produto desligado não contam');
+  assert.ok(!R.primeirosPassos({ config: { wpp: '123' } }).find((p) => p.id === 'whatsapp').feito, 'número curto não conta');
+  assert.ok(!R.primeirosPassos({ podePix: false }).some((p) => p.id === 'pix'), 'gerente não vê o passo do PIX');
+});
+
 teste('paleta de comandos (Ctrl+K): acha tela, produto (com erro de digitação) e pedido pelo cliente ou condomínio, sem repetir cliente', async () => {
   const C = await import(raiz('js/admin-comandos.js'));
   const telas = [{ rotulo: 'Pedidos', aba: 'relatorios' }, { rotulo: 'Estoque', aba: 'estoque' }];

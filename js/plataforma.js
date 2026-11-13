@@ -54,7 +54,7 @@ const aviso = (titulo, texto, link) => { el().innerHTML = `<div class="pf-vazio"
 /** A semana da feira: as 7 letras, com os dias da feira marcados. Editável no editor de feira. */
 function semanaHtml(dias, editavel) {
     const marcados = new Set(dias || []), todos = !marcados.size;
-    return `<div class="pf-semana${editavel ? ' editavel' : ''}${todos && !editavel ? ' todos' : ''}" ${editavel ? 'role="group" aria-label="Dias da feira"' : `aria-label="${escapeHTML(diasEmTexto(dias))}"`}>${LETRAS.map((l, i) => editavel
+    return `<div class="pf-semana${editavel ? ' editavel' : ''}${todos && !editavel ? ' todos' : ''}" ${editavel ? 'role="group" aria-label="Dias da feira"' : `role="img" aria-label="${escapeHTML(diasEmTexto(dias))}"`}>${LETRAS.map((l, i) => editavel
         ? `<button type="button" class="pf-dia${marcados.has(i) ? ' on' : ''}" data-pf-dia="${i}" aria-pressed="${marcados.has(i)}" aria-label="${NOMES_DIA[i]}">${l}</button>`
         : `<span class="pf-dia${marcados.has(i) || todos ? ' on' : ''}" aria-hidden="true">${l}</span>`).join('')}</div>`;
 }
@@ -190,7 +190,7 @@ async function carregarErros() {
 }
 const quando = (iso) => { try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); } catch (_) { return ''; } };
 // tipos: o que quebrou no código, defeito de desenho da tela (js/vigia-tela.js) e aviso do cliente ("Algo estranho na tela?")
-const TIPO_ERRO = { visual: ['Tela', 'tela'], relato: ['Cliente avisou', 'relato'], erro: ['Código', 'codigo'], promessa: ['Código', 'codigo'], recurso: ['Arquivo', 'codigo'] };
+const TIPO_ERRO = { visual: ['Tela', 'tela'], relato: ['Cliente avisou', 'relato'], erro: ['Código', 'codigo'], promessa: ['Código', 'codigo'], recurso: ['Arquivo', 'codigo'], csp: ['Segurança', 'codigo'] };
 const FILTROS_ERROS = [['abertos', 'Para olhar'], ['tela', 'Tela'], ['codigo', 'Código'], ['relato', 'Clientes'], ['corrigidos', 'Corrigidos']];
 const aberto = (e) => !e.corrigidoEm || e.voltou;
 const grupoDoErro = (e) => (TIPO_ERRO[e.tipo] || TIPO_ERRO.erro)[1];

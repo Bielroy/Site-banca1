@@ -16,7 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, writeBatch, setLogLevel } = require('firebase/firestore');
+const { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, writeBatch, setLogLevel, serverTimestamp } = require('firebase/firestore');
 const { ref, uploadBytes, getBytes, listAll, deleteObject } = require('firebase/storage');
 
 const raiz = (p) => path.join(__dirname, '..', '..', p);
@@ -497,6 +497,24 @@ teste('fotos: qualquer um vê pelo link; só quem administra a loja envia, e só
   // loja original: a conta antiga e a plataforma
   await pode(uploadBytes(arq(donaAntiga(), 'fotos_produtos/tomate-1.webp'), png(), { contentType: 'image/webp' })); await pode(uploadBytes(arq(plataforma(), 'tenants/loja-b/fotos_produtos/x-1.jpg'), png(), { contentType: 'image/jpeg' }));
   await pode(uploadBytes(arq(de('banca', 'administrador'), 'fotos_produtos/ovo-1.png'), png(), { contentType: 'image/png' })); await nega(uploadBytes(arq(de('banca', 'estoque'), 'fotos_produtos/ovo-2.png'), png(), { contentType: 'image/png' }));
+});
+
+teste('trilha do painel: a equipe só ACRESCENTA linha em nome próprio, com a hora do servidor; ninguém lê, muda nem apaga', async () => {
+  for (const loja of ['loja-a', 'banca']) for (const papel of ['proprietario', 'funcionario']) {
+    const eu = de(loja, papel), uid = `${loja}-${papel}`, quem = `${uid}@teste.com`;
+    const linha = (extra = {}) => ({ em: '2026-11-13T21:00:00.000Z', acao: 'painel-preco', quem, uid, detalhe: 'Tomate: R$ 8,00 → R$ 9,00', noServidor: serverTimestamp(), doPainel: true, ...extra });
+    const id = `${Date.now()}-${papel === 'funcionario' ? 'a1b2c3d4' : 'e5f6a7b8'}`;
+    await pode(setDoc(d(eu, cam(loja, `auditoria/${id}`)), linha()));
+    await nega(setDoc(d(eu, cam(loja, `auditoria/${id}`)), linha({ detalhe: 'mudei' })));                      // linha que já existe: não muda
+    await nega(deleteDoc(d(eu, cam(loja, `auditoria/${id}`)))); await nega(getDoc(d(eu, cam(loja, `auditoria/${id}`))));
+    await nega(setDoc(d(eu, cam(loja, 'auditoria/1700000000000-00000001')), linha({ quem: 'outra@pessoa.com' })));   // em nome de outro
+    await nega(setDoc(d(eu, cam(loja, 'auditoria/1700000000000-00000002')), linha({ uid: 'outro-uid' })));
+    await nega(setDoc(d(eu, cam(loja, 'auditoria/1700000000000-00000003')), linha({ noServidor: '2020-01-01' })));  // hora inventada
+    await nega(setDoc(d(eu, cam(loja, 'auditoria/1700000000000-00000004')), linha({ acao: 'login-passkey' })));   // finge ser do servidor
+    await nega(setDoc(d(eu, cam(loja, 'auditoria/1700000000000-00000005')), linha({ extra: 1 })));
+    await nega(setDoc(d(eu, cam(loja, 'auditoria/qualquer')), linha()));                                       // id fora do formato
+    await nega(setDoc(d(de('outra', 'proprietario'), cam(loja, 'auditoria/1700000000000-00000006')), linha({ quem: 'outra-proprietario@teste.com', uid: 'outra-proprietario' })));   // de outra loja
+  }
 });
 
 (async () => {
