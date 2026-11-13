@@ -1,7 +1,7 @@
-import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
+import { avisarErro } from './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
 import { normalizarInstagram, normalizarWhatsapp, telefoneBonito } from './contato-lib.js';
 import { miniatura } from './foto-lib.js';   // foto pelo redutor do site (o i.ibb.co direto não abre em algumas redes)
-import { getDoc, auth, db, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, onSnapshot, query, orderBy, limit, where, updateDoc } from './firebase.js';
+import { getDoc, auth, db, semCopia, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, onSnapshot, query, orderBy, limit, where, updateDoc } from './firebase.js';
 // sem internet o painel não fica preso, e o que espera aparece no topo (js/fila-offline.js)
 import { setDoc, deleteDoc, writeBatch, reenviarPendentes } from './fila-offline.js';
 import { iniciarLoginRapido, depoisDeEntrar } from './admin-passkey.js';
@@ -15,6 +15,7 @@ import { iniciarComandos } from './admin-comandos.js';
 import { anotar } from './admin-trilha.js';                // trilha: quem mudou preço, produto e pedido   // Ctrl+K, "/" e atalhos de uma tecla
 import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm, focarCampo, avisoComDesfazer } from './utils.js';
 import { estadoVazio, esqueleto } from './painel-ui.js';
+import { marcarSoMemoria, ESPERA_MS as ESPERA_LISTA_MS } from './banco-travado-lib.js';
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
 import { hojeDaLoja, iconeDaCategoria } from './vitrine-lib.js';
@@ -155,7 +156,7 @@ onAuthStateChanged(auth, async (user) => {
     iniciarLogoutPorInatividade(12 * 60);
     let suspensa = false;
     let fichaLida = null;
-    try { const f = await getDoc(fichaRef()); fichaLida = f.exists() ? f.data() : null; suspensa = f.exists() && f.data().ativo === false; modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; formatoDaLoja = formatoDaFicha(f.exists() ? f.data() : null); nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; lerDiasSemFeira(f.exists() ? f.data() : null); } catch (_) { modulosDaLoja = null; }
+    try { const f = await Promise.race([getDoc(fichaRef()), new Promise((_, nao) => setTimeout(() => nao(new Error('ficha sem resposta')), 8000))]); fichaLida = f.exists() ? f.data() : null; suspensa = f.exists() && f.data().ativo === false; modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; formatoDaLoja = formatoDaFicha(f.exists() ? f.data() : null); nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; lerDiasSemFeira(f.exists() ? f.data() : null); } catch (_) { modulosDaLoja = null; }
     pixAsaasDaFicha = !!(fichaLida && fichaLida.pixAsaas === true);
     try { aplicarCampos(fichaLida); } catch (e) { console.warn('[campos]', e); }   // campos do cadastro que a plataforma ligou nesta loja
     // LOJA BLOQUEADA pela plataforma (falta de pagamento): o painel não abre. Só a plataforma continua entrando.
@@ -555,8 +556,25 @@ const iniciarRealTimeSync = () => {
         aoErro: (e) => console.warn('[painel] custos:', e?.code || e),
     }) : null;
     if (escutaCustos) unsubscribes.push(escutaCustos);
+    // VIGIA: se a lista não chegar em 15 s, a cópia do banco neste aparelho travou (js/banco-travado-lib.js).
+    // Sem isto a tela ficava para sempre nos risquinhos de carregando, sem erro nem botão.
+    let listaChegou = false;
+    const vigiaLista = setTimeout(() => {
+        if (listaChegou) return;
+        const alvo = document.getElementById('lista-produtos');
+        if (!alvo || !alvo.querySelector('.pn-esqueleto')) return;
+        const semNet = navigator.onLine === false;
+        if (!semNet && !semCopia) marcarSoMemoria(localStorage);
+        avisarErro({ tipo: 'erro', msg: `Painel: a lista de produtos não chegou em ${ESPERA_LISTA_MS / 1000} s (${semNet ? 'sem internet' : semCopia ? 'já sem cópia' : 'cópia do aparelho travada'})` });
+        alvo.innerHTML = `<div class="pn-travou" role="alert"><p><strong>${semNet ? 'Sem internet.' : 'A lista de produtos não carregou.'}</strong></p>
+            <p>${semNet ? 'Confira o Wi-Fi ou os dados móveis e toque abaixo.' : 'Toque abaixo para carregar de novo. Este celular vai ler direto da internet, sem a cópia guardada que travou.'}</p>
+            <button type="button" class="bt bt-pri" id="btn-lista-recarregar">Carregar de novo</button></div>`;
+        document.getElementById('btn-lista-recarregar')?.addEventListener('click', () => location.reload());
+    }, ESPERA_LISTA_MS);
+    unsubscribes.push(() => clearTimeout(vigiaLista));
     const escutaProdutos = ouvirProdutosPainel({ onSnapshot, query, where, docPainel: tdoc('loja', 'painel'), colProdutos: tcol('produtos') }, {
         aoMudar: (lista) => {
+            listaChegou = true; clearTimeout(vigiaLista);
             produtosBase = lista.sort((a, b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
             juntarProdutos();
         },

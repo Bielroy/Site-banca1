@@ -478,6 +478,20 @@ teste('rede de segurança: mesmo que o card escureça por fora do tema, a tela m
   semErros(erros); await fechar();
 });
 
+teste('painel: banco que não responde (cópia travada no Android) não deixa a lista presa no carregando: avisa, marca o aparelho e oferece carregar de novo', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  cen.atraso = { produtos: 10 * 60 * 1000 };          // nenhuma leitura de produto responde, nem com erro
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 390, height: 800 }, isMobile: true } });
+  await pagina.waitForSelector('#dashboard', { state: 'visible', timeout: 8000 });
+  assert.ok(await pagina.locator('#lista-produtos .pn-esqueleto').count(), 'começa nos risquinhos');
+  await pagina.waitForSelector('#btn-lista-recarregar', { timeout: 20000 });
+  assert.strictEqual(await pagina.locator('#lista-produtos .pn-esqueleto').count(), 0, 'os risquinhos saem');
+  assert.match(await pagina.locator('#lista-produtos').innerText(), /não carregou/);
+  const marca = await pagina.evaluate(() => Number(localStorage.getItem('usebanca-banco-sem-copia')));
+  assert.ok(marca > Date.now(), 'o aparelho fica marcado para abrir sem a cópia');
+  semErros(erros); await fechar();
+});
+
 teste('painel: aba Clientes mostra a lista guardada na hora e só depois traz o recálculo (não espera a conferência de pedido novo)', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });

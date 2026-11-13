@@ -74,7 +74,7 @@ export const query = (r, ...f) => { const filtros = f.filter((x) => x && x.__w);
 export const writeBatch = () => ({ set: (ref, dados) => { (window.__gravados = window.__gravados || []).push({ path: ref.path, dados, lote: true }); }, update: nada, delete: nada, commit: async () => {} });
 export const signInWithCustomToken = async (_a, t) => { window.__tokenCustom = t; return { user: usuario }; };
 export const sendSignInLinkToEmail = async () => {}, isSignInWithEmailLink = () => false, signInWithEmailLink = async () => {}, signOut = async () => {}, deleteField = () => null, serverTimestamp = () => new Date().toISOString(), increment = (n) => n;
-export const ref = nada, uploadBytes = nada, getDownloadURL = async () => '', terminate = async () => {}, clearIndexedDbPersistence = async () => {};
+export const ref = nada, uploadBytes = nada, getDownloadURL = async () => '', terminate = async () => {}, clearIndexedDbPersistence = async () => {}, semCopia = !!C.semCopia;
 `;
 
 /**

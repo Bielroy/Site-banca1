@@ -90,3 +90,6 @@
 .rede-aviso { position: sticky; top: 0; z-index: var(--z-sticky, 50); margin: 0; padding: 10px 16px; text-align: center; font-weight: 700; font-size: .92rem; background: #fdf3dc; color: #5a3b00; border-bottom: 1px solid #ecd9a8; }
 .rede-aviso.offline { background: #fde8e4; color: #7a1f12; border-color: #f2c4ba; }
 .rede-aviso[hidden] { display: none; }
+/* lista que não carregou (cópia do banco travada no aparelho): js/banco-travado-lib.js */
+.pn-travou { display: grid; justify-items: center; text-align: center; gap: var(--pn-e2); padding: var(--pn-e6) var(--pn-e4); color: var(--text-dark, #1f1f1b); }
+.pn-travou p { margin: 0; max-width: 34ch; }
