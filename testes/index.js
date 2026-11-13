@@ -3203,6 +3203,26 @@ teste('impressão: recibo elegante — marca do UseBanca, foto de cada item na p
   const Ponte = require(raiz('lib/ponte.js'));
   if (typeof Ponte.limparFolhas === 'function') { const f = Ponte.limparFolhas([rec]); assert.ok(f, 'aceita item e marca'); assert.ok(f[0].some((l) => l.t === 'item') && f[0].some((l) => l.t === 'marca') && !JSON.stringify(f).includes('fotos.usebanca')); }
 });
+teste('testes inteligentes: cada mudança liga só as baterias que pode afetar, e na dúvida roda tudo', () => {
+  const S = require(raiz('scripts/testes-inteligentes.js'));
+  const liga = (...arqs) => { const r = S.escolher(arqs); return S.BATERIAS.filter((b) => r[b]).join(','); };
+  assert.strictEqual(liga('README.md', 'PENDENCIAS.md'), '', 'só texto: nada');
+  assert.strictEqual(liga('js/loja.js'), 'servidor,build,tela,matriz,iphone', 'loja: tudo de tela, com iPhone e matriz');
+  assert.strictEqual(liga('css/feira.css'), 'servidor,build,tela,matriz,iphone', 'página da feira é da loja');
+  assert.strictEqual(liga('css/admin-pedidos.css'), 'servidor,build,tela', 'só o painel: sem matriz e sem iPhone');
+  assert.strictEqual(liga('css/admin-escuro-extra.css'), 'servidor,build,tela', 'fonte do tema escuro conta como o arquivo gerado');
+  assert.strictEqual(liga('lib/avise.js'), 'servidor,build');
+  assert.ok(liga('lib/porteiro.js').includes('tela'), 'lib que o teste de tela usa direto liga a tela');
+  assert.strictEqual(liga('firestore.rules'), 'servidor,regras');
+  assert.strictEqual(liga('testes/tela/matriz.test.js'), 'matriz,iphone');
+  for (const f of ['.github/workflows/seguranca.yml', 'package.json', 'testes/tela/servidor.js', 'js/arquivo-que-ninguem-usa.js'])
+    assert.strictEqual(liga(f), S.BATERIAS.join(','), `${f}: na dúvida, tudo`);
+  // todo js e css do site é alcançado pela loja ou pelo painel (senão o mapa não saberia o que testar)
+  const fs = require('fs'), alc = new Set([...S.alcance(['index.html', 'feira.html']), ...S.alcance(['admin.html', 'plataforma.html', 'sistema.html', 'privacidade.html'])]);
+  const soltos = [...fs.readdirSync(raiz('js')).filter((f) => f.endsWith('.js')).map((f) => `js/${f}`), ...fs.readdirSync(raiz('css')).filter((f) => f.endsWith('.css')).map((f) => `css/${f}`)]
+    .filter((f) => !alc.has(f) && f !== 'css/admin-escuro-extra.css');
+  assert.deepStrictEqual(soltos, [], 'arquivos que nenhuma página carrega');
+});
 teste('impressão: comandos da térmica (ESC/POS), acentos e página comum', async () => {
   const I = await import(raiz('js/impressao-lib.js'));
   const linhas = [{ t: 'txt', v: 'Pão de açúcar', b: true }, { t: 'par', e: 'TOTAL', d: 'R$ 1,00', g: true }, { t: 'corte' }];
