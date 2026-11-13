@@ -191,4 +191,6 @@
 /* Cliente da feira, fora do dia da feira: o pedido vai para o próximo dia de feira */
 .banner-aviso.feira { background: #e0f2fe; color: #0c4a6e; }
 .checkout-entrega, .sucesso-entrega { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; background: #e0f2fe; color: #0c4a6e; font-weight: 700; line-height: 1.4; }
+/* no envio: uma linha discreta, não um bloco azul em negrito */
+#modal-checkout .checkout-entrega { padding: 10px 12px; font-weight: 600; font-size: .95rem; background: #eef6fb; }
 .checkout-entrega[hidden], .sucesso-entrega[hidden] { display: none; }

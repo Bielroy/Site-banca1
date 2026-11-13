@@ -677,9 +677,10 @@ const nomeDoDiaDoPedido = () => { const e = entregaDoPedido(); return e && e.ama
 const pintarAvisoDeEntrega = () => {
     const ent = entregaDoPedido(), aviso = document.getElementById('checkout-entrega'); if (!aviso) return;
     // pedido para OUTRO dia: o valor mostrado é o de hoje; o que vale é o preço do dia da entrega (a banca confirma no dia)
-    const outroDia = ent && !ent.hoje && !ent.amanha ? ' Os valores são os de hoje: o preço que vale é o do dia da feira, e a banca confirma com você.' : '';
-    aviso.textContent = !ent ? '' : ent.frete ? '🚚 Seu pedido é para hoje, com frete.' : ent.amanha ? `📅 Seu pedido é para amanhã, ${textoDoDia(ent.dia)}.` : ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.${outroDia}`;
-    aviso.hidden = !ent;
+    // uma linha curta; a caixa "Quando receber?" (frete hoje), quando aparece, já diz isso e o aviso some
+    aviso.textContent = !ent ? '' : ent.frete ? '🚚 Entrega hoje, com frete.' : ent.amanha ? `📅 Entrega amanhã, ${textoDoDia(ent.dia)}.` : ent.hoje ? '📅 Entrega hoje.' : `📅 Entrega ${textoDoDia(ent.dia)}, dia da feira. A banca confirma os preços do dia.`;
+    const caixaFrete = document.getElementById('frete-hoje');
+    aviso.hidden = !ent || !!(caixaFrete && !caixaFrete.hidden);
 };
 // FRETE HOJE (fora do dia da feira): a loja pergunta ao servidor quanto fica e oferece as duas opções.
 // O preço que vale é o do servidor na hora do pedido (pode ser menor se outro pedido de perto já estiver na rota).
@@ -687,7 +688,8 @@ const FRETE = { chave: '', cotacao: null, lendo: false };
 const pintarFreteHoje = () => {
     const box = document.getElementById('frete-hoje'); if (!box) return;
     const base = entregaDaFeiraBase(), retirada = modoEscolhido() === 'retirada';
-    if (!base || base.hoje || retirada) { box.hidden = true; box.innerHTML = ''; if (STATE.receberHoje && (retirada || !base || base.hoje)) escolherFreteHoje(false); return; }
+    const esconder = () => { box.hidden = true; box.innerHTML = ''; pintarAvisoDeEntrega(); };
+    if (!base || base.hoje || retirada) { esconder(); if (STATE.receberHoje && (retirada || !base || base.hoje)) escolherFreteHoje(false); return; }
     const cond = (endCheckout.ler() || {}).condominio || '';
     const chaveCot = `${feiraAqui()}|${cond}|${assinaturaDoCarrinho()}`;
     if (chaveCot !== FRETE.chave && !FRETE.lendo && cond) {
@@ -698,11 +700,15 @@ const pintarFreteHoje = () => {
     }
     const c = FRETE.chave === chaveCot ? FRETE.cotacao : null, hoje = !!STATE.receberHoje;
     if (c && !c.ok && hoje) escolherFreteHoje(false);
-    const opFeira = `<button type="button" class="ed-op${hoje ? '' : ' on'}" role="radio" aria-checked="${!hoje}" data-frete-hoje="nao"><b>Esperar a feira</b><small>${escapeHTML(textoDoDia(base.dia))} · sem frete</small></button>`;
-    const opHoje = c && c.ok ? `<button type="button" class="ed-op${hoje ? ' on' : ''}" role="radio" aria-checked="${hoje}" data-frete-hoje="sim"><b>Receber hoje</b><small>frete ${fmt(c.valor)}${c.rota > 1 ? ' · rota dividida' : ''}</small></button>` : '';
-    const nota = !cond ? 'Escolha o condomínio para ver se dá para receber hoje.' : !c ? 'Calculando o frete...' : !c.ok ? (c.aviso || '') : hoje ? `O frete de ${fmt(c.valor)} entra no total. Se outro pedido de perto entrar na mesma rota antes do seu, o valor pode cair; nunca sobe.` : '';
-    box.innerHTML = `<span class="ed-rot">Hoje não tem feira no seu condomínio</span><div class="ed-ops" role="radiogroup" aria-label="Quando receber">${opFeira}${opHoje}</div>${nota ? `<p class="frete-nota" role="status">${escapeHTML(nota)}</p>` : ''}`;
-    box.hidden = false;
+    // Só aparece quando dá MESMO para receber hoje. Sem condomínio, calculando, frete desligado ou longe: nada de caixa,
+    // fica só a linha "Entrega terça, dia da feira" (o cliente não precisa ler por que não dá).
+    if (!c || !c.ok) { esconder(); return; }
+    const dia = textoDoDia(base.dia), Dia = dia.charAt(0).toUpperCase() + dia.slice(1);
+    const opFeira = `<button type="button" class="ed-op${hoje ? '' : ' on'}" role="radio" aria-checked="${!hoje}" data-frete-hoje="nao"><b>${escapeHTML(Dia)}</b><small>dia da feira · sem frete</small></button>`;
+    const opHoje = `<button type="button" class="ed-op${hoje ? ' on' : ''}" role="radio" aria-checked="${hoje}" data-frete-hoje="sim"><b>Hoje</b><small>frete ${fmt(c.valor)}</small></button>`;
+    const nota = hoje ? `Frete de ${fmt(c.valor)} no total. Se outro pedido de perto entrar na rota, ele pode baixar.` : '';
+    box.innerHTML = `<span class="ed-rot">Quando receber?</span><div class="ed-ops" role="radiogroup" aria-label="Quando receber">${opFeira}${opHoje}</div>${nota ? `<p class="frete-nota" role="status">${escapeHTML(nota)}</p>` : ''}`;
+    box.hidden = false; pintarAvisoDeEntrega();
 };
 const escolherFreteHoje = (sim) => {
     if (!!STATE.receberHoje === !!sim) return;
@@ -1447,9 +1453,7 @@ const pintarPagamentoDaLoja = () => {
     });
     if (nota) {
         if (!nota.dataset.original) nota.dataset.original = nota.textContent;
-        const aceitas = [['Cartão', 'cartão na maquininha'], ['PIX', 'PIX'], ['Dinheiro', 'dinheiro']].filter(([v]) => formaAceita(v)).map(([, t]) => t);
-        const lista = aceitas.length > 1 ? `${aceitas.slice(0, -1).join(', ')} ou ${aceitas[aceitas.length - 1]}` : (aceitas[0] || '');
-        nota.textContent = naEntrega ? `Nada é cobrado agora. Você paga ${modoEscolhido() === 'retirada' ? 'quando retirar' : 'quando receber o pedido'}${lista ? `: ${lista}` : ''}.` : nota.dataset.original;
+        nota.textContent = naEntrega ? `Você paga ${modoEscolhido() === 'retirada' ? 'quando retirar' : 'quando receber o pedido'}. Nada é cobrado agora.` : nota.dataset.original;
     }
 };
 
