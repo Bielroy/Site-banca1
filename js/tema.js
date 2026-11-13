@@ -10,7 +10,7 @@
 //  Sem ficha (ou sem tema), vale o visual original da Banca Adair e Pedrina.
 // =====================================================================
 import { getDoc, doc, db } from './firebase.js';
-import { feiraDoDia, feirasDaFicha, feiraDoCliente, feirasDoCondominio, feiraDoEndereco, comFeira } from './plataforma-lib.js';
+import { feiraDoDia, feirasDaFicha, feiraDoCliente, feirasDoCondominio, feiraDoEndereco, comFeira, visaoDaBanca, feiraNoDia, bancaVemNoDia, hojeDaFeira, proximaEntrega } from './plataforma-lib.js';
 import { lerFeiraCliente, gravarFeiraCliente, gravarUltimaBanca, lerUltimaBanca } from './feira-cliente.js';
 import { TENANT, fichaRef, chave, urlDaLoja, ehLojaOriginal, EM_PREVIA } from './tenant.js';
 import { formatoDaFicha } from './formato-lib.js';
@@ -231,7 +231,18 @@ function aplicarFicha(ficha, completa = true) {
 //  - Cliente sem feira (quem já usava antes): a faixa antiga, com as lojas da feira de hoje.
 // ---------------------------------------------------------------------
 const diaBR = () => new Date(Date.now() - 3 * 3600000).getUTCDay();          // dia da semana em Brasília
-let FEIRAS_DA_LOJA = [], FEIRA_CLIENTE = null;
+let FEIRAS_DA_LOJA = [], FEIRA_CLIENTE = null, FEIRA_INTEIRA = null;
+/**
+ * A feira do cliente acontece HOJE e esta banca não veio? Devolve { volta: 'AAAA-MM-DD' | '' } (ou null se não é o caso).
+ * Aí a loja abre só para olhar: o cliente vê os produtos, mas o pedido não fecha (o servidor também recusa).
+ */
+export function bancaForaDaFeiraHoje(agora = Date.now()) {
+    if (!FEIRA_INTEIRA || !FEIRA_CLIENTE) return null;
+    const hoje = hojeDaFeira(agora);
+    if (!feiraNoDia(FEIRA_INTEIRA, hoje) || bancaVemNoDia(FEIRA_INTEIRA, TENANT, hoje)) return null;
+    const volta = proximaEntrega(FEIRA_CLIENTE, agora);
+    return { volta: volta ? volta.dia : '' };
+}
 /** A feira do cliente, se ele for de uma feira DESTA banca (senão null: a loja funciona como sempre). */
 export const feiraDoClienteAqui = () => FEIRA_CLIENTE;
 /**
@@ -288,7 +299,8 @@ function montarFeira(feiras) {
     pintarSeloFeira(doCliente ? feira : null);
     const barra = document.getElementById('feira-lojas');
     if (!barra) return;
-    const antes = FEIRA_CLIENTE && FEIRA_CLIENTE.id; FEIRA_CLIENTE = doCliente ? feira : null;
+    // a banca enxerga a feira com os dias DELA (lojas[i].dias): banca que só vem aos sábados não recebe pedido para quarta
+    const antes = FEIRA_CLIENTE && FEIRA_CLIENTE.id; FEIRA_INTEIRA = doCliente ? feira : null; FEIRA_CLIENTE = doCliente ? visaoDaBanca(feira, TENANT) : null;
     if ((FEIRA_CLIENTE && FEIRA_CLIENTE.id) !== antes) { try { document.dispatchEvent(new CustomEvent('feira-do-cliente')); } catch (_) { /* navegador antigo */ } }
     try { document.dispatchEvent(new CustomEvent('feiras-da-loja')); } catch (_) { /* navegador antigo */ }
     if (doCliente) { gravarUltimaBanca(feira.id, TENANT); montarFaixa(barra, feira, feira.id); aplicarAppDaFeira(feira); return; }
@@ -405,14 +417,11 @@ export async function iniciarTema() {
     // veio pelo link da feira (?feira=id): este aparelho passa a ser desta feira
     const doLink = feiraDoEndereco({ search: location.search });
     if (doLink) gravarFeiraCliente(doLink);
-    // veio pelo LINK DA FEIRA (/feira/id manda para cá com &entrar=1): abre direto a última banca que o
-    // cliente usou nesta feira. Na primeira vez fica nesta, se ela for da feira (conferido mais abaixo).
+    // LINK ANTIGO DA FEIRA (/?feira=id&entrar=1, de antes de a feira ter página de entrada): manda para a página
+    // da feira (feira.html), onde o cliente vê se tem feira hoje e escolhe a banca. O link de UMA banca
+    // (/?loja=x&feira=id, sem "entrar") continua abrindo a banca direto, sem passar por lá.
     const entrando = !!doLink && new URLSearchParams(location.search).has('entrar');
-    if (entrando) {
-        try { const u = new URL(location.href); u.searchParams.delete('entrar'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); } catch (_) { /* segue */ }
-        const ultima = lerUltimaBanca(doLink);
-        if (ultima && ultima !== TENANT) { location.replace(comFeira(urlDaLoja(ultima), doLink)); return null; }
-    }
+    if (entrando) { location.replace(`/feira.html?feira=${encodeURIComponent(doLink)}`); return null; }
     const K = chave('banca_ficha');
     let guardada = null;
     try { guardada = JSON.parse(localStorage.getItem(K) || 'null'); } catch (_) { /* sem cache */ }

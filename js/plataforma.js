@@ -237,7 +237,10 @@ function abrirFolha(tipo, id) {
     S.folha = { tipo, id: id || '' };
     if (tipo === 'feira') {
         const f = id ? S.dados.feiras.find((x) => x.id === id) : null;
-        S.rascunho = { id: f ? f.id : '', nome: f ? f.nome : '', dias: new Set(f ? f.dias : []), lojas: new Set((f ? f.lojas : []).filter((id) => lojaPorId(id))), conds: new Set(f ? f.condominiosIds || [] : []), horaLimite: f ? f.horaLimite || '' : '', semFeira: f ? (f.semFeira || []).slice() : [], buscaCond: '', mudou: false };
+        S.rascunho = { id: f ? f.id : '', nome: f ? f.nome : '', dias: new Set(f ? f.dias : []), lojas: new Set((f ? f.lojas : []).filter((id) => lojaPorId(id))), conds: new Set(f ? f.condominiosIds || [] : []), horaLimite: f ? f.horaLimite || '' : '', semFeira: f ? (f.semFeira || []).slice() : [], buscaCond: '', mudou: false,
+            // página de entrada da feira: datas extras ("hoje tem feira"), dias de cada banca e o que a página mostra
+            datasExtras: f ? (f.datasExtras || []).slice() : [], lojasDias: f && f.lojasDias ? Object.fromEntries(Object.entries(f.lojasDias).map(([k, v]) => [k, new Set(v)])) : {},
+            hud: { texto: '', local: '', horario: '', capa: '', fotos: [], ...(f && f.hud ? { ...f.hud, fotos: (f.hud.fotos || []).slice() } : {}) }, enviando: '' };
     }
     pintarFolha();
     const fundo = $('pf-folha'); fundo.classList.add('aberto'); fundo.setAttribute('aria-hidden', 'false'); document.body.style.overflow = 'hidden';
@@ -259,6 +262,42 @@ function pintarFolha() {
     if (tipo === 'cartaz' && S.cartaz) CZ.pintarPrevia(S.cartaz, true);
 }
 
+// Dias em que cada banca vem (só aparece em feira com mais de um dia): todos marcados = vem sempre.
+function diasDasBancasHtml(r) {
+    const dias = [...r.dias].sort((a, b) => a - b), d = S.dados;
+    if (dias.length < 2 || !r.lojas.size) return '';
+    const linhas = d.lojas.filter((l) => r.lojas.has(l.id)).map((l) => {
+        const dela = r.lojasDias[l.id] && r.lojasDias[l.id].size ? r.lojasDias[l.id] : new Set(dias);
+        return `<li><span>${ponto(l.cor)}${escapeHTML(l.nome)}</span><span class="pf-semana editavel mini" role="group" aria-label="Dias em que ${escapeHTML(l.nome)} vem">${dias.map((n) => `<button type="button" class="pf-dia${dela.has(n) ? ' on' : ''}" data-pf-banca-dia="${n}" data-loja="${escapeHTML(l.id)}" aria-pressed="${dela.has(n)}" aria-label="${NOMES_DIA[n]}">${LETRAS[n]}</button>`).join('')}</span></li>`;
+    }).join('');
+    return `<span class="pf-rot sub">Dias em que cada banca vem</span><ul class="pf-bancas-dias">${linhas}</ul><small class="pf-dica">No dia em que a banca não vem, ela aparece apagada na página da feira e abre só para olhar.</small>`;
+}
+// redesenha só o bloco dos dias de cada banca (marcar/desmarcar banca não rola a folha de volta ao topo)
+function pintarDiasDasBancas() {
+    const sec = document.getElementById('pf-f-n-lojas')?.closest('.pf-sec'); if (!sec || !S.rascunho) return;
+    sec.querySelectorAll('.pf-bancas-dias, .pf-bancas-dias ~ small, .pf-rot.sub').forEach((n) => n.remove());
+    sec.insertAdjacentHTML('beforeend', diasDasBancasHtml(S.rascunho));
+}
+// Foto da página da feira: reduz no aparelho e envia pelo mesmo caminho das fotos de produto (js/admin-fotos.js).
+async function enviarFotoDaFeira(tipo, arquivos) {
+    const r = S.rascunho; if (!r || r.enviando) return;
+    const lista = [...arquivos].slice(0, tipo === 'capa' ? 1 : Math.max(0, 6 - r.hud.fotos.length));
+    if (!lista.length) return;
+    r.enviando = tipo; pintarFolha();
+    try {
+        const F = await import('./admin-fotos.js'), { validarArquivo } = await import('./fotos-lib.js');
+        for (const arq of lista) {
+            const ruim = validarArquivo(arq); if (ruim) { showToast(ruim, true); continue; }
+            const otima = await F.otimizarFoto(arq, tipo === 'capa' ? 1600 : 1000, 0.82);
+            const url = await F.enviarFoto(`feira-${r.id || sugerirId(r.nome) || 'nova'}`, otima, `-${tipo}-${Date.now().toString(36)}`);
+            if (!/^https:\/\//.test(String(url || ''))) throw new Error('sem endereço');
+            if (tipo === 'capa') r.hud.capa = url; else if (r.hud.fotos.length < 6) r.hud.fotos.push(url);
+            marcarMudanca();
+        }
+    } catch (e) { console.error('[foto da feira]', e); showToast((e && e.amigavel) || 'Não consegui enviar a foto. Confira a internet e tente de novo.', true); }
+    if (S.rascunho === r) { r.enviando = ''; pintarFolha(); }
+}
+
 function folhaFeira() {
     const r = S.rascunho, d = S.dados, nova = !r.id;
     const termo = normCond(r.buscaCond);
@@ -269,7 +308,8 @@ function folhaFeira() {
         ${nova ? '<small class="pf-dica">O link da feira é criado a partir do nome e não muda depois.</small>' : `<div class="pf-link"><code>${escapeHTML(linkDaFeira(r.id))}</code><button type="button" class="pf-bt mini" data-pf="copiar-link" data-feira="${escapeHTML(r.id)}">Copiar</button></div>`}</section>
     <section class="pf-sec"><span class="pf-rot">Dias da feira</span>${semanaHtml([...r.dias], true)}<small class="pf-dica" id="pf-f-dias-txt">${escapeHTML(r.dias.size ? diasEmTexto([...r.dias]) : 'Nenhum dia marcado: a feira vale todos os dias (bom para loja que abre sempre).')}</small></section>
     <section class="pf-sec"><span class="pf-rot">Bancas desta feira <b id="pf-f-n-lojas">${r.lojas.size}</b></span>
-        <ul class="pf-marcar">${d.lojas.map((l) => `<li><label><input type="checkbox" data-pf-f-loja="${escapeHTML(l.id)}"${r.lojas.has(l.id) ? ' checked' : ''}>${ponto(l.cor)}<span>${escapeHTML(l.nome)}${l.ativo ? '' : ' <small>(bloqueada)</small>'}${feirasDaLoja(l.id).filter((f) => f.id !== r.id).length ? `<small>também em ${escapeHTML(feirasDaLoja(l.id).filter((f) => f.id !== r.id).map((f) => f.nome).join(', '))}</small>` : ''}</span></label></li>`).join('')}</ul></section>
+        <ul class="pf-marcar">${d.lojas.map((l) => `<li><label><input type="checkbox" data-pf-f-loja="${escapeHTML(l.id)}"${r.lojas.has(l.id) ? ' checked' : ''}>${ponto(l.cor)}<span>${escapeHTML(l.nome)}${l.ativo ? '' : ' <small>(bloqueada)</small>'}${feirasDaLoja(l.id).filter((f) => f.id !== r.id).length ? `<small>também em ${escapeHTML(feirasDaLoja(l.id).filter((f) => f.id !== r.id).map((f) => f.nome).join(', '))}</small>` : ''}</span></label></li>`).join('')}</ul>
+        ${diasDasBancasHtml(r)}</section>
     <section class="pf-sec"><span class="pf-rot">Condomínios que esta feira atende <b id="pf-f-n-conds">${r.conds.size}</b></span>
         <small class="pf-dica">Eles aparecem na lista de endereço das bancas da feira, e quem escolhe um deles cai nesta feira.</small>
         ${d.condominios.length > 6 ? `<input type="search" class="pf-busca largo" data-busca-cond placeholder="Buscar condomínio" value="${escapeHTML(r.buscaCond)}" aria-label="Buscar condomínio">` : ''}
@@ -281,7 +321,25 @@ function folhaFeira() {
         <span class="pf-rot sub">Dias sem feira (chuva, feriado)</span>
         <div class="pf-chips" id="pf-f-sem">${r.semFeira.map((dia) => `<span class="pf-chip-data">${escapeHTML(textoDoDia(dia))}<button type="button" data-pf="tirar-sem" data-dia="${escapeHTML(dia)}" aria-label="Tirar ${escapeHTML(textoDoDia(dia))}">&times;</button></span>`).join('') || '<small class="pf-dica">Nenhum.</small>'}</div>
         <div class="pf-form-linha"><input type="date" id="pf-f-sem-dia" aria-label="Data sem feira"><button type="button" class="pf-bt" data-pf="por-sem">Marcar sem feira</button></div>
-        <small class="pf-dica">Nesse dia a loja pula para a próxima feira. Pedidos já feitos para ele aparecem no painel da banca com o aviso "feira cancelada".</small></section>
+        <small class="pf-dica">Nesse dia a loja pula para a próxima feira. Pedidos já feitos para ele aparecem no painel da banca com o aviso "feira cancelada".</small>
+        <span class="pf-rot sub">Feira em dia extra</span>
+        <div class="pf-chips" id="pf-f-extra">${r.datasExtras.map((dia) => `<span class="pf-chip-data extra">${escapeHTML(textoDoDia(dia))}<button type="button" data-pf="tirar-extra" data-dia="${escapeHTML(dia)}" aria-label="Tirar ${escapeHTML(textoDoDia(dia))}">&times;</button></span>`).join('')}</div>
+        <div class="pf-form-linha"><input type="date" id="pf-f-extra-dia" aria-label="Data com feira extra"><button type="button" class="pf-bt" data-pf="por-extra">Marcar feira neste dia</button><button type="button" class="pf-bt" data-pf="por-extra-hoje">Hoje tem feira</button></div>
+        <small class="pf-dica">Nos dias da semana marcados lá em cima, a página da feira já diz "Hoje tem feira" sozinha. Use aqui só para uma feira fora do dia de sempre: nesse dia todas as bancas aparecem como presentes.</small></section>
+    <section class="pf-sec"><span class="pf-rot">Página de entrada da feira</span>
+        <small class="pf-dica">É o que abre no link da feira: a capa, se tem feira hoje, como funciona e as bancas. Cada banca aparece com a logo e a foto de capa que ela pôs em Aparência.</small>
+        <label class="pf-rot sub" for="pf-h-local">Onde acontece</label><input type="text" id="pf-h-local" data-pf-hud="local" maxlength="80" value="${escapeHTML(r.hud.local)}" placeholder="Ex.: Praça central do Jardins Munique" autocomplete="off">
+        <label class="pf-rot sub" for="pf-h-horario">Horário</label><input type="text" id="pf-h-horario" data-pf-hud="horario" maxlength="60" value="${escapeHTML(r.hud.horario)}" placeholder="Ex.: das 17h às 21h" autocomplete="off">
+        <label class="pf-rot sub" for="pf-h-texto">Recado da feira <small id="pf-h-texto-n">${r.hud.texto.length}/400</small></label><textarea id="pf-h-texto" data-pf-hud="texto" maxlength="400" rows="3" placeholder="Ex.: Toda quarta as bancas se reúnem na praça. Peça pelo celular e receba em casa.">${escapeHTML(r.hud.texto)}</textarea>
+        <span class="pf-rot sub">Foto de capa</span>
+        <div class="pf-hud-fotos">${r.hud.capa ? `<span class="pf-hud-foto capa"><img src="${escapeHTML(r.hud.capa)}" alt="Foto de capa"><button type="button" data-pf="hud-tirar-capa" aria-label="Tirar a foto de capa">&times;</button></span>` : ''}
+            <label class="pf-bt${r.enviando === 'capa' ? ' ocupado' : ''}"><input type="file" accept="image/*" data-pf-hud-foto="capa" hidden${r.enviando ? ' disabled' : ''}>${r.enviando === 'capa' ? 'Enviando…' : r.hud.capa ? 'Trocar a capa' : 'Escolher a capa'}</label></div>
+        <small class="pf-dica">Sem capa, a página usa a foto de capa da primeira banca que tiver uma.</small>
+        <span class="pf-rot sub">Fotos da feira <b>${r.hud.fotos.length}</b></span>
+        <div class="pf-hud-fotos">${r.hud.fotos.map((u, i) => `<span class="pf-hud-foto"><img src="${escapeHTML(u)}" alt="Foto ${i + 1} da feira"><button type="button" data-pf="hud-tirar-foto" data-i="${i}" aria-label="Tirar a foto ${i + 1}">&times;</button></span>`).join('')}
+            ${r.hud.fotos.length < 6 ? `<label class="pf-bt${r.enviando === 'fotos' ? ' ocupado' : ''}"><input type="file" accept="image/*" multiple data-pf-hud-foto="fotos" hidden${r.enviando ? ' disabled' : ''}>${r.enviando === 'fotos' ? 'Enviando…' : 'Acrescentar fotos'}</label>` : ''}</div>
+        <small class="pf-dica">Até 6 fotos bem apetitosas (comida, a praça, o movimento). Elas deslizam para o lado na página.</small>
+        ${nova ? '' : `<div class="pf-linha-bts"><a class="pf-bt" href="${escapeHTML(linkDaFeira(r.id))}" target="_blank" rel="noopener">Ver a página da feira</a></div>`}</section>
     ${nova ? '' : '<section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt perigo" data-pf="desfazer-feira">Desfazer esta feira</button><small class="pf-dica">As bancas continuam funcionando; o link da feira deixa de abrir.</small></section>'}`;
     const pe = `<button type="button" class="pf-bt" data-pf="fechar-folha">Cancelar</button><button type="button" class="pf-bt pri" data-pf="salvar-feira">${nova ? 'Criar feira' : 'Salvar feira'}</button>`;
     return [nova ? 'Nova feira' : 'Editar feira', corpo, pe];
@@ -417,6 +475,19 @@ async function agir(b) {
             return pintarFolha();
         }
         case 'tirar-sem': S.rascunho.semFeira = S.rascunho.semFeira.filter((d) => d !== b.dataset.dia); marcarMudanca(); return pintarFolha();
+        case 'por-extra': case 'por-extra-hoje': {
+            const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10), dia = b.dataset.pf === 'por-extra-hoje' ? hoje : String($('pf-f-extra-dia').value || '');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return showToast('Escolha a data.', true);
+            if (dia < hoje) return showToast('Escolha uma data de hoje em diante.', true);
+            const r = S.rascunho, dow = new Date(`${dia}T12:00:00Z`).getUTCDay();
+            if ((!r.dias.size || r.dias.has(dow)) && !r.semFeira.includes(dia)) return showToast('Esse dia já é dia de feira: a página mostra "Hoje tem feira" sozinha.');
+            r.semFeira = r.semFeira.filter((d) => d !== dia);                 // marcar "tem feira" desfaz o "sem feira" do mesmo dia
+            if (r.dias.size && !r.dias.has(dow) && !r.datasExtras.includes(dia)) { r.datasExtras.push(dia); r.datasExtras.sort(); }
+            marcarMudanca(); return pintarFolha();
+        }
+        case 'tirar-extra': S.rascunho.datasExtras = S.rascunho.datasExtras.filter((d) => d !== b.dataset.dia); marcarMudanca(); return pintarFolha();
+        case 'hud-tirar-capa': S.rascunho.hud.capa = ''; marcarMudanca(); return pintarFolha();
+        case 'hud-tirar-foto': S.rascunho.hud.fotos.splice(Number(b.dataset.i), 1); marcarMudanca(); return pintarFolha();
         case 'cond-rapido': {
             const nome = $('pf-f-cond-novo').value.trim(), formato = $('pf-f-cond-formato').value;
             if (normCond(nome).length < 2) return showToast('Escreva o nome do condomínio.', true);
@@ -535,7 +606,8 @@ async function salvarFeira() {
     if (r.conds.size > 40) return showToast(`Uma feira atende no máximo 40 condomínios (marcados: ${r.conds.size}).`, true);
     if (nova && S.dados.feiras.some((f) => f.id === fid)) return showToast('Já existe uma feira com um nome parecido. Escolha outro nome.', true);
     if (!r.conds.size && !(await confirmar('Salvar sem condomínio?', 'Sem condomínio marcado, só quem abrir o link da feira cai nela. Quem chega sem o link e escolhe o condomínio não é levado a esta feira.', { ok: 'Salvar assim', nao: 'Voltar e marcar' }))) return;
-    const corpo = { acao: 'feira', ...(nova ? { nova: true } : {}), fid, nome, dias: [...r.dias].sort((a, b) => a - b), lojas: [...r.lojas], condominiosIds: [...r.conds], horaLimite: r.horaLimite, semFeira: r.semFeira };
+    const corpo = { acao: 'feira', ...(nova ? { nova: true } : {}), fid, nome, dias: [...r.dias].sort((a, b) => a - b), lojas: [...r.lojas], condominiosIds: [...r.conds], horaLimite: r.horaLimite, semFeira: r.semFeira,
+        datasExtras: r.datasExtras, hud: r.hud, lojasDias: Object.fromEntries([...r.lojas].map((id) => [id, [...(r.lojasDias[id] || [])].sort((a, b) => a - b)])) };
     if (await fazer(corpo, nova ? 'Feira criada. Copie o link e mande aos clientes.' : 'Feira salva.')) fecharFolha(true);
 }
 
@@ -550,11 +622,25 @@ function ligar() {
     el().addEventListener('click', clique);
     $('pf-folha').addEventListener('click', async (e) => {
         if (e.target.id === 'pf-folha') { if (!S.confirmando) fecharFolha(false); return; }          // toque fora da folha
+        const diaBanca = e.target.closest('[data-pf-banca-dia]');
+        if (diaBanca && S.rascunho) {
+            const r = S.rascunho, id = diaBanca.dataset.loja, n = Number(diaBanca.dataset.pfBancaDia), todos = [...r.dias];
+            const dela = new Set(r.lojasDias[id] && r.lojasDias[id].size ? r.lojasDias[id] : todos);
+            if (dela.has(n)) { if (dela.size === 1) return showToast('A banca precisa vir em pelo menos um dia. Para tirar da feira, desmarque a banca.'); dela.delete(n); } else dela.add(n);
+            r.lojasDias[id] = dela.size === todos.length ? new Set() : dela;   // todos os dias = sem restrição
+            diaBanca.classList.toggle('on', dela.has(n)); diaBanca.setAttribute('aria-pressed', String(dela.has(n))); marcarMudanca();
+            return;
+        }
         const dia = e.target.closest('[data-pf-dia]');
         if (dia && S.rascunho) {
             const n = Number(dia.dataset.pfDia); if (S.rascunho.dias.has(n)) S.rascunho.dias.delete(n); else S.rascunho.dias.add(n);
             dia.classList.toggle('on'); dia.setAttribute('aria-pressed', String(S.rascunho.dias.has(n))); marcarMudanca();
+            // os dias de cada banca seguem os dias da feira: dia que saiu da feira sai das bancas, e deixa de ser "dia extra"
+            Object.keys(S.rascunho.lojasDias).forEach((id) => { S.rascunho.lojasDias[id] = new Set([...S.rascunho.lojasDias[id]].filter((x) => S.rascunho.dias.has(x))); });
+            S.rascunho.datasExtras = S.rascunho.datasExtras.filter((x) => !S.rascunho.dias.has(new Date(`${x}T12:00:00Z`).getUTCDay()));
             $('pf-f-dias-txt').textContent = S.rascunho.dias.size ? diasEmTexto([...S.rascunho.dias]) : 'Nenhum dia marcado: a feira vale todos os dias (bom para loja que abre sempre).';
+            pintarDiasDasBancas();
+            const chips = $('pf-f-extra'); if (chips) chips.querySelectorAll('.pf-chip-data').forEach((c) => { if (!S.rascunho.datasExtras.includes(c.querySelector('button').dataset.dia)) c.remove(); });
             return;
         }
         return clique(e);
@@ -572,6 +658,7 @@ function ligar() {
         if (t.dataset.pfCartaz && S.cartaz) { CZ.digitou(S.cartaz, t.dataset.pfCartaz, t.value); return; }
         if (t.id === 'pf-f-nome' && S.rascunho) { S.rascunho.nome = t.value; marcarMudanca(); return; }
         if (t.id === 'pf-f-limite' && S.rascunho) { S.rascunho.horaLimite = t.value; marcarMudanca(); return; }
+        if (t.dataset.pfHud && S.rascunho) { S.rascunho.hud[t.dataset.pfHud] = t.value; marcarMudanca(); if (t.id === 'pf-h-texto') $('pf-h-texto-n').textContent = `${t.value.length}/400`; return; }
         if (t.id === 'pf-nome' && !$('pf-id').dataset.mexido) $('pf-id').value = sugerirId(t.value);
         if (t.id === 'pf-id') t.dataset.mexido = '1';
         if (t.id === 'pf-nome' || t.id === 'pf-id') $('pf-id-dica').textContent = idValido($('pf-id').value) ? `A loja abre em ${urlDaLoja($('pf-id').value, '/').replace(/^https:\/\//, '')}. Não muda depois.` : 'Não muda depois. Só letras minúsculas, números e hífen.';
@@ -596,7 +683,8 @@ function ligar() {
             finally { st.lendo = ''; if (S.cartaz === st) CZ.pintarImagem(st, k); }
             return;
         }
-        if (t.dataset.pfFLoja && S.rascunho) { if (t.checked) S.rascunho.lojas.add(t.dataset.pfFLoja); else S.rascunho.lojas.delete(t.dataset.pfFLoja); $('pf-f-n-lojas').textContent = S.rascunho.lojas.size; marcarMudanca(); return; }
+        if (t.dataset.pfHudFoto && S.rascunho && t.files && t.files.length) { const arqs = [...t.files]; t.value = ''; return enviarFotoDaFeira(t.dataset.pfHudFoto, arqs); }
+        if (t.dataset.pfFLoja && S.rascunho) { if (t.checked) S.rascunho.lojas.add(t.dataset.pfFLoja); else S.rascunho.lojas.delete(t.dataset.pfFLoja); $('pf-f-n-lojas').textContent = S.rascunho.lojas.size; marcarMudanca(); pintarDiasDasBancas(); return; }
         if (t.dataset.pfFCond && S.rascunho) { if (t.checked) S.rascunho.conds.add(t.dataset.pfFCond); else S.rascunho.conds.delete(t.dataset.pfFCond); $('pf-f-n-conds').textContent = S.rascunho.conds.size; marcarMudanca(); return; }
         if (t.dataset.pfCampo && S.folha && S.folha.tipo === 'loja') {
             const k = t.dataset.pfCampo, nome = (S.dados.campos || CAMPOS_PRODUTO)[k];

@@ -12,6 +12,7 @@
 import { auth, getDoc, setDoc } from './firebase.js';
 import { tdoc, fichaRef, ehLojaOriginal } from './tenant.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal, customConfirm } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
 import { linhaEndereco } from './endereco.js';
 import { lerPainel } from './painel-cache.js';
 import { hojeBR } from './fechamento-lib.js';
@@ -27,7 +28,9 @@ const haDias = (n) => (n <= 0 ? 'hoje' : n === 1 ? 'ontem' : `há ${n} dias`);
 function render() {
     if (!el()) return;
     if (S.estado !== 'ok') {
-        el().innerHTML = `<div class="es-topo"><div><h3>Clientes</h3></div></div><div class="cp-vazio"><b>${S.estado === 'carregando' ? 'Carregando clientes (e conferindo pedidos novos)...' : S.estado === 'vazio' ? 'Ainda não há clientes calculados.' : 'Não consegui carregar os clientes.'}</b><span>${S.estado === 'vazio' ? 'A lista aparece sozinha quando chegar o primeiro pedido com endereço. Pedido com cupom especial (família, cortesia) não entra na lista.' : S.estado === 'erro' ? 'Confira a internet e abra a aba de novo.' : ''}</span></div>`;
+        el().innerHTML = `<div class="es-topo"><div><h3>Clientes</h3></div></div>${S.estado === 'carregando' ? esqueleto('Carregando clientes (e conferindo pedidos novos)...', 5)
+            : S.estado === 'vazio' ? estadoVazio({ icone: 'crm', titulo: 'Ainda não há clientes calculados.', texto: 'A lista aparece sozinha quando chegar o primeiro pedido com endereço. Pedido com cupom especial (família, cortesia) não entra na lista.' })
+            : estadoVazio({ erro: true, titulo: 'Não consegui carregar os clientes.', texto: 'Confira a internet e abra a aba de novo.' })}`;
         return;
     }
     const c = S.seg.contagem;
@@ -52,7 +55,7 @@ function render() {
         <button class="crm-item" data-crm-id="${escapeHTML(x.id)}">
             <span class="crm-nome">${escapeHTML(x.nome || 'Sem nome')}<small>${escapeHTML(linhaEndereco(x, { curto: true }) || 'sem endereço')}</small></span>
             <span class="crm-num"><b>${x.gasto ? fmt(x.gasto) : '–'}</b><small>${x.ped || x.n} pedido${(x.ped || x.n) > 1 ? 's' : ''} · ${haDias(x.semComprar)}</small></span>
-        </button>`).join('') || '<p class="config-sub">Nenhum cliente neste filtro.</p>'}</div>
+        </button>`).join('') || estadoVazio({ icone: 'crm', titulo: 'Nenhum cliente neste filtro', texto: 'Escolha outro filtro ou mude a busca.', compacto: true })}</div>
     ${lista.length > S.mostrar ? `<button class="btn-sec" data-crm-mais>Mostrar mais (${lista.length - S.mostrar} restantes)</button>` : ''}`;
 }
 
@@ -81,8 +84,8 @@ async function abrirCliente(x) {
             <dt>Última compra</dt><dd>${haDias(x.semComprar)}</dd>
             <dt>Costuma comprar</dt><dd>${x.cada ? `a cada ${Math.round(x.cada)} dia${Math.round(x.cada) > 1 ? 's' : ''}` : 'ainda sem padrão'}</dd>
         </dl>
-        <h4 class="cp-sub">O que costuma levar</h4><div id="crm-itens"><p class="config-sub">Carregando...</p></div>
-        <h4 class="cp-sub">Últimos pedidos</h4><div id="crm-pedidos"><p class="config-sub">Carregando...</p></div>
+        <h4 class="cp-sub">O que costuma levar</h4><div id="crm-itens">${esqueleto('Carregando...', 2)}</div>
+        <h4 class="cp-sub">Últimos pedidos</h4><div id="crm-pedidos">${esqueleto('Carregando...', 2)}</div>
         <h4 class="cp-sub">Acesso do cliente</h4><div id="crm-acesso"><p class="config-sub">Carregando...</p></div>
         <h4 class="cp-sub">Mensagem</h4>
         ${contato.pode ? `<textarea id="crm-texto" rows="4" maxlength="500" aria-label="Mensagem para o cliente">${escapeHTML(mensagemSugerida(x, S.nomeLoja))}</textarea>

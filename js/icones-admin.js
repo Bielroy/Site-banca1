@@ -77,6 +77,10 @@ export const ICONES = {
     conversa:   p('M12 4c4.7 0 8.5 3.2 8.5 7.2s-3.8 7.2-8.5 7.2c-1 0-2-.1-2.9-.4L4.5 20l1.2-3.8C4.3 14.9 3.5 13.1 3.5 11.2 3.5 7.2 7.3 4 12 4z') + semente(8.4, 11.2, 1.15) + semente(12, 11.2, 1.15) + semente(15.6, 11.2, 1.15),
     camera:     p('M4.5 8h3l1.6-2.5h5.8L16.5 8h3A1.5 1.5 0 0 1 21 9.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5v-9A1.5 1.5 0 0 1 4.5 8z') + bola(12, 13.6, 3.6) + semente(12, 13.6, 1.6),
     vazio:      p('M4 13.5l2.4-8h11.2l2.4 8') + p('M4 13.5h4.6l1 2.5h4.8l1-2.5H20V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z'),
+    // ----- tema do painel (claro / escuro) -----
+    resumo:     p('M3.4 11 12 4.2l8.6 6.8') + p('M5.6 9.4v9.8a1.3 1.3 0 0 0 1.3 1.3h10.2a1.3 1.3 0 0 0 1.3-1.3V9.4') + s('M9.9 20.5v-4.6a2.1 2.1 0 0 1 4.2 0v4.6z'),
+    lua:        p('M19.6 14.6A8 8 0 1 1 9.4 4.4a6.3 6.3 0 0 0 10.2 10.2z') + semente(16.6, 6.4, 1.5),
+    sol:        semente(12, 12, 3.3) + bola(12, 12, 3.3) + p('M12 3.2v2.1') + p('M12 18.7v2.1') + p('M3.2 12h2.1') + p('M18.7 12h2.1') + p('M5.8 5.8l1.5 1.5') + p('M16.7 16.7l1.5 1.5') + p('M5.8 18.2l1.5-1.5') + p('M16.7 7.3l1.5-1.5'),
 };
 // nomes alternativos (o mesmo desenho serve a mais de um lugar)
 const APELIDOS = { sacola: 'compras', pessoas: 'crm', moedas: 'balanco', barras: 'relatorios', prancheta: 'pedidos', cupom: 'cupons', megafone: 'comunicados', ajustes: 'config', toldo: 'fechamento' };

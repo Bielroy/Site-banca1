@@ -113,7 +113,7 @@ const CENARIOS = {
   // cliente que volta com endereço salvo de condomínio de nome comprido (o botão do topo mostra o endereço inteiro: apareceu "..." no iPhone)
   'endereço salvo comprido': () => { const c = cenarioPadrao(); c.lojas.banca.produtos = PIOR; c.lojas.banca.categorias = CATS_PIOR; return c; },
 };
-const CAMINHO = { 'muitos produtos e feira grande': '/?feira=florenca&entrar=1', 'outra loja com tema': '/?loja=paes-da-lucia' };
+const CAMINHO = { 'muitos produtos e feira grande': '/?feira=florenca', 'outra loja com tema': '/?loja=paes-da-lucia' };
 // o que roda no aparelho antes da loja abrir (por cenário)
 const ANTES = {
   'endereço salvo comprido': () => localStorage.setItem('banca_endereco', JSON.stringify({ modo: 'entrega', condominio: 'Residencial Jardins do Bosque Encantado', formato: 'rua', quadra: 'Alameda das Palmeiras Imperiais', lote: '1234' })),

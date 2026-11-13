@@ -8,6 +8,7 @@
 // =====================================================================
 import { auth } from './firebase.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
 import { criarCamposEndereco } from './endereco.js';
 import { precoDoDia } from './oferta-lib.js';
 import { lerPainel } from './painel-cache.js';
@@ -62,7 +63,7 @@ function pintarLista() {
     const lista = daBusca.filter((p) => passaNaCategoria(p, S.cat) || S.itens.has(p.id));
     // o que já está na venda vem primeiro
     lista.sort((a, b) => (S.itens.has(b.id) ? 1 : 0) - (S.itens.has(a.id) ? 1 : 0));
-    $('pv2-lista').innerHTML = lista.length ? lista.map(linhaHtml).join('') : '<p class="config-sub">Nenhum produto aqui. Toque em "Todas" ou mude a busca.</p>';
+    $('pv2-lista').innerHTML = lista.length ? lista.map(linhaHtml).join('') : estadoVazio({ icone: 'produtos', titulo: 'Nenhum produto aqui', texto: 'Toque em "Todas" ou mude a busca.', compacto: true });
 }
 function pintarRodape() {
     const t = totalC() / 100, n = S.itens.size, rec = Number(String($('pv2-recebido')?.value || '').replace(',', '.'));

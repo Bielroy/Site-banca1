@@ -8,7 +8,7 @@ import { getDoc } from './firebase.js';
 import { fichaRef, ehLojaOriginal } from './tenant.js';
 import { escapeHTML, showToast, customConfirm } from './utils.js';
 import { CAMINHOS, suporte, lerConfig, salvarConfig, conectar, conectada, imprimir } from './impressao.js';
-import { cupomDoPedido, etiquetaDeEntrega, etiquetaDeLote, paginaDeTeste, paraTexto, colunasDe } from './impressao-lib.js';
+import { cupomDoPedido, reciboDoCliente, etiquetaDeEntrega, etiquetaDeLote, paginaDeTeste, paraTexto, colunasDe } from './impressao-lib.js';
 import { MODOS_AUTO, podeAutomatico } from './impressao-fila-lib.js';
 import * as Ponte from './impressao-ponte.js';
 import { papelAtual } from './admin-guard.js';
@@ -17,10 +17,10 @@ import { papelAtual } from './admin-guard.js';
 const avisarMudanca = () => { try { document.dispatchEvent(new CustomEvent('impressao:config')); } catch (_) { /* navegador antigo */ } };
 
 const $ = (id) => document.getElementById(id);
-let nomeLoja = null;
+let nomeLoja = null, logoLoja = '';
 export async function loja() {
     if (nomeLoja !== null) return nomeLoja;
-    try { const s = await getDoc(fichaRef()); nomeLoja = (s.exists() && s.data().nome) || ''; } catch (_) { nomeLoja = ''; }
+    try { const s = await getDoc(fichaRef()); nomeLoja = (s.exists() && s.data().nome) || ''; const t = s.exists() ? s.data().tema : null; logoLoja = t && typeof t.logo === 'string' && /^https:\/\//.test(t.logo) ? t.logo : ''; } catch (_) { nomeLoja = ''; }
     if (!nomeLoja && ehLojaOriginal) nomeLoja = 'Banca Adair e Pedrina';
     return nomeLoja;
 }
@@ -43,9 +43,10 @@ export async function mandar(folhas, opcoes, feito) {
         return false;
     }
 }
-/** tipo: 'cupom' | 'etiqueta' */
-export async function imprimirPedido(pedido, tipo = 'cupom') {
+/** tipo: 'cupom' (para separar) | 'recibo' (vai na sacola do cliente, com logo, peso e total) | 'etiqueta' */
+export async function imprimirPedido(pedido, tipo = 'cupom', { fotos = {} } = {}) {
     const l = await loja();
+    if (tipo === 'recibo') return mandar([reciboDoCliente(pedido, { loja: l, logo: logoLoja, fotos })], { copias: 1 }, 'Recibo enviado para a impressora.');
     return mandar([tipo === 'etiqueta' ? etiquetaDeEntrega(pedido, { loja: l }) : cupomDoPedido(pedido, { loja: l })],
         tipo === 'etiqueta' ? { copias: 1 } : { pedidoId: pedido && pedido.id, tipo: 'cupom' });
 }

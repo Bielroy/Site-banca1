@@ -91,16 +91,45 @@ export function diasDaFeira(dias) {
 // ---------------------------------------------------------------------
 const limparHora = (h) => { const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(h || '').trim()); return m ? `${m[1]}:${m[2]}` : ''; };
 export function proximaEntrega(feira, agora = Date.now()) {
-    const f = feira || {}, dias = limparDias(f.dias), sem = new Set(Array.isArray(f.semFeira) ? f.semFeira : []), limite = limparHora(f.horaLimite);
+    const f = feira || {}, dias = limparDias(f.dias), sem = new Set(Array.isArray(f.semFeira) ? f.semFeira : []), limite = limparHora(f.horaLimite), extras = new Set(Array.isArray(f.datasExtras) ? f.datasExtras : []);
     const br = new Date(agora - 3 * 3600000), hora = br.toISOString().slice(11, 16);
     for (let k = 0; k < 56; k++) {
         const d = new Date(Date.UTC(br.getUTCFullYear(), br.getUTCMonth(), br.getUTCDate() + k)), dia = d.toISOString().slice(0, 10), dow = d.getUTCDay();
-        if (dias.length && !dias.includes(dow)) continue;
+        if (dias.length && !dias.includes(dow) && !extras.has(dia)) continue;
         if (sem.has(dia)) continue;
         if (k === 0 && limite && hora >= limite) continue;
         return { dia, hoje: k === 0, dow };
     }
     return null;
+}
+// As quatro contas abaixo são as MESMAS de lib/feira.js (um teste confere que batem).
+const DATA_OK = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+/** Hoje em Brasília, 'AAAA-MM-DD'. */
+export const hojeDaFeira = (agora = Date.now()) => new Date(agora - 3 * 3600000).toISOString().slice(0, 10);
+/** A feira acontece neste dia? Dia da semana dela ou data extra ("hoje tem feira"), e não marcado "sem feira". */
+export function feiraNoDia(feira, dia) {
+    const f = feira || {}, dias = limparDias(f.dias);
+    if (!DATA_OK.test(String(dia || '')) || (Array.isArray(f.semFeira) && f.semFeira.includes(dia))) return false;
+    if (Array.isArray(f.datasExtras) && f.datasExtras.includes(dia)) return true;
+    return !dias.length || dias.includes(new Date(`${dia}T12:00:00Z`).getUTCDay());
+}
+/** Dias da semana em que a banca vem a esta feira ([] = todos os dias da feira). */
+export function diasDaBanca(feira, lojaId) {
+    const l = (Array.isArray(feira && feira.lojas) ? feira.lojas : []).find((x) => x && x.id === lojaId);
+    const d = limparDias(l && l.dias), daFeira = limparDias(feira && feira.dias);
+    return d.length ? (daFeira.length ? d.filter((n) => daFeira.includes(n)) : d) : [];
+}
+/** A banca vem à feira neste dia? Em data extra (feira especial) todas as bancas vêm. */
+export function bancaVemNoDia(feira, lojaId, dia) {
+    if (!feiraNoDia(feira, dia)) return false;
+    if (Array.isArray(feira.datasExtras) && feira.datasExtras.includes(dia)) return true;
+    const d = diasDaBanca(feira, lojaId);
+    return !d.length || d.includes(new Date(`${dia}T12:00:00Z`).getUTCDay());
+}
+/** A feira como ESTA banca a vê: os dias viram os dias em que a banca vem. */
+export function visaoDaBanca(feira, lojaId) {
+    const d = diasDaBanca(feira, lojaId);
+    return d.length ? { ...feira, dias: d } : feira;
 }
 const NOMES_DIA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
 /** "terça, 14/10" */

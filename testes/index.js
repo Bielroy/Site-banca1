@@ -441,7 +441,7 @@ teste('feira: a data da entrega é a mesma na loja e no servidor (dias, horário
   assert.strictEqual(F.proximaEntrega({ dias: [] }, t('2026-10-13T15:00:00Z')).hoje, true, 'feira sem dia marcado (ferragista): todo dia');
   assert.strictEqual(F.textoDoDia('2026-10-14'), 'quarta, 14/10');
   // a loja e o servidor dão SEMPRE a mesma resposta
-  const feiras = [quarta, terca, { dias: [0, 6], horaLimite: '09:30', semFeira: ['2026-10-17'] }, { dias: [] , horaLimite: '23:59' }, { dias: [1, 3, 5] }];
+  const feiras = [quarta, terca, { dias: [0, 6], horaLimite: '09:30', semFeira: ['2026-10-17'] }, { dias: [] , horaLimite: '23:59' }, { dias: [1, 3, 5] }, { dias: [3], datasExtras: ['2026-10-16', '2026-10-21'], semFeira: ['2026-10-14'], horaLimite: '12:00' }];
   for (let h = 0; h < 24 * 21; h += 1.25) for (const f of feiras) {
     const ag = t('2026-10-10T00:00:00Z') + h * 3600000;
     assert.deepStrictEqual(L.proximaEntrega(f, ag), F.proximaEntrega(f, ag), `diferença em ${new Date(ag).toISOString()} ${JSON.stringify(f)}`);
@@ -616,6 +616,38 @@ teste('plataforma: horário limite e dias sem feira ficam guardados (limpos)', a
   assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
   const f = db._dados.get('feiras/f-1'); assert.strictEqual(f.horaLimite, '11:30'); assert.deepStrictEqual(f.semFeira, [futuro]);
 });
+teste('plataforma: página de entrada da feira (capa, fotos, local, recado), dia extra e dias de cada banca ficam guardados; tela antiga não apaga o que já estava', async () => {
+  const db = criarBanco(semente()); const api = carregarApi(raiz('api/plataforma.js'), criarAdmin(db, TOKENS));
+  const pf = (body) => chamar(api, { headers: { Authorization: 'Bearer plataforma' }, body });
+  const futuro = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10), outro = new Date(Date.now() + 12 * 86400000).toISOString().slice(0, 10);
+  let r = await pf({ acao: 'feira', fid: 'f-hud', nome: 'Feira HUD', dias: [3, 6], lojas: ['banca', 'espetinhos'], semFeira: [outro], datasExtras: [futuro, outro, '2001-01-01'],
+    lojasDias: { espetinhos: [6, 1], banca: [3, 6], intruso: [3] },
+    hud: { texto: 'Toda quarta na praça <script>', local: 'Praça central', horario: 'das 17h às 21h', capa: 'https://fotos.exemplo.com/capa.webp', fotos: ['https://fotos.exemplo.com/1.webp', 'http://x.com/2.jpg'] } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  let f = db._dados.get('feiras/f-hud');
+  assert.deepStrictEqual(f.datasExtras, [futuro], 'data extra: só de hoje em diante, e nunca num dia marcado "sem feira"');
+  assert.deepStrictEqual(f.lojas.map((l) => [l.id, l.dias || null]), [['banca', null], ['espetinhos', [6]]], 'banca que vem em todos os dias não guarda restrição; dia fora da feira não entra');
+  assert.deepStrictEqual(f.hud, { texto: 'Toda quarta na praça script', local: 'Praça central', horario: 'das 17h às 21h', capa: 'https://fotos.exemplo.com/capa.webp', fotos: ['https://fotos.exemplo.com/1.webp'] });
+  // tela antiga (não manda os campos novos): o que estava gravado continua
+  r = await pf({ acao: 'feira', fid: 'f-hud', nome: 'Feira HUD', dias: [3, 6], lojas: ['banca', 'espetinhos'] });
+  assert.strictEqual(r.status, 200); f = db._dados.get('feiras/f-hud');
+  assert.strictEqual(f.hud.capa, 'https://fotos.exemplo.com/capa.webp'); assert.deepStrictEqual(f.datasExtras, [futuro]); assert.deepStrictEqual(f.lojas[1].dias, [6]);
+  // a lista da Plataforma devolve tudo para o editor
+  const lista = (await pf({ acao: 'lojas' })).corpo.feiras.find((x) => x.id === 'f-hud');
+  assert.deepStrictEqual(lista.lojasDias, { espetinhos: [6] }); assert.strictEqual(lista.hud.local, 'Praça central'); assert.deepStrictEqual(lista.datasExtras, [futuro]);
+  // quem não é da plataforma não mexe
+  assert.strictEqual((await chamar(api, { headers: { Authorization: 'Bearer dono-espetinhos' }, body: { acao: 'feira', fid: 'f-hud', nome: 'X', lojas: ['espetinhos'], hud: { texto: 'meu' } } })).status, 403);
+});
+teste('feira: a banca que não veio hoje não fecha pedido (a loja abre só para olhar); o servidor diz quando ela volta', async () => {
+  const F = require(raiz('lib/feira')), hoje = F.hojeBR(), dow = new Date(`${hoje}T12:00:00Z`).getUTCDay();
+  const feira = { nome: 'Feira', dias: [dow, (dow + 3) % 7], lojas: [{ id: 'veio' }, { id: 'faltou', dias: [(dow + 3) % 7] }] };
+  const db = { collection: () => ({ doc: () => ({ get: async () => ({ exists: true, data: () => feira }) }) }) };
+  const veio = await F.daLoja(db, 'veio', 'f-1'), faltou = await F.daLoja(db, 'faltou', 'f-1');
+  assert.strictEqual(veio.foraHoje, false); assert.strictEqual(F.proximaEntrega(veio).hoje, true);
+  assert.strictEqual(faltou.foraHoje, true); assert.deepStrictEqual(faltou.dias, [(dow + 3) % 7]); assert.strictEqual(F.proximaEntrega(faltou).hoje, false);
+  assert.strictEqual(await F.daLoja(db, 'de-fora', 'f-1'), null, 'loja que não é da feira: o pedido segue como sempre');
+  assert.ok(/foraHoje/.test(require('fs').readFileSync(raiz('api/checkout.js'), 'utf8')), 'o checkout recusa o pedido da banca que não veio');
+});
 teste('preço por dia: a loja e o servidor dão o mesmo preço; oferta vence; dia sem preço usa o normal', async () => {
   const F = require(raiz('lib/feira')), O = await import(raiz('js/oferta-lib.js'));
   const casos = [
@@ -677,6 +709,163 @@ teste('pedido por mensagem (WhatsApp colado): preço do cadastro, kg com peso fe
   const fora = await chamar(api, { headers: { Authorization: 'Bearer cliente' }, body: { acao: 'mensagem', ...corpo, chave: chave + 'x' } });
   assert.strictEqual(fora.status, 403);
 });
+teste('vídeo do produto: o link de envio direto ao R2 bate com o vetor oficial da AWS; vale só para o tipo e o tamanho pedidos; a política de segurança deixa tocar vídeo https', async () => {
+  const R = require(raiz('lib/r2.js'));
+  // vetor de teste da AWS ("Authenticating Requests: Using Query Parameters"): presigned GET de examplebucket/test.txt
+  const v = R.presignar({ metodo: 'GET', host: 'examplebucket.s3.amazonaws.com', caminho: '/test.txt', chave: 'AKIAIOSFODNN7EXAMPLE', segredo: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', regiao: 'us-east-1', quando: new Date('2013-05-24T00:00:00Z'), expira: 86400 });
+  assert.strictEqual(v.assinatura, 'aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404');
+  const antes = { ...process.env };
+  Object.assign(process.env, { R2_ACCOUNT_ID: 'a'.repeat(32), R2_ACCESS_KEY_ID: 'CHAVEDETESTE1234', R2_SECRET_ACCESS_KEY: 'segredo-de-teste-1234', R2_BUCKET: 'fotos-bancas', R2_URL_PUBLICA: 'https://fotos.usebanca.com' });
+  try {
+    const l = R.linkDeVideo('lojas/banca/videos/queijo-video-1.mp4', 'video/mp4', 5_000_000);
+    assert.ok(l.put.startsWith(`https://${'a'.repeat(32)}.r2.cloudflarestorage.com/fotos-bancas/lojas/banca/videos/queijo-video-1.mp4?`));
+    assert.match(l.put, /X-Amz-SignedHeaders=cache-control%3Bcontent-length%3Bcontent-type%3Bhost/, 'o tamanho entra na assinatura: arquivo maior é recusado');
+    assert.match(l.put, /X-Amz-Expires=600/);
+    assert.strictEqual(l.url, 'https://fotos.usebanca.com/lojas/banca/videos/queijo-video-1.mp4');
+    assert.deepStrictEqual(Object.keys(l.cabecalhos).sort(), ['cache-control', 'content-type']);
+    assert.throws(() => R.linkDeVideo('lojas/banca/videos/x.mp4', 'video/avi', 10), /MP4, WebM ou MOV/);
+    assert.throws(() => R.linkDeVideo('lojas/banca/videos/x.mp4', 'video/mp4', 41 * 1024 * 1024), /até 40 MB/);
+    assert.throws(() => R.linkDeVideo('../x.mp4', 'video/mp4', 10), /Nome/);
+  } finally { for (const k of R.NOMES) { if (k in antes) process.env[k] = antes[k]; else delete process.env[k]; } }
+  const csp = JSON.stringify(require(raiz('vercel.json')));
+  assert.strictEqual((csp.match(/media-src 'self' data: blob: https:;/g) || []).length, 2, 'loja e painel tocam vídeo https');
+});
+
+teste('feira: dia extra ("hoje tem feira"), dias de cada banca e página de entrada: loja e servidor dão a mesma resposta; textos e fotos são limpos', async () => {
+  const F = require(raiz('lib/feira')), L = await import(raiz('js/plataforma-lib.js'));
+  const f = { dias: [3, 6], lojas: [{ id: 'a' }, { id: 'b', dias: [6] }, { id: 'c', dias: [1, 3] }], datasExtras: ['2026-11-16'], semFeira: ['2026-11-18'] };
+  // 2026-11-14 = sábado · 16 = segunda (extra) · 17 = terça · 18 = quarta (sem feira) · 21 = sábado · 25 = quarta
+  for (const lib of [F, L]) {
+    assert.deepStrictEqual(['2026-11-14', '2026-11-16', '2026-11-17', '2026-11-18', '2026-11-25', 'lixo'].map((d) => lib.feiraNoDia(f, d)), [true, true, false, false, true, false]);
+    assert.strictEqual(lib.feiraNoDia({ dias: [] }, '2026-11-17'), true, 'feira sem dia marcado: todo dia');
+    assert.deepStrictEqual(['2026-11-14', '2026-11-25', '2026-11-16', '2026-11-18'].map((d) => lib.bancaVemNoDia(f, 'b', d)), [true, false, true, false], 'banca de sábado: não vem na quarta, vem no dia extra, não vem no dia sem feira');
+    assert.strictEqual(lib.bancaVemNoDia(f, 'a', '2026-11-25'), true, 'banca sem dias marcados vem em todos os dias da feira');
+    assert.deepStrictEqual(lib.diasDaBanca(f, 'c'), [3], 'dia que não é da feira não conta para a banca');
+    assert.deepStrictEqual(lib.visaoDaBanca(f, 'b').dias, [6]); assert.strictEqual(lib.visaoDaBanca(f, 'a'), f);
+    // a banca de sábado, numa terça: o pedido vai para o sábado dela, não para a quarta da feira
+    const terca = Date.parse('2026-11-24T15:00:00Z');
+    assert.strictEqual(lib.proximaEntrega(f, terca).dia, '2026-11-25'); assert.strictEqual(lib.proximaEntrega(lib.visaoDaBanca(f, 'b'), terca).dia, '2026-11-28');
+    assert.strictEqual(lib.proximaEntrega(f, Date.parse('2026-11-15T15:00:00Z')).dia, '2026-11-16', 'o dia extra entra na conta');
+  }
+  const hud = F.limparHud({ texto: ' Peça <b>já</b>\n aqui ', local: 'Praça'.repeat(40), horario: 'das 17h às 21h', capa: 'http://sem-s.com/a.jpg', fotos: ['https://a.com/1.jpg', 'https://a.com/1.jpg', 'javascript:alert(1)', 'https://a.com/x.jpg" onerror="x', ...Array.from({ length: 9 }, (_, i) => `https://a.com/f${i}.jpg`)] });
+  assert.strictEqual(hud.texto, 'Peça b já /b aqui'); assert.strictEqual(hud.local.length, 80); assert.strictEqual(hud.capa, '', 'capa só https');
+  assert.strictEqual(hud.fotos.length, 6); assert.ok(hud.fotos.every((u) => /^https:\/\/a\.com\/[\w.]+$/.test(u)), 'nenhuma foto escapa do atributo');
+  assert.deepStrictEqual(F.limparHud(null), { texto: '', local: '', horario: '', capa: '', fotos: [] });
+});
+
+teste('mexer no pedido: tirar item que faltou (estoque volta), acrescentar o que o cliente pediu depois e voltar uma etapa; depois de sair para entrega os itens não mudam', async () => {
+  const sem = sementeEstoque();
+  sem['produtos/manga'] = { nome: 'Manga palmer', preco: 9, unidade: 'kg', cat: 'frutas', ativo: true };
+  const db = criarBancoP(sem); const api = carregarApi(raiz('api/pdv.js'), criarAdmin(db, TOKENS_P));
+  const chama = (body, quem = 'func-banca') => chamar(api, { headers: { Authorization: `Bearer ${quem}` }, body });
+  const chave = 'ajs-' + Math.random().toString(36).slice(2, 12);
+  const cria = await chama({ acao: 'mensagem', chave, pag: 'Dinheiro', cliente: { nome: 'Viviane', endereco: 'Qd10 Lt7' }, itens: [{ id: 'tomate', qtd: 2, tipo: 'kg' }, { id: 'ovos', qtd: 2, tipo: 'un' }] });
+  assert.strictEqual(cria.status, 200, JSON.stringify(cria.corpo));
+  const ped = () => db._dados.get(`pedidos/${chave}`), dia = ped().entregaDia;
+  assert.strictEqual(ped().total, 45.8); assert.strictEqual(db._dados.get('produtos/ovos').estoqueFisico, 8);
+  const caixa0 = db._dados.get(`resumos/${dia}`).receita;
+  const aj = (body, quem) => chama({ acao: 'ajuste', pedidoId: chave, ...body }, quem);
+
+  // TIRAR: os ovos faltaram
+  assert.strictEqual((await aj({ op: 'tirar', indice: 1, itemId: 'tomate' })).status, 400, 'o item daquela posição não é o que a pessoa viu');
+  let r = await aj({ op: 'tirar', indice: 1, itemId: 'ovos', motivo: 'acabou' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(ped().total, 17.8); assert.strictEqual(ped().itens.length, 1);
+  assert.strictEqual(db._dados.get('produtos/ovos').estoqueFisico, 10, 'o estoque dos ovos voltou');
+  assert.strictEqual(Math.round((db._dados.get(`resumos/${dia}`).receita - caixa0) * 100) / 100, -28, 'o caixa do dia perdeu os R$ 28');
+  assert.deepStrictEqual([ped().ajustes[0].op, ped().ajustes[0].nome, ped().ajustes[0].motivo, ped().ajustes[0].por], ['tirou', sem['produtos/ovos'].nome, 'acabou', ped().ajustes[0].por]);
+  assert.ok(ped().ajustes[0].por, 'fica registrado quem tirou');
+  assert.strictEqual((await aj({ op: 'tirar', indice: 0 })).status, 400, 'o último item não sai: aí é cancelar o pedido');
+  assert.strictEqual((await aj({ op: 'tirar', indice: 7 })).status, 400);
+
+  // ACRESCENTAR: o preço é o do cadastro, nunca o do navegador
+  r = await aj({ op: 'acrescentar', item: { id: 'ovos', qtd: 1, tipo: 'un', preco: 0.01 } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(ped().total, 31.8, '17,80 + 1 × 14'); assert.strictEqual(db._dados.get('produtos/ovos').estoqueFisico, 9);
+  assert.strictEqual(ped().itens[1].acrescentado, true);
+  assert.strictEqual((await aj({ op: 'acrescentar', item: { id: 'ovos', qtd: 1.5, tipo: 'un' } })).status, 400, 'unidade é inteira');
+  assert.strictEqual((await aj({ op: 'acrescentar', item: { id: 'nao-existe', qtd: 1, tipo: 'un' } })).status, 400);
+  // por quilo pedido em unidades: vai à balança e o pedido volta para "a pesar"
+  assert.strictEqual((await chama({ acao: 'pesagem', pedidoId: chave, pesos: [] })).status, 200);
+  assert.strictEqual(ped().status, 'preparando');
+  r = await aj({ op: 'acrescentar', item: { id: 'manga', qtd: 2, tipo: 'un' } });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(ped().status, 'aguardando_pesagem'); assert.strictEqual(ped().temItensAPesar, true); assert.strictEqual(ped().total, 31.8, 'a manga só entra no valor depois da balança');
+  assert.strictEqual((await chama({ acao: 'pesagem', pedidoId: chave, pesos: [{ i: 2, peso: 1 }] })).status, 200);
+  assert.strictEqual(ped().total, 40.8); assert.strictEqual(ped().status, 'preparando');
+
+  // quem não é da equipe não mexe
+  assert.strictEqual((await aj({ op: 'tirar', indice: 0 }, 'cliente')).status, 403);
+
+  // VOLTAR etapa: separando → novo; entregue → a caminho → separando
+  db._dados.set(`pedidos/${chave}`, { ...ped(), status: 'arquivado' });
+  assert.strictEqual((await aj({ op: 'tirar', indice: 0 })).status, 400, 'pedido entregue não muda de itens');
+  assert.strictEqual((await aj({ op: 'acrescentar', item: { id: 'ovos', qtd: 1, tipo: 'un' } })).status, 400);
+  assert.strictEqual((await aj({ op: 'voltar', de: 'enviado' })).status, 400, 'a etapa que a pessoa viu já não é a do pedido');
+  r = await aj({ op: 'voltar', de: 'arquivado' }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(ped().status, 'enviado');
+  assert.strictEqual((await aj({ op: 'tirar', indice: 0 })).status, 400, 'a caminho: os itens não mudam mais');
+  r = await aj({ op: 'voltar' }); assert.strictEqual(ped().status, 'preparando');
+  r = await aj({ op: 'voltar' }); assert.strictEqual(ped().status, 'pendente');
+  assert.strictEqual((await aj({ op: 'voltar' })).status, 400, 'pedido novo não tem etapa anterior');
+  assert.deepStrictEqual(ped().ajustes.filter((a) => a.op === 'voltou').map((a) => `${a.de}>${a.para}`), ['arquivado>enviado', 'enviado>preparando', 'preparando>pendente']);
+  assert.strictEqual(ped().total, 40.8, 'voltar etapa não mexe no valor');
+});
+
+teste('mensagens ao cliente (WhatsApp): pedido pronto com peso e conta, aviso de item em falta com desculpas, acréscimo e acerto de pedido já pago', async () => {
+  const M = await import(raiz('js/mensagem-lib.js'));
+  const pedido = { nome: 'marina souza', telefone: '(62) 99999-0001', pag: 'PIX', total: 44.52, cupom: { codigo: 'DEZ', desconto: 2 }, entrega: { horario: '17h às 18h', taxa: 5 }, obs: 'tocar o interfone',
+    itens: [{ nome: 'Tomate italiano', qtd: 4, unidade: 'kg', tipo: 'un', pesoFinal: 0.62, precoOriginal: 8.9, subtotal: 5.52 }, { nome: 'Ovos caipiras', qtd: 2, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 28 }, { nome: 'Queijo', qtd: 0.5, unidade: 'kg', tipo: 'kg', precoOriginal: 16, subtotal: 8, adicionais: 'meia cura' }] };
+  const t = M.mensagemPedidoPronto({ loja: 'Queijos do Zesildo', pedido, endereco: 'Jardins Florença · Qd 3 · Lt 12' });
+  for (const pedaco of ['*Queijos do Zesildo*', 'Olá, Marina! Seu pedido está separado e conferido.', '• *Tomate italiano*', '4 un · 0,62 kg × R$ 8,90 · *R$ 5,52*', '2 × R$ 14,00 · *R$ 28,00*', '0,5 kg × R$ 16,00', '_meia cura_', 'Itens: R$ 41,52', 'Cupom DEZ: − R$ 2,00', 'Entrega: R$ 5,00', '*Total: R$ 44,52*', 'Pagamento: PIX', 'Entrega: 17h às 18h', 'Endereço: Jardins Florença', 'Observação: tocar o interfone', 'Obrigado pela preferência!'])
+    assert.ok(t.includes(pedaco), `falta "${pedaco}" em:\n${t}`);
+  assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(t), 'mensagem sóbria: sem emoji');
+  assert.ok(!t.includes('Ficou de fora'), 'sem item tirado não há pedido de desculpas');
+  // faltou um item: a mensagem do pedido pronto também avisa
+  const comFalta = { ...pedido, ajustes: [{ op: 'tirou', nome: 'Alface crespa', qtd: '2 un', valor: 7 }, { op: 'voltou' }] };
+  assert.match(M.mensagemPedidoPronto({ loja: 'X', pedido: comFalta }), /_Ficou de fora: Alface crespa\. Estava em falta hoje e não conseguimos enviar\. Pedimos desculpas pelo transtorno\._/);
+  assert.match(M.mensagemPedidoPronto({ loja: 'X', pedido: { ...pedido, ajustes: [{ op: 'tirou', nome: 'Alface' }, { op: 'tirou', nome: 'Rúcula' }, { op: 'tirou', nome: 'Coentro' }] } }), /Ficaram de fora: Alface, Rúcula e Coentro\. Estavam em falta/);
+  // aviso de ajuste
+  const aj = M.mensagemDeAjuste({ loja: 'Queijos do Zesildo', pedido, tirados: [{ nome: 'Alface crespa', qtd: '2 un', valor: 7 }], total: 37.52 });
+  for (const pedaco of ['Precisamos avisar de uma mudança no seu pedido.', 'o item abaixo está em falta hoje e saiu do pedido', '• *Alface crespa* (2 un) · − R$ 7,00', 'Pedimos desculpas pelo transtorno.', '*Novo total: R$ 37,52*', 'Se preferir trocar por outro produto'])
+    assert.ok(aj.includes(pedaco), `falta "${pedaco}" em:\n${aj}`);
+  const mais = M.mensagemDeAjuste({ loja: 'X', pedido: { ...pedido, pagamento: { status: 'PAID', valorC: 4452 } }, acrescentados: [{ nome: 'Alface', qtd: '1 un', valor: 4 }, { nome: 'Manga', qtd: '2 un', aPesar: true }], total: 48.52, diferenca: 4 });
+  for (const pedaco of ['Atualizamos o seu pedido.', '• *Alface* (1 un) · + R$ 4,00', '• *Manga* (2 un) · valor depois da balança', 'Falta acertar na entrega: *R$ 4,00*'])
+    assert.ok(mais.includes(pedaco), `falta "${pedaco}" em:\n${mais}`);
+  assert.match(M.mensagemDeAjuste({ loja: 'X', pedido: { ...pedido, pagamento: { status: 'PAID' } }, tirados: [{ nome: 'A' }], total: 30, diferenca: -7 }), /Vamos devolver a diferença: \*R\$ 7,00\*/);
+  // a caminho e retirada
+  assert.match(M.mensagemACaminho({ loja: 'X', pedido, endereco: 'Qd 3' }), /Seu pedido saiu para entrega\.[\s\S]*\*Total: R\$ 44,52\*/);
+  assert.match(M.mensagemACaminho({ loja: 'X', pedido: { ...pedido, modo: 'retirada', feiraId: 'f', retiradaLocal: 'Praça central' } }), /pronto para retirada\.[\s\S]*Retirada na feira: Praça central/);
+  // link do WhatsApp: põe o 55, e DDD 55 (Santa Maria/RS) não vira código do país
+  assert.ok(M.linkDoWhatsApp('(62) 99999-0001', 'oi').startsWith('https://wa.me/5562999990001?text=oi'));
+  assert.ok(M.linkDoWhatsApp('55 99999-0001', 'oi').startsWith('https://wa.me/5555999990001?'));
+  assert.ok(M.linkDoWhatsApp('5562999990001', 'oi').startsWith('https://wa.me/5562999990001?'));
+  assert.ok(M.linkDoWhatsApp('', 'a b').startsWith('https://wa.me/?text=a%20b'));
+  assert.strictEqual(M.primeiroNome('  JOÃO pedro'), 'João');
+});
+
+teste('mexer no pedido (contas): cupom em % e entrega grátis são refeitos; pedido já pago mostra a diferença; venda de balcão e cancelado não mudam', () => {
+  const A = require(raiz('lib/ajuste.js'));
+  const ped = { status: 'preparando', total: 99, cupom: { codigo: 'DEZ', percentual: 10, desconto: 10 }, entrega: { taxaCheia: 8, gratisAcima: 80, taxa: 0 },
+    itens: [{ id: 'a', nome: 'Queijo', qtd: 1, tipo: 'un', subtotal: 60 }, { id: 'b', nome: 'Doce', qtd: 2, tipo: 'un', subtotal: 40 }, { id: 'c', nome: 'Manga', qtd: 2, tipo: 'un', aPesar: true, subtotal: 0 }] };
+  const r = A.tirarItem(ped, 1, { por: 'dona' });
+  assert.strictEqual(r.conta.total, 62, '60 − 10% = 54; ficou abaixo dos R$ 80, então a entrega de R$ 8 volta');
+  assert.strictEqual(r.conta.cupom.desconto, 6); assert.strictEqual(r.conta.entrega.taxa, 8);
+  assert.deepStrictEqual(r.devolver, { produtoId: 'b', qtd: 2 });
+  assert.strictEqual(A.tirarItem(ped, 2).devolver, null, 'item que ainda ia à balança nunca baixou estoque');
+  assert.deepStrictEqual(A.tirarItem({ ...ped, itens: [{ id: 'k', nome: 'Tomate', qtd: 3, tipo: 'un', pesoFinal: 0.8, pesoBaixado: 0.8, subtotal: 8 }, ped.itens[0]] }, 0).devolver, { produtoId: 'k', qtd: 0.8 }, 'item pesado devolve o peso');
+  assert.strictEqual(A.diferencaDoPago({ pagamento: { status: 'PAID', valorC: 9900 }, total: 99 }, 62), -37, 'pago a mais: devolver R$ 37');
+  assert.strictEqual(A.diferencaDoPago({ pagamento: { status: 'PAID', valorC: 9900 }, total: 99 }, 113), 14, 'falta cobrar R$ 14 na entrega');
+  assert.strictEqual(A.diferencaDoPago({ total: 99 }, 62), 0);
+  assert.throws(() => A.tirarItem({ ...ped, origem: 'balcao' }, 0), /balcão/);
+  assert.throws(() => A.tirarItem({ ...ped, status: 'cancelado' }, 0), /cancelado/);
+  assert.throws(() => A.tirarItem({ ...ped, status: 'enviado' }, 0), /saiu para entrega/);
+  assert.strictEqual(A.etapaAnterior({ status: 'arquivado', origem: 'balcao' }), '', 'venda de balcão não volta');
+  assert.strictEqual(A.etapaAnterior({ status: 'preparando', itens: [{ aPesar: true }] }), 'aguardando_pesagem');
+  assert.throws(() => A.linhaNova('x', { nome: 'Insumo', unidade: 'un', soInsumo: true }, { qtd: 1, tipo: 'un' }, 5), /não está à venda/);
+  assert.strictEqual(A.linhaNova('x', { nome: 'Tomate', unidade: 'kg' }, { qtd: '1,5', tipo: 'kg' }, 8).linha.subtotal, 12);
+  assert.strictEqual(A.comRegistro({ ajustes: Array.from({ length: 60 }, (_, i) => ({ i })) }, { novo: 1 }).length, 40, 'o registro tem teto');
+});
+
 teste('pedido por mensagem: o texto do cliente acha o produto (erro de digitação, plural, palavra a mais) e marca as dúvidas', async () => {
   const I = await import(raiz('js/impressao-lib.js')), W = await import(raiz('js/whats-produtos-lib.js'));
   const P = (id, nome, preco, unidade, extra = {}) => ({ id, nome, preco, unidade, ativo: true, ...extra });
@@ -1185,6 +1374,87 @@ const sementeEstoque = () => ({ ...semente(),
 });
 const TOKENS_E = { ...TOKENS, 'estoquista-espetinhos': { uid: 'u5', tenants: { espetinhos: 'estoque' } } };
 const movs = (db, prefixo = '') => [...db._dados.entries()].filter(([k]) => k.startsWith(prefixo + 'estoque_mov/')).map(([, v]) => v);
+
+teste('avise-me quando voltar: o produto em falta entra no catálogo da loja; o cliente deixa nome e WhatsApp (uma vez); o painel vê quem espera, sabe quando voltou e tira quem já foi avisado', async () => {
+  const sem = sementeEstoque();
+  sem['produtos/queijo'] = { nome: 'Queijo canastra', preco: 46, unidade: 'un', cat: 'queijos', ativo: false, estoqueFisico: 0, fotoMini: 'https://fotos.exemplo.com/q.webp' };
+  sem['produtos/tirado'] = { nome: 'Tirado da loja', preco: 5, unidade: 'un', ativo: false, estoqueFisico: 4 };      // o dono tirou: não é "em falta"
+  sem['produtos/semconta'] = { nome: 'Sem estoque contado', preco: 5, unidade: 'un', ativo: false };
+  const db = criarBancoP(sem), adm = criarAdmin(db, TOKENS_E);
+  // 1) catálogo: só o que zerou entra em "esgotados" (sem campo de estoque)
+  const C = require(raiz('lib/catalogo.js'));
+  await C.remontar(db, 'banca');
+  assert.deepStrictEqual(db._dados.get('loja/catalogo').esgotados, [{ id: 'queijo', nome: 'Queijo canastra', cat: 'queijos', foto: 'https://fotos.exemplo.com/q.webp' }]);
+  assert.ok(!db._dados.get('loja/catalogo').produtos.some((p) => p.id === 'queijo'), 'continua fora da vitrine');
+  // 2) o cliente pede (sem login)
+  const loja = carregarApi(raiz('api/checkout.js'), adm), pede = (body) => chamar(loja, { headers: ip(), body: { acao: 'avise-me', ...body } });
+  let r = await pede({ produtoId: 'queijo', nome: 'Marina Souza', telefone: '(62) 99999-0001' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo)); assert.strictEqual(r.corpo.jaEstava, false);
+  r = await pede({ produtoId: 'queijo', nome: 'Marina', telefone: '5562999990001' });
+  assert.strictEqual(r.corpo.jaEstava, true, 'o mesmo telefone não entra duas vezes');
+  assert.strictEqual((await pede({ produtoId: 'queijo', nome: 'Paulo', telefone: '62 98888-0002' })).status, 200);
+  assert.strictEqual((await pede({ produtoId: 'queijo', nome: 'X', telefone: '123' })).status, 400, 'telefone sem DDD');
+  assert.strictEqual((await pede({ produtoId: 'queijo', nome: '', telefone: '62999990003' })).status, 400, 'sem nome');
+  assert.strictEqual((await pede({ produtoId: 'tomate', nome: 'Ana', telefone: '62999990003' })).status, 400, 'produto que está à venda: é só pedir');
+  assert.strictEqual((await pede({ produtoId: 'tirado', nome: 'Ana', telefone: '62999990003' })).status, 400, 'produto que o dono tirou da loja não tem lista de espera');
+  assert.strictEqual((await pede({ produtoId: 'nao-existe', nome: 'Ana', telefone: '62999990003' })).status, 400);
+  const guardado = db._dados.get('espera/queijo');
+  assert.strictEqual(guardado.clientes.length, 2); assert.strictEqual(guardado.nome, 'Queijo canastra');
+  // 3) o painel
+  const est = carregarApi(raiz('api/estoque.js'), adm), painel = (body, quem = 'dona-banca') => chamar(est, { headers: { Authorization: `Bearer ${quem}` }, body });
+  assert.ok([401, 403].includes((await painel({ acao: 'espera' }, 'cliente')).status), 'cliente não vê a lista');
+  r = await painel({ acao: 'espera' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.deepStrictEqual(r.corpo.lista.map((x) => [x.produtoId, x.voltou, x.clientes.map((c) => `${c.nome}:${c.telefone}`)]), [['queijo', false, ['Marina Souza:62999990001', 'Paulo:62988880002']]]);
+  // chegou mais queijo: volta para a loja sozinho e a lista diz "voltou"
+  assert.strictEqual((await painel({ acao: 'movimentar', produtoId: 'queijo', tipo: 'compra', qtd: 6, chave: 'chave-queijo-1' })).status, 200);
+  assert.strictEqual(db._dados.get('produtos/queijo').ativo, true);
+  r = await painel({ acao: 'espera' });
+  assert.strictEqual(r.corpo.lista[0].voltou, true);
+  // avisou a Marina: ela sai; depois limpa o resto
+  r = await painel({ acao: 'espera-tirar', produtoId: 'queijo', telefone: '62999990001' });
+  assert.strictEqual(r.corpo.restam, 1);
+  r = await painel({ acao: 'espera-tirar', produtoId: 'queijo' });
+  assert.strictEqual(r.corpo.restam, 0); assert.ok(!db._dados.has('espera/queijo'), 'lista vazia some');
+  // texto que a banca manda
+  const A = require(raiz('lib/avise.js'));
+  assert.match(A.mensagem('Queijos do Zesildo', 'Marina Souza', 'Queijo canastra'), /^\*Queijos do Zesildo\*\n\nOlá, Marina! Você pediu para ser avisado: \*Queijo canastra\* voltou\./);
+  assert.deepStrictEqual(['(62) 99999-0001', '5562999990001', '6232221111', '62 0999-0001', '999990001', ''].map(A.telefone), ['62999990001', '62999990001', '6232221111', '', '', '']);
+});
+
+teste('pedido para outro dia: no dia, "confirmar os preços" põe o preço de hoje do cadastro em cada item (promoção e pedido pago ficam como estão) e refaz o total', async () => {
+  const A = require(raiz('lib/ajuste.js'));
+  const ped = { status: 'pendente', total: 50, precoNoDia: true, cupom: { codigo: 'DEZ', percentual: 10, desconto: 5.56 },
+    itens: [{ id: 'tomate', nome: 'Tomate', qtd: 2, tipo: 'kg', unidade: 'kg', preco: 8, precoOriginal: 8, subtotal: 16 },
+      { id: 'ovos', nome: 'Ovos', qtd: 2, tipo: 'un', unidade: 'un', preco: 14, precoOriginal: 14, subtotal: 28 },
+      { id: 'manga', nome: 'Manga', qtd: 3, tipo: 'un', unidade: 'kg', preco: 9, precoOriginal: 9, aPesar: true, subtotal: 0 },
+      { id: 'pacote', nome: 'Pacote', qtd: 4, tipo: 'un', unidade: 'un', preco: 3, precoOriginal: 3, subtotal: 10, promo: { qtd: 4, preco: 10 } },
+      { id: 'pastel', nome: 'Pastel', qtd: 1, tipo: 'un', unidade: 'un', preco: 8, precoOriginal: 8, subtotal: 11, adicionais: 'queijo extra' },
+      { id: 'sumiu', nome: 'Sumiu', qtd: 1, tipo: 'un', unidade: 'un', preco: 1.6, precoOriginal: 1.6, subtotal: 1.6 }] };
+  const precos = { tomate: 9.5, ovos: 14, manga: 7, pacote: 99, pastel: 99 };
+  const r = A.reprecificar(ped, (id) => precos[id], { por: 'dona' });
+  assert.deepStrictEqual(r.mudou, [{ nome: 'Tomate', de: 8, para: 9.5 }, { nome: 'Manga', de: 9, para: 7 }], 'ovos não mudaram; promoção, item montado e produto sem cadastro ficam como estão');
+  assert.strictEqual(r.itens[0].subtotal, 19); assert.strictEqual(r.itens[2].precoOriginal, 7); assert.strictEqual(r.itens[2].subtotal, 0, 'o item a pesar só muda o preço por quilo');
+  assert.strictEqual(r.itens[3].subtotal, 10); assert.strictEqual(r.itens[4].subtotal, 11);
+  assert.strictEqual(r.conta.total, 62.64, '19 + 28 + 10 + 11 + 1,60 = 69,60; menos 10%');
+  assert.throws(() => A.reprecificar({ ...ped, pagamento: { status: 'PAID' } }, (id) => precos[id]), /já foi pago/);
+  assert.throws(() => A.reprecificar({ ...ped, status: 'enviado' }, (id) => precos[id]), /saiu para entrega/);
+  // pelo servidor: o pedido deixa de estar marcado e o caixa do dia acompanha a diferença
+  const sem = sementeEstoque(); const db = criarBancoP(sem); const api = carregarApi(raiz('api/pdv.js'), criarAdmin(db, TOKENS_P));
+  const chama = (body) => chamar(api, { headers: { Authorization: 'Bearer func-banca' }, body });
+  const chave = 'prc-' + Math.random().toString(36).slice(2, 12);
+  assert.strictEqual((await chama({ acao: 'mensagem', chave, pag: 'Dinheiro', cliente: { nome: 'Viviane', endereco: 'Qd10 Lt7' }, itens: [{ id: 'tomate', qtd: 2, tipo: 'kg' }, { id: 'ovos', qtd: 1, tipo: 'un' }] })).status, 200);
+  const dia = db._dados.get(`pedidos/${chave}`).entregaDia, caixa0 = db._dados.get(`resumos/${dia}`).receita;
+  db._dados.set(`pedidos/${chave}`, { ...db._dados.get(`pedidos/${chave}`), precoNoDia: true });
+  db._dados.set('produtos/tomate', { ...db._dados.get('produtos/tomate'), preco: 10 });
+  const x = await chama({ acao: 'ajuste', op: 'precos', pedidoId: chave });
+  assert.strictEqual(x.status, 200, JSON.stringify(x.corpo));
+  const p = db._dados.get(`pedidos/${chave}`);
+  assert.strictEqual(p.total, 34); assert.strictEqual(p.precoNoDia, false); assert.ok(p.precoConfirmadoEm);
+  assert.deepStrictEqual(x.corpo.mudou, [{ nome: 'Tomate', de: 8.9, para: 10 }]);
+  assert.strictEqual(Math.round((db._dados.get(`resumos/${dia}`).receita - caixa0) * 100) / 100, 2.2);
+  assert.strictEqual(p.ajustes.pop().op, 'precos');
+});
 
 teste('estoque: conta de cada tipo de movimentação', () => {
   const E = require(raiz('lib/estoque'));
@@ -2848,7 +3118,7 @@ teste('ícones: todo ícone pedido no painel existe, e nenhuma tela do painel vo
   });
   assert.ok(usados > 60, `ícones em uso: ${usados}`);
   const abas = [...fs.readFileSync(raiz('admin.html'), 'utf8').matchAll(/class="tab[^"]*" data-aba="([a-z]+)"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="([a-z]+)">/g)];
-  assert.strictEqual(abas.length, 18); abas.forEach((m) => assert.strictEqual(m[1] === 'relatorios' ? 'pedidos' : m[1], m[2], 'cada aba usa o ícone com o próprio nome (a de pedidos usa o de pedidos)'));
+  assert.strictEqual(abas.length, 19); abas.forEach((m) => assert.strictEqual(m[1] === 'relatorios' ? 'pedidos' : m[1], m[2], 'cada aba usa o ícone com o próprio nome (a de pedidos usa o de pedidos)'));
   for (const [nome, d] of Object.entries(I.ICONES)) { assert.ok(!/<script|on\w+=|href/i.test(d), nome); assert.ok((d.match(/class="s"/g) || []).length <= 3, `${nome}: semente demais`); }
 });
 
@@ -2871,6 +3141,67 @@ teste('impressão: o cupom cabe na largura do papel e traz os valores do pedido'
   const e = I.etiquetaDeEntrega({ ...p, pagamento: { status: 'PAID' } }, {}); assert.ok(I.paraTexto(e, 32).includes('JÁ PAGO') && !I.paraTexto(e, 32).includes('Troco'));
   const lote = I.paraTexto(I.etiquetaDeLote({ nome: 'Molho de tomate', lote: '261005-01', fabricadoEm: '2026-10-05', validade: '2026-11-04', preco: 18 }), 32);
   assert.ok(lote.includes('261005-01') && lote.includes('04/11/2026') && lote.includes('R$ 18,00'));
+});
+teste('impressão: itens em letra alta com o peso da balança; recibo do cliente com logo, peso, total, o que faltou e a assinatura', async () => {
+  const I = await import(raiz('js/impressao-lib.js'));
+  const p = { id: 'abcXYZ123456', data: '2026-10-05T15:30:00Z', pesadoEm: '2026-10-05T16:00:00Z', nome: 'Maria Silva', condominio: 'Jardins Munique', quadra: '3', lote: '12', pag: 'PIX', pagamento: { status: 'PAID' }, troco: 'R$ 100',
+    entrega: { horario: '17h às 18h', taxa: 5 }, cupom: { codigo: 'DEZ', desconto: 2 }, total: 47.52,
+    ajustes: [{ op: 'tirou', nome: 'Alface crespa' }, { op: 'voltou', de: 'enviado', para: 'preparando' }],
+    itens: [{ nome: 'Tomate italiano', qtd: 4, unidade: 'kg', tipo: 'un', pesoFinal: 0.62, precoOriginal: 8.9, subtotal: 5.52 }, { nome: 'Ovos caipiras', qtd: 2, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 28 }, { nome: 'Queijo canastra', qtd: 0.5, unidade: 'kg', tipo: 'kg', precoOriginal: 22, subtotal: 11, adicionais: 'meia cura' }] };
+  // cupom de separar: o peso aparece, e os itens saem em letra alta sem perder a largura
+  const cupom = I.cupomDoPedido(p, { loja: 'Queijos do Zesildo' });
+  assert.ok(I.paraTexto(cupom, 32).includes('0,62 kg x R$ 8,90/kg'), I.paraTexto(cupom, 32));
+  assert.ok(cupom.some((l) => l.t === 'par' && l.a && /Tomate/.test(l.e)));
+  for (const largura of [58, 80]) I.compor(cupom, I.colunasDe(largura)).forEach((l) => { if (!l.corte) assert.ok(l.s.length <= (l.g ? Math.floor(I.colunasDe(largura) / 2) : I.colunasDe(largura)), l.s); });
+  const bytes = [...I.paraEscPos(cupom, {})];
+  assert.ok(bytes.some((x, i) => x === 0x1d && bytes[i + 1] === 0x21 && bytes[i + 2] === 0x01), 'GS ! 1 = letra alta');
+  assert.deepStrictEqual(bytes.slice(-6), [0x1b, 0x45, 0, 0x1d, 0x21, 0], 'no fim a impressora volta ao normal');
+  // recibo do cliente
+  const rec = I.reciboDoCliente(p, { loja: 'Queijos do Zesildo', logo: 'https://fotos.exemplo.com/logo.png' });
+  const t = I.paraTexto(rec, 48).replace(/\s*\n\s*/g, ' ');
+  for (const pedaco of ['Recibo do pedido 123456', '05/10/2026 13:00', 'Maria Silva', 'Entrega: 17h às 18h', 'Tomate italiano', '0,62 kg x R$ 8,90/kg', 'R$ 5,52', '2 x R$ 14,00', '0,5 kg x R$ 22,00', '+ meia cura', 'Cupom DEZ', 'já recebido', 'Alface crespa', 'Pedimos desculpas', 'Obrigado pela preferência!', 'usebanca.com'])
+    assert.ok(t.includes(pedaco), `falta "${pedaco}" em:\n${t}`);
+  assert.match(t, /TOTAL\s+R\$ 47,52/);
+  assert.ok(!t.includes('Troco'), 'pedido já pago não fala de troco');
+  for (const largura of [58, 80]) I.compor(rec, I.colunasDe(largura)).forEach((l) => { if (!l.corte && !l.img) assert.ok(l.s.length <= (l.g ? Math.floor(I.colunasDe(largura) / 2) : I.colunasDe(largura)), l.s); });
+  const html = I.paraHtml([rec], { largura: 80 });
+  assert.ok(html.includes('<img class="logo" src="https://fotos.exemplo.com/logo.png"'), 'a página comum leva a logo');
+  assert.ok(!I.paraHtml([I.reciboDoCliente(p, { logo: 'javascript:alert(1)' })]).includes('<img'), 'endereço que não é https não vira imagem');
+  assert.ok(!I.paraHtml([[{ t: 'logo', src: 'https://x.com/a.png" onerror="x' }]]).includes('onerror="x'), 'a logo não abre atributo');
+  // o celular da banca (app Ponte) aceita o recibo: a logo é pulada e a letra alta continua
+  const Ponte = require(raiz('lib/ponte.js'));
+  if (typeof Ponte.limparFolhas === 'function') { const f = Ponte.limparFolhas([rec]); assert.ok(f && !f[0].some((l) => l.t === 'logo') && f[0].some((l) => l.a)); }
+});
+teste('impressão: recibo elegante — marca do UseBanca, foto de cada item na página, peso total, parcial com a lista do que falta', async () => {
+  const I = await import(raiz('js/impressao-lib.js'));
+  const p = { id: '-Nabc123456', data: '2026-10-05T16:00:00Z', pesadoEm: '2026-10-05T16:20:00Z', nome: 'Maria Silva', total: 60.4, pag: 'Pix', entrega: { taxa: 5, horario: '17h às 18h' },
+    itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 4, unidade: 'kg', tipo: 'un', pesoFinal: 0.62, precoOriginal: 8.9, subtotal: 5.52 },
+      { id: 'queijo', nome: 'Queijo canastra', qtd: 0.5, unidade: 'kg', tipo: 'kg', precoOriginal: 22, subtotal: 11 },
+      { id: 'alface', nome: 'Alface crespa', qtd: 1, unidade: 'un', tipo: 'un', aPesar: true, precoOriginal: 4, subtotal: 0 }] };
+  const fotos = { tomate: 'https://fotos.usebanca.com/a/tomate.jpg', queijo: 'javascript:alert(1)' };
+  const rec = I.reciboDoCliente(p, { loja: 'Queijos do Zesildo', fotos });
+  const t = I.paraTexto(rec, 48);
+  assert.match(t, /Peso total\s+1,12 kg/, t);                                   // 0,62 kg (balança) + 0,5 kg (por peso)
+  assert.match(t, /PARCIAL\s+R\$ 60,40/, t);
+  assert.ok(t.includes('Falta pesar 1 item(ns): 1x Alface crespa'), t);
+  assert.match(t, /Tomate italiano\n\s*0,62 kg x R\$ 8,90\/kg\s+R\$ 5,52/, 'na térmica o item é o nome e, embaixo, peso e valor');
+  const html = I.paraHtml([rec], { largura: 58 });
+  assert.ok(html.includes('<img src="https://fotos.usebanca.com/a/tomate.jpg"'), 'a foto do produto vai na página comum');
+  assert.ok(!html.includes('javascript:alert'), 'foto que não é https é descartada');
+  assert.ok(html.includes('R$\u00a05,52') && !/R\$\s*nbsp|RR\$/.test(html), 'o valor não se parte no fim da linha e não sai com sujeira');
+  assert.match(html, /class="par[^"]*\btot\b/, 'o total é uma caixa em destaque'); assert.ok(html.includes('<svg') && html.includes('class="c marca"'), 'a marca do UseBanca vai na página comum');
+  assert.ok(!t.includes('<svg') && !I.paraTexto(rec, 32).includes('marca'), 'a prévia em texto não leva o desenho');
+  // térmica: o desenho vai em pontos (GS v 0), centralizado, e a letra volta ao normal depois
+  const bytes = [...I.paraEscPos(rec, { largura: 58 })], i = bytes.findIndex((x, k) => x === 0x1d && bytes[k + 1] === 0x76 && bytes[k + 2] === 0x30);
+  assert.ok(i > 0, 'comando de imagem presente'); assert.deepStrictEqual(bytes.slice(i + 3, i + 8), [0, 16, 0, 128, 0], '128 pontos de largura (16 bytes) por 128 de altura');
+  assert.ok(bytes.slice(i + 8, i + 8 + 2048).some((x) => x !== 0) && bytes[i - 3] === 0x1b && bytes[i - 2] === 0x61 && bytes[i - 1] === 1, 'tem desenho e vem centralizado');
+  assert.strictEqual(bytes[i + 8 + 2048], 0x0a);
+  // pedido completo: vira TOTAL e some a lista do que falta
+  const feito = I.paraTexto(I.reciboDoCliente({ ...p, itens: p.itens.slice(0, 2), total: 21.52 }, {}), 48);
+  assert.match(feito, /TOTAL\s+R\$ 21,52/); assert.ok(!feito.includes('PARCIAL') && !feito.includes('Falta pesar'));
+  // celular da banca: o item entra sem a foto
+  const Ponte = require(raiz('lib/ponte.js'));
+  if (typeof Ponte.limparFolhas === 'function') { const f = Ponte.limparFolhas([rec]); assert.ok(f, 'aceita item e marca'); assert.ok(f[0].some((l) => l.t === 'item') && f[0].some((l) => l.t === 'marca') && !JSON.stringify(f).includes('fotos.usebanca')); }
 });
 teste('impressão: comandos da térmica (ESC/POS), acentos e página comum', async () => {
   const I = await import(raiz('js/impressao-lib.js'));
@@ -3523,7 +3854,7 @@ teste('cloudflare: _headers não soma cabeçalhos em nenhum endereço, /previa t
   assert.strictEqual(de('/previa')['X-Frame-Options'], 'SAMEORIGIN'); assert.ok(/frame-ancestors 'self'/.test(de('/previa')['Content-Security-Policy']));
   assert.strictEqual(de('/')['X-Frame-Options'], 'DENY'); assert.ok(/frame-ancestors 'none'/.test(de('/')['Content-Security-Policy']));
   assert.ok(/noindex/.test(de('/admin')['X-Robots-Tag']) && /noindex/.test(de('/plataforma')['X-Robots-Tag']) && !de('/')['X-Robots-Tag']);
-  assert.deepStrictEqual(C.gerarRedirects(vercel).split('\n').slice(1).filter(Boolean), ['/feira/:id /?feira=:id&entrar=1 302'], '/previa não é reescrita (os cabeçalhos do /index.html vinham junto)');
+  assert.deepStrictEqual(C.gerarRedirects(vercel).split('\n').slice(1).filter(Boolean), ['/feira/:id /feira.html?feira=:id 302'], '/previa não é reescrita (os cabeçalhos do /index.html vinham junto)');
   assert.deepStrictEqual(C.copiasDePagina(vercel), [{ de: 'index.html', para: 'previa.html' }, { de: 'plataforma.html', para: 'admin-plataforma.html' }], '/previa vira um arquivo próprio; a plataforma ganha uma cópia dentro do app do painel');
   assert.ok(/noindex/.test(de('/admin-plataforma')['X-Robots-Tag']), 'a plataforma dentro do painel também fica fora do Google');
   assert.ok(!C.ENDERECOS_DO_SITE.some((e) => C.casa(e, '/previa') || C.casa(e, '/previa.html')), 'nenhum trecho "de todas as páginas" vale para a prévia');
@@ -5280,4 +5611,76 @@ teste('velocidade: estilos da loja num arquivo só e arquivos estáticos fora da
   for (const f of funcoes) assert.ok(rotaDe[f] && r.include.includes(rotaDe[f]), `functions/${f} precisa de rota no _routes.json (lib/cloudflare-arquivos.js)`);
   // o passo do build escreve o arquivo
   assert.ok(/_routes\.json/.test(fs.readFileSync(raiz('scripts/cloudflare-arquivos.js'), 'utf8')));
+});
+
+teste('resumo do painel: vendido e pedidos de hoje pelo dia da entrega, cancelado fora, gráfico de 7 dias, acabando e quem espera', async () => {
+  const R = await import(raiz('js/resumo-lib.js'));
+  const hoje = '2026-11-12';
+  const pedidos = [
+    { total: 100, status: 'arquivado', data: '2026-11-12T13:00:00.000Z' },                       // hoje (10h em Brasília)
+    { total: 50.5, status: 'pendente', data: '2026-11-10T13:00:00.000Z', entregaDia: '2026-11-12' }, // feito antes, entrega hoje: conta hoje
+    { total: 999, status: 'cancelado', data: '2026-11-12T14:00:00.000Z' },                        // cancelado não conta
+    { total: 80, status: 'arquivado', data: '2026-11-12T01:00:00.000Z' },                         // 22h de ontem em Brasília
+    { total: 30, status: 'arquivado', data: '2026-11-12T15:00:00.000Z', origem: 'balcao', resumoDoDia: true },   // resumo do balcão: soma, mas fora da média
+    { total: 70, status: 'arquivado', data: '2026-11-05T15:00:00.000Z' },                         // fora dos 7 dias
+  ];
+  const r = R.resumoDoDia(pedidos, hoje);
+  assert.strictEqual(r.vendido, 180.5); assert.strictEqual(r.pedidos, 3); assert.strictEqual(r.ontem, 80);
+  assert.strictEqual(r.variacao, 126); assert.strictEqual(r.ticket, 75.25);
+  assert.strictEqual(r.serie.length, 7); assert.strictEqual(r.serie[6].dia, hoje); assert.ok(r.serie[6].hoje);
+  assert.strictEqual(r.serie[0].dia, '2026-11-06'); assert.strictEqual(r.serie[5].valor, 80);
+  assert.strictEqual(R.resumoDoDia([], hoje).variacao, null, 'sem venda ontem não inventa porcentagem');
+  assert.strictEqual(R.resumoDoDia(null, hoje).vendido, 0);
+  const ac = R.produtosAcabando([
+    { id: 'a', nome: 'Queijo', estoqueFisico: 2, estoqueMin: 5 }, { id: 'b', nome: 'Doce', estoqueFisico: 0 },
+    { id: 'c', nome: 'Sem controle' }, { id: 'd', nome: 'Desligado', estoqueFisico: 0, ativo: false }, { id: 'e', nome: 'Insumo', estoqueFisico: 0, soInsumo: true },
+    { id: 'f', nome: 'Em dia', estoqueFisico: 9, estoqueMin: 5 },
+  ]);
+  assert.deepStrictEqual(ac.map((x) => x.id), ['b', 'a'], 'zerado primeiro; desligado, insumo e sem controle ficam fora');
+  const fila = [{ id: 2, status: 'pendente', data: '2026-11-12T12:00:00Z' }, { id: 1, status: 'aguardando_pesagem', data: '2026-11-12T11:00:00Z' }, { id: 3, status: 'preparando', data: '2026-11-12T10:00:00Z' }];
+  assert.deepStrictEqual(R.pedidosEsperando(fila).map((p) => p.id), [1, 2], 'quem chegou primeiro aparece primeiro; em preparo não está esperando');
+  assert.strictEqual(R.saudacao(Date.parse('2026-11-12T12:00:00Z')), 'Bom dia');
+  assert.strictEqual(R.saudacao(Date.parse('2026-11-12T18:00:00Z')), 'Boa tarde');
+  assert.strictEqual(R.saudacao(Date.parse('2026-11-12T23:30:00Z')), 'Boa noite');
+});
+
+teste('resumo do painel: só quem é gestor vê a aba, loja só vitrine não tem, e Produtos continua sendo a primeira tela', async () => {
+  const P = await import(raiz('js/papeis-lib.js')), fs = require('fs');
+  const html = fs.readFileSync(raiz('admin.html'), 'utf8');
+  const todas = [...html.matchAll(/class="tab[^"]*" data-aba="([a-z]+)"/g)].map((m) => m[1]);
+  assert.ok(todas.includes('resumo'));
+  assert.match(html, /class="tab active" data-aba="produtos"/, 'o painel continua abrindo em Produtos');
+  for (const papel of ['proprietario', 'administrador', 'gerente']) assert.ok(P.abasDoPapel(papel, todas).includes('resumo'), papel);
+  for (const papel of ['funcionario', 'caixa', 'producao', 'estoque']) assert.ok(!P.abasDoPapel(papel, todas).includes('resumo'), `${papel} não vê quanto a loja vendeu`);
+  assert.ok(!P.abasDoPapel('proprietario', todas, null, 'vitrine').includes('resumo'), 'loja só vitrine não tem pedido para resumir');
+});
+
+teste('painel: tema escuro gerado está em dia, só vale com o atributo e não toca a loja do cliente', async () => {
+  const fs = require('fs');
+  const T = require(raiz('lib/tema-escuro.js'));
+  const ler = (a) => fs.readFileSync(raiz(a), 'utf8');
+  const esperado = T.gerar(ler, ler('css/admin-escuro-extra.css'));
+  assert.strictEqual(ler('css/admin-escuro.css'), esperado, 'css/admin-escuro.css desatualizado: rode node scripts/gerar-tema-escuro.js');
+  // toda regra do arquivo só vale no tema escuro (o claro, que é o original, não muda)
+  const semCom = esperado.replace(/\/\*[\s\S]*?\*\//g, '');
+  const seletores = [...semCom.matchAll(/(^|[{};])\s*([^{};@]+)\{/g)].map((m) => m[2].trim()).filter(Boolean);
+  assert.ok(seletores.length > 300, 'o gerador cobre o painel');
+  const partes = (sel) => { const r = []; let p = 0, ini = 0; for (let i = 0; i < sel.length; i++) { const ch = sel[i]; if (ch === '(') p++; else if (ch === ')') p--; else if (ch === ',' && !p) { r.push(sel.slice(ini, i)); ini = i + 1; } } r.push(sel.slice(ini)); return r; };
+  for (const s of seletores) for (const parte of partes(s)) assert.ok(parte.trim().startsWith(T.ATRIBUTO), `regra fora do tema escuro: ${parte.trim().slice(0, 80)}`);
+  // o painel lista os mesmos arquivos que o gerador lê, e carrega o tema por último
+  const admin = ler('admin.html');
+  const links = [...admin.matchAll(/<link rel="stylesheet" href="\.\/(css\/[^"]+)">/g)].map((m) => m[1]);
+  assert.deepStrictEqual(links.slice(0, -1), T.ARQUIVOS, 'admin.html e lib/tema-escuro.js com a mesma lista de CSS');
+  assert.strictEqual(links[links.length - 1], 'css/admin-escuro.css');
+  assert.ok(/<script type="module" src="\.\/js\/painel-tema\.js"><\/script>\s*<\/head>/.test(admin), 'o tema entra no <head> (a tela já abre na cor certa)');
+  assert.ok(/id="btn-tema"/.test(admin), 'botão no menu Mais opções');
+  // a loja do cliente e a plataforma não carregam o tema do painel
+  for (const p of ['index.html', 'plataforma.html', 'feira.html']) assert.ok(!/admin-escuro|painel-tema/.test(ler(p)), `${p} não usa o tema do painel`);
+  assert.ok(!/admin-escuro/.test(ler('css/loja-tudo.css')));
+  // troca de cor pelo papel
+  const c = (h) => T.lerCor(h);
+  assert.ok(T.contraste(T.trocar(c('#1a1a18'), 'texto'), T.trocar(c('#ffffff'), 'fundo')) >= 7, 'texto principal legível no card');
+  assert.ok(T.contraste(T.trocar(c('#707065'), 'texto'), T.trocar(c('#faf7f2'), 'fundo')) >= 4.5, 'texto apagado ainda legível');
+  assert.strictEqual(T.trocar(c('#ffffff'), 'texto'), null, 'texto branco (em cima de cor) fica');
+  assert.strictEqual(T.trocar(c('#dc2626'), 'fundo'), null, 'fundo de cor forte fica');
 });

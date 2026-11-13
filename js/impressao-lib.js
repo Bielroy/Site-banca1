@@ -2,8 +2,11 @@
 //  js/impressao-lib.js — O QUE vai no papel (sem falar com impressora nenhuma).
 //
 //  Tudo o que se imprime vira primeiro uma lista de "linhas" simples:
-//     { t:'txt', v:'texto', al:'e'|'c'|'d', b:true (negrito), g:true (grande) }
+//     { t:'txt', v:'texto', al:'e'|'c'|'d', b:true (negrito), g:true (grande), a:true (alta: mesma largura, o dobro da altura) }
+//     { t:'logo', src:'https://…' }   logo da loja (só na página comum; a térmica pula e segue com o nome em letra grande)
 //     { t:'par', e:'esquerda', d:'direita', b }     ex.: "Tomate ........ R$ 8,00"
+//     { t:'item', nome, e:'detalhe (peso x preço)', d:'valor', foto:'https://…' }   linha de recibo: na página comum leva foto; na térmica vira nome + detalhe e valor
+//     { t:'marca' }   o desenho do UseBanca (página comum: SVG; térmica: pontos, GS v 0)       par com tot:true = caixa do total (página comum)
 //     { t:'sep' }   linha tracejada      { t:'esp', n }   linhas em branco      { t:'corte' }
 //  Depois a mesma lista é transformada em:
 //     • comandos ESC/POS  (impressora térmica por Bluetooth, cabo ou app)  → paraEscPos
@@ -11,6 +14,12 @@
 //     • texto puro         (prévia na tela e testes)                        → paraTexto
 //  Assim o cupom é igual em qualquer caminho, e um caminho novo não muda o cupom.
 // =====================================================================
+// <marca-gerada> — o desenho do UseBanca. GERADO por scripts/gerar-marca-termica.js (não edite à mão).
+//   MARCA_SVG = preto e branco, para a página comum · MARCA_BITS = 128 x 128 pontos, 1 bit cada (1 = preto), linha por linha, para a térmica (GS v 0)
+//   Fica neste arquivo de propósito: o servidor (Dockerfile) leva só js/impressao-lib.js, que não pode importar outros arquivos.
+const MARCA_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"96 76 320 320\" fill=\"none\"><defs><pattern id=\"r\" width=\"9\" height=\"9\" patternUnits=\"userSpaceOnUse\" patternTransform=\"rotate(45)\"><rect width=\"9\" height=\"9\" fill=\"#fff\"/><rect width=\"4.5\" height=\"9\" fill=\"#000\"/></pattern></defs><circle cx=\"322\" cy=\"204\" r=\"56\" fill=\"url(#r)\" stroke=\"#000\" stroke-width=\"6\"/><circle cx=\"216\" cy=\"188\" r=\"76\" fill=\"#000\"/><path d=\"M216 118C218 92 238 80 260 82C260 104 242 118 216 118Z\" fill=\"#000\"/><g fill=\"#fff\" stroke=\"#000\" stroke-width=\"7\"><rect x=\"115\" y=\"235\" width=\"282\" height=\"36\" rx=\"8\"/><rect x=\"115\" y=\"292\" width=\"282\" height=\"36\" rx=\"8\"/><rect x=\"115\" y=\"349\" width=\"282\" height=\"36\" rx=\"8\"/></g><rect x=\"104\" y=\"224\" width=\"40\" height=\"168\" rx=\"10\" fill=\"#000\"/><rect x=\"368\" y=\"224\" width=\"40\" height=\"168\" rx=\"10\" fill=\"#000\"/></svg>";
+const MARCA_BITS = { w: 128, h: 128, b64: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB4AAAAAAAAAAAAAAAAAAAH+AAAAAAAAAAAAAAAAAAAH/gAAAAAAAAAAAAAAAAAAD/4AAAAAAAAAAAAAAAAAAD/+AAAAAAAAAAAAAAAAAAA//gAAAAAAAAAAAAAAAAAAf/wAAAAAAAAAAAAAAAAAAP/8AAAAAAAAAAAAAAAAAAD/+AAAAAAAAAAAAAAAAAAB//AAAAAAAAAAAAAAAAAAAf/gAAAAAAAAAAAAAAAAAAH/wAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAD//4AAAAAAAAAAAAAAAAAH///gAAAAAAAAAAAAAAAAH///+AAAAAAAAAAAAAAAAH////4AAAAAAAAAAAAAAAH/////gAAAAAAAAAAAAAAD/////8AAAAAAAAAAAAAAB//////gAAAAAAAAAAAAAB//////+AAAAAAAAAAAAAA///////wAAAAAAAAAAAAAf//////+AAAAAAAAAAAAAH///////gAAAAAAAAAAAAD///////8AAAAAAAAAAAAB////////gAAAAAAAAAAAA////////8AP/4AAAAAAAAP////////Af//wAAAAAAAH////////4f5z/AAAAAAAB////////+f85z4AAAAAAA//////////Oc5/gAAAAAAP/////////nOc58AAAAAAD/////////znOc/gAAAAAB/////////5znOc8AAAAAAf////////+5znOfgAAAAAH/////////85znO8AAAAAD/////////+c5znHAAAAAA//////////Oc5zj4AAAAAP/////////3Oc5xmAAAAAD//////////nOc4xwAAAAA//////////znOcY8AAAAAP/////////5znOMbgAAAAD/////////85znGM4AAAAA//////////c5zjGOAAAAAP/////////+c5xjHgAAAAD//////////Oc4xjcAAAAA//////////nOcYxnAAAAAP/////////znOMYxwAAAAD/////////9znGMY8AAAAA//////////5zjGMfAAAAAH/////////85xjGNwAAAAB/////////+c4xjGcAAAAAf/////////OcYxjHAAAAAD/////////nOMYxjwAAAAA/////////znGMYx4AAAAAP////////9zjGMY+AAAAAB////////+5xjGMbgAAD/4f////////c4xjGM//AD//D////////+cYxjGf/8B//4f////////OMYxjH//gf///////////////////4H///////////////////+B////////////////////gf/+AAAAAAAAAAAAAAB//4H//gAAAAAAAAAAAAAAf/+B//4AAAAAAAAAAAAAAH//gf/+AAAAAAAAAAAAAAB//4H//gAAAAAAAAAAAAAAf/+B//4AAAAAAAAAAAAAAH//gf/+AAAAAAAAAAAAAAB//4H//gAAAAAAAAAAAAAAf/+B//4AAAAAAAAAAAAAAH//gf/+AAAAAAAAAAAAAAB//4H//gAAAAAAAAAAAAAAf/+B////////////////////gf///////////////////4H///////////////////+B////////////////////gf/+AAAAAAAAAAAAAAB//4H//gAAAAAAAAAAAAAAf/+B//4AAAAAAAAAAAAAAH//gf/+AAAAAAAAAAAAAAB//4H//gAAAAAAAAAAAAAAf/+B////////////////////gf///////////////////4H///////////////////+B//4AAAAAAAAAAAAAAH//gf/+AAAAAAAAAAAAAAB//4H//gAAAAAAAAAAAAAAf/+B//4AAAAAAAAAAAAAAH//gf/+AAAAAAAAAAAAAAB//4H//gAAAAAAAAAAAAAAf/+B//4AAAAAAAAAAAAAAH//gf/+AAAAAAAAAAAAAAB//4H//gAAAAAAAAAAAAAAf/+B//4AAAAAAAAAAAAAAH//gf/+AAAAAAAAAAAAAAB//4H///////////////////+B////////////////////gf///////////////////4H//gAAAAAAAAAAAAAAf/+B//4AAAAAAAAAAAAAAH//gf/+AAAAAAAAAAAAAAB//4H//gAAAAAAAAAAAAAAf/+B//4AAAAAAAAAAAAAAH//gf/+AAAAAAAAAAAAAAB//4H///////////////////+B////////////////////gf///////////////////4H//gAAAAAAAAAAAAAAf/+B//4AAAAAAAAAAAAAAH//gf/+AAAAAAAAAAAAAAB//4H//gAAAAAAAAAAAAAAf/+B//4AAAAAAAAAAAAAAH//gf/+AAAAAAAAAAAAAAB//4H//gAAAAAAAAAAAAAAf/+B//4AAAAAAAAAAAAAAH//gf/+AAAAAAAAAAAAAAB//4H//gAAAAAAAAAAAAAAf/+B//4AAAAAAAAAAAAAAH//gf///////////////////4H///////////////////+A////////////////////AP/8AAAAAAAAAAAAAAA//wAf4AAAAAAAAAAAAAAAB/gAAAAAAAAAAAAAAAAAAAAAA=' };
+// </marca-gerada>
 export const LARGURAS = { 58: { colunas: 32, mm: 58, util: 48 }, 80: { colunas: 48, mm: 80, util: 72 } };
 export const colunasDe = (largura) => (LARGURAS[largura] || LARGURAS[58]).colunas;
 
@@ -31,6 +40,10 @@ export function enderecoTxt(p) {
     return [limpo(p.condominio, 60), resto.filter(Boolean).join(f === 'ql' ? ' · ' : ', ')].filter(Boolean).join(' - ');
 }
 
+const kgTxt = (n) => String(Math.round((Number(n) || 0) * 1000) / 1000).replace('.', ',');
+/** "0,62 kg x R$ 8,90/kg" para o item pedido em unidades que foi à balança ('' para os outros). */
+const pesoTxt = (i) => (Number(i.pesoFinal) > 0 && i.tipo === 'un' && PESO.includes(String(i.unidade || '').toLowerCase()) ? `${kgTxt(i.pesoFinal)} kg x ${reais(i.precoOriginal)}/kg` : '');
+
 /** Como o pedido chega ao cliente, em letra grande no papel: quem separa vê de cara se é para entregar ou se o cliente busca. */
 export function modoTxt(p) {
     if (!p || p.origem === 'balcao') return '';                                   // venda no balcão: o cliente já está ali
@@ -48,14 +61,16 @@ export function cupomDoPedido(p, { loja = '', aviso = '' } = {}) {
     if (limpo(aviso)) L.push(txt(aviso, { al: 'c', b: true }));            // ex.: "CUPOM ATUALIZADO (depois da balança)"
     const modo = modoTxt(p); if (modo) L.push(SEP, txt(modo, { al: 'c', b: true, g: true }));
     L.push(SEP);
-    if (limpo(p.nome)) L.push(txt(p.nome, { b: true }));
+    if (limpo(p.nome)) L.push(txt(p.nome, { b: true, a: true }));
     const end = ondeTxt(p); if (end) L.push(txt(end));
     if (limpo(p.telefone)) L.push(txt(`Tel: ${limpo(p.telefone, 20)}`));
     if (limpo(p.nome) || end) L.push(SEP);
     let soma = 0, aPesar = 0;
+    // os itens saem em letra ALTA (mesma largura, o dobro da altura): é o que se lê de longe na hora de separar
     itens.forEach((i) => {
-        if (i.aPesar) { aPesar++; L.push({ t: 'par', e: `${qtdTxt(i)} ${limpo(i.nome, 60)}`, d: 'a pesar' }); }
-        else { soma += Number(i.subtotal) || 0; L.push({ t: 'par', e: `${qtdTxt(i)} ${limpo(i.nome, 60)}`, d: reais(i.subtotal) }); }
+        if (i.aPesar) { aPesar++; L.push({ t: 'par', e: `${qtdTxt(i)} ${limpo(i.nome, 60)}`, d: 'a pesar', a: true }); }
+        else { soma += Number(i.subtotal) || 0; L.push({ t: 'par', e: `${qtdTxt(i)} ${limpo(i.nome, 60)}`, d: reais(i.subtotal), a: true }); }
+        const peso = pesoTxt(i); if (peso) L.push(txt(`  ${peso}`));                // o que a balança marcou
         if (i.adicionais) L.push(txt(`  + ${limpo(i.adicionais, 200)}`));   // montar pedido: o que o cliente escolheu
     });
     L.push(SEP);
@@ -72,6 +87,63 @@ export function cupomDoPedido(p, { loja = '', aviso = '' } = {}) {
     if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`${p.modo === 'retirada' ? 'Retirar' : 'Entregar'}: ${limpo(p.entrega.horario, 40)}`, { b: true }));
     if (limpo(p.obs)) L.push(SEP, txt(`Obs: ${limpo(p.obs, 300)}`));
     L.push(SEP, txt('Obrigado pela preferência!', { al: 'c' }), CORTE);
+    return L;
+}
+
+/** Quilos que a balança marcou neste item (0 quando o item não é vendido por peso). */
+const quilosDe = (i) => {
+    const u = String(i.unidade || '').toLowerCase(), kg = ['kg', 'kilo', 'quilograma'].includes(u), g = ['g', 'grama'].includes(u);
+    if (i.aPesar) return 0;
+    if (i.tipo === 'un') return kg && Number(i.pesoFinal) > 0 ? Number(i.pesoFinal) : 0;
+    return kg ? Number(i.qtd) || 0 : g ? (Number(i.qtd) || 0) / 1000 : 0;
+};
+
+/**
+ * RECIBO DO CLIENTE: o papel que vai NA SACOLA, depois da balança. Mais caprichado que o cupom de separar:
+ *   • em cima: a logo da banca (página comum) e o nome dela; embaixo: a marca do UseBanca (a térmica imprime o desenho em pontos);
+ *   • lista de itens: foto pequena (só na página comum), nome, peso e preço do quilo, valor da linha;
+ *   • peso total, o total em destaque ("PARCIAL" enquanto falta pesar alguma coisa, com a lista do que falta) e o que ficou de fora.
+ *   opções: { loja, logo (https da banca), fotos ({ idDoProduto: https }), assinatura (texto do pé; '' tira) }
+ */
+export function reciboDoCliente(p, { loja = '', logo = '', fotos = {}, assinatura = 'Pedido feito pelo UseBanca · usebanca.com' } = {}) {
+    const L = [], itens = Array.isArray(p.itens) ? p.itens : [], mapaFotos = fotos && typeof fotos === 'object' ? fotos : {};
+    if (/^https:\/\/[^\s"'<>]+$/.test(String(logo || ''))) L.push({ t: 'logo', src: String(logo) });
+    if (loja) L.push(txt(loja, { al: 'c', b: true, g: true, ser: true }));
+    L.push(txt(`Recibo do pedido${p.id ? ` ${numeroDoPedido(p)}` : ''}`, { al: 'c', b: true }), txt(dataHora(p.pesadoEm || p.data), { al: 'c' }), SEP);
+    if (limpo(p.nome)) L.push(txt(p.nome, { b: true, a: true }));
+    const end = enderecoTxt(p); if (end) L.push(txt(end));
+    if (p.entrega && limpo(p.entrega.horario)) L.push(txt(`${p.modo === 'retirada' ? 'Retirada' : 'Entrega'}: ${limpo(p.entrega.horario, 40)}`));
+    L.push(SEP);
+    let soma = 0, quilos = 0; const faltam = [];
+    itens.forEach((i) => {
+        const foto = /^https:\/\/[^\s"'<>]+$/.test(String(mapaFotos[i.id] || '')) ? String(mapaFotos[i.id]) : '';
+        if (i.aPesar) { faltam.push(`${qtdTxt(i)} ${limpo(i.nome, 60)}`); L.push({ t: 'item', nome: limpo(i.nome, 80), e: `  ${qtdTxt(i)}`, d: 'a pesar', foto, a: true }); }
+        else {
+            soma += Number(i.subtotal) || 0; quilos += quilosDe(i);
+            const preco = Number(i.precoOriginal ?? i.preco) || 0, porQuilo = PESO.includes(String(i.unidade || '').toLowerCase());
+            const detalhe = pesoTxt(i) || (porQuilo && i.tipo !== 'un' ? `${qtdTxt(i)} x ${reais(preco)}` : (Number(i.qtd) > 1 && preco > 0 && !i.promo ? `${Math.round(Number(i.qtd))} x ${reais(preco)}` : qtdTxt(i)));
+            L.push({ t: 'item', nome: limpo(i.nome, 80), e: `  ${detalhe}`, d: reais(i.subtotal), foto, a: true });
+        }
+        if (i.adicionais) L.push(txt(`  + ${limpo(i.adicionais, 200)}`));
+    });
+    L.push(SEP);
+    const desc = p.cupom && Number(p.cupom.desconto) > 0 ? Number(p.cupom.desconto) : 0;
+    const taxa = p.entrega && Number(p.entrega.taxa) > 0 ? Number(p.entrega.taxa) : 0, aPesar = faltam.length;
+    if (quilos > 0) L.push({ t: 'par', e: 'Peso total', d: `${kgTxt(quilos)} kg` });
+    if (desc || taxa || aPesar) L.push({ t: 'par', e: 'Itens', d: reais(soma) });
+    if (desc) L.push({ t: 'par', e: `Cupom ${limpo(p.cupom.codigo, 20)}`, d: `-${reais(desc)}` });
+    if (taxa) L.push({ t: 'par', e: 'Entrega', d: reais(taxa) });
+    L.push({ t: 'par', e: aPesar ? 'PARCIAL' : 'TOTAL', d: reais(p.total), b: true, g: true, tot: true });
+    if (aPesar) L.push(txt(`Falta pesar ${aPesar} item(ns): ${faltam.join(', ')}. O total muda depois da balança.`));
+    const pago = p.pagamento && p.pagamento.status === 'PAID';
+    if (limpo(p.pag)) L.push(txt(`Pagamento: ${limpo(p.pag, 30)}${pago ? ' (já recebido)' : ''}`));
+    if (!pago && limpo(p.troco)) L.push(txt(`Troco para: ${limpo(p.troco, 30)}`));
+    // o que faltou e saiu do pedido: o cliente lê no papel o mesmo aviso que recebeu no WhatsApp
+    const fora = [...new Set((Array.isArray(p.ajustes) ? p.ajustes : []).filter((a) => a && a.op === 'tirou' && limpo(a.nome)).map((a) => limpo(a.nome, 60)))];
+    if (fora.length) L.push(SEP, txt(`Em falta hoje (${fora.length === 1 ? 'saiu' : 'saíram'} do pedido): ${fora.join(', ')}. Pedimos desculpas.`));
+    L.push(SEP, txt('Obrigado pela preferência!', { al: 'c', b: true, ser: true }), { t: 'marca' });
+    limpo(assinatura).split(' · ').filter(Boolean).forEach((s) => L.push(txt(s, { al: 'c' })));
+    L.push(CORTE);
     return L;
 }
 
@@ -202,15 +274,21 @@ export function compor(linhas, colunas) {
         if (l.t === 'sep') out.push({ s: '-'.repeat(colunas) });
         else if (l.t === 'esp') for (let i = 0; i < (l.n || 1); i++) out.push({ s: '' });
         else if (l.t === 'corte') out.push({ corte: true });
-        else if (l.t === 'txt') quebrar(l.v, n).forEach((s) => out.push({ s: alinhar(s, n, l.al), b: l.b, g: l.g }));
+        else if (l.t === 'marca') out.push({ img: 'marca' });
+        else if (l.t === 'item') {                          // sem foto no papel térmico: o nome e, embaixo, o detalhe com o valor
+            quebrar(l.nome, n).forEach((s) => out.push({ s, b: true, a: l.a && !l.g }));
+            const d = String(l.d || ''), livre = Math.max(4, n - d.length - (d ? 1 : 0)), partes = quebrar(l.e, livre);
+            partes.forEach((s, i) => out.push({ s: i === partes.length - 1 && d ? s.padEnd(n - d.length) + d : s }));
+        }
+        else if (l.t === 'txt') quebrar(l.v, n).forEach((s) => out.push({ s: alinhar(s, n, l.al), b: l.b, g: l.g, a: l.a && !l.g }));
         else if (l.t === 'par') {
             const d = String(l.d || ''), livre = Math.max(4, n - d.length - (d ? 1 : 0)), partes = quebrar(l.e, livre);
-            partes.forEach((s, i) => out.push({ s: i === partes.length - 1 && d ? s.padEnd(n - d.length) + d : s, b: l.b, g: l.g }));
+            partes.forEach((s, i) => out.push({ s: i === partes.length - 1 && d ? s.padEnd(n - d.length) + d : s, b: l.b, g: l.g, a: l.a && !l.g }));
         }
     });
     return out;
 }
-export const paraTexto = (linhas, colunas = 32) => compor(linhas, colunas).filter((l) => !l.corte).map((l) => l.s.replace(/\s+$/, '')).join('\n');
+export const paraTexto = (linhas, colunas = 32) => compor(linhas, colunas).filter((l) => !l.corte && !l.img).map((l) => l.s.replace(/\s+$/, '')).join('\n');
 
 // ---------------------------------------------------------------- ESC/POS
 // Tabela 860 (português), a mais comum nas térmicas. Só é usada se "acentos" estiver ligado.
@@ -224,14 +302,22 @@ function codificar(s, acentos) {
  * Comandos ESC/POS (o "idioma" de quase toda impressora térmica de cupom).
  * acentos=false troca "ã" por "a": sai certo em QUALQUER impressora. acentos=true usa a tabela 860.
  */
+/** base64 → lista de bytes (funciona no navegador e no Node). */
+const Buffer_ = (b64) => { const bin = atob(b64), out = new Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; };
 export function paraEscPos(linhas, { largura = 58, acentos = false, cortar = true } = {}) {
     const b = [0x1b, 0x40];                                   // ESC @  → zera a impressora
     if (acentos) b.push(0x1b, 0x74, 0x03);                    // ESC t 3 → tabela 860
-    let negrito = false, grande = false;
+    let negrito = false, tamanho = 0;                         // GS ! → 0x11 = dobro de largura e altura; 0x01 = só o dobro da altura
     compor(linhas, colunasDe(largura)).forEach((l) => {
+        if (l.img) {                                                                                     // desenho do UseBanca: GS v 0 (imagem em pontos), centralizado
+            const w = MARCA_BITS.w / 8, bytes = Buffer_(MARCA_BITS.b64);
+            b.push(0x1b, 0x61, 1, 0x1d, 0x76, 0x30, 0, w & 255, w >> 8, MARCA_BITS.h & 255, MARCA_BITS.h >> 8, ...bytes, 0x0a, 0x1b, 0x61, 0);
+            return;
+        }
         if (l.corte) { b.push(0x0a, 0x0a, 0x0a); if (cortar) b.push(0x1d, 0x56, 0x42, 0x00); return; }   // GS V 66 0 → corte (quem não tem guilhotina ignora)
         if (!!l.b !== negrito) { negrito = !!l.b; b.push(0x1b, 0x45, negrito ? 1 : 0); }                 // ESC E
-        if (!!l.g !== grande) { grande = !!l.g; b.push(0x1d, 0x21, grande ? 0x11 : 0x00); }              // GS !  → dobro de largura e altura
+        const tam = l.g ? 0x11 : l.a ? 0x01 : 0x00;
+        if (tam !== tamanho) { tamanho = tam; b.push(0x1d, 0x21, tam); }
         b.push(...codificar(l.s.replace(/\s+$/, ''), acentos), 0x0a);
     });
     b.push(0x1b, 0x45, 0, 0x1d, 0x21, 0);
@@ -242,15 +328,24 @@ export function paraBase64(bytes) { let s = ''; bytes.forEach((x) => { s += Stri
 
 // ---------------------------------------------------------------- página comum
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+/** "R$ 8,90" não se parte no fim da linha. */
+const semQuebra = (s) => esc(s).replace(/R\$ /g, () => 'R$\u00a0');   // função: no replace, "$&" seria o trecho achado
 /** Página pronta para a impressão do aparelho. largura: 58 | 80 | 'a4'. Várias folhas = várias listas. */
 export function paraHtml(folhas, { largura = 58 } = {}) {
     const a4 = largura === 'a4', L = LARGURAS[largura] || LARGURAS[58];
     const folha = (linhas) => `<section>${linhas.map((l) => {
-        const c = `${l.b ? ' b' : ''}${l.g ? ' g' : ''}`;
+        const c = `${l.b ? ' b' : ''}${l.g ? ' g' : l.a ? ' a' : ''}${l.ser ? ' ser' : ''}${l.tot ? ' tot' : ''}`;
         if (l.t === 'sep') return '<hr>';
+        if (l.t === 'logo') return /^https:\/\/[^\s"'<>]+$/.test(String(l.src || '')) ? `<p class="c"><img class="logo" src="${esc(l.src)}" alt=""></p>` : '';
+        if (l.t === 'marca') return `<p class="c marca">${MARCA_SVG}</p>`;
+        if (l.t === 'item') {
+            const foto = /^https:\/\/[^\s"'<>]+$/.test(String(l.foto || '')) ? `<img src="${esc(l.foto)}" alt="" width="42" height="42" decoding="sync">` : '';
+            // o nome usa a largura toda; embaixo, o peso/preço e o valor na mesma linha (no papel de 58 mm não sobra espaço para três colunas)
+            return `<div class="it">${foto}<div class="nm"><b>${esc(l.nome)}</b><div class="ln"><small>${semQuebra(String(l.e || '').trim())}</small><span class="vl">${semQuebra(l.d || '')}</span></div></div></div>`;
+        }
         if (l.t === 'esp') return '<br>'.repeat(l.n || 1);
         if (l.t === 'txt') return `<p class="${l.al || 'e'}${c}">${esc(l.v)}</p>`;
-        if (l.t === 'par') return `<p class="par${c}"><span>${esc(l.e)}</span><span>${esc(l.d || '')}</span></p>`;
+        if (l.t === 'par') return `<p class="par${c}"><span>${esc(l.e)}</span><span>${semQuebra(l.d || '')}</span></p>`;
         return '';
     }).join('')}</section>`;
     return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Impressão</title><style>
@@ -258,7 +353,16 @@ export function paraHtml(folhas, { largura = 58 } = {}) {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font: ${a4 ? '12pt' : L.mm === 58 ? '9.5pt' : '10.5pt'}/1.35 Arial, Helvetica, sans-serif; color: #000; ${a4 ? 'max-width: 90mm;' : `width: ${L.util}mm; padding: 2mm 0 6mm; margin: 0 auto;`} }
 section { break-after: page; page-break-after: always; } section:last-child { break-after: auto; page-break-after: auto; }
-p { overflow-wrap: anywhere; } .c { text-align: center; } .d { text-align: right; } .b { font-weight: 700; } .g { font-size: 1.5em; line-height: 1.2; }
+p { overflow-wrap: anywhere; } .c { text-align: center; } .d { text-align: right; } .b { font-weight: 700; } .g { font-size: 1.5em; line-height: 1.2; } .a { font-size: 1.22em; line-height: 1.25; }
+.ser { font-family: Georgia, 'Times New Roman', serif; letter-spacing: .02em; }
+.marca { margin: 2.5mm 0 1mm; } .marca svg { width: 16mm; height: 16mm; }
+.it { display: flex; align-items: center; gap: 2.4mm; padding: 1.6mm 0; border-bottom: .25mm dotted #000; break-inside: avoid; } .it:last-of-type { border-bottom: 0; }
+.it img { flex: none; width: 11mm; height: 11mm; object-fit: cover; border-radius: 1.6mm; border: .25mm solid #000; filter: grayscale(1) contrast(1.15); }
+.it .nm { flex: 1; min-width: 0; line-height: 1.25; overflow-wrap: anywhere; } .it .nm b { display: block; }
+.it .ln { display: flex; align-items: baseline; justify-content: space-between; gap: 2mm; margin-top: .4mm; } .it .ln small { min-width: 0; font-size: .86em; }
+.it .vl { flex: none; font-weight: 700; white-space: nowrap; }${L.mm === 58 && !a4 ? ' .it img { width: 9mm; height: 9mm; } .it { gap: 1.8mm; }' : ''}
+.tot { border-top: .6mm double #000; border-bottom: .6mm double #000; padding: 1.4mm 0; margin: 1.5mm 0; }
+.logo { display: inline-block; max-width: 26mm; max-height: 26mm; margin: 0 auto 1.5mm; object-fit: contain; }
 .par { display: flex; justify-content: space-between; gap: 3mm; } .par span:last-child { white-space: nowrap; }
 hr { border: 0; border-top: 1px dashed #000; margin: 1.5mm 0; }
 </style></head><body>${folhas.map(folha).join('')}</body></html>`;

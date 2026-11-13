@@ -37,6 +37,12 @@
     <link rel="stylesheet" href="./css/admin-impressora.css">
     <link rel="stylesheet" href="./css/admin-cadastro.css">
     <link rel="stylesheet" href="./css/admin-montar.css">
+    <link rel="stylesheet" href="./css/painel-base.css">
+    <link rel="stylesheet" href="./css/admin-resumo.css">
+    <link rel="stylesheet" href="./css/admin-pedidos.css">
+    <!-- tema escuro do painel: só vale com html[data-painel-tema="escuro"] (js/painel-tema.js). Gerado por scripts/gerar-tema-escuro.js -->
+    <link rel="stylesheet" href="./css/admin-escuro.css">
+    <script type="module" src="./js/painel-tema.js"></script>
 </head>
 <body>
 
@@ -84,6 +90,7 @@
                 <a id="link-plataforma" href="./admin-plataforma" hidden>Plataforma (todas as lojas)</a>
                 <button type="button" id="btn-instalar-painel" hidden>Instalar o painel no celular</button>
                 <button type="button" id="btn-impressora"><i class="ic" data-i="impressora"></i> Impressora</button>
+                <button type="button" id="btn-tema" aria-pressed="false"><i class="ic" data-i="lua"></i> <span id="btn-tema-texto">Tema escuro</span></button>
                 <button type="button" id="btn-logout"><i class="ic" data-i="sair"></i> Sair</button>
             </div>
         </header>
@@ -92,6 +99,7 @@
             <button type="button" class="tabs-atual" id="tabs-atual" aria-expanded="false" aria-controls="tabs-lista"><span class="tabs-atual-ico" id="tabs-atual-ico" aria-hidden="true"></span><b id="tabs-atual-nome">Produtos</b><span class="tabs-atual-trocar"><i class="ic" data-i="menu"></i>Menu<i class="tabs-ponto" id="tabs-ponto" hidden></i></span></button>
             <div class="tabs-lista" id="tabs-lista">
                 <span class="tabs-grupo">Dia a dia</span>
+                <button class="tab" data-aba="resumo"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="resumo"></i></span><span class="tab-txt">Resumo</span></button>
                 <button class="tab" data-aba="relatorios"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="pedidos"></i></span><span class="tab-txt">Pedidos</span></button>
                 <button class="tab" data-aba="pdv"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="pdv"></i></span><span class="tab-txt">Balcão</span></button>
                 <button class="tab" data-aba="fechamento"><span class="tab-ico" aria-hidden="true"><i class="ic" data-i="fechamento"></i></span><span class="tab-txt">Fechamento</span></button>
@@ -129,7 +137,7 @@
             <div class="pl-cats" id="pl-cats" role="group" aria-label="Categoria" hidden></div>
             <div class="pl-filtros" id="pl-filtros" role="group" aria-label="Mostrar"></div>
             <div class="pl-cabeca" id="pl-cabeca"></div>
-            <div id="lista-produtos" class="pl-lista">Carregando os produtos...</div>
+            <div id="lista-produtos" class="pl-lista"><div class="pn-esqueleto" role="status" aria-busy="true"><span class="pn-oculto">Carregando os produtos...</span><div class="pn-esq-linha"><i></i><span></span><em></em></div><div class="pn-esq-linha" style="--l1:48%;--l2:55%"><i></i><span></span><em></em></div><div class="pn-esq-linha" style="--l1:70%;--l2:35%"><i></i><span></span><em></em></div><div class="pn-esq-linha" style="--l1:54%;--l2:46%"><i></i><span></span><em></em></div></div></div>
             <div class="pl-lote" id="pl-lote" role="region" aria-label="Produtos marcados" hidden></div>
             <div class="pl-extras">
                 <button class="bt bt-sec" id="btn-varias-fotos">Enviar várias fotos</button>
@@ -139,6 +147,9 @@
             </div>
         </section>
 
+        <section id="aba-resumo" class="aba-content">
+            <div id="resumo-conteudo" class="rs"></div>
+        </section>
         <section id="aba-pdv" class="aba-content">
             <div id="pdv-conteudo"></div>
         </section>
@@ -181,7 +192,7 @@
                 </div>
             </div>
             <input type="search" class="ped-busca" id="pedido-busca-input" placeholder="Buscar por cliente, condomínio, quadra ou lote..." aria-label="Buscar pedido">
-            <div id="lista-historico">Carregando os pedidos...</div>
+            <div id="lista-historico"><div class="pn-esqueleto" role="status" aria-busy="true"><span class="pn-oculto">Carregando os pedidos...</span><div class="pn-esq-linha"><i></i><span></span><em></em></div><div class="pn-esq-linha" style="--l1:48%;--l2:55%"><i></i><span></span><em></em></div><div class="pn-esq-linha" style="--l1:70%;--l2:35%"><i></i><span></span><em></em></div></div></div>
 
             <details class="ped-mais" id="ped-mais">
                 <summary>Números dos pedidos em andamento</summary>
@@ -527,6 +538,20 @@
                         </div>
                     </div>
                     <input type="url" id="edit-foto-url" placeholder="Ou cole aqui o link de uma foto">
+                    <!-- VÍDEO curto (opcional): aparece na tela do produto, sem som, em repetição (js/admin-video.js) -->
+                    <div class="prod-video" id="prod-video">
+                        <span class="prod-rot">Vídeo curto <small>(opcional)</small></span>
+                        <div class="prod-video-linha">
+                            <div class="prod-video-previa" id="prod-video-previa"></div>
+                            <div class="prod-foto-bts">
+                                <label class="btn-outline prod-foto-bt" for="edit-video"><i class="ic" data-i="camera"></i> Escolher vídeo</label>
+                                <input type="file" id="edit-video" accept="video/mp4,video/webm,video/quicktime" class="sr-only">
+                                <button type="button" class="btn-outline" id="btn-tirar-video" hidden>Tirar o vídeo</button>
+                            </div>
+                        </div>
+                        <input type="url" id="edit-video-url" placeholder="Ou cole o link de um vídeo (MP4)">
+                        <small class="dica-campo" id="prod-video-dica">De 5 a 15 segundos, celular em pé, mostrando o produto de perto (o queijo cortado, o pastel abrindo). Até 40 MB. Na loja ele toca sem som.</small>
+                    </div>
                     <details class="guia-foto">
                         <summary>Como tirar uma foto que dá vontade de comprar</summary>
                         <ol>

@@ -102,7 +102,7 @@ function pintarPapel() {
     $('ipr-canvas').hidden = true; $('ipr-previa').hidden = !tem; $('ipr-vazio').hidden = tem;
     $('ipr-vazio').textContent = 'Cole a mensagem do cliente e o cupom aparece aqui.';
     if (tem) {
-        const linhas = compor(pedidoAvulso(d, { loja: nomeLoja }), col).filter((l) => !l.corte);
+        const linhas = compor(pedidoAvulso(d, { loja: nomeLoja }), col).filter((l) => !l.corte && !l.img);
         $('ipr-previa').innerHTML = linhas.map((l) => `<span class="${l.b ? 'b' : ''}${l.g ? ' g' : ''}">${escapeHTML(l.s.replace(/\s+$/, '')) || ' '}</span>`).join('');
     }
     bt.textContent = 'Imprimir pedido'; bt.disabled = !tem || S.enviando;

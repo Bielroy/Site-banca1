@@ -140,12 +140,21 @@ function enviarPagina(html) {
         const f = document.createElement('iframe');
         f.setAttribute('aria-hidden', 'true'); f.title = 'Impressão'; f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
         const limpar = () => setTimeout(() => f.remove(), 1000);
-        f.onload = () => {
-            try { const w = f.contentWindow; w.onafterprint = limpar; w.focus(); w.print(); setTimeout(limpar, 120000); resolve(); }
-            catch (e) { f.remove(); reject(erro('Este navegador não abriu a tela de imprimir.')); }
+        let foi = false;
+        const imprimir = () => {
+            if (foi) return; foi = true;
+            try {
+                const w = f.contentWindow;
+                // foto que não chegou (rede lenta ou link quebrado) sai da folha: nada de quadrado vazio no papel
+                [...(w.document.images || [])].forEach((img) => { if (!img.complete || !img.naturalWidth) img.remove(); });
+                w.onafterprint = limpar; w.focus(); w.print(); setTimeout(limpar, 120000); resolve();
+            } catch (e) { f.remove(); reject(erro('Este navegador não abriu a tela de imprimir.')); }
         };
+        f.onload = imprimir;
         f.srcdoc = html;
         document.body.appendChild(f);
+        // recibo com fotos: no máximo 3 s esperando por elas; depois imprime com as que chegaram
+        if (/<img\s/.test(html)) setTimeout(() => { try { if (f.contentDocument && f.contentDocument.readyState !== 'loading' && f.contentDocument.body) imprimir(); } catch (_) { /* ainda montando: o onload imprime */ } }, 3000);
     });
 }
 

@@ -39,7 +39,10 @@ async function abrir(caminho, cenario = cenarioPadrao(), opcoes = {}) {
 }
 // pedidos enviados (o mesmo endereço também atende a conta do cliente, com "acao")
 const pedidosEnviados = () => servidor.chamadas.filter((c) => c.caminho === '/api/checkout' && !c.corpo.acao);
-const semErros = (erros) => assert.deepStrictEqual(erros, [], 'a página teve erro de código:\n  ' + erros.join('\n  '));
+// A animação de troca de página (@view-transition) cancelada pelo navegador numa ida automática de uma página para outra
+// não é defeito do site: o próprio site já trata (js/erros-site.js → rejeicaoDoNavegador). Aqui ela também não conta.
+const AVISO_DO_NAVEGADOR = /Transition was aborted because of invalid state|ViewTransition opt-in disabled/;
+const semErros = (erros) => { const reais = erros.filter((e) => !AVISO_DO_NAVEGADOR.test(e)); assert.deepStrictEqual(reais, [], 'a página teve erro de código:\n  ' + reais.join('\n  ')); };
 const cards = (p) => p.locator('#lista-produtos .produto-card');
 // a busca e as categorias ESCONDEM os cards (não tiram da página): conta só os visíveis
 const visiveis = (p) => p.evaluate(() => [...document.querySelectorAll('#lista-produtos .produto-card')].filter((c) => c.offsetParent !== null).map((c) => c.querySelector('.produto-nome').textContent.trim()));
@@ -527,7 +530,7 @@ teste('retirada por dia e horários de entrega por dia: no dia sem retirada a es
   semErros(erros); await fechar();
   // CLIENTE DA FEIRA (entrou pelo link da feira do Florença, que hoje acontece): hoje a agenda da banca diz "só retirada na feira"
   const cenFeira = (linha) => { const k = cenarioPadrao(); k.feiras = { ...k.feiras, florenca: { ...k.feiras.florenca, dias: [hoje] } }; k.lojas.banca.config = { ...k.lojas.banca.config, entrega: { horarios: ['Geral'], agenda: [{ feira: 'florenca', dia: hoje, ...linha }] } }; return k; };
-  ({ pagina, erros, fechar } = await abrir('/feira/florenca', cenFeira({ entrega: false, retirada: true, horariosRetirada: ['Das 7h às 11h'], local: 'Na feira do Florença, banca verde' })));
+  ({ pagina, erros, fechar } = await abrir('/?feira=florenca', cenFeira({ entrega: false, retirada: true, horariosRetirada: ['Das 7h às 11h'], local: 'Na feira do Florença, banca verde' })));
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   await abrirCheckoutComOvos(pagina);
   assert.strictEqual(await pagina.locator('#grupo-modo').isVisible(), true);
@@ -546,7 +549,7 @@ teste('retirada por dia e horários de entrega por dia: no dia sem retirada a es
   assert.ok((await pagina.locator('#sucesso-entrega').innerText()).includes('Retirada na feira: Das 7h às 11h'));
   semErros(erros); await fechar();
   // a mesma feira num dia "só entrega, de manhã": nada para escolher e só o horário da manhã
-  ({ pagina, erros, fechar } = await abrir('/feira/florenca', cenFeira({ entrega: true, horariosEntrega: ['Manhã (8h às 11h)'], retirada: false })));
+  ({ pagina, erros, fechar } = await abrir('/?feira=florenca', cenFeira({ entrega: true, horariosEntrega: ['Manhã (8h às 11h)'], retirada: false })));
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   await abrirCheckoutComOvos(pagina);
   assert.strictEqual(await pagina.locator('#grupo-modo').isVisible(), false, 'só entrega');
@@ -554,7 +557,7 @@ teste('retirada por dia e horários de entrega por dia: no dia sem retirada a es
   assert.deepStrictEqual(await opcoesDe(pagina, '#cli-horario'), ['Tanto faz (a combinar)', 'Manhã (8h às 11h)'], 'o horário do dia da feira, não a lista geral');
   semErros(erros); await fechar();
   // entrega e retirada no mesmo dia: o cliente escolhe
-  ({ pagina, erros, fechar } = await abrir('/feira/florenca', cenFeira({ entrega: true, horariosEntrega: ['Tarde'], retirada: true, horariosRetirada: ['Das 16h às 20h'], local: 'Feira' })));
+  ({ pagina, erros, fechar } = await abrir('/?feira=florenca', cenFeira({ entrega: true, horariosEntrega: ['Tarde'], retirada: true, horariosRetirada: ['Das 16h às 20h'], local: 'Feira' })));
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   await abrirCheckoutComOvos(pagina);
   assert.strictEqual(await pagina.locator('#rot-modo-entrega').isVisible(), true); assert.strictEqual(await pagina.locator('input[name="cli-modo"][value="entrega"]').isChecked(), true);
@@ -672,7 +675,7 @@ teste('cliente da feira num dia futuro (hoje não tem feira): a agenda daquele d
   const k = cenarioPadrao();
   k.feiras = { ...k.feiras, florenca: { ...k.feiras.florenca, dias: [futuro] } };
   k.lojas.banca.config = { ...k.lojas.banca.config, entrega: { horarios: ['Geral'], agenda: [{ feira: 'florenca', dia: futuro, entrega: true, horariosEntrega: ['Das 18h às 22h'], retirada: true, horariosRetirada: ['Das 17h às 22h'], local: 'Banca do Adair' }] } };
-  const { pagina, erros, fechar } = await abrir('/feira/florenca', k);
+  const { pagina, erros, fechar } = await abrir('/?feira=florenca', k);
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   await abrirCheckoutComOvos(pagina);
   assert.strictEqual(await pagina.locator('#grupo-modo').isVisible(), true, 'o dia da feira é daqui a 2 dias e tem retirada: o cliente escolhe');
@@ -749,6 +752,45 @@ teste('cliente da feira que cai numa banca BLOQUEADA (link da feira, última ban
 
 // ---------------------------------------------------------------- VELOCIDADE / TELA ESTÁVEL
 const medirPulos = () => { window.__pulos = 0; new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__pulos += e.value; }).observe({ type: 'layout-shift', buffered: true }); };
+// ---------------------------------------------------------------- EM FALTA HOJE + AVISE-ME (js/avise-loja.js)
+teste('loja: "Em falta hoje" embaixo da vitrine com "Avise-me"; o cliente deixa nome e WhatsApp e o aparelho lembra; some na busca; botão Compartilhar manda o link limpo da loja', async () => {
+  const c = cenarioPadrao(), agora = Date.now(), b = c.lojas.banca;
+  const entrada = (id, d) => ({ id, ...d });
+  b.catalogo = { v: 1, geradoEm: agora - 60e3, assinatura: 't', n: 2, produtos: [entrada('banana', b.produtos.banana), entrada('ovos', b.produtos.ovos)], categorias: [],
+    esgotados: [{ id: 'queijo', nome: 'Queijo canastra', cat: 'queijos', foto: '' }, { id: 'doce', nome: 'Doce de leite', cat: 'doces', foto: '' }] };
+  const { pagina, erros, fechar } = await abrir('/', c, { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, antes: () => { window.__compartilhado = []; navigator.share = async (d) => { window.__compartilhado.push(d); }; } });
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.locator('#faixa-falta').waitFor({ timeout: 5000 });
+  assert.match(await pagina.locator('#faixa-falta').innerText(), /Em falta hoje[\s\S]*Queijo canastra[\s\S]*Doce de leite/);
+  assert.ok(await pagina.evaluate(() => { const g = document.getElementById('lista-produtos'), f = document.getElementById('faixa-falta'); return !!(g.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING); }), 'fica depois da vitrine');
+  await pagina.locator('[data-avise="queijo"]').click();
+  await pagina.locator('#modal-avise.aberto, #modal-avise.active, #modal-avise[style*="flex"]').first().waitFor({ timeout: 4000 }).catch(() => {});
+  await pagina.locator('#avise-nome').fill('Marina');
+  await pagina.locator('#avise-tel').fill('62 99999-0001');
+  await pagina.locator('#avise-enviar').click();
+  await pagina.waitForFunction(() => /Você será avisado/.test(document.getElementById('faixa-falta')?.innerText || ''), null, { timeout: 5000 });
+  const ch = servidor.chamadas.filter((x) => x.caminho === '/api/checkout' && x.corpo.acao === 'avise-me').pop();
+  assert.deepStrictEqual([ch.corpo.produtoId, ch.corpo.nome, ch.corpo.telefone], ['queijo', 'Marina', '62999990001']);
+  assert.strictEqual(await pagina.locator('[data-avise="doce"]').count(), 1, 'o outro produto continua com o botão');
+  // telefone sem DDD não vai ao servidor
+  const antes = servidor.chamadas.length;
+  await pagina.locator('[data-avise="doce"]').click();
+  await pagina.locator('#avise-tel').fill('99990001');
+  await pagina.locator('#avise-enviar').click(); await pagina.waitForTimeout(300);
+  assert.strictEqual(servidor.chamadas.filter((x, i) => i >= antes && x.corpo.acao === 'avise-me').length, 0);
+  await pagina.locator('[data-fechar="modal-avise"]').click();
+  // na busca, a faixa some (como as outras faixas)
+  await pagina.locator('#busca-input').fill('ban'); await pagina.waitForTimeout(400);
+  assert.ok(await pagina.locator('#faixa-falta').isHidden());
+  await pagina.locator('#busca-input').fill(''); await pagina.waitForTimeout(400);
+  // compartilhar: o link limpo da loja
+  await pagina.locator('.btn-compartilhar').click(); await pagina.waitForTimeout(200);
+  const comp = await pagina.evaluate(() => window.__compartilhado);
+  assert.strictEqual(comp.length, 1); assert.ok(!/entrar=|#/.test(comp[0].url), comp[0].url);
+  assert.ok(await pagina.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'nada vaza para o lado');
+  semErros(erros); await fechar();
+});
+
 // ---------------------------------------------------------------- VITRINE NUM DOCUMENTO SÓ (lib/catalogo.js, js/catalogo-loja.js)
 teste('vitrine num documento só: a loja lê o catálogo + só os produtos mudados há pouco (não lê um por um); mudança recente do painel vale por cima', async () => {
   const c = cenarioPadrao(), agora = Date.now(), b = c.lojas.banca;
@@ -922,22 +964,89 @@ teste('letras: a banca liga as letras dela; loja com outras letras não baixa as
 });
 
 // ---------------------------------------------------------------- FEIRA
-teste('link da feira abre direto na banca, com a faixa das bancas no topo, e lembra a última', async () => {
-  const { pagina, erros, fechar } = await abrir('/feira/florenca');
+// ---------------------------------------------------------------- PÁGINA DE ENTRADA DA FEIRA (feira.html)
+// dia da semana de hoje em Brasília e uma feira que acontece hoje, com uma banca que só vem noutro dia
+const dowHoje = () => new Date(Date.now() - 3 * 3600000).getUTCDay();
+const cenHud = (mudar = {}) => {
+  const cen = cenarioPadrao(), d = dowHoje();
+  cen.feiras = { ...cen.feiras, florenca: { nome: 'Feira Florença', dias: [d, (d + 3) % 7], hud: { local: 'Praça central', horario: 'das 17h às 21h', texto: 'Peça pelo celular e receba em casa.', fotos: ['https://fotos.exemplo.com/a.jpg'] },
+    lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', cor: '#1a3a2a' }, { id: 'paes-da-lucia', nome: 'Pães da Lúcia', cor: '#5a3a22', dias: [(d + 3) % 7] }], ...mudar } };
+  return cen;
+};
+teste('link da feira abre a PÁGINA DA FEIRA: "hoje tem feira", como funciona, bancas de hoje com cor e as que não vêm apagadas; tocar na banca abre a loja com a faixa', async () => {
+  const { pagina, erros, fechar } = await abrir('/feira/florenca', cenHud(), { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } });
+  await pagina.locator('.fe-banca').first().waitFor({ timeout: 8000 });
+  assert.ok(/\/feira\.html\?feira=florenca/.test(pagina.url()), 'o link da feira para na página da feira (não cai direto numa banca): ' + pagina.url());
+  assert.strictEqual((await pagina.locator('#fe-nome').innerText()).trim(), 'Feira Florença');
+  assert.match(await pagina.locator('#fe-status').innerText(), /Hoje tem feira · das 17h às 21h/);
+  assert.ok(await pagina.locator('#fe-status').evaluate((el) => el.classList.contains('hoje')));
+  assert.match(await pagina.locator('#fe-local').innerText(), /Praça central/);
+  assert.match(await pagina.locator('#fe-como').innerText(), /Escolha a banca[\s\S]*Monte o pedido[\s\S]*Receba ou retire[\s\S]*Peça pelo celular e receba em casa\./);
+  assert.strictEqual(await pagina.locator('#fe-fotos img').count(), 1);
+  assert.strictEqual((await pagina.locator('#fe-tit-hoje').innerText()).trim(), 'Bancas de hoje');
+  assert.deepStrictEqual((await pagina.locator('#fe-lista .fe-banca b').allInnerTexts()).map((t) => t.trim()), ['Banca Adair e Pedrina']);
+  assert.match(await pagina.locator('#fe-lista .fe-chip').innerText(), /Hoje na feira/);
+  // a banca que não vem hoje aparece apagada, com o dia em que volta
+  assert.ok(await pagina.locator('#fe-fora').isVisible());
+  assert.deepStrictEqual((await pagina.locator('#fe-lista-fora .fe-banca b').allInnerTexts()).map((t) => t.trim()), ['Pães da Lúcia']);
+  assert.match(await pagina.locator('#fe-lista-fora .fe-chip').innerText(), /^Volta /);
+  assert.match(await pagina.locator('#fe-lista-fora .fe-banca-capa').evaluate((el) => getComputedStyle(el).filter), /grayscale/);
+  assert.ok(await pagina.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'nada vaza para o lado no celular');
+  assert.match(await pagina.locator('#fe-ir').innerText(), /Ver a banca de hoje/);
+  // tocar na banca: abre a loja dela, como sempre foi, com a faixa das bancas da feira no topo
+  await pagina.locator('#fe-lista .fe-banca').click();
   await pagina.waitForSelector('#feira-lojas:not([hidden]) a', { timeout: 8000 });
-  assert.ok(!pagina.url().includes('entrar='), 'o "entrar" sai do endereço');
-  const nomes = await pagina.locator('#feira-lojas a').allInnerTexts();
-  assert.deepStrictEqual(nomes.map((n) => n.trim()), ['Banca Adair e Pedrina', 'Pães da Lúcia']);
-  // selo discreto no cabeçalho: o cliente vê de qual feira entrou
+  assert.deepStrictEqual((await pagina.locator('#feira-lojas a').allInnerTexts()).map((n) => n.trim()), ['Banca Adair e Pedrina', 'Pães da Lúcia']);
   await pagina.waitForSelector('#selo-feira', { timeout: 4000 });
   assert.strictEqual((await pagina.locator('#selo-feira').innerText()).trim(), 'Feira Florença');
-  assert.ok(await pagina.evaluate(() => document.getElementById('selo-feira').nextElementSibling.id === 'header-nome'), 'fica logo acima do nome da banca');
-  await pagina.click('#feira-lojas a:not(.atual)');
-  await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 6000 });
-  // a loja grava "a última banca desta feira" depois de abrir: espera essa gravação antes de voltar ao link
-  await pagina.waitForFunction(() => /paes-da-lucia/.test(localStorage.getItem('banca_feira_ultima') || ''), null, { timeout: 6000 });
+  // quem já esteve numa banca volta ao link e vê as bancas ANTES do "como funciona", com "Você esteve aqui"
+  await pagina.waitForFunction(() => /banca/.test(localStorage.getItem('banca_feira_ultima') || ''), null, { timeout: 6000 });
   await pagina.goto(servidor.base + '/feira/florenca');
-  await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 6000 });
+  await pagina.locator('.fe-banca').first().waitFor({ timeout: 8000 });
+  assert.match(await pagina.locator('#fe-lista .fe-chip').innerText(), /Você esteve aqui/);
+  assert.ok(await pagina.evaluate(() => !!(document.getElementById('fe-bancas').compareDocumentPosition(document.getElementById('fe-como')) & Node.DOCUMENT_POSITION_FOLLOWING)), 'as bancas vêm antes do "como funciona"');
+  semErros(erros); await fechar();
+});
+teste('página da feira em dia SEM feira: diz quando é a próxima e as bancas aparecem todas com cor, com o dia do pedido; link antigo (?entrar=1) cai na página da feira', async () => {
+  const d = dowHoje();
+  const { pagina, erros, fechar } = await abrir('/feira/florenca', cenHud({ dias: [(d + 2) % 7], lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', cor: '#1a3a2a' }, { id: 'paes-da-lucia', nome: 'Pães da Lúcia', cor: '#5a3a22' }] }));
+  await pagina.locator('.fe-banca').first().waitFor({ timeout: 8000 });
+  assert.match(await pagina.locator('#fe-status').innerText(), /^Próxima feira: /);
+  assert.ok(!(await pagina.locator('#fe-status').evaluate((el) => el.classList.contains('hoje'))));
+  assert.strictEqual((await pagina.locator('#fe-tit-hoje').innerText()).trim(), 'Bancas da feira');
+  assert.strictEqual(await pagina.locator('#fe-lista .fe-banca').count(), 2);
+  assert.ok(await pagina.locator('#fe-fora').isHidden(), 'fora do dia de feira nenhuma banca fica apagada');
+  assert.match((await pagina.locator('#fe-lista .fe-chip').allInnerTexts()).join(' | '), /Pedidos para /);
+  assert.match(await pagina.locator('#fe-nota').innerText(), /Você já pode deixar o seu pedido feito para /);
+  // "hoje tem feira" marcado à mão (dia extra): a página passa a dizer que tem feira hoje
+  const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+  const extra = await abrir('/feira/florenca', cenHud({ dias: [(d + 2) % 7], datasExtras: [hoje] }));
+  await extra.pagina.locator('.fe-banca').first().waitFor({ timeout: 8000 });
+  assert.match(await extra.pagina.locator('#fe-status').innerText(), /Hoje tem feira/);
+  assert.strictEqual(await extra.pagina.locator('#fe-lista .fe-banca').count(), 2, 'em dia extra todas as bancas vêm');
+  semErros(extra.erros); await extra.fechar();
+  // link antigo
+  await pagina.goto(servidor.base + '/?feira=florenca&entrar=1');
+  await pagina.waitForURL(/\/feira\.html\?feira=florenca/, { timeout: 6000 });
+  semErros(erros); await fechar();
+});
+teste('banca que não veio à feira de hoje abre só para olhar: aviso com o dia em que volta e o pedido não fecha; a banca que veio fecha normal', async () => {
+  const { pagina, erros, fechar } = await abrir('/?loja=paes-da-lucia&feira=florenca', cenHud());
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForFunction(() => /não está na feira hoje/.test(document.getElementById('banner-feira')?.textContent || ''), null, { timeout: 6000 });
+  assert.match(await pagina.locator('#banner-feira').innerText(), /Esta banca não está na feira hoje\. Você pode olhar os produtos; os pedidos voltam /);
+  assert.ok(await pagina.locator('#btn-abrir-checkout').isDisabled());
+  assert.match(await pagina.locator('#btn-abrir-checkout').evaluate((b) => b.textContent), /Banca fora da feira hoje/);
+  await pagina.goto(servidor.base + '/?loja=banca&feira=florenca');
+  await cards(pagina).first().waitFor({ timeout: 8000 });
+  await pagina.waitForTimeout(600);
+  assert.ok(!/não está na feira/.test(await pagina.locator('#banner-feira').evaluate((b) => b.textContent)), 'a banca que veio não mostra o aviso');
+  semErros(erros); await fechar();
+});
+teste('cartaz de UMA banca pelo link da feira (/feira/id?loja=banca) vai direto para ela, sem parar na página da feira', async () => {
+  const { pagina, erros, fechar } = await abrir('/feira.html?feira=florenca&loja=paes-da-lucia');
+  await pagina.waitForURL(/loja=paes-da-lucia/, { timeout: 8000 });
+  await pagina.waitForSelector('#selo-feira', { timeout: 6000 });
   semErros(erros); await fechar();
 });
 teste('cartaz de uma banca: /?loja=banca&feira=id cai NESSA banca (não na primeira da feira), com o selo da feira', async () => {
@@ -961,7 +1070,7 @@ teste('feira: cliente que entrou pelo link não troca o condomínio no topo (só
     florenca: { ...cen.feiras.florenca, conds: [{ id: 'jf', nome: 'Jardins Florença', formato: 'ql' }, { id: 'vf', nome: 'Vila Florença', formato: 'ql' }] },
     madri: { nome: 'Feira Madri', dias: [3], lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', cor: '#1a3a2a' }], conds: [{ id: 'sm', nome: 'Solar Madri', formato: 'ql' }] } };
   cen.lojas.banca.ficha = { ...cen.lojas.banca.ficha, feiras: ['florenca', 'madri'] };
-  const { pagina, erros, fechar } = await abrir('/feira/florenca', cen);
+  const { pagina, erros, fechar } = await abrir('/?feira=florenca', cen);
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   assert.strictEqual((await pagina.locator('#endereco-resumo').innerText()).trim(), 'Onde entregar?');
   await pagina.click('#btn-endereco');
@@ -981,7 +1090,7 @@ teste('feira: cliente que entrou pelo link não troca o condomínio no topo (só
   const salvo = await pagina.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => /^banca_endereco/.test(k)))));
   assert.strictEqual(salvo.condominio, 'Jardins Florença'); assert.strictEqual(salvo.lote, '14');
   // o link da OUTRA feira destrava e mostra os condomínios dela
-  await pagina.goto(servidor.base + '/feira/madri');
+  await pagina.goto(servidor.base + '/?feira=madri');
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   assert.match(await pagina.locator('#selo-feira').innerText(), /Madri/);
   assert.notStrictEqual((await pagina.locator('#endereco-resumo').innerText()).trim().startsWith('Entregar:'), true, 'condomínio de outra feira: não fica travado');
@@ -996,7 +1105,7 @@ teste('feira com um só condomínio: o condomínio já vem travado, sem escolher
     florenca: { ...cen.feiras.florenca, conds: [{ id: 'jf', nome: 'Jardins Florença', formato: 'ql' }, { id: 'vf', nome: 'Vila Florença', formato: 'ql' }] },
     madri: { nome: 'Feira Madri', dias: [3], lojas: [{ id: 'banca', nome: 'Banca Adair e Pedrina', cor: '#1a3a2a' }], conds: [{ id: 'sm', nome: 'Solar Madri', formato: 'ql' }] } };
   cen.lojas.banca.ficha = { ...cen.lojas.banca.ficha, feiras: ['florenca', 'madri'] };
-  const { pagina, erros, fechar } = await abrir('/feira/madri', cen);
+  const { pagina, erros, fechar } = await abrir('/?feira=madri', cen);
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   assert.strictEqual((await pagina.locator('#endereco-resumo').innerText()).trim(), 'Onde entregar?');
   await pagina.click('#btn-endereco');
@@ -1009,7 +1118,7 @@ teste('feira com um só condomínio: o condomínio já vem travado, sem escolher
   const salvo = await pagina.evaluate(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => /^banca_endereco/.test(k)))));
   assert.strictEqual(salvo.condominio, 'Solar Madri', 'o pedido leva o condomínio da feira sem a pessoa escolher');
   // a feira com DOIS condomínios: escolhe entre os dois (e o endereço do Solar Madri, de outra feira, não vale aqui)
-  await pagina.goto(servidor.base + '/feira/florenca');
+  await pagina.goto(servidor.base + '/?feira=florenca');
   await pagina.waitForSelector('#selo-feira', { timeout: 8000 });
   await pagina.click('#btn-endereco');
   assert.strictEqual(await pagina.locator('#end-cond').isVisible(), true);
@@ -1407,6 +1516,37 @@ teste('plataforma: "Link de entrada" do proprietário gera o link sem e-mail (o 
   semErros(erros); await fechar();
 });
 
+teste('plataforma: o editor de feira guarda a página de entrada (local, horário, recado), o dia extra "hoje tem feira" e os dias de cada banca', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'pf', email: 'plataforma@teste.com', isAnonymous: false, claims: { plataforma: true } } });
+  const { pagina, erros, fechar } = await abrir('/plataforma.html', cen, { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, antes: `try { localStorage.setItem('pf_aba', 'feiras'); } catch (_) {}` });
+  await pagina.locator('[data-pf="editar-feira"]').first().waitFor({ timeout: 10000 });
+  await pagina.locator('[data-pf="editar-feira"][data-feira="feira-do-lago"]').click();
+  await pagina.locator('#pf-h-local').waitFor({ timeout: 5000 });
+  await pagina.locator('#pf-h-local').fill('Praça central');
+  await pagina.locator('#pf-h-horario').fill('das 17h às 21h');
+  await pagina.locator('#pf-h-texto').fill('Peça pelo celular e receba em casa.');
+  assert.match(await pagina.locator('#pf-h-texto-n').innerText(), /35\/400/);
+  // dias de cada banca só aparecem em feira com mais de um dia; todos marcados = sem restrição
+  assert.strictEqual(await pagina.locator('.pf-bancas-dias').count(), 0, 'feira de um dia só: não há o que escolher por banca');
+  await pagina.locator('.pf-semana.editavel:not(.mini) [data-pf-dia="6"]').click();      // a feira passa a ter quinta e sábado
+  const dias = pagina.locator('.pf-bancas-dias li').first().locator('[data-pf-banca-dia]');
+  assert.ok(await dias.count() >= 2, 'a feira do teste tem mais de um dia');
+  await dias.first().click();
+  assert.strictEqual(await dias.first().getAttribute('aria-pressed'), 'false');
+  // dia extra: hoje (se hoje já é dia da feira, a tela avisa e não duplica)
+  await pagina.locator('[data-pf="por-extra-hoje"]').click();
+  assert.ok(await pagina.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'o editor cabe no celular');
+  await pagina.locator('[data-pf="salvar-feira"]').click();
+  await pagina.locator('#btn-confirm-ok').click({ timeout: 4000 }).catch(() => {});      // "Salvar sem condomínio?"
+  await pagina.waitForFunction(() => !document.getElementById('pf-folha').classList.contains('aberto'), null, { timeout: 6000 });
+  const c = servidor.chamadas.filter((x) => x.caminho === '/api/plataforma' && x.corpo.acao === 'feira').pop().corpo;
+  assert.deepStrictEqual(c.dias, [4, 6]);
+  assert.deepStrictEqual([c.hud.local, c.hud.horario, c.hud.texto], ['Praça central', 'das 17h às 21h', 'Peça pelo celular e receba em casa.']);
+  assert.ok(Array.isArray(c.datasExtras) && c.lojasDias && typeof c.lojasDias === 'object');
+  const restritas = Object.values(c.lojasDias).filter((d) => d.length > 0);
+  assert.strictEqual(restritas.length, 1, 'só a banca em que tirei um dia leva restrição: ' + JSON.stringify(c.lojasDias));
+  semErros(erros); await fechar();
+});
 teste('plataforma: "Cartaz com QR" de cada feira manda para a impressão o cartaz com o link DAQUELA feira', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dono', email: 'dono@teste.com', isAnonymous: false, claims: { plataforma: true } } });
   const { pagina, erros, fechar } = await abrir('/plataforma.html', cen, { antes: () => { try { localStorage.setItem('pf_aba', 'feiras'); } catch (_) { /* segue */ } } });
@@ -1590,6 +1730,40 @@ teste('temperos: cantinho no fim (depois dos pacotes), "+ 1 potinho", sacola com
   const comanda = await pagina.locator('#comanda').innerText();
   assert.ok(/2 potinhos/.test(comanda) && /Colorau/.test(comanda) && /R\$\s8,00/.test(comanda), comanda);
   semErros(erros); await fechar();
+});
+
+teste('vídeo do produto: o painel envia o vídeo direto para o link que o servidor dá e grava o endereço; a loja toca o vídeo sem som por cima da foto', async () => {
+  const cen = cenarioPacotes(); cen.conta = { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } };
+  const { pagina, ctx, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false, hasTouch: false } });
+  const enviados = [];
+  await ctx.route(/r2\.teste\/put/, (r) => { enviados.push({ metodo: r.request().method(), tipo: r.request().headers()['content-type'], bytes: (r.request().postDataBuffer() || Buffer.alloc(0)).length }); r.fulfill({ status: 200, body: '' }); });
+  await pagina.locator('[data-action="editar-produto"][data-id="cb"]').first().click({ timeout: 8000 });
+  await pagina.locator('#edit-video').setInputFiles({ name: 'queijo.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(2048, 1) });
+  assert.match(await pagina.locator('#prod-video-dica').innerText(), /escolhido\. Ele é enviado quando você salvar/);
+  await pagina.click('#btn-salvar-produto');
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => /produtos\/cb$/.test(g.path)), null, { timeout: 6000 });
+  const g = await pagina.evaluate(() => window.__gravados.filter((x) => /produtos\/cb$/.test(x.path)).pop().dados);
+  assert.strictEqual(g.video, 'https://fotos.teste/lojas/banca/videos/cb-video.mp4');
+  const pedido = servidor.chamadas.filter((c) => c.caminho === '/api/foto' && c.corpo.acao === 'video').pop().corpo;
+  assert.deepStrictEqual([pedido.tipo, pedido.bytes], ['video/mp4', 2048]);
+  assert.deepStrictEqual(enviados, [{ metodo: 'PUT', tipo: 'video/mp4', bytes: 2048 }], 'o arquivo foi direto para o link (não passou pelo servidor)');
+  semErros(erros); await fechar();
+  // na loja
+  const c2 = cenarioPadrao(); c2.lojas.banca.produtos.ovos = { ...c2.lojas.banca.produtos.ovos, video: 'https://fotos.teste/v.mp4' };
+  const loja = await abrir('/', c2);
+  await loja.ctx.route(/fotos\.teste\/v\.mp4/, () => { /* fica carregando: vídeo que não abre some da tela (ver o teste de baixo) */ });
+  await cards(loja.pagina).first().waitFor({ timeout: 8000 });
+  await cards(loja.pagina).filter({ hasText: 'Ovos' }).first().locator('.produto-nome').click();
+  await loja.pagina.waitForSelector('#modal-detalhe-produto.aberto', { timeout: 4000 });
+  const v = await loja.pagina.locator('#md-video').evaluate((el) => ({ src: el.getAttribute('src'), mudo: el.muted, repete: el.loop, noLugar: el.playsInline }));
+  assert.deepStrictEqual(v, { src: 'https://fotos.teste/v.mp4', mudo: true, repete: true, noLugar: true });
+  assert.ok(await loja.pagina.locator('.md-hero.com-video').count(), 'a foto fica por baixo, como capa do vídeo');
+  // produto sem vídeo: nada de vídeo na tela
+  await loja.pagina.locator('[data-fechar="modal-detalhe-produto"]').first().click();
+  await cards(loja.pagina).filter({ hasText: 'Banana' }).first().locator('.produto-nome').click();
+  await loja.pagina.waitForTimeout(400);
+  assert.strictEqual(await loja.pagina.locator('#md-video').count(), 0);
+  semErros(loja.erros.filter((e) => !/fotos\.teste|MEDIA_ERR|DEMUXER|Failed to load resource/.test(e))); await loja.fechar();
 });
 
 teste('pacotes: no painel, peso do pacote em branco é aceito e promoção mais cara é recusada', async () => {
@@ -1979,10 +2153,89 @@ const cartao = (p, nome) => p.locator('.card-pedido', { hasText: nome });
 teste('painel: pedido pesado sai de "Pesar os itens"; item por unidade aparece em "un", não "kg"', async () => {
   const { pagina, erros, fechar } = await abrirFila(cenarioFila());
   const novo = await cartao(pagina, 'Cliente Novo').innerText(), pesado = await cartao(pagina, 'Namorada').innerText();
-  assert.ok(/2 un Tomate/.test(novo) && /Pesar os itens/.test(novo), 'pedido a pesar: "2 un" e o botão de pesar\n' + novo);
+  assert.ok(/2 un\s+Tomate/.test(novo) && /Pesar os itens/.test(novo), 'pedido a pesar: "2 un" e o botão de pesar\n' + novo);
   assert.ok(!/2 kg/.test(novo), 'pedido por unidade não aparece em kg');
   assert.ok(/SEPARANDO/.test(pesado) && /3 un \(0,9 kg\)/.test(pesado) && !/Pesar os itens/.test(pesado), 'já pesado vai para Separando\n' + pesado);
   assert.ok(await pagina.locator('#faixa-fila-copia').count() === 0, 'com o banco respondendo, sem faixa de fila desatualizada');
+  semErros(erros); await fechar();
+});
+
+teste('painel: faltou um item → tira do pedido, o cartão muda na hora e a mensagem ao cliente já vai com o pedido de desculpas; acrescentar item pelo painel', async () => {
+  const agora = Date.now(), hoje = new Date(agora - 3 * 3600000).toISOString().slice(0, 10);
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  cen.lojas.banca.pedidos = {
+    'ped-marina': { nome: 'Marina Souza', telefone: '62999990001', condominio: 'Jardins Florença', quadra: '3', lote: '12', pag: 'Dinheiro', status: 'preparando', total: 33.52, data: new Date(agora - 600000).toISOString(), entregaDia: hoje,
+      itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 4, unidade: 'kg', tipo: 'un', pesoFinal: 0.62, precoOriginal: 8.9, subtotal: 5.52 }, { id: 'ovos', nome: 'Ovos caipiras', qtd: 2, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 28 }] },
+    'ped-lucia': { nome: 'Dona Lúcia', quadra: '10', lote: '7', pag: 'Cartão', status: 'enviado', total: 42, data: new Date(agora - 3600000).toISOString(), entregaDia: hoje, itens: [{ id: 'ovos', nome: 'Ovos caipiras', qtd: 3, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 42 }] },
+  };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false }, antes: () => { window.__abertos = []; window.open = (u) => { window.__abertos.push(String(u)); return null; }; } });
+  await pagina.locator('.tab[data-aba="relatorios"]').click();
+  await pagina.locator('.card-pedido').first().waitFor({ timeout: 8000 });
+  // a caminho: os itens não mudam mais (sem o botão); separando: tem
+  assert.strictEqual(await cartao(pagina, 'Dona Lúcia').locator('[data-action="itens-pedido"]').count(), 0, 'pedido a caminho não muda de itens');
+  await cartao(pagina, 'Marina Souza').locator('[data-action="itens-pedido"]').click();
+  await pagina.locator('#modal-pedido-itens.aberto').waitFor({ timeout: 5000 });
+  assert.strictEqual(await pagina.locator('#pi-itens li').count(), 2);
+  await pagina.locator('[data-pi-tirar="0"]').click();
+  await pagina.locator('#btn-confirm-ok').click();
+  await pagina.waitForFunction(() => document.querySelectorAll('#pi-itens li').length === 1, null, { timeout: 5000 });
+  const chamada = servidor.chamadas.filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ajuste').pop();
+  assert.deepStrictEqual([chamada.corpo.op, chamada.corpo.pedidoId, chamada.corpo.indice, chamada.corpo.itemId], ['tirar', 'ped-marina', 0, 'tomate']);
+  assert.match(await pagina.locator('#pi-total').innerText(), /R\$\s*28,00/);
+  assert.ok(await pagina.locator('[data-pi-tirar="0"]').isDisabled(), 'o último item não sai: aí é cancelar o pedido');
+  // o cartão por trás já mudou, sem esperar o banco
+  const card = await cartao(pagina, 'Marina Souza').innerText();
+  assert.ok(/R\$\s*28,00/.test(card) && !/Tomate italiano\s+R\$/.test(card) && /Saiu do pedido \(em falta\): Tomate italiano/.test(card), card);
+  // avisar o cliente: a mensagem pronta, com as desculpas, para o telefone do pedido
+  await pagina.locator('#pi-avisar').click();
+  const link = decodeURIComponent((await pagina.evaluate(() => window.__abertos)).pop());
+  assert.ok(link.startsWith('https://wa.me/5562999990001?text='), link.slice(0, 60));
+  for (const pedaco of ['Olá, Marina!', 'em falta hoje e saiu do pedido', '*Tomate italiano*', 'Pedimos desculpas pelo transtorno.', '*Novo total: R$ 28,00*']) assert.ok(link.includes(pedaco), `falta "${pedaco}" em:\n${link}`);
+  // acrescentar: busca, escolhe e manda só o id e a quantidade (o preço é do servidor)
+  await pagina.locator('#pi-busca').fill('ovo');
+  await pagina.locator('[data-pi-escolher]').first().click();
+  await pagina.locator('#pi-qtd').fill('1');
+  await pagina.locator('#pi-acrescentar').click();
+  await pagina.waitForFunction(() => document.querySelectorAll('#pi-itens li').length === 2, null, { timeout: 5000 });
+  const mais = servidor.chamadas.filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ajuste').pop().corpo;
+  assert.strictEqual(mais.op, 'acrescentar'); assert.deepStrictEqual(Object.keys(mais.item).sort(), ['id', 'qtd', 'tipo']); assert.strictEqual(mais.item.qtd, 1);
+  assert.match(await pagina.locator('#pi-feito').innerText(), /Saiu: Tomate italiano[\s\S]*Entrou: Ovos caipira/);
+  semErros(erros); await fechar();
+});
+
+teste('painel: marcou "Entregue" sem querer → acha o pedido em "Ver os entregues" e volta uma etapa; a mensagem muda conforme a etapa', async () => {
+  const agora = Date.now(), hoje = new Date(agora - 3 * 3600000).toISOString().slice(0, 10);
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const item = { id: 'ovos', nome: 'Ovos caipiras', qtd: 3, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 42 };
+  cen.lojas.banca.pedidos = {
+    'ped-rafael': { nome: 'Rafael', telefone: '62999990002', quadra: '1', lote: '2', pag: 'PIX', status: 'arquivado', total: 42, data: new Date(agora - 60000).toISOString(), entregaDia: hoje, itens: [item] },
+    'ped-balcao': { nome: 'Balcão', origem: 'balcao', pag: 'Dinheiro', status: 'arquivado', total: 14, data: new Date(agora - 60000).toISOString(), itens: [item] },
+    'ped-lucia': { nome: 'Dona Lúcia', telefone: '62999990003', quadra: '10', lote: '7', pag: 'Cartão', status: 'enviado', total: 42, data: new Date(agora - 3600000).toISOString(), entregaDia: hoje, itens: [item] },
+  };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, antes: () => { window.__abertos = []; window.open = (u) => { window.__abertos.push(String(u)); return null; }; } });
+  await pagina.waitForSelector('.tab[data-aba="produtos"]', { state: 'attached', timeout: 15000 });
+  await pagina.evaluate(() => document.querySelector('.tab[data-aba="relatorios"]').click());
+  await pagina.locator('.card-pedido').first().waitFor({ timeout: 8000 });
+  // mensagem do pedido a caminho
+  await pagina.locator('.kb-col:not([hidden]) [data-action="mensagem-pedido"]').first().click();
+  let link = decodeURIComponent((await pagina.evaluate(() => window.__abertos)).pop());
+  assert.ok(link.includes('5562999990003') && link.includes('Seu pedido saiu para entrega.'), link.slice(0, 200));
+  // entregues: só aparecem quando a pessoa pede; venda de balcão não entra
+  assert.strictEqual(await pagina.locator('.pc-feitos-lista').count(), 0);
+  await pagina.locator('[data-action="ver-entregues"]').click();
+  await pagina.locator('.pc-feitos-lista .card-pedido').first().waitFor({ timeout: 6000 });
+  assert.strictEqual(await pagina.locator('.pc-feitos-lista .card-pedido').count(), 1, 'só o pedido da loja; a venda de balcão não volta');
+  const feito = pagina.locator('.pc-feitos-lista .card-pedido');
+  assert.match(await feito.innerText(), /Rafael[\s\S]*ENTREGUE/);
+  assert.strictEqual(await feito.locator('[data-action="itens-pedido"], [data-action="cancelar-pedido-painel"]').count(), 0, 'pedido entregue: sem mexer em item nem cancelar por aqui');
+  await feito.locator('[data-action="voltar-pedido"]').click();
+  assert.match(await pagina.locator('#confirm-title').innerText(), /Voltar o pedido de Rafael para "A caminho"\?/);
+  await pagina.locator('#btn-confirm-ok').click();
+  await pagina.waitForFunction(() => [...document.querySelectorAll('.kb-col:not([hidden]) .card-pedido')].some((c) => /Rafael/.test(c.innerText) && /A CAMINHO/.test(c.innerText)), null, { timeout: 6000 });
+  const volta = servidor.chamadas.filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ajuste').pop().corpo;
+  assert.deepStrictEqual([volta.op, volta.pedidoId, volta.de], ['voltar', 'ped-rafael', 'arquivado']);
+  assert.strictEqual(await pagina.locator('.pc-feitos-lista .card-pedido').count(), 0, 'saiu da lista de entregues');
+  assert.ok(await pagina.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'nada vaza para o lado no celular');
   semErros(erros); await fechar();
 });
 
@@ -2418,17 +2671,28 @@ teste('painel: "Vários de uma vez" cria os pastéis com o mesmo preço (preço 
   semErros(erros); await fechar();
 });
 
+// ajuste de pedido (de mentira): responde como o api/pdv.js de verdade (lib/ajuste.js)
+const ajusteFalso = (c) => {
+  if (c.op === 'voltar') return { sucesso: true, status: { arquivado: 'enviado', enviado: 'preparando', preparando: 'pendente' }[c.de] || 'pendente', de: c.de };
+  if (c.op === 'tirar') return { sucesso: true, total: 28, status: 'preparando', diferencaDoPago: 0, tirado: { op: 'tirou', nome: 'Tomate italiano', qtd: '0,62 kg', valor: 5.52 },
+    itens: [{ id: 'ovos', nome: 'Ovos caipiras', qtd: 2, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 28 }] };
+  if (c.op === 'acrescentar') return { sucesso: true, total: 42, status: 'preparando', diferencaDoPago: 0, acrescentado: { op: 'acrescentou', nome: 'Ovos caipira (dúzia)', qtd: '1 un', valor: 14 },
+    itens: [{ id: 'ovos', nome: 'Ovos caipiras', qtd: 2, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 28 }, { id: 'ovos', nome: 'Ovos caipira (dúzia)', qtd: 1, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 14, acrescentado: true }] };
+  return { __status: 400, error: 'Ação desconhecida.' };
+};
+
 (async () => {
   servidor = await subir({
     // pesagem (de mentira): devolve o pedido pesado como o api/pdv.js de verdade
-    '/api/pdv': (c) => (c.acao === 'impressao' ? { sucesso: true, ok: true } : c.acao === 'ponte' ? ponteFalsa(c) : c.acao === 'mensagem' ? { sucesso: true, id: c.chave, total: 24.3, itens: c.itens.length, aPesar: c.itens.filter((i) => i.id === 'banana' && i.tipo === 'un').length } : c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
+    '/api/pdv': (c) => (c.acao === 'ajuste' ? ajusteFalso(c) : c.acao === 'impressao' ? { sucesso: true, ok: true } : c.acao === 'ponte' ? ponteFalsa(c) : c.acao === 'mensagem' ? { sucesso: true, id: c.chave, total: 24.3, itens: c.itens.length, aPesar: c.itens.filter((i) => i.id === 'banana' && i.tipo === 'un').length } : c.acao === 'pesagem' ? { sucesso: true, total: 0, desconto: 7.92, entrega: 0, itens: [{ id: 'tomate', nome: 'Tomate italiano', qtd: 2, tipo: 'un', unidade: 'kg', aPesar: false, pesoFinal: 0.8, precoOriginal: 9.9, subtotal: 7.92 }] } : {}),
     // ranking (de mentira) da banca, ao contrário da ordem do cadastro, chegando 1,5 s depois
     '/api/analytics': (c) => (c.acao === 'painel' ? (c.atualizar
         // com "atualizar" o servidor confere pedido novo e recalcula: demora 2 s e traz 1 cliente a mais
         ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, meta: { geradoEm: '2026-10-26T15:00:00.000Z' }, indiceClientes: [{ id: 'c1', nome: 'Ana Lima', condominio: 'Alfa', quadra: '1', lote: '2', n: 2, ult: '2026-10-20', pri: '2026-09-01', gasto: 50 }, { id: 'c2', nome: 'Bruno Reis', condominio: 'Alfa', quadra: '3', lote: '4', n: 1, ult: '2026-10-25', pri: '2026-10-25', gasto: 20 }] }), 2000))
         : { sucesso: true, meta: { geradoEm: '2026-10-26T10:00:00.000Z' }, indiceClientes: [{ id: 'c1', nome: 'Ana Lima', condominio: 'Alfa', quadra: '1', lote: '2', n: 2, ult: '2026-10-20', pri: '2026-09-01', gasto: 50 }] })
       : c.acao === 'ranking' ? new Promise((ok) => setTimeout(() => ok({ sucesso: true, nivel: 'popular', itens: ['ovos', 'banana', 'alface', 'tomate'].map((id, i) => ({ id, p: 0.9 - i * 0.2 })) }), 1500)) : {}),
-    '/api/checkout': (c) => (c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),
+    '/api/foto': (c) => (c.acao === 'video' ? { sucesso: true, put: 'https://r2.teste/put?X-Amz-Signature=x', url: `https://fotos.teste/lojas/banca/videos/${c.nome}.mp4`, cabecalhos: { 'content-type': c.tipo, 'cache-control': 'public, max-age=31536000, immutable' } } : {}),
+    '/api/checkout': (c) => (c.acao === 'avise-me' ? { sucesso: true, jaEstava: false } : c.acao ? {} : { sucesso: true, temConta: false, pedido: { id: 'PED123', total: 14, paraHoje: true, whatsapps: [{ nome: 'Banca', url: 'https://wa.me/5562999990000?text=Pedido' }] } }),
     '/api/plataforma': (c) => (c.acao === 'situacao' ? { sucesso: true, temDono: true, souEu: true }
       : c.acao === 'erros' ? { sucesso: true, erros: [{ id: 'e1', assinatura: 'e'.repeat(20), tipo: 'erro', msg: "Cannot read properties of undefined (reading 'preco')", vezes: 3, ultimo: new Date().toISOString(), onde: '/assets/main-X.js:10:5', paginas: ['/'], navegadores: ['Android · Chrome 129'], lojas: ['banca'], pilha: 'at x' },
         { id: 'v1', assinatura: 'a'.repeat(20), tipo: 'visual', msg: 'Texto cortado ou vazando: faixa › card de produto › preço', vezes: 12, dias: ['2026-10-22', '2026-10-23'], telas: ['320px · letra 200%', '375px · letra 150%'], ultimo: new Date().toISOString(), onde: '.faixa-rolo .produto-card .etq-preco', paginas: ['/'], navegadores: ['iPhone · Safari 17'], lojas: ['banca'], pilha: 'cortado sem "..."' },
@@ -2975,5 +3239,153 @@ teste('vigia da tela: página sem tela (largura 0 / aba escondida) não gera avi
     return { antes, semLargura, escondida };
   });
   assert.deepStrictEqual(r, { antes: 0, semLargura: 0, escondida: 0 });
+  semErros(erros); await fechar();
+});
+
+teste('painel: tema escuro pelo menu "Mais opções" fica guardado no aparelho, o claro continua o padrão e todo texto se lê', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, ctx, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForSelector('.tab[data-aba="produtos"]', { state: 'attached', timeout: 15000 });
+  // padrão: claro, sem o atributo (nenhuma regra do escuro vale)
+  assert.strictEqual(await pagina.evaluate(() => document.documentElement.dataset.painelTema || ''), '');
+  const fundoClaro = await pagina.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await pagina.click('#btn-mais'); await pagina.click('#btn-tema');
+  assert.strictEqual(await pagina.evaluate(() => document.documentElement.dataset.painelTema), 'escuro');
+  assert.strictEqual(await pagina.getAttribute('#btn-tema', 'aria-pressed'), 'true');
+  assert.strictEqual((await pagina.textContent('#btn-tema-texto')).trim(), 'Tema claro', 'o botão diz o que faz');
+  assert.notStrictEqual(await pagina.evaluate(() => getComputedStyle(document.body).backgroundColor), fundoClaro);
+  // contraste: nenhum texto visível abaixo de 4:1 nas abas do dia a dia (papel da impressora e etiqueta "HOJE" são iguais ao claro)
+  const medir = () => pagina.evaluate(() => {
+    const num = (c) => { const m = c.match(/[\d.]+/g).map(Number); return { r: m[0], g: m[1], b: m[2], a: m[3] === undefined ? 1 : m[3] }; };
+    const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+    const sobre = (c, f) => ({ r: c.r * c.a + f.r * (1 - c.a), g: c.g * c.a + f.g * (1 - c.a), b: c.b * c.a + f.b * (1 - c.a), a: 1 });
+    const fundoDe = (el) => { const pilha = []; for (let e = el; e; e = e.parentElement) { const s = getComputedStyle(e); if (/gradient|url/.test(s.backgroundImage)) return null; const c = num(s.backgroundColor); if (c.a > 0) { pilha.push(c); if (c.a >= 0.999) break; } } let f = { r: 15, g: 22, b: 18, a: 1 }; for (const c of pilha.reverse()) f = sobre(c, f); return f; };
+    const ruins = [];
+    for (const el of document.querySelectorAll('body *')) {
+      if (!el.offsetParent || el.closest('svg, .ipr-papel, .com-hoje-tag')) continue;
+      if (![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 1)) continue;
+      const s = getComputedStyle(el); if (s.visibility === 'hidden' || +s.opacity < 0.5) continue;
+      const f = fundoDe(el); if (!f) continue; const c = sobre(num(s.color), f); const a = lum(c), b = lum(f);
+      const k = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); if (k < 4) ruins.push(`${k.toFixed(2)} "${el.textContent.trim().slice(0, 30)}"`);
+    }
+    return ruins;
+  });
+  for (const aba of ['produtos', 'relatorios', 'pdv', 'estoque', 'cupons', 'comunicados', 'aparencia', 'config']) {
+    await pagina.evaluate((a) => document.querySelector(`.tab[data-aba="${a}"]`).click(), aba);
+    await pagina.waitForTimeout(500);
+    await pagina.evaluate(() => document.querySelectorAll('details').forEach((d) => { d.open = true; }));
+    const ruins = await medir();
+    assert.deepStrictEqual(ruins, [], `aba ${aba}: texto difícil de ler no escuro`);
+  }
+  // a escolha fica no aparelho: recarregar abre escuro
+  await pagina.reload(); await pagina.waitForSelector('.tab[data-aba="produtos"]', { state: 'attached', timeout: 15000 });
+  assert.strictEqual(await pagina.evaluate(() => document.documentElement.dataset.painelTema), 'escuro');
+  assert.strictEqual(await pagina.evaluate(() => document.querySelector('meta[name="theme-color"]').content), '#0f1612');
+  // voltar ao claro
+  await pagina.click('#btn-mais'); await pagina.click('#btn-tema');
+  assert.strictEqual(await pagina.evaluate(() => document.documentElement.dataset.painelTema || ''), '');
+  assert.strictEqual(await pagina.evaluate(() => getComputedStyle(document.body).backgroundColor), fundoClaro, 'o claro volta igual ao original');
+  // a loja do cliente não pega o tema do painel, mesmo com a escolha guardada
+  const loja = await ctx.newPage(); await loja.goto(pagina.url().replace(/\/admin\.html.*$/, '/'));
+  await loja.evaluate(() => localStorage.setItem('painel-tema', 'escuro')); await loja.reload();
+  await loja.waitForSelector('#lista-produtos .produto-card', { timeout: 8000 });
+  assert.strictEqual(await loja.evaluate(() => document.documentElement.dataset.painelTema || ''), '');
+  semErros(erros); await fechar();
+});
+
+teste('painel: aba Resumo no celular (vendido, pedidos, gráfico, quem espera, atalhos) sem tirar Produtos da primeira tela', async () => {
+  const agora = Date.now(), hojeBR = new Date(agora - 3 * 3600000).toISOString().slice(0, 10);
+  const iso = (diasAtras, horaUTC = 15) => { const d = new Date(`${hojeBR}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - diasAtras); d.setUTCHours(horaUTC); return d.toISOString(); };
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  cen.lojas.banca.pedidos = {
+    p1: { nome: 'Marina', condominio: 'Jardins Florença', quadra: '3', lote: '12', status: 'pendente', total: 96, data: new Date(agora - 120000).toISOString(), entregaDia: hojeBR, itens: [{ nome: 'Queijo canastra', qtd: 1 }, { nome: 'Goiabada', qtd: 1 }, { nome: 'Doce de leite', qtd: 2 }] },
+    p2: { nome: 'Paulo', modo: 'retirada', status: 'arquivado', total: 54.5, data: new Date(agora - 3600000).toISOString(), entregaDia: hojeBR, itens: [{ nome: 'Pão de queijo', qtd: 1 }] },
+    p3: { nome: 'Cancelado', status: 'cancelado', total: 500, data: new Date(agora - 600000).toISOString(), entregaDia: hojeBR, itens: [] },
+    p4: { nome: 'Ontem', status: 'arquivado', total: 100, data: iso(1), itens: [] },
+  };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } });
+  await pagina.waitForSelector('.tab[data-aba="produtos"]', { state: 'attached', timeout: 15000 });
+  await pagina.waitForTimeout(400);
+  assert.ok(await pagina.evaluate(() => document.getElementById('aba-produtos').classList.contains('active')), 'o painel continua abrindo em Produtos');
+  // a barra de baixo traz o Resumo primeiro, e Produtos continua nela
+  const barra = await pagina.evaluate(() => [...document.querySelectorAll('#barra [data-ir-aba]')].map((b) => b.dataset.irAba));
+  assert.deepStrictEqual(barra, ['resumo', 'relatorios', 'pdv', 'produtos']);
+  await pagina.locator('#barra [data-ir-aba="resumo"]').click();
+  const rs = pagina.locator('#resumo-conteudo .rs-nums .rs-grande');
+  await rs.first().waitFor({ timeout: 8000 });
+  const nums = await rs.allInnerTexts();
+  assert.match(nums[0].replace(/\s/g, ' '), /R\$ 150,50/, 'vendido hoje: 96 + 54,50, sem o cancelado');
+  assert.strictEqual(nums[1].trim(), '2');
+  assert.match(await pagina.locator('.rs-num').first().innerText(), /a mais que ontem/);
+  assert.strictEqual(await pagina.locator('.rs-grafico rect').count(), 7, 'gráfico de 7 dias');
+  assert.match(await pagina.locator('#topo-secao').innerText(), /Resumo/);
+  const ped = pagina.locator('.rs-ped');
+  assert.strictEqual(await ped.count(), 1, 'só o pedido novo espera alguém');
+  assert.match(await ped.innerText(), /Marina[\s\S]*Queijo canastra, Goiabada \+1/);
+  // sem rolagem para o lado no celular
+  assert.ok(await pagina.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'nada vaza para o lado');
+  // atalhos respeitam o papel; "Abrir na fila" leva aos pedidos
+  const atalhos = await pagina.locator('.rs-atalho').allInnerTexts();
+  assert.deepStrictEqual(atalhos.map((t) => t.trim()), ['Novo produto', 'Pedidos', 'Balcão', 'Fechar o dia']);
+  // nos dois temas, os números e o pedido se leem (contraste >= 4.5)
+  for (const tema of ['claro', 'escuro']) {
+    await pagina.evaluate((t) => { if (t === 'escuro') document.documentElement.dataset.painelTema = 'escuro'; else delete document.documentElement.dataset.painelTema; }, tema);
+    const k = await pagina.evaluate(() => {
+      const num = (c) => c.match(/[\d.]+/g).map(Number); const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const fundo = (el) => { for (let e = el; e; e = e.parentElement) { const c = num(getComputedStyle(e).backgroundColor); if (c[3] === undefined || c[3] > 0.9) return c; } return [255, 255, 255]; };
+      return [...document.querySelectorAll('.rs-titulo, .rs-rot, .rs-grande, .rs-comp, .rs-ped b, .rs-ped p, .rs-atalho > span:last-child, .rs-tit')].map((el) => { const a = lum(num(getComputedStyle(el).color)), b = lum(fundo(el)); return [el.className || el.tagName, (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)]; });
+    });
+    const ruins = k.filter(([, x]) => x < 4.5);
+    assert.ok(k.length >= 8 && !ruins.length, `tema ${tema}: ${ruins.map(([n, x]) => `${n} ${x.toFixed(2)}`).join(', ')}`);
+  }
+  await pagina.evaluate(() => { delete document.documentElement.dataset.painelTema; });
+  await pagina.locator('.rs-ped button[data-ir-aba="relatorios"]').click();
+  assert.ok(await pagina.evaluate(() => document.getElementById('aba-relatorios').classList.contains('active')), '"Abrir na fila" leva à fila de pedidos');
+  semErros(erros); await fechar();
+});
+
+teste('painel: funcionário não vê a aba Resumo nem o atalho dela', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'func', email: 'func@teste.com', isAnonymous: false, claims: { tenants: { banca: 'funcionario' } } } });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } });
+  await pagina.waitForSelector('.tab[data-aba="relatorios"]', { state: 'attached', timeout: 15000 });
+  await pagina.waitForTimeout(500);
+  assert.ok(await pagina.evaluate(() => document.querySelector('.tab[data-aba="resumo"]').hidden), 'a aba fica escondida');
+  assert.strictEqual(await pagina.locator('#barra [data-ir-aba="resumo"]').count(), 0);
+  semErros(erros); await fechar();
+});
+
+teste('painel: telas vazias no mesmo padrão (título, explicação, próximo passo), aviso com ícone e carregando em esqueleto', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForSelector('.tab[data-aba="produtos"]', { state: 'attached', timeout: 15000 });
+  // pedidos: fila vazia no padrão novo
+  await pagina.evaluate(() => document.querySelector('.tab[data-aba="relatorios"]').click());
+  const vazioPedidos = pagina.locator('#lista-historico .pn-vazio');
+  await vazioPedidos.waitFor({ timeout: 8000 });
+  assert.match(await vazioPedidos.innerText(), /Nenhum pedido na fila/);
+  assert.ok(await vazioPedidos.locator('.pn-vazio-ico svg').count(), 'o ícone foi desenhado');
+  // cupons: o botão da tela vazia leva ao campo do código
+  await pagina.evaluate(() => document.querySelector('.tab[data-aba="cupons"]').click());
+  const bt = pagina.locator('.pn-vazio button[data-pn-focar="cup-codigo"]');
+  await bt.waitFor({ timeout: 8000 }); await bt.click();
+  assert.strictEqual(await pagina.evaluate(() => document.activeElement && document.activeElement.id), 'cup-codigo');
+  // aviso rápido: tipo marcado (ícone de certo / de erro), texto igual
+  const tipo = await pagina.evaluate(async () => { const u = await import('/js/utils.js'); u.showToast('Teste certo'); const a = document.getElementById('toast').dataset.tipo; u.showToast('Teste erro', true); return [a, document.getElementById('toast').dataset.tipo, document.getElementById('toast').textContent]; });
+  assert.deepStrictEqual(tipo, ['ok', 'erro', 'Teste erro']);
+  // esqueleto: lê-se "Carregando..." para leitor de tela, sem aparecer
+  const esq = await pagina.evaluate(async () => { const m = await import('/js/painel-ui.js'); const d = document.createElement('div'); d.innerHTML = m.esqueleto('Carregando os clientes...', 3); document.body.appendChild(d);
+    const r = { linhas: d.querySelectorAll('.pn-esq-linha').length, texto: d.textContent, visivel: d.querySelector('.pn-oculto').getBoundingClientRect().width }; d.remove(); return r; });
+  assert.deepStrictEqual(esq, { linhas: 3, texto: 'Carregando os clientes...', visivel: 1 });
+  // nos dois temas, o texto da tela vazia se lê (contraste >= 4.5)
+  for (const tema of ['claro', 'escuro']) {
+    await pagina.evaluate((t) => { if (t === 'escuro') document.documentElement.dataset.painelTema = 'escuro'; else delete document.documentElement.dataset.painelTema; }, tema);
+    await pagina.evaluate(() => document.querySelector('.tab[data-aba="relatorios"]').click());
+    const k = await pagina.evaluate(() => {
+      const num = (c) => c.match(/[\d.]+/g).map(Number); const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const fundo = (el) => { for (let e = el; e; e = e.parentElement) { const c = num(getComputedStyle(e).backgroundColor); if (c[3] === undefined || c[3] > 0.9) return c; } return [255, 255, 255]; };
+      return [...document.querySelectorAll('#lista-historico .pn-vazio b, #lista-historico .pn-vazio p')].map((el) => { const a = lum(num(getComputedStyle(el).color)), b = lum(fundo(el)); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); });
+    });
+    assert.ok(k.length >= 2 && k.every((x) => x >= 4.5), `tema ${tema}: contraste ${k.map((x) => x.toFixed(2)).join(', ')}`);
+  }
   semErros(erros); await fechar();
 });

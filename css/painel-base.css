@@ -1,0 +1,69 @@
+/* =====================================================================
+   css/painel-base.css — COMPONENTES BASE DO PAINEL (etapa 2 do design system).
+
+   Só o painel carrega este arquivo (admin.html). A loja do cliente não.
+   Mantém a cara de sempre (verde-mata, creme, Fraunces + Figtree): aqui só se
+   unifica o que cada tela fazia do seu jeito.
+     .pn-vazio      tela vazia: ícone, título, explicação e o próximo passo
+     .pn-esqueleto  carregando: o desenho da lista aparece antes dos dados
+     .pn-pil        pílula de estado (certo, atenção, erro, aviso, neutro)
+     .toast         aviso rápido com ícone de certo ou de erro
+     foco visível em tudo que se toca pelo teclado
+   HTML pronto: js/painel-ui.js (estadoVazio, esqueleto, pilula).
+   O tema escuro destes componentes sai sozinho (scripts/gerar-tema-escuro.js).
+   ===================================================================== */
+:root {
+  /* espaços e cantos da escala única (prancha 1 do estudo) */
+  --pn-e1: 4px; --pn-e2: 8px; --pn-e3: 12px; --pn-e4: 16px; --pn-e5: 24px; --pn-e6: 32px;
+  --pn-r1: 8px; --pn-r2: 14px; --pn-r3: 20px;
+}
+
+/* ---------- tela vazia ---------- */
+.pn-vazio { display: grid; justify-items: center; text-align: center; gap: var(--pn-e2); padding: var(--pn-e6) var(--pn-e4); color: #55554e; }
+.pn-vazio-ico { width: 64px; height: 64px; border-radius: 20px; background: #e8f5ee; color: #1a3a2a; display: grid; place-items: center; margin-bottom: var(--pn-e1); }
+.pn-vazio-ico .ic { width: 30px; height: 30px; }
+.pn-vazio > b { font-family: var(--fonte-titulo); font-size: 1.12rem; line-height: 1.25; color: #1a3a2a; text-wrap: balance; }
+.pn-vazio p { margin: 0; max-width: 34ch; font-size: .92rem; line-height: 1.5; color: #55554e; }
+.pn-vazio .btn { margin-top: var(--pn-e2); min-height: 44px; padding: 10px 18px; }
+.pn-vazio.compacto { padding: var(--pn-e4) var(--pn-e3); gap: var(--pn-e1); }
+.pn-vazio.compacto .pn-vazio-ico { width: 44px; height: 44px; border-radius: 14px; }
+.pn-vazio.compacto .pn-vazio-ico .ic { width: 22px; height: 22px; }
+.pn-vazio.compacto > b { font-size: 1rem; }
+.pn-vazio.erro .pn-vazio-ico { background: #fdeaea; color: #b91c1c; }
+
+/* ---------- carregando ---------- */
+.pn-esqueleto { display: grid; gap: var(--pn-e2); padding: var(--pn-e1) 0; }
+.pn-esq-linha { display: grid; grid-template-columns: 44px 1fr 64px; gap: var(--pn-e3); align-items: center; padding: var(--pn-e3); border: 1px solid #e4dfd3; border-radius: var(--pn-r2); background: #ffffff; }
+.pn-esq-linha i, .pn-esq-linha em { display: block; border-radius: var(--pn-r1); background: #ece7dc; }
+.pn-esq-linha i { width: 44px; height: 44px; border-radius: 12px; }
+.pn-esq-linha span { display: grid; gap: 8px; }
+.pn-esq-linha span::before, .pn-esq-linha span::after { content: ''; display: block; height: 12px; border-radius: 6px; background: #ece7dc; }
+.pn-esq-linha span::before { width: var(--l1, 62%); }
+.pn-esq-linha span::after { width: var(--l2, 38%); height: 10px; }
+.pn-esq-linha em { height: 16px; }
+.pn-esq-linha i, .pn-esq-linha em, .pn-esq-linha span::before, .pn-esq-linha span::after { animation: pn-respira 1.4s ease-in-out infinite; }
+@keyframes pn-respira { 50% { opacity: .45; } }
+.pn-oculto { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---------- pílula de estado ---------- */
+.pn-pil { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; padding: 2px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700; line-height: 1.2; white-space: nowrap; background: #f4f0e8; color: #55554e; }
+.pn-pil::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.pn-pil.ok { background: #e1f5e7; color: #157538; }
+.pn-pil.atencao { background: #fdf0cf; color: #9a5503; }
+.pn-pil.erro { background: #fdeaea; color: #b91c1c; }
+.pn-pil.aviso { background: #e2f1fa; color: #0b6aa2; }
+
+/* ---------- aviso rápido: ícone de certo ou de erro (o texto continua o mesmo) ---------- */
+.toast[data-tipo] { display: inline-flex; align-items: center; gap: 10px; }
+.toast[data-tipo]::before { content: ''; flex: none; width: 20px; height: 20px; background: currentColor;
+  -webkit-mask: var(--pn-toast-ico) center / contain no-repeat; mask: var(--pn-toast-ico) center / contain no-repeat; }
+.toast[data-tipo="ok"] { --pn-toast-ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9.5'/%3E%3Cpath d='m8 12.5 2.7 2.7L16.2 9.6'/%3E%3C/svg%3E"); }
+.toast[data-tipo="erro"] { --pn-toast-ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9.5'/%3E%3Cpath d='M12 7.5v5.2M12 16.3v.2'/%3E%3C/svg%3E"); }
+
+/* ---------- foco visível (teclado) ---------- */
+#dashboard :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible,
+.modal :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible { outline: 3px solid #4a9467; outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pn-esq-linha i, .pn-esq-linha em, .pn-esq-linha span::before, .pn-esq-linha span::after { animation: none; }
+}

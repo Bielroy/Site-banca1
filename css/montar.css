@@ -97,4 +97,6 @@
 @container card-info (max-width: 160px) {
     .card-acao.montar .card-add--montar { padding: 0 8px; gap: 6px; }
     .card-add--montar .ico { display: none; }
+    /* se ainda assim não couber (fonte do aparelho mais larga), o rótulo quebra em duas linhas em vez de virar "Montar o…" */
+    .card-add--montar span { white-space: normal; text-overflow: clip; text-align: center; line-height: 1.1; overflow-wrap: normal; }
 }

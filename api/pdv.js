@@ -18,6 +18,11 @@
 //      (Antes o painel gravava o total direto: o cupom se perdia e o estoque
 //      dos itens por quilo nunca baixava.)
 //
+//  POST { acao: 'ajuste', op: 'tirar' | 'acrescentar' | 'voltar' | 'precos', pedidoId, indice?, item?: { id, qtd, tipo }, motivo? }
+//      Mexer no pedido depois que ele chegou (lib/ajuste.js): tirar um item que faltou (o estoque volta),
+//      acrescentar o que o cliente pediu depois pelo WhatsApp (preço do cadastro) ou voltar o pedido uma etapa.
+//      Tirar e acrescentar só antes de sair para entrega. Tudo fica registrado no pedido (quem e quando).
+//
 //  POST { acao: 'impressao', op, pedidoId, versao, aparelho }
 //      Fila de impressão (lib/impressao.js): reservar → imprimir no aparelho → confirmar
 //      (ou liberar, se não saiu). Um pedido não sai duas vezes, nem com dois aparelhos ligados.
@@ -43,6 +48,7 @@ const P = require('../lib/prudencia');
 const Imp = require('../lib/impressao');
 const Ponte = require('../lib/ponte');
 const Catalogo = require('../lib/catalogo');
+const Ajuste = require('../lib/ajuste');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -270,6 +276,93 @@ async function pesagem(req, res, { tid, dec }) {
   }
 }
 
+// MEXER NO PEDIDO (lib/ajuste.js): tirar item que faltou, acrescentar o que o cliente pediu depois, voltar uma etapa.
+async function ajuste(req, res, { tid, dec }) {
+  const b = req.body || {}, pedidoId = String(b.pedidoId || ''), op = String(b.op || ''), por = dec.email || dec.uid;
+  if (!/^[\w-]{6,80}$/.test(pedidoId)) return res.status(400).json({ error: 'Pedido inválido.' });
+  if (!['tirar', 'acrescentar', 'voltar', 'precos'].includes(op)) return res.status(400).json({ error: 'Ação desconhecida.' });
+  const item = b.item && typeof b.item === 'object' ? b.item : {};
+  if (op === 'acrescentar' && (!/^[\w-]{1,80}$/.test(String(item.id || '')) || !['kg', 'un'].includes(item.tipo))) return res.status(400).json({ error: 'Escolha o produto e a quantidade.' });
+  try {
+    const saida = await db.runTransaction(async (t) => {
+      const pedidoRef = T.tdoc(db, tid, 'pedidos', pedidoId), snap = await t.get(pedidoRef);
+      if (!snap.exists) throw new Error('Pedido não encontrado.');
+      const ped = snap.data(), agora = new Date();
+
+      if (op === 'voltar') {
+        const para = Ajuste.etapaAnterior(ped);
+        if (!para) throw new Error('Este pedido não tem etapa anterior para voltar.');
+        // quem mandou voltar viu o pedido numa etapa: se outra pessoa já mexeu, não volta duas vezes
+        if (b.de && String(b.de) !== String(ped.status)) throw new Error('Este pedido já mudou de etapa. Atualize a tela.');
+        t.update(pedidoRef, { status: para, ajustes: Ajuste.comRegistro(ped, { op: 'voltou', de: ped.status, para, por, em: agora.toISOString() }) });
+        return { status: para, de: ped.status };
+      }
+
+      // dia do caixa em que este pedido foi somado: o da ENTREGA (pedido para a próxima feira) ou o do pedido
+      const dia = /^\d{4}-\d{2}-\d{2}$/.test(String(ped.entregaDia || '')) ? ped.entregaDia : new Date(new Date(ped.data).getTime() - 3 * 3600000).toISOString().slice(0, 10);
+      const fecharCaixa = (totalNovo) => { const dif = V.paraReais(V.paraCentavos(totalNovo) - V.paraCentavos(Number(ped.total) || 0)); if (dif !== 0 && /^\d{4}-\d{2}-\d{2}$/.test(dia)) somarNoCaixa(t, tid, dif, 0, dia); };
+      const campos = (r) => ({ itens: r.itens, total: r.conta.total, totalExato: r.conta.total, temItensAPesar: r.itens.some((i) => i.aPesar),
+        ...(r.conta.cupom ? { cupom: r.conta.cupom } : {}), ...(r.conta.entrega ? { entrega: r.conta.entrega } : {}),
+        ajustes: Ajuste.comRegistro(ped, r.registro), ajustadoEm: agora.toISOString() });
+
+      if (op === 'tirar') {
+        const r = Ajuste.tirarItem(ped, b.indice, { motivo: b.motivo, por, agora });
+        // o cartão do painel pode estar velho: confere se o item daquela posição é o mesmo que a pessoa viu
+        if (b.itemId && String(b.itemId) !== String(r.tirado.id)) throw new Error('O pedido mudou. Atualize a tela e tente de novo.');
+        const movs = [];
+        if (r.devolver) {
+          const ps = await t.get(T.tdoc(db, tid, 'produtos', r.devolver.produtoId));
+          if (ps.exists && E.temControle(ps.data().estoqueFisico)) {
+            const p = ps.data(), novo = E.fix(Number(p.estoqueFisico) + r.devolver.qtd);
+            t.update(ps.ref, { estoqueFisico: novo, ativo: E.ativoDepois(p, novo) });
+            movs.push({ produtoId: r.devolver.produtoId, nome: p.nome, unidade: p.unidade, tipo: 'cancelamento', delta: r.devolver.qtd, saldo: novo, custoUnit: p.custo, pedidoId, obs: 'Item tirado do pedido', por });
+          }
+        }
+        // sem item a pesar, o pedido que esperava a balança segue como pedido novo comum
+        const semBalanca = !r.itens.some((i) => i.aPesar) && ped.status === 'aguardando_pesagem';
+        t.update(pedidoRef, { ...campos(r), ...(semBalanca ? { status: 'pendente' } : {}) });
+        E.registrarMovs(t, db, tid, movs, admin.firestore.FieldValue);
+        fecharCaixa(r.conta.total);
+        return { total: r.conta.total, itens: r.itens, tirado: r.registro, diferencaDoPago: Ajuste.diferencaDoPago(ped, r.conta.total), status: semBalanca ? 'pendente' : ped.status };
+      }
+
+      if (op === 'precos') {
+        // pedido feito para outro dia: cada item passa a valer o preço do cadastro no dia da entrega
+        const ids = [...new Set((ped.itens || []).map((i) => i && i.id).filter((id) => /^[\w-]{1,80}$/.test(String(id || ''))))].slice(0, 120);
+        const snaps = await Promise.all(ids.map((id) => t.get(T.tdoc(db, tid, 'produtos', String(id)))));
+        const dowDia = new Date(`${dia}T12:00:00-03:00`).getUTCDay(), precos = new Map();
+        snaps.forEach((ps) => { if (ps.exists) precos.set(ps.id, Feira.precoDoDia(ps.data(), dowDia)); });
+        const r = Ajuste.reprecificar(ped, (id) => precos.get(id), { por, agora });
+        t.update(pedidoRef, { ...campos(r), precoNoDia: false, precoConfirmadoEm: agora.toISOString() });
+        fecharCaixa(r.conta.total);
+        return { total: r.conta.total, itens: r.itens, mudou: r.mudou, status: ped.status };
+      }
+
+      // acrescentar: o preço é o do cadastro, no dia da entrega do pedido
+      const ps = await t.get(T.tdoc(db, tid, 'produtos', String(item.id)));
+      if (!ps.exists) throw new Error('Este produto não existe mais.');
+      const p = ps.data(), dow = new Date(`${dia}T12:00:00-03:00`).getUTCDay();
+      const { linha, baixa } = Ajuste.linhaNova(String(item.id), p, item, Feira.precoDoDia(p, dow));
+      const r = Ajuste.acrescentarItem(ped, linha, { por, agora });
+      const movs = [];
+      if (baixa > 0 && E.temControle(p.estoqueFisico)) {
+        // a banca está com o produto na mão: como no pedido por mensagem, o estoque nunca barra
+        const atual = Number(p.estoqueFisico), novo = Math.max(0, E.fix(atual - baixa));
+        t.update(ps.ref, { estoqueFisico: novo, ativo: E.ativoDepois(p, novo) });
+        movs.push({ produtoId: String(item.id), nome: p.nome, unidade: p.unidade, tipo: 'venda', delta: E.fix(novo - atual), saldo: novo, custoUnit: p.custo, pedidoId, obs: 'Item acrescentado ao pedido', por });
+      }
+      t.update(pedidoRef, { ...campos(r), status: r.status });
+      E.registrarMovs(t, db, tid, movs, admin.firestore.FieldValue);
+      fecharCaixa(r.conta.total);
+      return { total: r.conta.total, itens: r.itens, acrescentado: r.registro, diferencaDoPago: Ajuste.diferencaDoPago(ped, r.conta.total), status: r.status };
+    });
+    return res.status(200).json({ sucesso: true, ...saida });
+  } catch (e) {
+    if (P.ehFalhaInterna(e)) { await P.avisarFalha(db, tid, 'O ajuste de pedido', e); return res.status(500).json({ error: 'Não consegui mudar o pedido agora. Tente de novo em instantes.' }); }
+    return res.status(400).json({ error: e.message || 'Não foi possível mudar o pedido.' });
+  }
+}
+
 // FILA DE IMPRESSÃO (lib/impressao.js): o aparelho com a impressora reserva o pedido, imprime e confirma.
 // POST { acao: 'impressao', op: 'reservar' | 'confirmar' | 'liberar', pedidoId, versao, aparelho }
 async function impressao(req, res, { tid }) {
@@ -351,6 +444,7 @@ module.exports = async function handler(req, res) {
   if (acao === 'venda') return venda(req, res, { tid, dec });
   if (acao === 'mensagem') return mensagem(req, res, { tid, dec });
   if (acao === 'pesagem') return pesagem(req, res, { tid, dec });
+  if (acao === 'ajuste') return ajuste(req, res, { tid, dec });
   if (acao === 'impressao') return impressao(req, res, { tid, dec });
   if (acao === 'ponte') return ponte(req, res, { tid, dec });
   return res.status(400).json({ error: 'Ação desconhecida.' });

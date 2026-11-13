@@ -15,6 +15,7 @@
 import { getDoc, setDoc } from './firebase.js';
 import { tdoc } from './tenant.js';
 import { escapeHTML, showToast } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
 import { vitrineSegura, MAX_QUADROS, MAX_FAIXAS_LOJA, MAX_SECOES, ICONES_SECAO, secoesSugeridas, ESCOLHA_PADRAO, resumoFunil, ETAPAS, NOMES_ETAPAS, hojeDaLoja } from './vitrine-lib.js';
 import { PACOTES_PADRAO, TEMPEROS_PADRAO, SEM_TEMPEROS } from './pacote-lib.js';
 import { ARTE_PACOTE, ARTE_POTE } from './vitrine-arte.js';
@@ -315,7 +316,7 @@ export async function abrirVitrine(cats = []) {
     if (!el()) return;
     categorias = cats;
     if (estado) { pintarFunil(); return; }
-    el().innerHTML = '<p class="config-sub">Carregando a vitrine...</p>';
+    el().innerHTML = esqueleto('Carregando a vitrine...', 3);
     let cfg = {};
     try { const s = await getDoc(tdoc('loja', 'config')); if (s.exists()) cfg = s.data() || {}; }
     catch (_) { el().innerHTML = '<p class="config-sub">Não consegui ler a vitrine. Confira a internet e abra a aba de novo.</p>'; return; }

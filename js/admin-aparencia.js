@@ -13,6 +13,7 @@
 import { getDoc, setDoc } from './firebase.js';
 import { fichaRef, TENANT, urlDaLoja, ehLojaOriginal } from './tenant.js';
 import { escapeHTML, showToast, customConfirm } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
 import { temaSeguro, OPCOES, MODELOS, NOMES_MODELOS, FONTES, FOTO_FORMATOS, linkDaFonte, paletaDeUmaCor, avisosDeContraste, ajustarContraste, corValida, urlImagem } from './aparencia-lib.js';
 import { validarArquivo } from './fotos-lib.js';
 
@@ -428,7 +429,7 @@ function ligar() {
 export async function abrirAparencia() {
     if (!el()) return;
     if (carregado) { medirPrevia(); return; }
-    el().innerHTML = '<p class="config-sub">Carregando...</p>';
+    el().innerHTML = esqueleto('Carregando...', 3);
     let ficha = {};
     try { const s = await getDoc(fichaRef()); if (s.exists()) ficha = s.data(); }
     catch (e) { el().innerHTML = '<p class="config-sub">Não consegui ler a aparência desta loja. Confira a internet e abra a aba de novo.</p>'; return; }

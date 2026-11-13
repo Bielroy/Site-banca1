@@ -15,6 +15,8 @@ import { marcarProdutoLocal, marcarCustoLocal } from './painel-catalogo.js';
 import { lerPainel } from './painel-cache.js';
 import { sobrasPereciveis } from './alertas-lib.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
+import { mensagemProdutoVoltou, linkDoWhatsApp } from './mensagem-lib.js';
 import { numeroDeCampo } from './aparencia-lib.js';
 import { temControle, situacao, sugestaoCompra, fmtQtd, ROTULO_TIPO, MOTIVOS_PERDA, custoDaFicha, margem, UNIDADES_RECEITA, paraEstoque, taxasDePerda, comFolgaDePerda } from './estoque-lib.js';
 
@@ -88,6 +90,36 @@ const linhaDe = (p) => {
 };
 
 // Sobra de perecível e custo da falta (js/alertas-lib.js + motor). Somem quando não há o que dizer.
+// LISTA DE ESPERA ("Avise-me quando voltar", lib/avise.js): quem deixou o WhatsApp num produto em falta.
+// Quando o produto volta, cada cliente ganha o botão que abre a conversa com a mensagem pronta. Nada sai sozinho.
+async function carregarEspera() {
+    try { const r = await api({ acao: 'espera' }); S.espera = Array.isArray(r.lista) ? r.lista : []; } catch (_) { S.espera = S.espera || []; }
+    if (el() && document.activeElement?.id !== 'es-busca') render();
+}
+const dataCurta = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? new Date(t).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : ''; };
+function esperaHtml() {
+    const lista = (S.espera || []).filter((x) => x.clientes && x.clientes.length);
+    if (!lista.length) return '';
+    const total = lista.reduce((t, x) => t + x.clientes.length, 0), loja = (document.getElementById('topo-loja')?.textContent || '').trim();
+    return `<section class="es-alerta es-espera" aria-label="Clientes esperando produto">
+        <b>${total === 1 ? '1 cliente pediu para ser avisado' : `${total} clientes pediram para ser avisados`}</b>
+        <p class="es-nota">Eles tocaram em "Avise-me" num produto em falta. Quando o produto volta, avise um por um: o botão abre a conversa com a mensagem pronta.</p>
+        ${lista.map((x) => `<div class="es-espera-item">
+            <p class="es-espera-prod"><strong>${escapeHTML(x.nome)}</strong> <span class="pn-pil ${x.voltou ? 'ok' : 'atencao'}">${x.voltou ? 'Voltou: avise' : (x.existe === false ? 'Produto apagado' : 'Ainda em falta')}</span></p>
+            <ul>${x.clientes.map((c) => `<li><span>${escapeHTML(c.nome)}${dataCurta(c.em) ? ` <small>pediu em ${dataCurta(c.em)}</small>` : ''}</span>
+                <span class="es-espera-bts">${x.voltou ? `<a class="btn btn-primary" target="_blank" rel="noopener" href="${escapeHTML(linkDoWhatsApp(c.telefone, mensagemProdutoVoltou({ loja, cliente: c.nome, produto: x.nome })))}" data-es-avisado="${escapeHTML(x.produtoId)}" data-tel="${escapeHTML(c.telefone)}" data-nome="${escapeHTML(c.nome)}">Avisar no WhatsApp</a>` : ''}
+                <button type="button" class="btn-outline" data-es-tirar="${escapeHTML(x.produtoId)}" data-tel="${escapeHTML(c.telefone)}" data-nome="${escapeHTML(c.nome)}" aria-label="Tirar ${escapeHTML(c.nome)} da lista de espera">Tirar</button></span></li>`).join('')}</ul>
+        </div>`).join('')}
+    </section>`;
+}
+async function tirarDaEspera(produtoId, telefone, nome, avisou) {
+    // some da tela na hora; o servidor confirma em seguida
+    S.espera = (S.espera || []).map((x) => (x.produtoId === produtoId ? { ...x, clientes: x.clientes.filter((c) => c.telefone !== telefone) } : x));
+    render();
+    try { await api({ acao: 'espera-tirar', produtoId, telefone }); showToast(avisou ? `${nome} saiu da lista de espera.` : `${nome} foi tirado da lista.`); }
+    catch (e) { showToast(e.message, true); carregarEspera(); }
+}
+
 function alertasHtml() {
     const sobras = S.previsto ? sobrasPereciveis({ produtos: S.produtos, previsto: S.previsto, perdas: S.perdas || {} }) : [];
     const f = S.custoFalta && S.custoFalta.valor >= 1 ? S.custoFalta : null;
@@ -110,6 +142,7 @@ function render() {
         <div><h3>Estoque</h3><p class="config-sub">Quanto tem, o que está acabando e quanto comprar.</p></div>
         <button class="btn-outline es-hist-geral" data-es-acao="historico">Histórico</button>
     </div>
+    ${esperaHtml()}
     ${alertasHtml()}
     <div class="es-filtros">
         ${chip('todos', 'Todos', todas.length)}${chip('comprar', 'Comprar', n((l) => l.sug.comprar > 0))}${chip('baixo', 'Acabando', n((l) => l.sit === 'baixo' || l.sit === 'zerado'))}${chip('sem', 'Sem controle', n((l) => l.sit === 'sem-controle'))}
@@ -136,7 +169,7 @@ function render() {
                 ${ficha && ficha.valida ? `<button class="es-forte" data-es-acao="produzir" data-id="${escapeHTML(p.id)}">Produzir</button>` : ''}
                 <button data-es-acao="historico" data-id="${escapeHTML(p.id)}">Histórico</button>
             </div>
-        </article>`).join('') : '<p class="config-sub">Nenhum produto neste filtro.</p>'}
+        </article>`).join('') : estadoVazio({ icone: 'estoque', titulo: 'Nenhum produto neste filtro', texto: 'Toque em "Todos" ou mude a busca.', compacto: true })}
     </div>`;
 }
 
@@ -348,7 +381,7 @@ async function abrirHistorico(p) {
     garantirModal(); S.acao = null; $('es-m-corpo').oninput = null; $('es-m-corpo').onchange = null; $('es-m-corpo').onclick = null;
     $('es-m-titulo').textContent = p ? `Histórico de ${p.nome}` : 'Últimas movimentações';
     $('es-m-rodape').hidden = true;
-    $('es-m-corpo').innerHTML = '<p class="config-sub">Carregando...</p>';
+    $('es-m-corpo').innerHTML = esqueleto('Carregando...', 3);
     openModal('modal-estoque');
     try {
         const movs = p ? await movimentosRecentes('produtoId', p.id, 60) : (await getDocs(query(tcol('estoque_mov'), orderBy('em', 'desc'), limit(60)))).docs.map((d) => d.data());
@@ -367,6 +400,9 @@ function ligar() {
     if (S.ligado) return; S.ligado = true;
     el().addEventListener('click', (e) => {
         const f = e.target.closest('[data-es-filtro]'); if (f) { S.filtro = f.dataset.esFiltro; render(); return; }
+        // lista de espera: "Avisar" abre o WhatsApp (o link já está no botão) e tira o cliente da lista; "Tirar" só tira
+        const av = e.target.closest('[data-es-avisado]'); if (av) { setTimeout(() => tirarDaEspera(av.dataset.esAvisado, av.dataset.tel, av.dataset.nome, true), 400); return; }
+        const ti = e.target.closest('[data-es-tirar]'); if (ti) { tirarDaEspera(ti.dataset.esTirar, ti.dataset.tel, ti.dataset.nome, false); return; }
         const a = e.target.closest('[data-es-acao]'); if (!a) return;
         const p = S.produtos.find((x) => x.id === a.dataset.id);
         if (a.dataset.esAcao === 'historico') abrirHistorico(p || null); else if (p) abrirAcao(a.dataset.esAcao, p);
@@ -390,4 +426,5 @@ export function abrirEstoque(produtos) {
     ligar();
     if (document.activeElement?.id !== 'es-busca') render();
     carregarPrevisao(); carregarPerdas();
+    if (!S.esperaPedida || Date.now() - S.esperaPedida > 60000) { S.esperaPedida = Date.now(); carregarEspera(); }   // no máximo uma consulta por minuto
 }

@@ -16,7 +16,7 @@ import { ARTE_CATEGORIA, ARTE_SELO, ARTE_DONOS, ARTE_PACOTE, ARTE_BALANCA, ARTE_
 import { ehPacote, pesoDoPacote, promoDe, totalComPromo, textoPromo, chavePromo, contaDaPromo, nomesDaUnidade, emPalavras, NOMES_PACOTE, pacoteParecido, PACOTES_PADRAO, ehTempero, ehPotinho, NOMES_POTE, TEMPEROS_PADRAO, ORDEM_PACOTES, ORDEM_TEMPEROS, ordemDaSecao } from './pacote-lib.js';
 import './melhorias-ui.js';
 import { ICO } from './icones.js';
-import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras, condominioTravado, condominioUnicoDaFeira } from './tema.js';
+import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, condominiosDasFeiras, condominioTravado, condominioUnicoDaFeira, bancaForaDaFeiraHoje } from './tema.js';
 import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
@@ -521,9 +521,19 @@ const atualizarRodapeCarrinhoDOM = () => {
     const foraDoDia = STATE.carrinho.filter((i) => i.foraDoDia);
     pintarEscolhaDia();
     const bannerFeira = document.getElementById('banner-feira');
-    if (bannerFeira) { const futuro = lojaAberta && ent && !ent.hoje; bannerFeira.textContent = futuro ? `Hoje não tem feira. Seu pedido vai para ${textoDoDia(ent.dia)}.` : ''; bannerFeira.classList.toggle('visivel', !!futuro); }
-    
-    if (!lojaAberta || !hojePermitido) {
+    // a feira é hoje e esta banca não veio (o cliente chegou pela página da feira): a loja abre só para olhar
+    const foraHoje = lojaAberta ? bancaForaDaFeiraHoje(agoraLoja()) : null;
+    if (bannerFeira) {
+        const futuro = lojaAberta && ent && !ent.hoje;
+        bannerFeira.textContent = foraHoje ? `Esta banca não está na feira hoje. Você pode olhar os produtos${foraHoje.volta ? `; os pedidos voltam ${textoDoDia(foraHoje.volta)}` : ''}.`
+            : futuro ? `Hoje não tem feira. Seu pedido vai para ${textoDoDia(ent.dia)}, com o preço do dia da feira.` : '';
+        bannerFeira.classList.toggle('visivel', !!(foraHoje || futuro));
+    }
+
+    if (foraHoje) {
+        btnF.disabled = true; btnF.textContent = 'Banca fora da feira hoje';
+        bannerMin.classList.remove('visivel'); bannerFechado.classList.remove('visivel');
+    } else if (!lojaAberta || !hojePermitido) {
         btnF.disabled = true; btnF.textContent = "Loja Fechada";
         bannerMin.classList.remove('visivel'); bannerFechado.classList.add('visivel');
     } else { 
@@ -661,7 +671,9 @@ const nomeDoDiaDoPedido = () => { const e = entregaDoPedido(); return e && e.ama
 /** Aviso "seu pedido é para..." dentro da tela de envio. */
 const pintarAvisoDeEntrega = () => {
     const ent = entregaDoPedido(), aviso = document.getElementById('checkout-entrega'); if (!aviso) return;
-    aviso.textContent = !ent ? '' : ent.amanha ? `📅 Seu pedido é para amanhã, ${textoDoDia(ent.dia)}.` : ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.`;
+    // pedido para OUTRO dia: o valor mostrado é o de hoje; o que vale é o preço do dia da entrega (a banca confirma no dia)
+    const outroDia = ent && !ent.hoje && !ent.amanha ? ' Os valores são os de hoje: o preço que vale é o do dia da feira, e a banca confirma com você.' : '';
+    aviso.textContent = !ent ? '' : ent.amanha ? `📅 Seu pedido é para amanhã, ${textoDoDia(ent.dia)}.` : ent.hoje ? '📅 Seu pedido é para hoje.' : `📅 Hoje não tem feira: seu pedido vai para ${textoDoDia(ent.dia)}.${outroDia}`;
     aviso.hidden = !ent;
 };
 let _escolhaDiaHtml = null;
@@ -1065,11 +1077,43 @@ const contarFunil = async (etapa) => {
     } catch (_) { /* contar nunca atrapalha a compra */ }
 };
 
+// "EM FALTA HOJE": só com a vitrine livre (sem busca, em "Todas"), e nunca na loja só vitrine. O módulo só é baixado se houver o que mostrar.
+const pintarFalta = () => {
+    const lista = emVitrine() ? [] : (STATE.esgotados || []), livre = !semAcento(STATE.busca).trim() && STATE.catAtiva === 'todas';
+    if (!lista.length && !document.getElementById('faixa-falta')) return;
+    import('./avise-loja.js').then((m) => m.pintarEmFalta(lista, { livre })).catch(() => { /* sem a faixa, a loja segue */ });
+};
+
+// VÍDEO CURTO DO PRODUTO (cadastrado no painel, js/admin-video.js): toca por cima da foto, sem som e em repetição.
+// Quem pediu "menos movimento" no aparelho vê a foto, com um botão para tocar. Vídeo que não abre some (fica a foto).
+const pintarVideoDoProduto = (p) => {
+    const hero = document.querySelector('#modal-detalhe-produto .md-hero'); if (!hero) return;
+    let v = document.getElementById('md-video');
+    const src = p && /^https:\/\/[^\s"'<>]+$/.test(String(p.video || '')) ? String(p.video) : '';
+    if (!src) { if (v) { v.pause(); v.remove(); } hero.classList.remove('com-video'); return; }
+    if (!v) {
+        v = document.createElement('video'); v.id = 'md-video'; v.className = 'md-video';
+        v.muted = true; v.loop = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.preload = 'metadata';
+        v.addEventListener('error', () => { v.remove(); hero.classList.remove('com-video'); });
+        v.addEventListener('click', (e) => { e.stopPropagation(); if (v.paused) v.play().catch(() => {}); else v.pause(); });
+        hero.insertBefore(v, hero.firstChild.nextSibling);
+    }
+    if (v.getAttribute('src') !== src) v.src = src;
+    if (p.foto) v.poster = p.foto; else v.removeAttribute('poster');
+    v.setAttribute('aria-label', `Vídeo de ${p.nome}`);
+    hero.classList.add('com-video');
+    const calmo = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    v.controls = calmo;
+    if (!calmo) v.play().catch(() => { v.controls = true; });     // navegador que não deixa tocar sozinho: aparece o botão de tocar
+};
+// fechar a tela do produto para o vídeo (não fica tocando escondido, gastando internet)
+document.addEventListener('click', (e) => { if (e.target.closest('[data-fechar="modal-detalhe-produto"]') || e.target.id === 'modal-detalhe-produto') { const v = document.getElementById('md-video'); if (v) v.pause(); } });
+
 const renderLoja = (forcarRebuild = false) => {
     const grid = document.getElementById('lista-produtos');
     if (!STATE.catalogoChegou) return;     // produtos ainda a caminho: fica o carregando, e não um falso "sem produtos"
     if(!STATE.lojaRenderizada || forcarRebuild) construirCardsIniciais();
-    renderFaixaSempre(); renderFaixaOfertas(forcarRebuild); renderFaixasExtras(forcarRebuild); renderAtalhos();
+    renderFaixaSempre(); renderFaixaOfertas(forcarRebuild); renderFaixasExtras(forcarRebuild); renderAtalhos(); pintarFalta();
     const termo = semAcento(STATE.busca).trim();
     const cards = grid.querySelectorAll('.produto-card');
     let itensVisiveis = 0, soltosVisiveis = 0;
@@ -1508,6 +1552,7 @@ const iniciarRealTimeSync = () => {
         if (!_catsDoBanco) { definirCategorias(ex.categorias); _catsProntas = true; }
         if (!_notaDoBanco) pintarNota(ex.avaliacoes);
         usarComunicado(ex.comunicados);
+        STATE.esgotados = ex.esgotados || []; pintarFalta();       // "Em falta hoje" + Avise-me (js/avise-loja.js)
     };
     const unsubProdutos = ouvirVitrine({ onSnapshot, query, where, docCatalogo: tdoc('loja', 'catalogo'), colProdutos: tcol('produtos') }, { forcarAntigo: EM_PREVIA, aoExtras: usarExtras, aoMudar: (lista) => {
         _produtosChegaram = true;
@@ -2110,8 +2155,14 @@ const copiarLinkDaLoja = async (botao) => {
 };
 
 // "Indicar para um vizinho": abre o compartilhar do celular (WhatsApp, etc.) com um recado pronto e o link da loja.
+// O LINK CERTO DA LOJA: o endereço limpo desta loja (sem "entrar", sem rastros de busca), com a feira junto se o
+// cliente veio por ela (assim quem recebe cai na mesma feira, com a faixa das outras bancas).
+const linkParaCompartilhar = () => {
+    try { const f = lerFeiraCliente(), u = new URL(urlDaLoja(TENANT), location.origin); if (f && feiraDoClienteAqui()) u.searchParams.set('feira', f); return u.toString(); }
+    catch (_) { return location.href.split('#')[0]; }
+};
 const indicarLoja = async () => {
-    const nome = (document.getElementById('header-nome')?.textContent || 'a loja').trim(), url = location.href.split('#')[0];
+    const nome = (document.getElementById('header-nome')?.textContent || 'a loja').trim(), url = linkParaCompartilhar();
     const texto = ehLojaOriginal ? `Estou pedindo na ${nome} e entregam aqui no condomínio. Dá uma olhada:` : `Estou pedindo na ${nome} pelo celular. Dá uma olhada:`;
     try { if (navigator.share) { await navigator.share({ title: nome, text: texto, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
     window.open(`https://wa.me/?text=${encodeURIComponent(texto + ' ' + url)}`, '_blank', 'noopener');
@@ -2394,6 +2445,7 @@ document.body.addEventListener('click', async (e) => {
                 }
             } else { delete img.dataset.original; img.removeAttribute('src'); img.style.visibility = 'hidden'; }
             img.alt = p.nome;
+            pintarVideoDoProduto(p);
             document.getElementById('md-tag').textContent = p.cat ? (nomeDaCategoria(p.cat) || p.cat) : '';
             document.getElementById('md-desc').textContent = p.descricao || "Produto fresco, selecionado no dia.";
             { let ms = document.getElementById('md-selos'); if (!ms) { ms = document.createElement('div'); ms.id = 'md-selos'; document.getElementById('md-tag').after(ms); } ms.innerHTML = selosHtml(p, true); }

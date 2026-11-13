@@ -36,7 +36,7 @@ export function juntarVitrine(base, mudados) {
  */
 /** Categorias, aviso do dia e nota que vêm junto no documento (null = documento de antes, ou jeito antigo: leia você mesmo). */
 export const extrasDoCatalogo = (c) => (c && Array.isArray(c.categorias)
-    ? { categorias: c.categorias, comunicados: c.comunicados || null, avaliacoes: c.avaliacoes || null } : null);
+    ? { categorias: c.categorias, comunicados: c.comunicados || null, avaliacoes: c.avaliacoes || null, esgotados: Array.isArray(c.esgotados) ? c.esgotados : [] } : null);
 
 export function ouvirVitrine(fb, { aoMudar, aoErro, forcarAntigo = false, aoTrocarModo, aoExtras } = {}) {
     let modo = 'catalogo', cancelado = false, base = null, mudados = [], limite = null;
