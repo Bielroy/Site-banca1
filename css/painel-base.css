@@ -85,3 +85,8 @@
 .cmd-rodape { margin: 0; padding: 8px 14px; border-top: 1px solid var(--linha, #e7e2d6); font-size: .8rem; color: var(--text-mid); }
 .cmd-rodape kbd { display: inline-block; min-width: 1.4em; padding: 0 4px; border: 1px solid var(--linha, #d9d4c8); border-radius: 5px; font: inherit; font-size: .78rem; text-align: center; }
 @media (max-width: 600px) { .cmd { margin-top: 12px; } .cmd-rodape { display: none; } }
+
+/* AVISO DE INTERNET (js/fila-offline.js): sem internet, ou alterações esperando para ir */
+.rede-aviso { position: sticky; top: 0; z-index: var(--z-sticky, 50); margin: 0; padding: 10px 16px; text-align: center; font-weight: 700; font-size: .92rem; background: #fdf3dc; color: #5a3b00; border-bottom: 1px solid #ecd9a8; }
+.rede-aviso.offline { background: #fde8e4; color: #7a1f12; border-color: #f2c4ba; }
+.rede-aviso[hidden] { display: none; }

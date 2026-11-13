@@ -961,6 +961,19 @@ teste('painel: Ctrl+K abre a paleta, "tomat" + Enter abre Produtos já filtrado;
   semErros(erros); await fechar();
 });
 
+teste('painel sem internet: aviso no topo, a tela não trava ao tirar produto da loja, e o aviso some quando a internet volta', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  const { pagina, ctx, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });
+  await pagina.waitForSelector('[data-action="toggle-estoque"][data-id="tomate"]', { timeout: 8000 });
+  await ctx.setOffline(true);
+  await pagina.click('[data-action="toggle-estoque"][data-id="tomate"]');
+  await pagina.waitForFunction(() => /Sem internet/.test(document.getElementById('rede-aviso')?.textContent || '') && !document.getElementById('rede-aviso').hidden, null, { timeout: 4000 });
+  await pagina.locator('#toast.visivel .toast-desfazer').waitFor({ timeout: 3000 });   // seguiu: o aviso de "fora da loja" apareceu
+  await ctx.setOffline(false);
+  await pagina.waitForFunction(() => document.getElementById('rede-aviso').hidden, null, { timeout: 4000 });
+  semErros(erros); await fechar();
+});
+
 teste('painel num documento só: sem documento (ou caixa antes das regras novas) o painel lê os produtos como antes', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });

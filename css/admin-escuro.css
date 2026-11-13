@@ -969,6 +969,8 @@ html[data-painel-tema="escuro"] .cmd-item[aria-selected="true"] { background: va
 html[data-painel-tema="escuro"] .cmd-nada { color: #c3ccc6; }
 html[data-painel-tema="escuro"] .cmd-rodape { border-top: 1px solid #304138; color: #c3ccc6; }
 html[data-painel-tema="escuro"] .cmd-rodape kbd { border: 1px solid #304138; }
+html[data-painel-tema="escuro"] .rede-aviso { background: #24312a; color: #eccc8d; border-bottom: 1px solid #726031; }
+html[data-painel-tema="escuro"] .rede-aviso.offline { background: #3e1f19; color: #ec998d; border-color: #723d31; }
 
 /* ---- css/admin-resumo.css ---- */
 html[data-painel-tema="escuro"] .rs-ola { color: #bac5be; }

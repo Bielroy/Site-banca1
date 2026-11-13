@@ -5620,6 +5620,21 @@ teste('primeiros passos da banca nova: produto, WhatsApp, PIX (só para quem vê
   assert.ok(!R.primeirosPassos({ podePix: false }).some((p) => p.id === 'pix'), 'gerente não vê o passo do PIX');
 });
 
+teste('painel sem internet: só alteração simples vai para a fila do aparelho; ao abrir, reenvia as recentes na ordem; o aviso diz quantas esperam', async () => {
+  const F = await import(raiz('js/fila-offline-lib.js'));
+  assert.ok(F.guardavel({ preco: 9.5, ativo: false, nome: 'Tomate', tags: ['a'], x: null, sub: { a: 1 } }));
+  class Marcador { } assert.ok(!F.guardavel({ em: new Marcador() }), 'marcador do Firebase (hora do servidor) não vai');
+  assert.ok(!F.guardavel({ n: NaN })); assert.ok(!F.guardavel({ d: new Date() })); assert.ok(!F.guardavel(undefined));
+  const agora = 1_000_000_000_000;
+  const itens = [{ op: 'set', caminho: 'produtos/b', em: agora - 1000, seq: 2 }, { op: 'set', caminho: 'produtos/a', em: agora - 2000, seq: 1 }, { op: 'apagar', caminho: 'produtos/c', em: agora - 500, seq: 3 },
+    { op: 'set', caminho: 'produtos/velho', em: agora - 7 * 3600e3, seq: 0 }, { op: 'set', caminho: '../fora', em: agora, seq: 9 }, { op: 'outra', caminho: 'produtos/x', em: agora, seq: 9 }];
+  assert.deepStrictEqual(F.paraReenviar(itens, agora).map((x) => x.caminho), ['produtos/a', 'produtos/b', 'produtos/c'], 'na ordem, sem as vencidas nem caminho estranho');
+  assert.strictEqual(F.textoDoAviso({ online: true, pendentes: 0 }), '');
+  assert.match(F.textoDoAviso({ online: false, pendentes: 3 }), /^Sem internet\. 3 alterações esperando/);
+  assert.match(F.textoDoAviso({ online: false, pendentes: 0 }), /Pode continuar/);
+  assert.strictEqual(F.textoDoAviso({ online: true, pendentes: 1 }), 'Enviando 1 alteração esperando...');
+});
+
 teste('paleta de comandos (Ctrl+K): acha tela, produto (com erro de digitação) e pedido pelo cliente ou condomínio, sem repetir cliente', async () => {
   const C = await import(raiz('js/admin-comandos.js'));
   const telas = [{ rotulo: 'Pedidos', aba: 'relatorios' }, { rotulo: 'Estoque', aba: 'estoque' }];
