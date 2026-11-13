@@ -959,6 +959,16 @@ html[data-painel-tema="escuro"] .pn-pil.atencao { background: #3e3319; color: #e
 html[data-painel-tema="escuro"] .pn-pil.erro { background: #3e1919; color: #ea7b7b; }
 html[data-painel-tema="escuro"] .pn-pil.aviso { background: #19303e; color: #7bc1ea; }
 html[data-painel-tema="escuro"] #dashboard :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible, html[data-painel-tema="escuro"] .modal :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible { outline: 3px solid #8ac7a2; }
+html[data-painel-tema="escuro"] .cmd { background: #19221d; color: #eaedeb; }
+html[data-painel-tema="escuro"] .cmd::backdrop { background: rgba(15, 27, 20, .45); }
+html[data-painel-tema="escuro"] .cmd-campo { border-bottom: 1px solid #304138; }
+html[data-painel-tema="escuro"] .cmd-campo .ic { color: #a3d6bd; }
+html[data-painel-tema="escuro"] .cmd-grupo { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .cmd-item small { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .cmd-item[aria-selected="true"] { background: var(--mint, #e8f5ee); }
+html[data-painel-tema="escuro"] .cmd-nada { color: #c3ccc6; }
+html[data-painel-tema="escuro"] .cmd-rodape { border-top: 1px solid #304138; color: #c3ccc6; }
+html[data-painel-tema="escuro"] .cmd-rodape kbd { border: 1px solid #304138; }
 
 /* ---- css/admin-resumo.css ---- */
 html[data-painel-tema="escuro"] .rs-ola { color: #bac5be; }

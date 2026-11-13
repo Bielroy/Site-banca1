@@ -108,7 +108,10 @@ export const avisoComDesfazer = (msg, desfazer, { tempo = 6000 } = {}) => {
   return new Promise((resolve) => {
     let restante = tempo, inicio = Date.now(), timer = null, fechado = false;
     const parar = () => { if (timer) { clearTimeout(timer); timer = null; restante -= Date.now() - inicio; } };
-    const seguir = () => { if (fechado || timer || document.hidden) return; inicio = Date.now(); timer = setTimeout(() => fechar(false), Math.max(800, restante)); };
+    // no fim do tempo, confere de novo: se o dedo/mouse ainda está no aviso (o pointerenter pode não ter vindo,
+    // por exemplo quando o aviso deslizou para baixo do mouse parado), espera mais um pouco
+    const acabou = () => { timer = null; if (t.matches(':hover') || t.contains(document.activeElement)) { restante = 1500; seguir(); } else fechar(false); };
+    const seguir = () => { if (fechado || timer || document.hidden) return; inicio = Date.now(); timer = setTimeout(acabou, Math.max(800, restante)); };
     const naVisibilidade = () => (document.hidden ? parar() : seguir());
     const fechar = (desfez) => {
       if (fechado) return; fechado = true; parar();
