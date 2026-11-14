@@ -2015,7 +2015,7 @@ teste('vagas por horário (como o Cal.com): lotou, o servidor recusa e a loja mo
 teste('frete fora do dia da feira: distância até o condomínio, peso, 5% pelo tempo, rota junta dividida; o servidor cobra e guarda a rota', async () => {
   const F = require(raiz('lib/frete'));
   const cfg = F.lerConfig({ ligado: true, origem: { lat: -16.68, lng: -49.25 }, base: 5, porKm: 1.5, porKg: 0.5, kgLivre: 5, margem: 5, minimo: 8, raioKm: 15, juntarKm: 2 });
-  assert.deepStrictEqual(F.lerConfig({}), { ligado: false, origem: null, base: 0, porKm: 0, porKg: 0, kgLivre: 5, margem: 5, minimo: 0, raioKm: 15, juntarKm: 2 }, 'padrão: 5% de margem, 5 kg livres, 15 km, junta a 2 km');
+  assert.deepStrictEqual(F.lerConfig({}), { ligado: false, origem: null, base: 0, porKm: 0, porKg: 0, kgLivre: 5, margem: 5, minimo: 0, raioKm: 15, juntarKm: 2, diasSemFrete: [] }, 'padrão: 5% de margem, 5 kg livres, 15 km, junta a 2 km');
   const perto = { lat: -16.70, lng: -49.27 };              // ~3,8 km de rua
   const km = F.kmEntre(cfg.origem, perto); assert.ok(km > 3.5 && km < 4.2, String(km));
   let r = F.cotar(cfg, perto, 3);
@@ -5908,4 +5908,17 @@ teste('banco travado no aparelho: a marca "sem cópia" vale 7 dias, some depois 
   assert.strictEqual(B.usarSoMemoria(quebrado), false);
   assert.strictEqual(B.usarSoMemoria(null), false);
   assert.strictEqual(B.marcarSoMemoria(quebrado), false);
+});
+
+teste('frete por dia: nos dias marcados como "não entrego com frete" a opção de hoje some, mesmo com o frete ligado', () => {
+  const F = require(raiz('lib/frete.js'));
+  const cfg = F.lerConfig({ ligado: true, origem: { lat: -16.68, lng: -49.25 }, base: 5, porKm: 1.5, diasSemFrete: [0, 6, 9, '3', 'x'] });
+  assert.deepStrictEqual(cfg.diasSemFrete, [0, 6, 3], 'só dias de 0 a 6, em número');
+  const destino = { lat: -16.69, lng: -49.26 };
+  assert.strictEqual(F.cotar(F.paraDia(cfg, 2), destino).ok, true, 'terça: frete normal');
+  assert.strictEqual(F.cotar(F.paraDia(cfg, 6), destino).ok, false, 'sábado marcado: sem frete');
+  assert.strictEqual(F.cotar(F.paraDia(cfg, 6), destino).motivo, 'desligado');
+  assert.strictEqual(F.cotar(F.paraDia(cfg, 0), destino).ok, false, 'domingo marcado: sem frete');
+  assert.strictEqual(F.cotar(cfg, destino).ok, true, 'sem o dia, a configuração original segue igual');
+  assert.strictEqual(F.paraDia(F.lerConfig({ ligado: false }), 2).ligado, false, 'frete desligado continua desligado');
 });

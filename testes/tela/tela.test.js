@@ -512,6 +512,19 @@ teste('painel no celular: Produtos abre com busca, "+ Novo" e "⋯" numa linha; 
   semErros(erros); await fechar();
 });
 
+teste('painel: Configurações mostra os dias em que a banca não entrega com frete (marcados vêm marcados; os outros não)', async () => {
+  const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+  cen.lojas.banca.frete = { ligado: true, origem: { lat: -16.68, lng: -49.25 }, base: 5, diasSemFrete: [6, 0] };
+  const { pagina, erros, fechar } = await abrir('/admin.html', cen);
+  await pagina.waitForSelector('#dashboard', { state: 'visible', timeout: 8000 });
+  await pagina.evaluate(() => { document.querySelector('.tab[data-aba="config"]').click(); document.getElementById('frete-bloco').open = true; });
+  await pagina.waitForFunction(() => document.querySelector('[data-dia-sem-frete="6"]')?.checked === true, null, { timeout: 5000 });
+  const marcados = await pagina.$$eval('[data-dia-sem-frete]', (els) => els.filter((e) => e.checked).map((e) => Number(e.dataset.diaSemFrete)).sort());
+  assert.deepStrictEqual(marcados, [0, 6], 'só sábado e domingo marcados');
+  assert.strictEqual(await pagina.locator('[data-dia-sem-frete]').count(), 7, 'os sete dias da semana');
+  semErros(erros); await fechar();
+});
+
 teste('painel: aba Clientes mostra a lista guardada na hora e só depois traz o recálculo (não espera a conferência de pedido novo)', async () => {
   const cen = cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
   const { pagina, erros, fechar } = await abrir('/admin.html', cen, { contexto: { viewport: { width: 1200, height: 900 }, isMobile: false } });

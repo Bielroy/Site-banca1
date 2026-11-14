@@ -467,6 +467,18 @@
                         <div class="frete-origem-linha"><input type="text" id="frete-origem" inputmode="decimal" autocomplete="off" placeholder="-16.680000, -49.250000"><button type="button" class="btn-outline" id="frete-gps">Usar a minha localização</button></div>
                         <small class="dica-campo">Fica só no painel: o cliente não vê. No Google Maps, toque e segure no lugar e copie os números.</small></div>
                     <div class="grid-2">
+                        <fieldset class="frete-dias form-group" style="width:100%"><legend>Não entregar com frete nestes dias</legend>
+                            <div class="frete-dias-linha">
+                                <label class="chk-linha"><input type="checkbox" data-dia-sem-frete="1"> Seg</label>
+                                <label class="chk-linha"><input type="checkbox" data-dia-sem-frete="2"> Ter</label>
+                                <label class="chk-linha"><input type="checkbox" data-dia-sem-frete="3"> Qua</label>
+                                <label class="chk-linha"><input type="checkbox" data-dia-sem-frete="4"> Qui</label>
+                                <label class="chk-linha"><input type="checkbox" data-dia-sem-frete="5"> Sex</label>
+                                <label class="chk-linha"><input type="checkbox" data-dia-sem-frete="6"> Sáb</label>
+                                <label class="chk-linha"><input type="checkbox" data-dia-sem-frete="0"> Dom</label>
+                            </div>
+                            <small class="dica-campo">Marcou o dia: nele o cliente não vê a opção de receber hoje, mesmo com o frete ligado.</small>
+                        </fieldset>
                         <div class="form-group"><label for="frete-base">Saída (R$)</label><input type="number" id="frete-base" min="0" step="0.5" inputmode="decimal" placeholder="5"></div>
                         <div class="form-group"><label for="frete-km">Por km (R$)</label><input type="number" id="frete-km" min="0" step="0.1" inputmode="decimal" placeholder="1.5"></div>
                         <div class="form-group"><label for="frete-kg">Por kg a mais (R$)</label><input type="number" id="frete-kg" min="0" step="0.1" inputmode="decimal" placeholder="0.5"></div>

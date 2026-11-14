@@ -239,7 +239,7 @@ module.exports = async function handler(req, res) {
       const prods = await Promise.all(itensF.map((i) => (H.idSeguro(i && i.id, 1, 120) ? T.docDe(db, lojaF, `produtos/${i.id}`).get().catch(() => null) : null)));
       const kg = Frete.quilos(itensF.map((i, k) => ({ qtd: Number(i && i.qtd) || 0, tipo: i && i.tipo, unidade: prods[k] && prods[k].exists ? prods[k].data().unidade : '' })));
       const fs = await T.docDe(db, lojaF, `fretes/${dia}`).get();
-      const r = Frete.cotar(cfg, cond, kg, Object.values((fs.exists && fs.data().pedidos) || {}));
+      const r = Frete.cotar(Frete.paraDia(cfg, agoraBrasilia().getUTCDay()), cond, kg, Object.values((fs.exists && fs.data().pedidos) || {}));
       return res.status(200).json({ sucesso: true, ...r, proximaFeira: prox.dia, ...(r.ok ? {} : { aviso: Frete.MOTIVOS[r.motivo] || '' }) });
     } catch (e) {
       if (e && e.status && e.status < 500) return res.status(e.status).json({ error: e.message });
@@ -624,7 +624,7 @@ module.exports = async function handler(req, res) {
       let frete = null;
       if (freteRef) {
         const condF = Frete.condominioNaFeira(feiraDoPedido, condominio);
-        const r = Frete.cotar(Frete.lerConfig(freteCfgSnap && freteCfgSnap.exists ? freteCfgSnap.data() : {}), condF, Frete.quilos(itensValidados), Object.values((fretesSnap && fretesSnap.exists && fretesSnap.data().pedidos) || {}));
+        const r = Frete.cotar(Frete.paraDia(Frete.lerConfig(freteCfgSnap && freteCfgSnap.exists ? freteCfgSnap.data() : {}), agoraBrasilia().getUTCDay()), condF, Frete.quilos(itensValidados), Object.values((fretesSnap && fretesSnap.exists && fretesSnap.data().pedidos) || {}));
         if (!r.ok) throw new Error(Frete.MOTIVOS[r.motivo] || 'Não deu para calcular o frete.');
         frete = { valor: r.valor, km: r.km, rota: r.rota, ponto: { lat: condF.lat, lng: condF.lng } };
       }
