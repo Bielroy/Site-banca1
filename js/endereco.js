@@ -17,9 +17,9 @@ import { escapeHTML } from './utils.js';
 import { chave } from './tenant.js';
 
 export const ROTULOS = {
-    ql:    { a: 'Quadra', b: 'Casa/Lote', modoA: 'numeric', modoB: 'numeric' },
-    rua:   { a: 'Rua ou alameda', b: 'Número da casa', modoA: 'text', modoB: 'numeric' },
-    livre: { a: 'Quadra ou rua', b: 'Lote ou número', modoA: 'text', modoB: 'text' },
+    ql:    { a: 'Quadra', b: 'Casa/Lote', modoA: 'numeric', modoB: 'numeric', exA: 'Ex.: 12', exB: 'Ex.: 7' },
+    rua:   { a: 'Rua ou alameda', b: 'Número da casa', modoA: 'text', modoB: 'numeric', exA: 'Ex.: Rua 3', exB: 'Ex.: 120' },
+    livre: { a: 'Quadra ou rua', b: 'Lote ou número', modoA: 'text', modoB: 'text', exA: 'Ex.: Qd 12', exB: 'Ex.: Lt 7' },
 };
 const OUTRO = '__outro';
 const CHAVE = chave('banca_endereco');
@@ -87,7 +87,7 @@ export function criarCamposEndereco(raiz, p) {
         const r = ROTULOS[formatoAtual()];
         raiz.querySelector(`label[for="${p}-quadra"]`).textContent = r.a;
         raiz.querySelector(`label[for="${p}-lote"]`).textContent = r.b;
-        campoA.inputMode = r.modoA; campoB.inputMode = r.modoB;
+        campoA.inputMode = r.modoA; campoB.inputMode = r.modoB; campoA.placeholder = r.exA || ''; campoB.placeholder = r.exB || '';
         raiz.querySelector('.end-grid').classList.toggle('end-grid--rua', formatoAtual() === 'rua');
     };
     sel.addEventListener('change', () => { ajustar(); (sel.value === OUTRO ? outro : campoA).focus(); });
