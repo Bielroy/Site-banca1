@@ -35,6 +35,7 @@ function ler(p) {
   if (resto === 'loja/config') return f.config || { lojaAberta: true, diasAbertos: [0,1,2,3,4,5,6], minimo: 0, wpp: '5562999990000' };
   if (resto === 'loja/catalogo') return f.catalogo || null;      // vitrine num documento só (lib/catalogo.js)
   if (resto === 'loja/painel') return f.painel || null;          // painel num documento só
+  if (resto === 'loja/frete') return f.frete || null;            // frete fora do dia da feira (lib/frete.js)
   if (resto === 'loja/custos') return f.custosDoc || null;
   if (resto === 'loja/comunicados') return f.comunicados || null;
   if (resto === 'loja/avaliacoes') return f.avaliacoes || null;

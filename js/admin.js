@@ -3086,6 +3086,8 @@ async function carregarFrete() {
         const s = await getDoc(tdoc('loja', 'frete')), f = s.exists() ? s.data() : {};
         document.getElementById('frete-ligado').checked = f.ligado === true;
         document.getElementById('frete-origem').value = f.origem && Number.isFinite(f.origem.lat) ? `${f.origem.lat}, ${f.origem.lng}` : '';
+        const semFrete = Array.isArray(f.diasSemFrete) ? f.diasSemFrete.map(Number) : [];
+        document.querySelectorAll('[data-dia-sem-frete]').forEach((c) => { c.checked = semFrete.includes(Number(c.dataset.diaSemFrete)); });
         const padrao = { margem: 5, kgLivre: 5, raioKm: 15, juntarKm: 2 };
         FRETE_CAMPOS.forEach(([id, k]) => { const el = document.getElementById(id); if (el) el.value = f[k] !== undefined ? f[k] : (padrao[k] !== undefined ? padrao[k] : ''); });
         freteCarregado = true;
@@ -3107,12 +3109,13 @@ document.getElementById('btn-salvar-frete')?.addEventListener('click', async () 
         if (t && !m) throw new Error('Ponto de saída: cole no formato "-16.68, -49.25" ou toque em "Usar a minha localização".');
         const ligado = document.getElementById('frete-ligado').checked;
         if (ligado && !m) throw new Error('Para ligar o frete, marque o ponto de onde a entrega sai.');
-        const dados = { ligado, origem: m ? { lat: Number(m[1]), lng: Number(m[2]) } : null, atualizadoEm: Date.now() };
+        const diasSemFrete = [...document.querySelectorAll('[data-dia-sem-frete]')].filter((c) => c.checked).map((c) => Number(c.dataset.diaSemFrete));
+        const dados = { ligado, origem: m ? { lat: Number(m[1]), lng: Number(m[2]) } : null, diasSemFrete, atualizadoEm: Date.now() };
         FRETE_CAMPOS.forEach(([id, k]) => { const v = Number(String(document.getElementById(id)?.value || '').replace(',', '.')); dados[k] = Number.isFinite(v) && v >= 0 ? v : 0; });
         if (dados.margem > 100) throw new Error('Margem: no máximo 100%.');
         bt.disabled = true;
         await setDoc(tdoc('loja', 'frete'), dados);
-        anotar('frete', `${ligado ? 'ligado' : 'desligado'} · base ${fmt(dados.base)} + ${fmt(dados.porKm)}/km`);
+        anotar('frete', `${ligado ? 'ligado' : 'desligado'}${diasSemFrete.length ? ` · sem frete em ${diasSemFrete.length} dia(s)` : ''} · base ${fmt(dados.base)} + ${fmt(dados.porKm)}/km`);
         showToast(ligado ? 'Frete salvo. Quem é de feira já pode receber hoje pagando o frete.' : 'Frete salvo (desligado).');
     } catch (e) { showToast(e.message || 'Não consegui salvar o frete.', true); }
     finally { bt.disabled = false; }

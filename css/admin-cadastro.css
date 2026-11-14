@@ -126,3 +126,7 @@
 .frete-origem-linha input { flex: 1 1 200px; min-width: 0; }
 .frete-origem-linha .btn-outline { min-height: 44px; padding: 0 14px; }
 .pc-nota.frete { font-weight: 800; }
+.frete-dias { border: 0; padding: 0; margin: 14px 0 6px; min-width: 0; }
+.frete-dias legend { font-weight: 700; padding: 0; margin-bottom: 8px; }
+.frete-dias-linha { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.frete-dias-linha .chk-linha { min-height: 44px; }
