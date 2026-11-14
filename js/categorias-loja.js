@@ -13,6 +13,7 @@
 // =====================================================================
 import { db, collection, onSnapshot } from './firebase.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
+import { unificarCategorias } from './categorias-unificar.js';
 
 const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
@@ -38,9 +39,10 @@ export const definirCategorias = (lista) => {
 
 const achar = (cat) => categorias.find((c) => norm(c.chave) === norm(cat));
 
-/** Padroniza p.cat com a chave cadastrada e tira os produtos de categorias ocultas. */
-export const aplicarCategorias = (produtos) => produtos
-    .map((p) => { const c = achar(p.cat); return c ? { ...p, cat: c.chave } : p; })
+/** Padroniza p.cat com a chave cadastrada e tira os produtos de categorias ocultas.
+ *  Grafias parecidas ("Pasteis Doces" / "Pastéis Doces") viram uma aba só, cadastrada ou não. */
+export const aplicarCategorias = (produtos) => unificarCategorias(produtos
+    .map((p) => { const c = achar(p.cat); return c ? { ...p, cat: c.chave } : p; }))
     .filter((p) => { const c = achar(p.cat); return !c || c.visivel !== false; });
 
 /** Abas na ordem do painel; categorias sem produto não aparecem. */
