@@ -97,7 +97,9 @@ const base = {
   CHUVA_MM: 5,                    // a partir de quantos mm o dia conta como "de chuva"
   CALOR_GRAUS: 3,                 // máxima ≥ mediana dos 30 dias anteriores + isto = "calor"
   FRIO_GRAUS: 4,                  // máxima ≤ mediana − isto = "frio"
-  PAGAMENTO_DE: 5, PAGAMENTO_ATE: 10,
+  PAGAMENTO_DIA_UTIL: 5,          // salário: a lei manda pagar até o 5º dia útil
+  PAGAMENTO_DIAS: 6,              // a janela de compras do salário dura 6 dias a partir dele
+  VALE_DIA: 20, VALE_DIAS: 3,     // vale/adiantamento: dia 20 (ou o dia útil seguinte), 3 dias. VALE_DIAS 0 desliga
   MIN_DIAS_ESTADO: 4,             // dias "com" (chuva, calor...) antes de usar o efeito
   MIN_DIAS_SEM: 8,                // dias "sem" comparáveis
   MIN_MESES_PAGAMENTO: 2,         // o efeito do pagamento precisa aparecer em 2 meses diferentes

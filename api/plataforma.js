@@ -4,24 +4,37 @@
 //
 //  POST { acao: 'situacao' }                                a plataforma já tem dono? (a tela usa para não oferecer "Assumir")
 //  POST { acao: 'lojas' }                                   lista lojas, feiras e o movimento do mês
+//  POST { acao: 'lojas-leve' }                              só nome, tipo e cor de cada loja (rápido; é a lista de "trocar de loja" do painel)
 //  POST { acao: 'erros' }                                   erros do site nos últimos 7 dias (lib/erros.js)
+//  POST { acao: 'erro-estado', assinatura, estado }          marca um erro como corrigido ('corrigido') ou reabre ('aberto')
 //  POST { acao: 'criar-loja', id, nome, modelo, tipoNome?, emailDono? }   (modelo = aparência inicial; tipoNome = tipo escrito à mão)
-//  POST { acao: 'imgbb', chave }                               liga (ou desliga, com chave vazia) o envio de fotos ao ImgBB
+//  POST { acao: 'imgbb' }                                      apaga a chave antiga do ImgBB (as fotos agora vão para o Cloudflare R2)
 //  POST { acao: 'tipo', id, tipo }                              muda o tipo de negócio de uma loja
+//  POST { acao: 'formato', id, formato }                        'loja' (carrinho e pedidos), 'whatsapp' (sacola enviada no WhatsApp) ou 'vitrine' (só catálogo, lib/formato.js)
 //  POST { acao: 'ativo', id, ativo }                        bloquear / liberar
+//  POST { acao: 'excluir', id, confirmar }                   EXCLUI a loja (vai para a lixeira por 30 dias: bloqueada e escondida). confirmar = o nome da loja digitado
+//  POST { acao: 'restaurar', id }                            tira da lixeira (volta BLOQUEADA: libere depois, se for o caso)
 //  POST { acao: 'modulos', id, modulos: { pdv: true, ... } }
+//  POST { acao: 'campos', id, campos: { duracao: false, ... } }   campos do cadastro de produto (lib/campos.js)
 //  POST { acao: 'proprietario', id, email, remover? }
+//  POST { acao: 'link-entrada', id, email }                 gera o link de entrada no painel da loja SEM mandar e-mail (para mandar pelo WhatsApp)
 //  POST { acao: 'condominio', id?, nome, formato, remover? }  cadastro de condomínios da plataforma
 //  POST { acao: 'assinatura', id, valor, dia, obs }        mensalidade da banca (valor vazio = tira)
-//  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids], condominiosIds: [ids do cadastro], horaLimite: 'HH:MM', semFeira: ['AAAA-MM-DD'] }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
+//  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids], condominiosIds: [ids do cadastro], horaLimite: 'HH:MM', semFeira: ['AAAA-MM-DD'],
+//         datasExtras: ['AAAA-MM-DD'], lojasDias: { lojaId: [0..6] }, hud: { texto, local, horario, capa, fotos } }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
 //
 //  O primeiro acesso de plataforma ainda é dado pelo terminal
 //  (scripts/plataforma.js): não existe tela que promova alguém a dono de tudo.
 // =====================================================================
 const admin = require('firebase-admin');
 const T = require('../lib/tenant');
+const Aprov = require('../lib/aprovacao');
 const { MODELOS, MODULOS } = require('../lib/modelos');
+const { CAMPOS_PRODUTO } = require('../lib/campos');
 const Segredos = require('../lib/segredos');
+const Formato = require('../lib/formato');
+const R2 = require('../lib/r2');
+const Asaas = require('../lib/asaas');
 const P = require('../lib/prudencia');
 const crypto = require('crypto');
 const Feira = require('../lib/feira');
@@ -38,6 +51,7 @@ const boot = () => {
 const H = require('../lib/http');
 const cors = H.cors;            // origem (CORS): lista única em lib/http.js
 const NOME_ORIGINAL = 'Banca Adair e Pedrina', MAX_LOJAS = 200;
+const donoRegistrado = new Set();
 const falha = (status, msg) => Object.assign(new Error(msg), { status });
 const texto = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const emailValido = (e) => /^[^\s@]{1,64}@[^\s@]{1,180}\.[a-z]{2,}$/i.test(e);
@@ -53,7 +67,21 @@ async function exigirLoja(id) {
 const base = (f) => (f._nova ? { nome: NOME_ORIGINAL, ativo: true } : {});
 const mesAtual = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 7);
 
-async function movimentoDoMes(id) {
+// Movimento do mês e donos de cada loja mudam devagar e custam 2 leituras por loja a cada abertura da tela
+// (e a cada botão tocado). Ficam guardados por 90 s na memória deste servidor; trocar o proprietário limpa o dono.
+const TTL_LISTA_MS = 90 * 1000;
+const guardados = { mov: new Map(), donos: new Map(), leve: null };
+// Se duas telas pedem a mesma loja ao mesmo tempo (várias pessoas abrindo a Plataforma), a segunda espera a
+// leitura da primeira em vez de repetir (com muitas lojas, isso evitava centenas de leituras em dobro).
+const doCache = (mapa, id, ler) => {
+  const g = mapa.get(id);
+  if (g && (g.p || Date.now() - g.em < TTL_LISTA_MS)) return g.p || Promise.resolve(g.v);
+  const p = ler().then((v) => { mapa.set(id, { em: Date.now(), v }); return v; }, (e) => { mapa.delete(id); throw e; });
+  mapa.set(id, { p, em: 0 });
+  return p;
+};
+async function movimentoDoMes(id) { return doCache(guardados.mov, id, () => movimentoDoMesLido(id)); }
+async function movimentoDoMesLido(id) {
   try {
     const mes = mesAtual();
     const s = await T.tcol(db, id, 'resumos').where(admin.firestore.FieldPath.documentId(), '>=', `${mes}-01`).get();
@@ -62,7 +90,8 @@ async function movimentoDoMes(id) {
     return { receita: Math.round(receita * 100) / 100, pedidos };
   } catch (_) { return null; }
 }
-async function donosDe(id) {
+async function donosDe(id) { return doCache(guardados.donos, id, () => donosLidos(id)); }
+async function donosLidos(id) {
   try { const s = await T.tcol(db, id, 'equipe').get(); return s.docs.filter((d) => d.data().papel === 'proprietario').map((d) => d.data().email).filter(Boolean).sort(); }
   catch (_) { return []; }
 }
@@ -76,14 +105,39 @@ async function lojas(res) {
   const lista = await Promise.all(ids.map(async (id) => {
     const f = fichas.get(id), [mes, donos] = await Promise.all([movimentoDoMes(id), donosDe(id)]);
     const modulos = {}; Object.keys(MODULOS).forEach((m) => { modulos[m] = m === 'ia' && id !== T.TENANT_PADRAO ? !!(f.modulos && f.modulos.ia === true) : T.moduloAtivo(f, m); });
-    return { id, nome: f.nome || id, tipo: f.tipo || '', ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, mes, donos, assinatura: assinaturas.get(id) || null };
+    return { id, nome: f.nome || id, tipo: f.tipo || '', formato: Formato.formatoDaFicha(f), ativo: f.ativo !== false, excluida: f.excluida === true, excluidaEm: f.excluida === true ? String(f.excluidaEm || '').slice(0, 30) : '', original: id === T.TENANT_PADRAO, feiraId: f.feiraId || '', cor: (f.tema && f.tema.primaria) || '#1a3a2a', criadoEm: f.criadoEm || '', modulos, campos: camposMarcados(f), mes, donos, assinatura: assinaturas.get(id) || null };
   }));
   const condominios = await Cond.garantir(db, T);   // sem o cadastro, a tela não abre (senão salvar uma feira apagaria os condomínios dela)
-  const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, condominiosIds: Cond.idsDaFeira(condominios, d.data()), dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira) }));
+  const feiras = fs.docs.map((d) => ({ id: d.id, nome: d.data().nome || d.id, condominiosIds: Cond.idsDaFeira(condominios, d.data()), dias: Array.isArray(d.data().dias) ? d.data().dias.filter((n) => Number.isInteger(n) && n >= 0 && n <= 6) : [], lojas: (d.data().lojas || []).map((l) => l.id), condominios: Array.isArray(d.data().condominios) ? d.data().condominios.filter((c) => typeof c === 'string').slice(0, 40) : [], horaLimite: Feira.limparHora(d.data().horaLimite), semFeira: Feira.limparDatas(d.data().semFeira),
+    // página de entrada da feira (HUD): datas extras ("hoje tem feira"), dias de cada banca e o que a página mostra
+    datasExtras: Feira.limparDatas(d.data().datasExtras), hud: Feira.limparHud(d.data().hud),
+    lojasDias: Object.fromEntries((d.data().lojas || []).filter((l) => l && Feira.limparDias(l.dias).length).map((l) => [l.id, Feira.limparDias(l.dias)])) }));
   const seg = await db.collection('plataforma').doc('segredos').get();
-  const fotos = /^[a-f0-9]{32}$/i.test(String(process.env.IMGBB_API_KEY || (seg.exists && seg.data().imgbb) || ''));
+  const r2 = !!R2.config(), fotos = r2;                           // fotos no Cloudflare R2 (lib/r2.js)
+  const imgbbGuardada = !!(seg.exists && seg.data().imgbb);       // chave antiga do ImgBB, que não é mais usada: a tela oferece apagar
   const pix = !!process.env.PAGBANK_API_TOKEN || Segredos.tokenPagbankValido(seg.exists && seg.data().pagbank);
-  return res.status(200).json({ sucesso: true, lojas: lista, feiras, condominios, modelos: Object.keys(MODELOS), modulos: MODULOS, mes: mesAtual(), fotos, pix });
+  return res.status(200).json({ sucesso: true, lojas: lista, feiras, condominios, modelos: Object.keys(MODELOS), modulos: MODULOS, campos: CAMPOS_PRODUTO, mes: mesAtual(), fotos, fotosR2: r2, imgbbGuardada, r2Falta: r2 || R2.nenhuma() ? [] : R2.faltando(), pix, asaas: await situacaoAsaas(seg.exists ? seg.data() : {}) });
+}
+
+// LISTA LEVE (trocar de loja): só as fichas, sem movimento do mês nem donos. 1 leitura por loja, guardada por 60 s.
+async function lojasLeve(res) {
+  const g = guardados.leve;
+  if (!g || Date.now() - g.em > 60 * 1000) {
+    if (!guardados.leveEmCurso) guardados.leveEmCurso = lerLeve().finally(() => { guardados.leveEmCurso = null; });
+    await guardados.leveEmCurso;
+  }
+  return res.status(200).json({ sucesso: true, lojas: guardados.leve.lista });
+}
+async function lerLeve() {
+  {
+    const ts = await db.collection('tenants').get();
+    const fichas = new Map(ts.docs.map((d) => [d.id, d.data()]));
+    if (!fichas.has(T.TENANT_PADRAO)) fichas.set(T.TENANT_PADRAO, { nome: NOME_ORIGINAL, ativo: true });
+    const lista = [...fichas.keys()].filter(T.idValido).sort((a, b) => (a === T.TENANT_PADRAO ? -1 : b === T.TENANT_PADRAO ? 1 : String(fichas.get(a).nome || a).localeCompare(String(fichas.get(b).nome || b), 'pt-BR'))).slice(0, MAX_LOJAS)
+      .filter((id) => fichas.get(id).excluida !== true)       // loja na lixeira não aparece na troca de lojas
+      .map((id) => { const f = fichas.get(id); return { id, nome: texto(f.nome || id, 60), tipo: texto(f.tipo, 30), ativo: f.ativo !== false, original: id === T.TENANT_PADRAO, cor: /^#[0-9a-fA-F]{6}$/.test(String(f.tema && f.tema.primaria)) ? f.tema.primaria : '#1a3a2a' }; });
+    guardados.leve = { em: Date.now(), lista };
+  }
 }
 
 async function definirDono(id, email, remover) {
@@ -94,12 +148,14 @@ async function definirDono(id, email, remover) {
   if (!remover && u.emailVerified !== true) { try { await admin.auth().updateUser(u.uid, { password: crypto.randomBytes(48).toString('base64') }); await admin.auth().revokeRefreshTokens(u.uid); } catch (e) { console.error('[plataforma] blindar', e && e.code); } }
   const claims = u.customClaims || {}, tenants = { ...(claims.tenants || {}) };
   if (remover) { if (tenants[id] !== 'proprietario') throw falha(400, 'Esta conta não é proprietária desta loja.'); delete tenants[id]; } else tenants[id] = 'proprietario';
-  const novos = { ...claims, tenants };
+  // loja que exige aparelho aprovado: o login do dono leva a marca (lib/aprovacao.js); quem sai perde a marca
+  const novos = Aprov.claimsCom({ ...claims, tenants }, id, !remover && (await Aprov.exige(db, id)));
   if (JSON.stringify(novos).length > 900) throw falha(400, 'Esta conta já participa de lojas demais.');
   await admin.auth().setCustomUserClaims(u.uid, novos);
   const ref = T.tdoc(db, id, 'equipe', u.uid);
   if (remover) { await ref.delete(); try { await admin.auth().revokeRefreshTokens(u.uid); } catch (_) { /* o papel já saiu */ } }
   else await ref.set({ email, papel: 'proprietario', em: new Date().toISOString(), por: 'plataforma' });
+  guardados.donos.delete(id);                   // a lista de donos desta loja volta a ser lida na próxima abertura
 }
 
 async function criarLoja(req, res) {
@@ -122,7 +178,28 @@ async function criarLoja(req, res) {
 
 async function ativo(req, res) {
   const id = String((req.body || {}).id || ''), f = await exigirLoja(id);
+  if (f.excluida === true && (req.body || {}).ativo === true) throw falha(400, 'Esta loja está na lixeira. Restaure antes de liberar.');
   await fichaRef(id).set({ ...base(f), ativo: (req.body || {}).ativo === true }, { merge: true });
+  T._cacheFichas.delete(id);
+  return res.status(200).json({ sucesso: true });
+}
+// EXCLUIR LOJA: nada é apagado na hora. A loja vai para a LIXEIRA: fica bloqueada (sem pedidos, fora das feiras,
+// painel fechado), some da troca de lojas e da lista principal, e pode ser restaurada por 30 dias.
+// Para excluir, o nome da loja tem de vir digitado (a tela pede) e a loja original nunca é excluída.
+const DIAS_LIXEIRA = 30;
+const mesmoNome = (a) => String(a || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+async function excluir(req, res) {
+  const b = req.body || {}, id = String(b.id || ''), f = await exigirLoja(id);
+  if (id === T.TENANT_PADRAO) throw falha(400, 'A loja original não pode ser excluída.');
+  if (!mesmoNome(b.confirmar) || mesmoNome(b.confirmar) !== mesmoNome(f.nome || id)) throw falha(400, 'Digite o nome da loja exatamente como aparece para confirmar.');
+  await fichaRef(id).set({ ...base(f), ativo: false, excluida: true, excluidaEm: new Date().toISOString() }, { merge: true });
+  T._cacheFichas.delete(id);
+  return res.status(200).json({ sucesso: true, diasParaRestaurar: DIAS_LIXEIRA });
+}
+async function restaurar(req, res) {
+  const id = String((req.body || {}).id || ''), f = await exigirLoja(id);
+  if (f.excluida !== true) throw falha(400, 'Esta loja não está na lixeira.');
+  await fichaRef(id).set({ excluida: false, excluidaEm: '' }, { merge: true });
   T._cacheFichas.delete(id);
   return res.status(200).json({ sucesso: true });
 }
@@ -134,15 +211,22 @@ async function tipo(req, res) {
   T._cacheFichas.delete(id);
   return res.status(200).json({ sucesso: true });
 }
-// Chave do ImgBB (hospedagem das fotos). Fica em plataforma/segredos, que ninguém lê pelo navegador.
-// A tela só fica sabendo SE existe chave, nunca qual é.
-async function imgbb(req, res) {
-  const chave = String((req.body || {}).chave || '').trim();
-  if (chave && !/^[a-f0-9]{32}$/i.test(chave)) throw falha(400, 'Esta não parece uma chave do ImgBB (são 32 letras e números).');
-  await db.collection('plataforma').doc('segredos').set({ imgbb: chave, imgbbEm: new Date().toISOString() }, { merge: true });
-  return res.status(200).json({ sucesso: true, ligado: !!chave });
+// Formato da loja: 'loja' (carrinho e pedidos) ou 'vitrine' (só catálogo com preço e WhatsApp). A loja original fica sempre loja.
+async function formato(req, res) {
+  const id = String((req.body || {}).id || ''), f = await exigirLoja(id), valor = String((req.body || {}).formato || '');
+  if (!Formato.formatoValido(valor)) throw falha(400, 'Formato desconhecido.');
+  if (id === T.TENANT_PADRAO && valor !== 'loja') throw falha(400, 'A loja original continua recebendo pedidos.');
+  await fichaRef(id).set({ ...base(f), formato: valor }, { merge: true });
+  T._cacheFichas.delete(id);
+  return res.status(200).json({ sucesso: true, formato: valor });
 }
-// Chave do PagBank (PIX automático). Mesmo cuidado da chave do ImgBB: fica em plataforma/segredos
+// Chave antiga do ImgBB: as fotos foram para o Cloudflare R2 e o ImgBB não é mais usado. Esta ação só APAGA
+// a chave que ficou guardada em plataforma/segredos (qualquer chave enviada é ignorada).
+async function imgbb(req, res) {
+  await db.collection('plataforma').doc('segredos').set({ imgbb: '', imgbbEm: new Date().toISOString() }, { merge: true });
+  return res.status(200).json({ sucesso: true, ligado: false });
+}
+// Chave do PagBank (PIX automático). Fica em plataforma/segredos
 // e a tela só fica sabendo SE existe. Chave vazia desliga.
 async function pagbank(req, res) {
   const chave = String((req.body || {}).chave || '').trim();
@@ -150,6 +234,63 @@ async function pagbank(req, res) {
   await db.collection('plataforma').doc('segredos').set({ pagbank: chave, pagbankEm: new Date().toISOString() }, { merge: true });
   Segredos._zerar();
   return res.status(200).json({ sucesso: true, ligado: !!chave });
+}
+// ---------------------------------------------------------------- Asaas (PIX com carteira por banca)
+// A chave fica em plataforma/segredos (a tela só sabe SE existe). O token do aviso é criado aqui e
+// mostrado SÓ nesta tela (do dono da plataforma), para colar no cadastro do webhook no Asaas.
+async function situacaoAsaas(s) {
+  const cfg = await Segredos.asaas(db);
+  const carteiras = {};
+  for (const [tid, w] of Object.entries(s.carteirasAsaas || {})) if (T.idValido(tid) && Asaas.carteiraValida(w)) carteiras[tid] = w;
+  const base = String(process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
+  return {
+    ligado: !!cfg, ambiente: cfg ? cfg.ambiente : '', viaAmbiente: !!process.env.ASAAS_API_KEY,
+    aviso: process.env.ASAAS_WEBHOOK_TOKEN ? '' : (Segredos.avisoAsaasValido(s.asaasAviso) ? s.asaasAviso : ''),
+    avisoViaAmbiente: !!process.env.ASAAS_WEBHOOK_TOKEN,
+    urlAviso: /^https:\/\//.test(base) ? `${base}/api/pagamento-asaas` : '', carteiras, comissao: Asaas.comissaoPct(),
+  };
+}
+// Desligar: apaga a chave e, se o PagBank também não atende, desliga o "PIX automático" de todas as lojas.
+// Sem isso o cliente veria o botão "Pagar com PIX agora" e levaria um erro; assim ele só vê o copia e cola
+// da loja (código com o valor do pedido). Para voltar: salvar a chave de novo e ligar a opção em cada loja.
+async function desligarPixAutomaticoDasLojas() {
+  if (await Segredos.pagbank(db)) return 0;                          // o PagBank continua atendendo: nada a desligar
+  const ts = await db.collection('tenants').get();
+  const ids = [...new Set([T.TENANT_PADRAO, ...ts.docs.map((d) => d.id)])].filter(T.idValido);
+  let n = 0;
+  await Promise.all(ids.map(async (id) => {
+    const ref = T.docDe(db, id, 'loja/config'), snap = await ref.get();
+    if (snap.exists && snap.data().pixAutomatico === true) { await ref.set({ pixAutomatico: false }, { merge: true }); n++; }
+  }));
+  return n;
+}
+async function asaas(req, res) {
+  const b = req.body || {}, desligar = b.desligar === true, chave = desligar ? '' : String(b.chave || '').trim();
+  if (desligar && process.env.ASAAS_API_KEY) throw falha(400, 'A chave está no servidor (variável ASAAS_API_KEY): para desligar, apague-a lá.');
+  if (chave && !Segredos.chaveAsaasValida(chave)) throw falha(400, 'Esta não parece uma chave do Asaas. Ela começa com $aact_ e não tem espaços.');
+  const ref = db.collection('plataforma').doc('segredos'), atual = (await ref.get()).data() || {};
+  const novo = { asaas: chave, asaasEm: new Date().toISOString(), asaasAmbiente: b.ambiente === 'producao' ? 'producao' : 'sandbox' };
+  // o token do aviso nasce junto com a chave (ou quando pedem um novo) e não muda ao trocar a chave
+  if (chave && (b.novoAviso === true || !Segredos.avisoAsaasValido(atual.asaasAviso))) novo.asaasAviso = crypto.randomBytes(30).toString('base64url');
+  await ref.set(novo, { merge: true });
+  Segredos._zerar();
+  const lojasDesligadas = desligar ? await desligarPixAutomaticoDasLojas() : 0;
+  return res.status(200).json({ sucesso: true, ligado: !!chave, lojasDesligadas });
+}
+async function asaasCarteira(req, res) {
+  const b = req.body || {}, id = String(b.id || ''), carteira = String(b.carteira || '').trim().toLowerCase();
+  await exigirLoja(id);
+  if (id === T.TENANT_PADRAO) throw falha(400, 'A loja original recebe na conta da plataforma: não precisa de carteira.');
+  if (carteira && !Asaas.carteiraValida(carteira)) throw falha(400, 'A carteira (walletId) tem o formato 0b763922-aa88-4cbe-a567-e3fe8511fa06. Confira se copiou inteira.');
+  // o mapa inteiro é regravado (com merge, uma carteira apagada continuaria lá dentro)
+  const ref = db.collection('plataforma').doc('segredos'), atual = (await ref.get()).data() || {};
+  const mapa = { ...(atual.carteirasAsaas || {}) };
+  if (carteira) mapa[id] = carteira; else delete mapa[id];
+  await ref.set({ ...atual, carteirasAsaas: mapa });
+  // na ficha pública só vai o SIM/NÃO (o painel da loja libera a opção "PIX automático"); a carteira não
+  await fichaRef(id).set({ pixAsaas: !!carteira }, { merge: true });
+  Segredos._zerar();
+  return res.status(200).json({ sucesso: true, ligado: !!carteira });
 }
 async function modulos(req, res) {
   const id = String((req.body || {}).id || ''), f = await exigirLoja(id), pedido = (req.body || {}).modulos;
@@ -160,11 +301,44 @@ async function modulos(req, res) {
   T._cacheFichas.delete(id);
   return res.status(200).json({ sucesso: true, modulos: novo });
 }
+// só o que a plataforma MARCOU (true/false); o que falta segue o tipo de negócio (js/cadastro-lib.js)
+function camposMarcados(f) {
+  const c = f && f.campos && typeof f.campos === 'object' ? f.campos : {}, r = {};
+  Object.keys(CAMPOS_PRODUTO).forEach((k) => { if (typeof c[k] === 'boolean') r[k] = c[k]; });
+  return r;
+}
+async function campos(req, res) {
+  const id = String((req.body || {}).id || ''), f = await exigirLoja(id), pedido = (req.body || {}).campos;
+  if (!pedido || typeof pedido !== 'object' || Array.isArray(pedido)) throw falha(400, 'Nada para mudar.');
+  const novo = camposMarcados(f);
+  for (const [k, v] of Object.entries(pedido)) { if (!CAMPOS_PRODUTO[k] || typeof v !== 'boolean') throw falha(400, 'Campo desconhecido.'); novo[k] = v; }
+  await fichaRef(id).set({ ...base(f), campos: novo }, { merge: true });
+  T._cacheFichas.delete(id);
+  return res.status(200).json({ sucesso: true, campos: novo });
+}
 async function proprietario(req, res) {
   const b = req.body || {}, id = String(b.id || ''), email = String(b.email || '').trim().toLowerCase(); await exigirLoja(id);
   if (!emailValido(email)) throw falha(400, 'Confira o e-mail.');
   await definirDono(id, email, b.remover === true);
   return res.status(200).json({ sucesso: true });
+}
+// LINK DE ENTRADA SEM E-MAIL: o e-mail do Firebase sai como "project-829734263703", em inglês, e cai no spam.
+// No spam, o Gmail e o iCloud DESLIGAM os links (o "Sign in" fica preto, sem dar para tocar). Aqui o servidor gera
+// o mesmo link que iria no e-mail, sem enviar nada (também não gasta o limite de links por dia), e a plataforma
+// manda pelo WhatsApp. Só para quem já tem papel NESTA loja: não serve para abrir conta de ninguém.
+async function linkEntrada(req, res) {
+  const b = req.body || {}, id = String(b.id || ''), email = String(b.email || '').trim().toLowerCase(); await exigirLoja(id);
+  if (!emailValido(email)) throw falha(400, 'Confira o e-mail.');
+  let u = null;
+  try { u = await admin.auth().getUserByEmail(email); } catch (e) { if (e && e.code !== 'auth/user-not-found') throw e; }
+  const papel = u && u.customClaims && u.customClaims.tenants ? u.customClaims.tenants[id] : null;
+  const dono = u && id === T.TENANT_PADRAO && u.customClaims && u.customClaims.admin === true;
+  if (!u || u.disabled === true || (!T.PAPEIS.includes(papel) && !dono)) throw falha(400, 'Este e-mail não faz parte da equipe desta loja.');
+  const base = H.origensPermitidas().includes(req.headers && req.headers.origin) ? req.headers.origin : H.origensPermitidas()[0];
+  const url = `${base}/admin.html${id !== T.TENANT_PADRAO ? `?loja=${encodeURIComponent(id)}` : ''}`;
+  const link = await admin.auth().generateSignInWithEmailLink(email, { url, handleCodeInApp: true });
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(200).json({ sucesso: true, link, email });
 }
 // FEIRA = um dia (ou mais) da semana + as lojas que vão nesse dia. A mesma loja pode estar em várias
 // feiras (quarta num condomínio, sábado em outro); a loja mostra a faixa só da feira de HOJE.
@@ -209,7 +383,15 @@ async function feira(req, res) {
   const condominios = doCadastro ? doCadastro.condominios : limparCondominios(b.condominios), conds = doCadastro ? doCadastro.conds : [];
   // horário limite do pedido para o mesmo dia (vazio = aceita o dia todo) e datas sem feira (chuva, feriado)
   const horaLimite = Feira.limparHora(b.horaLimite), semFeira = Feira.limparDatas(b.semFeira);
-  if (ids.length) lote.set(refFeira, { nome, dias, condominios, conds, horaLimite, semFeira, lojas: fichas.map(([id, f]) => ({ id, nome: f.nome || NOME_ORIGINAL, cor: (f.tema && f.tema.primaria) || '#1a3a2a' })), atualizadoEm: new Date().toISOString() });
+  // PÁGINA DE ENTRADA (HUD). Tela antiga que não manda estes campos não apaga o que já estava gravado.
+  const antes = antiga.exists ? antiga.data() : {};
+  const datasExtras = Feira.limparDatas(b.datasExtras !== undefined ? b.datasExtras : antes.datasExtras).filter((d) => !semFeira.includes(d));
+  const hud = Feira.limparHud(b.hud !== undefined ? b.hud : antes.hud);
+  // dias em que cada banca vem (só os que são dias da feira; vazio = vem em todos)
+  const diasAntes = Object.fromEntries((Array.isArray(antes.lojas) ? antes.lojas : []).filter((l) => l && l.id).map((l) => [l.id, l.dias]));
+  const diasDe = (id) => { const d = Feira.limparDias(b.lojasDias && typeof b.lojasDias === 'object' ? b.lojasDias[id] : diasAntes[id]).filter((n) => !dias.length || dias.includes(n)); return d.length && (!dias.length || d.length < dias.length) ? d : []; };
+  if (ids.length) lote.set(refFeira, { nome, dias, condominios, conds, horaLimite, semFeira, datasExtras, hud,
+    lojas: fichas.map(([id, f]) => { const d = diasDe(id); return { id, nome: f.nome || NOME_ORIGINAL, cor: (f.tema && f.tema.primaria) || '#1a3a2a', ...(d.length ? { dias: d } : {}) }; }), atualizadoEm: new Date().toISOString() });
   else lote.delete(refFeira);
   await lote.commit();
   saem.concat(ids).forEach((id) => T._cacheFichas.delete(id));
@@ -221,6 +403,9 @@ async function feira(req, res) {
 async function condominio(req, res) {
   const b = req.body || {}, lista = await Cond.garantir(db, T);
   const nome = texto(b.nome, 80), formato = Cond.FORMATOS.includes(b.formato) ? b.formato : 'ql', id = String(b.id || '');
+  // ponto no mapa (opcional): "lat, lng" colado do Google Maps ou o GPS do celular. Vazio = tira o ponto.
+  const ponto = (() => { const m = String(b.ponto == null ? '' : b.ponto).match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/); return m ? { lat: Number(m[1]), lng: Number(m[2]) } : null; })();
+  if (String(b.ponto || '').trim() && !ponto) throw falha(400, 'Localização: cole no formato "-16.68, -49.25" (latitude, longitude).');
   const feirasSnap = await db.collection('feiras').get();
   const usam = (cid) => feirasSnap.docs.filter((d) => Cond.idsDaFeira(lista, d.data()).includes(cid));
   if (b.remover === true) {
@@ -235,7 +420,7 @@ async function condominio(req, res) {
   if (id) {
     const atual = lista.find((c) => c.id === id); if (!atual) throw falha(404, 'Condomínio não encontrado.');
     // o nome antigo vira apelido: cliente com o endereço antigo guardado continua caindo na feira
-    const nova = lista.map((c) => (c.id === id ? { ...c, nome, formato, apelidos: Cond.normCond(c.nome) === Cond.normCond(nome) ? c.apelidos || [] : [c.nome, ...(c.apelidos || [])] } : c));
+    const nova = lista.map((c) => { if (c.id !== id) return c; const { lat, lng, ...resto } = c; return { ...resto, nome, formato, ...(b.ponto === undefined ? { lat, lng } : ponto || {}), apelidos: Cond.normCond(c.nome) === Cond.normCond(nome) ? c.apelidos || [] : [c.nome, ...(c.apelidos || [])] }; });
     await Cond.salvar(db, nova);
     // as feiras que usam este condomínio passam a ter o nome e o formato novos
     const lote = db.batch(); let n = 0;
@@ -244,7 +429,7 @@ async function condominio(req, res) {
     return res.status(200).json({ sucesso: true });
   }
   if (lista.length >= Cond.MAX) throw falha(400, `O cadastro chegou a ${Cond.MAX} condomínios.`);
-  await Cond.salvar(db, [...lista, { nome, formato }]);
+  await Cond.salvar(db, [...lista, { nome, formato, ...(ponto || {}) }]);
   return res.status(200).json({ sucesso: true });
 }
 
@@ -259,7 +444,7 @@ async function assinatura(req, res) {
 }
 
 async function assumir(dec, res) {
-  const donoDaOriginal = dec.admin === true || (dec.tenants && dec.tenants[T.TENANT_PADRAO] === 'proprietario');
+  const donoDaOriginal = T.papelDe(dec, T.TENANT_PADRAO) === 'proprietario';      // respeita a aprovação de aparelho (lib/aprovacao.js)
   if (!donoDaOriginal && dec.plataforma !== true) throw falha(403, 'Só quem é dono da loja original pode assumir a plataforma.');
   const ref = db.collection('plataforma').doc('dono');
   await db.runTransaction(async (t) => {
@@ -300,24 +485,34 @@ module.exports = async function handler(req, res) {
   if (dec.plataforma !== true) return res.status(403).json({ error: 'Área restrita ao dono da plataforma.' });
   // Dono que ganhou o acesso pelo terminal (sem passar pelo botão) não tinha o registro em plataforma/dono, e aí
   // outra conta dona da loja original ainda conseguiria assumir. Ao usar a tela, o registro passa a existir.
-  try { await db.runTransaction(async (t) => { const r = db.collection('plataforma').doc('dono'), s = await t.get(r); if (!s.exists) t.set(r, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() }); }); }
-  catch (e) { console.error('[plataforma] dono', e && e.message); }
-  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), lojas: () => lojas(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), modulos: () => modulos(req, res), tipo: () => tipo(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), proprietario: () => proprietario(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
+  // (uma vez por conta e por cópia do servidor: antes era uma transação a cada toque na tela)
+  if (!donoRegistrado.has(dec.uid)) {
+    try { await db.runTransaction(async (t) => { const r = db.collection('plataforma').doc('dono'), s = await t.get(r); if (!s.exists) t.set(r, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() }); }); donoRegistrado.add(dec.uid); }
+    catch (e) { console.error('[plataforma] dono', e && e.message); }
+  }
+  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), 'erro-estado': async () => res.status(200).json({ sucesso: true, ...(await Erros.marcarEstado(db, req.body, dec.email || dec.uid)) }), lojas: () => lojas(res), 'lojas-leve': () => lojasLeve(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), excluir: () => excluir(req, res), restaurar: () => restaurar(req, res), modulos: () => modulos(req, res), campos: () => campos(req, res), tipo: () => tipo(req, res), formato: () => formato(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), asaas: () => asaas(req, res), 'asaas-carteira': () => asaasCarteira(req, res), proprietario: () => proprietario(req, res), 'link-entrada': () => linkEntrada(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
   const nomeAcao = typeof (req.body || {}).acao === 'string' ? (req.body || {}).acao : '';
   const fn = Object.prototype.hasOwnProperty.call(acoes, nomeAcao) ? acoes[nomeAcao] : null;
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });
   // Tudo o que MUDA alguma coisa fica na trilha (auditoria_plataforma). Chave e token nunca entram no registro: só "gravou" ou "apagou".
-  if (nomeAcao !== 'lojas' && nomeAcao !== 'auditoria' && nomeAcao !== 'erros') {
+  if (!['lojas', 'lojas-leve', 'auditoria', 'erros'].includes(nomeAcao)) {
+    guardados.leve = null; guardados.mov.clear();          // mexeu em alguma coisa: as listas guardadas são lidas de novo
     const b = req.body || {}, alvo = String(b.id || b.fid || '').slice(0, 40);
-    const detalhe = nomeAcao === 'imgbb' || nomeAcao === 'pagbank' ? (String(b.chave || '').trim() ? 'chave gravada' : 'chave apagada')
+    const detalhe = nomeAcao === 'imgbb' ? 'chave apagada'
+      : nomeAcao === 'pagbank' || nomeAcao === 'asaas' ? (String(b.chave || '').trim() ? 'chave gravada' : 'chave apagada')
+      : nomeAcao === 'asaas-carteira' ? `carteira de ${String(b.id || '').slice(0, 40)} ${String(b.carteira || '').trim() ? 'gravada' : 'apagada'}`
       : nomeAcao === 'proprietario' ? `${alvo}: ${b.remover === true ? 'tirou' : 'definiu'} ${String(b.email || '').slice(0, 80)}`
+      : nomeAcao === 'link-entrada' ? `${alvo}: gerou link de entrada para ${String(b.email || '').slice(0, 80)}`
       : nomeAcao === 'ativo' ? `${alvo}: ${b.ativo === true ? 'liberou' : 'bloqueou'}`
+      : nomeAcao === 'excluir' ? `${alvo}: mandou para a lixeira` : nomeAcao === 'restaurar' ? `${alvo}: tirou da lixeira`
       : nomeAcao === 'criar-loja' ? `${alvo} (${String(b.emailDono || 'sem dono').slice(0, 80)})`
       : nomeAcao === 'condominio' ? `${b.remover === true ? 'tirou' : b.id ? 'mudou' : 'cadastrou'} ${String(b.nome || b.id || '').slice(0, 60)}`
+      : nomeAcao === 'erro-estado' ? `${String(b.assinatura || '').slice(0, 20)} ${b.estado === 'aberto' ? 'reaberto' : 'corrigido'}`
       : nomeAcao === 'assinatura' ? `${alvo}: ${String(b.valor == null ? '' : b.valor).trim() === '' ? 'sem mensalidade' : `R$ ${String(b.valor).slice(0, 12)}`}` : alvo;
     await anotar(`plataforma-${nomeAcao}`, detalhe);
-    if (['proprietario', 'pagbank', 'ativo'].includes(nomeAcao)) await P.alertar(db, T.TENANT_PADRAO, `plataforma-${nomeAcao}`, { titulo: 'Plataforma alterada', corpo: `${dec.email || 'O dono da plataforma'} mudou: ${nomeAcao} (${detalhe}).`, url: '/plataforma.html' });
+    if (['proprietario', 'link-entrada', 'pagbank', 'asaas', 'asaas-carteira', 'ativo', 'excluir', 'restaurar'].includes(nomeAcao)) await P.alertar(db, T.TENANT_PADRAO, `plataforma-${nomeAcao}`, { titulo: 'Plataforma alterada', corpo: `${dec.email || 'O dono da plataforma'} mudou: ${nomeAcao} (${detalhe}).`, url: '/admin-plataforma' });
   }
   try { return await fn(); }
   catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[plataforma]', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }
+  finally { if (!['lojas', 'lojas-leve', 'auditoria', 'erros'].includes(nomeAcao)) { guardados.leve = null; guardados.mov.clear(); } }   // depois de mudar algo, de novo (uma leitura no meio não pode guardar o antigo)
 };

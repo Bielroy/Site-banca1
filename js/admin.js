@@ -1,18 +1,41 @@
-import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
+import { avisarErro } from './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
+import { normalizarInstagram, normalizarWhatsapp, telefoneBonito } from './contato-lib.js';
 import { miniatura } from './foto-lib.js';   // foto pelo redutor do site (o i.ibb.co direto não abre em algumas redes)
-import { getDoc, auth, db, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, limit, writeBatch, where, updateDoc } from './firebase.js';
+import { getDoc, auth, db, semCopia, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut, collection, doc, onSnapshot, query, orderBy, limit, where, updateDoc } from './firebase.js';
+// sem internet o painel não fica preso, e o que espera aparece no topo (js/fila-offline.js)
+import { setDoc, deleteDoc, writeBatch, reenviarPendentes } from './fila-offline.js';
+import { iniciarLoginRapido, depoisDeEntrar } from './admin-passkey.js';
+import { vigiarEsteAparelho, anotarComoEntrou, garantirAparelho, numeroDoAparelho } from './admin-aparelho.js';
+import { prepararPorteiro, provaPara } from './porteiro-cliente.js';
 import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
 import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
-import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm } from './utils.js';
+import { textoDeBusca, combinaBusca } from './busca-lib.js';
+import { iniciarComandos } from './admin-comandos.js';
+import { anotar } from './admin-trilha.js';                // trilha: quem mudou preço, produto e pedido   // Ctrl+K, "/" e atalhos de uma tecla
+import { fmt, escapeHTML, qtdDoItem, showToast, openModal, closeModal, customConfirm, focarCampo, avisoComDesfazer } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
+import { marcarSoMemoria, ESPERA_MS as ESPERA_LISTA_MS } from './banco-travado-lib.js';
+import './painel-menu.js';   // menu "⋯" (Produtos e Pedidos): o que se usa de vez em quando sai do caminho
 import { normalizarChave, TIPOS_DE_CHAVE } from './pix-chave-lib.js';
 import { precoDeValido } from './oferta-lib.js';
+import { hojeDaLoja, iconeDaCategoria } from './vitrine-lib.js';
+import { TODAS, categoriasDaLista, passaNaCategoria, mudancasEmLote } from './produtos-lista-lib.js';
+import { cadastroPacote, promoDe, textoPromo, totalComPromo, nomesDaUnidade, emPalavras, ehPacote } from './pacote-lib.js';
+import { ARTE_PACOTE, ARTE_CATEGORIA } from './vitrine-arte.js';
+import { camposDaLoja, unidadeMaisUsada, precoMaisUsado, lerPreco } from './cadastro-lib.js';
+import { iniciarMontarAdmin, preencherMontar, lerMontar } from './admin-montar.js';
+import { preencherDias, lerDias, lerPalavras } from './admin-dias.js';   // dias em que o produto sai e palavras da busca
 import './admin-instalar.js';
 import { exigirAdmin, iniciarLogoutPorInatividade, papelAtual, sairELimpar, bancasDaPessoa, mostrarSuspensa } from './admin-guard.js';
 import { htmlSimples, csvCampo } from './html-lib.js';
-import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel } from './papeis-lib.js';
+import { carregarChave, abrirPedidos } from './cofre-lib.js';   // nome, telefone e endereço do cliente chegam cifrados do banco
+import { abasDoPapel, podeAbrir, ehGestor, cuidaDeEstoque, rotuloDoPapel, mexeNaChavePix } from './papeis-lib.js';
+import { formatoDaFicha } from './formato-lib.js';
 import { ico } from './icones-admin.js';          // também liga a troca das marcas <i class="ic"> pelos desenhos
 import { linhaEndereco } from './endereco.js';
+import { mensagemPedidoPronto, mensagemACaminho, linkDoWhatsApp } from './mensagem-lib.js';
+import { mostrarVideo, videoParaSalvar, ligarVideo } from './admin-video.js';   // vídeo curto do produto   // textos do WhatsApp para o cliente
 import { abrirPrevisao } from './admin-previsao.js';
 import { abrirFechamento } from './admin-fechamento.js';
 
@@ -22,27 +45,60 @@ import { abrirFechamento } from './admin-fechamento.js';
 // em que a aba é tocada (e fica guardado para as próximas vezes).
 // ---------------------------------------------------------------------
 const TELAS = {
-    aparencia: () => import('./admin-aparencia.js'), estoque: () => import('./admin-estoque.js'), fotos: () => import('./admin-fotos.js'),
+    aparencia: () => import('./admin-aparencia.js'), estoque: () => import('./admin-estoque.js'), fotos: () => import('./admin-fotos.js'), conserto: () => import('./admin-fotos-conserto.js'),
     margens: () => import('./admin-margens.js'), compras: () => import('./admin-compras.js'), pdv: () => import('./admin-pdv.js'),
     crm: () => import('./admin-crm.js'), copiloto: () => import('./admin-copiloto.js'), calendario: () => import('./admin-calendario.js'),
-    equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'), avisos: () => import('./admin-avisos.js'),
-    precosDia: () => import('./admin-precos-dia.js'),
+    equipe: () => import('./admin-equipe.js'), impressao: () => import('./admin-impressao.js'), impressora: () => import('./admin-impressora.js'), avisos: () => import('./admin-avisos.js'),
+    impressaoAuto: () => import('./impressao-auto.js'),
+    resumo: () => import('./admin-resumo.js'), pedidoItens: () => import('./admin-pedido-itens.js'),
+    varios: () => import('./admin-varios.js'), precosDia: () => import('./admin-precos-dia.js'), vitrine: () => import('./admin-vitrine.js'), rotulos: () => import('./admin-rotulos.js'),
 };
 const comImpressao = async (fn) => { try { await fn(await TELAS.impressao()); } catch (e) { console.error(e); showToast('Não consegui abrir a impressão. Confira a internet e toque de novo.', true); } };
-document.getElementById('btn-impressora')?.addEventListener('click', () => comImpressao((m) => m.abrirImpressora()));
+document.getElementById('btn-impressora')?.addEventListener('click', () => comImpressao((m) => m.abrirImpressora('whats')));
 document.getElementById('btn-avisos')?.addEventListener('click', async () => { try { (await TELAS.avisos()).abrirAvisos(); } catch (e) { console.error(e); showToast('Não consegui abrir os avisos. Confira a internet e toque de novo.', true); } });
 let condominiosAtuais = [];
+let configAtual = null;                                   // loja/config (os "Primeiros passos" do Resumo leem daqui)
 const ABRIR = {
-    aparencia: (m) => m.abrirAparencia(), estoque: (m) => m.abrirEstoque(produtosAtuais), compras: (m) => m.abrirCompras(produtosAtuais),
-    pdv: (m) => { m.definirCondominiosPdv(condominiosAtuais); m.abrirPdv(produtosAtuais); }, crm: (m) => m.abrirCrm(produtosAtuais), copiloto: (m) => m.abrirCopiloto(), calendario: (m) => m.abrirCalendario({ podeEditar: ehGestor(papelAtual) }), equipe: (m) => m.abrirEquipe(),
+    aparencia: (m) => { m.abrirAparencia(); TELAS.vitrine().then((v) => v.abrirVitrine(categoriasComProduto())).catch((e) => console.error(e)); }, estoque: (m) => m.abrirEstoque(produtosAtuais), compras: (m) => m.abrirCompras(produtosAtuais),
+    pdv: (m) => { m.definirCondominiosPdv(condominiosAtuais); m.abrirPdv(produtosAtuais); }, crm: (m) => m.abrirCrm(produtosAtuais), copiloto: (m) => m.abrirCopiloto(), calendario: (m) => m.abrirCalendario({ podeEditar: ehGestor(papelAtual) }), equipe: (m) => m.abrirEquipe(), impressora: (m) => m.abrirAbaImpressora(produtosAtuais),
+    resumo: (m) => m.abrirResumo({ produtos: produtosAtuais, fila: pedidosGerais, abas: abasDoPapel(papelAtual, TODAS_AS_ABAS, modulosDaLoja, formatoDaLoja), nome: auth.currentUser?.displayName || '', config: configAtual, link: new URL(urlDaLoja(TENANT, '/'), location.origin).href }),
 };
+// categorias que têm produto à venda (para o botão "Ver Frutas" dos quadros da vitrine)
+const categoriasComProduto = () => [...new Set(produtosAtuais.filter((p) => p.ativo && !p.soInsumo && p.cat).map((p) => p.cat))]
+    .map((chave) => ({ chave, nome: nomeDaCategoria(chave) || chave })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 const abrirTela = async (nome) => {
     try { ABRIR[nome](await TELAS[nome]()); }
     catch (e) { console.error(e); showToast('Não consegui abrir esta tela. Confira a internet e toque de novo.', true); }
 };
-import { iniciarCategoriasAdmin, abrirCategorias, chaveDaCategoria, nomeDaCategoria, normalizarWpp } from './admin-categorias.js';
+import { listaGuardada, buscarLista, filtrarLojas } from './lojas-rapido.js';   // trocar de loja (dono da plataforma)
+import { pedirCatalogo, produtoSalvo } from './pedir-catalogo.js';   // avisa o servidor para remendar vitrine/painel (lib/catalogo.js)
+import { ouvirProdutosPainel, ouvirCustosPainel, guardarEscutas, marcarApagadoLocal } from './painel-catalogo.js';
+import { iniciarCategoriasAdmin, abrirCategorias, chaveDaCategoria, nomeDaCategoria, normalizarWpp, ordemDasCategorias } from './admin-categorias.js';
+// PIX automático: a loja original (conta da plataforma) ou a banca que a plataforma ligou ao Asaas (carteira cadastrada)
+let pixAsaasDaFicha = false;
+const podePixAutomatico = () => ehLojaOriginal || pixAsaasDaFicha;
 // Miniatura do redutor falhou? Volta para a foto original (mesmo cuidado da loja).
-document.addEventListener('error', (e) => { const img = e.target; if (!(img instanceof HTMLImageElement) || !img.dataset.original) return; const o = img.dataset.original; delete img.dataset.original; if (img.getAttribute('src') !== o) img.src = o; }, true);
+document.addEventListener('error', (e) => {
+    const img = e.target; if (!(img instanceof HTMLImageElement)) return;
+    // 1º a outra versão da foto (pelo redutor); depois o endereço original; na lista de produtos, em vez do original
+    // (que mostraria a figura "imgbb.com service unavailable"), um aviso e o botão de consertar
+    if (img.dataset.reserva) { const r = img.dataset.reserva; delete img.dataset.reserva; img.src = r; return; }
+    if (img.dataset.original) { const o = img.dataset.original; delete img.dataset.original; if (img.getAttribute('src') !== o) img.src = o; return; }
+    if (img.dataset.foraDoAr && img.parentElement) { const casa = img.parentElement; casa.innerHTML = '<span class="pl-sem-foto pl-fora-do-ar">Foto fora do ar</span>'; avisarFotosForaDoAr(); }
+}, true);
+const https = (u) => /^https:\/\//i.test(String(u || ''));
+// "Foto fora do ar" só vale para link antigo do ImgBB (que some de vez). Foto do R2/Firebase cuja miniatura falhou cai na original.
+const ehImgbb = (u) => /^https:\/\/([a-z0-9-]+\.)*ibb\.co\//i.test(String(u || ''));
+let _avisoFotos = 0;
+function avisarFotosForaDoAr() {
+    clearTimeout(_avisoFotos);
+    _avisoFotos = setTimeout(() => {
+        const n = document.querySelectorAll('#lista-produtos .pl-fora-do-ar').length; if (!n) return;
+        let faixa = document.getElementById('pl-faixa-fotos');
+        if (!faixa) { faixa = document.createElement('div'); faixa.id = 'pl-faixa-fotos'; faixa.className = 'pl-faixa-fotos'; document.getElementById('lista-produtos')?.before(faixa); }
+        faixa.innerHTML = `<span>${n === 1 ? '1 foto sumiu' : `${n} fotos sumiram`} do ImgBB (aparecia "service unavailable" na loja).</span><button type="button" class="bt bt-pri" data-action="consertar-fotos">Consertar</button>`;
+    }, 400);
+}
 
 // Chart.js agora é carregado sob demanda (só ao abrir o Dashboard).
 // Isso tira ~200KB do carregamento inicial do painel.
@@ -53,8 +109,14 @@ const carregarChart = async () => {
 };
 
 let produtosAtuais = [];
+/** { idDoProduto: endereço https da foto pequena } — o recibo impresso mostra a foto de cada item na página comum. */
+// pelo redutor (128 px): o mesmo endereço da lista de produtos, que já está no cache do navegador — o recibo abre sem esperar foto grande
+const fotosDosProdutos = () => Object.fromEntries(produtosAtuais.map((p) => [p.id, p.fotoMini || p.foto]).filter(([id, u]) => id && https(u))
+    .map(([id, u]) => { try { return [id, new URL(miniatura(u, 128), location.href).href]; } catch (_) { return [id, u]; } }).filter(([, u]) => https(u)));
 let nomeDaLoja = ehLojaOriginal ? 'Banca Adair e Pedrina' : 'Nossa loja';   // trocado pelo nome da ficha da loja ao entrar
 let pedidosGerais = [];
+let filaRecebida = false;          // a fila já chegou do banco pelo menos uma vez (a impressão automática espera por ela)
+let impAuto = null;                // js/impressao-auto.js, quando carregado
 let unsubscribes = [];
 let adminBuscaTermo = "";
 let pedidoBuscaTermo = "";
@@ -69,18 +131,23 @@ const normalizar = (txt) => String(txt || '').toLowerCase().normalize("NFD").rep
 // mágico, qualquer pessoa pedia um link para o próprio e-mail e entrava.
 // AGORA: exige o custom claim `admin: true`, que só o servidor grava.
 // =====================================================================
+let loginRapidoLigado = false;      // Face ID/digital e e-mail lembrado na tela de login (js/admin-passkey.js)
 onAuthStateChanged(auth, async (user) => {
     unsubscribes.forEach(unsub => unsub());
     unsubscribes = [];
+    filaRecebida = false; try { impAuto?.parar(); } catch (_) { /* nada a parar */ }
 
     if (!user) {
         document.getElementById('login-screen').style.display = 'block';
         document.getElementById('dashboard').style.display = 'none';
+        if (!loginRapidoLigado) { loginRapidoLigado = true; iniciarLoginRapido().catch(() => { /* só conveniência */ }); prepararPorteiro(); }
         return;
     }
 
     const autorizado = await exigirAdmin(user);
     if (!autorizado) return; // o guard já exibe a tela de bloqueio
+    // loja que exige APARELHO APROVADO (lib/aprovacao.js): troca o login do link pelo deste aparelho, ou espera o dono aprovar
+    if (!(await garantirAparelho(user))) return;
 
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('dashboard').style.display = 'grid';
@@ -89,14 +156,19 @@ onAuthStateChanged(auth, async (user) => {
     // equipe esgotava o limite e ninguém mais entrava naquele dia. No balcão, "Sair" encerra na hora.
     iniciarLogoutPorInatividade(12 * 60);
     let suspensa = false;
-    try { const f = await getDoc(fichaRef()); suspensa = f.exists() && f.data().ativo === false; modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; lerDiasSemFeira(f.exists() ? f.data() : null); } catch (_) { modulosDaLoja = null; }
+    let fichaLida = null;
+    try { const f = await Promise.race([getDoc(fichaRef()), new Promise((_, nao) => setTimeout(() => nao(new Error('ficha sem resposta')), 8000))]); fichaLida = f.exists() ? f.data() : null; suspensa = f.exists() && f.data().ativo === false; modulosDaLoja = f.exists() ? (f.data().modulos || null) : null; formatoDaLoja = formatoDaFicha(f.exists() ? f.data() : null); nomeDaLoja = (f.exists() && f.data().nome) || nomeDaLoja; lerDiasSemFeira(f.exists() ? f.data() : null); } catch (_) { modulosDaLoja = null; }
+    pixAsaasDaFicha = !!(fichaLida && fichaLida.pixAsaas === true);
+    try { aplicarCampos(fichaLida); } catch (e) { console.warn('[campos]', e); }   // campos do cadastro que a plataforma ligou nesta loja
     // LOJA BLOQUEADA pela plataforma (falta de pagamento): o painel não abre. Só a plataforma continua entrando.
     if (suspensa && papelAtual !== 'plataforma') { mostrarSuspensa(papelAtual === 'proprietario'); return; }
     { const tl = document.getElementById('topo-loja'); if (tl) tl.textContent = nomeDaLoja; }
     aplicarPapel();
-    montarTrocaDeBanca();
+    if (papelAtual === 'plataforma') montarTrocaDaPlataforma(); else montarTrocaDeBanca();
     if (ehGestor(papelAtual)) iniciarIAFeaturesDOM();
     iniciarRealTimeSync();
+    depoisDeEntrar(user).catch(() => { /* só conveniência */ });     // guarda o e-mail e oferece Face ID/digital neste aparelho
+    vigiarEsteAparelho();       // avisa o servidor que este aparelho está no painel (aparelho novo vira aviso ao dono; desconectado sai)
 });
 
 let isLoginProcessing = false;
@@ -110,21 +182,32 @@ document.getElementById('btn-login').addEventListener('click', async () => {
     }
 
     isLoginProcessing = true; document.getElementById('btn-login').disabled = true;
-    msg.textContent = "A enviar link..."; msg.style.color = "var(--text-dark)";
+    msg.textContent = "Conferindo que não é um robô..."; msg.style.color = "var(--text-dark)";
 
     const guardarEmail = () => { try { window.localStorage.setItem('emailForSignIn', email); } catch (_) {} try { window.sessionStorage.setItem('emailForSignIn', email); } catch (_) {} };
     try {
         // O pedido do link passa pelo NOSSO servidor: só e-mail que já faz parte de alguma equipe recebe, e a
         // resposta é a mesma para qualquer e-mail (não dá para descobrir por aqui quem é da equipe).
+        // PORTEIRO (lib/porteiro.js): o navegador resolve o desafio (1 a 3 s, sem a pessoa fazer nada) e manda junto
+        // com a isca (campo escondido) e o número deste aparelho. Se o servidor pedir um desafio mais pesado, refaz sozinho.
         let r = null, j = {};
-        try {
-            r = await fetch('/api/equipe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'pedir-link', email, loja: TENANT }) });
-            j = await r.json().catch(() => ({}));
-        } catch (_) { r = null; }
+        const aparelho = numeroDoAparelho(), isca = document.getElementById('site-empresa')?.value || '';
+        for (let tentativa = 0, pesado = null; tentativa < 3; tentativa++) {
+            let prova = { desafio: '', solucao: '' };
+            try { prova = await provaPara(email, aparelho, pesado); } catch (e) { if (e && e.status === 429) { r = { ok: false, status: 429 }; j = { error: e.message }; break; } }
+            msg.textContent = "A enviar link...";
+            try {
+                r = await fetch('/api/equipe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'pedir-link', email, loja: TENANT, aparelho, isca, ...prova }) });
+                j = await r.json().catch(() => ({}));
+            } catch (_) { r = null; }
+            if (!(r && r.status === 428)) break;
+            pesado = { dificuldade: j.dificuldade };
+            msg.textContent = "Conferindo de novo...";
+        }
         if (r && r.ok) {
             guardarEmail();
             msg.textContent = j.mensagem || 'Se este e-mail estiver autorizado, o link chega em instantes.'; msg.style.color = "var(--success)";
-        } else if (r && (r.status === 429 || r.status === 400)) {
+        } else if (r && (r.status === 429 || r.status === 400 || r.status === 428 || r.status === 403)) {
             msg.textContent = j.error || 'Não consegui enviar. Tente de novo em alguns minutos.'; msg.style.color = "var(--danger)";
         } else {
             // Plano B: o servidor não conseguiu (fora do ar ou sem configuração). Pede direto ao Firebase, como era antes,
@@ -146,6 +229,8 @@ if (isSignInWithEmailLink(auth, window.location.href)) {
     try { email = email || window.localStorage.getItem('emailForSignIn'); } catch (_) {}
     const linkCompleto = window.location.href;
     const processLogin = async () => {
+        // link aberto num aparelho que NÃO pediu (encaminhado, copiado): o dono da loja é avisado (js/admin-aparelho.js)
+        anotarComoEntrou(email ? 'link' : 'link-outro-aparelho');
         if (!email) email = prompt("Por segurança, confirme o seu e-mail:");
         if (email) {
             try {
@@ -170,17 +255,19 @@ document.getElementById('btn-logout').addEventListener('click', () => sairELimpa
 // ---------------------------------------------------------------------
 const TODAS_AS_ABAS = [...document.querySelectorAll('.tab')].map((t) => t.dataset.aba);
 let modulosDaLoja = null;                                // ficha.modulos: o que a plataforma ligou nesta loja
+let formatoDaLoja = 'loja';                              // ficha.formato: 'vitrine' = só catálogo (js/formato-lib.js)
 const aplicarPapel = () => {
-    const minhas = abasDoPapel(papelAtual, TODAS_AS_ABAS, modulosDaLoja), gestor = ehGestor(papelAtual);
+    const minhas = abasDoPapel(papelAtual, TODAS_AS_ABAS, modulosDaLoja, formatoDaLoja), gestor = ehGestor(papelAtual);
     const lp = document.getElementById('link-plataforma'); if (lp) lp.hidden = !(papelAtual === 'plataforma' || (papelAtual === 'proprietario' && ehLojaOriginal));
     document.querySelectorAll('.tab').forEach((t) => { t.hidden = !minhas.includes(t.dataset.aba); });
     const ba = document.getElementById('btn-avisos');   // quem não vê pedidos (produção, estoque) não recebe aviso de pedido
-    if (ba) { ba.hidden = !['plataforma', 'proprietario', 'administrador', 'funcionario', 'caixa'].includes(papelAtual); if (!ba.hidden) TELAS.avisos().then((m) => m.marcarBotaoDeAvisos()).catch(() => {}); }
+    if (ba) { ba.hidden = !['plataforma', 'proprietario', 'administrador', 'gerente', 'funcionario', 'caixa'].includes(papelAtual); if (!ba.hidden) TELAS.avisos().then((m) => m.iniciarAvisos()).catch(() => {}); }
     document.body.classList.toggle('so-equipe', !gestor);
     if (['plataforma', 'proprietario'].includes(papelAtual)) import('./admin-maquininha.js').then((m) => m.iniciarMaquininha()).catch((e) => console.warn('[maquininha]', e && e.message));
     if (['plataforma', 'proprietario'].includes(papelAtual)) import('./admin-copia.js').then((m) => m.iniciarCopia()).catch((e) => console.warn('[copia]', e && e.message));
     const r = document.getElementById('papel-rotulo'); if (r) { r.textContent = rotuloDoPapel(papelAtual); r.hidden = papelAtual === 'proprietario'; }
     montarBarra(minhas);
+    document.body.classList.toggle('sem-chave-pix', !mexeNaChavePix(papelAtual));   // gerente: não vê nem troca chave PIX, PIX automático e WhatsApp dos pedidos
     document.querySelectorAll('.so-dono').forEach((el) => { el.hidden = !['plataforma', 'proprietario'].includes(papelAtual); });
     // título de grupo só aparece se sobrou alguma aba dele; quem tem poucas abas não precisa de grupos nem de menu
     const nav = document.querySelector('.tabs');
@@ -203,6 +290,16 @@ const mostrarAbaAtual = (tab) => {
     document.querySelectorAll('#barra [data-ir-aba]').forEach((b) => { const on = b.dataset.irAba === tab.dataset.aba; b.classList.toggle('on', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     const bm = document.getElementById('barra-menu'); if (bm) bm.classList.toggle('on', !document.querySelector(`#barra [data-ir-aba="${tab.dataset.aba}"]`));   // tela que só existe no Menu
 };
+// O topo já diz em que tela a pessoa está: o título igual logo no começo da tela sai, fica só a explicação.
+// ("Fechamento da Feira" na tela Fechamento sai; "Comprar hoje" na tela Compras fica, porque diz mais.)
+let quadroTitulo = 0;
+const marcarTituloRepetido = () => {
+    const sec = document.querySelector('.aba-content.active'), nome = normalizar(document.getElementById('topo-secao')?.textContent || '');
+    if (!sec || !nome) return;
+    const h = sec.querySelector('h2, h3');
+    if (h && !h.classList.contains('titulo-repete') && !h.closest('.modal, dialog, details') && normalizar(h.textContent).startsWith(nome)) h.classList.add('titulo-repete');
+};
+if (document.getElementById('dashboard')) new MutationObserver(() => { cancelAnimationFrame(quadroTitulo); quadroTitulo = requestAnimationFrame(marcarTituloRepetido); }).observe(document.getElementById('dashboard'), { childList: true, subtree: true });
 const recolherMenu = (sim) => {
     document.querySelector('.tabs').classList.toggle('recolhido', sim);
     document.getElementById('tabs-atual').setAttribute('aria-expanded', String(!sim));
@@ -215,7 +312,7 @@ const recolherMenu = (sim) => {
 // É o desenho dos painéis de loja mais usados (Shopify, Square, iFood): o que se abre
 // dez vezes por dia fica sempre ao alcance do polegar. Respeita o papel de quem entrou.
 // ---------------------------------------------------------------------
-const ORDEM_DA_BARRA = ['relatorios', 'pdv', 'fechamento', 'produtos', 'estoque', 'compras', 'calendario', 'previsao', 'balanco'];
+const ORDEM_DA_BARRA = ['resumo', 'relatorios', 'pdv', 'produtos', 'fechamento', 'estoque', 'compras', 'calendario', 'previsao', 'balanco'];
 const montarBarra = (minhas) => {
     const barra = document.getElementById('barra'); if (!barra) return;
     const cabeTudo = minhas.length <= 5;
@@ -236,13 +333,38 @@ document.getElementById('tabs-fundo')?.addEventListener('click', () => recolherM
 
 // DIAS SEM FEIRA (chuva, feriado), marcados na Plataforma: o pedido já feito para um desses dias ganha um aviso.
 const SEM_FEIRA = new Map();
+const FEIRAS_DA_LOJA = new Map();   // id → { nome, dias } das feiras em que esta banca está (usado na agenda das feiras)
 function lerDiasSemFeira(ficha) {
     feirasDaFicha(ficha).forEach((fid) => getDoc(doc(db, 'feiras', fid)).then((s) => {
         if (!s.exists()) return;
         SEM_FEIRA.set(fid, new Set(Array.isArray(s.data().semFeira) ? s.data().semFeira : []));
+        FEIRAS_DA_LOJA.set(fid, { nome: String(s.data().nome || fid), dias: (Array.isArray(s.data().dias) ? s.data().dias : []).filter(Number.isInteger) }); pintarAgenda({ manter: true });   // a feira entra na lista da agenda
         const listDiv = document.getElementById('lista-historico');
         if (listDiv && pedidosGerais.length) listDiv.innerHTML = renderHtmlPedidos(pedidosGerais);
     }).catch(() => {}));
+}
+
+// TROCAR DE LOJA (dono da plataforma): todas as lojas num toque, com busca. A última lista fica guardada no aparelho
+// e aparece na hora, enquanto a nova chega (js/lojas-rapido.js). Cada loja abre direto no painel dela.
+let trocaDaPlataformaPronta = false;
+function montarTrocaDaPlataforma() {
+    const caixa = document.getElementById('menu-bancas'), botao = document.getElementById('topo-trocar');
+    if (!caixa || trocaDaPlataformaPronta) return;       // o painel pode reentrar (login renovado): monta e busca a lista uma vez só
+    trocaDaPlataformaPronta = true;
+    let lojas = listaGuardada(), termo = '';
+    const pintar = () => {
+        const vistas = filtrarLojas(lojas, termo);
+        const lista = caixa.querySelector('.menu-bancas-lista');
+        if (lista) lista.innerHTML = vistas.map((l) => `<a href="${escapeHTML(urlDaLoja(l.id, location.pathname))}"${l.id === TENANT ? ' aria-current="true"' : ''}>${escapeHTML(l.nome)}${l.ativo ? '' : ' <small>(bloqueada)</small>'}</a>`).join('') || '<span class="menu-bancas-vazio">Nenhuma loja com esse nome.</span>';
+        const busca = caixa.querySelector('.menu-bancas-busca'); if (busca) busca.hidden = lojas.length < 7;
+    };
+    caixa.innerHTML = `<span class="menu-bancas-tit">Trocar de loja</span><input type="search" class="menu-bancas-busca" placeholder="Buscar loja" aria-label="Buscar loja" autocomplete="off" hidden><div class="menu-bancas-lista"></div>`;
+    // o menu fecha ao tocar nele: tocar na busca não pode fechar
+    caixa.querySelector('.menu-bancas-busca').addEventListener('click', (e) => e.stopPropagation());
+    caixa.querySelector('.menu-bancas-busca').addEventListener('input', (e) => { termo = e.target.value; pintar(); });
+    caixa.hidden = false; pintar();
+    if (botao) { botao.textContent = 'Trocar de loja'; botao.hidden = false; botao.onclick = (e) => { e.stopPropagation(); document.getElementById('btn-mais')?.click(); }; }
+    buscarLista().then((nova) => { lojas = nova; pintar(); }).catch((e) => console.warn('[trocar de loja]', e && e.message));
 }
 
 // TROCAR DE BANCA: quem cuida de mais de uma banca (dono de dois pontos) escolhe qual abrir.
@@ -272,7 +394,7 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');
     if (!tab) return;
     const aba = tab.dataset.aba;
-    if (!podeAbrir(papelAtual, aba, TODAS_AS_ABAS, modulosDaLoja)) return;
+    if (!podeAbrir(papelAtual, aba, TODAS_AS_ABAS, modulosDaLoja, formatoDaLoja)) return;
     document.querySelectorAll('.tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
     document.querySelectorAll('.aba-content').forEach(c => c.classList.remove('active'));
 
@@ -399,7 +521,24 @@ const avisarModoSimples = (erro) => {
         </div>`);
 };
 
+// CHAVE DOS DADOS DO CLIENTE: o servidor só entrega a quem atende a loja. Fica só na memória desta página.
+const buscarChaveDosDados = async () => {
+    // internet fraca na hora do login: tenta 3 vezes antes de desistir (sem a chave, os nomes aparecem "(protegido)")
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
+        try {
+            const token = await auth.currentUser?.getIdToken();
+            const r = await fetch('/api/equipe', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ acao: 'chave-dados' }) });
+            const j = await r.json().catch(() => ({}));
+            if (r.ok) return j.chave || '';
+            if (r.status < 500 && r.status !== 429) return '';          // sem permissão: não adianta insistir
+        } catch (_) { /* sem conexão: tenta de novo */ }
+        await new Promise((ok) => setTimeout(ok, 1500 * (tentativa + 1)));
+    }
+    return '';
+};
+
 const iniciarRealTimeSync = () => {
+    carregarChave(buscarChaveDosDados);
     // Custo e ficha técnica moram em produtos_custos (privado). Aqui os dois se juntam,
     // e todas as abas continuam lendo p.custo e p.ficha como antes.
     let produtosBase = [], custosPorId = new Map();
@@ -408,30 +547,82 @@ const iniciarRealTimeSync = () => {
         renderProdutos();
         const abaAberta = (n) => document.getElementById(`aba-${n}`)?.classList.contains('active');
         ['estoque', 'compras', 'pdv'].forEach((n) => { if (abaAberta(n)) abrirTela(n); });
+        if (abaAberta('resumo')) TELAS.resumo().then((m) => m.atualizarResumo({ produtos: produtosAtuais })).catch(() => {});
+        if (abaAberta('impressora')) import('./admin-impressora.js').then((m) => m.definirProdutosImpressora(produtosAtuais)).catch(() => { /* tela ainda não carregou */ });
     };
-    if (cuidaDeEstoque(papelAtual)) unsubscribes.push(onSnapshot(tcol("produtos_custos"), (snap) => {
-        custosPorId = new Map(snap.docs.map(d => [d.id, d.data()])); juntarProdutos();
-    }, (e) => console.warn('[painel] custos:', e?.code || e)));
-    const unsubProd = onSnapshot(tcol("produtos"), (snap) => {
-        produtosBase = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }))
-            .sort((a, b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
-        juntarProdutos();
-    }, (e) => mostrarErroConsulta(e, 'lista-produtos'));
-    unsubscribes.push(unsubProd);
+    // Produtos e custos vêm de UM documento cada (loja/painel e loja/custos, montados pelo servidor), mais o que
+    // mudou há pouco. Sem documento (ou sem permissão), volta sozinho para ler um por um (js/painel-catalogo.js).
+    const escutaCustos = cuidaDeEstoque(papelAtual) ? ouvirCustosPainel({ onSnapshot, docCustos: tdoc('loja', 'custos'), colCustos: tcol('produtos_custos') }, {
+        aoMudar: (mapa) => { custosPorId = mapa; juntarProdutos(); },
+        aoErro: (e) => console.warn('[painel] custos:', e?.code || e),
+    }) : null;
+    if (escutaCustos) unsubscribes.push(escutaCustos);
+    // VIGIA: se a lista não chegar em 15 s, a cópia do banco neste aparelho travou (js/banco-travado-lib.js).
+    // Sem isto a tela ficava para sempre nos risquinhos de carregando, sem erro nem botão.
+    let listaChegou = false;
+    const vigiaLista = setTimeout(() => {
+        if (listaChegou) return;
+        const alvo = document.getElementById('lista-produtos');
+        if (!alvo || !alvo.querySelector('.pn-esqueleto')) return;
+        const semNet = navigator.onLine === false;
+        if (!semNet && !semCopia) marcarSoMemoria(localStorage);
+        avisarErro({ tipo: 'erro', msg: `Painel: a lista de produtos não chegou em ${ESPERA_LISTA_MS / 1000} s (${semNet ? 'sem internet' : semCopia ? 'já sem cópia' : 'cópia do aparelho travada'})` });
+        alvo.innerHTML = `<div class="pn-travou" role="alert"><p><strong>${semNet ? 'Sem internet.' : 'A lista de produtos não carregou.'}</strong></p>
+            <p>${semNet ? 'Confira o Wi-Fi ou os dados móveis e toque abaixo.' : 'Toque abaixo para carregar de novo. Este celular vai ler direto da internet, sem a cópia guardada que travou.'}</p>
+            <button type="button" class="bt bt-pri" id="btn-lista-recarregar">Carregar de novo</button></div>`;
+        document.getElementById('btn-lista-recarregar')?.addEventListener('click', () => location.reload());
+    }, ESPERA_LISTA_MS);
+    unsubscribes.push(() => clearTimeout(vigiaLista));
+    const escutaProdutos = ouvirProdutosPainel({ onSnapshot, query, where, docPainel: tdoc('loja', 'painel'), colProdutos: tcol('produtos') }, {
+        aoMudar: (lista) => {
+            listaChegou = true; clearTimeout(vigiaLista);
+            produtosBase = lista.sort((a, b) => (b.ultimaModificacao || 0) - (a.ultimaModificacao || 0));
+            juntarProdutos();
+        },
+        aoErro: (e) => mostrarErroConsulta(e, 'lista-produtos'),
+        // este aparelho acabou de salvar produto: o servidor remenda a vitrine e o painel (só esses produtos)
+        aoPendentes: (ids) => (ids.length ? pedirCatalogo('mudou', ids) : pedirCatalogo('tudo')),
+    });
+    unsubscribes.push(escutaProdutos);
+    guardarEscutas(escutaProdutos, escutaCustos);
+    pedirCatalogo('se-faltar', null, 1500);   // painel abriu: se a vitrine da loja ainda não tem o documento (ou está velho), monta
 
     const unsubConfig = onSnapshot(tdoc("loja", "config"), (snap) => {
+        configAtual = snap.exists() ? snap.data() : {};
+        if (document.getElementById('aba-resumo')?.classList.contains('active')) TELAS.resumo().then((m) => m.atualizarResumo({ config: configAtual })).catch(() => {});
         if (snap.exists()) {
             const data = snap.data();
             document.getElementById('config-wpp').value = data.wpp || '';
+            { const k = data.contato || {}; document.getElementById('config-instagram').value = k.instagram ? '@' + k.instagram : ''; document.getElementById('config-wpp-contato').value = k.whatsapp ? telefoneBonito(k.whatsapp) : ''; document.getElementById('config-mostrar-wpp').checked = k.mostrarWpp === true; }
             document.getElementById('config-minimo').value = data.minimo || 0;
             const ent = data.entrega || {}, campoHor = document.getElementById('config-horarios');
             if (document.activeElement?.id !== 'config-taxa') document.getElementById('config-taxa').value = Number(ent.taxa) > 0 ? ent.taxa : '';
             if (document.activeElement?.id !== 'config-gratis') document.getElementById('config-gratis').value = Number(ent.gratisAcima) > 0 ? ent.gratisAcima : '';
             if (campoHor && document.activeElement !== campoHor) campoHor.value = (Array.isArray(ent.horarios) ? ent.horarios : []).join('\n');
+            { const v = document.getElementById('config-vagas'), a = document.getElementById('config-antecedencia');
+              if (v && document.activeElement !== v) v.value = Number(ent.vagas) > 0 ? ent.vagas : '';
+              if (a && document.activeElement !== a) a.value = Number(ent.antecedenciaMin) > 0 ? String(Math.round(ent.antecedenciaMin / 30) / 2) : ''; }
+            // agenda das feiras (não redesenha enquanto a pessoa mexe nela, para não apagar o que ela digitou)
+            if (!agendaMexida) {
+                agenda = (Array.isArray(ent.agenda) ? ent.agenda : []).slice(0, 40).filter((r) => r && typeof r === 'object').map((r) => ({
+                    feira: String(r.feira || ''), dia: Number.isInteger(r.dia) ? r.dia : -1, entrega: r.entrega === true, retirada: r.retirada === true,
+                    horariosEntrega: (Array.isArray(r.horariosEntrega) ? r.horariosEntrega : []).map(String), horariosRetirada: (Array.isArray(r.horariosRetirada) ? r.horariosRetirada : []).map(String), local: String(r.local || ''),
+                }));
+                pintarAgenda();
+            }
+            const ret = ent.retirada && typeof ent.retirada === 'object' ? ent.retirada : {};
+            const diasRet = (Array.isArray(ret.dias) ? ret.dias : []).filter(Number.isInteger);
+            document.querySelectorAll('.chk-ret-dia').forEach((c) => { if (document.activeElement !== c) c.checked = !diasRet.length || diasRet.includes(Number(c.value)); });   // nenhum dia gravado = todos
+            const retAtiva = document.getElementById('config-retirada-ativa'), retHor = document.getElementById('config-retirada-horarios'), retLocal = document.getElementById('config-retirada-local');
+            if (retAtiva && document.activeElement !== retAtiva) retAtiva.checked = ret.ativa === true;
+            if (retHor && document.activeElement !== retHor) retHor.value = (Array.isArray(ret.horarios) ? ret.horarios : []).join('\n');
+            if (retLocal && document.activeElement !== retLocal) retLocal.value = ret.local || '';
             const chkPix = document.getElementById('config-pix'); if (chkPix) chkPix.checked = data.pixAutomatico === true;
+            const chkEnt = document.getElementById('config-pag-entrega'); if (chkEnt) chkEnt.checked = data.pagamentoNaEntrega === true;
+            { const fp = data.formasPagamento || {}; ['pix', 'cartao', 'dinheiro'].forEach((k) => { const c = document.getElementById(`config-forma-${k}`); if (c) c.checked = fp[k] !== false; }); }
             const px = data.pix || {}; [['config-pix-tipo', px.tipo || 'celular'], ['config-pix-chave', px.chave || ''], ['config-pix-nome', px.nome || ''], ['config-pix-cidade', px.cidade || '']].forEach(([id, v]) => { const el = document.getElementById(id); if (el) el.value = v; });
             const cid = document.getElementById('config-cidade'); if (cid && document.activeElement !== cid) cid.value = data.cidade || '';
-            const grupoPix = document.getElementById('grupo-pix'); if (grupoPix) grupoPix.hidden = !ehLojaOriginal;   // a conta do PagBank no servidor é a da loja original
+            const grupoPix = document.getElementById('grupo-pix'); if (grupoPix) grupoPix.hidden = !podePixAutomatico();   // loja original (conta da plataforma) ou banca com carteira Asaas
             document.getElementById('config-status-loja').value = data.lojaAberta === false ? "fechada" : "aberta";
             const diasSalvos = data.diasAbertos || [0, 1, 2, 3, 4, 5, 6];
             document.querySelectorAll('.chk-dia').forEach(chk => chk.checked = diasSalvos.includes(parseInt(chk.value)));
@@ -452,7 +643,25 @@ const iniciarRealTimeSync = () => {
     if (ehGestor(papelAtual)) iniciarCupons();
     unsubscribes.push(...iniciarCategoriasAdmin(() => produtosAtuais));
     // Produção e Estoque não têm a fila de pedidos: não gasta leitura com ela.
-    if (!podeAbrir(papelAtual, 'relatorios', TODAS_AS_ABAS, modulosDaLoja)) return;
+    if (!podeAbrir(papelAtual, 'relatorios', TODAS_AS_ABAS, modulosDaLoja, formatoDaLoja)) return;
+
+    // IMPRESSÃO AUTOMÁTICA (js/impressao-auto.js): quem atende pedidos pode deixar este aparelho
+    // imprimindo sozinho. Ela recebe a fila (abaixo, em aplicarPedidos) e os cancelados recentes,
+    // para o aviso "PEDIDO CANCELADO" de quem já tinha saído no papel.
+    TELAS.impressaoAuto().then((m) => {
+        impAuto = m; m.iniciar();
+        if (filaRecebida) m.aoMudarPedidos(pedidosGerais);
+        // os cancelados (15 leituras ao abrir) só interessam a quem imprime sozinho: ouve quando a automática liga
+        const ouvirCancelados = () => {
+            const qCancelados = query(tcol("pedidos"), where("status", "==", "cancelado"), orderBy("data", "desc"), limit(15));
+            unsubscribes.push(onSnapshot(qCancelados, async (snap) => {
+                try { m.aoMudarCancelados(await abrirPedidos(snap.docs.map((d) => ({ ...d.data(), id: d.id })))); } catch (e) { console.warn('[impressao-auto] cancelados', e); }
+            }, (e) => console.warn('[impressao-auto] cancelados sem índice: o aviso de cancelado fica desligado', e)));
+        };
+        const ligada = () => { try { return typeof m.ativo !== 'function' || m.ativo(); } catch (_) { return true; } };
+        if (ligada()) ouvirCancelados();
+        else { const vigia = setInterval(() => { if (!auth.currentUser) return clearInterval(vigia); if (ligada()) { clearInterval(vigia); ouvirCancelados(); } }, 20000); }
+    }).catch((e) => console.error('[impressao-auto]', e));
 
     // ATENÇÃO: esta consulta combina "where in" + "orderBy", o que exige um
     // ÍNDICE COMPOSTO no Firestore. Se aparecer erro no console com um link,
@@ -468,8 +677,18 @@ const iniciarRealTimeSync = () => {
     // -----------------------------------------------------------------
     let cargaInicial = true;
 
+    // Os pedidos chegam com os dados do cliente cifrados: abre antes de desenhar. A conta "vez" garante que
+    // uma leva mais antiga, que terminou de abrir depois, não passe por cima da mais nova.
+    let vezDaFila = 0;
+    const receberPedidos = async (lista) => {
+        const vez = ++vezDaFila;
+        const abertos = await abrirPedidos(lista);
+        if (vez === vezDaFila) aplicarPedidos(abertos);
+    };
+
     const aplicarPedidos = (docs) => {
-        pedidosGerais = docs;
+        pedidosGerais = docs; filaRecebida = true;
+        try { impAuto?.aoMudarPedidos(docs); } catch (e) { console.error('[impressao-auto]', e); }   // a impressão nunca atrapalha a fila na tela
         // quantos pedidos esperam alguém: aparece na aba e no botão do menu
         const esperando = docs.filter(p => ['pendente', 'aguardando_pesagem'].includes(p.status)).length;
         const tabPed = document.querySelector('.tab[data-aba="relatorios"]');
@@ -479,6 +698,7 @@ const iniciarRealTimeSync = () => {
         if (document.getElementById('aba-relatorios')?.classList.contains('active')) {
             renderRelatoriosMaster();
         }
+        if (document.getElementById('aba-resumo')?.classList.contains('active')) TELAS.resumo().then((m) => m.atualizarResumo({ fila: docs })).catch(() => {});   // "esperando você" se mexe sozinho
     };
 
     // No Android, "new Notification()" lança erro (lá só funciona via service
@@ -513,7 +733,7 @@ const iniciarRealTimeSync = () => {
         // O unsubscribe é guardado — sem isso o listener sobreviveria ao logout.
         const unsub = onSnapshot(qSimples, { includeMetadataChanges: true }, (snap) => {
             avisarCopiaVelha(snap);
-            aplicarPedidos(
+            receberPedidos(
                 snap.docs.map(d => ({ ...d.data(), id: d.id }))
                          .filter(p => STATUS_NA_FILA.includes(p.status))
             );
@@ -544,7 +764,7 @@ const iniciarRealTimeSync = () => {
 
     const unsubPedidos = onSnapshot(qComIndice, { includeMetadataChanges: true }, (snap) => {
         avisarCopiaVelha(snap);
-        aplicarPedidos(snap.docs.map(d => ({ ...d.data(), id: d.id })));
+        receberPedidos(snap.docs.map(d => ({ ...d.data(), id: d.id })));
         avisarFilaCheia(snap.size >= LIMITE_FILA);
         avisarSeChegouPedido(snap);
     }, (erro) => {
@@ -555,7 +775,8 @@ const iniciarRealTimeSync = () => {
     });
     unsubscribes.push(unsubPedidos);
 
-    try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch (_) { /* navegador sem suporte */ }
+    // pede a permissão e, dada, já CADASTRA o aparelho no servidor (antes só dava a permissão e o aviso com o painel fechado nunca chegava)
+    try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().then(() => TELAS.avisos().then((m) => m.iniciarAvisos())).catch(() => {}); } catch (_) { /* navegador sem suporte */ }
 };
 
 document.getElementById('admin-busca-input')?.addEventListener('input', (e) => {
@@ -580,17 +801,48 @@ const FILTROS_PRODUTO = [
     ['baixo', 'Estoque baixo', (p) => temEstoque(p) && Number(p.estoqueFisico) <= 5],
     ['semfoto', 'Sem foto', (p) => !p.foto && !p.soInsumo],
     ['oferta', 'Em oferta', (p) => Number(p.precoDe) > Number(p.preco)],
+    ['chegou', 'Chegou hoje', (p) => p.chegouEm === hojeDaLoja()],
+    ['selo', 'Com selo', (p) => p.chegouEm === hojeDaLoja() || p.estacao === true || p.escolha === true],
     ['insumo', 'Só ingrediente', (p) => p.soInsumo === true],
 ];
+// Botões de categoria (Temperos, Verduras...) em cima dos filtros: a escolha fica guardada neste aparelho até fechar.
+const PL_CAT = chave('banca_produtos_categoria');
+let adminCategoria = (() => { try { return sessionStorage.getItem(PL_CAT) || TODAS; } catch (_) { return TODAS; } })();
+// "Selecionar vários": tocar na linha marca o produto; a barra de baixo põe na loja, tira ou marca "chegou hoje" de uma vez
+const plSel = { ligado: false, ids: new Set(), preco: false, precoTexto: '' };
+const arteDaCategoria = (nome) => ARTE_CATEGORIA[iconeDaCategoria(nome)] || ARTE_CATEGORIA.cesta;
 const renderProdutos = () => {
-    const daBusca = produtosAtuais.filter(p => !adminBuscaTermo || normalizar(p.nome).includes(adminBuscaTermo) || normalizar(nomeDaCategoria(p.cat)).includes(adminBuscaTermo) || normalizar(p.cat).includes(adminBuscaTermo));
+    // a mesma busca da loja (js/busca-lib.js): perdoa acento, plural, letra trocada e vizinhas invertidas, e acha pelas palavras do produto
+    const daBusca = produtosAtuais.filter(p => !adminBuscaTermo || normalizar(p.nome).includes(adminBuscaTermo) || normalizar(nomeDaCategoria(p.cat)).includes(adminBuscaTermo) || normalizar(p.cat).includes(adminBuscaTermo) || combinaBusca(textoDeBusca(p, nomeDaCategoria(p.cat)), adminBuscaTermo));
+    const cats = categoriasDaLista(daBusca, ordemDasCategorias(), nomeDaCategoria);
+    if (adminCategoria !== TODAS && !cats.some((c) => c.chave === adminCategoria)) adminCategoria = TODAS;
+    const caixaCats = document.getElementById('pl-cats');
+    if (caixaCats) {
+        caixaCats.hidden = cats.length < 2;
+        caixaCats.innerHTML = [{ chave: TODAS, nome: 'Todas', n: daBusca.length }, ...cats].map((c) => `
+            <button type="button" class="pl-cat${adminCategoria === c.chave ? ' on' : ''}" data-pl-cat="${escapeHTML(c.chave)}" aria-pressed="${adminCategoria === c.chave}">
+                <span class="pl-cat-ico">${c.chave === TODAS ? ARTE_CATEGORIA.todas : arteDaCategoria(c.nome)}</span><span class="pl-cat-nome">${escapeHTML(c.nome)}</span><i>${c.n}</i>
+            </button>`).join('');
+    }
+    const daCategoria = daBusca.filter((p) => passaNaCategoria(p, adminCategoria));
     const filtros = document.getElementById('pl-filtros');
     if (filtros) {
-        if (!FILTROS_PRODUTO.some(([k, , f]) => k === adminFiltro && daBusca.some(f))) adminFiltro = 'todos';
-        filtros.innerHTML = FILTROS_PRODUTO.map(([k, rot, f]) => { const n = daBusca.filter(f).length; return n || k === 'todos' ? `<button type="button" class="pl-filtro${adminFiltro === k ? ' on' : ''}" data-pl-filtro="${k}" aria-pressed="${adminFiltro === k}">${rot} <i>${n}</i></button>` : ''; }).join('');
+        if (!FILTROS_PRODUTO.some(([k, , f]) => k === adminFiltro && daCategoria.some(f))) adminFiltro = 'todos';
+        filtros.innerHTML = FILTROS_PRODUTO.map(([k, rot, f]) => { const n = daCategoria.filter(f).length; return n || k === 'todos' ? `<button type="button" class="pl-filtro${adminFiltro === k ? ' on' : ''}" data-pl-filtro="${k}" aria-pressed="${adminFiltro === k}">${rot} <i>${n}</i></button>` : ''; }).join('');
     }
     const passa = (FILTROS_PRODUTO.find(([k]) => k === adminFiltro) || FILTROS_PRODUTO[0])[2];
-    const lista = daBusca.filter(passa).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+    const lista = daCategoria.filter(passa).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+    // escolhidos que sumiram (apagados, ou fora da busca) saem da seleção
+    const naTela = new Set(lista.map((p) => p.id)); for (const id of [...plSel.ids]) if (!naTela.has(id)) plSel.ids.delete(id);
+
+    const cabeca = document.getElementById('pl-cabeca');
+    if (cabeca) {
+        const titulo = adminCategoria === TODAS ? 'Todos os produtos' : (cats.find((c) => c.chave === adminCategoria) || {}).nome || '';
+        const todosMarcados = lista.length > 0 && lista.every((p) => plSel.ids.has(p.id));
+        cabeca.innerHTML = lista.length ? `<b>${escapeHTML(titulo)}</b><span>${lista.length === 1 ? '1 produto' : `${lista.length} produtos`}</span>
+            ${plSel.ligado ? `<button type="button" class="pl-cabeca-bt" data-pl-sel="todos">${todosMarcados ? 'Desmarcar todos' : 'Marcar todos'}</button>`
+                : `<button type="button" class="pl-cabeca-bt" data-pl-sel="ligar"><i class="ic" data-i="certo"></i> Selecionar vários</button>`}` : '';
+    }
 
     const html = lista.map(p => {
         const avisos = [];
@@ -598,27 +850,119 @@ const renderProdutos = () => {
         if (Number(p.precoDe) > Number(p.preco)) avisos.push('<span class="pl-selo oferta">oferta</span>');
         else if (p.precosDia && Object.values(p.precosDia).some((v) => Number(v) > 0)) avisos.push('<span class="pl-selo">preço por dia</span>');
         if (temEstoque(p)) { const q = Number(p.estoqueFisico); avisos.push(q <= 0 ? '<span class="pl-selo ruim">estoque zerado</span>' : q <= 5 ? `<span class="pl-selo atencao">restam ${q}</span>` : `<span class="pl-selo">estoque ${q}</span>`); }
+        if (Array.isArray(p.dias) && p.dias.length && p.dias.length < 7) avisos.push(`<span class="pl-selo">só ${escapeHTML(p.dias.slice().sort().map((d) => ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'][d]).filter(Boolean).join(', '))}</span>`);
+        if (p.chegouEm === hojeDaLoja()) avisos.push('<span class="pl-selo bom">chegou hoje</span>');
+        if (p.estacao === true) avisos.push('<span class="pl-selo bom">da estação</span>');
+        if (p.escolha === true) avisos.push('<span class="pl-selo bom">escolha da casa</span>');
         if (!p.foto && !p.soInsumo) avisos.push('<span class="pl-selo atencao">sem foto</span>');
         // sem o peso médio, o cliente não vê estimativa de preço ao pedir "5 unidades" de um produto vendido a peso
         if (ehFracionavel(p.unidade) && !p.pesoMedio && !p.soInsumo) avisos.push('<span class="pl-selo atencao">sem peso médio</span>');
         const cat = nomeDaCategoria(p.cat);
+        const marcado = plSel.ids.has(p.id);
         return `
-        <article class="pl-item${p.ativo ? '' : ' fora'}">
-            <button type="button" class="pl-abrir" data-action="editar-produto" data-id="${escapeHTML(p.id)}">
-                <span class="pl-foto">${/^https:\/\//i.test(String(p.fotoMini || p.foto || '')) ? `<img src="${escapeHTML(miniatura(p.fotoMini || p.foto, 128))}" data-original="${escapeHTML(p.fotoMini || p.foto)}" loading="lazy" decoding="async" alt="">` : placeholderSVG}</span>
+        <article class="pl-item${p.ativo ? '' : ' fora'}${plSel.ligado ? ' marcando' : ''}${marcado ? ' marcado' : ''}">
+            <button type="button" class="pl-abrir" ${plSel.ligado ? `data-pl-marcar="${escapeHTML(p.id)}" role="checkbox" aria-checked="${marcado}"` : `data-action="editar-produto" data-id="${escapeHTML(p.id)}"`}>
+                ${plSel.ligado ? '<span class="pl-marca" aria-hidden="true"></span>' : ''}
+                <span class="pl-foto">${/^https:\/\//i.test(String(p.fotoMini || p.foto || '')) ? `<img src="${escapeHTML(miniatura(p.fotoMini || p.foto, 128))}"${p.fotoMini && https(p.foto) && p.foto !== p.fotoMini ? ` data-reserva="${escapeHTML(miniatura(p.foto, 128))}"` : ''}${ehImgbb(p.fotoMini || p.foto) ? ' data-fora-do-ar="1"' : ` data-original="${escapeHTML(p.fotoMini || p.foto)}"`} loading="lazy" decoding="async" alt="">` : '<span class="pl-sem-foto">Sem foto</span>'}</span>
                 <span class="pl-txt">
                     <b>${escapeHTML(p.nome)}</b>
-                    <span class="pl-sub">${Number(p.preco) > 0 ? `${fmt(p.preco)} / ${escapeHTML(p.unidade || 'un')}` : 'sem preço'}${cat ? ` · ${escapeHTML(cat)}` : ''}${p.ativo ? '' : ' · <em>fora da loja</em>'}</span>
+                    <span class="pl-sub">${Number(p.preco) > 0 ? `${fmt(p.preco)} / ${ehPacote(p) ? 'pacote' : escapeHTML(p.unidade || 'un')}` : 'sem preço'}${promoDe(p) ? ` · ${escapeHTML(textoPromo(promoDe(p)))}` : ''}${cat ? ` · ${escapeHTML(cat)}` : ''}${p.ativo ? '' : ' · <em>fora da loja</em>'}</span>
                     ${avisos.length ? `<span class="pl-avisos">${avisos.join('')}</span>` : ''}
                 </span>
             </button>
-            ${p.soInsumo ? '' : `<button type="button" class="pl-chave" role="switch" aria-checked="${p.ativo ? 'true' : 'false'}" aria-label="${p.ativo ? 'À venda' : 'Fora da loja'}: ${escapeHTML(p.nome)}" data-action="toggle-estoque" data-id="${escapeHTML(p.id)}" data-status="${p.ativo ? 'false' : 'true'}"><i></i></button>`}
+            ${plSel.ligado || p.soInsumo || !p.ativo ? '' : `<button type="button" class="pl-chegou${p.chegouEm === hojeDaLoja() ? ' on' : ''}" data-action="chegou-hoje" data-id="${escapeHTML(p.id)}" aria-pressed="${p.chegouEm === hojeDaLoja()}" aria-label="Chegou hoje: ${escapeHTML(p.nome)}" title="Marcar que chegou hoje (some sozinho amanhã)">${ico('broto')}<span>hoje</span></button>`}
+            ${plSel.ligado || p.soInsumo ? '' : `<button type="button" class="pl-chave" role="switch" aria-checked="${p.ativo ? 'true' : 'false'}" aria-label="${p.ativo ? 'À venda' : 'Fora da loja'}: ${escapeHTML(p.nome)}" data-action="toggle-estoque" data-id="${escapeHTML(p.id)}" data-status="${p.ativo ? 'false' : 'true'}"><i></i></button>`}
         </article>`;
     }).join('');
 
-    document.getElementById('lista-produtos').innerHTML = html || `<p class="pl-vazio">${produtosAtuais.length ? 'Nenhum produto com essa busca.' : 'Nenhum produto cadastrado ainda. Toque em "Novo produto".'}</p>`;
+    document.getElementById('lista-produtos').innerHTML = html || (produtosAtuais.length
+        ? estadoVazio({ icone: 'produtos', titulo: 'Nenhum produto aqui', texto: 'Toque em "Todos" para ver a lista inteira, ou mude a busca.', compacto: true })
+        : estadoVazio({ icone: 'produtos', titulo: 'Nenhum produto cadastrado ainda', texto: 'Cadastre o primeiro: foto, nome e preço. Ele já aparece na loja.',
+            acao: { texto: '+ Novo produto', atributos: 'data-action="novo-produto"' } }));
+    pintarLote();
 };
 document.getElementById('pl-filtros')?.addEventListener('click', (e) => { const b = e.target.closest('[data-pl-filtro]'); if (!b) return; adminFiltro = b.dataset.plFiltro; renderProdutos(); });
+document.getElementById('pl-cats')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pl-cat]'); if (!b) return;
+    adminCategoria = b.dataset.plCat;
+    try { sessionStorage.setItem(PL_CAT, adminCategoria); } catch (_) { /* armazenamento bloqueado: só não lembra */ }
+    renderProdutos();
+    b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+});
+document.addEventListener('categorias:mudou', () => renderProdutos());
+
+// ---- vários produtos de uma vez ----
+const sairDaSelecao = () => { plSel.ligado = false; plSel.ids.clear(); plSel.preco = false; renderProdutos(); };
+function pintarLote() {
+    const barra = document.getElementById('pl-lote'); if (!barra) return;
+    barra.hidden = !plSel.ligado;
+    document.getElementById('aba-produtos')?.classList.toggle('pl-com-lote', plSel.ligado);
+    if (!plSel.ligado) return;
+    const n = plSel.ids.size;
+    barra.innerHTML = `<div class="pl-lote-topo"><b>${n === 0 ? 'Toque nos produtos para marcar' : n === 1 ? '1 marcado' : `${n} marcados`}</b>
+            <button type="button" class="pl-lote-sair" data-pl-sel="sair">Cancelar</button></div>
+        <div class="pl-lote-acoes">
+            <button type="button" class="bt bt-pri" data-pl-lote="chegou"${n ? '' : ' disabled'}>${ico('broto')} Chegou hoje</button>
+            <button type="button" class="bt bt-sec" data-pl-lote="loja"${n ? '' : ' disabled'}>Pôr na loja</button>
+            <button type="button" class="bt bt-sec" data-pl-lote="fora"${n ? '' : ' disabled'}>Tirar da loja</button>
+            <button type="button" class="bt bt-sec${plSel.preco ? ' on' : ''}" data-pl-sel="preco" aria-expanded="${plSel.preco}"${n ? '' : ' disabled'}>Mudar preço</button>
+        </div>
+        ${plSel.preco && n ? `<div class="pl-lote-preco"><input type="text" id="pl-lote-preco" inputmode="decimal" autocomplete="off" placeholder="Novo preço de ${n === 1 ? 'todos' : `todos os ${n}`} (R$)" aria-label="Novo preço dos marcados" value="${escapeHTML(plSel.precoTexto)}">
+            <button type="button" class="bt bt-pri" data-pl-lote="preco">Aplicar</button></div>` : ''}`;
+}
+async function aplicarLote(acao, bt) {
+    const escolhidos = produtosAtuais.filter((p) => plSel.ids.has(p.id));
+    const preco = acao === 'preco' ? lerPreco(plSel.precoTexto) : 0;
+    if (acao === 'preco' && !(preco > 0)) { showToast('Escreva o novo preço. Ex.: 16 ou 16,50', true); document.getElementById('pl-lote-preco')?.focus(); return; }
+    const mud = mudancasEmLote(escolhidos, acao, hojeDaLoja(), Date.now(), preco);
+    if (!mud.length) { showToast(acao === 'preco' ? `Os marcados já custam ${fmt(preco)}.` : acao === 'fora' ? 'Os marcados já estão fora da loja.' : 'Os marcados já estão assim.'); return; }
+    // "tirar da loja" não pergunta mais: acontece na hora e o aviso traz Desfazer (volta cada um como estava)
+    const antes = acao === 'fora' ? mud.map(({ id }) => { const p = produtosAtuais.find((x) => x.id === id); return { id, ativo: p ? p.ativo !== false : true }; }) : null;
+    bt.disabled = true;
+    try {
+        for (let i = 0; i < mud.length; i += 400) {            // o banco aceita até 500 por vez
+            const lote = writeBatch(db);
+            mud.slice(i, i + 400).forEach(({ id, dados }) => lote.set(tdoc('produtos', id), dados, { merge: true }));
+            await lote.commit();
+        }
+        mud.forEach(({ id, dados }) => produtoSalvo(id, dados));    // painel já mostra; servidor remenda só esses
+        const q = mud.length === 1 ? '1 produto' : `${mud.length} produtos`;
+        const nomesLote = mud.slice(0, 6).map(({ id }) => (produtosAtuais.find((x) => x.id === id) || {}).nome || id).join(', ') + (mud.length > 6 ? ` e mais ${mud.length - 6}` : '');
+        anotar(acao === 'preco' ? 'preco-em-lote' : acao === 'fora' ? 'fora-da-loja' : acao === 'chegou' ? 'chegou-hoje' : 'de-volta', `${acao === 'preco' ? `${fmt(preco)}: ` : ''}${nomesLote}`);
+        if (acao === 'preco') plSel.precoTexto = '';
+        if (acao === 'fora') avisoComDesfazer(`${q} fora da loja.`, async () => {
+            for (let i = 0; i < antes.length; i += 400) {
+                const lote = writeBatch(db);
+                antes.slice(i, i + 400).forEach(({ id, ativo }) => lote.set(tdoc('produtos', id), { ativo, ultimaModificacao: Date.now() }, { merge: true }));
+                await lote.commit();
+            }
+            antes.forEach(({ id, ativo }) => produtoSalvo(id, { ativo }));
+        });
+        else showToast(acao === 'preco' ? `${q} agora por ${fmt(preco)}.` : acao === 'chegou' ? `${q} na loja com "Chegou hoje" até o fim do dia.` : `${q} de volta na loja.`);
+        sairDaSelecao();
+    } catch (e) { console.error('[lote]', e); showToast('Não consegui salvar. Confira a internet e tente de novo.', true); bt.disabled = false; }
+}
+document.getElementById('aba-produtos')?.addEventListener('click', (e) => {
+    const m = e.target.closest('[data-pl-marcar]');
+    if (m) { const id = m.dataset.plMarcar; if (plSel.ids.has(id)) plSel.ids.delete(id); else plSel.ids.add(id); renderProdutos(); return; }
+    const s = e.target.closest('[data-pl-sel]');
+    if (s) {
+        const a = s.dataset.plSel;
+        if (a === 'ligar') { plSel.ligado = true; plSel.ids.clear(); renderProdutos(); }
+        else if (a === 'sair') sairDaSelecao();
+        else if (a === 'preco') { plSel.preco = !plSel.preco; pintarLote(); document.getElementById('pl-lote-preco')?.focus(); }
+        else if (a === 'todos') {
+            const visiveis = [...document.querySelectorAll('#lista-produtos [data-pl-marcar]')].map((b) => b.dataset.plMarcar);
+            const todos = visiveis.every((id) => plSel.ids.has(id));
+            visiveis.forEach((id) => (todos ? plSel.ids.delete(id) : plSel.ids.add(id)));
+            renderProdutos();
+        }
+        return;
+    }
+    const l = e.target.closest('[data-pl-lote]'); if (l && !l.disabled) aplicarLote(l.dataset.plLote, l);
+});
+document.getElementById('aba-produtos')?.addEventListener('input', (e) => { if (e.target.id === 'pl-lote-preco') plSel.precoTexto = e.target.value; });
+document.getElementById('aba-produtos')?.addEventListener('keydown', (e) => { if (e.target.id === 'pl-lote-preco' && e.key === 'Enter') { e.preventDefault(); document.querySelector('[data-pl-lote="preco"]')?.click(); } });
 
 // Banco de fotos: escolhe uma foto já enviada, sem galeria nem link.
 document.getElementById('btn-banco-fotos')?.addEventListener('click', async () => {
@@ -666,6 +1010,7 @@ const definirUnidade = (valor) => {
     if (igual) v = igual.value;
     else sel.add(new Option(v, v));
     sel.value = v;
+    pintarUnidades();
 };
 
 const alternarCampoPesoMedio = () => {
@@ -679,6 +1024,44 @@ const alternarCampoPesoMedio = () => {
 };
 document.getElementById('edit-unidade')?.addEventListener('change', alternarCampoPesoMedio);
 
+// PACOTE e PROMOÇÃO (js/pacote-lib.js): só aparecem no que NÃO vai à balança; "como chamar 1 unidade", só no que vai.
+const v$ = (id) => document.getElementById(id);
+const reaisAdm = (c) => fmt(c / 100);
+const pintarPacote = () => {
+    const un = v$('edit-unidade')?.value, frac = ehFracionavel(un), g = v$('grupo-pacote');
+    if (!g) return;
+    g.hidden = frac;
+    const ico = g.querySelector('[data-arte="pacote"]'); if (ico && !ico.innerHTML) ico.innerHTML = ARTE_PACOTE;
+    const pac = !!v$('edit-pacote')?.checked;
+    v$('grupo-peso-pacote').hidden = !pac;
+    g.classList.toggle('ligado', pac);
+    const preco = parseFloat(v$('edit-preco')?.value);
+    const { dados, erro } = cadastroPacote({ pacote: pac, unidade: un, preco, promoQtd: v$('edit-promo-qtd')?.value, promoPreco: v$('edit-promo-preco')?.value });
+    const previa = v$('promo-previa');
+    if (previa) {
+        const promo = !erro && dados.promoQtd ? promoDe({ unidade: un, promoQtd: dados.promoQtd, promoPreco: dados.promoPreco }, preco) : null;
+        const nome = pac ? 'pacote' : 'unidade', q = promo ? promo.qtd : 0;
+        previa.classList.toggle('erro', !!erro);
+        previa.textContent = erro || (promo
+            ? `Na loja: ${fmt(preco)} ${pac ? 'o pacote' : 'cada'} · ${textoPromo(promo)}. ${[q - 1, q, q + 1].map((n) => `${n} = ${reaisAdm(totalComPromo(preco, n, promo))}`).join(' · ')}${pac ? '. Vale misturando com outros pacotes da mesma promoção (2 de um + 2 de outro).' : ''}`
+            : `Ex.: leve 4 por R$ 10,00. Quem levar 4 paga R$ 10; o que passar volta ao preço normal da ${nome}. Em branco: sem promoção.`);
+    }
+    const pn = v$('nome-un-previa');
+    if (pn) { const n = nomesDaUnidade(v$('edit-nome-un')?.value); pn.textContent = `Na loja: "+ 1 ${n.um}" e, na sacola, "${emPalavras(2, n)}" em vez de "2 un".`; }
+};
+['edit-unidade', 'edit-pacote', 'edit-promo-qtd', 'edit-promo-preco', 'edit-preco', 'edit-nome-un'].forEach((id) => {
+    v$(id)?.addEventListener('input', pintarPacote); v$(id)?.addEventListener('change', pintarPacote);
+});
+const preencherPacote = (p) => {
+    if (!v$('edit-pacote')) return;
+    v$('edit-pacote').checked = !!(p && p.pacote === true);
+    v$('edit-peso-pacote').value = (p && p.pesoPacote) || '';
+    v$('edit-promo-qtd').value = p && Number(p.promoQtd) >= 2 ? p.promoQtd : '';
+    v$('edit-promo-preco').value = p && Number(p.promoPreco) > 0 ? String(p.promoPreco).replace('.', ',') : '';
+    v$('edit-nome-un').value = (p && p.nomeUn) || '';
+    pintarPacote();
+};
+
 // Formulário de produto EM BRANCO. Usado pelo "novo produto" e pelo kit criado com IA:
 // sem isto o kit herdava estoque, preço de oferta e "só ingrediente" do último produto aberto.
 const limparFormularioProduto = () => {
@@ -687,21 +1070,149 @@ const limparFormularioProduto = () => {
     const est = document.getElementById('edit-estoque-fisico'); if (est) { est.value = ''; est.dataset.aoAbrir = ''; }
     if (document.getElementById('edit-duracao')) document.getElementById('edit-duracao').value = 'normal';
     if (document.getElementById('edit-so-insumo')) document.getElementById('edit-so-insumo').checked = false;
+    ['edit-selo-chegou', 'edit-selo-estacao', 'edit-selo-escolha'].forEach((i) => { const c = document.getElementById(i); if (c) c.checked = false; });
     if (document.getElementById('edit-peso-medio')) document.getElementById('edit-peso-medio').value = '';
     if (document.getElementById('edit-mostrar-primeiro')) document.getElementById('edit-mostrar-primeiro').value = 'un';
     const url = document.getElementById('edit-foto-url'); if (url) { delete url.dataset.bancoUrl; delete url.dataset.bancoMini; }
-    definirUnidade('kg');          // produto novo começa sempre em "Quilo" (antes herdava o do último aberto)
+    definirUnidade(unidadeMaisUsada(produtosAtuais));   // produto novo começa na unidade mais usada da loja (antes herdava a do último aberto)
     alternarCampoPesoMedio();
+    preencherPacote(null);
+    preencherDias(null);
+    iniciarMontarAdmin({ produtos: () => produtosAtuais }); preencherMontar(null);
     const previa = document.getElementById('preview-foto-wrapper'); if (previa) previa.innerHTML = placeholderSVG;
+    ligarVideo(); mostrarVideo('');
     document.getElementById('btn-excluir-produto').style.display = 'none';
+    { const g = document.getElementById('grupo-rotulo-produto'); if (g) g.hidden = true; }
     { const bp = document.getElementById('btn-post-ia'); if (bp) bp.hidden = true; }
+    modoDoFormulario('novo');
 };
+
+// =====================================================================
+// CADASTRO RÁPIDO (js/cadastro-lib.js)
+//  • unidade e categoria em botões (um toque, sem lista para abrir);
+//  • produto novo já vem com a categoria que está aberta na lista e a unidade mais usada nela;
+//  • "Salvar e criar outro igual": guarda e deixa preço, unidade e categoria — só troca o nome;
+//  • "Criar outro parecido": a partir de um produto aberto;
+//  • o que é de cada loja (quanto dura na banca, peso médio...) fica em "Mais opções",
+//    e a plataforma escolhe por loja o que aparece (ficha.campos).
+// =====================================================================
+const $p = (id) => document.getElementById(id);
+const NOMES_UNIDADE = { kg: 'Quilo', un: 'Unidade', 'maço': 'Maço', bdj: 'Bandeja', kit: 'Kit / Cesta' };
+const CURTOS_CAMPO = { oferta: 'oferta', estoque: 'estoque', pacote: 'pacote e promoção', pesoMedio: 'peso médio', selos: 'selos', descricao: 'descrição', insumo: 'só ingrediente', duracao: 'quanto dura', rotulo: 'rótulo' };   // (montar tem bloco próprio)
+let camposLoja = null, unidadeMexida = false, repetidos = 0;
+function aplicarCampos(ficha) {
+    camposLoja = camposDaLoja(ficha, ehLojaOriginal);
+    const m = $p('modal-produto'); if (!m) return;
+    Object.entries(camposLoja).forEach(([k, on]) => m.classList.toggle(`sem-${k}`, !on));
+    resumoMaisOpcoes();
+}
+function resumoMaisOpcoes() {
+    const mais = $p('prod-mais'), res = $p('prod-mais-resumo'); if (!mais || !res) return;
+    const lig = Object.entries(camposLoja || camposDaLoja(null, ehLojaOriginal)).filter(([, on]) => on).map(([k]) => CURTOS_CAMPO[k]).filter(Boolean);
+    mais.hidden = !lig.length;
+    res.textContent = lig.length > 4 ? `${lig.slice(0, 4).join(', ')}…` : lig.join(', ');
+}
+function pintarUnidades() {
+    const sel = $p('edit-unidade'), box = $p('unidade-chips'); if (!sel || !box) return;
+    box.innerHTML = [...sel.options].map((o) => { const on = o.value === sel.value; return `<button type="button" class="prod-chip${on ? ' on' : ''}" role="radio" aria-checked="${on}" data-unidade="${escapeHTML(o.value)}">${escapeHTML(NOMES_UNIDADE[o.value] || o.textContent)}</button>`; }).join('');
+}
+const categoriasParaEscolher = () => {
+    const vistas = new Map();
+    ordemDasCategorias().forEach((k) => { if (k && !vistas.has(normalizar(k))) vistas.set(normalizar(k), k); });
+    produtosAtuais.forEach((p) => { if (p.cat && !vistas.has(normalizar(p.cat))) vistas.set(normalizar(p.cat), p.cat); });
+    return [...vistas.values()].map((k) => ({ chave: k, nome: nomeDaCategoria(k) || k }));
+};
+function pintarCategorias() {
+    const box = $p('cat-chips'), campo = $p('edit-cat'); if (!box || !campo) return;
+    const atual = normalizar(chaveDaCategoria(campo.value));
+    const lista = categoriasParaEscolher();
+    box.hidden = !lista.length;
+    box.innerHTML = lista.map((c) => { const on = !!atual && normalizar(c.chave) === atual; return `<button type="button" class="prod-chip prod-chip-cat${on ? ' on' : ''}" role="radio" aria-checked="${on}" data-cat-nome="${escapeHTML(c.nome)}"><span class="prod-chip-ico" aria-hidden="true">${arteDaCategoria(c.nome)}</span>${escapeHTML(c.nome)}</button>`; }).join('');
+}
+// categoria escolhida num produto NOVO: a unidade vira a mais usada nela (se a pessoa ainda não escolheu) e o preço mostra o mais comum como dica
+function aoMudarCategoria() {
+    const chaveCat = chaveDaCategoria($p('edit-cat')?.value || '');
+    const novo = !$p('edit-id')?.value;
+    if (novo && !unidadeMexida && chaveCat) {
+        const un = unidadeMaisUsada(produtosAtuais, chaveCat);
+        if (un !== $p('edit-unidade')?.value) { definirUnidade(un); $p('edit-unidade').dispatchEvent(new Event('change')); }
+    }
+    const pm = novo ? precoMaisUsado(produtosAtuais, chaveCat) : null, preco = $p('edit-preco');
+    if (preco) preco.placeholder = pm ? `Ex.: ${String(pm.toFixed(2)).replace('.', ',')} (o mais comum em ${nomeDaCategoria(chaveCat)})` : '0,00';
+}
+$p('unidade-chips')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-unidade]'); if (!b) return;
+    unidadeMexida = true;
+    definirUnidade(b.dataset.unidade);
+    $p('edit-unidade').dispatchEvent(new Event('change'));
+});
+$p('cat-chips')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cat-nome]'); if (!b) return;
+    $p('edit-cat').value = b.dataset.catNome;
+    pintarCategorias(); aoMudarCategoria();
+});
+$p('edit-cat')?.addEventListener('input', () => { pintarCategorias(); aoMudarCategoria(); });
+document.addEventListener('categorias:mudou', () => { if ($p('modal-produto')?.classList.contains('aberto')) pintarCategorias(); });
+
+// produto com alguma opção extra em uso: "Mais opções" já abre aberto, para ninguém achar que sumiu
+const usaMaisOpcoes = (p) => Number(p.precoDe) > Number(p.preco) || temEstoque(p) || p.pacote === true || Number(p.promoQtd) >= 2 || Number(p.pesoMedio) > 0 || !!p.nomeUn
+    || p.chegouEm === hojeDaLoja() || p.estacao === true || p.escolha === true || p.soInsumo === true || ['curta', 'longa'].includes(p.duracao);
+function modoDoFormulario(modo, p = null) {
+    const novo = modo === 'novo';
+    { const b = $p('btn-salvar-outro'); if (b) b.hidden = !novo; }
+    { const b = $p('btn-duplicar'); if (b) b.hidden = novo; }
+    if (novo) { unidadeMexida = false; repetidos = 0; const r = $p('prod-repetindo'); if (r) r.hidden = true; }
+    pintarUnidades(); pintarCategorias();
+    { const pr = $p('edit-preco'); if (pr) pr.placeholder = '0,00'; }
+    const mais = $p('prod-mais'); if (mais) mais.open = !novo && !!p && usaMaisOpcoes(p);
+    resumoMaisOpcoes();
+}
+// tira só o que é DESTE produto (id, nome, foto, descrição, estoque); preço, unidade, categoria e opções ficam
+function esvaziarParaOutro() {
+    ['edit-id', 'edit-nome', 'edit-foto', 'edit-foto-url'].forEach((i) => { const c = $p(i); if (c) c.value = ''; });
+    { const u = $p('edit-foto-url'); if (u) { delete u.dataset.bancoUrl; delete u.dataset.bancoMini; } }
+    { const d = $p('edit-descricao'); if (d) d.value = ''; }
+    { const est = $p('edit-estoque-fisico'); if (est) { est.value = ''; est.dataset.aoAbrir = ''; } }
+    { const pv = $p('preview-foto-wrapper'); if (pv) pv.innerHTML = placeholderSVG; }
+    $p('modal-titulo').textContent = 'Novo produto';
+    $p('btn-excluir-produto').style.display = 'none';
+    { const g = $p('grupo-rotulo-produto'); if (g) g.hidden = true; }
+    { const bp = $p('btn-post-ia'); if (bp) bp.hidden = true; }
+    { const b = $p('btn-salvar-outro'); if (b) b.hidden = false; }
+    { const b = $p('btn-duplicar'); if (b) b.hidden = true; }
+}
+function avisarRepetindo(html) {
+    const r = $p('prod-repetindo'); if (r) { r.innerHTML = html; r.hidden = false; }
+    const nome = $p('edit-nome');
+    if (nome) { nome.focus(); r?.scrollIntoView({ block: 'nearest' }); }
+}
+function prepararOutroIgual(nomeSalvo) {
+    repetidos++;
+    esvaziarParaOutro();
+    showToast(`${nomeSalvo} guardado.`);
+    const cat = nomeDaCategoria(chaveDaCategoria($p('edit-cat')?.value || ''));
+    avisarRepetindo(`<b>${escapeHTML(nomeSalvo)}</b> guardado${repetidos > 1 ? ` (${repetidos} nesta leva)` : ''}. Escreva o nome do próximo: preço, unidade${cat ? ` e a categoria <b>${escapeHTML(cat)}</b>` : ' e categoria'} continuam iguais.`);
+}
+function duplicarProduto() {
+    const base = $p('edit-nome')?.value.trim() || 'o produto';
+    esvaziarParaOutro();
+    unidadeMexida = true; repetidos = 0;
+    avisarRepetindo(`Copiado de <b>${escapeHTML(base)}</b>. Escreva o nome do novo produto: preço, unidade, categoria e as outras opções vieram iguais. A foto fica em branco.`);
+}
+function abrirProdutoNovo() {
+    injetarEstoqueUI();
+    limparFormularioProduto();
+    $p('modal-titulo').textContent = 'Novo produto';
+    // com uma categoria aberta na lista ("Pastéis"), o produto novo já nasce nela
+    if (adminCategoria !== TODAS) { $p('edit-cat').value = nomeDaCategoria(adminCategoria); pintarCategorias(); aoMudarCategoria(); }
+    openModal('modal-produto');   // no computador a janela já põe o foco no nome; no celular o teclado só abre ao tocar
+}
 
 const injetarEstoqueUI = () => {
     if (!document.getElementById('edit-estoque-fisico')) {
-        const precoRow = document.getElementById('edit-preco')?.closest('.grid-2');
-        if (precoRow) {
-            precoRow.insertAdjacentHTML('afterend', `
+        const lugar = document.getElementById('lugar-estoque');
+        if (lugar) {
+            lugar.insertAdjacentHTML('beforeend', `
                 <div class="form-group-estoque">
                     <label for="edit-estoque-fisico"><i class="ic" data-i="caixa"></i> Quantidade em estoque (opcional)</label>
                     <input type="number" id="edit-estoque-fisico" min="0" placeholder="Em branco = sem controle de estoque">
@@ -731,7 +1242,8 @@ const valorDoItem = (item) => {
     if (ehItemDeBalanca(item)) {
         return item.pesoFinal > 0 ? item.pesoFinal * (item.precoOriginal || 0) : 0;
     }
-    return (item.precoOriginal || 0) * (item.qtd || 0);
+    // valor fechado: o que o servidor calculou (com a promoção "4 por R$ 10", quando houver)
+    return Number(item.subtotal) > 0 ? Number(item.subtotal) : (item.precoOriginal || 0) * (item.qtd || 0);
 };
 
 const totalDaEsteira = () => ESTEIRA.itens.reduce((soma, i) => soma + valorDoItem(i), 0);
@@ -887,13 +1399,13 @@ const renderItemAtual = () => {
 
         campo.addEventListener('input', atualizar);
         corpo.querySelectorAll('.pk-atalho').forEach(b => {
-            b.addEventListener('click', () => { campo.value = b.dataset.peso; atualizar(); campo.focus(); });
+            b.addEventListener('click', () => { campo.value = b.dataset.peso; atualizar(); focarCampo(campo); });
         });
-        setTimeout(() => campo.focus(), 120);
+        setTimeout(() => focarCampo(campo), 120);      // no celular o teclado só abre quando tocar no campo
 
     } else {
         // Item de valor fechado (unidade, maço, bandeja): calcula sozinho
-        const total = (item.precoOriginal || 0) * (item.qtd || 0);
+        const total = valorDoItem(item);
         corpo.innerHTML = `
             <span class="pk-contador">Produto ${ESTEIRA.indice + 1} de ${ESTEIRA.itens.length}</span>
             ${blocoFoto}
@@ -936,6 +1448,7 @@ const renderConferencia = () => {
                    : `<div class="pk-linha-foto"></div>`}
             <div class="pk-linha-info">
                 <div class="pk-linha-nome">${escapeHTML(item.nome)}</div>
+                ${item.adicionais ? `<div class="pk-linha-detalhe">↳ ${escapeHTML(item.adicionais)}</div>` : ''}
                 <div class="pk-linha-detalhe">${detalhe}</div>
                 <button class="pk-linha-editar" data-corrigir="${i}">corrigir</button>
             </div>
@@ -1022,103 +1535,13 @@ const abrirEsteira = (pedido) => {
 // e um emoji por produto para facilitar a leitura no celular.
 // =====================================================================
 
-// Emoji por tipo de produto. A busca é por pedaço do nome já sem acento,
-// então "Tomate Saladete" e "tomatinho cereja" caem os dois em 🍅.
-const EMOJI_PRODUTO = [
-    ['batata doce', '🍠'], ['batata', '🥔'], ['alho', '🧄'], ['cebola', '🧅'],
-    ['tomatinho', '🍅'], ['tomate', '🍅'], ['cenoura', '🥕'], ['alface', '🥬'], ['couve', '🥬'],
-    ['repolho', '🥬'], ['rucula', '🥬'], ['espinafre', '🥬'], ['agriao', '🥬'],
-    ['banana', '🍌'], ['maca', '🍎'], ['laranja', '🍊'], ['tangerina', '🍊'],
-    ['mexerica', '🍊'], ['limao', '🍋'], ['uva', '🍇'], ['morango', '🍓'],
-    ['melancia', '🍉'], ['melao', '🍈'], ['abacaxi', '🍍'], ['manga', '🥭'],
-    ['abacate', '🥑'], ['pepino', '🥒'], ['pimentao', '🫑'], ['pimenta', '🌶️'],
-    ['milho', '🌽'], ['brocolis', '🥦'], ['couve-flor', '🥦'], ['berinjela', '🍆'],
-    ['cogumelo', '🍄'], ['champignon', '🍄'], ['ovo', '🥚'], ['coco', '🥥'],
-    ['pera', '🍐'], ['pessego', '🍑'], ['ameixa', '🍑'], ['cereja', '🍒'],
-    ['kiwi', '🥝'], ['abobora', '🎃'], ['moranga', '🎃'], ['gengibre', '🫚'],
-    ['salsa', '🌿'], ['cheiro verde', '🌿'], ['coentro', '🌿'], ['manjericao', '🌿'],
-    ['hortela', '🌿'], ['cebolinha', '🌿'], ['feijao', '🫘'], ['ervilha', '🫛'],
-    ['vagem', '🫛'], ['mandioca', '🥔'], ['inhame', '🥔'], ['beterraba', '🥬'],
-    ['chuchu', '🥒'], ['quiabo', '🥒'], ['maracuja', '🍈'], ['goiaba', '🍈'],
-    ['mamao', '🧡'], ['acerola', '🍒'], ['kit', '🧺'], ['cesta', '🧺']
-];
-
-const emojiDoProduto = (nome) => {
-    const limpo = String(nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const achou = EMOJI_PRODUTO.find(([chave]) => limpo.includes(chave));
-    return achou ? achou[1] : '🥬';
-};
-
-// "said" -> "Said" | "maria clara" -> "Maria"
-const primeiroNomeBonito = (nomeCompleto) => {
-    const primeiro = String(nomeCompleto || '').trim().split(/\s+/)[0] || '';
-    return primeiro.charAt(0).toUpperCase() + primeiro.slice(1).toLowerCase();
-};
-
-const kgBonito = (valor) => String(valor).replace('.', ',');
-
+// O texto mora em js/mensagem-lib.js (um estilo só para todas as mensagens ao cliente, testado).
 const montarMensagemCliente = () => {
-    const p = ESTEIRA.pedido;
-    const risco = '━━━━━━━━━━━━━━';
-    const L = [];
-
-    L.push(`${ehLojaOriginal ? '🥬 ' : ''}*${nomeDaLoja}*`);          // cada loja assina com o próprio nome
-    L.push('');
-    L.push(`Olá, ${primeiroNomeBonito(p.nome)}! 👋`);
-    L.push('');
-    L.push('Seu pedido já foi separado e pesado com sucesso.');
-    L.push('');
-    L.push(risco);
-    L.push('📦 *ITENS DO PEDIDO*');
-    L.push('');
-
-    ESTEIRA.itens.forEach(item => {
-        const unid = String(item.unidade || '').toLowerCase();
-        const porPeso = ['kg', 'g', 'grama', 'quilo', 'l', 'litro'].includes(unid);
-
-        L.push(`${emojiDoProduto(item.nome)} *${item.nome}*`);
-
-        if (ehItemDeBalanca(item)) {
-            // Pediu por unidade, mas foi para a balança: mostra os dois dados
-            L.push(`• Quantidade: ${item.qtd} un`);
-            L.push(`• Peso: ${kgBonito(item.pesoFinal)} kg`);
-        } else if (porPeso) {
-            L.push(`• Peso: ${kgBonito(item.qtd)} ${unid}`);
-        } else {
-            L.push(`• Quantidade: ${item.qtd}`);
-        }
-
-        L.push(`• Valor: ${fmt(valorDoItem(item))}`);
-        L.push('');
+    const conta = contaDaEsteira();
+    return mensagemPedidoPronto({
+        loja: nomeDaLoja, pedido: ESTEIRA.pedido, endereco: linhaEndereco(ESTEIRA.pedido), itens: ESTEIRA.itens.map((i) => ({ ...i, subtotal: valorDoItem(i) })),
+        conta: { itens: conta.itens, desconto: ESTEIRA.desconto ?? conta.desconto, entrega: ESTEIRA.entrega ?? conta.entrega, total: ESTEIRA.totalFechado ?? conta.total },
     });
-
-    L.push(risco);
-    if (ESTEIRA.desconto > 0) L.push(`🎁 Desconto do cupom: -${fmt(ESTEIRA.desconto)}`);
-    if (ESTEIRA.entrega > 0) L.push(`🛵 Entrega: ${fmt(ESTEIRA.entrega)}`);
-    if (p.entrega?.horario) L.push(`🕒 Entrega: ${p.entrega.horario}`);
-    else if (p.entrega?.horarioACombinar) L.push('🕒 Entrega: horário a combinar');
-    L.push(`💰 *Total: ${fmt(ESTEIRA.totalFechado ?? contaDaEsteira().total)}*`);
-    L.push('');
-    L.push(`💳 Pagamento: ${p.pag || 'a combinar'}`);
-
-    if (p.troco) {
-        L.push(`💵 Troco para: ${p.troco}`);
-    }
-
-    L.push('');
-    L.push('📍 *Endereço de entrega:*');
-    L.push(linhaEndereco(p));
-
-    if (p.obs) {
-        L.push('');
-        L.push(`📝 *Observação:* ${p.obs}`);
-    }
-
-    L.push('');
-    L.push('🌱 Obrigado pela preferência!');
-    L.push('Qualquer dúvida ou alteração, é só chamar.');
-
-    return L.join('\n');
 };
 
 const finalizarEsteira = async (btn, enviarWhats) => {
@@ -1148,13 +1571,11 @@ const finalizarEsteira = async (btn, enviarWhats) => {
         if (enviarWhats) {
             const msg = montarMensagemCliente();
             const fone = String(ESTEIRA.pedido.telefone || '').replace(/\D/g, '');
+            const url = linkDoWhatsApp(fone, msg);
             // Se o pedido tem telefone, abre a conversa direto.
             // Se não tem, abre o WhatsApp para escolher o contato — e o
             // texto já vai copiado para colar.
             try { await navigator.clipboard.writeText(msg); } catch (_) {}
-            const url = fone
-                ? `https://wa.me/${fone.startsWith('55') ? fone : '55' + fone}?text=${encodeURIComponent(msg)}`
-                : `https://wa.me/?text=${encodeURIComponent(msg)}`;
             window.open(url, '_blank', 'noopener');
             showToast(fone ? `Pesagem salva (${fmt(fechado.total || 0)}). Pedido em Separando.` : 'Pesagem salva. Texto copiado — escolha a conversa da cliente.', false);
         } else {
@@ -1177,13 +1598,8 @@ document.body.addEventListener('click', async (e) => {
     const action = target.dataset.action;
 
     try {
-        if (action === 'novo-produto') {
-            injetarEstoqueUI();
-            document.getElementById('modal-titulo').textContent = 'Novo produto';
-            limparFormularioProduto();
-            document.getElementById('btn-excluir-produto').style.display = 'none';
-            openModal('modal-produto');
-        }
+        if (action === 'novo-produto') abrirProdutoNovo();
+        else if (action === 'varios-produtos') (await TELAS.varios()).abrirVarios({ produtos: produtosAtuais, categorias: categoriasParaEscolher(), arte: arteDaCategoria, categoria: adminCategoria !== TODAS ? adminCategoria : '' });
 
         else if (action === 'editar-produto') {
             injetarEstoqueUI();
@@ -1198,6 +1614,7 @@ document.body.addEventListener('click', async (e) => {
             document.getElementById('edit-cat').value = nomeDaCategoria(p.cat);   // mostra o NOME da categoria; a chave é resolvida ao salvar
             document.getElementById('edit-foto').value = '';
             document.getElementById('edit-foto-url').value = '';
+            ligarVideo(); mostrarVideo(p.video || '');
 
             if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = p.descricao || '';
             // guarda o estoque MOSTRADO ao abrir: se alguém vender enquanto a janela está aberta, gravar o produto não pode devolver o número velho
@@ -1206,13 +1623,19 @@ document.body.addEventListener('click', async (e) => {
             if (document.getElementById('edit-mostrar-primeiro')) document.getElementById('edit-mostrar-primeiro').value = p.mostrarPrimeiro === 'kg' ? 'kg' : 'un';
             if (document.getElementById('edit-duracao')) document.getElementById('edit-duracao').value = ['curta', 'longa'].includes(p.duracao) ? p.duracao : 'normal';
             if (document.getElementById('edit-so-insumo')) document.getElementById('edit-so-insumo').checked = p.soInsumo === true;
+            { const m = (i, v) => { const c = document.getElementById(i); if (c) c.checked = v; }; m('edit-selo-chegou', p.chegouEm === hojeDaLoja()); m('edit-selo-estacao', p.estacao === true); m('edit-selo-escolha', p.escolha === true); }
             alternarCampoPesoMedio();
+            preencherPacote(p);
+            iniciarMontarAdmin({ produtos: () => produtosAtuais }); preencherMontar(p);
+            preencherDias(p);
 
             const previewContainer = document.getElementById('preview-foto-wrapper');
             if (previewContainer) previewContainer.innerHTML = p.foto ? `<img src="${escapeHTML(p.foto)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" alt="${escapeHTML(p.nome)}">` : placeholderSVG;
 
             document.getElementById('btn-excluir-produto').style.display = 'block';
+            { const g = document.getElementById('grupo-rotulo-produto'); if (g) g.hidden = false; }
             { const bp = document.getElementById('btn-post-ia'); if (bp) { bp.hidden = !ehGestor(papelAtual); bp.dataset.id = p.id; } }
+            modoDoFormulario('editar', p);
             openModal('modal-produto');
         }
 
@@ -1239,15 +1662,31 @@ document.body.addEventListener('click', async (e) => {
             }
         }
 
+        else if (action === 'rotulos' || action === 'rotulo-do-produto') {    // rótulos adesivos personalizados
+            const id = action === 'rotulo-do-produto' ? document.getElementById('edit-id').value : '';
+            try { (await TELAS.rotulos()).abrirRotulos(produtosAtuais, id); }
+            catch (e) { console.error(e); showToast('Não consegui abrir os rótulos. Confira a internet e toque de novo.', true); }
+        }
+        else if (action === 'chegou-hoje') {      // selo "Chegou hoje": vale só no dia; amanhã some sozinho
+            const id = target.dataset.id, p = produtosAtuais.find(x => x.id === id); if (!p) return;
+            const marcar = p.chegouEm !== hojeDaLoja();
+            const mud = { chegouEm: marcar ? hojeDaLoja() : null, ultimaModificacao: Date.now() };
+            await setDoc(tdoc("produtos", id), mud, { merge: true }); produtoSalvo(id, mud);
+            showToast(marcar ? `${p.nome}: "Chegou hoje" na loja até o fim do dia.` : `${p.nome}: selo tirado.`);
+        }
         else if (action === 'toggle-estoque') {
             const id = target.dataset.id;
             const novoStatus = target.dataset.status === 'true';
-            if (!novoStatus) {
-                const confirmado = await customConfirm("Tirar da loja?", "Os clientes não vão ver este produto até você tocar em Voltar a vender.");
-                if (!confirmado) return;
-            }
-            await setDoc(tdoc("produtos", id), { ativo: novoStatus, ultimaModificacao: Date.now() }, { merge: true });
-            showToast(novoStatus ? "Produto de volta na loja." : "Produto fora da loja.");
+            const mud = { ativo: novoStatus, ultimaModificacao: Date.now() };
+            await setDoc(tdoc("produtos", id), mud, { merge: true }); produtoSalvo(id, mud);
+            const nomeP = (produtosAtuais.find((x) => x.id === id) || {}).nome || id;
+            anotar(novoStatus ? 'de-volta' : 'fora-da-loja', nomeP);
+            if (novoStatus) showToast("Produto de volta na loja.");
+            else avisoComDesfazer("Produto fora da loja.", async () => {             // sem pergunta antes: Desfazer põe de volta
+                const volta = { ativo: true, ultimaModificacao: Date.now() };
+                await setDoc(tdoc("produtos", id), volta, { merge: true }); produtoSalvo(id, volta);
+                anotar('desfez', `${nomeP} de volta na loja`);
+            });
         }
 
         // --- AÇÕES DE LOGÍSTICA KANBAN ---
@@ -1265,6 +1704,7 @@ document.body.addEventListener('click', async (e) => {
             const nextStatus = target.dataset.next;
             target.disabled = true;
             await setDoc(tdoc("pedidos", id), { status: nextStatus }, { merge: true });
+            anotar('status-pedido', `${(pedidosGerais.find((p) => p.id === id) || {}).nome || id}: ${nextStatus}`);
             showToast(`Pedido movido para: ${nextStatus.toUpperCase()}`);
         }
 
@@ -1300,16 +1740,74 @@ document.body.addEventListener('click', async (e) => {
             }
         }
 
+        else if (action === 'ver-entregues') {
+            ENTREGUES.aberto = !ENTREGUES.aberto;
+            if (ENTREGUES.aberto) await carregarEntregues(); else redesenharFila();
+        }
+
+        else if (action === 'itens-pedido') {      // faltou um produto, ou o cliente pediu mais um pelo WhatsApp (js/admin-pedido-itens.js)
+            const pedido = acharPedido(target.dataset.id);
+            if (!pedido) return showToast('Pedido não encontrado', true);
+            (await TELAS.pedidoItens()).abrirItensDoPedido(pedido, { produtos: produtosAtuais, loja: nomeDaLoja,
+                aoMudar: (novo) => { pedidosGerais = pedidosGerais.map((p) => (p.id === novo.id ? { ...p, ...novo } : p)); redesenharFila(); } });
+        }
+
+        else if (action === 'mensagem-pedido') {   // a mensagem certa para a etapa; nada sai sem a pessoa tocar em enviar no WhatsApp
+            const pedido = acharPedido(target.dataset.id);
+            if (!pedido) return showToast('Pedido não encontrado', true);
+            const dados = { loja: nomeDaLoja, pedido, endereco: linhaEndereco(pedido) };
+            const pagoC = pedido.pagamento?.status === 'PAID' && Number.isFinite(Number(pedido.pagamento.valorC)) ? Number(pedido.pagamento.valorC) : null;
+            const msg = pedido.status === 'enviado' ? mensagemACaminho(dados) : mensagemPedidoPronto({ ...dados, diferenca: pagoC === null ? 0 : (Math.round((Number(pedido.total) || 0) * 100) - pagoC) / 100 });
+            // abre ANTES de qualquer espera: o iPhone bloqueia janela aberta depois de um "await"
+            window.open(linkDoWhatsApp(pedido.telefone, msg), '_blank', 'noopener');
+            try { navigator.clipboard.writeText(msg).catch(() => {}); } catch (_) { /* o link já leva o texto */ }
+            showToast(pedido.telefone ? 'Abrindo a conversa com o cliente.' : 'Texto copiado: escolha a conversa do cliente.');
+        }
+
+        else if (action === 'precos-pedido') {     // pedido para o dia da feira: cada item passa ao preço de hoje do cadastro (o servidor faz a conta)
+            const pedido = acharPedido(target.dataset.id);
+            if (!pedido) return showToast('Pedido não encontrado', true);
+            target.disabled = true; target.textContent = 'Conferindo...';
+            try {
+                const d = await chamarAjuste({ op: 'precos', pedidoId: pedido.id });
+                pedidosGerais = pedidosGerais.map((p) => (p.id === pedido.id ? { ...p, itens: d.itens, total: d.total, precoNoDia: false } : p));
+                redesenharFila();
+                const n = (d.mudou || []).length;
+                showToast(n ? `${n === 1 ? '1 preço mudou' : `${n} preços mudaram`}. Novo total: ${fmt(d.total)}.` : 'Os preços continuam os mesmos.');
+            } catch (e) { showToast(e.message, true); target.disabled = false; target.textContent = 'Confirmar os preços de hoje'; }
+        }
+
+        else if (action === 'voltar-pedido') {     // marcou a etapa errada: volta uma (o servidor confere e registra quem voltou)
+            const pedido = acharPedido(target.dataset.id);
+            if (!pedido) return showToast('Pedido não encontrado', true);
+            const para = etapaDeVolta(pedido);
+            if (!para) return showToast('Este pedido não tem etapa anterior.', true);
+            if (!(await customConfirm(`Voltar o pedido de ${pedido.nome || 'cliente'} para "${NOME_DA_ETAPA[para]}"?`,
+                'Use quando a etapa foi marcada por engano. O valor e os itens não mudam, e nenhuma mensagem é enviada ao cliente: se precisar avisar, use o botão Mensagem.', { ok: 'Voltar etapa', nao: 'Deixar como está' }))) return;
+            target.disabled = true;
+            try {
+                const d = await chamarAjuste({ op: 'voltar', pedidoId: pedido.id, de: pedido.status });
+                // muda na hora: o entregue volta para a fila; os outros trocam de coluna
+                if (ENTREGUES.lista) ENTREGUES.lista = ENTREGUES.lista.filter((p) => p.id !== pedido.id);
+                const novo = { ...pedido, status: d.status };
+                pedidosGerais = pedidosGerais.some((p) => p.id === pedido.id) ? pedidosGerais.map((p) => (p.id === pedido.id ? novo : p)) : [novo, ...pedidosGerais];
+                kbEtapa = { enviado: 'env', preparando: 'prep' }[d.status] || 'novos';
+                redesenharFila();
+                showToast(`Pedido de volta em "${NOME_DA_ETAPA[d.status] || d.status}".`);
+            } catch (e) { showToast(e.message, true); target.disabled = false; }
+        }
+
         else if (action === 'imprimir-pedido') {
-            const pedido = pedidosGerais.find(p => p.id === target.dataset.id);
+            const pedido = acharPedido(target.dataset.id);
             if (!pedido) return showToast("Pedido não encontrado", true);
             target.disabled = true;
-            await comImpressao((m) => m.imprimirPedido(pedido, target.dataset.tipo));
+            // cupom impresso à mão entra na fila como impresso: o automático não imprime de novo
+            await comImpressao(async (m) => { const ok = await m.imprimirPedido(pedido, target.dataset.tipo, { fotos: fotosDosProdutos() }); if (ok && target.dataset.tipo === 'cupom') impAuto?.marcarImpresso(pedido); });
             target.disabled = false;
         }
 
         else if (action === 'cancelar-pedido-painel') {
-            const pedido = pedidosGerais.find(p => p.id === target.dataset.id);
+            const pedido = acharPedido(target.dataset.id);
             if (!pedido) return showToast("Pedido não encontrado", true);
             const pago = pedido.pagamento?.status === 'PAID';
             if (!(await customConfirm(`Cancelar o pedido de ${pedido.nome || 'cliente'}?`,
@@ -1327,10 +1825,21 @@ document.body.addEventListener('click', async (e) => {
 
         else if (action === 'excluir-pedido') {
             const id = target.dataset.id;
-            if (await customConfirm("Concluir e Arquivar", "Deseja finalizar este pedido e retirá-lo da logística visual? (Os dados financeiros serão mantidos).")) {
-                await setDoc(tdoc("pedidos", id), { status: 'arquivado' }, { merge: true });
-                showToast("Pedido concluído e arquivado!");
-            }
+            // sem pergunta: marca na hora e o aviso traz Desfazer. Desfazer usa o mesmo "Voltar etapa" do servidor
+            // (as regras do banco só deixam o status andar para frente; quem volta é o servidor, e ele registra quem voltou)
+            const pedidoAntes = pedidosGerais.find((p) => p.id === id);
+            await setDoc(tdoc("pedidos", id), { status: 'arquivado' }, { merge: true });
+            anotar('status-pedido', `${(pedidoAntes && pedidoAntes.nome) || id}: entregue`);
+            if (ENTREGUES.aberto) carregarEntregues(); else ENTREGUES.lista = null;   // a lista de entregues mostra o que acabou de sair da fila
+            avisoComDesfazer('Pedido entregue.', async () => {
+                const d = await chamarAjuste({ op: 'voltar', pedidoId: id, de: 'arquivado' });
+                if (ENTREGUES.lista) ENTREGUES.lista = ENTREGUES.lista.filter((p) => p.id !== id);
+                if (pedidoAntes) {
+                    const novo = { ...pedidoAntes, status: d.status };
+                    pedidosGerais = pedidosGerais.some((p) => p.id === id) ? pedidosGerais.map((p) => (p.id === id ? novo : p)) : [novo, ...pedidosGerais];
+                    redesenharFila();
+                }
+            });
         }
     } catch (err) {
         console.error("Ação Falhou:", err);
@@ -1372,7 +1881,7 @@ const mostrarTextoGerado = (titulo, texto) => {
 const iniciarIAFeaturesDOM = () => {
     const catInput = document.getElementById('edit-cat');
     if (catInput && !document.getElementById('form-group-descricao')) {
-        catInput.closest('.form-group').insertAdjacentHTML('afterend', `
+        (document.getElementById('lugar-descricao') || catInput.closest('.form-group')).insertAdjacentHTML('beforeend', `
             <div class="form-group w-100" id="form-group-descricao">
                 <label style="display:flex; justify-content:space-between; align-items:center;">
                     Descrição
@@ -1425,7 +1934,7 @@ const iniciarIAFeaturesDOM = () => {
                 document.getElementById('modal-titulo').textContent = '' + data.kit.nome;
                 document.getElementById('edit-id').value = ''; document.getElementById('edit-nome').value = data.kit.nome;
                 document.getElementById('edit-preco').value = data.kit.preco;
-                document.getElementById('edit-cat').value = 'Kits Inteligentes';
+                document.getElementById('edit-cat').value = 'Kits Inteligentes'; pintarCategorias();
                 definirUnidade('kit');
                 alternarCampoPesoMedio();
                 if (document.getElementById('edit-descricao')) document.getElementById('edit-descricao').value = `${data.kit.descricao}\n\nO que inclui:\n${data.kit.itensInclusos}`;
@@ -1437,8 +1946,10 @@ const iniciarIAFeaturesDOM = () => {
     }
 };
 
-document.getElementById('btn-salvar-produto').addEventListener('click', async () => {
-    const btn = document.getElementById('btn-salvar-produto');
+// outro = true: "Salvar e criar outro igual" (o formulário fica com preço, unidade e categoria; só troca o nome)
+const salvarProduto = async (outro = false) => {
+    const btn = document.getElementById(outro ? 'btn-salvar-outro' : 'btn-salvar-produto'), rotuloBtn = btn.innerHTML;
+    if (btn.disabled) return;
     btn.textContent = "A guardar..."; btn.disabled = true;
 
     try {
@@ -1463,6 +1974,10 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
             mostrarPrimeiro: document.getElementById('edit-mostrar-primeiro')?.value === 'kg' ? 'kg' : 'un',   // qual botão vem em cima no card (unidade ou quilo)
             duracao: document.getElementById('edit-duracao')?.value || 'normal',   // folga da sugestão de compra (motor)
             soInsumo: !!document.getElementById('edit-so-insumo')?.checked,        // ingrediente de receita: fora da loja
+            // selos verdadeiros na loja (js/vitrine-lib.js). "Chegou hoje" guarda o DIA: amanhã some sozinho.
+            chegouEm: document.getElementById('edit-selo-chegou')?.checked ? hojeDaLoja() : null,
+            estacao: !!document.getElementById('edit-selo-estacao')?.checked,
+            escolha: !!document.getElementById('edit-selo-escolha')?.checked,
             // Sem controle de estoque: mantém o que estava. Antes, editar um produto
             // marcado como "Esgotado" o colocava de volta à venda sem ninguém pedir.
             ativo: antigo ? antigo.ativo !== false : true,
@@ -1470,7 +1985,16 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
         };
 
         if (!pData.nome) throw new Error("Preencha o nome do produto.");
+        {   // pacote fechado, peso do pacote (opcional), promoção por quantidade e nome da unidade
+            const cad = cadastroPacote({ pacote: !!v$('edit-pacote')?.checked, pesoPacote: v$('edit-peso-pacote')?.value, promoQtd: v$('edit-promo-qtd')?.value,
+                promoPreco: v$('edit-promo-preco')?.value, nomeUn: v$('edit-nome-un')?.value, unidade: pData.unidade, preco: pData.preco });
+            if (cad.erro) throw new Error(cad.erro);
+            Object.assign(pData, cad.dados);
+        }
         if (!pData.unidade) throw new Error("Escolha a métrica de venda (quilo, unidade...).");
+        pData.montar = lerMontar();   // complementos e adicionais (null = produto sem montar)
+        pData.dias = lerDias();       // dias da semana em que sai (null = todo dia)
+        pData.palavras = lerPalavras();   // outras palavras para a busca da loja
         if (!pData.cat) throw new Error("Escolha a categoria do produto.");
         if (pData.soInsumo && !(pData.preco > 0)) pData.preco = 0;
         else if (isNaN(pData.preco) || pData.preco <= 0) throw new Error("Informe um preço válido.");
@@ -1493,6 +2017,9 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
             if (pAntigo && pAntigo.foto) pData.foto = pAntigo.foto;
         }
 
+        // VÍDEO curto (js/admin-video.js): o arquivo escolhido vai direto ao R2; sem vídeo, o campo fica vazio (null)
+        pData.video = await videoParaSalvar(id, (f) => { btn.textContent = `Enviando o vídeo... ${Math.round(f * 100)}%`; });
+
         // ESTOQUE: a quantidade não é mais gravada direto aqui. Campo vazio = sem controle.
         // Número diferente do atual = contagem, que passa pelo servidor e entra no histórico.
         const estoqueAntes = antigo && antigo.estoqueFisico !== undefined && antigo.estoqueFisico !== '' ? antigo.estoqueFisico : null;
@@ -1502,28 +2029,49 @@ document.getElementById('btn-salvar-produto').addEventListener('click', async ()
         if (estoqueFinal === null && estoqueAntes !== null && mexeuNoEstoque) pData.estoqueFisico = null;
 
         await setDoc(tdoc("produtos", id), pData, { merge: true });
+        produtoSalvo(id, pData);
+        if (!antigo) anotar('criou-produto', `${pData.nome}: ${fmt(pData.preco)}`);
+        else if (Number(antigo.preco) !== Number(pData.preco)) anotar('preco', `${pData.nome}: ${fmt(antigo.preco)} → ${fmt(pData.preco)}`);
         if (estoqueFinal !== null && mexeuNoEstoque && estoqueFinal !== estoqueAntes) {
             try { await (await TELAS.estoque()).contarEstoque(id, estoqueFinal, 'Alterado no cadastro do produto'); }
             catch (e) { throw new Error(`Produto guardado, mas o estoque não mudou: ${e.message}`); }
         }
-        closeModal('modal-produto'); showToast("Produto guardado com sucesso!");
+        if (outro) prepararOutroIgual(pData.nome);
+        else { closeModal('modal-produto'); showToast("Produto guardado com sucesso!"); }
     } catch (erro) {
         showToast(erro.message || "Erro ao guardar o produto.", true);
     } finally {
-        btn.textContent = "Salvar produto"; btn.disabled = false;
+        btn.innerHTML = rotuloBtn; btn.disabled = false;
     }
+};
+document.getElementById('btn-salvar-produto').addEventListener('click', () => salvarProduto(false));
+document.getElementById('btn-salvar-outro')?.addEventListener('click', () => salvarProduto(true));
+document.getElementById('btn-duplicar')?.addEventListener('click', () => duplicarProduto());
+// Enter no nome salva (no "criar outro igual" é o jeito mais rápido: digita o nome, Enter, digita o próximo...)
+document.getElementById('edit-nome')?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    e.preventDefault();
+    salvarProduto(!document.getElementById('btn-salvar-outro').hidden);
 });
 
 document.getElementById('btn-precos-dia')?.addEventListener('click', async () => {
     try { (await TELAS.precosDia()).abrirPrecosDia(produtosAtuais); } catch (e) { console.error(e); showToast('Não consegui abrir os preços por dia. Confira a internet e toque de novo.', true); }
 });
+const abrirConsertoDeFotos = async () => {
+    try { (await TELAS.conserto()).abrirConserto(produtosAtuais, () => renderProdutos()); } catch (e) { showToast('Não consegui abrir. Confira a internet.', true); }
+};
+document.getElementById('btn-conferir-fotos')?.addEventListener('click', abrirConsertoDeFotos);
+document.addEventListener('click', (e) => { if (e.target.closest('[data-action="consertar-fotos"]')) abrirConsertoDeFotos(); });
 document.getElementById('btn-varias-fotos')?.addEventListener('click', async () => {
     try { (await TELAS.fotos()).abrirFotos(produtosAtuais); } catch (e) { showToast('Não consegui abrir. Confira a internet.', true); }
 });
 
 document.getElementById('btn-excluir-produto').addEventListener('click', async () => {
     if (await customConfirm("Apagar este produto?", "Ele some da loja e do painel. Não dá para desfazer.", { ok: "Apagar", nao: "Não apagar" })) {
-        await deleteDoc(tdoc("produtos", document.getElementById('edit-id').value));
+        const idApagado = document.getElementById('edit-id').value;
+        await deleteDoc(tdoc("produtos", idApagado));
+        anotar('apagou-produto', (produtosAtuais.find((x) => x.id === idApagado) || {}).nome || idApagado);
+        marcarApagadoLocal(idApagado); pedirCatalogo('tudo');       // some já daqui; o servidor tira da vitrine e do painel
         closeModal('modal-produto'); showToast("Produto apagado.");
     }
 });
@@ -1554,15 +2102,106 @@ const extrairEstatisticas = (pedidos) => {
 // ==========================================
 // KANBAN DE PEDIDOS
 // ==========================================
-const renderHtmlPedidos = (pedidos) => {
-    const dicsStatus = {
-        'pendente':             { tag: '<i class="ic" data-i="sino"></i> NOVO',        cor: 'var(--forest)',  btn: 'Aceitar e separar',      proximo: 'preparando' },
-        'aguardando_pagamento': { tag: '<i class="ic" data-i="pix"></i> AGUARDA PIX', cor: 'var(--info)',    btn: 'Recebi o PIX',   proximo: 'preparando' },
-        'aguardando_pesagem':   { tag: '<i class="ic" data-i="balanca"></i> A PESAR',     cor: 'var(--earth)',   btn: 'Pesar os itens', proximo: null },
-        'preparando':           { tag: '<i class="ic" data-i="caixa"></i> SEPARANDO',  cor: 'var(--earth)', btn: 'Saiu para entrega',     proximo: 'enviado' },
-        'enviado':              { tag: '<i class="ic" data-i="entrega"></i> A CAMINHO',   cor: 'var(--leaf)',    btn: 'Entregue',    proximo: 'arquivado' }
-    };
+// Etapa do cartão (cor da faixa e do botão): css/admin-pedidos.css → .pc[data-etapa]
+const ETAPA_DO_STATUS = { pendente: 'novo', aguardando_pagamento: 'pix', aguardando_pesagem: 'pesar', preparando: 'prep', enviado: 'env', arquivado: 'feito' };
+const PEDIDO_STATUS = {
+    'pendente':             { tag: '<i class="ic" data-i="sino"></i> NOVO',          btn: 'Aceitar e separar',  proximo: 'preparando' },
+    'aguardando_pagamento': { tag: '<i class="ic" data-i="pix"></i> AGUARDA PIX',    btn: 'Recebi o PIX',       proximo: 'preparando' },
+    'aguardando_pesagem':   { tag: '<i class="ic" data-i="balanca"></i> A PESAR',    btn: 'Pesar os itens',     proximo: null },
+    'preparando':           { tag: '<i class="ic" data-i="caixa"></i> SEPARANDO',    btn: 'Saiu para entrega',  proximo: 'enviado' },
+    'enviado':              { tag: '<i class="ic" data-i="entrega"></i> A CAMINHO',  btn: 'Entregue',           proximo: 'arquivado' },
+    'arquivado':            { tag: '<i class="ic" data-i="certo"></i> ENTREGUE',     btn: '',                   proximo: null },
+};
+// já pesado (nenhum item a pesar): mesmo se o status ainda disser "a pesar", o cartão vai para Separando
+const etapaDoPedido = (p) => {
+    const temAPesar = p.itens && p.itens.some(i => i.aPesar);
+    return (temAPesar && p.status === 'pendente') ? 'aguardando_pesagem' : (p.status === 'aguardando_pesagem' && !temAPesar) ? 'preparando' : p.status;
+};
+// quanto vale a linha no cartão: o peso da balança × preço, ou o valor fechado
+const valorDaLinha = (i) => (i.aPesar && !(Number(i.pesoFinal) > 0) ? 0 : (Number(i.subtotal) > 0 ? Number(i.subtotal) : (Number(i.pesoFinal) > 0 ? Number(i.pesoFinal) : Number(i.qtd) || 0) * (Number(i.precoOriginal ?? i.preco) || 0)));
 
+// UM cartão de pedido. Serve à fila (Novos, Separando, A caminho) e à lista de entregues.
+const cartaoDoPedido = (p) => {
+    const dateObj = new Date(p.data);
+    const dataFmt = isNaN(dateObj.getTime()) ? '' : dateObj.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const stKey = etapaDoPedido(p), st = PEDIDO_STATUS[stKey] || PEDIDO_STATUS.pendente, etapa = ETAPA_DO_STATUS[stKey] || 'novo', id = escapeHTML(p.id);
+    const daLoja = p.origem !== 'balcao';
+    const podeMexer = daLoja && ['pendente', 'aguardando_pesagem', 'aguardando_pagamento', 'preparando'].includes(p.status);   // lib/ajuste.js: depois de sair para entrega os itens não mudam
+    const temVolta = daLoja && ['preparando', 'enviado', 'arquivado'].includes(p.status);
+    const temBalanca = (p.itens || []).some((i) => i.tipo === 'un' && Number(i.pesoFinal) > 0);
+
+    const itensHtml = (p.itens || []).map((i) => `<li${i.acrescentado ? ' class="mais"' : ''}><b>${qtdDoItem(i)}</b><span>${escapeHTML(i.nome)}${i.acrescentado ? ' <small class="pc-novo">acrescentado</small>' : ''}${i.adicionais ? `<small class="ped-adicionais">↳ ${escapeHTML(i.adicionais)}</small>` : ''}</span>${i.aPesar ? '<em>a pesar</em>' : `<i>${fmt(valorDaLinha(i))}</i>`}</li>`).join('');
+
+    // Botão de ação: pesagem tem fluxo próprio; arquivar pede confirmação; o resto avança o status.
+    let botao = '';
+    if (stKey === 'aguardando_pesagem') botao = `<button class="pc-botao" data-action="iniciar-separacao" data-id="${id}">${st.btn}</button>`;
+    else if (st.proximo === 'arquivado') botao = `<button class="pc-botao" data-action="excluir-pedido" data-id="${id}">${st.btn}</button>`;
+    else if (st.proximo) botao = `<button class="pc-botao" data-action="avancar-pedido" data-next="${st.proximo}" data-id="${id}">${st.btn}</button>`;
+
+    // fila de impressão (lib/impressao.js): o que já saiu no papel, e quando
+    const imp = p.impressao || {}, horaImp = imp.saiuEm ? new Date(imp.saiuEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+    const infoImp = imp.saiu ? `<span class="ped-impresso" title="${imp.vezes > 1 ? `Saiu ${Number(imp.vezes)} vezes` : 'Saiu no papel'}"><i class="ic" data-i="impressora"></i> Impresso${horaImp ? ` ${horaImp}` : ''}${imp.saiu === 'pesado' ? ' (pesado)' : ''}</span>`
+        : (imp.estado === 'reservado' && Date.now() - (Date.parse(imp.em) || 0) < 90000 ? '<span class="ped-impresso fila"><i class="ic" data-i="impressora"></i> Imprimindo…</span>' : '');
+    const pago = p.pagamento?.status === 'PAID';
+    const infoPag = pago ? '<span class="pc-pago"><i class="ic" data-i="certo"></i> PAGO</span>' : '';
+    const retirada = p.modo === 'retirada';
+    // ENTREGA HOJE FORA DA FEIRA (lib/frete.js): o cliente pagou o frete para não esperar a feira
+    const fr = p.entrega && p.entrega.frete;
+    const infoFrete = fr ? `<p class="pc-nota entrega frete"><i class="ic" data-i="entrega"></i> ${escapeHTML(`HOJE, fora da feira · frete ${fmt(fr.valor)} · ${String(fr.km).replace('.', ',')} km${fr.rota > 1 ? ` · rota com ${fr.rota}` : ''}`)}</p>` : '';
+    const infoEntrega = infoFrete + (retirada || (p.entrega && (p.entrega.horario || p.entrega.horarioACombinar || Number(p.entrega.taxa) > 0)))
+        ? `<p class="pc-nota entrega"><i class="ic" data-i="${retirada ? 'caixa' : 'entrega'}"></i> ${escapeHTML([retirada ? `${p.feiraId ? 'RETIRADA NA FEIRA' : 'RETIRADA NA BANCA'}${p.retiradaLocal ? ` (${p.retiradaLocal})` : ''}` : '', p.entrega?.horario || (p.entrega?.horarioACombinar ? 'horário a combinar' : ''), Number(p.entrega?.taxa) > 0 ? `entrega ${fmt(p.entrega.taxa)}` : ''].filter(Boolean).join(' · '))}</p>` : '';
+    const infoTroco = p.troco ? `<p class="pc-nota troco"><i class="ic" data-i="dinheiro"></i> Troco para: ${escapeHTML(p.troco)}</p>` : '';
+    // pedido para outro dia (cliente da feira pediu fora do dia da feira) e feira cancelada nesse dia
+    const ehFuturo = p.entregaDia && p.entregaDia !== diaBR(p.data);
+    const cancelada = p.feiraId && p.entregaDia && (SEM_FEIRA.get(p.feiraId) || new Set()).has(p.entregaDia);
+    const infoDia = ehFuturo || cancelada ? `<div class="ped-para-dia${cancelada ? ' cancelada' : ''}"><i class="ic" data-i="calendario"></i> Para ${escapeHTML(textoDoDia(p.entregaDia))}${cancelada ? ' · <b>feira cancelada neste dia: avise o cliente</b>' : ''}</div>` : '';
+    const infoObs = p.obs ? `<p class="pc-nota obs"><i class="ic" data-i="nota"></i> ${escapeHTML(p.obs)}</p>` : '';
+    // o que mudou no pedido depois que chegou (lib/ajuste.js) e, se já estava pago, o acerto
+    const tirados = (Array.isArray(p.ajustes) ? p.ajustes : []).filter((a) => a && a.op === 'tirou' && a.nome);
+    const infoFalta = tirados.length ? `<p class="pc-nota falta"><i class="ic" data-i="alerta"></i> Saiu do pedido (em falta): ${escapeHTML([...new Set(tirados.map((a) => a.nome))].join(', '))}</p>` : '';
+    const pagoC = pago && Number.isFinite(Number(p.pagamento.valorC)) ? Number(p.pagamento.valorC) : null;
+    const difC = pagoC === null ? 0 : Math.round((Number(p.total) || 0) * 100) - pagoC;
+    const infoAcerto = difC > 0 ? `<p class="pc-acerto cobrar"><i class="ic" data-i="dinheiro"></i><span>Já pagou ${fmt(pagoC / 100)} pelo site. <b>Falta cobrar ${fmt(difC / 100)} na entrega.</b></span></p>`
+        : difC < 0 ? `<p class="pc-acerto devolver"><i class="ic" data-i="dinheiro"></i><span>Já pagou ${fmt(pagoC / 100)} pelo site. <b>Devolva ${fmt(-difC / 100)} ao cliente.</b></span></p>` : '';
+    const onde = [linhaEndereco(p, { curto: true }), p.pag].filter(Boolean).join(' · ');
+    // pedido feito antes para o dia da feira: os valores são os do dia em que o cliente pediu. No dia, confirma o preço de hoje.
+    const hojeBRp = diaBR(new Date().toISOString());
+    const confirmarPreco = podeMexer && p.precoNoDia && !pago && /^\d{4}-\d{2}-\d{2}$/.test(String(p.entregaDia || '')) && p.entregaDia <= hojeBRp;
+    const infoPreco = confirmarPreco ? `<div class="pc-acerto preco"><i class="ic" data-i="etiqueta"></i><span>Pedido feito antes, com os preços daquele dia. <b>Confirme os preços de hoje antes de separar.</b></span><button type="button" class="bt bt-sec" data-action="precos-pedido" data-id="${id}">Confirmar os preços de hoje</button></div>` : '';
+
+    return `
+        <article class="card-pedido pc" data-etapa="${etapa}">
+            <header class="pc-topo">
+                <div><h3>${escapeHTML(p.nome)}</h3>${onde ? `<p class="pc-onde"><i class="ic" data-i="pino"></i> ${escapeHTML(onde)}</p>` : ''}</div>
+                <strong class="pc-total">${fmt(p.total || 0)}</strong>
+            </header>
+            <div class="pc-marcas">
+                <span class="pc-etapa">${st.tag}</span>
+                ${infoPag}
+                ${infoImp}
+                ${dataFmt ? `<span class="pc-hora">${dataFmt}</span>` : ''}
+            </div>
+            ${infoDia}
+            ${infoPreco}
+            ${infoAcerto}
+            <ul class="pc-itens">${itensHtml}</ul>
+            ${infoEntrega}${infoTroco}${infoObs}${infoFalta}
+            ${p.avaliacao && p.avaliacao.nota ? `<p class="pedido-avaliacao${p.avaliacao.nota <= 3 ? ' baixa' : ''}"><b>Nota ${Number(p.avaliacao.nota)} de 5</b> ${p.avaliacao.texto ? escapeHTML(p.avaliacao.texto) : 'sem comentário'}</p>` : ''}
+            ${botao ? `<div class="pc-principal">${botao}</div>` : ''}
+            <div class="pc-acoes">
+                ${podeMexer ? `<button type="button" data-action="itens-pedido" data-id="${id}"><i class="ic" data-i="lapis"></i> Itens: faltou ou acrescentar</button>` : ''}
+                ${podeMexer && temBalanca && stKey !== 'aguardando_pesagem' ? `<button type="button" data-action="iniciar-separacao" data-id="${id}"><i class="ic" data-i="balanca"></i> Corrigir pesos</button>` : ''}
+                ${daLoja && stKey !== 'aguardando_pesagem' ? `<button type="button" data-action="mensagem-pedido" data-id="${id}"><i class="ic" data-i="conversa"></i> Mensagem</button>` : ''}
+                <button type="button" data-action="imprimir-pedido" data-tipo="cupom" data-id="${id}"><i class="ic" data-i="impressora"></i> Cupom</button>
+                ${stKey !== 'aguardando_pesagem' ? `<button type="button" data-action="imprimir-pedido" data-tipo="recibo" data-id="${id}"><i class="ic" data-i="nota"></i> Recibo do cliente</button>` : ''}
+                <button type="button" data-action="imprimir-pedido" data-tipo="etiqueta" data-id="${id}"><i class="ic" data-i="etiqueta"></i> Etiqueta</button>
+                ${temVolta ? `<button type="button" class="pc-voltar" data-action="voltar-pedido" data-id="${id}"><i class="ic" data-i="repetir"></i> Voltar etapa</button>` : ''}
+                ${p.status !== 'arquivado' ? `<button type="button" class="pc-cancelar" data-action="cancelar-pedido-painel" data-id="${id}"><i class="ic" data-i="lixeira"></i> Cancelar pedido</button>` : ''}
+            </div>
+        </article>`;
+};
+
+const renderHtmlPedidos = (pedidos) => {
     let colNovos = '', colPrep = '', colEnv = '';
     let nNovos = 0, nPrep = 0, nEnv = 0;
 
@@ -1572,70 +2211,7 @@ const renderHtmlPedidos = (pedidos) => {
         : pedidos;
 
     filtrados.forEach(p => {
-        const dateObj = new Date(p.data);
-        const dataFmt = isNaN(dateObj.getTime()) ? "Desconhecida" : dateObj.toLocaleString('pt-BR');
-
-        const itensStr = p.itens ? p.itens.map(i => {
-            const extra = i.aPesar ? ' <span style="color:var(--earth);font-weight:bold;">(A Pesar)</span>' : '';
-            return `${qtdDoItem(i)} ${escapeHTML(i.nome)}${extra}`;
-        }).join('<br> • ') : '';
-
-        const temAPesar = p.itens && p.itens.some(i => i.aPesar);
-        // já pesado (nenhum item a pesar): mesmo se o status ainda disser "a pesar", o cartão vai para Separando
-        const stKey = (temAPesar && p.status === 'pendente') ? 'aguardando_pesagem'
-            : (p.status === 'aguardando_pesagem' && !temAPesar) ? 'preparando' : p.status;
-        const st = dicsStatus[stKey] || dicsStatus['pendente'];
-
-        // Botão de ação: pesagem tem fluxo próprio; arquivar pede confirmação;
-        // o resto avança o status pelo handler 'avancar-pedido'.
-        let botao;
-        if (stKey === 'aguardando_pesagem') {
-            botao = `<button class="btn-outline flex-1" style="background:${st.cor};color:white;border:none;width:100%;padding:12px;" data-action="iniciar-separacao" data-id="${escapeHTML(p.id)}">${st.btn}</button>`;
-        } else if (st.proximo === 'arquivado') {
-            botao = `<button class="btn-outline flex-1" style="border-color:var(--success);color:var(--success);width:100%;padding:12px;" data-action="excluir-pedido" data-id="${escapeHTML(p.id)}">${st.btn}</button>`;
-        } else {
-            botao = `<button class="btn-outline flex-1" style="background:${st.cor};color:white;border:none;width:100%;padding:12px;" data-action="avancar-pedido" data-next="${st.proximo}" data-id="${escapeHTML(p.id)}">${st.btn}</button>`;
-        }
-
-        const infoPag = p.pagamento?.status === 'PAID'
-            ? `<span style="background:var(--success);color:white;padding:3px 8px;border-radius:12px;font-size:0.72rem;font-weight:700;">✓ PAGO</span>` : '';
-        const infoEntrega = p.entrega && (p.entrega.horario || p.entrega.horarioACombinar || Number(p.entrega.taxa) > 0)
-            ? `<div style="font-size:0.82rem;color:var(--forest);margin-top:4px;font-weight:600;"><i class="ic" data-i="entrega"></i> ${escapeHTML([p.entrega.horario || (p.entrega.horarioACombinar ? 'horário a combinar' : ''), Number(p.entrega.taxa) > 0 ? `entrega ${fmt(p.entrega.taxa)}` : ''].filter(Boolean).join(' · '))}</div>` : '';
-        const infoTroco = p.troco ? `<div style="font-size:0.82rem;color:var(--earth);margin-top:4px;"><i class="ic" data-i="dinheiro"></i> Troco para: ${escapeHTML(p.troco)}</div>` : '';
-        // pedido para outro dia (cliente da feira pediu fora do dia da feira) e feira cancelada nesse dia
-        const ehFuturo = p.entregaDia && p.entregaDia !== diaBR(p.data);
-        const cancelada = p.feiraId && p.entregaDia && (SEM_FEIRA.get(p.feiraId) || new Set()).has(p.entregaDia);
-        const infoDia = ehFuturo || cancelada ? `<div class="ped-para-dia${cancelada ? ' cancelada' : ''}"><i class="ic" data-i="calendario"></i> Para ${escapeHTML(textoDoDia(p.entregaDia))}${cancelada ? ' · <b>feira cancelada neste dia: avise o cliente</b>' : ''}</div>` : '';
-        const infoObs = p.obs ? `<div style="font-size:0.82rem;color:var(--text-mid);margin-top:4px;font-style:italic;"><i class="ic" data-i="nota"></i> ${escapeHTML(p.obs)}</div>` : '';
-
-        const cardHtml = `
-        <article class="card-pedido" style="border-left: 5px solid ${st.cor}; background: var(--warm-white); border-radius: 8px; padding: 15px; margin-bottom: 15px; border-right: 1px solid var(--parchment); border-top: 1px solid var(--parchment); border-bottom: 1px solid var(--parchment);">
-            <div style="display:flex; justify-content: space-between; gap:8px; margin-bottom: 5px;">
-                <h3 style="font-size: 1.1rem; color: var(--forest); margin: 0;">${escapeHTML(p.nome)}</h3>
-                <strong style="font-size: 1.1rem; white-space:nowrap;">${fmt(p.total || 0)}</strong>
-            </div>
-            <p style="font-size: 0.85rem; color: var(--text-mid); margin-bottom: 8px;"><i class="ic" data-i="pino"></i> ${escapeHTML(linhaEndereco(p, { curto: true }))} • ${escapeHTML(p.pag || '')}</p>
-            <div style="margin-bottom: 10px; font-size: 0.8rem; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                <span style="background: ${st.cor}; color: white; padding: 3px 8px; border-radius: 12px; font-weight: bold;">${st.tag}</span>
-                ${infoPag}
-                <span><i class="ic" data-i="calendario"></i> ${dataFmt}</span>
-            </div>
-            ${infoDia}
-            <div style="font-size: 0.9rem; color: var(--text-dark); margin-bottom: 12px; background: white; padding: 10px; border-radius: 6px; border: 1px solid #eee;">
-                • ${itensStr}
-                ${infoEntrega}
-                ${p.avaliacao && p.avaliacao.nota ? `<p class="pedido-avaliacao${p.avaliacao.nota <= 3 ? ' baixa' : ''}"><b>Nota ${Number(p.avaliacao.nota)} de 5</b> ${p.avaliacao.texto ? escapeHTML(p.avaliacao.texto) : 'sem comentário'}</p>` : ''}
-                ${infoTroco}
-                ${infoObs}
-            </div>
-            <div style="display: flex; gap: 8px;">${botao}</div>
-            <div class="ped-imprimir">
-                <button type="button" data-action="imprimir-pedido" data-tipo="cupom" data-id="${escapeHTML(p.id)}"><i class="ic" data-i="impressora"></i> Cupom</button>
-                <button type="button" data-action="imprimir-pedido" data-tipo="etiqueta" data-id="${escapeHTML(p.id)}"><i class="ic" data-i="etiqueta"></i> Etiqueta da sacola</button>
-                <button type="button" class="ped-cancelar" data-action="cancelar-pedido-painel" data-id="${escapeHTML(p.id)}"><i class="ic" data-i="lixeira"></i> Cancelar pedido</button>
-            </div>
-        </article>`;
-
+        const stKey = etapaDoPedido(p), cardHtml = cartaoDoPedido(p);
         if (['pendente', 'aguardando_pesagem', 'aguardando_pagamento'].includes(stKey)) { colNovos += cardHtml; nNovos++; }
         else if (stKey === 'preparando') { colPrep += cardHtml; nPrep++; }
         else if (stKey === 'enviado') { colEnv += cardHtml; nEnv++; }
@@ -1651,7 +2227,53 @@ const renderHtmlPedidos = (pedidos) => {
     </div>
     <div class="kb">
         ${etapas.map(([k, rot, html, n, vazio]) => `<div class="kb-col" data-kb-col="${k}"${kbEtapa === k ? '' : ' hidden'}><h3>${rot} <i>${n}</i></h3>${html || `<p class="kb-vazio">${vazio}</p>`}</div>`).join('')}
-    </div>`;
+    </div>${blocoEntregues()}`;
+};
+
+// ---------------------------------------------------------------------
+// ENTREGUES DE HOJE E DE ONTEM
+// O pedido entregue sai da fila. Se a pessoa marcou "Entregue" sem querer, é aqui que ela
+// acha o pedido e volta uma etapa. Só carrega quando alguém abre (uma consulta), para não
+// gastar leitura à toa.
+// ---------------------------------------------------------------------
+const ENTREGUES = { aberto: false, carregando: false, lista: null, erro: false };
+const blocoEntregues = () => {
+    let corpo = '';
+    if (ENTREGUES.aberto) {
+        if (ENTREGUES.carregando && !ENTREGUES.lista) corpo = esqueleto('Buscando os pedidos entregues...', 2);
+        else if (ENTREGUES.erro) corpo = estadoVazio({ erro: true, compacto: true, titulo: 'Não consegui buscar os entregues', texto: 'Confira a internet e toque de novo.' });
+        else if (!(ENTREGUES.lista || []).length) corpo = estadoVazio({ icone: 'certo', compacto: true, titulo: 'Nenhum pedido entregue hoje nem ontem', texto: 'Os mais antigos ficam em <b>Balanço</b>.' });
+        else corpo = `<p class="pc-feitos-dica">Marcou "Entregue" sem querer? Toque em <b>Voltar etapa</b> e o pedido volta para A caminho.</p><div class="pc-feitos-lista">${ENTREGUES.lista.map(cartaoDoPedido).join('')}</div>`;
+    }
+    return `<section class="pc-feitos" aria-label="Pedidos entregues">
+        <button type="button" class="bt bt-sec" data-action="ver-entregues" aria-expanded="${ENTREGUES.aberto}"><i class="ic" data-i="certo"></i> ${ENTREGUES.aberto ? 'Esconder os entregues' : 'Ver os entregues de hoje e de ontem'}</button>
+        ${corpo}
+    </section>`;
+};
+const redesenharFila = () => { if (document.getElementById('aba-relatorios')?.classList.contains('active')) renderRelatoriosMaster(); };
+const carregarEntregues = async () => {
+    ENTREGUES.carregando = true; ENTREGUES.erro = false; redesenharFila();
+    try {
+        const { getDocs } = await import('./firebase.js');
+        const desde = new Date(Date.now() - 3 * 86400000).toISOString();
+        const snap = await getDocs(query(tcol('pedidos'), where('data', '>=', desde), orderBy('data', 'desc'), limit(400)));
+        const hoje = diaBR(new Date().toISOString()), ontem = diaBR(new Date(Date.now() - 86400000).toISOString());
+        const doDia = (p) => (/^\d{4}-\d{2}-\d{2}$/.test(String(p.entregaDia || '')) ? p.entregaDia : diaBR(p.data));
+        const feitos = snap.docs.map((d) => ({ ...d.data(), id: d.id })).filter((p) => p.status === 'arquivado' && p.origem !== 'balcao' && [hoje, ontem].includes(doDia(p)));
+        ENTREGUES.lista = await abrirPedidos(feitos);
+    } catch (e) { console.error('[entregues]', e); ENTREGUES.erro = true; }
+    ENTREGUES.carregando = false; redesenharFila();
+};
+// pedido da fila ou da lista de entregues
+const acharPedido = (id) => pedidosGerais.find((p) => p.id === id) || (ENTREGUES.lista || []).find((p) => p.id === id);
+const NOME_DA_ETAPA = { pendente: 'Novos', aguardando_pesagem: 'Novos (a pesar)', preparando: 'Separando', enviado: 'A caminho' };
+const etapaDeVolta = (p) => (p.status === 'arquivado' ? 'enviado' : p.status === 'enviado' ? 'preparando' : p.status === 'preparando' ? ((p.itens || []).some((i) => i.aPesar) ? 'aguardando_pesagem' : 'pendente') : '');
+const chamarAjuste = async (corpo) => {
+    const token = await auth.currentUser?.getIdToken();
+    const r = await fetch('/api/pdv', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ acao: 'ajuste', ...corpo }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || 'Não foi possível mudar o pedido.');
+    return d;
 };
 let kbEtapa = 'novos';
 document.getElementById('lista-historico')?.addEventListener('click', (e) => {
@@ -1725,15 +2347,8 @@ const acoplarRelatorioIADemanda = (historicoMap) => {
 const renderRelatoriosMaster = async () => {
     const listDiv = document.getElementById('lista-historico');
     if (pedidosGerais.length === 0) {
-        listDiv.innerHTML = `
-            <div style="text-align:center; padding:40px 20px; color:var(--text-light);">
-                <div style="font-size:2.5rem; margin-bottom:10px;"><i class="ic" data-i="vazio"></i></div>
-                <p style="font-weight:700; color:var(--text-mid); font-size:1.05rem;">Nenhum pedido na fila</p>
-                <p style="font-size:.88rem; margin-top:6px; line-height:1.6;">
-                    Só aparecem aqui pedidos em andamento.<br>
-                    Os já concluídos ficam em <b>Balanço</b>.
-                </p>
-            </div>`;
+        listDiv.innerHTML = estadoVazio({ icone: 'vazio', titulo: 'Nenhum pedido na fila',
+            texto: 'Só aparecem aqui pedidos em andamento. Quando um cliente pedir, o pedido aparece aqui e o celular avisa. Os já concluídos ficam em <b>Balanço</b>.' }) + blocoEntregues();
         document.getElementById('stat-pedidos').textContent = "0";
         document.getElementById('stat-receita').textContent = "R$ 0,00";
         return;
@@ -1901,12 +2516,8 @@ const renderCupons = () => {
     if (!alvo) return;
 
     if (cuponsAtuais.length === 0) {
-        alvo.innerHTML = `
-            <div style="text-align:center; padding:30px 20px; color:var(--text-light);">
-                <div style="font-size:2rem; margin-bottom:8px;"><i class="ic" data-i="cupom"></i></div>
-                <p style="font-weight:700; color:var(--text-mid);">Nenhum cupom criado</p>
-                <p style="font-size:.86rem; margin-top:6px;">Crie um acima para começar a oferecer desconto.</p>
-            </div>`;
+        alvo.innerHTML = estadoVazio({ icone: 'cupons', titulo: 'Nenhum cupom criado', texto: 'Crie um acima para começar a oferecer desconto.',
+            acao: { texto: 'Criar o primeiro cupom', atributos: 'data-pn-focar="cup-codigo"' } });
         return;
     }
 
@@ -2070,10 +2681,13 @@ const renderComunicados = () => {
 
     const blocosDias = DIAS_NOMES.map((nome, i) => {
         const d = comunicadosAtuais.dias?.[i] || { ativo: false, texto: '' };
+        // dia sem aviso fica numa linha só; "Escrever" abre a caixa (menos rolagem nos 7 dias)
+        const vazio = !d.ativo && !String(d.texto || '').trim();
         return `
-        <div class="com-dia">
+        <div class="com-dia${vazio ? ' fechado' : ''}">
             <div class="com-dia-topo">
-                <span class="com-dia-nome">${nome} ${i === hoje ? '<span class="com-hoje-tag">HOJE</span>' : ''} ${jaVenceu(d) ? SELO_VENCIDO : ''}</span>
+                <span class="com-dia-nome">${nome} ${i === hoje ? '<span class="com-hoje-tag">HOJE</span>' : ''} ${jaVenceu(d) ? SELO_VENCIDO : ''}${vazio ? '<small class="com-sem">sem aviso</small>' : ''}</span>
+                ${vazio ? '<button type="button" class="com-escrever" data-com-abrir>Escrever</button>' : ''}
                 <label class="com-switch">
                     <input type="checkbox" class="com-dia-ativo" data-dia="${i}" ${d.ativo ? 'checked' : ''}> mostrar
                 </label>
@@ -2088,6 +2702,12 @@ const renderComunicados = () => {
 
     cont.innerHTML = blocoFixo + blocosDias;
 };
+{
+    const abrirDia = (dia, focar) => { if (!dia || !dia.classList.contains('fechado')) return; dia.classList.remove('fechado'); dia.querySelector('.com-escrever')?.remove(); dia.querySelector('.com-sem')?.remove(); if (focar) dia.querySelector('textarea')?.focus(); };
+    const cont = document.getElementById('lista-comunicados');
+    cont?.addEventListener('click', (e) => { const b = e.target.closest('[data-com-abrir]'); if (b) abrirDia(b.closest('.com-dia'), true); });
+    cont?.addEventListener('change', (e) => { if (e.target.classList.contains('com-dia-ativo') && e.target.checked) abrirDia(e.target.closest('.com-dia'), true); });
+}
 
 document.getElementById('btn-salvar-cupom')?.addEventListener('click', salvarCupom);
 
@@ -2171,6 +2791,7 @@ const salvarComunicados = async () => {
             validoAte: document.getElementById('com-fixo-validade')?.value || ''
         };
         await setDoc(tdoc('loja', 'comunicados'), { dias, fixo, atualizadoEm: Date.now() }, { merge: true });
+        pedirCatalogo('extras', null, 1500);        // a vitrine leva o aviso junto (lib/catalogo.js)
         showToast('Comunicados atualizados!');
     } catch (e) {
         showToast('Erro ao salvar comunicados.', true);
@@ -2207,7 +2828,7 @@ const carregarBalanco = async (dias = 30) => {
                 const parar = onSnapshot(q, (s) => { parar(); resolve(s); }, reject);
               });
 
-        balancoCache = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+        balancoCache = await abrirPedidos(snap.docs.map(d => ({ ...d.data(), id: d.id })));
         renderBalanco(dias);
         TELAS.margens().then((m) => m.renderMargens(balancoCache, produtosAtuais, dias)).catch(() => {});   // custos e margens, com os mesmos pedidos
         // Antes cortava em 800 sem avisar: o total do período saía menor que o real.
@@ -2370,6 +2991,136 @@ document.getElementById('lista-condominios')?.addEventListener('click', (e) => {
     e.target.closest('.cond-remover')?.closest('.cond-linha').remove();
 });
 
+// AGENDA DAS FEIRAS: para cada dia de cada feira desta banca, se tem entrega, se tem retirada na feira, os horários de cada uma e o local.
+// Fica em loja/config.entrega.agenda DESTA banca (as outras bancas da mesma feira têm a delas). Quem lê: lib/entrega.js (opcoesDoDia).
+let agenda = [], agendaMexida = false;
+const NOMES_DIAS_CURTOS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const lerAgenda = () => [...document.querySelectorAll('#agenda-entrega .agenda-linha')].map((el) => ({
+    feira: el.querySelector('[data-r="feira"]').value, dia: Number(el.querySelector('[data-r="dia"]').value),
+    entrega: el.querySelector('[data-r="entrega"]').checked, horariosEntrega: horariosDoTexto(el.querySelector('[data-r="horariosEntrega"]').value),
+    retirada: el.querySelector('[data-r="retirada"]').checked, horariosRetirada: horariosDoTexto(el.querySelector('[data-r="horariosRetirada"]').value),
+    local: el.querySelector('[data-r="local"]').value.replace(/[<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
+}));
+const DIA_COM_ARTIGO = ['no domingo', 'na segunda', 'na terça', 'na quarta', 'na quinta', 'na sexta', 'no sábado'];
+/** Frase curta sob cada linha: os dias da feira (feitos na Plataforma) e, se o dia escolhido não é um deles, o que fazer. */
+function dicaDaLinha(feira, dia) {
+    const f = FEIRAS_DA_LOJA.get(feira); if (!f) return { texto: '', erro: false };
+    if (!f.dias.length) return { texto: `${f.nome} vale todos os dias.`, erro: false };
+    if (dia >= 0 && dia <= 6 && !f.dias.includes(dia)) return { texto: `${f.nome} não tem entrega ${DIA_COM_ARTIGO[dia]} (dias dela: ${f.dias.map((d) => NOMES_DIAS_CURTOS[d]).join(', ')}). Para usar este dia, marque-o nessa feira em Plataforma → Feiras. Enquanto isso, escolha outro dia ou apague a linha.`, erro: true };
+    return { texto: `Dias de ${f.nome}: ${f.dias.map((d) => NOMES_DIAS_CURTOS[d]).join(', ')}.`, erro: false };
+}
+/** O que a agenda tem de errado (null = pode gravar). `i` é a linha com o problema, para destacá-la na tela. */
+function conferirAgenda(linhas) {
+    const vistos = new Set();
+    for (const [i, r] of linhas.entries()) {
+        const n = `Linha ${i + 1} da agenda`;
+        if (!r.feira) return { i, msg: `${n}: escolha a feira.` };
+        if (!(r.dia >= 0 && r.dia <= 6)) return { i, msg: `${n}: escolha o dia.` };
+        if (!r.entrega && !r.retirada) return { i, msg: `${n}: marque entrega, retirada ou as duas (ou apague a linha).` };
+        if (dicaDaLinha(r.feira, r.dia).erro) return { i, msg: `${n}: ${FEIRAS_DA_LOJA.get(r.feira).nome} não tem ${DIA_COM_ARTIGO[r.dia].replace(/^(no|na) /, '')} cadastrada. Marque esse dia na feira em Plataforma → Feiras, ou escolha outro dia.` };
+        if (vistos.has(`${r.feira}|${r.dia}`)) return { i, msg: `${n}: essa feira já tem uma linha para esse dia.` };
+        vistos.add(`${r.feira}|${r.dia}`);
+    }
+    return null;
+}
+/** Destaca a linha do problema (borda vermelha) e leva a tela até ela; sem `i` só limpa. */
+function destacarLinhaDaAgenda(i) {
+    document.querySelectorAll('#agenda-entrega .agenda-linha').forEach((el, k) => el.classList.toggle('com-erro', k === i));
+    if (i >= 0) document.querySelectorAll('#agenda-entrega .agenda-linha')[i]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+function pintarAgenda({ manter = false } = {}) {
+    const el = document.getElementById('agenda-entrega'); if (!el) return;
+    if (manter && el.children.length) agenda = lerAgenda();   // não perde o que a pessoa está digitando
+    const opFeira = (sel) => {
+        const ids = new Map([...FEIRAS_DA_LOJA].map(([id, f]) => [id, f.nome])); if (sel && !ids.has(sel)) ids.set(sel, sel);
+        return '<option value="">Escolha a feira</option>' + [...ids].map(([id, nome]) => `<option value="${escapeHTML(id)}"${id === sel ? ' selected' : ''}>${escapeHTML(nome)}</option>`).join('');
+    };
+    const opDia = (feira, sel) => {
+        const dias = (FEIRAS_DA_LOJA.get(feira) || {}).dias || [];
+        return '<option value="-1">Dia</option>' + NOMES_DIAS_CURTOS.map((n, d) => `<option value="${d}"${d === sel ? ' selected' : ''}>${n}${dias.includes(d) ? ' (dia da feira)' : ''}</option>`).join('');
+    };
+    el.innerHTML = agenda.map((r, i) => { const dica = dicaDaLinha(r.feira, r.dia); return `
+        <div class="regra-entrega agenda-linha${dica.erro ? ' com-erro' : ''}" data-i="${i}">
+            <div class="regra-topo"><select data-r="feira" aria-label="Feira da linha ${i + 1}">${opFeira(r.feira)}</select><select data-r="dia" aria-label="Dia da linha ${i + 1}">${opDia(r.feira, r.dia)}</select><button type="button" class="btn-texto" data-r="remover" aria-label="Apagar a linha ${i + 1}">Apagar</button></div>
+            <p class="agenda-dica" data-r="dica"${dica.texto ? '' : ' hidden'}>${escapeHTML(dica.texto)}</p>
+            <label class="chk-linha"><input type="checkbox" data-r="entrega"${r.entrega ? ' checked' : ''}> Entrega neste dia</label>
+            <textarea data-r="horariosEntrega" rows="2" aria-label="Horários de entrega da linha ${i + 1}" placeholder="Horários da entrega, um por linha (em branco = não pergunta)">${escapeHTML((r.horariosEntrega || []).join('\n'))}</textarea>
+            <label class="chk-linha"><input type="checkbox" data-r="retirada"${r.retirada ? ' checked' : ''}> Retirada na feira neste dia</label>
+            <textarea data-r="horariosRetirada" rows="2" aria-label="Horários de retirada da linha ${i + 1}" placeholder="Horários da retirada, um por linha (em branco = não pergunta)">${escapeHTML((r.horariosRetirada || []).join('\n'))}</textarea>
+            <input type="text" data-r="local" maxlength="80" aria-label="Onde retirar, linha ${i + 1}" placeholder="Onde retirar (ex.: na feira do Madri, banca da esquina)" value="${escapeHTML(r.local || '')}">
+        </div>`; }).join('');
+}
+(() => {
+    const caixa = document.getElementById('agenda-entrega'), novo = document.getElementById('btn-add-agenda'); if (!caixa || !novo) return;
+    caixa.addEventListener('input', () => { agendaMexida = true; });
+    caixa.addEventListener('change', (e) => {
+        agendaMexida = true;
+        // trocou a feira: o dia vira o primeiro dia dela (e a lista de dias mostra quais são os dela)
+        if (e.target && e.target.dataset.r === 'feira') {
+            const linhas = lerAgenda(), i = Number(e.target.closest('.agenda-linha').dataset.i), f = FEIRAS_DA_LOJA.get(linhas[i].feira);
+            if (f && f.dias.length && !f.dias.includes(linhas[i].dia)) linhas[i].dia = f.dias[0];
+            agenda = linhas; pintarAgenda();
+        } else if (e.target && e.target.dataset.r === 'dia') {                // trocou o dia: a frase da linha acompanha (sem redesenhar, para não apagar o que foi digitado)
+            const el = e.target.closest('.agenda-linha'), l = lerAgenda()[Number(el.dataset.i)], dica = dicaDaLinha(l.feira, l.dia), p = el.querySelector('[data-r="dica"]');
+            p.textContent = dica.texto; p.hidden = !dica.texto; el.classList.toggle('com-erro', dica.erro);
+        }
+    });
+    caixa.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-r="remover"]'); if (!b) return;
+        agenda = lerAgenda().filter((_, k) => k !== Number(b.closest('.agenda-linha').dataset.i)); agendaMexida = true; pintarAgenda();
+    });
+    novo.addEventListener('click', () => {
+        const atuais = lerAgenda(); if (atuais.length >= 40) return showToast('No máximo 40 linhas na agenda.', true);
+        const so = FEIRAS_DA_LOJA.size === 1 ? [...FEIRAS_DA_LOJA][0] : null;     // banca de uma feira só: já vem escolhida
+        agenda = [...atuais, { feira: so ? so[0] : '', dia: so && so[1].dias.length ? so[1].dias[0] : -1, entrega: true, horariosEntrega: [], retirada: false, horariosRetirada: [], local: '' }];
+        agendaMexida = true; pintarAgenda();
+    });
+})();
+
+// FRETE FORA DO DIA DA FEIRA (lib/frete.js): fica em loja/frete, que só a equipe lê (o ponto de saída pode ser a casa do dono)
+const FRETE_CAMPOS = [['frete-base', 'base'], ['frete-km', 'porKm'], ['frete-kg', 'porKg'], ['frete-kg-livre', 'kgLivre'], ['frete-margem', 'margem'], ['frete-minimo', 'minimo'], ['frete-raio', 'raioKm'], ['frete-juntar', 'juntarKm']];
+let freteCarregado = false;
+async function carregarFrete() {
+    if (freteCarregado || !document.getElementById('frete-ligado')) return;
+    try {
+        const s = await getDoc(tdoc('loja', 'frete')), f = s.exists() ? s.data() : {};
+        document.getElementById('frete-ligado').checked = f.ligado === true;
+        document.getElementById('frete-origem').value = f.origem && Number.isFinite(f.origem.lat) ? `${f.origem.lat}, ${f.origem.lng}` : '';
+        const semFrete = Array.isArray(f.diasSemFrete) ? f.diasSemFrete.map(Number) : [];
+        document.querySelectorAll('[data-dia-sem-frete]').forEach((c) => { c.checked = semFrete.includes(Number(c.dataset.diaSemFrete)); });
+        const padrao = { margem: 5, kgLivre: 5, raioKm: 15, juntarKm: 2 };
+        FRETE_CAMPOS.forEach(([id, k]) => { const el = document.getElementById(id); if (el) el.value = f[k] !== undefined ? f[k] : (padrao[k] !== undefined ? padrao[k] : ''); });
+        freteCarregado = true;
+    } catch (e) { /* sem permissão (papel sem configuração) ou sem internet: o bloco fica em branco */ }
+}
+document.querySelector('.tab[data-aba="config"]')?.addEventListener('click', () => { carregarFrete(); });
+document.getElementById('frete-gps')?.addEventListener('click', () => {
+    if (!navigator.geolocation) return showToast('Este aparelho não informa a localização. Cole o ponto do Google Maps.', true);
+    showToast('Pegando a localização...');
+    navigator.geolocation.getCurrentPosition((pos) => {
+        document.getElementById('frete-origem').value = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`;
+        showToast('Ponto marcado. Toque em "Salvar frete".');
+    }, () => showToast('Não deu para pegar a localização. Libere o GPS ou cole o ponto do Google Maps.', true), { enableHighAccuracy: true, timeout: 15000 });
+});
+document.getElementById('btn-salvar-frete')?.addEventListener('click', async () => {
+    const bt = document.getElementById('btn-salvar-frete');
+    try {
+        const t = document.getElementById('frete-origem').value.trim(), m = t.match(/^(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/);
+        if (t && !m) throw new Error('Ponto de saída: cole no formato "-16.68, -49.25" ou toque em "Usar a minha localização".');
+        const ligado = document.getElementById('frete-ligado').checked;
+        if (ligado && !m) throw new Error('Para ligar o frete, marque o ponto de onde a entrega sai.');
+        const diasSemFrete = [...document.querySelectorAll('[data-dia-sem-frete]')].filter((c) => c.checked).map((c) => Number(c.dataset.diaSemFrete));
+        const dados = { ligado, origem: m ? { lat: Number(m[1]), lng: Number(m[2]) } : null, diasSemFrete, atualizadoEm: Date.now() };
+        FRETE_CAMPOS.forEach(([id, k]) => { const v = Number(String(document.getElementById(id)?.value || '').replace(',', '.')); dados[k] = Number.isFinite(v) && v >= 0 ? v : 0; });
+        if (dados.margem > 100) throw new Error('Margem: no máximo 100%.');
+        bt.disabled = true;
+        await setDoc(tdoc('loja', 'frete'), dados);
+        anotar('frete', `${ligado ? 'ligado' : 'desligado'}${diasSemFrete.length ? ` · sem frete em ${diasSemFrete.length} dia(s)` : ''} · base ${fmt(dados.base)} + ${fmt(dados.porKm)}/km`);
+        showToast(ligado ? 'Frete salvo. Quem é de feira já pode receber hoje pagando o frete.' : 'Frete salvo (desligado).');
+    } catch (e) { showToast(e.message || 'Não consegui salvar o frete.', true); }
+    finally { bt.disabled = false; }
+});
+
 document.getElementById('btn-salvar-config').addEventListener('click', async () => {
     const btn = document.getElementById('btn-salvar-config');
     btn.textContent = "A guardar..."; btn.disabled = true;
@@ -2380,26 +3131,56 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         const lojaAberta = document.getElementById('config-status-loja').value === "aberta";
         const diasAbertos = Array.from(document.querySelectorAll('.chk-dia:checked')).map(chk => parseInt(chk.value));
 
-        if (!wpp) throw new Error("Número de WhatsApp inválido. Digite com DDD, ex.: 62 99999-8888.");
+        const cuidaDoPix = mexeNaChavePix(papelAtual);   // o gerente não manda chave PIX, PIX automático nem WhatsApp: o banco também recusaria
+        if (cuidaDoPix && !wpp) throw new Error("Número de WhatsApp inválido. Digite com DDD, ex.: 62 99999-8888.");
         if (diasAbertos.length === 0) throw new Error("Marque pelo menos um dia de abertura (ou feche a loja no disjuntor).");
 
         const condominios = lerCondominios();
-        const pixAutomatico = ehLojaOriginal && document.getElementById('config-pix')?.checked === true;
+        const pixAutomatico = cuidaDoPix && podePixAutomatico() && document.getElementById('config-pix')?.checked === true;
+        const pagamentoNaEntrega = document.getElementById('config-pag-entrega')?.checked === true;
+        const formasPagamento = Object.fromEntries(['pix', 'cartao', 'dinheiro'].map((k) => [k, document.getElementById(`config-forma-${k}`)?.checked !== false]));
+        if (!Object.values(formasPagamento).some(Boolean)) throw new Error('Deixe pelo menos uma forma de pagamento marcada (PIX, cartão ou dinheiro).');
         const taxa = Math.max(0, parseFloat(document.getElementById('config-taxa').value) || 0), gratisAcima = Math.max(0, parseFloat(document.getElementById('config-gratis').value) || 0);
         if (taxa > 500) throw new Error("Confira a taxa de entrega: o máximo é R$ 500.");
-        const entrega = { taxa, gratisAcima, horarios: horariosDoTexto(document.getElementById('config-horarios').value) };
+        const diasRet = Array.from(document.querySelectorAll('.chk-ret-dia:checked')).map((c) => Number(c.value));
+        const retiradaLigada = document.getElementById('config-retirada-ativa')?.checked === true;
+        if (retiradaLigada && diasRet.length === 0) throw new Error("Marque pelo menos um dia em que a retirada funciona (ou desmarque \"Aceitar retirada na banca\").");
+        const retirada = {
+            ativa: retiradaLigada,
+            dias: diasRet.length === 7 ? [] : diasRet,          // todos os dias = lista vazia
+            horarios: horariosDoTexto(document.getElementById('config-retirada-horarios')?.value || ''),
+            local: (document.getElementById('config-retirada-local')?.value || '').replace(/[<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
+        };
+        const linhasAgenda = lerAgenda(), erroAgenda = conferirAgenda(linhasAgenda);
+        destacarLinhaDaAgenda(erroAgenda ? erroAgenda.i : -1);
+        if (erroAgenda) throw new Error(erroAgenda.msg);
+        // vagas por horário e antecedência (js/vagas-lib.js): número inteiro de vagas; antecedência em horas, gravada em minutos
+        const vagas = Math.floor(Number(document.getElementById('config-vagas')?.value) || 0), antecedenciaH = Number(document.getElementById('config-antecedencia')?.value) || 0;
+        if (vagas < 0 || vagas > 500) throw new Error('Vagas por horário: de 0 a 500.');
+        if (antecedenciaH < 0 || antecedenciaH > 24) throw new Error('Fechar o horário: de 0 a 24 horas antes.');
+        const entrega = { taxa, gratisAcima, horarios: horariosDoTexto(document.getElementById('config-horarios').value), retirada, vagas, antecedenciaMin: Math.round(antecedenciaH * 60),
+            agenda: linhasAgenda.map((r) => ({ feira: r.feira, dia: r.dia, entrega: r.entrega, horariosEntrega: r.entrega ? r.horariosEntrega : [], retirada: r.retirada, horariosRetirada: r.retirada ? r.horariosRetirada : [], local: r.retirada ? r.local : '' })) };
         // Chave PIX da loja (copia e cola). Vazia = desligado. Preenchida, tem de ser válida para o tipo escolhido.
         const pixTipo = document.getElementById('config-pix-tipo').value, pixBruta = document.getElementById('config-pix-chave').value.trim();
         const pixNome = document.getElementById('config-pix-nome').value.trim(), pixCidade = document.getElementById('config-pix-cidade').value.trim();
         let pix = null;
-        if (pixBruta) {
+        if (cuidaDoPix && pixBruta) {
             const chave = normalizarChave(pixTipo, pixBruta);
             if (!chave) throw new Error(`A chave PIX não confere com o tipo "${TIPOS_DE_CHAVE[pixTipo]}". Confira os números ou troque o tipo.`);
             if (pixNome.length < 2) throw new Error("Escreva o nome de quem recebe o PIX, como aparece no banco.");
             pix = { tipo: pixTipo, chave, nome: pixNome.slice(0, 25), cidade: pixCidade.slice(0, 15) };
         }
         const cidade = (document.getElementById('config-cidade')?.value || '').trim().slice(0, 60);   // usada pelo motor de previsão para o clima
-        await setDoc(tdoc("loja", "config"), { wpp, minimo, lojaAberta, diasAbertos, condominios, pixAutomatico, entrega, pix, cidade }, { merge: true });
+        // Instagram e WhatsApp que o cliente vê na loja (js/contato-lib.js)
+        const igBruto = document.getElementById('config-instagram').value.trim(), instagram = normalizarInstagram(igBruto);
+        if (igBruto && !instagram) throw new Error('Confira o Instagram: escreva o @ da loja (ex.: @pastelacaidobie) ou cole o link do perfil.');
+        const wcBruto = document.getElementById('config-wpp-contato').value.trim(), wppContato = normalizarWhatsapp(wcBruto);
+        if (wcBruto && !wppContato) throw new Error('Confira o WhatsApp para o cliente: com DDD, ex.: 62 99999-8888 (ou deixe vazio para usar o dos pedidos).');
+        const contato = { instagram, whatsapp: wppContato, mostrarWpp: document.getElementById('config-mostrar-wpp').checked === true };
+        const dados = { minimo, lojaAberta, diasAbertos, condominios, pagamentoNaEntrega, formasPagamento, entrega, cidade, contato };
+        if (cuidaDoPix) Object.assign(dados, { wpp, pixAutomatico, pix });       // gerente: estas três chaves nem vão no pacote
+        await setDoc(tdoc("loja", "config"), dados, { merge: true });
+        agendaMexida = false;
         showToast("Configurações atualizadas!");
     } catch (err) {
         showToast(err.message, true);
@@ -2407,3 +3188,9 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         btn.textContent = "Salvar configurações"; btn.disabled = false;
     }
 });
+
+// PALETA DE COMANDOS (Ctrl+K, "/"): acha tela, produto, pedido ou ação com as listas que o painel já tem
+iniciarComandos({ produtos: () => produtosAtuais, pedidos: () => pedidosGerais });
+
+// o que ficou esperando internet da última vez (painel fechado sem sinal, no iPhone) vai agora
+onAuthStateChanged(auth, (u) => { if (u && !u.isAnonymous) reenviarPendentes().catch(() => {}); });

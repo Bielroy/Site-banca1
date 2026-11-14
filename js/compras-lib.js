@@ -15,7 +15,11 @@ import { temControle, sugestaoCompra, comFolgaDePerda, custoDaFicha, paraCima } 
 
 const r2 = (n) => Math.round(n * 100) / 100, r3 = (n) => Math.round(n * 1000) / 1000;
 
-export function listaDeCompras({ produtos, previsto = {}, perdas = {}, acabou = [] }) {
+const somarDias = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const ddmm = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+
+/** hoje = 'AAAA-MM-DD' (Brasília): só serve para dizer a data em que a produção fica pronta. */
+export function listaDeCompras({ produtos, previsto = {}, perdas = {}, acabou = [], hoje = null }) {
     const mapa = new Map(produtos.map((p) => [p.id, p]));
     const alvoPrevisto = (p) => {
         const pv = previsto[p.id]; if (!pv) return null;
@@ -29,8 +33,18 @@ export function listaDeCompras({ produtos, previsto = {}, perdas = {}, acabou = 
         if (!p.ficha || !temControle(p.estoqueFisico)) continue;
         const f = custoDaFicha(p.ficha, mapa); if (!f.valida) continue;
         const s = sugestaoCompra({ atual: p.estoqueFisico, min: p.estoqueMin, ideal: p.estoqueIdeal, previsto: alvoPrevisto(p), unidade: 'un' });
-        const unidades = Math.ceil(s.comprar - 1e-9); if (!(unidades > 0)) continue;
-        produzir.push({ id: p.id, nome: p.nome, unidade: p.unidade || 'un', qtd: unidades, motivo: s.motivo, custo: f.completo ? r2(f.porUnidade * unidades) : null });
+        let unidades = Math.ceil(s.comprar - 1e-9); if (!(unidades > 0)) continue;
+        let motivo = s.motivo;
+        // LEAD TIME: produto que leva dias para ficar pronto (cura, descanso, embalagem) — começa hoje e avisa quando fica pronto
+        const prazo = Number(p.prazoDias) > 0 ? Math.min(30, Math.round(Number(p.prazoDias))) : 0;
+        if (prazo) motivo += `; leva ${prazo} dia${prazo > 1 ? 's' : ''} para ficar pronto${hoje ? ` (começando hoje, fica pronto em ${ddmm(somarDias(hoje, prazo))})` : ''}`;
+        // VALIDADE: não produz mais do que vende antes de vencer
+        const val = Number(p.ficha.validadeDias), pv = previsto[p.id];
+        if (val > 0 && pv && Number(pv.vende) > 0) {
+            const teto = Math.max(1, Math.ceil(Number(pv.vende) / 7 * val - Math.max(0, Number(p.estoqueFisico) || 0)));
+            if (unidades > teto) { unidades = teto; motivo += `; limitado ao que vende em ${val} dia${val > 1 ? 's' : ''} de validade`; }
+        }
+        produzir.push({ id: p.id, nome: p.nome, unidade: p.unidade || 'un', qtd: unidades, motivo, custo: f.completo ? r2(f.porUnidade * unidades) : null });
         for (const l of f.linhas) uso.set(l.id, r3((uso.get(l.id) || 0) + l.qtd * unidades / f.rende));
     }
 

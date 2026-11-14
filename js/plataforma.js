@@ -10,23 +10,28 @@
 //  no login. Esta tela não protege nada sozinha: sem esse login, o servidor recusa.
 // =====================================================================
 import './erros-site.js';   // primeiro: avisa o servidor se algo quebrar (aba Erros da Plataforma)
-import { auth, onAuthStateChanged } from './firebase.js';
+import { auth, onAuthStateChanged, getDoc, doc, db } from './firebase.js';
 import { urlDaLoja } from './tenant.js';
+import * as CZ from './cartaz-editor.js';
 import { escapeHTML, fmt, showToast, customConfirm } from './utils.js';
 import { sugerirId, idValido, totais, diasDaFeira, textoDoDia, proximaEntrega, normCond } from './plataforma-lib.js';
+import { CAMPOS_PRODUTO, camposDaLoja } from './cadastro-lib.js';
+import { FORMATOS as FORMATOS_LOJA } from './formato-lib.js';
+import { listaGuardada, guardarDaPlataforma } from './lojas-rapido.js';
 const diasEmTexto = (dias) => diasDaFeira(dias);
 import './icones-admin.js';
 
 const ABAS = ['feiras', 'lojas', 'condominios', 'mensalidades', 'chaves', 'erros'];
 const lerAba = () => { try { const a = localStorage.getItem('pf_aba'); return ABAS.includes(a) ? a : 'feiras'; } catch (_) { return 'feiras'; } };
-const S = { dados: null, aba: lerAba(), busca: { lojas: '', condominios: '' }, folha: null, rascunho: null, ocupado: false, editandoCond: '', mensal: {}, confirmando: 0 };
+const S = { dados: null, aba: lerAba(), busca: { lojas: '', condominios: '' }, folha: null, rascunho: null, ocupado: false, editandoCond: '', mensal: {}, confirmando: 0, cartaz: null };
 const el = () => document.getElementById('pf-conteudo');
 const $ = (id) => document.getElementById(id);
-const NOMES_MODELO = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', jantinha: 'Jantinha', padaria: 'Padaria', acai: 'Açaí', mercadinho: 'Mercadinho', doceria: 'Doceria' };
+const NOMES_MODELO = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', jantinha: 'Jantinha', padaria: 'Padaria', acai: 'Açaí', pastelacai: 'Pastel e açaí', mercadinho: 'Mercadinho', doceria: 'Doceria' };
 const FORMATOS = { ql: 'Quadra e lote', rua: 'Rua e número', livre: 'Endereço escrito' };
 const LETRAS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'], NOMES_DIA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const corOk = (c) => (/^#[0-9a-fA-F]{6}$/.test(String(c || '')) ? c : '#1a3a2a');
-const linkDaFeira = (fid) => `${location.origin}/feira/${fid}`;
+const linkDaFeira = (fid) => `${location.origin}/feira/${fid}`;                 // QR, fitinha e link copiado: abre direto a banca
+const linkDaPaginaDaFeira = (fid) => `${location.origin}/feira.html?feira=${encodeURIComponent(fid)}`;   // página com todas as bancas
 const reais = (v) => String(Number(v).toFixed(2)).replace('.', ',');
 
 async function api(corpo) {
@@ -49,7 +54,7 @@ const aviso = (titulo, texto, link) => { el().innerHTML = `<div class="pf-vazio"
 /** A semana da feira: as 7 letras, com os dias da feira marcados. Editável no editor de feira. */
 function semanaHtml(dias, editavel) {
     const marcados = new Set(dias || []), todos = !marcados.size;
-    return `<div class="pf-semana${editavel ? ' editavel' : ''}${todos && !editavel ? ' todos' : ''}" ${editavel ? 'role="group" aria-label="Dias da feira"' : `aria-label="${escapeHTML(diasEmTexto(dias))}"`}>${LETRAS.map((l, i) => editavel
+    return `<div class="pf-semana${editavel ? ' editavel' : ''}${todos && !editavel ? ' todos' : ''}" ${editavel ? 'role="group" aria-label="Dias da feira"' : `role="img" aria-label="${escapeHTML(diasEmTexto(dias))}"`}>${LETRAS.map((l, i) => editavel
         ? `<button type="button" class="pf-dia${marcados.has(i) ? ' on' : ''}" data-pf-dia="${i}" aria-pressed="${marcados.has(i)}" aria-label="${NOMES_DIA[i]}">${l}</button>`
         : `<span class="pf-dia${marcados.has(i) || todos ? ' on' : ''}" aria-hidden="true">${l}</span>`).join('')}</div>`;
 }
@@ -60,6 +65,15 @@ const ponto = (cor) => `<i class="pf-ponto" style="background:${corOk(cor)}" ari
 
 // ---------------------------------------------------------------- abas
 function render() {
+    // a aba pode ser tocada antes de a lista da plataforma chegar (ou se ela falhar): mostra "carregando", não quebra
+    if (!S.dados) {
+        // a lista completa leva alguns segundos (lê o movimento de cada loja): enquanto isso, as lojas da última vez, já com link para o painel
+        const guardadas = S.aba === 'lojas' ? listaGuardada() : [];
+        el().innerHTML = guardadas.length
+            ? `<p class="config-sub" role="status">Atualizando os números...</p><ul class="pf-lista">${guardadas.map((l) => `<li class="pf-linha-wrap"><span class="pf-linha${l.ativo ? '' : ' bloq'}">${ponto(l.cor)}<span class="pf-linha-txt"><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.original ? 'Loja original' : NOMES_MODELO[l.tipo] || l.tipo || 'Loja')}${l.ativo ? '' : ', bloqueada'}</small></span></span><a class="pf-bt mini pf-painel" href="${escapeHTML(urlDaLoja(l.id, '/admin'))}">Painel</a></li>`).join('')}</ul>`
+            : '<p class="pf-vazio">Carregando a plataforma...</p>';
+        return;
+    }
     const d = S.dados, t = totais(d.lojas), mensal = d.lojas.reduce((s, l) => s + (l.assinatura ? l.assinatura.valor : 0), 0);
     $('pf-resumo').textContent = `${t.ativas} de ${t.lojas} lojas ativas, ${fmt(t.receita)} vendidos e ${t.pedidos} pedidos neste mês${mensal ? `, ${fmt(mensal)} em mensalidades` : ''}.`;
     const abas = $('pf-abas'); abas.hidden = false;
@@ -82,7 +96,7 @@ function abaFeiras() {
             <p class="pf-feira-bancas">${bancas.map((l) => `<span>${ponto(l.cor)}${escapeHTML(l.nome)}</span>`).join('')}</p>
             <p class="pf-feira-conds">${conds ? `${conds} condomínio${conds > 1 ? 's' : ''}: ${escapeHTML(d.condominios.filter((c) => f.condominiosIds.includes(c.id)).map((c) => c.nome).join(', '))}` : 'Nenhum condomínio.'}</p>
             ${alertas.length ? `<ul class="pf-alertas">${alertas.map((a) => `<li>${escapeHTML(a)}</li>`).join('')}</ul>` : ''}
-            <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="copiar-link" data-feira="${escapeHTML(f.id)}">Copiar link</button><button type="button" class="pf-bt pri" data-pf="editar-feira" data-feira="${escapeHTML(f.id)}">Editar</button></div>
+            <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="copiar-link" data-feira="${escapeHTML(f.id)}">Copiar link</button><button type="button" class="pf-bt" data-pf="cartaz-feira" data-feira="${escapeHTML(f.id)}">Cartaz com QR</button><button type="button" class="pf-bt pri" data-pf="editar-feira" data-feira="${escapeHTML(f.id)}">Editar</button></div>
         </article>`;
     }).join('');
     return `<div class="pf-topo-aba"><p>Cada feira tem os seus dias, as suas bancas e os condomínios que atende. Quem abre o link da feira vê só as bancas dela.</p><button type="button" class="pf-bt pri" data-pf="nova-feira">Nova feira</button></div>
@@ -91,12 +105,20 @@ function abaFeiras() {
 
 function abaLojas() {
     const d = S.dados, termo = normCond(S.busca.lojas);
-    const lojas = d.lojas.filter((l) => !termo || normCond(`${l.nome} ${l.id}`).includes(termo));
+    const achou = d.lojas.filter((l) => !termo || normCond(`${l.nome} ${l.id}`).includes(termo));
+    const lojas = achou.filter((l) => !l.excluida), lixeira = achou.filter((l) => l.excluida);
     return `<div class="pf-topo-aba"><input type="search" class="pf-busca" data-busca="lojas" placeholder="Buscar loja" value="${escapeHTML(S.busca.lojas)}" aria-label="Buscar loja"><button type="button" class="pf-bt pri" data-pf="nova-loja">Nova loja</button></div>
-    <ul class="pf-lista">${lojas.map((l) => `<li><button type="button" class="pf-linha${l.ativo ? '' : ' bloq'}" data-pf="abrir-loja" data-loja="${escapeHTML(l.id)}">
-        ${ponto(l.cor)}<span class="pf-linha-txt"><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.original ? 'Loja original' : NOMES_MODELO[l.tipo] || l.tipo || 'Loja')}${feirasDaLoja(l.id).length ? `, em ${feirasDaLoja(l.id).length} feira${feirasDaLoja(l.id).length > 1 ? 's' : ''}` : ''}${l.donos.length ? '' : ', sem proprietário'}</small></span>
+    <ul class="pf-lista">${lojas.map((l) => `<li class="pf-linha-wrap"><button type="button" class="pf-linha${l.ativo ? '' : ' bloq'}" data-pf="abrir-loja" data-loja="${escapeHTML(l.id)}">
+        ${ponto(l.cor)}<span class="pf-linha-txt"><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.original ? 'Loja original' : NOMES_MODELO[l.tipo] || l.tipo || 'Loja')}${l.formato === 'vitrine' ? ', só vitrine' : l.formato === 'whatsapp' ? ', sacola no WhatsApp' : ''}${feirasDaLoja(l.id).length ? `, em ${feirasDaLoja(l.id).length} feira${feirasDaLoja(l.id).length > 1 ? 's' : ''}` : ''}${l.donos.length ? '' : ', sem proprietário'}</small></span>
         <span class="pf-linha-num"><b>${l.mes ? fmt(l.mes.receita) : '–'}</b><small>${l.ativo ? `${l.mes ? l.mes.pedidos : 0} pedidos no mês` : 'Bloqueada'}</small></span>
-    </button></li>`).join('') || '<li class="pf-nada">Nenhuma loja com esse nome.</li>'}</ul>`;
+    </button><a class="pf-bt mini pf-painel" href="${escapeHTML(urlDaLoja(l.id, '/admin'))}" aria-label="Abrir o painel de ${escapeHTML(l.nome)}">Painel</a></li>`).join('') || '<li class="pf-nada">Nenhuma loja com esse nome.</li>'}</ul>
+    ${lixeira.length ? `<h3 class="pf-rot pf-lixeira-tit">Lixeira (restaura em até 30 dias)</h3><ul class="pf-lista pf-lixeira">${lixeira.map((l) => `<li class="pf-linha-wrap"><span class="pf-linha bloq">${ponto(l.cor)}<span class="pf-linha-txt"><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(diasNaLixeira(l.excluidaEm))}</small></span></span><button type="button" class="pf-bt mini" data-pf="restaurar" data-loja="${escapeHTML(l.id)}">Restaurar</button></li>`).join('')}</ul>` : ''}`;
+}
+/** "Excluída há 3 dias · restaura até 12/12" (prazo de 30 dias contado no servidor). */
+function diasNaLixeira(iso) {
+    const t = Date.parse(iso || ''); if (!Number.isFinite(t)) return 'Na lixeira';
+    const dias = Math.max(0, Math.floor((Date.now() - t) / 864e5)), ate = new Date(t + 30 * 864e5);
+    return `Excluída ${dias === 0 ? 'hoje' : dias === 1 ? 'ontem' : `há ${dias} dias`} · restaura até ${ate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`;
 }
 
 function abaCondominios() {
@@ -110,8 +132,10 @@ function abaCondominios() {
     <ul class="pf-lista">${conds.map((c) => {
         const em = feirasDoCond(c.id);
         if (S.editandoCond === c.id) return `<li class="pf-cond editando" data-cond="${escapeHTML(c.id)}"><div class="pf-form-linha"><input type="text" data-cond-nome maxlength="80" value="${escapeHTML(c.nome)}" aria-label="Nome do condomínio">${formatoSelect('', c.formato, 'data-cond-formato')}</div>
+            <div class="pf-form-linha"><input type="text" data-cond-ponto inputmode="decimal" autocomplete="off" placeholder="Localização: -16.68, -49.25" value="${Number.isFinite(c.lat) ? escapeHTML(`${c.lat}, ${c.lng}`) : ''}" aria-label="Localização do condomínio (latitude, longitude), para o frete"><button type="button" class="pf-bt" data-pf="cond-gps">Estou aqui</button></div>
+            <small class="pf-dica">Para o frete fora do dia da feira: toque em "Estou aqui" na portaria, ou cole o ponto do Google Maps.</small>
             <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="cancelar-cond">Cancelar</button><button type="button" class="pf-bt pri" data-pf="salvar-cond">Salvar</button></div></li>`;
-        return `<li class="pf-cond" data-cond="${escapeHTML(c.id)}"><span class="pf-linha-txt"><b>${escapeHTML(c.nome)}</b><small>${FORMATOS[c.formato] || FORMATOS.ql}. ${em.length ? `Usado em: ${escapeHTML(em.map((f) => f.nome).join(', '))}.` : 'Ainda não está em nenhuma feira.'}</small></span>
+        return `<li class="pf-cond" data-cond="${escapeHTML(c.id)}"><span class="pf-linha-txt"><b>${escapeHTML(c.nome)}</b><small>${FORMATOS[c.formato] || FORMATOS.ql}${Number.isFinite(c.lat) ? ', no mapa' : ''}. ${em.length ? `Usado em: ${escapeHTML(em.map((f) => f.nome).join(', '))}.` : 'Ainda não está em nenhuma feira.'}</small></span>
             <span class="pf-cond-bts"><button type="button" class="pf-bt mini" data-pf="editar-cond">Mudar</button><button type="button" class="pf-bt mini perigo" data-pf="tirar-cond"${em.length ? ' disabled title="Tire das feiras antes"' : ''}>Tirar</button></span></li>`;
     }).join('') || `<li class="pf-nada">${d.condominios.length ? 'Nenhum condomínio com esse nome.' : 'Nenhum condomínio cadastrado.'}</li>`}</ul>`;
 }
@@ -131,14 +155,33 @@ function abaMensalidades() {
         </div></li>`; }).join('')}</ul>`;
 }
 
+// PIX pelo Asaas: chave da conta da plataforma, o aviso (webhook) para cadastrar lá e a carteira de cada banca.
+function secaoAsaas(d) {
+    const a = d.asaas || {}, amb = a.ambiente === 'producao' ? 'produção' : 'teste (sandbox)';
+    const copiar = (rotulo, valor) => `<div class="pf-copiar"><span>${rotulo}</span><input type="text" readonly value="${escapeHTML(valor)}" aria-label="${rotulo}"><button type="button" class="pf-bt mini" data-pf="copiar-texto" data-copiar="${escapeHTML(valor)}">Copiar</button></div>`;
+    const outras = (d.lojas || []).filter((l) => !l.original);
+    return `<section class="pf-chave"><div class="pf-chave-topo"><h3>PIX automático (Asaas)</h3><span class="pf-selo${a.ligado ? ' ok' : ''}">${a.ligado ? `Ligado · ${amb}` : 'Sem chave'}</span></div>
+        <p>${a.ligado ? 'Com o Asaas ligado, o PIX de todas as lojas sai por ele (o PagBank fica de lado). A loja original recebe na conta da plataforma; cada outra banca recebe na carteira dela, cadastrada abaixo.' : 'Cole a chave da API da conta Asaas da plataforma (no Asaas: Integrações, Chaves de API). Comece com a chave do sandbox para testar sem dinheiro de verdade.'}</p>
+        ${a.viaAmbiente ? '<p>A chave está no servidor (variável ASAAS_API_KEY): para trocar, mude lá.</p>' : `<div class="pf-form-linha"><input type="password" id="pf-asaas" autocomplete="off" spellcheck="false" maxlength="420" placeholder="Chave da API ($aact_...)" aria-label="Chave da API do Asaas"><button type="button" class="pf-bt pri" data-pf="salvar-asaas">Salvar</button></div>`}
+        ${a.ligado && !a.viaAmbiente ? '<div class="pf-asaas-desligar"><button type="button" class="pf-bt" data-pf="desligar-asaas">Desligar o Asaas</button><small>Apaga a chave e desliga o PIX automático das lojas. O cliente passa a pagar só pelo copia e cola da loja (com o valor do pedido).</small></div>' : ''}
+        ${a.ligado ? `<div class="pf-asaas-aviso"><b>Cadastre o aviso de pagamento no Asaas</b><small>Integrações → Webhooks → Adicionar Webhook. Cole a URL e o token abaixo e marque os eventos de cobrança <b>PAYMENT_RECEIVED</b> e <b>PAYMENT_CONFIRMED</b>.</small>
+            ${a.urlAviso ? copiar('URL', a.urlAviso) : '<small>Falta PUBLIC_BASE_URL no servidor para montar a URL.</small>'}
+            ${a.avisoViaAmbiente ? '<small>Token: o que está na variável ASAAS_WEBHOOK_TOKEN do servidor.</small>' : a.aviso ? copiar('Token', a.aviso) : ''}</div>
+        <div class="pf-asaas-carteiras"><b>Carteira de cada banca</b><small>O walletId da conta Asaas da banca (formato 0b763922-aa88-4cbe-a567-e3fe8511fa06). Sem carteira, a loja não mostra PIX automático.${a.comissao ? ` Comissão da plataforma: ${a.comissao}%.` : ''}</small>
+            ${outras.length ? outras.map((l) => `<div class="pf-copiar" data-loja="${escapeHTML(l.id)}"><span>${escapeHTML(l.nome)}</span><input type="text" data-carteira autocomplete="off" spellcheck="false" maxlength="40" value="${escapeHTML((a.carteiras || {})[l.id] || '')}" placeholder="walletId" aria-label="Carteira Asaas de ${escapeHTML(l.nome)}"><button type="button" class="pf-bt mini pri" data-pf="salvar-carteira">Salvar</button></div>`).join('') : '<small>Nenhuma outra loja ainda.</small>'}</div>` : ''}
+    </section>`;
+}
+
 function abaChaves() {
     const d = S.dados;
-    return `<section class="pf-chave"><div class="pf-chave-topo"><h3>PIX automático (PagBank)</h3><span class="pf-selo${d.pix ? ' ok' : ''}">${d.pix ? 'Chave guardada' : 'Sem chave'}</span></div>
+    return `${secaoAsaas(d)}<section class="pf-chave"><div class="pf-chave-topo"><h3>PIX automático (PagBank)</h3><span class="pf-selo${d.pix ? ' ok' : ''}">${d.pix ? 'Chave guardada' : 'Sem chave'}</span></div>
         <p>${d.pix ? 'Para trocar, cole o novo token. Para o PIX aparecer ao cliente, ligue também "PIX automático" nas Configurações do painel da loja.' : 'Cole o token da conta PagBank (no site do PagBank: Integrações, Token). Depois ligue "PIX automático" nas Configurações do painel da loja. Vale para a loja original.'}</p>
         <div class="pf-form-linha"><input type="password" id="pf-pagbank" autocomplete="off" spellcheck="false" maxlength="300" placeholder="Token do PagBank" aria-label="Token do PagBank"><button type="button" class="pf-bt pri" data-pf="salvar-pagbank">Salvar</button></div></section>
-    <section class="pf-chave"><div class="pf-chave-topo"><h3>Fotos dos produtos (ImgBB)</h3><span class="pf-selo${d.fotos ? ' ok' : ''}">${d.fotos ? 'Envio automático ligado' : 'Desligado'}</span></div>
-        <p>${d.fotos ? 'As lojas enviam as fotos pelo painel e elas vão sozinhas para o ImgBB. Para trocar a chave, cole a nova.' : 'Com a chave do ImgBB, as lojas enviam várias fotos de uma vez pelo painel. Para pegar a chave (grátis): crie a conta em imgbb.com, abra api.imgbb.com e toque em "Get API key".'}</p>
-        <div class="pf-form-linha"><input type="password" id="pf-imgbb" autocomplete="off" spellcheck="false" maxlength="40" placeholder="Chave do ImgBB (32 letras e números)" aria-label="Chave do ImgBB"><button type="button" class="pf-bt pri" data-pf="salvar-imgbb">Salvar</button></div></section>`;
+    <section class="pf-chave"><div class="pf-chave-topo"><h3>Fotos dos produtos (Cloudflare R2)</h3><span class="pf-selo${d.fotosR2 ? ' ok' : ''}">${d.fotosR2 ? 'Ligado' : 'Desligado'}</span></div>
+        <p>${d.fotosR2 ? 'As fotos enviadas pelo painel vão para o R2 (fotos.usebanca.com).' : (d.r2Falta || []).length ? `O R2 está configurado pela metade no servidor. Falta ou está errado: ${(d.r2Falta || []).join(', ')} (no ~/segredos.env).` : 'Desligado: as chaves do R2 ficam no ~/segredos.env do servidor (veja ROTA-CLOUDFLARE.md). Sem elas, o painel não envia fotos pelo servidor.'}</p></section>
+    ${d.imgbbGuardada ? `<section class="pf-chave"><div class="pf-chave-topo"><h3>Chave antiga do ImgBB</h3><span class="pf-selo">Não é mais usada</span></div>
+        <p>As fotos agora vão para o Cloudflare R2. A chave do ImgBB que ficou guardada não serve para mais nada: pode apagar.</p>
+        <div class="pf-form-linha"><button type="button" class="pf-bt" data-pf="apagar-imgbb">Apagar a chave do ImgBB</button></div></section>` : ''}`;
 }
 
 // ---------------------------------------------------------------- erros do site (lib/erros.js)
@@ -148,20 +191,56 @@ async function carregarErros() {
     if (S.aba === 'erros') render();
 }
 const quando = (iso) => { try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); } catch (_) { return ''; } };
+// tipos: o que quebrou no código, defeito de desenho da tela (js/vigia-tela.js) e aviso do cliente ("Algo estranho na tela?")
+const TIPO_ERRO = { visual: ['Tela', 'tela'], relato: ['Cliente avisou', 'relato'], erro: ['Código', 'codigo'], promessa: ['Código', 'codigo'], recurso: ['Arquivo', 'codigo'], csp: ['Segurança', 'codigo'] };
+const FILTROS_ERROS = [['abertos', 'Para olhar'], ['tela', 'Tela'], ['codigo', 'Código'], ['relato', 'Clientes'], ['corrigidos', 'Corrigidos']];
+const aberto = (e) => !e.corrigidoEm || e.voltou;
+const grupoDoErro = (e) => (TIPO_ERRO[e.tipo] || TIPO_ERRO.erro)[1];
+function errosDoFiltro(lista, f) {
+    if (f === 'corrigidos') return lista.filter((e) => !aberto(e));
+    const abertos = lista.filter(aberto);
+    return f === 'abertos' ? abertos : abertos.filter((e) => grupoDoErro(e) === f);
+}
 function abaErros() {
     const lista = S.erros;
-    const topo = `<div class="pf-topo-aba"><p>O que deu erro no celular dos clientes e da equipe nos últimos 7 dias. O mesmo erro no mesmo dia aparece uma vez, com o número de vezes. Lista vazia é bom sinal.</p><button type="button" class="pf-bt" data-pf="atualizar-erros">Atualizar</button></div>`;
+    const topo = `<div class="pf-topo-aba"><p>O que deu erro no celular dos clientes e da equipe nos últimos 7 dias: no código, no <b>desenho da tela</b> (preço cortado, botão coberto, foto quebrada, com o tamanho da tela e da letra) e o que os <b>clientes avisaram</b>. O mesmo erro aparece uma vez, com o número de vezes. Consertou? Toque em <b>Corrigi</b>: se acontecer de novo, ele volta para a lista.</p><button type="button" class="pf-bt" data-pf="atualizar-erros">Atualizar</button></div>`;
     if (lista === null || lista === undefined) return `${topo}<p class="config-sub">Carregando...</p>`;
     if (lista.falha) return `${topo}<div class="pf-vazio"><b>Não consegui abrir a lista.</b><p>${escapeHTML(lista.falha)}</p></div>`;
     if (!lista.length) return `${topo}<div class="pf-vazio"><b>Nenhum erro nos últimos 7 dias.</b><p>Quando algo quebrar no aparelho de alguém, aparece aqui.</p></div>`;
-    const total = lista.reduce((t, e) => t + (Number(e.vezes) || 0), 0);
-    return `${topo}<p class="pf-total"><b>${lista.length}</b> erro${lista.length > 1 ? 's' : ''} diferente${lista.length > 1 ? 's' : ''}, ${total} vez${total > 1 ? 'es' : ''} no total.</p>
-    <ul class="pf-lista pf-erros">${lista.map((e) => `<li class="pf-erro">
-        <div class="pf-erro-topo"><b>${escapeHTML(e.msg)}</b><span class="pf-selo">${Number(e.vezes) || 1}×</span></div>
-        <small>${escapeHTML(quando(e.ultimo))}${e.onde ? ` · ${escapeHTML(e.onde)}` : ''} · ${escapeHTML((e.paginas || [e.pagina]).join(', '))}</small>
+    const f = S.filtroErros || 'abertos';
+    const chips = `<div class="pf-filtros-erros" role="group" aria-label="Mostrar">${FILTROS_ERROS.map(([k, t]) => {
+        const n = errosDoFiltro(lista, k).length;
+        return `<button type="button" class="pf-filtro${k === f ? ' ativo' : ''}" data-pf="filtro-erros" data-filtro="${k}" aria-pressed="${k === f}">${t} <span>${n}</span></button>`;
+    }).join('')}</div>`;
+    const mostrar = errosDoFiltro(lista, f);
+    const total = mostrar.reduce((t, e) => t + (Number(e.vezes) || 0), 0);
+    const resumo = mostrar.length ? `<p class="pf-total"><b>${mostrar.length}</b> erro${mostrar.length > 1 ? 's' : ''} diferente${mostrar.length > 1 ? 's' : ''}, ${total} vez${total > 1 ? 'es' : ''} no total.</p>`
+        : `<div class="pf-vazio"><b>${f === 'corrigidos' ? 'Nada marcado como corrigido.' : 'Nada para olhar aqui.'}</b><p>${f === 'corrigidos' ? 'Quando você tocar em "Corrigi" num erro, ele vem para cá.' : 'Bom sinal.'}</p></div>`;
+    return `${topo}${chips}${resumo}
+    <ul class="pf-lista pf-erros">${mostrar.map((e) => {
+        const [rot, grupo] = TIPO_ERRO[e.tipo] || TIPO_ERRO.erro;
+        const dias = (e.dias || []).length;
+        return `<li class="pf-erro pf-erro--${grupo}${e.voltou ? ' voltou' : ''}">
+        <div class="pf-erro-topo"><span class="pf-tipo-erro pf-tipo-erro--${grupo}">${rot}</span><b>${escapeHTML(e.msg)}</b><span class="pf-selo">${Number(e.vezes) || 1}×</span></div>
+        ${e.voltou ? `<p class="pf-voltou">Voltou depois de corrigido (marcado em ${escapeHTML(quando(e.corrigidoEm))})</p>` : ''}
+        ${(e.telas || []).length ? `<small>Telas: ${escapeHTML(e.telas.join(' · '))}</small>` : ''}
+        <small>${escapeHTML(quando(e.ultimo))}${dias > 1 ? ` · em ${dias} dias` : ''}${e.onde ? ` · ${escapeHTML(e.onde)}` : ''} · ${escapeHTML((e.paginas || [e.pagina]).join(', '))}</small>
         <small>${escapeHTML((e.navegadores || []).join(', '))}${(e.lojas || []).length ? ` · lojas: ${escapeHTML(e.lojas.map((id) => (lojaPorId(id) || {}).nome || id).join(', '))}` : ''}</small>
-        ${e.pilha ? `<details><summary>Detalhe técnico</summary><pre>${escapeHTML(e.pilha)}</pre></details>` : ''}
-    </li>`).join('')}</ul>`;
+        ${e.pilha ? `<details><summary>${grupo === 'codigo' ? 'Detalhe técnico' : 'Onde e como'}</summary><pre>${escapeHTML(e.pilha)}</pre></details>` : ''}
+        <div class="pf-erro-acoes">${aberto(e)
+            ? `<button type="button" class="pf-bt mini" data-pf="erro-corrigi" data-ass="${escapeHTML(e.assinatura || '')}">Corrigi</button>`
+            : `<span class="pf-selo ok">Corrigido em ${escapeHTML(quando(e.corrigidoEm))}</span><button type="button" class="pf-bt mini" data-pf="erro-reabrir" data-ass="${escapeHTML(e.assinatura || '')}">Reabrir</button>`}</div>
+    </li>`;
+    }).join('')}</ul>`;
+}
+async function marcarErro(ass, estado) {
+    const e = (Array.isArray(S.erros) ? S.erros : []).find((x) => x.assinatura === ass); if (!e) return;
+    try {
+        const r = await api({ acao: 'erro-estado', assinatura: ass, estado });
+        if (estado === 'corrigido') { e.corrigidoEm = r.em || new Date().toISOString(); e.voltou = false; showToast('Marcado como corrigido. Se acontecer de novo, volta para a lista.'); }
+        else { delete e.corrigidoEm; delete e.voltou; showToast('Reaberto.'); }
+        render();
+    } catch (err) { showToast(err.message, true); }
 }
 
 // ---------------------------------------------------------------- folha (edição)
@@ -169,7 +248,10 @@ function abrirFolha(tipo, id) {
     S.folha = { tipo, id: id || '' };
     if (tipo === 'feira') {
         const f = id ? S.dados.feiras.find((x) => x.id === id) : null;
-        S.rascunho = { id: f ? f.id : '', nome: f ? f.nome : '', dias: new Set(f ? f.dias : []), lojas: new Set((f ? f.lojas : []).filter((id) => lojaPorId(id))), conds: new Set(f ? f.condominiosIds || [] : []), horaLimite: f ? f.horaLimite || '' : '', semFeira: f ? (f.semFeira || []).slice() : [], buscaCond: '', mudou: false };
+        S.rascunho = { id: f ? f.id : '', nome: f ? f.nome : '', dias: new Set(f ? f.dias : []), lojas: new Set((f ? f.lojas : []).filter((id) => lojaPorId(id))), conds: new Set(f ? f.condominiosIds || [] : []), horaLimite: f ? f.horaLimite || '' : '', semFeira: f ? (f.semFeira || []).slice() : [], buscaCond: '', mudou: false,
+            // página de entrada da feira: datas extras ("hoje tem feira"), dias de cada banca e o que a página mostra
+            datasExtras: f ? (f.datasExtras || []).slice() : [], lojasDias: f && f.lojasDias ? Object.fromEntries(Object.entries(f.lojasDias).map(([k, v]) => [k, new Set(v)])) : {},
+            hud: { texto: '', local: '', horario: '', capa: '', fotos: [], ...(f && f.hud ? { ...f.hud, fotos: (f.hud.fotos || []).slice() } : {}) }, enviando: '' };
     }
     pintarFolha();
     const fundo = $('pf-folha'); fundo.classList.add('aberto'); fundo.setAttribute('aria-hidden', 'false'); document.body.style.overflow = 'hidden';
@@ -178,15 +260,53 @@ function abrirFolha(tipo, id) {
 async function fecharFolha(forcar) {
     if (!forcar && S.ocupado) return showToast('Espere terminar de salvar.');
     if (!forcar && S.rascunho && S.rascunho.mudou && !(await confirmar('Sair sem salvar?', 'O que você mudou nesta feira vai se perder.', { ok: 'Sair sem salvar', nao: 'Continuar editando' }))) return;
-    S.folha = null; S.rascunho = null;
+    S.folha = null; S.rascunho = null; S.cartaz = null; S.linkEntrada = null;
     const fundo = $('pf-folha'); fundo.classList.remove('aberto'); fundo.setAttribute('aria-hidden', 'true');
     if (!document.querySelector('.modal-overlay.aberto')) document.body.style.overflow = '';
 }
 function pintarFolha() {
     if (!S.folha) return;
     const { tipo, id } = S.folha;
-    const [titulo, corpo, pe] = tipo === 'feira' ? folhaFeira() : tipo === 'nova-loja' ? folhaNovaLoja() : folhaLoja(lojaPorId(id));
+    const loja = lojaPorId(id);
+    const [titulo, corpo, pe] = tipo === 'feira' ? folhaFeira() : tipo === 'nova-loja' ? folhaNovaLoja() : tipo === 'cartaz' ? CZ.folhaCartaz(S.cartaz, loja ? loja.nome : id) : folhaLoja(loja);
     $('pf-folha-titulo').textContent = titulo; $('pf-folha-corpo').innerHTML = corpo; $('pf-folha-pe').innerHTML = pe;
+    if (tipo === 'cartaz' && S.cartaz) CZ.pintarPrevia(S.cartaz, true);
+}
+
+// Dias em que cada banca vem (só aparece em feira com mais de um dia): todos marcados = vem sempre.
+function diasDasBancasHtml(r) {
+    const dias = [...r.dias].sort((a, b) => a - b), d = S.dados;
+    if (dias.length < 2 || !r.lojas.size) return '';
+    const linhas = d.lojas.filter((l) => r.lojas.has(l.id)).map((l) => {
+        const dela = r.lojasDias[l.id] && r.lojasDias[l.id].size ? r.lojasDias[l.id] : new Set(dias);
+        return `<li><span>${ponto(l.cor)}${escapeHTML(l.nome)}</span><span class="pf-semana editavel mini" role="group" aria-label="Dias em que ${escapeHTML(l.nome)} vem">${dias.map((n) => `<button type="button" class="pf-dia${dela.has(n) ? ' on' : ''}" data-pf-banca-dia="${n}" data-loja="${escapeHTML(l.id)}" aria-pressed="${dela.has(n)}" aria-label="${NOMES_DIA[n]}">${LETRAS[n]}</button>`).join('')}</span></li>`;
+    }).join('');
+    return `<span class="pf-rot sub">Dias em que cada banca vem</span><ul class="pf-bancas-dias">${linhas}</ul><small class="pf-dica">No dia em que a banca não vem, ela aparece apagada na página da feira e abre só para olhar.</small>`;
+}
+// redesenha só o bloco dos dias de cada banca (marcar/desmarcar banca não rola a folha de volta ao topo)
+function pintarDiasDasBancas() {
+    const sec = document.getElementById('pf-f-n-lojas')?.closest('.pf-sec'); if (!sec || !S.rascunho) return;
+    sec.querySelectorAll('.pf-bancas-dias, .pf-bancas-dias ~ small, .pf-rot.sub').forEach((n) => n.remove());
+    sec.insertAdjacentHTML('beforeend', diasDasBancasHtml(S.rascunho));
+}
+// Foto da página da feira: reduz no aparelho e envia pelo mesmo caminho das fotos de produto (js/admin-fotos.js).
+async function enviarFotoDaFeira(tipo, arquivos) {
+    const r = S.rascunho; if (!r || r.enviando) return;
+    const lista = [...arquivos].slice(0, tipo === 'capa' ? 1 : Math.max(0, 6 - r.hud.fotos.length));
+    if (!lista.length) return;
+    r.enviando = tipo; pintarFolha();
+    try {
+        const F = await import('./admin-fotos.js'), { validarArquivo } = await import('./fotos-lib.js');
+        for (const arq of lista) {
+            const ruim = validarArquivo(arq); if (ruim) { showToast(ruim, true); continue; }
+            const otima = await F.otimizarFoto(arq, tipo === 'capa' ? 1600 : 1000, 0.82);
+            const url = await F.enviarFoto(`feira-${r.id || sugerirId(r.nome) || 'nova'}`, otima, `-${tipo}-${Date.now().toString(36)}`);
+            if (!/^https:\/\//.test(String(url || ''))) throw new Error('sem endereço');
+            if (tipo === 'capa') r.hud.capa = url; else if (r.hud.fotos.length < 6) r.hud.fotos.push(url);
+            marcarMudanca();
+        }
+    } catch (e) { console.error('[foto da feira]', e); showToast((e && e.amigavel) || 'Não consegui enviar a foto. Confira a internet e tente de novo.', true); }
+    if (S.rascunho === r) { r.enviando = ''; pintarFolha(); }
 }
 
 function folhaFeira() {
@@ -199,7 +319,8 @@ function folhaFeira() {
         ${nova ? '<small class="pf-dica">O link da feira é criado a partir do nome e não muda depois.</small>' : `<div class="pf-link"><code>${escapeHTML(linkDaFeira(r.id))}</code><button type="button" class="pf-bt mini" data-pf="copiar-link" data-feira="${escapeHTML(r.id)}">Copiar</button></div>`}</section>
     <section class="pf-sec"><span class="pf-rot">Dias da feira</span>${semanaHtml([...r.dias], true)}<small class="pf-dica" id="pf-f-dias-txt">${escapeHTML(r.dias.size ? diasEmTexto([...r.dias]) : 'Nenhum dia marcado: a feira vale todos os dias (bom para loja que abre sempre).')}</small></section>
     <section class="pf-sec"><span class="pf-rot">Bancas desta feira <b id="pf-f-n-lojas">${r.lojas.size}</b></span>
-        <ul class="pf-marcar">${d.lojas.map((l) => `<li><label><input type="checkbox" data-pf-f-loja="${escapeHTML(l.id)}"${r.lojas.has(l.id) ? ' checked' : ''}>${ponto(l.cor)}<span>${escapeHTML(l.nome)}${l.ativo ? '' : ' <small>(bloqueada)</small>'}${feirasDaLoja(l.id).filter((f) => f.id !== r.id).length ? `<small>também em ${escapeHTML(feirasDaLoja(l.id).filter((f) => f.id !== r.id).map((f) => f.nome).join(', '))}</small>` : ''}</span></label></li>`).join('')}</ul></section>
+        <ul class="pf-marcar">${d.lojas.map((l) => `<li><label><input type="checkbox" data-pf-f-loja="${escapeHTML(l.id)}"${r.lojas.has(l.id) ? ' checked' : ''}>${ponto(l.cor)}<span>${escapeHTML(l.nome)}${l.ativo ? '' : ' <small>(bloqueada)</small>'}${feirasDaLoja(l.id).filter((f) => f.id !== r.id).length ? `<small>também em ${escapeHTML(feirasDaLoja(l.id).filter((f) => f.id !== r.id).map((f) => f.nome).join(', '))}</small>` : ''}</span></label></li>`).join('')}</ul>
+        ${diasDasBancasHtml(r)}</section>
     <section class="pf-sec"><span class="pf-rot">Condomínios que esta feira atende <b id="pf-f-n-conds">${r.conds.size}</b></span>
         <small class="pf-dica">Eles aparecem na lista de endereço das bancas da feira, e quem escolhe um deles cai nesta feira.</small>
         ${d.condominios.length > 6 ? `<input type="search" class="pf-busca largo" data-busca-cond placeholder="Buscar condomínio" value="${escapeHTML(r.buscaCond)}" aria-label="Buscar condomínio">` : ''}
@@ -211,7 +332,25 @@ function folhaFeira() {
         <span class="pf-rot sub">Dias sem feira (chuva, feriado)</span>
         <div class="pf-chips" id="pf-f-sem">${r.semFeira.map((dia) => `<span class="pf-chip-data">${escapeHTML(textoDoDia(dia))}<button type="button" data-pf="tirar-sem" data-dia="${escapeHTML(dia)}" aria-label="Tirar ${escapeHTML(textoDoDia(dia))}">&times;</button></span>`).join('') || '<small class="pf-dica">Nenhum.</small>'}</div>
         <div class="pf-form-linha"><input type="date" id="pf-f-sem-dia" aria-label="Data sem feira"><button type="button" class="pf-bt" data-pf="por-sem">Marcar sem feira</button></div>
-        <small class="pf-dica">Nesse dia a loja pula para a próxima feira. Pedidos já feitos para ele aparecem no painel da banca com o aviso "feira cancelada".</small></section>
+        <small class="pf-dica">Nesse dia a loja pula para a próxima feira. Pedidos já feitos para ele aparecem no painel da banca com o aviso "feira cancelada".</small>
+        <span class="pf-rot sub">Feira em dia extra</span>
+        <div class="pf-chips" id="pf-f-extra">${r.datasExtras.map((dia) => `<span class="pf-chip-data extra">${escapeHTML(textoDoDia(dia))}<button type="button" data-pf="tirar-extra" data-dia="${escapeHTML(dia)}" aria-label="Tirar ${escapeHTML(textoDoDia(dia))}">&times;</button></span>`).join('')}</div>
+        <div class="pf-form-linha"><input type="date" id="pf-f-extra-dia" aria-label="Data com feira extra"><button type="button" class="pf-bt" data-pf="por-extra">Marcar feira neste dia</button><button type="button" class="pf-bt" data-pf="por-extra-hoje">Hoje tem feira</button></div>
+        <small class="pf-dica">Nos dias da semana marcados lá em cima, a página da feira já diz "Hoje tem feira" sozinha. Use aqui só para uma feira fora do dia de sempre: nesse dia todas as bancas aparecem como presentes.</small></section>
+    <section class="pf-sec"><span class="pf-rot">Página de entrada da feira</span>
+        <small class="pf-dica">É o que abre no link da feira: a capa, se tem feira hoje, como funciona e as bancas. Cada banca aparece com a logo e a foto de capa que ela pôs em Aparência.</small>
+        <label class="pf-rot sub" for="pf-h-local">Onde acontece</label><input type="text" id="pf-h-local" data-pf-hud="local" maxlength="80" value="${escapeHTML(r.hud.local)}" placeholder="Ex.: Praça central do Jardins Munique" autocomplete="off">
+        <label class="pf-rot sub" for="pf-h-horario">Horário</label><input type="text" id="pf-h-horario" data-pf-hud="horario" maxlength="60" value="${escapeHTML(r.hud.horario)}" placeholder="Ex.: das 17h às 21h" autocomplete="off">
+        <label class="pf-rot sub" for="pf-h-texto">Recado da feira <small id="pf-h-texto-n">${r.hud.texto.length}/400</small></label><textarea id="pf-h-texto" data-pf-hud="texto" maxlength="400" rows="3" placeholder="Ex.: Toda quarta as bancas se reúnem na praça. Peça pelo celular e receba em casa.">${escapeHTML(r.hud.texto)}</textarea>
+        <span class="pf-rot sub">Foto de capa</span>
+        <div class="pf-hud-fotos">${r.hud.capa ? `<span class="pf-hud-foto capa"><img src="${escapeHTML(r.hud.capa)}" alt="Foto de capa"><button type="button" data-pf="hud-tirar-capa" aria-label="Tirar a foto de capa">&times;</button></span>` : ''}
+            <label class="pf-bt${r.enviando === 'capa' ? ' ocupado' : ''}"><input type="file" accept="image/*" data-pf-hud-foto="capa" hidden${r.enviando ? ' disabled' : ''}>${r.enviando === 'capa' ? 'Enviando…' : r.hud.capa ? 'Trocar a capa' : 'Escolher a capa'}</label></div>
+        <small class="pf-dica">Sem capa, a página usa a foto de capa da primeira banca que tiver uma.</small>
+        <span class="pf-rot sub">Fotos da feira <b>${r.hud.fotos.length}</b></span>
+        <div class="pf-hud-fotos">${r.hud.fotos.map((u, i) => `<span class="pf-hud-foto"><img src="${escapeHTML(u)}" alt="Foto ${i + 1} da feira"><button type="button" data-pf="hud-tirar-foto" data-i="${i}" aria-label="Tirar a foto ${i + 1}">&times;</button></span>`).join('')}
+            ${r.hud.fotos.length < 6 ? `<label class="pf-bt${r.enviando === 'fotos' ? ' ocupado' : ''}"><input type="file" accept="image/*" multiple data-pf-hud-foto="fotos" hidden${r.enviando ? ' disabled' : ''}>${r.enviando === 'fotos' ? 'Enviando…' : 'Acrescentar fotos'}</label>` : ''}</div>
+        <small class="pf-dica">Até 6 fotos bem apetitosas (comida, a praça, o movimento). Elas deslizam para o lado na página.</small>
+        ${nova ? '' : `<div class="pf-linha-bts"><a class="pf-bt" href="${escapeHTML(linkDaPaginaDaFeira(r.id))}" target="_blank" rel="noopener">Ver a página da feira</a></div>`}</section>
     ${nova ? '' : '<section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt perigo" data-pf="desfazer-feira">Desfazer esta feira</button><small class="pf-dica">As bancas continuam funcionando; o link da feira deixa de abrir.</small></section>'}`;
     const pe = `<button type="button" class="pf-bt" data-pf="fechar-folha">Cancelar</button><button type="button" class="pf-bt pri" data-pf="salvar-feira">${nova ? 'Criar feira' : 'Salvar feira'}</button>`;
     return [nova ? 'Nova feira' : 'Editar feira', corpo, pe];
@@ -223,16 +362,33 @@ function folhaLoja(l) {
     const corpo = `
     <section class="pf-sec pf-loja-cab">${ponto(l.cor)}<div><b>${escapeHTML(l.nome)}</b><small>${escapeHTML(l.id)}${l.original ? ', loja original' : ''}</small></div><span class="pf-selo${l.ativo ? ' ok' : ' bloq'}">${l.ativo ? 'Ativa' : 'Bloqueada'}</span></section>
     <section class="pf-sec"><p class="pf-mes">${l.mes ? `Neste mês: <b>${fmt(l.mes.receita)}</b> em <b>${l.mes.pedidos}</b> pedidos.` : 'Sem leitura do movimento deste mês.'}${l.assinatura ? ` Mensalidade: <b>${fmt(l.assinatura.valor)}</b>${l.assinatura.dia ? `, dia ${l.assinatura.dia}` : ''}.` : ' Sem mensalidade (defina na aba Mensalidades).'}</p>
-        <div class="pf-linha-bts"><a class="pf-bt" href="${urlDaLoja(l.id, './')}" target="_blank" rel="noopener">Ver a loja</a><a class="pf-bt" href="${urlDaLoja(l.id, './admin.html')}" target="_blank" rel="noopener">Abrir o painel</a></div></section>
+        <div class="pf-linha-bts"><a class="pf-bt" href="${urlDaLoja(l.id, './')}" target="_blank" rel="noopener">Ver a loja</a><a class="pf-bt" href="${urlDaLoja(l.id, '/admin')}">Abrir o painel</a></div>
+        <div class="pf-linha-bts"><button type="button" class="pf-bt" data-pf="cartaz-abrir" data-loja="${escapeHTML(l.id)}">Montar cartaz com QR e fitinha NFC</button></div>
+        <small class="pf-dica">Um cartaz para cada feira, nas cores da loja, com logo, foto, WhatsApp e Instagram. Dá para mudar tudo antes de imprimir.</small></section>
     <section class="pf-sec"><span class="pf-rot">Proprietários</span>
-        ${l.donos.length ? `<ul class="pf-donos">${l.donos.map((e) => `<li><span>${escapeHTML(e)}</span><button type="button" class="pf-bt mini" data-pf="tirar-dono" data-email="${escapeHTML(e)}" aria-label="Tirar ${escapeHTML(e)}">Tirar</button></li>`).join('')}</ul>` : `<p class="pf-dica">${l.original ? 'A conta antiga da banca continua valendo. Novos proprietários aparecem aqui.' : 'Ninguém ainda. Sem proprietário, ninguém abre o painel desta loja.'}</p>`}
+        ${l.donos.length ? `<ul class="pf-donos">${l.donos.map((e) => `<li><span>${escapeHTML(e)}</span><button type="button" class="pf-bt mini" data-pf="link-entrada" data-email="${escapeHTML(e)}" aria-label="Gerar link de entrada para ${escapeHTML(e)}">Link de entrada</button><button type="button" class="pf-bt mini" data-pf="tirar-dono" data-email="${escapeHTML(e)}" aria-label="Tirar ${escapeHTML(e)}">Tirar</button></li>`).join('')}</ul>${caixaLinkEntrada(l.id)}` : `<p class="pf-dica">${l.original ? 'A conta antiga da banca continua valendo. Novos proprietários aparecem aqui.' : 'Ninguém ainda. Sem proprietário, ninguém abre o painel desta loja.'}</p>`}
         <div class="pf-form-linha"><input type="email" id="pf-l-dono" inputmode="email" autocomplete="off" placeholder="E-mail do proprietário" aria-label="E-mail do novo proprietário"><button type="button" class="pf-bt" data-pf="dar-dono">Adicionar</button></div></section>
     ${l.original ? '' : `<section class="pf-sec"><label class="pf-rot" for="pf-l-tipo">Tipo de negócio</label><div class="pf-form-linha"><input type="text" id="pf-l-tipo" maxlength="30" autocomplete="off" value="${escapeHTML(NOMES_MODELO[l.tipo] || l.tipo || '')}" placeholder="Ex.: Padaria"><button type="button" class="pf-bt" data-pf="mudar-tipo">Salvar</button></div></section>`}
+    ${l.original ? '' : `<section class="pf-sec"><span class="pf-rot">Formato da loja</span><small class="pf-dica">Sacola no WhatsApp: o cliente monta a sacola e o único jeito de fechar é mandar no WhatsApp do dono (não vira pedido no painel). Só vitrine: produtos, fotos e preços, sem sacola. Muda na hora, ao tocar.</small>
+        <div class="pf-toggles">${Object.entries(FORMATOS_LOJA).map(([k, rot]) => `<label><input type="radio" name="pf-formato" data-pf-formato="${k}"${(l.formato || 'loja') === k ? ' checked' : ''}> ${escapeHTML(rot)}</label>`).join('')}</div></section>`}
     <section class="pf-sec"><span class="pf-rot">Módulos ligados</span><small class="pf-dica">Muda na hora, ao tocar.</small>
         <div class="pf-toggles">${Object.entries(S.dados.modulos).map(([k, rot]) => `<label><input type="checkbox" data-pf-modulo="${k}"${l.modulos[k] ? ' checked' : ''}> ${escapeHTML(rot)}</label>`).join('')}</div></section>
+    <section class="pf-sec"><span class="pf-rot">Campos no cadastro de produto</span><small class="pf-dica">O que esta loja vê ao criar ou editar um produto. Nome, preço, unidade, categoria e foto sempre aparecem. Muda na hora, ao tocar.</small>
+        <div class="pf-toggles">${(() => { const lig = camposDaLoja({ tipo: l.tipo, campos: l.campos || {} }, l.original); return Object.entries(S.dados.campos || CAMPOS_PRODUTO).map(([k, rot]) => `<label><input type="checkbox" data-pf-campo="${k}"${lig[k] ? ' checked' : ''}> ${escapeHTML(rot)}</label>`).join(''); })()}</div></section>
     <section class="pf-sec"><span class="pf-rot">Feiras</span>${fs.length ? `<ul class="pf-mini-lista">${fs.map((f) => `<li>${escapeHTML(f.nome)}<small>${escapeHTML(diasEmTexto(f.dias))}</small></li>`).join('')}</ul>` : '<p class="pf-dica">Não está em nenhuma feira.</p>'}<small class="pf-dica">Para colocar ou tirar de uma feira, use a aba Feiras.</small></section>
-    <section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt${l.ativo ? ' perigo' : ' pri'}" data-pf="${l.ativo ? 'bloquear' : 'liberar'}">${l.ativo ? 'Bloquear a loja' : 'Liberar a loja'}</button><small class="pf-dica">Bloqueada, a loja para de receber pedidos e some das feiras, e o painel dela fecha com o aviso "Sua assinatura foi interrompida por falta de pagamento. Pague e volte a usar", mostrando a mensalidade. Nada se perde: ao liberar, tudo volta.</small></section>`;
+    <section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt${l.ativo ? ' perigo' : ' pri'}" data-pf="${l.ativo ? 'bloquear' : 'liberar'}">${l.ativo ? 'Bloquear a loja' : 'Liberar a loja'}</button><small class="pf-dica">Bloqueada, a loja para de receber pedidos e some das feiras, e o painel dela fecha com o aviso "Sua assinatura foi interrompida por falta de pagamento. Pague e volte a usar", mostrando a mensalidade. Nada se perde: ao liberar, tudo volta.</small></section>
+    ${l.original ? '' : `<section class="pf-sec pf-sec-perigo"><button type="button" class="pf-bt perigo" data-pf="excluir">Excluir a loja</button><small class="pf-dica">A loja vai para a lixeira: fica bloqueada e some das listas. Dá para restaurar por 30 dias. Para confirmar, você digita o nome da loja.</small></section>`}`;
     return [l.nome, corpo, '<button type="button" class="pf-bt" data-pf="fechar-folha">Fechar</button>'];
+}
+
+// Link de entrada gerado na hora (o e-mail do Firebase cai no spam e lá o link não abre): copiar ou mandar no WhatsApp.
+function caixaLinkEntrada(lojaId) {
+    const k = S.linkEntrada;
+    if (!k || k.lojaId !== lojaId) return '';
+    const texto = `Seu link para entrar no painel da loja (vale uma vez só, abra no celular): ${k.link}\nSe pedir, confirme o e-mail ${k.email}.`;
+    return `<div class="pf-link-entrada" role="status"><b>Link de entrada de ${escapeHTML(k.email)}</b><small class="pf-dica">Vale uma vez só e por pouco tempo. Mande agora. Se a pessoa abrir e o site pedir, ela confirma o e-mail dela.</small>
+        <input type="text" readonly value="${escapeHTML(k.link)}" aria-label="Link de entrada">
+        <div class="pf-form-linha"><button type="button" class="pf-bt" data-pf="copiar-texto" data-copiar="${escapeHTML(k.link)}">Copiar</button><a class="pf-bt pri" href="https://wa.me/?text=${encodeURIComponent(texto)}" target="_blank" rel="noopener">Mandar no WhatsApp</a></div></div>`;
 }
 
 function folhaNovaLoja() {
@@ -249,12 +405,14 @@ function folhaNovaLoja() {
 }
 
 // ---------------------------------------------------------------- dados
-async function carregar() { S.dados = await api({ acao: 'lojas' }); render(); }
-async function fazer(corpo, ok, { manterFolha = false } = {}) {
+async function carregar() { S.dados = await api({ acao: 'lojas' }); guardarDaPlataforma(S.dados.lojas); render(); }
+async function fazer(corpo, ok, { manterFolha = false, aplicar = null } = {}) {
     if (S.ocupado) return false; S.ocupado = true;
     document.body.classList.add('pf-ocupado');
     try {
         await api(corpo); if (ok) showToast(ok);
+        // interruptor de módulo/campo: o servidor já gravou; muda só esta loja na tela, sem reler a plataforma inteira (era o que demorava)
+        if (aplicar && S.dados) { aplicar(S.dados); render(); if (S.folha) pintarFolha(); return true; }
         await carregar();
         if (S.folha && manterFolha) pintarFolha(); else if (S.folha && S.folha.tipo === 'loja') pintarFolha();
         return true;
@@ -270,10 +428,52 @@ async function agir(b) {
     switch (a) {
         case 'fechar-folha': return fecharFolha(false);
         case 'atualizar-erros': return carregarErros();
+        case 'filtro-erros': S.filtroErros = b.dataset.filtro; return render();
+        case 'erro-corrigi': return marcarErro(b.dataset.ass, 'corrigido');
+        case 'erro-reabrir': return marcarErro(b.dataset.ass, 'aberto');
         case 'nova-feira': return abrirFolha('feira', '');
         case 'editar-feira': return abrirFolha('feira', b.dataset.feira);
         case 'nova-loja': return abrirFolha('nova-loja');
         case 'abrir-loja': return abrirFolha('loja', b.dataset.loja);
+        case 'cartaz-feira': {       // cartaz A4 "Agora temos aplicativo" com o QR DESTA feira (js/cartaz-lib.js)
+            const f = S.dados.feiras.find((x) => x.id === b.dataset.feira); if (!f) return;
+            try {
+                const [{ cartazHtml }, { imprimirPagina }] = await Promise.all([import('./cartaz-lib.js'), import('./impressao.js')]);
+                await imprimirPagina(cartazHtml({ feira: f, link: linkDaFeira(f.id) }));
+                showToast('Cartaz pronto. Para guardar, escolha "Salvar como PDF".');
+            } catch (e) { showToast((e && e.message) || 'Não consegui montar o cartaz.', true); }
+            return;
+        }
+        case 'cartaz-abrir': {      // editor do cartaz da loja (js/cartaz-editor.js)
+            const l = lojaPorId(b.dataset.loja); if (!l) return;
+            S.cartaz = null; S.folha = { tipo: 'cartaz', id: l.id }; pintarFolha();
+            try { const st = await CZ.carregarCartaz(l, feirasDaLoja(l.id)); if (S.folha && S.folha.tipo === 'cartaz' && S.folha.id === l.id) { S.cartaz = st; pintarFolha(); } }
+            catch (e) { showToast((e && e.message) || 'Não consegui abrir os dados da loja.', true); }
+            return;
+        }
+        case 'cartaz-voltar': { const id = S.folha && S.folha.id; S.cartaz = null; return abrirFolha('loja', id); }
+        case 'cartaz-padrao': CZ.voltarAoPadrao(S.cartaz); return pintarFolha();
+        case 'cartaz-img-escolher': {   // abre a galeria (o campo de arquivo fica escondido, mas não "display:none": alguns celulares não abrem)
+            const inp = b.closest('.pf-cz-img') && b.closest('.pf-cz-img').querySelector('input[type="file"]');
+            if (inp && S.cartaz && !S.cartaz.lendo) inp.click();
+            return;
+        }
+        case 'cartaz-img-loja': if (S.cartaz) { S.cartaz[b.dataset.img] = b.dataset.img === 'logo' ? S.cartaz.logoLoja : S.cartaz.fotoLoja; CZ.pintarImagem(S.cartaz, b.dataset.img); } return;
+        case 'cartaz-img-tirar': if (S.cartaz) { S.cartaz[b.dataset.img] = ''; CZ.pintarImagem(S.cartaz, b.dataset.img); } return;
+        case 'cartaz-copiar-link': {
+            if (!S.cartaz) return;
+            try { await navigator.clipboard.writeText(CZ.linkDoCartaz(S.cartaz.lojaId, S.cartaz.fid)); showToast('Endereço copiado. É este que vai na fitinha NFC.'); }
+            catch (_) { showToast('Não consegui copiar. Segure o dedo no endereço para copiar.', true); }
+            return;
+        }
+        case 'cartaz-imprimir': {
+            if (!S.cartaz) return;
+            const c = CZ.conferir(S.cartaz);
+            if (c.avisoWpp || c.avisoInsta) showToast(c.avisoWpp || c.avisoInsta, true);
+            try { const { imprimirPagina } = await import('./impressao.js'); await imprimirPagina(CZ.htmlDoCartaz(S.cartaz)); showToast('Cartaz pronto. Para guardar, escolha "Salvar como PDF".'); }
+            catch (e) { showToast((e && e.message) || 'Não consegui montar o cartaz.', true); }
+            return;
+        }
         case 'copiar-link': {
             try { await navigator.clipboard.writeText(linkDaFeira(b.dataset.feira)); showToast('Link da feira copiado.'); }
             catch (_) { showToast('Não consegui copiar. Segure o dedo no link para copiar.', true); }
@@ -287,6 +487,19 @@ async function agir(b) {
             return pintarFolha();
         }
         case 'tirar-sem': S.rascunho.semFeira = S.rascunho.semFeira.filter((d) => d !== b.dataset.dia); marcarMudanca(); return pintarFolha();
+        case 'por-extra': case 'por-extra-hoje': {
+            const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10), dia = b.dataset.pf === 'por-extra-hoje' ? hoje : String($('pf-f-extra-dia').value || '');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return showToast('Escolha a data.', true);
+            if (dia < hoje) return showToast('Escolha uma data de hoje em diante.', true);
+            const r = S.rascunho, dow = new Date(`${dia}T12:00:00Z`).getUTCDay();
+            if ((!r.dias.size || r.dias.has(dow)) && !r.semFeira.includes(dia)) return showToast('Esse dia já é dia de feira: a página mostra "Hoje tem feira" sozinha.');
+            r.semFeira = r.semFeira.filter((d) => d !== dia);                 // marcar "tem feira" desfaz o "sem feira" do mesmo dia
+            if (r.dias.size && !r.dias.has(dow) && !r.datasExtras.includes(dia)) { r.datasExtras.push(dia); r.datasExtras.sort(); }
+            marcarMudanca(); return pintarFolha();
+        }
+        case 'tirar-extra': S.rascunho.datasExtras = S.rascunho.datasExtras.filter((d) => d !== b.dataset.dia); marcarMudanca(); return pintarFolha();
+        case 'hud-tirar-capa': S.rascunho.hud.capa = ''; marcarMudanca(); return pintarFolha();
+        case 'hud-tirar-foto': S.rascunho.hud.fotos.splice(Number(b.dataset.i), 1); marcarMudanca(); return pintarFolha();
         case 'cond-rapido': {
             const nome = $('pf-f-cond-novo').value.trim(), formato = $('pf-f-cond-formato').value;
             if (normCond(nome).length < 2) return showToast('Escreva o nome do condomínio.', true);
@@ -317,6 +530,12 @@ async function agir(b) {
             return fazer({ acao: 'ativo', id: lojaId, ativo: false }, 'Loja bloqueada.');
         }
         case 'liberar': return fazer({ acao: 'ativo', id: lojaId, ativo: true }, 'Loja liberada.');
+        case 'excluir': {
+            if (!(await confirmar(`Excluir ${loja.nome}?`, 'A loja para de receber pedidos, sai das feiras e o painel dela fecha. Ela fica 30 dias na lixeira, onde dá para restaurar; depois disso não volta mais.', { ok: 'Excluir', nao: 'Voltar', digitar: loja.nome }))) return;
+            if (await fazer({ acao: 'excluir', id: lojaId, confirmar: loja.nome }, `${loja.nome} foi para a lixeira.`)) fecharFolha(true);
+            return;
+        }
+        case 'restaurar': return fazer({ acao: 'restaurar', id: lojaId }, `${loja.nome} saiu da lixeira. Ela continua bloqueada: libere quando quiser.`);
         case 'mudar-tipo': {
             const novo = $('pf-l-tipo').value.trim();
             if (novo.length < 2) return showToast('Escreva o tipo de negócio.', true);
@@ -326,6 +545,13 @@ async function agir(b) {
             const email = $('pf-l-dono').value.trim().toLowerCase();
             if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) return showToast('Confira o e-mail.', true);
             return fazer({ acao: 'proprietario', id: lojaId, email }, `${email} agora é proprietário de ${loja.nome}.`);
+        }
+        case 'link-entrada': {
+            if (S.ocupado) return; S.ocupado = true; b.disabled = true;
+            try { const r = await api({ acao: 'link-entrada', id: lojaId, email: b.dataset.email }); S.linkEntrada = { lojaId, email: r.email, link: r.link }; pintarFolha(); document.querySelector('.pf-link-entrada')?.scrollIntoView({ block: 'nearest' }); }
+            catch (e) { showToast(e.message, true); }
+            finally { S.ocupado = false; b.disabled = false; }
+            return;
         }
         case 'tirar-dono': {
             if (!(await confirmar('Tirar o proprietário?', `${b.dataset.email} deixa de abrir o painel de ${loja.nome}.`, { ok: 'Tirar', nao: 'Voltar' }))) return;
@@ -338,11 +564,19 @@ async function agir(b) {
         }
         case 'editar-cond': S.editandoCond = b.closest('[data-cond]').dataset.cond; render(); el().querySelector('[data-cond-nome]')?.focus(); return;
         case 'cancelar-cond': S.editandoCond = ''; return render();
+        case 'cond-gps': {
+            const campo = b.closest('[data-cond]')?.querySelector('[data-cond-ponto]'); if (!campo) return;
+            if (!navigator.geolocation) return showToast('Este aparelho não informa a localização. Cole o ponto do Google Maps.', true);
+            showToast('Pegando a localização...');
+            navigator.geolocation.getCurrentPosition((pos) => { campo.value = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`; showToast('Ponto marcado. Toque em Salvar.'); },
+                () => showToast('Não deu para pegar a localização. Libere o GPS ou cole o ponto do Google Maps.', true), { enableHighAccuracy: true, timeout: 15000 });
+            return;
+        }
         case 'salvar-cond': {
             const li = b.closest('[data-cond]'), nome = li.querySelector('[data-cond-nome]').value.trim();
             if (normCond(nome).length < 2) return showToast('Escreva o nome do condomínio.', true);
             const id = li.dataset.cond, em = feirasDoCond(id);
-            if (await fazer({ acao: 'condominio', id, nome, formato: li.querySelector('[data-cond-formato]').value }, em.length ? `Salvo. ${em.length === 1 ? 'A feira que usa este condomínio já mostra' : 'As feiras que usam este condomínio já mostram'} o nome novo.` : 'Salvo.')) { S.editandoCond = ''; render(); }
+            if (await fazer({ acao: 'condominio', id, nome, formato: li.querySelector('[data-cond-formato]').value, ponto: li.querySelector('[data-cond-ponto]')?.value.trim() || '' }, em.length ? `Salvo. ${em.length === 1 ? 'A feira que usa este condomínio já mostra' : 'As feiras que usam este condomínio já mostram'} o nome novo.` : 'Salvo.')) { S.editandoCond = ''; render(); }
             return;
         }
         case 'tirar-cond': {
@@ -361,16 +595,31 @@ async function agir(b) {
             if (!foi) { S.mensal[id] = guardado; render(); }
             return;
         }
+        case 'copiar-texto': {
+            try { await navigator.clipboard.writeText(b.dataset.copiar || ''); showToast('Copiado.'); }
+            catch (_) { const campo = b.parentElement && b.parentElement.querySelector('input'); if (campo) { campo.focus(); campo.select(); } showToast('Não consegui copiar sozinho: o texto ficou selecionado, use Copiar do celular.', true); }
+            return;
+        }
+        case 'salvar-asaas': {
+            const chave = $('pf-asaas').value.trim();
+            if (!/^\$aact_\S{20,}$/.test(chave)) return showToast('A chave do Asaas começa com $aact_ e não tem espaços. Confira se copiou inteira.', true);
+            return fazer({ acao: 'asaas', chave }, 'Chave do Asaas guardada. Agora cadastre o aviso de pagamento no Asaas (URL e token abaixo).');
+        }
+        case 'desligar-asaas': {
+            if (!await confirmar('Desligar o PIX automático?', 'A chave do Asaas será apagada e o PIX automático some de todas as lojas. O cliente continua pagando pelo copia e cola da loja. Para voltar, é só cadastrar a chave de novo.', { ok: 'Desligar', nao: 'Voltar' })) return;
+            return fazer({ acao: 'asaas', desligar: true }, 'Asaas desligado. As lojas voltaram ao PIX copia e cola.');
+        }
+        case 'salvar-carteira': {
+            const linha = b.closest('[data-loja]'), carteira = linha.querySelector('[data-carteira]').value.trim();
+            if (carteira && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(carteira)) return showToast('A carteira tem o formato 0b763922-aa88-4cbe-a567-e3fe8511fa06. Confira se copiou inteira.', true);
+            return fazer({ acao: 'asaas-carteira', id: linha.dataset.loja, carteira }, carteira ? 'Carteira guardada. O PIX desta banca vai direto para ela.' : 'Carteira apagada. Esta loja volta a não ter PIX automático.');
+        }
         case 'salvar-pagbank': {
             const chave = $('pf-pagbank').value.trim();
             if (chave.length < 20 || /\s/.test(chave)) return showToast('O token do PagBank é longo e não tem espaços. Confira se copiou inteiro.', true);
             return fazer({ acao: 'pagbank', chave }, 'Chave do PagBank guardada. Agora ligue "PIX automático" nas Configurações da loja.');
         }
-        case 'salvar-imgbb': {
-            const chave = $('pf-imgbb').value.trim();
-            if (!/^[a-f0-9]{32}$/i.test(chave)) return showToast('A chave do ImgBB tem 32 letras e números. Confira se copiou inteira.', true);
-            return fazer({ acao: 'imgbb', chave }, 'Chave guardada. O envio automático de fotos está ligado.');
-        }
+        case 'apagar-imgbb': return fazer({ acao: 'imgbb' }, 'Chave do ImgBB apagada.');
         default: return undefined;
     }
 }
@@ -383,7 +632,8 @@ async function salvarFeira() {
     if (r.conds.size > 40) return showToast(`Uma feira atende no máximo 40 condomínios (marcados: ${r.conds.size}).`, true);
     if (nova && S.dados.feiras.some((f) => f.id === fid)) return showToast('Já existe uma feira com um nome parecido. Escolha outro nome.', true);
     if (!r.conds.size && !(await confirmar('Salvar sem condomínio?', 'Sem condomínio marcado, só quem abrir o link da feira cai nela. Quem chega sem o link e escolhe o condomínio não é levado a esta feira.', { ok: 'Salvar assim', nao: 'Voltar e marcar' }))) return;
-    const corpo = { acao: 'feira', ...(nova ? { nova: true } : {}), fid, nome, dias: [...r.dias].sort((a, b) => a - b), lojas: [...r.lojas], condominiosIds: [...r.conds], horaLimite: r.horaLimite, semFeira: r.semFeira };
+    const corpo = { acao: 'feira', ...(nova ? { nova: true } : {}), fid, nome, dias: [...r.dias].sort((a, b) => a - b), lojas: [...r.lojas], condominiosIds: [...r.conds], horaLimite: r.horaLimite, semFeira: r.semFeira,
+        datasExtras: r.datasExtras, hud: r.hud, lojasDias: Object.fromEntries([...r.lojas].map((id) => [id, [...(r.lojasDias[id] || [])].sort((a, b) => a - b)])) };
     if (await fazer(corpo, nova ? 'Feira criada. Copie o link e mande aos clientes.' : 'Feira salva.')) fecharFolha(true);
 }
 
@@ -398,11 +648,25 @@ function ligar() {
     el().addEventListener('click', clique);
     $('pf-folha').addEventListener('click', async (e) => {
         if (e.target.id === 'pf-folha') { if (!S.confirmando) fecharFolha(false); return; }          // toque fora da folha
+        const diaBanca = e.target.closest('[data-pf-banca-dia]');
+        if (diaBanca && S.rascunho) {
+            const r = S.rascunho, id = diaBanca.dataset.loja, n = Number(diaBanca.dataset.pfBancaDia), todos = [...r.dias];
+            const dela = new Set(r.lojasDias[id] && r.lojasDias[id].size ? r.lojasDias[id] : todos);
+            if (dela.has(n)) { if (dela.size === 1) return showToast('A banca precisa vir em pelo menos um dia. Para tirar da feira, desmarque a banca.'); dela.delete(n); } else dela.add(n);
+            r.lojasDias[id] = dela.size === todos.length ? new Set() : dela;   // todos os dias = sem restrição
+            diaBanca.classList.toggle('on', dela.has(n)); diaBanca.setAttribute('aria-pressed', String(dela.has(n))); marcarMudanca();
+            return;
+        }
         const dia = e.target.closest('[data-pf-dia]');
         if (dia && S.rascunho) {
             const n = Number(dia.dataset.pfDia); if (S.rascunho.dias.has(n)) S.rascunho.dias.delete(n); else S.rascunho.dias.add(n);
             dia.classList.toggle('on'); dia.setAttribute('aria-pressed', String(S.rascunho.dias.has(n))); marcarMudanca();
+            // os dias de cada banca seguem os dias da feira: dia que saiu da feira sai das bancas, e deixa de ser "dia extra"
+            Object.keys(S.rascunho.lojasDias).forEach((id) => { S.rascunho.lojasDias[id] = new Set([...S.rascunho.lojasDias[id]].filter((x) => S.rascunho.dias.has(x))); });
+            S.rascunho.datasExtras = S.rascunho.datasExtras.filter((x) => !S.rascunho.dias.has(new Date(`${x}T12:00:00Z`).getUTCDay()));
             $('pf-f-dias-txt').textContent = S.rascunho.dias.size ? diasEmTexto([...S.rascunho.dias]) : 'Nenhum dia marcado: a feira vale todos os dias (bom para loja que abre sempre).';
+            pintarDiasDasBancas();
+            const chips = $('pf-f-extra'); if (chips) chips.querySelectorAll('.pf-chip-data').forEach((c) => { if (!S.rascunho.datasExtras.includes(c.querySelector('button').dataset.dia)) c.remove(); });
             return;
         }
         return clique(e);
@@ -417,8 +681,10 @@ function ligar() {
             $('pf-folha-corpo').querySelectorAll('[data-nome]').forEach((li) => { li.hidden = !!termo && !li.dataset.nome.includes(termo); });
             return;
         }
+        if (t.dataset.pfCartaz && S.cartaz) { CZ.digitou(S.cartaz, t.dataset.pfCartaz, t.value); return; }
         if (t.id === 'pf-f-nome' && S.rascunho) { S.rascunho.nome = t.value; marcarMudanca(); return; }
         if (t.id === 'pf-f-limite' && S.rascunho) { S.rascunho.horaLimite = t.value; marcarMudanca(); return; }
+        if (t.dataset.pfHud && S.rascunho) { S.rascunho.hud[t.dataset.pfHud] = t.value; marcarMudanca(); if (t.id === 'pf-h-texto') $('pf-h-texto-n').textContent = `${t.value.length}/400`; return; }
         if (t.id === 'pf-nome' && !$('pf-id').dataset.mexido) $('pf-id').value = sugerirId(t.value);
         if (t.id === 'pf-id') t.dataset.mexido = '1';
         if (t.id === 'pf-nome' || t.id === 'pf-id') $('pf-id-dica').textContent = idValido($('pf-id').value) ? `A loja abre em ${urlDaLoja($('pf-id').value, '/').replace(/^https:\/\//, '')}. Não muda depois.` : 'Não muda depois. Só letras minúsculas, números e hífen.';
@@ -433,11 +699,35 @@ function ligar() {
             return;
         }
         if (t.id === 'pf-f-limite' && S.rascunho) { S.rascunho.horaLimite = t.value; marcarMudanca(); return; }
-        if (t.dataset.pfFLoja && S.rascunho) { if (t.checked) S.rascunho.lojas.add(t.dataset.pfFLoja); else S.rascunho.lojas.delete(t.dataset.pfFLoja); $('pf-f-n-lojas').textContent = S.rascunho.lojas.size; marcarMudanca(); return; }
+        if (t.hasAttribute('data-pf-cartaz-feira') && S.cartaz) { CZ.trocarFeira(S.cartaz, t.value); pintarFolha(); return; }
+        if (t.dataset.pfCartazImg && S.cartaz) {
+            const k = t.dataset.pfCartazImg, st = S.cartaz, arq = t.files && t.files[0]; t.value = ''; if (!arq || st.lendo) return;
+            st.lendo = k; CZ.pintarImagem(st, k);
+            await new Promise((ok) => setTimeout(ok, 30));          // deixa o "Preparando…" aparecer antes do trabalho pesado
+            try { const dado = await CZ.lerImagem(arq, k); if (S.cartaz === st) st[k] = dado; }
+            catch (err) { showToast((err && err.message) || 'Não consegui usar esta foto.', true); }
+            finally { st.lendo = ''; if (S.cartaz === st) CZ.pintarImagem(st, k); }
+            return;
+        }
+        if (t.dataset.pfHudFoto && S.rascunho && t.files && t.files.length) { const arqs = [...t.files]; t.value = ''; return enviarFotoDaFeira(t.dataset.pfHudFoto, arqs); }
+        if (t.dataset.pfFLoja && S.rascunho) { if (t.checked) S.rascunho.lojas.add(t.dataset.pfFLoja); else S.rascunho.lojas.delete(t.dataset.pfFLoja); $('pf-f-n-lojas').textContent = S.rascunho.lojas.size; marcarMudanca(); pintarDiasDasBancas(); return; }
         if (t.dataset.pfFCond && S.rascunho) { if (t.checked) S.rascunho.conds.add(t.dataset.pfFCond); else S.rascunho.conds.delete(t.dataset.pfFCond); $('pf-f-n-conds').textContent = S.rascunho.conds.size; marcarMudanca(); return; }
+        if (t.dataset.pfCampo && S.folha && S.folha.tipo === 'loja') {
+            const k = t.dataset.pfCampo, nome = (S.dados.campos || CAMPOS_PRODUTO)[k];
+            const loja = lojaPorId(S.folha.id), ligado = t.checked;
+            if (!(await fazer({ acao: 'campos', id: S.folha.id, campos: { [k]: ligado } }, `${nome}: ${ligado ? 'aparece' : 'escondido'} no cadastro.`, { aplicar: () => { if (loja) loja.campos = { ...(loja.campos || {}), [k]: ligado }; } }))) t.checked = !t.checked;
+            return;
+        }
+        if (t.dataset.pfFormato && S.folha && S.folha.tipo === 'loja' && t.checked) {
+            const loja = lojaPorId(S.folha.id), novo = t.dataset.pfFormato, antes = (loja && loja.formato) || 'loja';
+            const ok = await fazer({ acao: 'formato', id: S.folha.id, formato: novo }, novo === 'vitrine' ? `${(loja && loja.nome) || 'Loja'} agora é só vitrine.` : novo === 'whatsapp' ? `${(loja && loja.nome) || 'Loja'} agora fecha a sacola no WhatsApp.` : `${(loja && loja.nome) || 'Loja'} voltou a receber pedidos.`, { aplicar: () => { if (loja) loja.formato = novo; } });
+            if (!ok) { const volta = document.querySelector(`[data-pf-formato="${antes}"]`); if (volta) volta.checked = true; }
+            return;
+        }
         if (t.dataset.pfModulo && S.folha && S.folha.tipo === 'loja') {
             const nome = S.dados.modulos[t.dataset.pfModulo];
-            if (!(await fazer({ acao: 'modulos', id: S.folha.id, modulos: { [t.dataset.pfModulo]: t.checked } }, `${nome}: ${t.checked ? 'ligado' : 'desligado'}.`))) t.checked = !t.checked;
+            const loja = lojaPorId(S.folha.id), k = t.dataset.pfModulo, ligado = t.checked;
+            if (!(await fazer({ acao: 'modulos', id: S.folha.id, modulos: { [k]: ligado } }, `${nome}: ${ligado ? 'ligado' : 'desligado'}.`, { aplicar: () => { if (loja) loja.modulos = { ...(loja.modulos || {}), [k]: ligado }; } }))) t.checked = !t.checked;
         }
     });
 }
@@ -446,7 +736,11 @@ let ligado = false;
 onAuthStateChanged(auth, async (user) => {
     if (!user) return aviso('Entre primeiro pelo painel.', 'Depois de entrar com o seu e-mail, volte para esta página.', 'Ir para o painel');
     try {
-        const { claims } = await user.getIdTokenResult(true);
+        // Usa a conta que já está no aparelho (instantâneo). Só vai à rede se ela ainda não diz "plataforma"
+        // (acabou de assumir, ou o acesso foi dado há pouco).
+        let { claims } = await user.getIdTokenResult();
+        if (claims.plataforma !== true) ({ claims } = await user.getIdTokenResult(true));
+        if (claims.plataforma === true && !S.dados) render();           // as lojas da última vez já aparecem, enquanto a lista nova chega
         if (claims.plataforma !== true) {
             const donoDaOriginal = claims.admin === true || (claims.tenants && claims.tenants.banca === 'proprietario');
             if (!donoDaOriginal) return aviso('Área do dono da plataforma.', 'Esta conta cuida de uma loja, não da plataforma.', 'Voltar ao painel');

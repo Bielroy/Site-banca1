@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Feira | Escolha a sua banca</title>
+    <title>Feira | As bancas da sua feira</title>
     <meta name="description" content="As bancas da sua feira, num lugar só. Escolha a banca e faça o seu pedido.">
     <meta name="theme-color" content="#1a3a2a">
     <meta name="robots" content="noindex">
@@ -12,7 +12,7 @@
     <meta property="og:description" content="Toque para ver as bancas da sua feira e fazer o seu pedido.">
     <meta property="og:type" content="website">
     <meta property="og:locale" content="pt_BR">
-    <meta property="og:image" content="https://site-banca1.vercel.app/og-image.png">
+    <meta property="og:image" content="https://usebanca.com/og-image.png">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" href="/icon-192.png">
     <link rel="apple-touch-icon" href="/icon-192.png">
@@ -25,15 +25,48 @@
     <link rel="stylesheet" href="/css/feira.css">
 </head>
 <body>
-    <main class="fe" id="fe" aria-live="polite">
-        <header class="fe-topo">
-            <span class="fe-selo">Feira</span>
-            <h1 id="fe-nome">Carregando a feira…</h1>
-            <p id="fe-dias" class="fe-dias"></p>
+    <main class="fe" id="fe">
+        <!-- CAPA: toldo de feira, foto (se a feira tiver) e o que o cliente precisa saber de cara: tem feira hoje? -->
+        <header class="fe-hero" id="fe-hero">
+            <img class="fe-capa" id="fe-capa" alt="" hidden>
+            <div class="fe-toldo" aria-hidden="true"></div>
+            <div class="fe-hero-txt">
+                <span class="fe-selo">Feira</span>
+                <h1 id="fe-nome">Carregando a feira…</h1>
+                <p class="fe-status" id="fe-status" hidden></p>
+                <p class="fe-local" id="fe-local" hidden></p>
+                <a class="fe-ir" id="fe-ir" href="#fe-bancas" hidden></a>
+            </div>
         </header>
-        <section class="fe-lista" id="fe-lista" aria-label="Bancas desta feira"></section>
+
         <p class="fe-aviso" id="fe-aviso" hidden></p>
-        <p class="fe-rodape">Escolha uma banca para ver os produtos e fazer o seu pedido. Cada banca recebe o pedido dela.</p>
+        <p class="fe-nota" id="fe-nota" hidden></p>
+
+        <!-- COMO FUNCIONA: três passos, sempre os mesmos; o texto da feira (se houver) vem logo abaixo -->
+        <section class="fe-como" id="fe-como" aria-labelledby="fe-como-tit" hidden>
+            <h2 id="fe-como-tit">Como funciona</h2>
+            <ol class="fe-passos">
+                <li><span class="fe-passo-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 9.5 5.3 5h13.4L20 9.5"/><path d="M4 9.5a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0"/><path d="M5.5 12v7h13v-7"/><path d="M10 19v-4h4v4"/></svg></span><b>Escolha a banca</b><small>Cada banca tem o cardápio dela.</small></li>
+                <li><span class="fe-passo-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 8h14l-1.2 11H6.2z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg></span><b>Monte o pedido</b><small>Ponha na sacola e envie. Vai direto para a banca.</small></li>
+                <li><span class="fe-passo-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6.5-5.6 6.5-10.6A6.5 6.5 0 0 0 5.5 10.4C5.5 15.4 12 21 12 21z"/><circle cx="12" cy="10.2" r="2.3"/></svg></span><b>Receba ou retire</b><small>A banca entrega no seu endereço ou separa para você retirar.</small></li>
+            </ol>
+            <p class="fe-texto" id="fe-texto" hidden></p>
+        </section>
+
+        <!-- FOTOS da feira (a plataforma escolhe): deslizam para o lado -->
+        <section class="fe-fotos" id="fe-fotos" aria-label="Fotos da feira" hidden></section>
+
+        <section class="fe-sec" id="fe-bancas" aria-labelledby="fe-tit-hoje">
+            <h2 id="fe-tit-hoje">Bancas da feira</h2>
+            <p class="fe-dica" id="fe-dica-hoje" hidden></p>
+            <div class="fe-lista" id="fe-lista"></div>
+        </section>
+        <section class="fe-sec" id="fe-fora" aria-labelledby="fe-tit-fora" hidden>
+            <h2 id="fe-tit-fora">Não vêm hoje</h2>
+            <p class="fe-dica">Dá para olhar os produtos. Os pedidos voltam no dia em que a banca voltar.</p>
+            <div class="fe-lista fora" id="fe-lista-fora"></div>
+        </section>
+        <p class="fe-rodape">Cada banca recebe o pedido dela e combina a entrega com você.</p>
     </main>
     <script type="module" src="/js/feira.js"></script>
 </body>

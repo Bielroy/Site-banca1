@@ -10,12 +10,17 @@
 // =====================================================================
 import { auth, getDoc, getDocs, query, where, orderBy, limit, setDoc } from './firebase.js';
 import { tcol, tdoc } from './tenant.js';
+import { pedirCatalogo } from './pedir-catalogo.js';
+import { marcarProdutoLocal, marcarCustoLocal } from './painel-catalogo.js';
 import { lerPainel } from './painel-cache.js';
+import { sobrasPereciveis } from './alertas-lib.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
+import { mensagemProdutoVoltou, linkDoWhatsApp } from './mensagem-lib.js';
 import { numeroDeCampo } from './aparencia-lib.js';
 import { temControle, situacao, sugestaoCompra, fmtQtd, ROTULO_TIPO, MOTIVOS_PERDA, custoDaFicha, margem, UNIDADES_RECEITA, paraEstoque, taxasDePerda, comFolgaDePerda } from './estoque-lib.js';
 
-const S = { produtos: [], filtro: 'todos', busca: '', previsto: null, previstoEm: 0, perdas: null, perdasEm: 0, ligado: false, acao: null };
+const S = { produtos: [], filtro: 'todos', busca: '', previsto: null, previstoEm: 0, clima: [], custoFalta: null, perdas: null, perdasEm: 0, ligado: false, acao: null };
 const mapaProdutos = () => new Map(S.produtos.map((p) => [p.id, p]));
 const pctBonito = (x) => `${(x * 100).toFixed(1).replace('.', ',')}%`;
 const el = () => document.getElementById('estoque-conteudo');
@@ -58,7 +63,7 @@ async function carregarPrevisao() {
         const j = await lerPainel(); if (!j.produtos) return;
         const m = {};
         for (const [id, p] of Object.entries(j.produtos)) { const h = p.horizontes && p.horizontes.prox7; if (h && h.recomendacao) m[id] = { alvo: h.recomendacao.sugestao, vende: h.previsto }; }
-        S.previsto = m; S.previstoEm = Date.now(); render();
+        S.previsto = m; S.clima = (j.meta && Array.isArray(j.meta.climaProximo)) ? j.meta.climaProximo : []; S.custoFalta = (j.meta && j.meta.custoFalta) || null; S.previstoEm = Date.now(); render();
     } catch (_) { /* sem previsão: segue */ }
 }
 
@@ -84,6 +89,44 @@ const linhaDe = (p) => {
     return { p, sit, pv, sug, perda, ficha };
 };
 
+// Sobra de perecível e custo da falta (js/alertas-lib.js + motor). Somem quando não há o que dizer.
+// LISTA DE ESPERA ("Avise-me quando voltar", lib/avise.js): quem deixou o WhatsApp num produto em falta.
+// Quando o produto volta, cada cliente ganha o botão que abre a conversa com a mensagem pronta. Nada sai sozinho.
+async function carregarEspera() {
+    try { const r = await api({ acao: 'espera' }); S.espera = Array.isArray(r.lista) ? r.lista : []; } catch (_) { S.espera = S.espera || []; }
+    if (el() && document.activeElement?.id !== 'es-busca') render();
+}
+const dataCurta = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? new Date(t).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : ''; };
+function esperaHtml() {
+    const lista = (S.espera || []).filter((x) => x.clientes && x.clientes.length);
+    if (!lista.length) return '';
+    const total = lista.reduce((t, x) => t + x.clientes.length, 0), loja = (document.getElementById('topo-loja')?.textContent || '').trim();
+    return `<section class="es-alerta es-espera" aria-label="Clientes esperando produto">
+        <b>${total === 1 ? '1 cliente pediu para ser avisado' : `${total} clientes pediram para ser avisados`}</b>
+        <p class="es-nota">Eles tocaram em "Avise-me" num produto em falta. Quando o produto volta, avise um por um: o botão abre a conversa com a mensagem pronta.</p>
+        ${lista.map((x) => `<div class="es-espera-item">
+            <p class="es-espera-prod"><strong>${escapeHTML(x.nome)}</strong> <span class="pn-pil ${x.voltou ? 'ok' : 'atencao'}">${x.voltou ? 'Voltou: avise' : (x.existe === false ? 'Produto apagado' : 'Ainda em falta')}</span></p>
+            <ul>${x.clientes.map((c) => `<li><span>${escapeHTML(c.nome)}${dataCurta(c.em) ? ` <small>pediu em ${dataCurta(c.em)}</small>` : ''}</span>
+                <span class="es-espera-bts">${x.voltou ? `<a class="btn btn-primary" target="_blank" rel="noopener" href="${escapeHTML(linkDoWhatsApp(c.telefone, mensagemProdutoVoltou({ loja, cliente: c.nome, produto: x.nome })))}" data-es-avisado="${escapeHTML(x.produtoId)}" data-tel="${escapeHTML(c.telefone)}" data-nome="${escapeHTML(c.nome)}">Avisar no WhatsApp</a>` : ''}
+                <button type="button" class="btn-outline" data-es-tirar="${escapeHTML(x.produtoId)}" data-tel="${escapeHTML(c.telefone)}" data-nome="${escapeHTML(c.nome)}" aria-label="Tirar ${escapeHTML(c.nome)} da lista de espera">Tirar</button></span></li>`).join('')}</ul>
+        </div>`).join('')}
+    </section>`;
+}
+async function tirarDaEspera(produtoId, telefone, nome, avisou) {
+    // some da tela na hora; o servidor confirma em seguida
+    S.espera = (S.espera || []).map((x) => (x.produtoId === produtoId ? { ...x, clientes: x.clientes.filter((c) => c.telefone !== telefone) } : x));
+    render();
+    try { await api({ acao: 'espera-tirar', produtoId, telefone }); showToast(avisou ? `${nome} saiu da lista de espera.` : `${nome} foi tirado da lista.`); }
+    catch (e) { showToast(e.message, true); carregarEspera(); }
+}
+
+function alertasHtml() {
+    const sobras = S.previsto ? sobrasPereciveis({ produtos: S.produtos, previsto: S.previsto, perdas: S.perdas || {} }) : [];
+    const f = S.custoFalta && S.custoFalta.valor >= 1 ? S.custoFalta : null;
+    return `${sobras.length ? `<div class="es-alerta es-alerta-sobra"><b>Pode sobrar</b><ul>${sobras.map((x) => `<li><span>${escapeHTML(x.nome)}<small>o estoque dá para uns ${x.dias} dias, e aguenta uns ${x.aguenta}. Sobra perto de ${fmtQtd(x.sobra, x.unidade)}${x.valor ? ` (${fmt(x.valor)})` : ''}</small></span></li>`).join('')}</ul><small>Vale uma promoção ou uma bacia antes que perca a cara. Se já virou ingrediente, registre como produção.</small></div>` : ''}
+    ${f ? `<details class="es-alerta es-alerta-falta"><summary><b>A falta custou uns ${fmt(f.valor)}</b> nos últimos ${f.dias} dias</summary><ul>${f.itens.map((x) => `<li><span>${escapeHTML(x.nome)}<small>faltou em ${x.dias} dia(s); deixou de vender perto de ${fmtQtd(x.qtd, x.unidade)}</small></span><b>${fmt(x.valor)}</b></li>`).join('')}</ul><small>Estimativa: compara com o que o produto vende no mesmo dia da semana. Quem não achou pode ter levado outra coisa.</small></details>` : ''}`;
+}
+
 function render() {
     if (!el()) return;
     const todas = S.produtos.map(linhaDe);
@@ -99,6 +142,8 @@ function render() {
         <div><h3>Estoque</h3><p class="config-sub">Quanto tem, o que está acabando e quanto comprar.</p></div>
         <button class="btn-outline es-hist-geral" data-es-acao="historico">Histórico</button>
     </div>
+    ${esperaHtml()}
+    ${alertasHtml()}
     <div class="es-filtros">
         ${chip('todos', 'Todos', todas.length)}${chip('comprar', 'Comprar', n((l) => l.sug.comprar > 0))}${chip('baixo', 'Acabando', n((l) => l.sit === 'baixo' || l.sit === 'zerado'))}${chip('sem', 'Sem controle', n((l) => l.sit === 'sem-controle'))}
     </div>
@@ -110,7 +155,7 @@ function render() {
                 <span class="es-sit">${CHIP[sit][0]}</span>
             </div>
             ${sit === 'sem-controle'
-                ? `<p class="es-nota">Este produto não tem estoque controlado. Faça uma contagem para começar.</p>`
+                ? `<p class="es-nota">Ainda sem contagem. Toque em <b>Contar</b> para começar.</p>`
                 : `<p class="es-qtd">${fmtQtd(p.estoqueFisico, p.unidade)}</p>
                    <p class="es-nota">${[temControle(p.estoqueMin) && `mínimo ${fmtQtd(p.estoqueMin, p.unidade)}`, temControle(p.estoqueIdeal) && `ideal ${fmtQtd(p.estoqueIdeal, p.unidade)}`, pv && `previsão de 7 dias: ${fmtQtd(pv.vende, p.unidade)}`].filter(Boolean).join(' · ') || 'Sem mínimo e ideal definidos'}</p>`}
             ${perda ? `<p class="es-nota es-perda">${perda.taxa !== null ? `Perde ${pctBonito(perda.taxa)} do que entra` : `Perdeu ${fmtQtd(perda.perdeu, p.unidade)}`}${perda.valor ? ` (${fmt(perda.valor)} nos últimos 2 meses)` : ''}</p>` : ''}
@@ -118,13 +163,13 @@ function render() {
             ${sug.comprar > 0 ? `<p class="es-comprar">${p.ficha ? 'Produzir' : 'Comprar'} ${fmtQtd(sug.comprar, p.unidade)} <small>${sug.motivo}</small></p>` : ''}
             <div class="es-acoes">
                 ${sit === 'sem-controle' ? '' : `<button data-es-acao="compra" data-id="${escapeHTML(p.id)}">Entrada</button><button data-es-acao="perda" data-id="${escapeHTML(p.id)}">Perda</button>`}
-                <button data-es-acao="ajuste" data-id="${escapeHTML(p.id)}">Contar</button>
+                <button${sit === 'sem-controle' ? ' class="es-forte"' : ''} data-es-acao="ajuste" data-id="${escapeHTML(p.id)}">Contar</button>
                 <button data-es-acao="limites" data-id="${escapeHTML(p.id)}">Limites</button>
                 <button data-es-acao="ficha" data-id="${escapeHTML(p.id)}">Ficha</button>
                 ${ficha && ficha.valida ? `<button class="es-forte" data-es-acao="produzir" data-id="${escapeHTML(p.id)}">Produzir</button>` : ''}
                 <button data-es-acao="historico" data-id="${escapeHTML(p.id)}">Histórico</button>
             </div>
-        </article>`).join('') : '<p class="config-sub">Nenhum produto neste filtro.</p>'}
+        </article>`).join('') : estadoVazio({ icone: 'estoque', titulo: 'Nenhum produto neste filtro', texto: 'Toque em "Todos" ou mude a busca.', compacto: true })}
     </div>`;
 }
 
@@ -158,7 +203,7 @@ function abrirAcao(tipo, p) {
         tipo === 'compra' ? campo('es-qtd', `Quanto entrou (${un})`, dec) + campo('es-custo', `Quanto pagou por ${un} (opcional)`, dec, p.custo ? `Último custo: ${fmt(p.custo)}` : 'Serve para calcular margem e o valor das perdas.') + campo('es-obs', 'Observação (opcional)', 'type="text" maxlength="140" placeholder="Ex.: Ceasa, fornecedor João"')
         : tipo === 'perda' ? campo('es-qtd', `Quanto perdeu (${un})`, dec) + `<div class="form-group"><label for="es-motivo">Motivo</label><select id="es-motivo">${MOTIVOS_PERDA.map(([v, r]) => `<option value="${v}">${r}</option>`).join('')}</select></div>` + campo('es-obs', 'Observação (opcional)', 'type="text" maxlength="140"')
         : tipo === 'ajuste' ? campo('es-contagem', `Quanto tem de verdade (${un})`, dec, 'Conte na banca e digite o total. O sistema calcula a diferença e guarda no histórico.')
-        : campo('es-min', `Mínimo (${un})`, `${dec} value="${numeroDeCampo(p.estoqueMin)}"`, 'Abaixo disso, o produto aparece em "Comprar".') + campo('es-ideal', `Ideal (${un})`, `${dec} value="${numeroDeCampo(p.estoqueIdeal)}"`, 'Até quanto comprar para ficar tranquilo.') + campo('es-max', `Máximo (${un}, opcional)`, `${dec} value="${numeroDeCampo(p.estoqueMax)}"`, 'Acima disso tende a sobrar e estragar.') + campo('es-prazo', 'Dias até a compra chegar (opcional)', `type="text" inputmode="numeric" autocomplete="off" value="${numeroDeCampo(p.prazoDias)}"`, 'Para fornecedor que entrega depois: a lista de compras soma o que vende nesse intervalo.') + campo('es-custo', `Custo por ${un} (opcional)`, `${dec} value="${numeroDeCampo(p.custo)}"`));
+        : campo('es-min', `Mínimo (${un})`, `${dec} value="${numeroDeCampo(p.estoqueMin)}"`, 'Abaixo disso, o produto aparece em "Comprar".') + campo('es-ideal', `Ideal (${un})`, `${dec} value="${numeroDeCampo(p.estoqueIdeal)}"`, 'Até quanto comprar para ficar tranquilo.') + campo('es-max', `Máximo (${un}, opcional)`, `${dec} value="${numeroDeCampo(p.estoqueMax)}"`, 'Acima disso tende a sobrar e estragar.') + (p.ficha ? campo('es-prazo', 'Dias para ficar pronto (opcional)', `type="text" inputmode="numeric" autocomplete="off" value="${numeroDeCampo(p.prazoDias)}"`, 'Cura, descanso e embalagem. A aba Compras manda começar antes e soma o que vende enquanto não fica pronto.') : campo('es-prazo', 'Dias até a compra chegar (opcional)', `type="text" inputmode="numeric" autocomplete="off" value="${numeroDeCampo(p.prazoDias)}"`, 'Para fornecedor que entrega depois: a lista de compras soma o que vende nesse intervalo.')) + campo('es-custo', `Custo por ${un} (opcional)`, `${dec} value="${numeroDeCampo(p.custo)}"`));
     openModal('modal-estoque');
 }
 
@@ -175,8 +220,14 @@ async function gravar() {
             if (min !== null && ideal !== null && ideal < min) throw new Error('O ideal precisa ser maior ou igual ao mínimo.');
             if (max !== null && ideal !== null && max < ideal) throw new Error('O máximo precisa ser maior ou igual ao ideal.');
             b.disabled = true;
-            await setDoc(tdoc('produtos', a.p.id), { estoqueMin: min, estoqueIdeal: ideal, estoqueMax: max, prazoDias }, { merge: true });
-            if (custo !== (a.p.custo ?? null)) await setDoc(tdoc('produtos_custos', a.p.id), { custo }, { merge: true });      // custo é privado
+            const limites = { estoqueMin: min, estoqueIdeal: ideal, estoqueMax: max, prazoDias };
+            await setDoc(tdoc('produtos', a.p.id), limites, { merge: true });
+            // limites não mexem em ultimaModificacao (a regra só deixa o estoque mexer neles): marca aqui e o servidor remenda o painel
+            marcarProdutoLocal(a.p.id, limites); pedirCatalogo('mudou', [a.p.id]);
+            if (custo !== (a.p.custo ?? null)) {
+                await setDoc(tdoc('produtos_custos', a.p.id), { custo }, { merge: true });      // custo é privado
+                marcarCustoLocal(a.p.id, { custo }); pedirCatalogo('custos', [a.p.id]);
+            }
             showToast('Limites gravados.');
         } else {
             const corpo = { acao: 'movimentar', produtoId: a.p.id, tipo: a.tipo, chave: a.chave, obs: $('es-obs')?.value || '' };
@@ -271,7 +322,9 @@ async function gravarFicha(a, b) {
             if (f.validadeDias !== null && !(f.validadeDias > 0 && f.validadeDias <= 3650)) throw new Error('A validade precisa ser em dias (1 a 3650).');
         }
         b.disabled = true;
-        await setDoc(tdoc('produtos_custos', a.p.id), { ficha: vazia ? null : { rende: f.rende, validadeDias: f.validadeDias, itens: f.itens } }, { merge: true });   // ficha é privada
+        const ficha = vazia ? null : { rende: f.rende, validadeDias: f.validadeDias, itens: f.itens };
+        await setDoc(tdoc('produtos_custos', a.p.id), { ficha }, { merge: true });   // ficha é privada
+        marcarCustoLocal(a.p.id, { ficha }); pedirCatalogo('custos', [a.p.id]);
         showToast(vazia ? 'Ficha removida.' : 'Ficha gravada.');
         closeModal('modal-estoque'); if (history.state && history.state.modal === 'modal-estoque') history.back();
     } catch (e) { showToast(e.message || 'Não consegui gravar a ficha.', true); }
@@ -328,7 +381,7 @@ async function abrirHistorico(p) {
     garantirModal(); S.acao = null; $('es-m-corpo').oninput = null; $('es-m-corpo').onchange = null; $('es-m-corpo').onclick = null;
     $('es-m-titulo').textContent = p ? `Histórico de ${p.nome}` : 'Últimas movimentações';
     $('es-m-rodape').hidden = true;
-    $('es-m-corpo').innerHTML = '<p class="config-sub">Carregando...</p>';
+    $('es-m-corpo').innerHTML = esqueleto('Carregando...', 3);
     openModal('modal-estoque');
     try {
         const movs = p ? await movimentosRecentes('produtoId', p.id, 60) : (await getDocs(query(tcol('estoque_mov'), orderBy('em', 'desc'), limit(60)))).docs.map((d) => d.data());
@@ -347,6 +400,9 @@ function ligar() {
     if (S.ligado) return; S.ligado = true;
     el().addEventListener('click', (e) => {
         const f = e.target.closest('[data-es-filtro]'); if (f) { S.filtro = f.dataset.esFiltro; render(); return; }
+        // lista de espera: "Avisar" abre o WhatsApp (o link já está no botão) e tira o cliente da lista; "Tirar" só tira
+        const av = e.target.closest('[data-es-avisado]'); if (av) { setTimeout(() => tirarDaEspera(av.dataset.esAvisado, av.dataset.tel, av.dataset.nome, true), 400); return; }
+        const ti = e.target.closest('[data-es-tirar]'); if (ti) { tirarDaEspera(ti.dataset.esTirar, ti.dataset.tel, ti.dataset.nome, false); return; }
         const a = e.target.closest('[data-es-acao]'); if (!a) return;
         const p = S.produtos.find((x) => x.id === a.dataset.id);
         if (a.dataset.esAcao === 'historico') abrirHistorico(p || null); else if (p) abrirAcao(a.dataset.esAcao, p);
@@ -360,7 +416,7 @@ function ligar() {
 
 /** Previsão do motor e desperdício já carregados (a aba Compras usa os mesmos, sem ler de novo). */
 export const carregarApoio = () => Promise.all([carregarPrevisao(), carregarPerdas()]);
-export const apoio = () => ({ previsto: S.previsto || {}, perdas: S.perdas || {} });
+export const apoio = () => ({ previsto: S.previsto || {}, perdas: S.perdas || {}, clima: S.clima || [] });
 export const movimentar = (corpo) => api({ acao: 'movimentar', chave: novaChave(), ...corpo });
 
 /** Chamado ao abrir a aba e sempre que os produtos mudam com a aba aberta. */
@@ -370,4 +426,5 @@ export function abrirEstoque(produtos) {
     ligar();
     if (document.activeElement?.id !== 'es-busca') render();
     carregarPrevisao(); carregarPerdas();
+    if (!S.esperaPedida || Date.now() - S.esperaPedida > 60000) { S.esperaPedida = Date.now(); carregarEspera(); }   // no máximo uma consulta por minuto
 }

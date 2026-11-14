@@ -17,11 +17,8 @@
 const REAIS = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 export const fmt = (n) => REAIS.format(Number(n) || 0);
 
-export const escapeHTML = (str) => {
-  if (str === null || str === undefined) return '';
-  return String(str).replace(/[&<>'"]/g, (m) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[m]));
-};
+import { escapeHTML } from './escape-lib.js';   // a única (js/escape-lib.js)
+export { escapeHTML };
 
 export const isFracionavel = (unidade) => {
   const u = (unidade || '').toLowerCase();
@@ -48,6 +45,11 @@ export const formatarQtdRelatorio = (qtd, und) => {
 // peso, depois de pesado: "3 un (1,2 kg)". Antes aparecia "3 kg", como se fosse peso.
 export const qtdDoItem = (item) => {
   const i = item || {};
+  // pacote fechado (js/pacote-lib.js): "4 pacotes" / "1 pacote de 500 g", para a banca separar o pacote e não a unidade solta
+  if (i.pacote === true && !isFracionavel(i.unidade)) {
+    const n = Math.round(soNumero(i.qtd)), peso = String(i.pesoPacote || '').replace(/[<>]/g, '').slice(0, 16);
+    return `${n} ${n === 1 ? 'pacote' : 'pacotes'}${peso ? ` de ${escapeHTML(peso)}` : ''}`;
+  }
   if (i.tipo === 'un' || i.aPesar === true) {
     const n = Math.round(soNumero(i.qtd));
     const peso = soNumero(i.pesoFinal);
@@ -70,14 +72,61 @@ export const showToast = (msg, isError = false) => {
   let t = document.getElementById('toast');
   // página sem a caixinha de aviso (era o caso da Plataforma): cria na hora, senão o aviso some calado
   if (!t) { t = document.createElement('div'); t.className = 'toast'; t.id = 'toast'; t.setAttribute('role', 'alert'); document.body.appendChild(t); }
+  if (desfazerAtual) desfazerAtual.fechar(false);
+  t.classList.remove('com-acao');
   t.textContent = msg;
   t.style.background = isError ? 'var(--danger)' : 'var(--forest)';
+  t.dataset.tipo = isError ? 'erro' : 'ok';   // o painel mostra um ícone de certo/erro (css/painel-base.css); a loja não usa
   t.classList.add('visivel');
   hapticFeedback(isError ? 'heavy' : 'light');
   clearTimeout(toastTimer);
   // erro e texto comprido ficam mais tempo na tela (3 s não dava para ler)
   const tempo = Math.min(7000, Math.max(isError ? 4500 : 3000, String(msg).length * 55));
   toastTimer = setTimeout(() => t.classList.remove('visivel'), tempo);
+};
+
+// ---------------------------------------------------------------------
+// AVISO COM DESFAZER (como o sonner): a ação acontece NA HORA e o aviso traz o botão "Desfazer" por alguns
+// segundos. Troca o "Tem certeza?" das ações que voltam atrás sem perder nada (tirar da loja, marcar entregue).
+// O tempo PARA enquanto o dedo ou o mouse está no aviso e enquanto a aba está escondida (quem saiu não perde a chance).
+// desfazer: função (pode ser async) que volta o que foi feito. Devolve uma Promise: true se a pessoa desfez.
+let desfazerAtual = null;
+export const avisoComDesfazer = (msg, desfazer, { tempo = 6000 } = {}) => {
+  if (desfazerAtual) desfazerAtual.fechar(false);          // um aviso novo encerra o anterior (a ação dele fica valendo)
+  let t = document.getElementById('toast');
+  if (!t) { t = document.createElement('div'); t.className = 'toast'; t.id = 'toast'; t.setAttribute('role', 'alert'); document.body.appendChild(t); }
+  clearTimeout(toastTimer);
+  t.textContent = '';
+  const texto = document.createElement('span'); texto.textContent = msg;
+  const bt = document.createElement('button'); bt.type = 'button'; bt.className = 'toast-desfazer'; bt.textContent = 'Desfazer';
+  t.append(texto, bt);
+  t.style.background = 'var(--forest)'; t.dataset.tipo = 'ok'; t.classList.add('visivel', 'com-acao');
+  hapticFeedback('light');
+  return new Promise((resolve) => {
+    let restante = tempo, inicio = Date.now(), timer = null, fechado = false;
+    const parar = () => { if (timer) { clearTimeout(timer); timer = null; restante -= Date.now() - inicio; } };
+    // no fim do tempo, confere de novo: se o dedo/mouse ainda está no aviso (o pointerenter pode não ter vindo,
+    // por exemplo quando o aviso deslizou para baixo do mouse parado), espera mais um pouco
+    const acabou = () => { timer = null; if (t.matches(':hover') || t.contains(document.activeElement)) { restante = 1500; seguir(); } else fechar(false); };
+    const seguir = () => { if (fechado || timer || document.hidden) return; inicio = Date.now(); timer = setTimeout(acabou, Math.max(800, restante)); };
+    const naVisibilidade = () => (document.hidden ? parar() : seguir());
+    const fechar = (desfez) => {
+      if (fechado) return; fechado = true; parar();
+      t.removeEventListener('pointerenter', parar); t.removeEventListener('pointerleave', seguir); t.removeEventListener('focusin', parar); t.removeEventListener('focusout', seguir);
+      document.removeEventListener('visibilitychange', naVisibilidade);
+      t.classList.remove('visivel', 'com-acao'); if (desfazerAtual && desfazerAtual.fechar === fechar) desfazerAtual = null;
+      resolve(desfez);
+    };
+    bt.addEventListener('click', async () => {
+      bt.disabled = true;
+      try { await desfazer(); fechar(true); showToast('Desfeito.'); }
+      catch (e) { fechar(false); showToast('Não deu para desfazer. Confira e tente de novo.', true); }
+    }, { once: true });
+    t.addEventListener('pointerenter', parar); t.addEventListener('pointerleave', seguir); t.addEventListener('focusin', parar); t.addEventListener('focusout', seguir);
+    document.addEventListener('visibilitychange', naVisibilidade);
+    desfazerAtual = { fechar };
+    seguir();
+  });
 };
 
 export const animarFeedbackBtn = (btn) => {
@@ -96,11 +145,38 @@ const SELETOR_FOCAVEL = [
   'select:not([disabled])', 'textarea:not([disabled])', '[tabindex]:not([tabindex="-1"])'
 ].join(', ');
 
+// ---------------------------------------------------------------------
+// TECLADO DO CELULAR: só abre quando a pessoa toca no campo.
+// Antes, abrir uma janela (ex.: "Editar" produto no painel) punha o cursor sozinho no 1º campo e o
+// teclado subia por cima da tela antes de a pessoa escolher o que mudar. No celular e no tablet a
+// janela recebe o foco (o leitor de tela anuncia e o Tab continua preso nela), sem abrir o teclado.
+// No computador continua indo direto para o 1º campo (lá não tem teclado na tela).
+// ---------------------------------------------------------------------
+export const tecladoNaTela = () => {
+  // dedo como jeito principal, ou tela de toque sem nenhum mouse (notebook com tela de toque e mouse conta como computador)
+  try { return matchMedia('(pointer: coarse)').matches || ((navigator.maxTouchPoints || 0) > 0 && !matchMedia('(any-pointer: fine)').matches); } catch (_) { return false; }
+};
+const DIGITAVEL = 'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=reset]):not([type=range]):not([type=color]):not([type=file]), textarea, [contenteditable=""], [contenteditable="true"]';
+/** Põe o cursor no campo só quando isso não abre teclado na tela (computador). Devolve true se focou. */
+export const focarCampo = (el, { selecionar = false } = {}) => {
+  if (!el || typeof el.focus !== 'function') return false;
+  if (tecladoNaTela() && el.matches && el.matches(DIGITAVEL)) return false;
+  el.focus({ preventScroll: true });
+  if (selecionar && typeof el.select === 'function') try { el.select(); } catch (_) { /* campo sem seleção */ }
+  return true;
+};
+
 const focarPrimeiroElemento = (modal) => {
   const alvo = modal.querySelector(
     'input:not([type=hidden]), select, textarea, button:not(.btn-fechar)'
   ) || modal.querySelector('[data-fechar], .btn-fechar');
-  if (alvo) setTimeout(() => alvo.focus({ preventScroll: true }), 60);
+  if (!alvo) return;
+  setTimeout(() => {
+    if (focarCampo(alvo)) return;
+    // celular: foco na própria janela, sem abrir o teclado
+    if (!modal.hasAttribute('tabindex')) { modal.setAttribute('tabindex', '-1'); modal.style.outline = 'none'; }
+    modal.focus({ preventScroll: true });
+  }, 60);
 };
 
 // ---------------------------------------------------------------------
@@ -176,8 +252,9 @@ export const closeModal = (id) => {
   modal.setAttribute('aria-hidden', 'true');
   modal.setAttribute('aria-modal', 'false');
   soltarRolagem();
+  // volta para onde estava; se era um campo (a busca, por ex.), no celular não reabre o teclado
   if (ultimoFocado && typeof ultimoFocado.focus === 'function') {
-    ultimoFocado.focus({ preventScroll: true });
+    if (!focarCampo(ultimoFocado) && document.activeElement && modal.contains(document.activeElement)) document.activeElement.blur();
     ultimoFocado = null;
   }
 };
@@ -204,6 +281,7 @@ const ensureConfirmModal = () => {
         <div class="modal-body" style="padding: 30px 24px;">
           <h2 id="confirm-title" style="color: var(--forest); margin-bottom: 12px; font-size: 1.5rem;">Atenção</h2>
           <p id="confirm-msg" style="color: var(--text-mid); font-size: 1.05rem;">Confirma a operação?</p>
+          <label id="confirm-digitar" class="confirm-digitar" hidden><span id="confirm-digitar-rot"></span><input id="confirm-digitar-campo" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
           <div style="display:flex; gap:12px; margin-top:24px;">
             <button class="btn btn-outline" id="btn-confirm-cancel" style="flex:1; border-color:#e0dcd4; color:var(--text-dark);">Cancelar</button>
             <button class="btn" id="btn-confirm-ok" style="flex:1; background:var(--danger); color:white; border-color:var(--danger);">Confirmar</button>
@@ -230,11 +308,22 @@ export const customConfirm = (title, msg, rotulos = {}) => {
 
   const okBtn = document.getElementById('btn-confirm-ok');
   const cancelBtn = document.getElementById('btn-confirm-cancel');
-  setTimeout(() => okBtn.focus({ preventScroll: true }), 60);
+  // CONFIRMAÇÃO DIGITADA (ações que não voltam, como excluir uma loja): o botão só acende quando a pessoa
+  // digita exatamente o texto pedido (sem diferença de maiúscula, acento ou espaço sobrando)
+  const caixaDig = document.getElementById('confirm-digitar'), campoDig = document.getElementById('confirm-digitar-campo');
+  const igual = (a) => String(a || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const pede = rotulos.digitar ? igual(rotulos.digitar) : '';
+  const naDigitacao = () => { okBtn.disabled = !!pede && igual(campoDig.value) !== pede; };
+  if (caixaDig) {
+    caixaDig.hidden = !pede; campoDig.value = '';
+    document.getElementById('confirm-digitar-rot').textContent = pede ? `Para confirmar, digite: ${rotulos.digitar}` : '';
+  }
+  okBtn.disabled = !!pede;
+  setTimeout(() => (pede ? campoDig : okBtn).focus({ preventScroll: true }), 60);
 
   return new Promise((resolve) => {
     const finalizar = (valor) => { cleanup(); resolve(valor); };
-    const onOk = () => finalizar(true);
+    const onOk = () => { if (!okBtn.disabled) finalizar(true); };
     const onCancel = () => finalizar(false);
     const onOverlay = (e) => { if (e.target === overlay) finalizar(false); };
     const onKey = (e) => { if (e.key === 'Escape') finalizar(false); };
@@ -243,14 +332,17 @@ export const customConfirm = (title, msg, rotulos = {}) => {
       overlay.classList.remove('aberto');
       overlay.setAttribute('aria-hidden', 'true');
       soltarRolagem();
-      okBtn.removeEventListener('click', onOk);
+      okBtn.removeEventListener('click', onOk); okBtn.disabled = false;
+      if (campoDig) campoDig.removeEventListener('input', naDigitacao);
+      if (caixaDig) caixaDig.hidden = true;
       cancelBtn.removeEventListener('click', onCancel);
       overlay.removeEventListener('click', onOverlay);
       document.removeEventListener('keydown', onKey);
-      if (focoAnterior && typeof focoAnterior.focus === 'function') focoAnterior.focus({ preventScroll: true });
+      if (focoAnterior && typeof focoAnterior.focus === 'function' && !focarCampo(focoAnterior) && overlay.contains(document.activeElement)) document.activeElement.blur();
     };
 
     okBtn.addEventListener('click', onOk);
+    if (campoDig) campoDig.addEventListener('input', naDigitacao);
     cancelBtn.addEventListener('click', onCancel);
     overlay.addEventListener('click', onOverlay);
     document.addEventListener('keydown', onKey);
@@ -258,12 +350,18 @@ export const customConfirm = (title, msg, rotulos = {}) => {
 };
 
 // --------- Rede: erros globais ---------
+import { rejeicaoDoNavegador, mensagemDaRejeicao } from './erros-site.js';   // a mesma régua da aba Erros (já carregado antes em toda página)
 window.addEventListener('unhandledrejection', (event) => {
-  console.error('Unhandled Promise:', event.reason);
+  const r = event.reason;
+  console.error('Unhandled Promise:', r);
   // Só fala em "conexão" quando é mesmo conexão; outros erros não culpam a internet de quem está usando.
-  const txt = String((event.reason && (event.reason.code || event.reason.message)) || event.reason || '');
+  const txt = String((r && (r.code || r.message)) || (typeof r === 'string' ? r : '') || '');
   const rede = !navigator.onLine || /network|fetch|unavailable|offline|timeout|deadline/i.test(txt);
-  showToast(rede ? 'Erro de conexão. Tente novamente.' : 'Algo não saiu como esperado. Tente de novo.', true);
+  if (rede) { showToast('Erro de conexão. Tente novamente.', true); return; }
+  // Recusa do próprio navegador que não atrapalha nada (animação de troca de tela cancelada, registro do app recusado)
+  // e recusa sem mensagem nenhuma: o cliente não tem o que "tentar de novo". Fica só no console e na aba Erros.
+  if (rejeicaoDoNavegador(r) || !mensagemDaRejeicao(r)) return;
+  showToast('Algo não saiu como esperado. Tente de novo.', true);
 });
 
 // --------- Versão nova do site: entra sozinha ---------

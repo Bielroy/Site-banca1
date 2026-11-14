@@ -2,4 +2,4 @@ User-agent: *
 Disallow: /admin.html
 Disallow: /api/
 Allow: /
-Sitemap: https://site-banca1.vercel.app/sitemap.xml
+Sitemap: https://usebanca.com/sitemap.xml

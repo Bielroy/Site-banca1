@@ -44,6 +44,10 @@
 .ap-cor input[type=color], .ap-gerar input[type=color] { width: 48px; height: 44px; padding: 0; border: 1.5px solid #e0dcd4; border-radius: 10px; background: none; flex: none; cursor: pointer; }
 .ap-cor input[type=color]:disabled { opacity: .35; cursor: default; }
 .ap-cor span { display: flex; flex-direction: column; font-size: .9rem; min-width: 0; }
+.ap-cor label { cursor: pointer; }
+.ap-hex { width: 100%; max-width: 112px; min-height: 36px; margin-top: 4px; padding: 4px 8px; border: 1.5px solid #e0dcd4; border-radius: 8px; background: #fff; font: .85rem ui-monospace, SFMono-Regular, Menlo, monospace; box-sizing: border-box; }
+.ap-hex[aria-invalid="true"] { border-color: #b3261e; background: #fdf0ee; }
+.ap-hex:disabled { opacity: .4; }
 .ap-cor small { color: var(--text-light); font-size: .76rem; }
 .ap-check { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--text-mid); cursor: pointer; min-height: 28px; }
 .ap-check input { width: 18px; height: 18px; accent-color: var(--forest); }

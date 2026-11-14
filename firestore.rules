@@ -30,15 +30,35 @@ service cloud.firestore {
     function plataforma() { return confirmado() && request.auth.token.get('plataforma', false) == true; }
     function mapaDePapeis() { return request.auth.token.get('tenants', {}); }
     // papel da pessoa NESTA loja ('' se não tiver). A conta antiga (admin: true) vale como proprietária da loja original.
+    // APARELHO APROVADO (lib/aprovacao.js): loja com a opção ligada põe no login a marca apr[loja] = true.
+    // Aí o papel nela só vale com login dado pelo servidor a um aparelho aprovado (apl contém a loja).
+    // O link do e-mail sozinho não basta. A mesma conta é feita no servidor (lib/tenant.js, faltaAparelho).
+    function aparelhoOk(tid) {
+      return !(request.auth.token.get('apr', {}) is map && request.auth.token.get('apr', {}).get(tid, false) == true)
+        || (request.auth.token.get('apl', []) is list && tid in request.auth.token.get('apl', []));
+    }
     function papel(tid) {
-      return !confirmado() ? ''
+      return !confirmado() || !aparelhoOk(tid) ? ''
         : (mapaDePapeis() is map && mapaDePapeis().get(tid, '') is string && mapaDePapeis().get(tid, '') != '' ? mapaDePapeis().get(tid, '')
           : (tid == 'banca' && request.auth.token.get('admin', false) == true ? 'proprietario' : ''));
     }
-    function gestor(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador']; }
-    function equipe(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'funcionario', 'caixa', 'producao', 'estoque']; }
+    function gestor(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'gerente']; }
+    // gestor COMPLETO: o gerente mexe em tudo, menos onde o dinheiro cai (chave PIX, PIX automático) e no WhatsApp que recebe os pedidos
+    function gestorTotal(tid) { return plataforma() || papel(tid) in ['proprietario', 'administrador']; }
+    // o que o gerente NÃO pode alterar em loja/config (só vale se o documento já existe: ele não cria a configuração)
+    function gerenteSemDinheiro() {
+      return resource != null && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pix', 'pixAutomatico', 'wpp']);
+    }
+    function podeGravarLoja(tid, docId) {
+      return (gestorTotal(tid) || (gestor(tid) && (docId != 'config' || gerenteSemDinheiro())))
+        && !(docId in ['avaliacoes', 'catalogo', 'painel', 'custos']);       // nota média e documentos montados (lib/catalogo.js): só o servidor grava
+    }
+    // Documentos montados pelo servidor para o PAINEL ler de uma vez (lib/catalogo.js), em vez de produto por produto:
+    // 'painel' = todos os produtos (os mesmos que a coleção produtos já mostra) → equipe; 'custos' = custo e ficha → quem cuida de estoque.
+    function painelLe(tid, docId) { return (docId == 'painel' && equipe(tid)) || (docId == 'custos' && cuidaDeEstoque(tid)); }
+    function equipe(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa', 'producao', 'estoque']; }
     // quem ATENDE pedidos (vê nome, telefone e endereço de cliente): estoque e produção ficam de fora
-    function atende(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'funcionario', 'caixa']; }
+    function atende(tid)  { return plataforma() || papel(tid) in ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa']; }
     function cuidaDeEstoque(tid) { return gestor(tid) || papel(tid) in ['estoque', 'producao']; }
     // quem faz o fechamento da feira (o que sobrou / o que faltou)
     function fechaFeira(tid) { return gestor(tid) || papel(tid) in ['funcionario', 'estoque']; }
@@ -74,11 +94,13 @@ service cloud.firestore {
         && corOk(t, 'superficie') && corOk(t, 'texto') && corOk(t, 'sobrePrimaria') && corOk(t, 'botao')
         && textoAte(t, 'fonteTitulo', 40) && textoAte(t, 'fonteTexto', 40) && textoAte(t, 'etiqueta', 20)
         && textoAte(t, 'fotoFormato', 20) && textoAte(t, 'fotoEncaixe', 20)
-        && textoAte(t, 'cabecalho', 20) && textoAte(t, 'borda', 20) && textoAte(t, 'arte', 20) && textoAte(t, 'alinhamento', 20)
-        && textoAte(t, 'logoFormato', 20) && textoAte(t, 'botaoFormato', 20) && textoAte(t, 'card', 20)
+        && textoAte(t, 'cabecalho', 20) && textoAte(t, 'pelicula', 20) && textoAte(t, 'borda', 20) && textoAte(t, 'arte', 20) && textoAte(t, 'alinhamento', 20)
+        && textoAte(t, 'logoFormato', 20) && textoAte(t, 'botaoFormato', 20) && textoAte(t, 'botaoCab', 20) && textoAte(t, 'textoLado', 20) && textoAte(t, 'card', 20)
         && textoAte(t, 'fundoEstilo', 20) && textoAte(t, 'letra', 20)
         && urlOk(t, 'logo') && urlOk(t, 'capa')
-        && (!('raio' in t) || (t.raio is number && t.raio >= 0 && t.raio <= 40));
+        && (!('raio' in t) || (t.raio is number && t.raio >= 0 && t.raio <= 40))
+        && (!('peliculaForca' in t) || (t.peliculaForca is number && t.peliculaForca >= 0 && t.peliculaForca <= 100))
+        && (!('botaoFundoForca' in t) || (t.botaoFundoForca is number && t.botaoFundoForca >= 0 && t.botaoFundoForca <= 100));
     }
     function aparenciaOk(d) {
       return d.get('nome', '') is string && d.get('nome', '').size() >= 2 && d.get('nome', '').size() <= 60
@@ -107,7 +129,19 @@ service cloud.firestore {
         && textoAte(request.resource.data, 'atualizadoEm', 40);
     }
     // Documentos de `loja` que o CLIENTE precisa ler para comprar. O resto (banco de fotos etc.) é só de quem administra.
-    function lojaPublica(docId) { return docId in ['config', 'comunicados', 'avaliacoes']; }
+    // 'catalogo': a vitrine inteira num documento só, montada pelo SERVIDOR (lib/catalogo.js). Uma leitura por visita.
+    // TRILHA DO PAINEL (js/admin-trilha.js): quem é da equipe pode ACRESCENTAR uma linha, só em nome dela mesma,
+    // com a hora do servidor. Ninguém lê, muda ou apaga pelo navegador (o proprietário lê pela aba Equipe, via servidor).
+    function trilhaOk(tid, id) {
+      let d = request.resource.data;
+      return equipe(tid) && id.matches('^[0-9]{13}-[0-9a-f]{8}$')
+        && d.keys().hasOnly(['em', 'acao', 'quem', 'uid', 'detalhe', 'noServidor', 'doPainel']) && d.keys().hasAll(['em', 'acao', 'quem', 'uid', 'detalhe', 'noServidor', 'doPainel'])
+        && d.uid == request.auth.uid && d.quem == request.auth.token.get('email', request.auth.uid)
+        && d.noServidor == request.time && d.doPainel == true
+        && d.acao is string && d.acao.matches('^painel-[a-z-]{2,30}$')
+        && d.detalhe is string && d.detalhe.size() <= 200 && d.em is string && d.em.size() <= 30;
+    }
+    function lojaPublica(docId) { return docId in ['config', 'comunicados', 'avaliacoes', 'catalogo']; }
     // Loja NO AR: a plataforma não desligou (ficha.ativo != false). Loja bloqueada não mostra catálogo
     // nem configuração para o público; a equipe dela continua vendo tudo no painel.
     // (Loja sem ficha, como a original antes de ter uma, conta como no ar.)
@@ -150,8 +184,8 @@ service cloud.firestore {
       }
       match /categorias/{id}  { allow read: if vitrine(tid); allow write: if gestor(tid); }
       match /loja/{docId} {
-        allow read: if (lojaPublica(docId) && vitrine(tid)) || gestor(tid);
-        allow write: if gestor(tid) && docId != 'avaliacoes';      // a nota média das avaliações é do servidor
+        allow read: if (lojaPublica(docId) && vitrine(tid)) || (gestor(tid) && docId != 'custos') || painelLe(tid, docId);
+        allow write: if podeGravarLoja(tid, docId);
       }
       match /pedidos/{id} {
         // o cliente lê o PRÓPRIO pedido (o dono vem do login anônimo dele); quem atende lê os da loja
@@ -175,7 +209,9 @@ service cloud.firestore {
       match /calendario/{id}  { allow read: if equipe(tid); allow write: if gestor(tid); }           // calendário operacional
       match /equipe/{id}      { allow read: if gestor(tid); allow write: if false; }                // espelho da equipe: só o servidor grava
       match /crm/{id}         { allow read, write: if gestor(tid); }                         // anotação de quando cada cliente recebeu mensagem
-      // auditoria, avisos, uso_ia, maquininha, analytics_* e tudo o mais: só o servidor (a regra final nega).
+      match /auditoria/{id}   { allow create: if trilhaOk(tid, id); }
+      match /vagas/{dia}      { allow get: if vitrine(tid); allow write: if false; }               // vagas por horário (lib/vagas.js): a loja lê; só o servidor conta                              // trilha: só acrescenta (ler, mudar e apagar: negado)
+      // avisos, uso_ia, maquininha, analytics_* e tudo o mais: só o servidor (a regra final nega).
     }
 
     // Feiras: grupos de lojas que aparecem juntas na faixa do topo.
@@ -199,8 +235,8 @@ service cloud.firestore {
     }
     match /categorias/{id}  { allow read: if vitrine('banca'); allow write: if gestor('banca'); }
     match /loja/{docId} {
-      allow read: if (lojaPublica(docId) && vitrine('banca')) || gestor('banca');
-      allow write: if gestor('banca') && docId != 'avaliacoes';
+      allow read: if (lojaPublica(docId) && vitrine('banca')) || (gestor('banca') && docId != 'custos') || painelLe('banca', docId);
+      allow write: if podeGravarLoja('banca', docId);
     }
     match /pedidos/{id} {
       allow get: if atende('banca') || (logado() && resource.data.userId == request.auth.uid);
@@ -223,6 +259,8 @@ service cloud.firestore {
     match /crm/{id}         { allow read, write: if gestor('banca'); }
     match /calendario/{id}  { allow read: if equipe('banca'); allow write: if gestor('banca'); }
     match /equipe/{id}      { allow read: if gestor('banca'); allow write: if false; }
+    match /auditoria/{id}   { allow create: if trilhaOk('banca', id); }
+    match /vagas/{dia}      { allow get: if vitrine('banca'); allow write: if false; }
 
     // Qualquer outro caminho: negado (o servidor usa a conta de serviço e não passa por aqui).
     // Isto cobre: plataforma/* (chaves e segredos), backups, limites, auditoria e o que for criado no futuro.

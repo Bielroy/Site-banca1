@@ -12,6 +12,7 @@
 import { auth, getDoc, setDoc } from './firebase.js';
 import { tdoc, fichaRef, ehLojaOriginal } from './tenant.js';
 import { escapeHTML, fmt, showToast, openModal, closeModal, customConfirm } from './utils.js';
+import { estadoVazio, esqueleto } from './painel-ui.js';
 import { linhaEndereco } from './endereco.js';
 import { lerPainel } from './painel-cache.js';
 import { hojeBR } from './fechamento-lib.js';
@@ -19,7 +20,7 @@ import { SEGMENTOS, segmentar, filtrar, podeContatar, mensagemSugerida } from '.
 import { mensagemDoLink, foneParaWhats, foneBonito } from './conta-lib.js';
 import { feiraDeUmCliente } from './plataforma-lib.js';
 
-const S = { feiras: [], feira: '', seg: null, produtos: [], filtro: 'todos', produtoId: '', busca: '', contatos: {}, geradoEm: '', ligado: false, estado: 'carregando', atual: null, nomeLoja: ehLojaOriginal ? 'Banca Adair e Pedrina' : 'loja' };
+const S = { mostrar: 150, feiras: [], feira: '', seg: null, produtos: [], filtro: 'todos', produtoId: '', busca: '', contatos: {}, geradoEm: '', ligado: false, estado: 'carregando', atual: null, nomeLoja: ehLojaOriginal ? 'Banca Adair e Pedrina' : 'loja' };
 const el = () => document.getElementById('crm-conteudo');
 const $ = (id) => document.getElementById(id);
 const haDias = (n) => (n <= 0 ? 'hoje' : n === 1 ? 'ontem' : `há ${n} dias`);
@@ -27,7 +28,9 @@ const haDias = (n) => (n <= 0 ? 'hoje' : n === 1 ? 'ontem' : `há ${n} dias`);
 function render() {
     if (!el()) return;
     if (S.estado !== 'ok') {
-        el().innerHTML = `<div class="es-topo"><div><h3>Clientes</h3></div></div><div class="cp-vazio"><b>${S.estado === 'carregando' ? 'Carregando clientes (e conferindo pedidos novos)...' : S.estado === 'vazio' ? 'Ainda não há clientes calculados.' : 'Não consegui carregar os clientes.'}</b><span>${S.estado === 'vazio' ? 'A lista aparece sozinha quando chegar o primeiro pedido com endereço. Pedido com cupom especial (família, cortesia) não entra na lista.' : S.estado === 'erro' ? 'Confira a internet e abra a aba de novo.' : ''}</span></div>`;
+        el().innerHTML = `<div class="es-topo"><div><h3>Clientes</h3></div></div>${S.estado === 'carregando' ? esqueleto('Carregando clientes (e conferindo pedidos novos)...', 5)
+            : S.estado === 'vazio' ? estadoVazio({ icone: 'crm', titulo: 'Ainda não há clientes calculados.', texto: 'A lista aparece sozinha quando chegar o primeiro pedido com endereço. Pedido com cupom especial (família, cortesia) não entra na lista.' })
+            : estadoVazio({ erro: true, titulo: 'Não consegui carregar os clientes.', texto: 'Confira a internet e abra a aba de novo.' })}`;
         return;
     }
     const c = S.seg.contagem;
@@ -48,12 +51,12 @@ function render() {
         <select id="crm-produto" aria-label="Clientes que compram um produto"><option value="">Que compram qualquer produto</option>${comprados.map(([id, n]) => `<option value="${escapeHTML(id)}"${id === S.produtoId ? ' selected' : ''}>Que compram ${escapeHTML(n)}</option>`).join('')}</select>
     </div>
     <p class="config-sub crm-conta">${lista.length} cliente${lista.length === 1 ? '' : 's'} neste filtro</p>
-    <div class="crm-lista">${lista.slice(0, 150).map((x) => `
+    <div class="crm-lista">${lista.slice(0, S.mostrar).map((x) => `
         <button class="crm-item" data-crm-id="${escapeHTML(x.id)}">
             <span class="crm-nome">${escapeHTML(x.nome || 'Sem nome')}<small>${escapeHTML(linhaEndereco(x, { curto: true }) || 'sem endereço')}</small></span>
             <span class="crm-num"><b>${x.gasto ? fmt(x.gasto) : '–'}</b><small>${x.ped || x.n} pedido${(x.ped || x.n) > 1 ? 's' : ''} · ${haDias(x.semComprar)}</small></span>
-        </button>`).join('') || '<p class="config-sub">Nenhum cliente neste filtro.</p>'}</div>
-    ${lista.length > 150 ? '<p class="config-sub">Mostrando os 150 primeiros. Use a busca para achar os demais.</p>' : ''}`;
+        </button>`).join('') || estadoVazio({ icone: 'crm', titulo: 'Nenhum cliente neste filtro', texto: 'Escolha outro filtro ou mude a busca.', compacto: true })}</div>
+    ${lista.length > S.mostrar ? `<button class="btn-sec" data-crm-mais>Mostrar mais (${lista.length - S.mostrar} restantes)</button>` : ''}`;
 }
 
 function garantirModal() {
@@ -81,8 +84,8 @@ async function abrirCliente(x) {
             <dt>Última compra</dt><dd>${haDias(x.semComprar)}</dd>
             <dt>Costuma comprar</dt><dd>${x.cada ? `a cada ${Math.round(x.cada)} dia${Math.round(x.cada) > 1 ? 's' : ''}` : 'ainda sem padrão'}</dd>
         </dl>
-        <h4 class="cp-sub">O que costuma levar</h4><div id="crm-itens"><p class="config-sub">Carregando...</p></div>
-        <h4 class="cp-sub">Últimos pedidos</h4><div id="crm-pedidos"><p class="config-sub">Carregando...</p></div>
+        <h4 class="cp-sub">O que costuma levar</h4><div id="crm-itens">${esqueleto('Carregando...', 2)}</div>
+        <h4 class="cp-sub">Últimos pedidos</h4><div id="crm-pedidos">${esqueleto('Carregando...', 2)}</div>
         <h4 class="cp-sub">Acesso do cliente</h4><div id="crm-acesso"><p class="config-sub">Carregando...</p></div>
         <h4 class="cp-sub">Mensagem</h4>
         ${contato.pode ? `<textarea id="crm-texto" rows="4" maxlength="500" aria-label="Mensagem para o cliente">${escapeHTML(mensagemSugerida(x, S.nomeLoja))}</textarea>
@@ -174,13 +177,14 @@ async function enviar() {
 function ligar() {
     if (S.ligado) return; S.ligado = true;
     el().addEventListener('click', (e) => {
-        const s = e.target.closest('[data-crm-seg]'); if (s) { S.filtro = s.dataset.crmSeg; render(); return; }
+        if (e.target.closest('[data-crm-mais]')) { S.mostrar += 150; render(); return; }
+        const s = e.target.closest('[data-crm-seg]'); if (s) { S.filtro = s.dataset.crmSeg; S.mostrar = 150; render(); return; }
         const i = e.target.closest('[data-crm-id]'); if (i) { const x = S.seg.lista.find((c) => c.id === i.dataset.crmId); if (x) abrirCliente(x); }
     });
     el().addEventListener('change', (e) => { if (e.target.id === 'crm-produto') { S.produtoId = e.target.value; render(); } else if (e.target.id === 'crm-feira') { S.feira = e.target.value; render(); } });
     el().addEventListener('input', (e) => {
         if (e.target.id !== 'crm-busca') return;
-        S.busca = e.target.value; const pos = e.target.selectionStart; render(); const b = $('crm-busca'); b.focus(); b.setSelectionRange(pos, pos);
+        S.busca = e.target.value; S.mostrar = 150; const pos = e.target.selectionStart; render(); const b = $('crm-busca'); b.focus(); b.setSelectionRange(pos, pos);
     });
 }
 
@@ -200,23 +204,44 @@ let carregandoCrm = null;
 function carregarCrm(primeira) {
     if (carregandoCrm) return carregandoCrm;
     carregandoCrm = (async () => {
-        try {
-            const [painel, contatos, ficha] = await Promise.all([lerPainel({ atualizar: true }), getDoc(tdoc('crm', 'contatos')).catch(() => null), getDoc(fichaRef()).catch(() => null)]);
-            if (ficha && ficha.exists() && ficha.data().nome) S.nomeLoja = ficha.data().nome;
-            S.contatos = contatos && contatos.exists() ? contatos.data() : {};
+        // Na PRIMEIRA abertura: mostra logo o último cálculo guardado (rápido, sem recalcular) e só depois confere
+        // em segundo plano se entrou pedido novo (essa conferência pode recalcular e demorar). Antes a tela esperava tudo.
+        const aplicar = (painel, forcaDesenho) => {
             const geradoEm = (painel.meta && painel.meta.geradoEm) || '';
-            if (!primeira && S.seg && geradoEm === S.geradoEm) return;             // nada mudou: não redesenha (não atrapalha quem está digitando)
+            if (!forcaDesenho && S.seg && geradoEm === S.geradoEm) return false;     // nada mudou: não redesenha (não atrapalha quem está digitando)
             const indice = painel.indiceClientes || [];
             S.geradoEm = geradoEm;
             S.feiras = (painel.meta && Array.isArray(painel.meta.feiras)) ? painel.meta.feiras : [];
             if (S.feira && S.feira !== '-' && !S.feiras.some((f) => f.id === S.feira)) S.feira = '';
             if (!indice.length) { S.seg = null; S.estado = 'vazio'; }
             else { S.seg = segmentar(indice, hojeBR()); S.estado = 'ok'; }
-        } catch (_) { if (primeira || !S.seg) S.estado = 'erro'; else return; }
+            return true;
+        };
         // quem está digitando na busca não perde o cursor quando a lista nova chega
-        const ativo = document.activeElement, pos = ativo && ativo.id === 'crm-busca' ? ativo.selectionStart : null;
-        render();
-        if (pos != null && $('crm-busca')) { $('crm-busca').focus(); $('crm-busca').setSelectionRange(pos, pos); }
+        const desenhar = () => {
+            const ativo = document.activeElement, pos = ativo && ativo.id === 'crm-busca' ? ativo.selectionStart : null;
+            render();
+            if (pos != null && $('crm-busca')) { $('crm-busca').focus(); $('crm-busca').setSelectionRange(pos, pos); }
+        };
+        try {
+            const extras = Promise.all([getDoc(tdoc('crm', 'contatos')).catch(() => null), getDoc(fichaRef()).catch(() => null)]);
+            if (primeira) {
+                const rapido = await lerPainel().catch(() => null);               // sem "atualizar": só lê o que já está guardado
+                const [contatos, ficha] = await extras;
+                if (ficha && ficha.exists() && ficha.data().nome) S.nomeLoja = ficha.data().nome;
+                S.contatos = contatos && contatos.exists() ? contatos.data() : {};
+                if (rapido && !rapido.vazio && aplicar(rapido, true)) desenhar();
+            }
+            const painel = await lerPainel({ atualizar: true });
+            if (!primeira) {
+                const [contatos, ficha] = await extras;
+                if (ficha && ficha.exists() && ficha.data().nome) S.nomeLoja = ficha.data().nome;
+                S.contatos = contatos && contatos.exists() ? contatos.data() : {};
+            }
+            if (aplicar(painel, primeira && S.estado !== 'ok')) desenhar();
+        } catch (_) {
+            if (!S.seg && S.estado !== 'vazio') { S.estado = 'erro'; desenhar(); }       // já mostrou a lista guardada: um erro na conferência não a apaga
+        }
     })();
     return carregandoCrm.finally(() => { carregandoCrm = null; });
 }

@@ -24,8 +24,22 @@ function montarRankingCliente({ modelo, G, catalogo, cesta, agora = Date.now(), 
     ...(o.motivoCurto ? { motivo: o.motivoCurto } : {}),
     ...(o.tags && o.tags.includes('repor') ? { repor: true } : {}),
   }));
-  return { nivel: modelo ? modelo.nivel : 'sem_historico', itens };
+  return { nivel: modelo ? modelo.nivel : 'sem_historico', itens, maisPedidos: maisPedidosDe(G, ativos) };
 }
 
-module.exports = { montarRankingCliente };
+/**
+ * "Os mais pedidos" da vitrine: os produtos que entram em mais pedidos da loja toda.
+ * Só número agregado (nunca quem comprou). Produto comprado menos de 3 vezes não entra:
+ * com pouco movimento, a faixa contaria o que UMA casa levou.
+ */
+function maisPedidosDe(G, ativos, max = 8) {
+  const pop = (G && G.pop) || {};
+  const ids = Object.keys(pop)
+    .filter((id) => ativos.has(id) && pop[id] && Number(pop[id].n) >= 3 && Number(pop[id].p) > 0)
+    .sort((a, b) => pop[b].p - pop[a].p || String(a).localeCompare(String(b)))
+    .slice(0, max);
+  return ids.length >= 4 ? ids : [];
+}
+
+module.exports = { montarRankingCliente, maisPedidosDe };
 
