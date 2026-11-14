@@ -511,6 +511,16 @@ teste('feira: pedido fora do dia vai para a próxima feira (caixa do dia certo, 
   assert.strictEqual(n.vendasDia.get('tomate').has(N.diaDeIso(esperado)), true);
 });
 
+teste('categorias escritas com e sem acento viram uma aba só na loja ("Pasteis Doces" = "Pastéis Doces")', async () => {
+  const U = await import(raiz('js/categorias-unificar.js'));
+  const out = U.unificarCategorias([
+    { id: 'a', cat: 'Pasteis Doces' }, { id: 'b', cat: 'Pastéis Doces' }, { id: 'c', cat: 'pasteis doces ' },
+    { id: 'd', cat: 'Pastéis Salgados' }, { id: 'e' },
+  ]);
+  assert.deepStrictEqual(out.map((p) => p.cat), ['Pastéis Doces', 'Pastéis Doces', 'Pastéis Doces', 'Pastéis Salgados', undefined]);
+  assert.strictEqual(new Set(out.map((p) => p.cat).filter(Boolean)).size, 2);
+});
+
 teste('cliente que volta: o resumo só aparece com nome, WhatsApp e endereço; a forma de pagamento guardada só vale se a loja ainda aceita', async () => {
   const C = await import(raiz('js/conhecido-lib.js'));
   const base = { nome: ' Maria  Souza ', telefone: '(62) 99999-8888', retirada: false, enderecoTexto: 'Atenas — Quadra 5 • Lote 12', enderecoOk: true };
