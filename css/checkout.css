@@ -112,3 +112,32 @@
 #modal-checkout.ck-resumido #ck-pessoais,
 #modal-checkout.ck-resumido #checkout-sub-titulo { display: none; }
 #modal-checkout.ck-resumido .chk-oferta { margin-top: 0; }
+
+/* =====================================================================
+   LEITURA (13/11/2026): no celular os campos bege sumiam no fundo bege e os rótulos cinza cansavam.
+   Campo branco com borda visível, rótulo escuro, seções com nome e a comanda fechada sem as linhas do bloquinho
+   (uma delas passava no meio de "Seu pedido" como se riscasse o texto).
+   ===================================================================== */
+#modal-checkout .form-group label { font-size: 1rem; font-weight: 700; color: var(--text-dark, #26241f); line-height: 1.3; }
+#modal-checkout .form-group label .ck-dica { display: block; margin-top: 2px; font-size: .82rem; font-weight: 500; color: var(--text-mid, #4a4a44); }
+#modal-checkout .form-group input:not([type="radio"]):not([type="checkbox"]), #modal-checkout .form-group select, #modal-checkout .form-group textarea {
+    min-height: 52px; padding: 12px 14px; border: 1.5px solid color-mix(in srgb, var(--text-dark, #26241f) 24%, var(--superficie, #fff)); border-radius: 12px;
+    background: var(--superficie, #fff); color: var(--text-dark, #26241f); font-size: 17px; }
+#modal-checkout .form-group input::placeholder, #modal-checkout .form-group textarea::placeholder { color: var(--text-light, #7a7566); opacity: 1; }
+#modal-checkout .form-group input:focus, #modal-checkout .form-group select:focus, #modal-checkout .form-group textarea:focus {
+    border-color: var(--cor-botao, var(--forest)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cor-botao, var(--forest)) 18%, transparent); }
+/* nome de cada parte: Dados da entrega, Seus dados, Como vai pagar */
+#modal-checkout .checkout-sub { margin: 22px 0 12px; padding-top: 18px; border-top: 1px solid var(--linha, #e8e2d4); font-size: .82rem; color: var(--text-mid, #4a4a44); }
+#modal-checkout .comanda + .checkout-sub, #modal-checkout #checkout-sub-titulo { margin-top: 6px; padding-top: 0; border-top: 0; }
+#modal-checkout .pag-grupo { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--linha, #e8e2d4); }
+#modal-checkout .pag-grupo > label { font-size: .82rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--text-mid, #4a4a44); margin-bottom: 12px; }
+/* pagamento: botões da mesma altura e letra que se lê */
+#modal-checkout .pag-chip { min-height: 64px; padding: 10px; }
+#modal-checkout .pag-chip b { font-size: 1.05rem; }
+#modal-checkout .pag-chip small { font-size: .78rem; }
+#modal-checkout .pag-nota { margin: 10px 2px 0; font-size: .9rem; line-height: 1.4; color: var(--text-mid, #4a4a44); }
+#modal-checkout .chk-oferta { margin: 4px 0 16px; font-size: .95rem; color: var(--text-dark, #26241f); align-items: center; }
+/* comanda fechada: sem as linhas do bloquinho atrás do resumo */
+#modal-checkout .comanda:has(> .cm-dobra:not([open])) { background-image: none; }
+#modal-checkout .cm-cab-txt small { font-size: .85rem; }
+#modal-checkout .end-grid .form-group { margin-bottom: 4px; }
