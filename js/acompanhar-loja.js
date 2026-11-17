@@ -16,7 +16,7 @@
 import { auth, onAuthStateChanged, onSnapshot } from './firebase.js';
 import { tdoc } from './tenant.js';
 import { escapeHTML, fmt, hapticFeedback } from './utils.js';
-import { acompanhamento, pedidosParaAcompanhar, chamouAgora, oQueAPlacaAbre } from './acompanhar-lib.js';
+import { acompanhamento, pedidosParaAcompanhar, chamouAgora, oQueAPlacaAbre, temPixParaPagar, pixLiberouAgora } from './acompanhar-lib.js';
 
 const VIVOS = new Map();        // id → dados do pedido no banco
 const OUVINDO = new Map();      // id → função que para de ouvir
@@ -96,12 +96,17 @@ const desenhar = () => {
     if (aberto && !VIVOS.has(aberto)) aberto = '';
     if (!lista.length && !aberto) { el.hidden = true; el.innerHTML = ''; document.body.classList.remove('com-acomp'); return; }
     el.hidden = false; document.body.classList.add('com-acomp');
-    const faixas = lista.map(({ id, a }) => `
-        <button type="button" class="acomp-faixa tom-${a.tom}" data-acomp="abrir" data-id="${escapeHTML(id)}">
-            <span class="acomp-ico" aria-hidden="true">${ICONE[a.tom] || '🧾'}</span>
-            <span class="acomp-txt"><b>${escapeHTML(a.titulo)}</b><small>${escapeHTML(a.senha ? `Senha ${a.senha} · toque para ver` : a.tom === 'pagar' ? 'Toque para pagar com PIX' : 'Toque para ver o pedido')}</small></span>
+    const faixas = lista.map(({ id, a, p }) => {
+        // PIX liberado: só depois da balança (temItensAPesar = false) e se a loja mostra o código (js/loja.js decide)
+        const pagar = a.tom !== 'pronto' && temPixParaPagar(p) && /data-action=/.test(OPCOES.pixHtml({ ...p, id }) || '');
+        const sub = a.senha ? `Senha ${a.senha} · toque para ver` : pagar ? `Valor fechado${Number.isFinite(Number(p.total)) ? `: ${fmt(Number(p.total))}` : ''} · toque para pagar com PIX` : p.temItensAPesar ? 'O PIX aparece depois da pesagem' : 'Toque para ver o pedido';
+        return `
+        <button type="button" class="acomp-faixa tom-${pagar ? 'pagar' : a.tom}" data-acomp="abrir" data-id="${escapeHTML(id)}">
+            <span class="acomp-ico" aria-hidden="true">${pagar ? '💠' : (ICONE[a.tom] || '🧾')}</span>
+            <span class="acomp-txt"><b>${escapeHTML(a.titulo)}</b><small>${escapeHTML(sub)}</small></span>
             ${a.senha ? `<span class="acomp-senha-mini">${escapeHTML(a.senha)}</span>` : ''}
-        </button>`).join('');
+        </button>`;
+    }).join('');
     const det = aberto && VIVOS.has(aberto) ? `<div class="acomp-fundo" data-acomp="fechar"></div>${detalhesHtml(aberto, VIVOS.get(aberto))}` : '';
     el.classList.toggle('acomp-aberto', !!det);
     el.innerHTML = `<div class="acomp-faixas">${faixas}</div>${det}`;
@@ -124,6 +129,7 @@ const ouvir = (id) => {
         primeira = false;
         VIVOS.set(id, depois);
         if (chamouAgora(antes, depois)) { aberto = id; tocarAviso(); avisarNoTitulo(acompanhamento(depois).senha); }
+        else if (pixLiberouAgora(antes, depois)) { try { if (navigator.vibrate) navigator.vibrate(200); } catch (_) { /* ok */ } }   // pesou: o PIX com o valor certo apareceu
         if (!acompanhamento(depois).ativo) { pararDeOuvir(id); }
         desenhar();
         if (placaPendente) resolverPlaca();

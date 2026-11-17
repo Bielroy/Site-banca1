@@ -957,6 +957,13 @@ teste('faixa do pedido na tela do cliente e plaquinha: status muda sozinho, reti
   assert.strictEqual(A.chamouAgora({ ...ret, status: 'enviado', chamada: { vezes: 2 } }, { ...ret, status: 'enviado', chamada: { vezes: 2 } }), false);
   assert.strictEqual(A.chamouAgora({ modo: 'entrega', status: 'preparando' }, { modo: 'entrega', status: 'enviado' }), false);
 
+  // PIX só depois da balança
+  assert.strictEqual(A.temPixParaPagar({ status: 'aguardando_pesagem', pag: 'PIX', temItensAPesar: true }), false, 'item a pesar: sem PIX (o valor ainda muda)');
+  assert.strictEqual(A.temPixParaPagar({ status: 'preparando', pag: 'PIX', temItensAPesar: false, total: 41.3 }), true, 'pesou: o PIX sai com o valor da balança');
+  assert.strictEqual(A.temPixParaPagar({ status: 'preparando', pag: 'Dinheiro' }), false);
+  assert.strictEqual(A.pixLiberouAgora({ status: 'aguardando_pesagem', pag: 'PIX', temItensAPesar: true }, { status: 'preparando', pag: 'PIX', temItensAPesar: false }), true);
+  assert.strictEqual(A.pixLiberouAgora(null, { status: 'preparando', pag: 'PIX' }), false);
+
   // a plaquinha
   assert.strictEqual(A.oQueAPlacaAbre([]).tela, 'cardapio', 'sem pedido: o cardápio');
   assert.strictEqual(A.oQueAPlacaAbre([{ status: 'arquivado' }]).tela, 'cardapio');

@@ -80,6 +80,11 @@ export function temPixParaPagar(p) {
     return !!p && String(p.pag || '').toUpperCase() === 'PIX' && !pagoPeloSite(p) && !p.temItensAPesar && !FINAIS.includes(p.status);
 }
 
+/** A banca acabou de pesar e o PIX ficou liberado (com o valor fechado da balança): vale um aviso curto. */
+export function pixLiberouAgora(antes, depois) {
+    return !!antes && !!antes.temItensAPesar && temPixParaPagar(depois);
+}
+
 /**
  * A pessoa encostou o celular na plaquinha (ou leu o QR Code): o que abrir.
  * pedidos = os pedidos deste aparelho, já lidos do banco (o mais novo primeiro).
