@@ -149,6 +149,7 @@ export function mensagemDeAjuste({ loja, pedido, tirados = [], acrescentados = [
 export function mensagemACaminho({ loja, pedido, endereco = '' }) {
     const retirada = pedido.modo === 'retirada';
     const L = [...cabecalho(loja, pedido, retirada ? 'Seu pedido está pronto para retirada.' : 'Seu pedido saiu para entrega.')];
+    if (retirada && /^\d{3}$/.test(String(pedido.senha || ''))) L.push('', `*Sua senha: ${pedido.senha}*`);   // lib/senha.js
     L.push('', `*Total: ${dinheiro(pedido.total)}*`, ...linhasDaEntrega(pedido, endereco), ...FECHO);
     return L.join('\n');
 }

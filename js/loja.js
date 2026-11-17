@@ -21,6 +21,8 @@ import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
 import { podePagarPix } from './pix-lib.js';
+import { iniciarAcompanhamento, atualizarAcompanhamento } from './acompanhar-loja.js';   // a faixa do pedido na tela (muda sozinha)
+import { rotuloDoStatus, etapasDoPedido } from './acompanhar-lib.js';
 import { lerEntrega, previaDaEntrega, horariosDoModo, opcoesDoDia } from './entrega-lib.js';
 import { lerVagas, chaveHorario, estadoDoHorario, agoraMinBR } from './vagas-lib.js';   // vagas por horário e antecedência (como o Cal.com)
 import { ehIOS, navegadorIOS, deveConvidar } from './instalar-lib.js';
@@ -1374,6 +1376,8 @@ const oferecerPixNoSucesso = (pedido) => {
     document.getElementById('modal-sucesso')?.classList.toggle('com-pix', pendente);
     return pendente;
 };
+// A FAIXA DO PEDIDO (js/acompanhar-loja.js): o cliente vê o status sem abrir "Meus pedidos"; a plaquinha (?placa) abre o PIX ou a senha.
+iniciarAcompanhamento({ lerPedidos: () => lerLista('banca_meus_pedidos'), pixHtml: (pedido) => pixDoPedidoHtml(pedido, true) });
 // QR do código PIX (para pagar com outro celular): só é desenhado quando a pessoa abre.
 document.addEventListener('toggle', async (e) => {
     const det = e.target; if (!(det instanceof HTMLDetailsElement) || !det.classList.contains('pix-d-qr') || !det.open) return;
@@ -1946,10 +1950,12 @@ const ROTULO_STATUS = {
     arquivado: 'Pedido concluído',
 };
 
-const renderLinhaDoTempo = (status) => {
+const renderLinhaDoTempo = (status, pedido = null) => {
     if (status === 'cancelado' || status === 'arquivado') return '';
     const atual = etapaDoStatus(status);
-    const passos = ETAPAS.map((et, i) => {
+    // retirada termina em "Pronto" (js/acompanhar-lib.js); entrega, em "A caminho"
+    const etapas = pedido && pedido.modo === 'retirada' ? etapasDoPedido(pedido).map((e, i) => ({ ...e, icone: ETAPAS[i].icone })) : ETAPAS;
+    const passos = etapas.map((et, i) => {
         const feito = i <= atual;
         return `
             <div class="timeline-passo ${feito ? 'feito' : ''} ${i === atual ? 'atual' : ''}">
@@ -2010,12 +2016,13 @@ const renderHistorico = async () => {
             </div>
 
             <span class="pedido-status" style="color:${corStatus};">
-                ${escapeHTML(ROTULO_STATUS[status] || status)}
+                ${escapeHTML(vivo ? rotuloDoStatus({ ...vivo, status }) : (ROTULO_STATUS[status] || status))}
             </span>
+            ${vivo && vivo.modo === 'retirada' && status === 'enviado' && /^\d{3}$/.test(String(vivo.senha || '')) ? `<p class="pedido-senha">Sua senha: <b>${escapeHTML(vivo.senha)}</b></p>` : ''}
 
             ${foiPesado ? '<p class="pedido-aviso-peso">Valor final já com os itens pesados</p>' : ''}
 
-            ${renderLinhaDoTempo(status)}
+            ${renderLinhaDoTempo(status, vivo)}
 
             <p class="pedido-itens">${escapeHTML(p.descItens || 'Itens do pedido')}</p>
 
@@ -3034,6 +3041,7 @@ document.getElementById('btn-enviar-pedido').addEventListener('click', async (e)
             localStorage.setItem(chave('banca_meus_pedidos'), JSON.stringify(meusPedidos.slice(0, 10)));
 
         } catch (e) { console.warn('[loja] pedido enviado, mas não consegui guardar no aparelho:', e && e.message); }
+        try { atualizarAcompanhamento(); } catch (_) { /* a faixa é só conveniência */ }
 
         { const tit = document.querySelector('#modal-sucesso .title-success'); if (tit) tit.textContent = pagaNaEntrega() ? 'Pedido enviado!' : 'Pedido registrado!'; }
         { const lp = document.getElementById('sucesso-pag'); if (lp) { lp.hidden = !pagaNaEntrega(); lp.textContent = pagaNaEntrega() ? `💳 Pagamento ${retirada ? 'na retirada' : 'na entrega'}${pag ? `: ${pag}` : ''}.` : ''; } }

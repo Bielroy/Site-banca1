@@ -9,6 +9,7 @@ import { vigiarEsteAparelho, anotarComoEntrou, garantirAparelho, numeroDoAparelh
 import { prepararPorteiro, provaPara } from './porteiro-cliente.js';
 import { horariosDoTexto } from './entrega-lib.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
+import { linkDaPlaca } from './acompanhar-lib.js';
 import { feirasDaFicha, textoDoDia } from './plataforma-lib.js';
 import { textoDeBusca, combinaBusca } from './busca-lib.js';
 import { iniciarComandos } from './admin-comandos.js';
@@ -619,6 +620,8 @@ const iniciarRealTimeSync = () => {
             if (retLocal && document.activeElement !== retLocal) retLocal.value = ret.local || '';
             const chkPix = document.getElementById('config-pix'); if (chkPix) chkPix.checked = data.pixAutomatico === true;
             const chkEnt = document.getElementById('config-pag-entrega'); if (chkEnt) chkEnt.checked = data.pagamentoNaEntrega === true;
+            { const sel = document.getElementById('config-senha'); if (sel && document.activeElement !== sel) sel.value = ['tela', 'caixinha'].includes(data.senhaChamada) ? data.senhaChamada : 'desligada'; }
+            { const lp = document.getElementById('config-link-placa'); if (lp) lp.value = linkDaPlaca(urlDaLoja(TENANT)); }
             { const fp = data.formasPagamento || {}; ['pix', 'cartao', 'dinheiro'].forEach((k) => { const c = document.getElementById(`config-forma-${k}`); if (c) c.checked = fp[k] !== false; }); }
             const px = data.pix || {}; [['config-pix-tipo', px.tipo || 'celular'], ['config-pix-chave', px.chave || ''], ['config-pix-nome', px.nome || ''], ['config-pix-cidade', px.cidade || '']].forEach(([id, v]) => { const el = document.getElementById(id); if (el) el.value = v; });
             const cid = document.getElementById('config-cidade'); if (cid && document.activeElement !== cid) cid.value = data.cidade || '';
@@ -1708,6 +1711,24 @@ document.body.addEventListener('click', async (e) => {
             showToast(`Pedido movido para: ${nextStatus.toUpperCase()}`);
         }
 
+        else if (action === 'pronto-pedido' || action === 'chamar-senha') {   // pedido para retirar (lib/senha.js): pronto dá a senha; chamar repete o aviso na tela do cliente
+            const id = target.dataset.id, pedido = acharPedido(id);
+            if (!pedido) return showToast('Pedido não encontrado', true);
+            target.disabled = true;
+            try {
+                const d = await chamarAjuste({ op: action === 'pronto-pedido' ? 'pronto' : 'chamar', pedidoId: id });
+                if (action === 'pronto-pedido') {
+                    pedidosGerais = pedidosGerais.map((p) => (p.id === id ? { ...p, status: 'enviado', ...(d.senha ? { senha: d.senha, chamada: { vezes: 1, caixinha: d.modo === 'caixinha' } } : {}) } : p));
+                    anotar('status-pedido', `${pedido.nome || id}: pronto${d.senha ? ` (senha ${d.senha})` : ''}`);
+                    showToast(d.senha ? `Pronto! Senha ${d.senha}: a tela do cliente já avisou.${d.modo === 'caixinha' ? ` Mostre ${d.senha} na caixinha.` : ''}` : 'Pronto para retirar: a tela do cliente já avisou.');
+                } else {
+                    pedidosGerais = pedidosGerais.map((p) => (p.id === id ? { ...p, chamada: { ...(p.chamada || {}), vezes: d.vezes } } : p));
+                    showToast(`Senha ${d.senha} chamada de novo.`);
+                }
+                redesenharFila();
+            } catch (e) { showToast(e.message, true); target.disabled = false; }
+        }
+
         else if (action === 'toggle-cupom') {
             const codigo = target.dataset.id;
             const atual = cuponsAtuais.find(c => c.codigo === codigo);
@@ -2134,9 +2155,17 @@ const cartaoDoPedido = (p) => {
 
     // Botão de ação: pesagem tem fluxo próprio; arquivar pede confirmação; o resto avança o status.
     let botao = '';
+    const pararetirar = p.modo === 'retirada' && daLoja;
     if (stKey === 'aguardando_pesagem') botao = `<button class="pc-botao" data-action="iniciar-separacao" data-id="${id}">${st.btn}</button>`;
+    // PARA RETIRAR (lib/senha.js): "Pronto" passa pelo servidor, que dá a senha do dia quando a loja usa senha
+    else if (pararetirar && stKey === 'preparando') botao = `<button class="pc-botao" data-action="pronto-pedido" data-id="${id}">Pronto para retirar</button>`;
+    else if (pararetirar && st.proximo === 'arquivado') botao = `<button class="pc-botao" data-action="excluir-pedido" data-id="${id}">Cliente retirou</button>`;
     else if (st.proximo === 'arquivado') botao = `<button class="pc-botao" data-action="excluir-pedido" data-id="${id}">${st.btn}</button>`;
     else if (st.proximo) botao = `<button class="pc-botao" data-action="avancar-pedido" data-next="${st.proximo}" data-id="${id}">${st.btn}</button>`;
+    // senha do pedido pronto: grande no cartão, com "Chamar de novo". Com a caixinha de LED, o número a digitar nela.
+    const senhaP = /^\d{3}$/.test(String(p.senha || '')) && p.status === 'enviado' && p.modo === 'retirada' ? String(p.senha) : '';
+    const vezesCh = Number(p.chamada && p.chamada.vezes) || 0;
+    const infoSenha = senhaP ? `<div class="pc-senha"><span class="pc-senha-num" aria-label="Senha ${senhaP}">${senhaP}</span><span class="pc-senha-txt"><b>Senha de chamada</b>${p.chamada && p.chamada.caixinha ? `<small>Mostre ${senhaP} na caixinha de senhas.</small>` : ''}${vezesCh > 1 ? `<small>Chamado ${vezesCh} vezes</small>` : ''}</span><button type="button" class="bt bt-sec" data-action="chamar-senha" data-id="${id}"><i class="ic" data-i="sino"></i> Chamar de novo</button></div>` : '';
 
     // fila de impressão (lib/impressao.js): o que já saiu no papel, e quando
     const imp = p.impressao || {}, horaImp = imp.saiuEm ? new Date(imp.saiuEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -2176,11 +2205,12 @@ const cartaoDoPedido = (p) => {
                 <strong class="pc-total">${fmt(p.total || 0)}</strong>
             </header>
             <div class="pc-marcas">
-                <span class="pc-etapa">${st.tag}</span>
+                <span class="pc-etapa">${p.modo === 'retirada' && stKey === 'enviado' ? '<i class="ic" data-i="certo"></i> PRONTO P/ RETIRAR' : st.tag}</span>
                 ${infoPag}
                 ${infoImp}
                 ${dataFmt ? `<span class="pc-hora">${dataFmt}</span>` : ''}
             </div>
+            ${infoSenha}
             ${infoDia}
             ${infoPreco}
             ${infoAcerto}
@@ -3177,7 +3207,8 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
         const wcBruto = document.getElementById('config-wpp-contato').value.trim(), wppContato = normalizarWhatsapp(wcBruto);
         if (wcBruto && !wppContato) throw new Error('Confira o WhatsApp para o cliente: com DDD, ex.: 62 99999-8888 (ou deixe vazio para usar o dos pedidos).');
         const contato = { instagram, whatsapp: wppContato, mostrarWpp: document.getElementById('config-mostrar-wpp').checked === true };
-        const dados = { minimo, lojaAberta, diasAbertos, condominios, pagamentoNaEntrega, formasPagamento, entrega, cidade, contato };
+        const senhaChamada = (v => (['tela', 'caixinha'].includes(v) ? v : 'desligada'))(document.getElementById('config-senha')?.value);   // lib/senha.js
+        const dados = { minimo, lojaAberta, diasAbertos, condominios, pagamentoNaEntrega, formasPagamento, entrega, cidade, contato, senhaChamada };
         if (cuidaDoPix) Object.assign(dados, { wpp, pixAutomatico, pix });       // gerente: estas três chaves nem vão no pacote
         await setDoc(tdoc("loja", "config"), dados, { merge: true });
         agendaMexida = false;
@@ -3187,6 +3218,13 @@ document.getElementById('btn-salvar-config').addEventListener('click', async () 
     } finally {
         btn.textContent = "Salvar configurações"; btn.disabled = false;
     }
+});
+
+// link da plaquinha (js/acompanhar-lib.js): copiar para gravar no NFC ou gerar o QR Code
+document.getElementById('btn-copiar-placa')?.addEventListener('click', async () => {
+    const campo = document.getElementById('config-link-placa'); if (!campo || !campo.value) return;
+    try { await navigator.clipboard.writeText(campo.value); showToast('Link da plaquinha copiado.'); }
+    catch (_) { campo.select(); showToast('Selecionei o link: copie e grave na plaquinha.'); }
 });
 
 // PALETA DE COMANDOS (Ctrl+K, "/"): acha tela, produto, pedido ou ação com as listas que o painel já tem

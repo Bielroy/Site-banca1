@@ -873,6 +873,108 @@ teste('mexer no pedido: tirar item que faltou (estoque volta), acrescentar o que
   assert.strictEqual(ped().total, 40.8, 'voltar etapa não mexe no valor');
 });
 
+teste('pedido para retirar fica pronto: senha de 3 dígitos do dia (001 a 999, volta para 001), a mesma se voltar etapa, chamar de novo e sem senha quando a loja desliga', async () => {
+  const Senha = require(raiz('lib/senha.js'));
+  assert.deepStrictEqual(Senha.proximaSenha(null, '2026-11-16'), { numero: 1, texto: '001' });
+  assert.deepStrictEqual(Senha.proximaSenha({ dia: '2026-11-16', ultimo: 41 }, '2026-11-16'), { numero: 42, texto: '042' });
+  assert.deepStrictEqual(Senha.proximaSenha({ dia: '2026-11-16', ultimo: 999 }, '2026-11-16'), { numero: 1, texto: '001' }, 'depois de 999 volta para 001: o painel tem 3 dígitos');
+  assert.deepStrictEqual(Senha.proximaSenha({ dia: '2026-11-15', ultimo: 300 }, '2026-11-16'), { numero: 1, texto: '001' }, 'dia novo, contagem nova');
+  assert.strictEqual(Senha.diaDaSenha(new Date('2026-11-17T02:30:00Z')), '2026-11-16', '23h30 em Brasília ainda é o dia 16');
+  assert.strictEqual(Senha.modoDaSenha({ senhaChamada: 'qualquer' }), 'desligada');
+
+  const sem = sementeEstoque();
+  sem['loja/config'] = { ...sem['loja/config'], senhaChamada: 'caixinha' };
+  const base = { nome: 'Rita', modo: 'retirada', status: 'preparando', total: 20, itens: [{ id: 'ovos', nome: 'Ovos', qtd: 1, tipo: 'un', precoOriginal: 20 }], data: new Date().toISOString() };
+  sem['pedidos/ret-aaaaaa1'] = { ...base };
+  sem['pedidos/ret-aaaaaa2'] = { ...base, nome: 'Caio' };
+  sem['pedidos/ent-aaaaaa3'] = { ...base, modo: 'entrega' };
+  sem['pedidos/ret-aaaaaa4'] = { ...base, status: 'aguardando_pesagem', itens: [{ id: 'tomate', nome: 'Tomate', qtd: 2, tipo: 'un', aPesar: true }] };
+  const db = criarBancoP(sem); const api = carregarApi(raiz('api/pdv.js'), criarAdmin(db, TOKENS_P));
+  const aj = (pedidoId, body, quem = 'func-banca') => chamar(api, { headers: { Authorization: `Bearer ${quem}` }, body: { acao: 'ajuste', pedidoId, ...body } });
+  const ped = (id) => db._dados.get(`pedidos/${id}`);
+
+  let r = await aj('ret-aaaaaa1', { op: 'pronto' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(r.corpo.senha, '001'); assert.strictEqual(r.corpo.modo, 'caixinha');
+  assert.strictEqual(ped('ret-aaaaaa1').status, 'enviado'); assert.strictEqual(ped('ret-aaaaaa1').senha, '001');
+  assert.deepStrictEqual([ped('ret-aaaaaa1').chamada.vezes, ped('ret-aaaaaa1').chamada.caixinha], [1, true]);
+  assert.ok(ped('ret-aaaaaa1').prontoEm, 'fica a hora em que ficou pronto');
+  r = await aj('ret-aaaaaa2', { op: 'pronto' }); assert.strictEqual(r.corpo.senha, '002', 'o próximo pega o número seguinte');
+
+  // chamar de novo: mesma senha, conta as vezes
+  r = await aj('ret-aaaaaa1', { op: 'chamar' }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.deepStrictEqual([r.corpo.senha, r.corpo.vezes, ped('ret-aaaaaa1').chamada.vezes], ['001', 2, 2]);
+
+  // voltou etapa por engano e marcou pronto de novo: continua 001 (não gasta número)
+  assert.strictEqual((await aj('ret-aaaaaa1', { op: 'voltar' })).status, 200);
+  assert.strictEqual(ped('ret-aaaaaa1').status, 'preparando');
+  assert.strictEqual((await aj('ret-aaaaaa1', { op: 'chamar' })).status, 400, 'pedido que não está pronto não é chamado');
+  r = await aj('ret-aaaaaa1', { op: 'pronto' }); assert.strictEqual(r.corpo.senha, '001');
+  assert.strictEqual(db._dados.get('contadores/senha').ultimo, 2);
+
+  // o que não pode
+  assert.strictEqual((await aj('ret-aaaaaa1', { op: 'pronto' })).status, 400, 'já está pronto');
+  assert.strictEqual((await aj('ent-aaaaaa3', { op: 'pronto' })).status, 400, 'entrega usa "Saiu para entrega"');
+  assert.strictEqual((await aj('ret-aaaaaa4', { op: 'pronto' })).status, 400, 'item a pesar: pesa antes');
+  assert.strictEqual((await aj('ret-aaaaaa2', { op: 'chamar' }, 'cliente')).status, 403, 'quem não é da equipe não chama');
+
+  // loja com a senha desligada: fica pronto, sem senha
+  db._dados.set('loja/config', { ...db._dados.get('loja/config'), senhaChamada: 'desligada' });
+  db._dados.set('pedidos/ret-aaaaaa5', { ...base, nome: 'Bia' });
+  r = await aj('ret-aaaaaa5', { op: 'pronto' }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(ped('ret-aaaaaa5').status, 'enviado'); assert.strictEqual(ped('ret-aaaaaa5').senha, undefined); assert.strictEqual(r.corpo.senha, '');
+  assert.strictEqual((await aj('ret-aaaaaa5', { op: 'chamar' })).status, 400, 'sem senha, não tem o que chamar');
+});
+
+teste('faixa do pedido na tela do cliente e plaquinha: status muda sozinho, retirada termina em "Pronto" com senha, a plaquinha abre cardápio, PIX ou senha', async () => {
+  const A = await import(raiz('js/acompanhar-lib.js'));
+  const agora = Date.parse('2026-11-16T20:00:00Z'), h = (n) => new Date(agora - n * 3600000).toISOString();
+  // quais pedidos do aparelho entram na faixa
+  const lista = [{ id: 'p1', data: h(1) }, { id: 'p2', data: h(2), cancelado: true }, { id: 'p3', data: h(40) }, { id: 'p4', data: h(3), status: 'arquivado' }, { id: 'p5', data: h(5) }];
+  assert.deepStrictEqual(A.pedidosParaAcompanhar(lista, agora), ['p1', 'p5'], 'cancelado, entregue e muito antigo ficam de fora');
+  assert.deepStrictEqual(A.pedidosParaAcompanhar(null, agora), []);
+
+  // o que a faixa diz
+  const ret = { modo: 'retirada' };
+  assert.strictEqual(A.acompanhamento({ ...ret, status: 'pendente' }).tom, 'espera');
+  assert.strictEqual(A.acompanhamento({ ...ret, status: 'preparando' }).titulo, 'Separando seu pedido');
+  const pronto = A.acompanhamento({ ...ret, status: 'enviado', senha: '027' });
+  assert.deepStrictEqual([pronto.tom, pronto.senha, pronto.titulo, pronto.passo], ['pronto', '027', 'Seu pedido está pronto!', 2]);
+  assert.ok(pronto.texto.includes('027'));
+  assert.strictEqual(A.acompanhamento({ ...ret, status: 'enviado' }).senha, '', 'loja sem senha: só "pronto"');
+  assert.strictEqual(A.acompanhamento({ modo: 'entrega', status: 'enviado', senha: '027' }).tom, 'caminho', 'entrega não tem senha');
+  assert.strictEqual(A.acompanhamento({ ...ret, status: 'arquivado' }).ativo, false, 'retirado sai da faixa');
+  assert.strictEqual(A.acompanhamento({ status: 'aguardando_pagamento' }).tom, 'pagar');
+  assert.strictEqual(A.acompanhamento({ status: 'aguardando_pagamento', pagamento: { status: 'PAID' } }).tom, 'espera', 'já pagou: não pede de novo');
+  assert.deepStrictEqual(A.etapasDoPedido(ret).map((e) => e.rotulo), ['Recebido', 'Separando', 'Pronto']);
+  assert.deepStrictEqual(A.etapasDoPedido({ modo: 'entrega' }).map((e) => e.rotulo), ['Recebido', 'Separando', 'A caminho']);
+  assert.strictEqual(A.rotuloDoStatus({ ...ret, status: 'arquivado' }), 'Retirado');
+
+  // quando toca o aviso
+  assert.strictEqual(A.chamouAgora({ ...ret, status: 'preparando' }, { ...ret, status: 'enviado', senha: '005', chamada: { vezes: 1 } }), true, 'ficou pronto agora');
+  assert.strictEqual(A.chamouAgora(null, { ...ret, status: 'enviado', senha: '005' }), false, 'abriu a página com ele já pronto: mostra, sem tocar');
+  assert.strictEqual(A.chamouAgora({ ...ret, status: 'enviado', chamada: { vezes: 1 } }, { ...ret, status: 'enviado', chamada: { vezes: 2 } }), true, 'a banca chamou de novo');
+  assert.strictEqual(A.chamouAgora({ ...ret, status: 'enviado', chamada: { vezes: 2 } }, { ...ret, status: 'enviado', chamada: { vezes: 2 } }), false);
+  assert.strictEqual(A.chamouAgora({ modo: 'entrega', status: 'preparando' }, { modo: 'entrega', status: 'enviado' }), false);
+
+  // a plaquinha
+  assert.strictEqual(A.oQueAPlacaAbre([]).tela, 'cardapio', 'sem pedido: o cardápio');
+  assert.strictEqual(A.oQueAPlacaAbre([{ status: 'arquivado' }]).tela, 'cardapio');
+  assert.strictEqual(A.oQueAPlacaAbre([{ status: 'pendente', pag: 'PIX', total: 30 }]).tela, 'pagar', 'PIX por pagar: o código com o valor');
+  assert.strictEqual(A.oQueAPlacaAbre([{ status: 'pendente', pag: 'PIX', temItensAPesar: true }]).tela, 'acompanhar', 'a pesar: ainda não tem valor');
+  assert.strictEqual(A.oQueAPlacaAbre([{ status: 'pendente', pag: 'PIX', pagamento: { status: 'PAID' } }]).tela, 'acompanhar');
+  const r = A.oQueAPlacaAbre([{ status: 'pendente', pag: 'PIX' }, { ...ret, status: 'enviado', senha: '014' }]);
+  assert.deepStrictEqual([r.tela, r.pedido.senha], ['pronto', '014'], 'pronto vem antes de tudo');
+  assert.strictEqual(A.linkDaPlaca('https://usebanca.com/queijos'), 'https://usebanca.com/queijos?placa=1');
+  assert.strictEqual(A.linkDaPlaca('https://loja.com/?x=1#topo'), 'https://loja.com/?x=1&placa=1');
+  assert.strictEqual(A.linkDaPlaca('nada'), '');
+
+  // a mensagem de pronto leva a senha
+  const M = await import(raiz('js/mensagem-lib.js'));
+  assert.ok(M.mensagemACaminho({ loja: 'Banca', pedido: { nome: 'Rita', modo: 'retirada', senha: '027', total: 10 } }).includes('Sua senha: 027'));
+  assert.ok(!M.mensagemACaminho({ loja: 'Banca', pedido: { nome: 'Rita', modo: 'entrega', senha: '027', total: 10 } }).includes('senha'));
+});
+
 teste('mensagens ao cliente (WhatsApp): pedido pronto com peso e conta, aviso de item em falta com desculpas, acréscimo e acerto de pedido já pago', async () => {
   const M = await import(raiz('js/mensagem-lib.js'));
   const pedido = { nome: 'marina souza', telefone: '(62) 99999-0001', pag: 'PIX', total: 44.52, cupom: { codigo: 'DEZ', desconto: 2 }, entrega: { horario: '17h às 18h', taxa: 5 }, obs: 'tocar o interfone',

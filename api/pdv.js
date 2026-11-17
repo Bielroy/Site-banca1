@@ -18,10 +18,13 @@
 //      (Antes o painel gravava o total direto: o cupom se perdia e o estoque
 //      dos itens por quilo nunca baixava.)
 //
-//  POST { acao: 'ajuste', op: 'tirar' | 'acrescentar' | 'voltar' | 'precos', pedidoId, indice?, item?: { id, qtd, tipo }, motivo? }
+//  POST { acao: 'ajuste', op: 'tirar' | 'acrescentar' | 'voltar' | 'precos' | 'pronto' | 'chamar', pedidoId, indice?, item?: { id, qtd, tipo }, motivo? }
 //      Mexer no pedido depois que ele chegou (lib/ajuste.js): tirar um item que faltou (o estoque volta),
 //      acrescentar o que o cliente pediu depois pelo WhatsApp (preço do cadastro) ou voltar o pedido uma etapa.
 //      Tirar e acrescentar só antes de sair para entrega. Tudo fica registrado no pedido (quem e quando).
+//      pronto  pedido PARA RETIRAR ficou pronto (status 'enviado'). Com a senha ligada (lib/senha.js), ganha a
+//              senha do dia (001 a 999), contada aqui dentro da transação: duas pessoas nunca pegam a mesma.
+//      chamar  chama a mesma senha de novo (o cliente não ouviu): a tela dele e a caixinha tocam outra vez.
 //
 //  POST { acao: 'impressao', op, pedidoId, versao, aparelho }
 //      Fila de impressão (lib/impressao.js): reservar → imprimir no aparelho → confirmar
@@ -49,6 +52,7 @@ const Imp = require('../lib/impressao');
 const Ponte = require('../lib/ponte');
 const Catalogo = require('../lib/catalogo');
 const Ajuste = require('../lib/ajuste');
+const Senha = require('../lib/senha');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -280,7 +284,7 @@ async function pesagem(req, res, { tid, dec }) {
 async function ajuste(req, res, { tid, dec }) {
   const b = req.body || {}, pedidoId = String(b.pedidoId || ''), op = String(b.op || ''), por = dec.email || dec.uid;
   if (!/^[\w-]{6,80}$/.test(pedidoId)) return res.status(400).json({ error: 'Pedido inválido.' });
-  if (!['tirar', 'acrescentar', 'voltar', 'precos'].includes(op)) return res.status(400).json({ error: 'Ação desconhecida.' });
+  if (!['tirar', 'acrescentar', 'voltar', 'precos', 'pronto', 'chamar'].includes(op)) return res.status(400).json({ error: 'Ação desconhecida.' });
   const item = b.item && typeof b.item === 'object' ? b.item : {};
   if (op === 'acrescentar' && (!/^[\w-]{1,80}$/.test(String(item.id || '')) || !['kg', 'un'].includes(item.tipo))) return res.status(400).json({ error: 'Escolha o produto e a quantidade.' });
   try {
@@ -288,6 +292,31 @@ async function ajuste(req, res, { tid, dec }) {
       const pedidoRef = T.tdoc(db, tid, 'pedidos', pedidoId), snap = await t.get(pedidoRef);
       if (!snap.exists) throw new Error('Pedido não encontrado.');
       const ped = snap.data(), agora = new Date();
+
+      if (op === 'pronto') {
+        const trava = Senha.travaDoPronto(ped); if (trava) throw new Error(trava);
+        // leituras antes de qualquer gravação (regra da transação): configuração da loja e contador do dia
+        const cfg = await t.get(T.tdoc(db, tid, 'loja', 'config'));
+        const modo = Senha.modoDaSenha(cfg.exists ? cfg.data() : {}), dia = Senha.diaDaSenha(agora), em = agora.toISOString();
+        let senha = modo === 'desligada' ? '' : Senha.senhaGuardada(ped, dia);
+        if (modo !== 'desligada' && !senha) {
+          const contRef = T.tdoc(db, tid, 'contadores', 'senha'), cont = await t.get(contRef);   // só o servidor lê e grava (a regra final nega)
+          const prox = Senha.proximaSenha(cont.exists ? cont.data() : null, dia);
+          t.set(contRef, { dia, ultimo: prox.numero, em });
+          senha = prox.texto;
+        }
+        const muda = { status: 'enviado', prontoEm: em, ajustes: Ajuste.comRegistro(ped, { op: 'pronto', de: ped.status, por, em, ...(senha ? { senha } : {}) }) };
+        if (senha) Object.assign(muda, { senha, senhaDia: dia, chamada: { vezes: 1, em, caixinha: modo === 'caixinha' } });
+        t.update(pedidoRef, muda);
+        return { status: 'enviado', senha, modo };
+      }
+
+      if (op === 'chamar') {
+        const trava = Senha.travaDaChamada(ped); if (trava) throw new Error(trava);
+        const ch = ped.chamada && typeof ped.chamada === 'object' ? ped.chamada : {}, vezes = Math.min(99, (Number(ch.vezes) || 0) + 1);
+        t.update(pedidoRef, { chamada: { ...ch, vezes, em: agora.toISOString() } });
+        return { senha: ped.senha, vezes };
+      }
 
       if (op === 'voltar') {
         const para = Ajuste.etapaAnterior(ped);

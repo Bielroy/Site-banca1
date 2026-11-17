@@ -394,6 +394,18 @@
                     <label for="config-retirada-local" style="margin-top:10px;display:block;">Onde retirar (opcional)</label>
                     <input type="text" id="config-retirada-local" maxlength="80" placeholder="Ex.: na banca, ao lado da portaria">
                 </div>
+                <div class="form-group" style="width: 100%;" id="grupo-senha">
+                    <label for="config-senha"><i class="ic" data-i="sino"></i> Senha de chamada (pedido para retirar)</label>
+                    <select id="config-senha">
+                        <option value="desligada">Desligada: o cliente só vê "pronto" na tela</option>
+                        <option value="tela">Ligada: senha de 3 dígitos na tela do cliente</option>
+                        <option value="caixinha">Ligada, e tenho a caixinha de senhas (painel de LED)</option>
+                    </select>
+                    <small class="dica-campo" style="display:block;">Ao tocar em "Pronto para retirar", o pedido ganha a senha do dia (001 a 999, recomeça à meia-noite). A tela do cliente abre sozinha com a senha, vibra e toca um aviso. "Chamar de novo" repete o aviso. Com a caixinha, o cartão do pedido mostra o número para digitar nela (a ligação automática com a caixinha vem depois).</small>
+                    <label style="margin-top:12px;display:block;"><i class="ic" data-i="pino"></i> Link da plaquinha (NFC e QR Code)</label>
+                    <div class="pix-chave-linha"><input type="text" id="config-link-placa" readonly aria-label="Link da plaquinha"><button type="button" class="btn-outline" id="btn-copiar-placa">Copiar</button></div>
+                    <small class="dica-campo" style="display:block;">Grave este link na plaquinha. Sem pedido aberto, abre o cardápio. Com PIX por pagar, abre o PIX já com o valor. Com o pedido pronto, mostra a senha.</small>
+                </div>
                 <div class="form-group" style="width: 100%;" id="grupo-agenda">
                     <label><i class="ic" data-i="calendario"></i> Agenda das feiras: entrega e retirada em cada dia</label>
                     <small class="dica-campo" style="display:block;">Uma linha para cada dia de cada feira (condomínio). Ex.: Madri na quarta: só entrega, de manhã. Madri na sexta: entrega e retirada na feira. O cliente só vê o que está na linha da feira DELE no dia do pedido. Dia de feira sem linha: só entrega, com os horários de cima. Cada banca tem a sua agenda: as outras bancas da feira não veem nem mudam a sua.</small>
