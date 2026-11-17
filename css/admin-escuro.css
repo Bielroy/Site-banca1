@@ -1074,6 +1074,8 @@ html[data-painel-tema="escuro"] .pi-feito ul { color: #eaedeb; }
 html[data-painel-tema="escuro"] .pi-feito li.saiu::marker { color: #e9827c; }
 html[data-painel-tema="escuro"] .pi-feito li.entrou::marker { color: #8febb0; }
 html[data-painel-tema="escuro"] .pc-acerto.preco { background: #19303e; color: #8dc8ec; }
+html[data-painel-tema="escuro"] .pc-senha { background: #111; color: #f3f4f6; }
+html[data-painel-tema="escuro"] .pc-senha-num { color: #ea817b; }
 
 /* ---- css/admin-escuro-extra.css (acertos à mão) ---- */
 /* Acertos à mão do tema escuro do painel. Entra no fim de css/admin-escuro.css (ver lib/tema-escuro.js). */

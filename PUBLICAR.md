@@ -50,6 +50,20 @@ conferido com o exemplo oficial, mas nunca foi pago de verdade: faça um PIX de 
 - Pedido com item a pesar só libera o PIX depois da pesagem (botão em **Meus pedidos**).
 - Cancelar um pedido já pago NÃO devolve o dinheiro: devolva o PIX pelo aplicativo do banco.
 
+## 4b2. Pedido na tela do cliente, senha de chamada e plaquinha (NFC / QR Code)
+- **Faixa do pedido:** depois de pedir, o cliente vê embaixo da loja em que pé está o pedido (Recebido, Separando,
+  Pronto para retirar, Saiu para entrega). Muda sozinha: não precisa abrir "Meus pedidos". Some quando o pedido é entregue ou retirado.
+- **Pedido para retirar:** no painel, o cartão em "Separando" ganha o botão **Pronto para retirar**. A tela do cliente abre
+  sozinha, vibra e toca um aviso curto (com a tela do celular apagada o navegador não toca nada). Depois, **Cliente retirou**.
+- **Senha:** em **Configurações → Senha de chamada**: desligada (padrão), ligada (senha na tela) ou ligada com a caixinha de senhas.
+  A senha tem 3 dígitos, de 001 a 999, recomeça à meia-noite e quem conta é o servidor (duas pessoas nunca pegam a mesma).
+  "Chamar de novo" repete o aviso. Com a caixinha, o cartão mostra o número para digitar nela: **a ligação automática com a
+  caixinha ainda não existe** (falta saber o modelo e como ela recebe o número).
+- **Plaquinha:** em **Configurações**, logo abaixo da senha, copie o **link da plaquinha** (o endereço da loja com `?placa=1`)
+  e grave no NFC ou gere o QR Code com ele. Sem pedido aberto no celular, abre o cardápio. Com PIX por pagar, abre o PIX já com
+  o valor. Com o pedido pronto, mostra a senha. O celular é reconhecido pelo navegador: quem fez o pedido em outro navegador
+  (ex.: dentro do Instagram) não é reconhecido na plaquinha e vê o cardápio.
+
 ## 4c. Aviso de pedido novo no celular
 - No painel, botão **Avisos** no topo → **Ligar avisos neste aparelho** → **Mandar um aviso de teste**.
 - Cada pessoa liga no próprio celular. Android: funciona pelo Chrome. iPhone: só com o site instalado

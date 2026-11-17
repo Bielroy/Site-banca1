@@ -110,3 +110,10 @@
 .pc-acerto.preco { flex-wrap: wrap; background: #e2f1fa; color: #0a3f5f; }
 .pc-acerto.preco span { flex: 1 1 200px; }
 .pc-acerto.preco .bt { flex: 1 0 100%; min-height: 44px; }
+
+/* SENHA DE CHAMADA do pedido pronto para retirar (lib/senha.js): o número grande, como no painel de LED */
+.pc-senha { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0; padding: 10px 12px; border-radius: 12px; background: #111; color: #f3f4f6; }
+.pc-senha-num { font-family: 'Courier New', ui-monospace, monospace; font-weight: 700; font-size: 2.2rem; line-height: 1; letter-spacing: .12em; color: #ff3b30; text-shadow: 0 0 12px rgba(255, 59, 48, .45); font-variant-numeric: tabular-nums; }
+.pc-senha-txt { display: flex; flex-direction: column; flex: 1; min-width: 120px; font-size: .85rem; }
+.pc-senha-txt small { opacity: .8; }
+.pc-senha .bt { margin-left: auto; }

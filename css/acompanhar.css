@@ -1,0 +1,65 @@
+/* =====================================================================
+   css/acompanhar.css — a faixa do pedido na tela da loja (js/acompanhar-loja.js).
+   Fica embaixo, acima do botão da sacola no celular. Pronto para retirar = verde, com a senha.
+   ===================================================================== */
+.acomp { position: fixed; z-index: 950; left: 20px; bottom: calc(var(--safe-bottom, 0px) + 20px); width: min(380px, calc(100vw - 40px)); pointer-events: none; }
+.acomp[hidden] { display: none; }
+.acomp-faixas { display: flex; flex-direction: column; gap: 8px; pointer-events: auto; }
+.acomp-faixa {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; cursor: pointer;
+    padding: 12px 14px; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--forest) 18%, transparent);
+    background: var(--superficie, #fff); color: var(--forest-texto, var(--forest)); box-shadow: var(--shadow-lg);
+    font: inherit; animation: acompSobe .35s cubic-bezier(.16, 1, .3, 1);
+}
+.acomp-faixa:active { transform: scale(.98); }
+.acomp-ico { font-size: 1.35rem; line-height: 1; flex: none; }
+.acomp-txt { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.acomp-txt b { font-size: 1rem; }
+.acomp-txt small { font-size: .82rem; opacity: .75; }
+.acomp-faixa.tom-pagar { border-color: var(--manga, #e9a862); }
+.acomp-faixa.tom-pronto { background: var(--success, #16a34a); color: #fff; border-color: transparent; animation: acompSobe .35s cubic-bezier(.16, 1, .3, 1), acompPulsa 1.6s ease-in-out 3; }
+.acomp-faixa.tom-pronto small { opacity: .92; }
+.acomp-senha-mini { font-family: var(--fonte-titulo); font-weight: 800; font-size: 1.7rem; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+
+/* detalhes (folha que sobe) */
+.acomp-fundo { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); pointer-events: auto; animation: fadeIn .2s ease; }
+.acomp-folha {
+    position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: min(520px, 100vw); max-height: 88dvh; overflow-y: auto;
+    background: var(--superficie, #fff); color: var(--texto, #1f2937); border-radius: 24px 24px 0 0; pointer-events: auto;
+    padding: 26px 22px calc(var(--safe-bottom, 0px) + 22px); box-shadow: var(--shadow-lg); animation: acompSobe .3s cubic-bezier(.16, 1, .3, 1);
+}
+.acomp-fechar { position: absolute; top: 10px; right: 12px; width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; font-size: 1.8rem; line-height: 1; cursor: pointer; color: inherit; }
+.acomp-status { font-family: var(--fonte-titulo); font-size: 1.45rem; font-weight: 800; margin: 0 40px 6px 0; color: var(--forest-texto, var(--forest)); }
+.acomp-status.tom-pronto { color: var(--success, #16a34a); }
+.acomp-status.tom-cancelado { color: var(--danger, #dc2626); }
+.acomp-texto { margin: 0 0 14px; opacity: .85; }
+.acomp-senha { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 8px 0 14px; padding: 16px; border-radius: 18px; background: #111; color: #ff3b30; }
+.acomp-senha small { color: #f3f4f6; font-size: .85rem; letter-spacing: .08em; text-transform: uppercase; }
+.acomp-senha b { font-family: 'Courier New', ui-monospace, monospace; font-size: 4.4rem; line-height: 1; letter-spacing: .12em; font-variant-numeric: tabular-nums; text-shadow: 0 0 18px rgba(255, 59, 48, .55); }
+.acomp-senha span { color: #d1d5db; font-size: .85rem; text-align: center; }
+.acomp-tempo { display: flex; justify-content: space-between; gap: 6px; margin: 4px 0 16px; }
+.acomp-passo { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: .8rem; opacity: .5; text-align: center; }
+.acomp-passo i { width: 100%; height: 6px; border-radius: 6px; background: color-mix(in srgb, var(--forest) 20%, transparent); }
+.acomp-passo.feito { opacity: 1; }
+.acomp-passo.feito i { background: var(--forest); }
+.acomp-passo.atual { font-weight: 700; }
+.acomp-pago { color: var(--success, #16a34a); font-weight: 700; margin: 0 0 12px; }
+.acomp-pix { margin: 0 0 14px; }
+.acomp-resumo { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; padding-top: 12px; border-top: 1px solid var(--parchment, #eee); font-size: .9rem; }
+.acomp-resumo p { margin: 0; opacity: .8; }
+.acomp-resumo b { font-family: var(--fonte-titulo); font-size: 1.15rem; white-space: nowrap; }
+.pedido-senha { margin: 4px 0 0; font-weight: 700; }
+.pedido-senha b { font-size: 1.2rem; letter-spacing: .08em; color: var(--success, #16a34a); }
+
+@keyframes acompSobe { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+.acomp-folha { animation-name: acompSobeFolha; }
+@keyframes acompSobeFolha { from { transform: translate(-50%, 24px); opacity: 0; } to { transform: translateX(-50%); opacity: 1; } }
+@keyframes acompPulsa { 0%, 100% { box-shadow: var(--shadow-lg); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--success, #16a34a) 35%, transparent), var(--shadow-lg); } }
+
+/* celular e tablet estreito: centralizada, acima do botão da sacola */
+@media (max-width: 859px) {
+    /* sem transform aqui: ele prenderia a folha "fixed" dentro da faixa */
+    .acomp { left: 12px; right: 12px; width: auto; bottom: calc(var(--safe-bottom, 0px) + 88px); }
+    body.com-acomp .site-rodape { margin-bottom: 170px; }
+}
+@media (prefers-reduced-motion: reduce) { .acomp-faixa, .acomp-folha { animation: none !important; } }
