@@ -21,8 +21,8 @@ import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
 import { podePagarPix } from './pix-lib.js';
-import { iniciarAcompanhamento, atualizarAcompanhamento } from './acompanhar-loja.js';   // a faixa do pedido na tela (muda sozinha)
-import { rotuloDoStatus, etapasDoPedido } from './acompanhar-lib.js';
+import { iniciarAcompanhamento, atualizarAcompanhamento, lerInformados, informarPago, desfazerInformado, veioDaPlaca, redesenharAcompanhamento } from './acompanhar-loja.js';   // a faixa do pedido na tela (muda sozinha)
+import { rotuloDoStatus, etapasDoPedido, estadoDoInformado, pixConferidoCobre, pixConferidoMudou } from './acompanhar-lib.js';
 import { lerEntrega, previaDaEntrega, horariosDoModo, opcoesDoDia } from './entrega-lib.js';
 import { lerVagas, chaveHorario, estadoDoHorario, agoraMinBR } from './vagas-lib.js';   // vagas por horário e antecedência (como o Cal.com)
 import { ehIOS, navegadorIOS, deveConvidar } from './instalar-lib.js';
@@ -1338,6 +1338,18 @@ const pixCopiaColaHtml = (pedido, destaque) => {
     if (!(Number(pedido.total) > 0)) return '';          // pedido de cortesia (cupom de 100%): nada a pagar
     const pix = STATE.config.pix, codigo = codigoPix(pix, pedido.total, pedido.id);
     if (!codigo) return '';
+    // o cliente tocou "Já paguei" NESTE aparelho: não oferecer o mesmo PIX de novo (não pagar duas vezes)
+    const inf = lerInformados()[pedido.id], estado = estadoDoInformado(inf, pedido);
+    if (estado === 'mudou') return `<p class="pix-aviso">Você avisou que pagou <b>${fmt(inf.total)}</b>, e depois o pedido mudou para <b>${fmt(pedido.total)}</b>. Fale com a banca no WhatsApp antes de pagar a diferença.</p>`;
+    if (estado === 'informado') {
+        const hora = new Date(inf.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        return `<section class="pix-destaque pix-informado" aria-label="Pagamento informado">
+            <p class="pix-d-rot">Pagamento informado às ${hora}</p>
+            <p class="pix-d-total">${fmt(pedido.total)}</p>
+            <p class="pix-d-nota"><b>Não pague de novo.</b> A banca confere no extrato e confirma aqui. Se ainda não mandou, mande o comprovante no WhatsApp.</p>
+            <button type="button" class="btn-pix-paguei" data-action="pix-nao-paguei" data-id="${escapeHTML(pedido.id)}">Ainda não paguei: mostrar o PIX</button>
+        </section>`;
+    }
     if (destaque) return pixCartao(pedido, `<p class="pix-d-para">Para <b>${escapeHTML(pix.nome)}</b><span>Chave ${escapeHTML(chaveBonita(pix))}</span></p>
         <button type="button" class="btn-pix btn-pix--grande" data-action="copiar-pix" data-codigo="${escapeHTML(codigo)}">${ICO_COPIAR}<span>Copiar código PIX</span></button>
         <ol class="pix-d-passos">
@@ -1345,7 +1357,9 @@ const pixCopiaColaHtml = (pedido, destaque) => {
             <li><span>2</span><p>No app do banco, escolha <b>PIX copia e cola</b> e cole. O valor já vem preenchido.</p></li>
             <li><span>3</span><p>Depois de pagar, mande o <b>comprovante no WhatsApp</b> no botão verde abaixo.</p></li>
         </ol>
-        <details class="pix-d-qr"><summary>Vai pagar por outro celular? Mostrar QR Code</summary><div class="pix-d-qr-caixa" data-codigo="${escapeHTML(codigo)}"></div></details>`);
+        <details class="pix-d-qr"><summary>Vai pagar por outro celular? Mostrar QR Code</summary><div class="pix-d-qr-caixa" data-codigo="${escapeHTML(codigo)}"></div></details>
+        ${veioDaPlaca() ? '<p class="pix-d-placa"><b>Vai pagar depois?</b> É só ler o QR Code ou encostar o celular na plaquinha de novo: este PIX abre de novo, com o mesmo valor.</p>' : ''}
+        <button type="button" class="btn-pix-paguei" data-action="pix-ja-paguei" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Já paguei</button>`);
     return `<div class="pix-cola">
         <b>Pague ${fmt(pedido.total)} com PIX</b>
         <span>Para ${escapeHTML(pix.nome)} · chave ${escapeHTML(chaveBonita(pix))}</span>
@@ -1356,6 +1370,10 @@ const pixCopiaColaHtml = (pedido, destaque) => {
 // "Pagamento só na entrega" (painel → Configurações → Pagamento): o site não mostra código PIX nem QR em lugar nenhum.
 const pagaNaEntrega = () => STATE.config && STATE.config.pagamentoNaEntrega === true;
 const pixDoPedidoHtml = (pedido, destaque = false) => {
+    // a banca conferiu no extrato e marcou "PIX recebido" no painel
+    if (pixConferidoCobre(pedido)) return destaque ? `<p class="pix-pago-ok">✓ A banca confirmou o PIX de ${fmt(Number(pedido.pixConferido.valor) || 0)}. Pedido pago.</p>` : '';
+    if (pixConferidoMudou(pedido)) return `<p class="pix-aviso">A banca recebeu <b>${fmt(Number(pedido.pixConferido.valor) || 0)}</b> e o pedido mudou para <b>${fmt(pedido.total)}</b>. Fale com a banca no WhatsApp sobre a diferença.</p>`;
+    if (pedido.status === 'cancelado') return destaque ? '<p class="pix-aviso"><b>Pedido cancelado pela banca.</b> Não pague. Se já pagou, fale com a banca no WhatsApp.</p>' : '';
     if (pagaNaEntrega()) return '';
     if (STATE.config && STATE.config.formasPagamento && STATE.config.formasPagamento.pix === false) return '';   // a loja desligou o PIX
     // outras lojas só conseguem ligar a opção quando a plataforma cadastra a carteira Asaas delas (o servidor confere de novo)
@@ -1367,7 +1385,22 @@ const pixDoPedidoHtml = (pedido, destaque = false) => {
 };
 // Devolve true quando ficou um PIX para pagar agora: aí o cartão sobe para logo abaixo do título,
 // antes do botão do WhatsApp (pagar primeiro, mandar o comprovante depois).
+let PIX_NO_SUCESSO = null;     // { id, marca }: o pedido cujo PIX está na tela de "Pedido registrado"
+const marcaDoPix = (p) => [Number(p.total) || 0, p.status, !!p.temItensAPesar, !!(p.pagamento && p.pagamento.status === 'PAID'), !!(p.pixConferido && p.pixConferido.em), JSON.stringify(lerInformados()[p.id] || null)].join('|');
+// o pedido mudou no banco (pesou, a banca tirou um item, cancelou, confirmou o PIX): a tela aberta não pode mostrar o valor velho
+const atualizarPixDoSucesso = (id, dados, doServidor) => {
+    if (!PIX_NO_SUCESSO || PIX_NO_SUCESSO.id !== id || !doServidor) return;
+    const modal = document.getElementById('modal-sucesso');
+    if (!modal || !modal.classList.contains('aberto')) return;
+    const p = { ...dados, id };
+    if (marcaDoPix(p) === PIX_NO_SUCESSO.marca) return;
+    const valorAntes = PIX_NO_SUCESSO.total;
+    oferecerPixNoSucesso(p);
+    if (Number(valorAntes) > 0 && Math.round(valorAntes * 100) !== Math.round((Number(p.total) || 0) * 100) && p.status !== 'cancelado')
+        showToast(`O valor do pedido mudou para ${fmt(Number(p.total) || 0)}. O PIX já está atualizado.`);
+};
 const oferecerPixNoSucesso = (pedido) => {
+    PIX_NO_SUCESSO = { id: pedido.id, marca: marcaDoPix(pedido), total: Number(pedido.total) || 0 };
     const area = document.getElementById('sucesso-pix'); if (!area) return false;
     const html = pixDoPedidoHtml(pedido, true), pendente = html.includes('pix-destaque');
     area.hidden = !html; area.innerHTML = html;
@@ -1377,7 +1410,7 @@ const oferecerPixNoSucesso = (pedido) => {
     return pendente;
 };
 // A FAIXA DO PEDIDO (js/acompanhar-loja.js): o cliente vê o status sem abrir "Meus pedidos"; a plaquinha (?placa) abre o PIX ou a senha.
-iniciarAcompanhamento({ lerPedidos: () => lerLista('banca_meus_pedidos'), pixHtml: (pedido) => pixDoPedidoHtml(pedido, true) });
+iniciarAcompanhamento({ lerPedidos: () => lerLista('banca_meus_pedidos'), pixHtml: (pedido) => pixDoPedidoHtml(pedido, true), aoMudar: atualizarPixDoSucesso });
 // QR do código PIX (para pagar com outro celular): só é desenhado quando a pessoa abre.
 document.addEventListener('toggle', async (e) => {
     const det = e.target; if (!(det instanceof HTMLDetailsElement) || !det.classList.contains('pix-d-qr') || !det.open) return;
@@ -2604,6 +2637,16 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'indicar') { indicarLoja(); }
         else if (action === 'esquecer-dados') { esquecerDados(); }
         else if (action === 'copiar-pix') { copiarPix(actionTarget); }
+        else if (action === 'pix-ja-paguei' || action === 'pix-nao-paguei') {   // guardado só neste aparelho: a banca confirma de verdade no painel
+            if (action === 'pix-ja-paguei' && !(await customConfirm('Já pagou o PIX?', 'Confirme só depois que o app do banco mostrar o PIX como feito. Assim a plaquinha não pede de novo.', { ok: 'Sim, já paguei', nao: 'Ainda não' }))) return;
+            if (action === 'pix-ja-paguei') informarPago(id, Number(actionTarget.dataset.total) || 0); else desfazerInformado(id);
+            if (PIX_NO_SUCESSO && PIX_NO_SUCESSO.id === id && document.getElementById('modal-sucesso')?.classList.contains('aberto')) {
+                const area = document.getElementById('sucesso-pix'), atual = { id, total: PIX_NO_SUCESSO.total, pag: 'PIX', status: 'pendente' };
+                if (area) oferecerPixNoSucesso(atual);
+            }
+            redesenharAcompanhamento();
+            if (action === 'pix-ja-paguei') showToast('Anotado. Agora mande o comprovante no WhatsApp para a banca conferir.');
+        }
         else if (action === 'instalar') { instalarApp(); }
         else if (action === 'convite-fechar') { fecharConviteApp(); }
         else if (action === 'reserva-pronto') { pedidoReservaMandado(); }

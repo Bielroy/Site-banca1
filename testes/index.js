@@ -918,6 +918,18 @@ teste('pedido para retirar fica pronto: senha de 3 dígitos do dia (001 a 999, v
   assert.strictEqual((await aj('ret-aaaaaa4', { op: 'pronto' })).status, 400, 'item a pesar: pesa antes');
   assert.strictEqual((await aj('ret-aaaaaa2', { op: 'chamar' }, 'cliente')).status, 403, 'quem não é da equipe não chama');
 
+  // "PIX recebido": a equipe conferiu o extrato. Só PIX, só depois da pesagem, uma vez; dá para desfazer
+  db._dados.set('pedidos/pix-aaaaaa6', { ...base, pag: 'PIX', status: 'pendente' });
+  db._dados.set('pedidos/pix-aaaaaa7', { ...base, pag: 'Dinheiro', status: 'pendente' });
+  r = await aj('pix-aaaaaa6', { op: 'pix-recebido' }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(ped('pix-aaaaaa6').pixConferido.valor, 20); assert.ok(ped('pix-aaaaaa6').pixConferido.por, 'fica quem conferiu');
+  assert.strictEqual(ped('pix-aaaaaa6').pagamento, undefined, 'não mexe no pagamento do PIX automático (é dele o estorno)');
+  assert.strictEqual((await aj('pix-aaaaaa6', { op: 'pix-recebido' })).status, 400, 'duas vezes não');
+  assert.strictEqual((await aj('pix-aaaaaa7', { op: 'pix-recebido' })).status, 400, 'pedido em dinheiro não');
+  assert.strictEqual((await aj('ret-aaaaaa4', { op: 'pix-recebido' })).status, 400, 'item a pesar não');
+  assert.strictEqual((await aj('pix-aaaaaa6', { op: 'pix-recebido' }, 'cliente')).status, 403, 'cliente não marca o próprio PIX como pago');
+  r = await aj('pix-aaaaaa6', { op: 'pix-desfazer' }); assert.strictEqual(r.status, 200); assert.strictEqual(ped('pix-aaaaaa6').pixConferido, null);
+
   // loja com a senha desligada: fica pronto, sem senha
   db._dados.set('loja/config', { ...db._dados.get('loja/config'), senhaChamada: 'desligada' });
   db._dados.set('pedidos/ret-aaaaaa5', { ...base, nome: 'Bia' });
@@ -961,16 +973,30 @@ teste('faixa do pedido na tela do cliente e plaquinha: status muda sozinho, reti
   assert.strictEqual(A.temPixParaPagar({ status: 'aguardando_pesagem', pag: 'PIX', temItensAPesar: true }), false, 'item a pesar: sem PIX (o valor ainda muda)');
   assert.strictEqual(A.temPixParaPagar({ status: 'preparando', pag: 'PIX', temItensAPesar: false, total: 41.3 }), true, 'pesou: o PIX sai com o valor da balança');
   assert.strictEqual(A.temPixParaPagar({ status: 'preparando', pag: 'Dinheiro' }), false);
-  assert.strictEqual(A.pixLiberouAgora({ status: 'aguardando_pesagem', pag: 'PIX', temItensAPesar: true }, { status: 'preparando', pag: 'PIX', temItensAPesar: false }), true);
+  assert.strictEqual(A.pixLiberouAgora({ status: 'aguardando_pesagem', pag: 'PIX', temItensAPesar: true }, { status: 'preparando', pag: 'PIX', temItensAPesar: false, total: 41.3 }), true);
   assert.strictEqual(A.pixLiberouAgora(null, { status: 'preparando', pag: 'PIX' }), false);
 
   // a plaquinha
-  assert.strictEqual(A.oQueAPlacaAbre([]).tela, 'cardapio', 'sem pedido: o cardápio');
-  assert.strictEqual(A.oQueAPlacaAbre([{ status: 'arquivado' }]).tela, 'cardapio');
-  assert.strictEqual(A.oQueAPlacaAbre([{ status: 'pendente', pag: 'PIX', total: 30 }]).tela, 'pagar', 'PIX por pagar: o código com o valor');
-  assert.strictEqual(A.oQueAPlacaAbre([{ status: 'pendente', pag: 'PIX', temItensAPesar: true }]).tela, 'acompanhar', 'a pesar: ainda não tem valor');
-  assert.strictEqual(A.oQueAPlacaAbre([{ status: 'pendente', pag: 'PIX', pagamento: { status: 'PAID' } }]).tela, 'acompanhar');
-  const r = A.oQueAPlacaAbre([{ status: 'pendente', pag: 'PIX' }, { ...ret, status: 'enviado', senha: '014' }]);
+  const op = { agora };
+  const pix = (extra = {}) => ({ _id: 'p1', status: 'pendente', pag: 'PIX', total: 20, data: h(0.5), ...extra });
+  assert.strictEqual(A.oQueAPlacaAbre([], op).tela, 'cardapio', 'sem pedido: o cardápio');
+  assert.strictEqual(A.oQueAPlacaAbre([{ status: 'arquivado' }], op).tela, 'cardapio');
+  assert.strictEqual(A.oQueAPlacaAbre([pix()], op).tela, 'pagar', 'PIX por pagar: o código com o valor');
+  assert.strictEqual(A.oQueAPlacaAbre([pix({ temItensAPesar: true })], op).tela, 'acompanhar', 'a pesar: ainda não tem valor');
+  assert.strictEqual(A.oQueAPlacaAbre([pix({ pagamento: { status: 'PAID' } })], op).tela, 'acompanhar', 'PIX automático pago: não cobra de novo');
+  // SEGURANÇA: nada de cobrar duas vezes, nem cobrar com dado velho
+  assert.strictEqual(A.oQueAPlacaAbre([pix({ pixConferido: { em: h(0.1), valor: 20 } })], op).tela, 'acompanhar', 'a banca marcou "PIX recebido": não abre o PIX');
+  assert.strictEqual(A.pagoPeloSite(pix({ pixConferido: { em: h(0.1), valor: 20 } })), true);
+  const mudou = pix({ total: 26, pixConferido: { em: h(0.1), valor: 20 } });
+  assert.deepStrictEqual([A.pagoPeloSite(mudou), A.pixConferidoMudou(mudou), A.temPixParaPagar(mudou)], [false, true, false], 'recebeu 20, o pedido foi para 26: não oferece o PIX cheio de 26');
+  assert.strictEqual(A.oQueAPlacaAbre([pix()], { agora, informados: { p1: { em: h(0.2), total: 20 } } }).tela, 'acompanhar', 'o cliente tocou "Já paguei": a plaquinha não abre o PIX de novo');
+  assert.strictEqual(A.estadoDoInformado({ em: h(0.2), total: 20 }, pix()), 'informado');
+  assert.strictEqual(A.estadoDoInformado({ em: h(0.2), total: 20 }, pix({ total: 25 })), 'mudou', 'pagou 20 e o pedido subiu: fala com a banca');
+  assert.strictEqual(A.estadoDoInformado(null, pix()), '');
+  assert.strictEqual(A.oQueAPlacaAbre([pix({ _doServidor: false })], op).tela, 'acompanhar', 'sem resposta do servidor (conexão ruim): não cobra com a cópia do aparelho');
+  assert.strictEqual(A.oQueAPlacaAbre([pix({ data: h(13) })], op).tela, 'acompanhar', 'pedido de mais de 12 h esquecido aberto: não vira cobrança');
+  assert.strictEqual(A.temPixParaPagar(pix({ total: 0 })), false, 'cupom de 100%: nada a pagar');
+  const r = A.oQueAPlacaAbre([pix(), { ...ret, status: 'enviado', senha: '014' }], op);
   assert.deepStrictEqual([r.tela, r.pedido.senha], ['pronto', '014'], 'pronto vem antes de tudo');
   assert.strictEqual(A.linkDaPlaca('https://usebanca.com/queijos'), 'https://usebanca.com/queijos?placa=1');
   assert.strictEqual(A.linkDaPlaca('https://loja.com/?x=1#topo'), 'https://loja.com/?x=1&placa=1');

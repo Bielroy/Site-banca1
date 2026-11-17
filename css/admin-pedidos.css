@@ -117,3 +117,7 @@
 .pc-senha-txt { display: flex; flex-direction: column; flex: 1; min-width: 120px; font-size: .85rem; }
 .pc-senha-txt small { opacity: .8; }
 .pc-senha .bt { margin-left: auto; }
+
+/* PIX pela chave da loja: a equipe confere no banco e marca "recebido" (api/pdv.js, op 'pix-recebido') */
+.pc-pix-conf { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0; }
+.pc-pix-conf small { opacity: .75; font-size: .8rem; flex: 1; min-width: 160px; }

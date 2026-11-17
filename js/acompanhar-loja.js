@@ -12,15 +12,41 @@
 //
 //  Plaquinha (NFC / QR Code) com ?placa: abre o que vale para o pedido deste aparelho
 //  (js/acompanhar-lib.js → oQueAPlacaAbre). Sem pedido aberto, fica a loja normal.
+//  SEGURANÇA: cada celular só enxerga os PRÓPRIOS pedidos (regra do banco: dono = login anônimo daquele
+//  navegador). Duas pessoas lendo a mesma plaquinha ao mesmo tempo não se misturam: o link não leva pedido nenhum.
+//  O PIX só abre com o dado confirmado pelo servidor, de pedido de até 12 h, e nunca se o cliente tocou "Já paguei"
+//  ou se a banca já marcou "PIX recebido".
 // =====================================================================
 import { auth, onAuthStateChanged, onSnapshot } from './firebase.js';
-import { tdoc } from './tenant.js';
+import { tdoc, chave } from './tenant.js';
 import { escapeHTML, fmt, hapticFeedback } from './utils.js';
-import { acompanhamento, pedidosParaAcompanhar, chamouAgora, oQueAPlacaAbre, temPixParaPagar, pixLiberouAgora } from './acompanhar-lib.js';
+import { acompanhamento, pedidosParaAcompanhar, chamouAgora, oQueAPlacaAbre, temPixParaPagar, pixLiberouAgora, estadoDoInformado } from './acompanhar-lib.js';
+
+// ---------- guardado no aparelho ----------
+// "Já paguei" (PIX pela chave): o site não sabe sozinho quando o PIX cai. Guardar evita que a plaquinha cobre de novo.
+const K_INFORMADO = () => chave('banca_pix_informado'), K_PLACA = () => chave('banca_veio_placa');
+const lerJSON = (k, padrao) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v && typeof v === 'object' ? v : padrao; } catch (_) { return padrao; } };
+/** { idDoPedido: { em, total } } dos últimos 3 dias. */
+export const lerInformados = () => {
+    const tudo = lerJSON(K_INFORMADO(), {}), limite = Date.now() - 3 * 86400000, fica = {};
+    Object.entries(tudo).forEach(([id, v]) => { if (v && Date.parse(v.em) > limite) fica[id] = v; });
+    return fica;
+};
+export const informarPago = (id, total) => {
+    const tudo = lerInformados(); tudo[String(id)] = { em: new Date().toISOString(), total: Number(total) || 0 };
+    try { localStorage.setItem(K_INFORMADO(), JSON.stringify(tudo)); } catch (_) { /* aparelho sem espaço: segue */ }
+};
+export const desfazerInformado = (id) => {
+    const tudo = lerInformados(); delete tudo[String(id)];
+    try { localStorage.setItem(K_INFORMADO(), JSON.stringify(tudo)); } catch (_) { /* ok */ }
+};
+/** A pessoa chegou pela plaquinha nas últimas 6 horas (a tela do PIX lembra que dá para ler de novo). */
+export const veioDaPlaca = () => { try { return Date.now() - Number(localStorage.getItem(K_PLACA()) || 0) < 6 * 3600000; } catch (_) { return false; } };
 
 const VIVOS = new Map();        // id → dados do pedido no banco
 const OUVINDO = new Map();      // id → função que para de ouvir
-let OPCOES = { lerPedidos: () => [], pixHtml: () => '' };
+let OPCOES = { lerPedidos: () => [], pixHtml: () => '', aoMudar: () => {} };
+const DO_SERVIDOR = new Set();  // ids cujo dado já veio do servidor (não só da cópia guardada no aparelho)
 let aberto = '';                // id do pedido com os detalhes abertos
 let placaPendente = false;
 let tituloOriginal = '';
@@ -98,8 +124,9 @@ const desenhar = () => {
     el.hidden = false; document.body.classList.add('com-acomp');
     const faixas = lista.map(({ id, a, p }) => {
         // PIX liberado: só depois da balança (temItensAPesar = false) e se a loja mostra o código (js/loja.js decide)
-        const pagar = a.tom !== 'pronto' && temPixParaPagar(p) && /data-action=/.test(OPCOES.pixHtml({ ...p, id }) || '');
-        const sub = a.senha ? `Senha ${a.senha} · toque para ver` : pagar ? `Valor fechado${Number.isFinite(Number(p.total)) ? `: ${fmt(Number(p.total))}` : ''} · toque para pagar com PIX` : p.temItensAPesar ? 'O PIX aparece depois da pesagem' : 'Toque para ver o pedido';
+        const informado = estadoDoInformado(lerInformados()[id], p);
+        const pagar = a.tom !== 'pronto' && !informado && temPixParaPagar(p) && /data-action="copiar-pix"|data-action="pagar-pix"/.test(OPCOES.pixHtml({ ...p, id }) || '');
+        const sub = a.senha ? `Senha ${a.senha} · toque para ver` : a.pago ? 'Pago ✓ · toque para ver' : informado === 'mudou' ? 'O valor mudou: fale com a banca' : informado ? 'Você avisou que pagou · a banca confere' : pagar ? `Valor fechado${Number.isFinite(Number(p.total)) ? `: ${fmt(Number(p.total))}` : ''} · toque para pagar com PIX` : p.temItensAPesar ? 'O PIX aparece depois da pesagem' : 'Toque para ver o pedido';
         return `
         <button type="button" class="acomp-faixa tom-${pagar ? 'pagar' : a.tom}" data-acomp="abrir" data-id="${escapeHTML(id)}">
             <span class="acomp-ico" aria-hidden="true">${pagar ? '💠' : (ICONE[a.tom] || '🧾')}</span>
@@ -123,11 +150,15 @@ const abrirDetalhes = (id) => { if (!VIVOS.has(id)) return; aberto = id; desenha
 const ouvir = (id) => {
     if (OUVINDO.has(id)) return;
     let primeira = true;
-    const parar = onSnapshot(tdoc('pedidos', id), (snap) => {
-        if (!snap.exists()) { VIVOS.delete(id); desenhar(); return; }
+    // includeMetadataChanges: saber quando o dado chegou DO SERVIDOR (a cópia do aparelho pode estar velha: já pago, valor mudou)
+    const parar = onSnapshot(tdoc('pedidos', id), { includeMetadataChanges: true }, (snap) => {
+        const doServidor = !(snap.metadata && snap.metadata.fromCache);
+        if (doServidor) DO_SERVIDOR.add(id);
+        if (!snap.exists()) { if (doServidor) { VIVOS.delete(id); desenhar(); } return; }
         const antes = primeira ? null : VIVOS.get(id), depois = snap.data();
         primeira = false;
         VIVOS.set(id, depois);
+        try { OPCOES.aoMudar(id, depois, DO_SERVIDOR.has(id)); } catch (_) { /* a tela do sucesso é conveniência */ }
         if (chamouAgora(antes, depois)) { aberto = id; tocarAviso(); avisarNoTitulo(acompanhamento(depois).senha); }
         else if (pixLiberouAgora(antes, depois)) { try { if (navigator.vibrate) navigator.vibrate(200); } catch (_) { /* ok */ } }   // pesou: o PIX com o valor certo apareceu
         if (!acompanhamento(depois).ativo) { pararDeOuvir(id); }
@@ -136,7 +167,10 @@ const ouvir = (id) => {
     }, () => { pararDeOuvir(id); VIVOS.delete(id); desenhar(); if (placaPendente) resolverPlaca(); });   // sem permissão (pedido de outra conta) ou sem internet
     OUVINDO.set(id, parar);
 };
-const pararDeOuvir = (id) => { const f = OUVINDO.get(id); if (f) { try { f(); } catch (_) { /* ok */ } } OUVINDO.delete(id); };
+const pararDeOuvir = (id) => { const f = OUVINDO.get(id); if (f) { try { f(); } catch (_) { /* ok */ } } OUVINDO.delete(id); DO_SERVIDOR.delete(id); };
+
+/** Redesenha a faixa (depois de "Já paguei", por exemplo). */
+export const redesenharAcompanhamento = () => desenhar();
 
 /** Relê a lista de pedidos do aparelho (chame depois de enviar um pedido). */
 export function atualizarAcompanhamento() {
@@ -149,12 +183,15 @@ export function atualizarAcompanhamento() {
 
 // ---------- plaquinha ----------
 let esperaPlaca = null;
+// Espera a resposta DO SERVIDOR de cada pedido (até 15 s). Sem ela (sem internet), nunca abre um PIX para pagar com a cópia
+// do aparelho: pode já estar pago ou com outro valor. Mostra só o andamento; o PIX aparece quando a conexão voltar.
 const resolverPlaca = (forcar = false) => {
     const ids = pedidosParaAcompanhar(OPCOES.lerPedidos());
-    const todosLidos = ids.every((id) => VIVOS.has(id) || !OUVINDO.has(id));
+    const todosLidos = ids.every((id) => DO_SERVIDOR.has(id) || !OUVINDO.has(id));
     if (!forcar && !todosLidos) return;
     placaPendente = false; clearTimeout(esperaPlaca);
-    const { tela, pedido } = oQueAPlacaAbre(ids.filter((id) => VIVOS.has(id)).map((id) => ({ ...VIVOS.get(id), _id: id })));
+    const lista = ids.filter((id) => VIVOS.has(id)).map((id) => ({ ...VIVOS.get(id), _id: id, _doServidor: DO_SERVIDOR.has(id) }));
+    const { tela, pedido } = oQueAPlacaAbre(lista, { informados: lerInformados() });
     if (tela !== 'cardapio' && pedido) abrirDetalhes(pedido._id);
 };
 
@@ -165,9 +202,10 @@ export function iniciarAcompanhamento(opcoes = {}) {
         const u = new URL(location.href);
         if (u.searchParams.has('placa')) {
             placaPendente = true;
+            try { localStorage.setItem(K_PLACA(), String(Date.now())); } catch (_) { /* ok */ }
             u.searchParams.delete('placa');
             history.replaceState(history.state, '', u.pathname + (u.search || '') + u.hash);   // recarregar não repete
-            esperaPlaca = setTimeout(() => { if (placaPendente) resolverPlaca(true); }, 4000);
+            esperaPlaca = setTimeout(() => { if (placaPendente) resolverPlaca(true); }, 15000);
         }
     } catch (_) { /* endereço estranho: segue sem a plaquinha */ }
     onAuthStateChanged(auth, (u) => {

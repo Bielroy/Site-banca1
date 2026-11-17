@@ -1711,6 +1711,19 @@ document.body.addEventListener('click', async (e) => {
             showToast(`Pedido movido para: ${nextStatus.toUpperCase()}`);
         }
 
+        else if (action === 'pix-recebido' || action === 'pix-desfazer') {   // PIX pela chave: a equipe conferiu no banco (ou desfaz o engano)
+            const id = target.dataset.id, pedido = acharPedido(id);
+            if (!pedido) return showToast('Pedido não encontrado', true);
+            if (action === 'pix-recebido' && !(await customConfirm('O PIX caiu na conta?', `Confira no app do banco: ${fmt(Number(pedido.total) || 0)} de ${pedido.nome || 'cliente'}. A tela do cliente vai dizer "pago" e a plaquinha não cobra mais.`, { ok: 'Sim, recebi' }))) return;
+            target.disabled = true;
+            try {
+                const d = await chamarAjuste({ op: action, pedidoId: id });
+                pedidosGerais = pedidosGerais.map((p) => (p.id === id ? { ...p, pixConferido: d.pixConferido } : p));
+                showToast(action === 'pix-recebido' ? 'PIX marcado como recebido.' : 'Desfeito: o PIX volta a constar como não pago.');
+                redesenharFila();
+            } catch (e) { showToast(e.message, true); target.disabled = false; }
+        }
+
         else if (action === 'pronto-pedido' || action === 'chamar-senha') {   // pedido para retirar (lib/senha.js): pronto dá a senha; chamar repete o aviso na tela do cliente
             const id = target.dataset.id, pedido = acharPedido(id);
             if (!pedido) return showToast('Pedido não encontrado', true);
@@ -1840,7 +1853,7 @@ document.body.addEventListener('click', async (e) => {
                 const r = await fetch('/api/cancelar-pedido', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ pedidoId: pedido.id }) });
                 const d = await r.json().catch(() => ({}));
                 if (!r.ok) throw new Error(d.error || 'Não foi possível cancelar.');
-                showToast(d.jaEstava ? 'Este pedido já estava cancelado.' : (d.estavaPago ? 'Pedido cancelado. Lembre de devolver o PIX ao cliente.' : 'Pedido cancelado e estoque devolvido.'));
+                showToast(d.jaEstava ? 'Este pedido já estava cancelado.' : ((d.estavaPago || (pedido.pixConferido && pedido.pixConferido.em)) ? 'Pedido cancelado. Lembre de devolver o PIX ao cliente.' : 'Pedido cancelado e estoque devolvido.'));
             } catch (e) { showToast(e.message, true); target.disabled = false; }
         }
 
@@ -2172,7 +2185,16 @@ const cartaoDoPedido = (p) => {
     const infoImp = imp.saiu ? `<span class="ped-impresso" title="${imp.vezes > 1 ? `Saiu ${Number(imp.vezes)} vezes` : 'Saiu no papel'}"><i class="ic" data-i="impressora"></i> Impresso${horaImp ? ` ${horaImp}` : ''}${imp.saiu === 'pesado' ? ' (pesado)' : ''}</span>`
         : (imp.estado === 'reservado' && Date.now() - (Date.parse(imp.em) || 0) < 90000 ? '<span class="ped-impresso fila"><i class="ic" data-i="impressora"></i> Imprimindo…</span>' : '');
     const pago = p.pagamento?.status === 'PAID';
-    const infoPag = pago ? '<span class="pc-pago"><i class="ic" data-i="certo"></i> PAGO</span>' : '';
+    // PIX pela chave da loja: o site não sabe quando cai. A equipe confere no app do banco e marca (api/pdv.js, op 'pix-recebido').
+    const pixConf = !!(p.pixConferido && p.pixConferido.em);
+    const pixMudou = pixConf && Math.round((Number(p.pixConferido.valor) || 0) * 100) < Math.round((Number(p.total) || 0) * 100);
+    const infoPag = pago ? '<span class="pc-pago"><i class="ic" data-i="certo"></i> PAGO</span>'
+        : pixConf ? `<span class="pc-pago"${pixMudou ? ' style="background:#b45309"' : ''}><i class="ic" data-i="certo"></i> PIX RECEBIDO${pixMudou ? ` ${fmt(Number(p.pixConferido.valor) || 0)}` : ''}</span>` : '';
+    const podeConferirPix = daLoja && !pago && !pixConf && String(p.pag || '').toUpperCase() === 'PIX' && !p.temItensAPesar && !['cancelado', 'arquivado', 'aguardando_pesagem'].includes(p.status) && Number(p.total) > 0;
+    const infoPix = podeConferirPix
+        ? `<div class="pc-pix-conf"><button type="button" class="bt bt-sec" data-action="pix-recebido" data-id="${id}"><i class="ic" data-i="certo"></i> PIX de ${fmt(Number(p.total) || 0)} recebido</button><small>Confira no app do banco antes. Identificador do PIX: ${escapeHTML(String(id).replace(/[^A-Za-z0-9]/g, '').slice(0, 25))}</small></div>`
+        : pixMudou ? `<p class="pc-nota"><i class="ic" data-i="alerta"></i> O cliente pagou ${fmt(Number(p.pixConferido.valor) || 0)} e o pedido foi para ${fmt(Number(p.total) || 0)}: combine a diferença com ele.</p>`
+        : pixConf ? `<div class="pc-pix-conf"><small>PIX conferido às ${new Date(p.pixConferido.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.</small><button type="button" class="bt bt-sec" data-action="pix-desfazer" data-id="${id}">Desfazer</button></div>` : '';
     const retirada = p.modo === 'retirada';
     // ENTREGA HOJE FORA DA FEIRA (lib/frete.js): o cliente pagou o frete para não esperar a feira
     const fr = p.entrega && p.entrega.frete;
@@ -2211,6 +2233,7 @@ const cartaoDoPedido = (p) => {
                 ${dataFmt ? `<span class="pc-hora">${dataFmt}</span>` : ''}
             </div>
             ${infoSenha}
+            ${infoPix}
             ${infoDia}
             ${infoPreco}
             ${infoAcerto}
@@ -2895,7 +2918,7 @@ const renderBalanco = async (dias) => {
             porDia[rot] = (porDia[rot] || 0) + v;
         }
         // venda de balcão e pedido já concluído (arquivado) foram pagos na hora: não são "a receber"
-        if (p.pagamento?.status === 'PAID') jaPago += v; else if (p.origem === 'balcao' || p.status === 'arquivado') naEntrega += v; else aReceber += v;
+        if (p.pagamento?.status === 'PAID' || (p.pixConferido && p.pixConferido.em)) jaPago += v; else if (p.origem === 'balcao' || p.status === 'arquivado') naEntrega += v; else aReceber += v;
         (p.itens || []).forEach(i => {
             const q = Number(i.qtd) || 0;
             porProduto[i.nome] = (porProduto[i.nome] || 0) + q;

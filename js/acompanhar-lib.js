@@ -15,7 +15,27 @@ const HORAS_ACOMPANHA = 36;          // pedido mais velho que isso sai da faixa 
 const MAX_ACOMPANHA = 3;
 
 export const ehRetirada = (p) => !!p && p.modo === 'retirada';
-export const pagoPeloSite = (p) => !!(p && p.pagamento && p.pagamento.status === 'PAID');
+const centavos = (v) => Math.round((Number(v) || 0) * 100);
+/** PIX automático confirmado pelo banco, ou PIX pela chave que a equipe conferiu no extrato e marcou no painel. */
+export const pagoPeloSite = (p) => !!(p && ((p.pagamento && p.pagamento.status === 'PAID') || pixConferidoCobre(p)));
+/** A equipe marcou "PIX recebido" e o valor recebido cobre o total de agora. */
+export const pixConferidoCobre = (p) => !!(p && p.pixConferido && p.pixConferido.em && centavos(p.pixConferido.valor) >= centavos(p.total));
+/** A equipe marcou "PIX recebido", mas o pedido mudou depois e o total ficou maior: não oferecer o PIX cheio de novo. */
+export const pixConferidoMudou = (p) => !!(p && p.pixConferido && p.pixConferido.em && centavos(p.pixConferido.valor) < centavos(p.total));
+
+const HORAS_PIX_PLACA = 12;     // a plaquinha só abre o PIX de pedido feito há menos disso (pedido velho esquecido não vira cobrança)
+
+/**
+ * "Já paguei" que o cliente tocou NESTE aparelho (o site não tem como saber de PIX pela chave sozinho).
+ * informado = { em, total } guardado no aparelho. Devolve:
+ *   ''            não informou
+ *   'informado'   informou e o valor não mudou: não mostrar o PIX de novo (evita pagar duas vezes)
+ *   'mudou'       informou, mas o pedido ficou mais caro depois: falar com a banca, sem PIX cheio
+ */
+export function estadoDoInformado(informado, p) {
+    if (!informado || !informado.em) return '';
+    return centavos(p && p.total) > centavos(informado.total) ? 'mudou' : 'informado';
+}
 const senhaValida = (s) => /^\d{3}$/.test(String(s || ''));
 
 /** As etapas da linha do tempo: retirada termina em "Pronto"; entrega, em "A caminho". */
@@ -53,7 +73,7 @@ export function acompanhamento(p) {
     if (s === 'enviado') return { ...base, tom: 'caminho', ativo: true, texto: 'Seu pedido saiu para entrega.' };
     if (s === 'preparando') return { ...base, tom: 'separando', ativo: true, texto: ret ? 'A banca está separando. Avisamos aqui quando ficar pronto.' : 'A banca está separando seu pedido.' };
     if (s === 'aguardando_pesagem') return { ...base, tom: 'separando', ativo: true, texto: 'Seus itens estão sendo pesados para fechar o valor.' };
-    if (s === 'aguardando_pagamento' && !base.pago) return { ...base, tom: 'pagar', ativo: true, texto: 'Falta o pagamento para a banca começar.' };
+    if (s === 'aguardando_pagamento' && !base.pago && !pixConferidoMudou(p)) return { ...base, tom: 'pagar', ativo: true, texto: 'Falta o pagamento para a banca começar.' };
     return { ...base, tom: 'espera', ativo: true, texto: 'A banca recebeu seu pedido.' };
 }
 
@@ -77,7 +97,7 @@ export function chamouAgora(antes, depois) {
 
 /** Pedido com PIX ainda por pagar pelo site (a tela de pagamento decide se mostra o código). */
 export function temPixParaPagar(p) {
-    return !!p && String(p.pag || '').toUpperCase() === 'PIX' && !pagoPeloSite(p) && !p.temItensAPesar && !FINAIS.includes(p.status);
+    return !!p && String(p.pag || '').toUpperCase() === 'PIX' && !pagoPeloSite(p) && !pixConferidoMudou(p) && !p.temItensAPesar && !FINAIS.includes(p.status) && Number(p.total) > 0;
 }
 
 /** A banca acabou de pesar e o PIX ficou liberado (com o valor fechado da balança): vale um aviso curto. */
@@ -93,12 +113,14 @@ export function pixLiberouAgora(antes, depois) {
  *   'pagar'      um pedido com PIX por pagar: o código com o valor.
  *   'acompanhar' tem pedido aberto: a faixa aberta, com a etapa.
  */
-export function oQueAPlacaAbre(pedidos) {
+export function oQueAPlacaAbre(pedidos, { agora = Date.now(), informados = {} } = {}) {
     const abertos = (Array.isArray(pedidos) ? pedidos : []).filter((p) => p && acompanhamento(p).ativo);
     if (!abertos.length) return { tela: 'cardapio', pedido: null };
     const pronto = abertos.find((p) => acompanhamento(p).tom === 'pronto');
     if (pronto) return { tela: 'pronto', pedido: pronto };
-    const pagar = abertos.find(temPixParaPagar);
+    // PIX só com dado CONFIRMADO pelo servidor (nada de cópia velha do aparelho), de pedido recente, e que o cliente não disse que já pagou
+    const pagar = abertos.find((p) => temPixParaPagar(p) && p._doServidor !== false && !estadoDoInformado(informados[p._id || p.id], p)
+        && (() => { const t = Date.parse(p.data); return Number.isFinite(t) && agora - t < HORAS_PIX_PLACA * 3600000; })());
     if (pagar) return { tela: 'pagar', pedido: pagar };
     return { tela: 'acompanhar', pedido: abertos[0] };
 }
