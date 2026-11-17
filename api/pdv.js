@@ -25,6 +25,9 @@
 //      pronto  pedido PARA RETIRAR ficou pronto (status 'enviado'). Com a senha ligada (lib/senha.js), ganha a
 //              senha do dia (001 a 999), contada aqui dentro da transação: duas pessoas nunca pegam a mesma.
 //      chamar  chama a mesma senha de novo (o cliente não ouviu): a tela dele e a caixinha tocam outra vez.
+//      pix-recebido / pix-desfazer  a equipe conferiu no app do banco que o PIX pela chave da loja caiu (ou desfaz o
+//              engano). Fica em pedido.pixConferido (NÃO em pagamento.status, que é do PIX automático e do estorno):
+//              a tela do cliente passa a dizer "pago" e a plaquinha não abre mais o PIX dele.
 //
 //  POST { acao: 'impressao', op, pedidoId, versao, aparelho }
 //      Fila de impressão (lib/impressao.js): reservar → imprimir no aparelho → confirmar
@@ -284,7 +287,7 @@ async function pesagem(req, res, { tid, dec }) {
 async function ajuste(req, res, { tid, dec }) {
   const b = req.body || {}, pedidoId = String(b.pedidoId || ''), op = String(b.op || ''), por = dec.email || dec.uid;
   if (!/^[\w-]{6,80}$/.test(pedidoId)) return res.status(400).json({ error: 'Pedido inválido.' });
-  if (!['tirar', 'acrescentar', 'voltar', 'precos', 'pronto', 'chamar'].includes(op)) return res.status(400).json({ error: 'Ação desconhecida.' });
+  if (!['tirar', 'acrescentar', 'voltar', 'precos', 'pronto', 'chamar', 'pix-recebido', 'pix-desfazer'].includes(op)) return res.status(400).json({ error: 'Ação desconhecida.' });
   const item = b.item && typeof b.item === 'object' ? b.item : {};
   if (op === 'acrescentar' && (!/^[\w-]{1,80}$/.test(String(item.id || '')) || !['kg', 'un'].includes(item.tipo))) return res.status(400).json({ error: 'Escolha o produto e a quantidade.' });
   try {
@@ -309,6 +312,20 @@ async function ajuste(req, res, { tid, dec }) {
         if (senha) Object.assign(muda, { senha, senhaDia: dia, chamada: { vezes: 1, em, caixinha: modo === 'caixinha' } });
         t.update(pedidoRef, muda);
         return { status: 'enviado', senha, modo };
+      }
+
+      if (op === 'pix-recebido') {
+        const trava = Senha.travaDoPixRecebido(ped); if (trava) throw new Error(trava);
+        const em = agora.toISOString(), valor = Number(ped.total) || 0;
+        t.update(pedidoRef, { pixConferido: { em, por, valor }, ajustes: Ajuste.comRegistro(ped, { op: 'pix-recebido', por, em, valor }) });
+        return { pixConferido: { em, valor } };
+      }
+
+      if (op === 'pix-desfazer') {
+        if (!(ped.pixConferido && ped.pixConferido.em)) throw new Error('Este PIX não está marcado como recebido.');
+        const em = agora.toISOString();
+        t.update(pedidoRef, { pixConferido: null, ajustes: Ajuste.comRegistro(ped, { op: 'pix-desfazer', por, em }) });
+        return { pixConferido: null };
       }
 
       if (op === 'chamar') {

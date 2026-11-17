@@ -63,6 +63,18 @@ conferido com o exemplo oficial, mas nunca foi pago de verdade: faça um PIX de 
   e grave no NFC ou gere o QR Code com ele. Sem pedido aberto no celular, abre o cardápio. Com PIX por pagar, abre o PIX já com
   o valor. Com o pedido pronto, mostra a senha. O celular é reconhecido pelo navegador: quem fez o pedido em outro navegador
   (ex.: dentro do Instagram) não é reconhecido na plaquinha e vê o cardápio.
+- **Segurança do PIX pela plaquinha:**
+  - Cada celular só enxerga os próprios pedidos (regra do banco). Duas pessoas lendo a mesma plaquinha ao mesmo tempo não se
+    misturam: o link não carrega pedido nenhum.
+  - O PIX só abre com o dado confirmado pelo servidor (sem internet, mostra só o andamento), só de pedido feito há menos de
+    12 h e nunca antes da pesagem.
+  - **Já paguei** (na tela do PIX): o cliente avisa e a plaquinha não cobra de novo. Se o pedido mudar de valor depois,
+    a tela pede para falar com a banca, sem oferecer o PIX cheio.
+  - **PIX recebido** (no cartão do pedido, no painel): a equipe confere no app do banco e marca. A tela do cliente diz
+    "pago" e a plaquinha não cobra mais. O identificador do PIX (aparece no extrato) é o número do pedido: serve para achar
+    o pagamento feito por outra pessoa. Dá para desfazer. Cancelar um pedido com PIX recebido lembra de devolver o PIX.
+  - A tela de "Pedido registrado" se atualiza sozinha: pesou, tirou item ou cancelou, o PIX muda ou some na hora.
+  - PIX pela chave tem valor no código, mas alguns bancos deixam o cliente mudar o valor: confira o valor no extrato.
 
 ## 4c. Aviso de pedido novo no celular
 - No painel, botão **Avisos** no topo → **Ligar avisos neste aparelho** → **Mandar um aviso de teste**.
