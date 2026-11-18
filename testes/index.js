@@ -1553,6 +1553,24 @@ teste('motor: mesma quadra e lote em condomínios diferentes são clientes difer
   const r2 = N.normalizarPedidos([{ id: '1', data: d(1), nome: 'Ana', quadra: '5', lote: '3', itens: it }, { id: '2', data: d(8), nome: 'Ana', quadra: '5', lote: '3', condominio: 'Jardins Munique', itens: it }], []);
   assert.strictEqual(r2.clientes.length, 1, 'com 1 condomínio só, o pedido antigo é da mesma casa');
 });
+teste('aba Clientes: quem RETIRA na banca entra na lista (pelo telefone ou pelo aparelho); balcão sem dados não', () => {
+  const N = require(raiz('analytics/normalize'));
+  const it = [{ id: 'b', nome: 'B', qtd: 1, unidade: 'un', preco: 1 }], d = (n) => new Date(Date.UTC(2026, 10, n, 15)).toISOString();
+  const r = N.normalizarPedidos([
+    { id: '1', data: d(1), nome: 'Carla', modo: 'retirada', telefone: '(61) 99999-1111', userId: 'u1', total: 50, itens: it },
+    { id: '2', data: d(9), nome: 'Carla', modo: 'retirada', telefone: '5561999991111', userId: 'u2', total: 30, itens: it },   // outro aparelho, mesmo telefone
+    { id: '3', data: d(9), nome: 'Patrícia', modo: 'retirada', userId: 'u3', total: 20, itens: it },                          // sem telefone: o aparelho
+    { id: '4', data: d(9), nome: 'Balcão', origem: 'balcao', userId: 'equipe:x', total: 9, itens: it },                       // venda de balcão sem dados
+  ], []);
+  const seguidos = r.clientes.filter((c) => !c.anonimo);
+  assert.strictEqual(seguidos.length, 2, 'Carla (2 pedidos, mesmo telefone) e Patrícia');
+  const carla = seguidos.find((c) => c.nome === 'Carla');
+  assert.strictEqual(carla.nPedidos, 2); assert.strictEqual(carla.gasto, 80); assert.strictEqual(carla.retirada, true);
+  assert.ok(r.clientes.find((c) => c.nome === 'Balcão').anonimo, 'balcão sem telefone continua fora da lista');
+  assert.ok(N.chaveCliente({ quadra: '5', lote: '3', telefone: '61999991111' }).startsWith('end:'), 'com endereço, continua sendo pela casa');
+  const { linhaEndereco } = require(raiz('lib/endereco'));
+  assert.strictEqual(linhaEndereco({ modo: 'retirada', quadra: '', lote: '' }), 'Retirada na banca');
+});
 teste('motor: dia com falta de produto sobe a previsão; métricas novas batem com a conta à mão', () => {
   const D = require(raiz('analytics/demandForecast')), E = require(raiz('analytics/evaluation'));
   const abertos = new Set([1, 2, 3, 4, 5, 6]), vendas = new Map(), faltas = new Set();

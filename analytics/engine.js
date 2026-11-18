@@ -161,7 +161,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     for (const nome of ['hoje', 'amanha', 'proximoDia']) {
       const h = r.horizontes[nome]; if (!h || !h._exp) continue;
       const d = hz[nome][0];
-      const top = buDias[d] ? buDias[d].clientes.map((c) => ({ c, e: (c.itens.find((i) => i.id === p.id) || {}).e || 0 })).filter((x) => x.e > 0.01).sort((a, b) => b.e - a.e).slice(0, 3).map((x) => `${(x.c.nome || 'Cliente').split(' ')[0]} (${x.c.formatoEndereco === 'rua' || x.c.formatoEndereco === 'livre' ? `${x.c.quadra}, ${x.c.lote}` : `Q${x.c.quadra}·L${x.c.lote}`})`) : [];
+      const top = buDias[d] ? buDias[d].clientes.map((c) => ({ c, e: (c.itens.find((i) => i.id === p.id) || {}).e || 0 })).filter((x) => x.e > 0.01).sort((a, b) => b.e - a.e).slice(0, 3).map((x) => `${(x.c.nome || 'Cliente').split(' ')[0]} (${x.c.modo === 'retirada' ? 'retira na banca' : x.c.formatoEndereco === 'rua' || x.c.formatoEndereco === 'livre' ? `${x.c.quadra}, ${x.c.lote}` : `Q${x.c.quadra}·L${x.c.lote}`})`) : [];
       h.explicacao = D.explicarDemanda(p.nome, h, r.tendencia, wBU, p.unidade, dowNome(d), top);
       delete h._exp;
     }
@@ -194,7 +194,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     esperados[nome] = {
       dia: isoDeDia(d), pedidosEsperados: r2(b.pedidos),
       clientes: b.clientes.sort((x, y) => y.p - x.p).slice(0, 25).map((c) => ({
-        id: c.id, nome: c.nome, condominio: c.condominio || '', formatoEndereco: c.formatoEndereco || 'ql', quadra: c.quadra, lote: c.lote, p: c.p, diasDesdeUltima: hoje - c.ultimoDia, intervaloMedio: c.nuMed, jaComprouHoje: nome === 'hoje' && jaHoje.has(c.id),
+        id: c.id, nome: c.nome, condominio: c.condominio || '', formatoEndereco: c.formatoEndereco || 'ql', quadra: c.quadra, lote: c.lote, ...(c.modo === 'retirada' ? { modo: 'retirada' } : {}), p: c.p, diasDesdeUltima: hoje - c.ultimoDia, intervaloMedio: c.nuMed, jaComprouHoje: nome === 'hoje' && jaHoje.has(c.id),
         itens: c.itens.sort((x, y) => y.e - x.e).slice(0, 5).map((i) => ({ id: i.id, nome: (produtos.get(i.id) || {}).nome || i.id, p: S.arred(i.p, 2), qtd: i.qtd })),
       })),
     };
@@ -244,7 +244,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
   // dados compactos para a API pública / painel (sem nada sensível)
   const catalogoCompacto = {}; produtos.forEach((p) => { catalogoCompacto[p.id] = { nome: p.nome, un: p.unidade, cat: p.cat, ativo: p.ativo }; });
   const feiraDoCli = new Map(clientes.map((c) => [c.id, c.feira || '']));
-  const indiceClientes = modelos.map((m) => ({ id: m.id, nome: m.nome, fe: feiraDoCli.get(m.id) || '', condominio: m.condominio || '', formatoEndereco: m.formatoEndereco || 'ql', quadra: m.quadra, lote: m.lote, n: m.nVisitas, nivel: m.nivel, ult: isoDeDia(m.ultimoDia),
+  const indiceClientes = modelos.map((m) => ({ id: m.id, nome: m.nome, fe: feiraDoCli.get(m.id) || '', condominio: m.condominio || '', formatoEndereco: m.formatoEndereco || 'ql', quadra: m.quadra, lote: m.lote, ...(m.modo === 'retirada' ? { modo: 'retirada' } : {}), n: m.nVisitas, nivel: m.nivel, ult: isoDeDia(m.ultimoDia),
     // CRM (aba Clientes): primeira compra, intervalo típico, gasto, ticket, produtos mais comprados e contato
     pri: isoDeDia(m.primeiroDia), cada: m.nuMed, gasto: m.gasto, ticket: m.ticket, ped: m.nPedidos,
     tp: Object.entries(m.prod || {}).sort((a, b) => (b[1].n || 0) - (a[1].n || 0)).slice(0, 6).map(([id]) => id),

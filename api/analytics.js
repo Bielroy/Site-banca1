@@ -178,7 +178,7 @@ module.exports = async function handler(req, res) {
       const itens = K.pontuarCliente(m, g.global, hoje, { produtos: catalogo, ativos, explicar: 12 }).slice(0, 12)
         .map((o) => ({ id: o.id, nome: (g.catalogo[o.id] || {}).nome || o.id, p: Math.round(o.p * 100) / 100, conf: Math.round(o.conf * 100) / 100, confRotulo: K.rotuloConfianca(o.conf), qtd: o.qtd, motivos: o.motivos, tags: o.tags }));
       const perfil = {
-        nome: m.nome, condominio: m.condominio || '', formatoEndereco: m.formatoEndereco || 'ql', quadra: m.quadra, lote: m.lote, nivel: m.nivel, pedidos: m.nVisitas, ultimaCompra: isoDeDia(m.ultimoDia),
+        nome: m.nome, condominio: m.condominio || '', formatoEndereco: m.formatoEndereco || 'ql', quadra: m.quadra, lote: m.lote, ...(m.modo === 'retirada' ? { modo: 'retirada' } : {}), nivel: m.nivel, pedidos: m.nVisitas, ultimaCompra: isoDeDia(m.ultimoDia),
         intervaloMedioDias: m.nuMedia, intervaloMedianoDias: m.nuMed, intervaloDesvio: m.nuDp, diaMaisFrequente: K.NOMES_DOW[m.dowTop],
         juntos: (m.juntos || []).map((j) => ({ a: (g.catalogo[j.a] || {}).nome || j.a, b: (g.catalogo[j.b] || {}).nome || j.b, n: j.n })),
         abandonados: Object.entries(m.prod).filter(([, p]) => p.abandonado).map(([id]) => (g.catalogo[id] || {}).nome || id),

@@ -47,8 +47,14 @@ const normCond = (s) => semAcento(s).replace(/[^a-z0-9]+/g, ' ').trim();
 // conhecido a chave é a ANTIGA (só quadra|lote), para o histórico não se partir.
 const chaveCliente = (p, cond = normCond(p.condominio)) => {
   const q = normEnd(p.quadra), l = normEnd(p.lote);
-  if (!q && !l) return `ped:${p.id || Math.random()}`;
-  return cond ? `end:${cond}|${q}|${l}` : `end:${q}|${l}`;
+  if (q || l) return cond ? `end:${cond}|${q}|${l}` : `end:${q}|${l}`;
+  // sem endereço (retirada na banca ou na feira): o TELEFONE identifica a pessoa; sem telefone, o
+  // aparelho de onde ela pediu pelo site. Sem nenhum dos dois (balcão sem dados), não dá para acompanhar.
+  const tel = String(p.telefone || '').replace(/\D/g, '');
+  if (tel.length >= 10) return `tel:${tel.slice(-11)}`;
+  const uid = String(p.userId || '');
+  if (p.modo === 'retirada' && uid && uid !== 'anonimo' && !uid.startsWith('equipe:')) return `uid:${uid}`;
+  return `ped:${p.id || Math.random()}`;
 };
 
 // Pedidos de ANTES do campo de condomínio não trazem esse dado. Se a mesma
@@ -137,7 +143,7 @@ function normalizarPedidos(pedidos, catalogo = []) {
     const cond = condominioDoPedido(p, condsVistos);
     const chave = chaveCliente(p, cond.chave); const cid = idDeChave(chave);
     // venda sem endereço (balcão, quase sempre): conta nas vendas do dia, mas não é um "cliente" que dê para acompanhar
-    if (!clientes.has(cid)) clientes.set(cid, { id: cid, anonimo: chave.startsWith('ped:'), resumo: p.resumoDoDia === true, nome: '', condominio: '', formatoEndereco: 'ql', quadra: '', lote: '', telefone: '', feira: '', aceitaOfertas: false, gasto: 0, nPedidos: 0, uids: new Set(), visitas: new Map() });
+    if (!clientes.has(cid)) clientes.set(cid, { id: cid, anonimo: chave.startsWith('ped:'), retirada: !chave.startsWith('end:'), resumo: p.resumoDoDia === true, nome: '', condominio: '', formatoEndereco: 'ql', quadra: '', lote: '', telefone: '', feira: '', aceitaOfertas: false, gasto: 0, nPedidos: 0, uids: new Set(), visitas: new Map() });
     const cli = clientes.get(cid);
     cli.nome = p.nome || cli.nome; cli.quadra = p.quadra || cli.quadra; cli.lote = p.lote || cli.lote;   // o mais recente vence
     cli.condominio = cond.nome || cli.condominio; if (p.formatoEndereco) cli.formatoEndereco = p.formatoEndereco;
