@@ -65,9 +65,11 @@
 @media (prefers-reduced-motion: reduce) { .acomp-faixa, .acomp-folha { animation: none !important; } }
 
 /* PIX pela chave (js/loja.js): "Já paguei", aviso da plaquinha, pago e avisos de valor */
-.pix-d-placa { margin: 12px 0 0; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--forest) 8%, transparent); font-size: .88rem; line-height: 1.4; }
-.btn-pix-paguei { display: block; width: 100%; margin-top: 12px; min-height: 46px; border-radius: 14px; border: 2px solid var(--forest); background: transparent; color: var(--forest-texto, var(--forest)); font: inherit; font-weight: 700; cursor: pointer; }
+.pix-d-placa { display: flex; align-items: flex-start; gap: 10px; margin: 0; padding: 12px 18px 14px; background: color-mix(in srgb, var(--pix, #17877c) 6%, var(--superficie, #fff)); border-top: 1px solid color-mix(in srgb, var(--pix, #17877c) 18%, transparent); font-size: .86rem; line-height: 1.4; color: var(--text-mid); }
+.pix-d-placa svg { flex: none; width: 26px; height: 26px; color: var(--pix, #17877c); margin-top: 1px; }
+.pix-d-placa b { color: var(--text-dark, #1d1a22); }
+.btn-pix-paguei { display: block; width: 100%; min-height: 50px; border-radius: 14px; border: 2px solid var(--pix, var(--forest)); background: var(--superficie, #fff); color: var(--pix, var(--forest-texto, var(--forest))); font: inherit; font-size: 1.02rem; font-weight: 800; cursor: pointer; }
+.btn-pix-paguei--leve { min-height: 46px; margin-top: 12px; border-width: 1.5px; font-size: .95rem; }
 .btn-pix-paguei:active { transform: scale(.98); }
-.pix-informado .pix-d-nota { margin: 6px 0 0; }
 .pix-aviso { margin: 10px 0; padding: 12px 14px; border-radius: 14px; background: #fff4e5; color: #7a3e00; border: 1px solid #f3c58a; font-size: .9rem; line-height: 1.4; }
 .pix-pago-ok { margin: 10px 0; padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--success, #16a34a) 12%, transparent); color: var(--success, #15803d); font-weight: 700; }
