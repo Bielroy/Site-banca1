@@ -121,20 +121,34 @@ const passouDoLimite = (quem, max = 20, janelaMs = 60000) => H.passouNaMemoria(`
 // TETOS DE GASTO DO CHAT (cada mensagem leva o catálogo inteiro para a IA, então cada uma custa).
 //   por loja, por dia: 300 (era 1.500). A plataforma muda pela variável CHAT_LIMITE_DIA (todas as lojas) ou pelo campo
 //                      limiteChatDia na ficha da loja (tenants/{loja}; só a plataforma grava nesse documento).
-//   por pessoa (login anônimo da loja), por dia: 30. Sem login, por conexão: 90.
-const CHAT_LIMITE_DIA_PADRAO = 300, CHAT_POR_LOGIN_DIA = 30, CHAT_SEM_LOGIN_DIA = 90;
+//   por pessoa (login anônimo da loja), por dia: 30.
+//   por conexão, por dia: 90, SEMPRE (com ou sem login: criar logins novos não passa daqui).
+//   RESERVA: o último 1/3 do teto da loja só atende cliente conhecido (login com mais de 1 dia, ou que já fez pedido).
+//            Quem gasta o chat com logins novos esgota só os 2/3 livres; a clientela de sempre continua sendo atendida.
+const CHAT_LIMITE_DIA_PADRAO = 300, CHAT_POR_LOGIN_DIA = 30, CHAT_POR_CONEXAO_DIA = 90, LOGIN_ANTIGO_MS = 24 * 3600 * 1000;
+/** Até quanto do teto do dia qualquer um usa; o resto (1/3) fica para cliente conhecido. */
+const livreDoChat = (teto) => teto - Math.ceil(teto / 3);
 function tetoDoChat(ficha) {
   const daFicha = Number(ficha && ficha.limiteChatDia);
   if (Number.isInteger(daFicha) && daFicha >= 1 && daFicha <= 10000) return daFicha;
   const doAmbiente = Number(process.env.CHAT_LIMITE_DIA);
   return Number.isFinite(doAmbiente) && doAmbiente >= 1 ? Math.floor(doAmbiente) : CHAT_LIMITE_DIA_PADRAO;
 }
-// uid do login anônimo da cliente (o ia.js manda o token). Token inválido ou ausente: '' (conta pela conexão).
-async function uidDoChat(req) {
+// login anônimo da cliente (o ia.js manda o token): { uid, desde (ms) }. Token inválido ou ausente: null (conta só pela conexão).
+async function loginDoChat(req) {
   const tk = H.tokenDe(req);
-  if (!tk) return '';
-  try { const dec = await admin.auth().verifyIdToken(tk); return typeof dec.uid === 'string' ? dec.uid : ''; }
-  catch (e) { return ''; }
+  if (!tk) return null;
+  try {
+    const dec = await admin.auth().verifyIdToken(tk);
+    return typeof dec.uid === 'string' && dec.uid ? { uid: dec.uid, desde: Number(dec.auth_time) > 0 ? Number(dec.auth_time) * 1000 : 0 } : null;
+  } catch (e) { return null; }
+}
+// Cliente CONHECIDO: o login existe há mais de 1 dia, ou já fez pedido nesta loja (uma leitura, só quando a reserva é usada).
+async function clienteConhecido(db, tid, login) {
+  if (!login) return false;
+  if (login.desde > 0 && Date.now() - login.desde > LOGIN_ANTIGO_MS) return true;
+  try { return !(await T.tcol(db, tid, 'pedidos').where('userId', '==', login.uid).limit(1).get()).empty; }
+  catch (e) { return false; }
 }
 
 // ---------------------------------------------------------------------
@@ -525,17 +539,20 @@ module.exports = async function handler(req, res) {
         if (tidChat !== T.TENANT_PADRAO && !(loja.ficha.modulos && loja.ficha.modulos.ia === true)) return semChat(403, 'O ajudante não está ligado nesta loja.');
         // Por conexão, contado no banco (vale para todas as cópias do servidor): 40 mensagens em 10 minutos.
         if (!(await P.limitar(admin.firestore(), 'ia-chat', `${tidChat}|${ip}`, 40, 600))) return semChat(429, 'Muitas mensagens seguidas. Aguarde alguns minutos.');
-        // Teto por PESSOA (login anônimo da loja): 30 mensagens por dia. Sem login (versão antiga da página guardada no
-        // celular, ou o login falhou), conta pela conexão, com um teto um pouco maior (Wi-Fi da feira junta muita gente).
-        const uidChat = await uidDoChat(req);
-        const [chavePessoa, tetoPessoa] = uidChat ? [`${tidChat}|${uidChat}`, CHAT_POR_LOGIN_DIA] : [`${tidChat}|ip:${ip}`, CHAT_SEM_LOGIN_DIA];
-        if (!(await P.limitar(admin.firestore(), 'ia-chat-dia', chavePessoa, tetoPessoa, 86400))) return semChat(429, 'Você já conversou bastante com o ajudante hoje. Para continuar, chame a loja pelo WhatsApp.');
+        // Teto diário por CONEXÃO (sempre, com ou sem login) e por PESSOA (login anônimo da loja).
+        const dbc = admin.firestore(), login = await loginDoChat(req), cansou = 'Você já conversou bastante com o ajudante hoje. Para continuar, chame a loja pelo WhatsApp.';
+        if (!(await P.limitar(dbc, 'ia-chat-dia', `${tidChat}|ip:${ip}`, CHAT_POR_CONEXAO_DIA, 86400))) return semChat(429, cansou);
+        if (login && !(await P.limitar(dbc, 'ia-chat-dia', `${tidChat}|${login.uid}`, CHAT_POR_LOGIN_DIA, 86400))) return semChat(429, cansou);
         // Teto diário por loja: o chat é aberto ao público, então alguém mal-intencionado poderia gastar a cota da IA.
-        const teto = tetoDoChat(fichaChat), dia = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
-        const usoRef = T.docDe(admin.firestore(), tidChat, `uso_ia/${dia}`);
-        const ok = await admin.firestore().runTransaction(async (t) => {
+        // O último 1/3 fica reservado para cliente conhecido (ver livreDoChat).
+        const teto = tetoDoChat(fichaChat), livre = livreDoChat(teto), dia = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+        const usoRef = T.docDe(dbc, tidChat, `uso_ia/${dia}`);
+        const usados = (((await usoRef.get()).data()) || {}).chat || 0;
+        const conhecido = Number(usados) >= livre ? await clienteConhecido(dbc, tidChat, login) : false;
+        const meuTeto = conhecido ? teto : livre;
+        const ok = await dbc.runTransaction(async (t) => {
           const s = await t.get(usoRef), n = (s.exists && Number(s.data().chat)) || 0;
-          if (n >= teto) return false;
+          if (n >= meuTeto) return false;
           t.set(usoRef, { chat: n + 1, dia }, { merge: true }); return true;
         });
         if (!ok) return semChat(429, 'O ajudante atingiu o limite de hoje. Chame a loja pelo WhatsApp.');
@@ -737,5 +754,6 @@ module.exports = async function handler(req, res) {
 };
 module.exports.htmlSimples = htmlSimples;
 module.exports.tetoDoChat = tetoDoChat;
+module.exports.livreDoChat = livreDoChat;
 module.exports.promptDoChat = promptDoChat;
 module.exports.vendasLimpas = vendasLimpas;

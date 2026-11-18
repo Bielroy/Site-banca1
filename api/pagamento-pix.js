@@ -47,6 +47,7 @@ const PAGBANK_BASE_URL = process.env.PAGBANK_ENV === 'sandbox'
   : 'https://api.pagseguro.com';
 
 const paraCentavos = (v) => Math.round(Number(v) * 100);
+const QR_PAGBANK_MIN = 15;   // validade do QR do PagBank (ele não deixa cancelar um QR antes de vencer)
 
 // ---------------------------------------------------------------------
 // CORS — lista de origens confiáveis
@@ -86,8 +87,9 @@ async function conferir(res, tid, pedidoId, dec, token) {
   if (pedido.userId !== dec.uid && !T.temPapel(dec, tid, EQUIPE_DO_PIX)) return res.status(404).json({ error: 'Pedido não encontrado.' });
   if (pg.status === 'PAID') return res.status(200).json({ pago: true });
   // as ordens mais recentes primeiro (no máximo 3 consultas por vez)
-  const ordens = [...new Set([pg.orderId].concat(Array.isArray(pg.ordens) ? pg.ordens.slice().reverse() : []).filter((x) => typeof x === 'string' && x))].slice(0, 3);
+  const ordens = [...new Set([pg.orderId].concat(Array.isArray(pg.ordens) ? pg.ordens.slice().reverse() : []).filter((x) => typeof x === 'string' && x && !PagBank.ordensPagasDe(pg).includes(x)))].slice(0, 3);   // as já pagas não precisam de consulta
   for (const id of ordens) {
+    if (PagBank.ordensPagasDe(pg).includes(id)) continue;                 // já entrou na soma
     const { order } = await PagBank.consultarOrdem(token, id);
     if (!order || !(order.charges || []).some((c) => c && c.status === 'PAID')) continue;
     const aviso = await PagBank.aplicarOrdem(db, order);
@@ -110,8 +112,9 @@ async function conferirAsaas(res, tid, pedidoId, dec, cfg) {
   const pedido = snap.data(), pg = pedido.pagamento || {};
   if (pedido.userId !== dec.uid && !T.temPapel(dec, tid, EQUIPE_DO_PIX)) return res.status(404).json({ error: 'Pedido não encontrado.' });
   if (pg.status === 'PAID') return res.status(200).json({ pago: true });
-  const ids = [...new Set([pg.orderId].concat(Array.isArray(pg.ordens) ? pg.ordens.slice().reverse() : []).filter((x) => typeof x === 'string' && Asaas.ID_COBRANCA.test(x)))].slice(0, 3);
+  const ids = [...new Set([pg.orderId].concat(Array.isArray(pg.ordens) ? pg.ordens.slice().reverse() : []).filter((x) => typeof x === 'string' && Asaas.ID_COBRANCA.test(x) && !PagBank.ordensPagasDe(pg).includes(x)))].slice(0, 3);
   for (const id of ids) {
+    if (PagBank.ordensPagasDe(pg).includes(id)) continue;                 // já entrou na soma
     const { cobranca } = await Asaas.consultarCobranca(cfg, id);
     if (!cobranca || !Asaas.PAGOS.includes(cobranca.status)) continue;
     const aviso = await Asaas.aplicarCobranca(db, cobranca);
@@ -125,10 +128,27 @@ async function conferirAsaas(res, tid, pedidoId, dec, cfg) {
   return res.status(200).json({ pago: !!(depois.pagamento && depois.pagamento.status === 'PAID') });
 }
 
+/**
+ * O pagamento do pedido depois de sair um QR NOVO. Guarda:
+ *   ordens       todas as ordens/cobranças deste pedido (se a cliente pagar um QR antigo, o aviso é reconhecido);
+ *   valores      quanto cada uma cobra (para somar certo quando o banco não disser o valor pago);
+ *   ordensPagas, valorPagoC   o que já entrou (pedido pago em parte: o QR novo cobra só o que falta).
+ */
+function pagamentoComQrNovo(pg, { provedor, id, valorC, extra = {} }) {
+  const ordens = [...new Set([...(Array.isArray(pg.ordens) ? pg.ordens : []), pg.orderId, id].filter((x) => typeof x === 'string' && x))].slice(-12);
+  const antes = { ...(pg.orderId && Number.isFinite(Number(pg.valorC)) ? { [pg.orderId]: Number(pg.valorC) } : {}), ...(pg.valores && typeof pg.valores === 'object' ? pg.valores : {}) };
+  const valores = Object.fromEntries(Object.entries({ ...antes, [id]: valorC }).filter(([k]) => ordens.includes(k)));
+  const pagas = PagBank.ordensPagasDe(pg);
+  return { provedor, orderId: id, ordens, valores, valorC, status: 'WAITING', criadoEm: new Date().toISOString(),
+    ...(pagas.length ? { ordensPagas: pagas, valorPagoC: PagBank.jaPagoC(pg) } : {}), ...extra };
+}
+/** Quanto o próximo QR cobra, em centavos: o total menos o que já entrou (pedido pago em parte). */
+const aCobrarDe = (pedido) => paraCentavos(pedido.total || 0) - PagBank.jaPagoC(pedido.pagamento || {});
+
 const respostaQr = (id, qr) => ({ sucesso: true, orderId: id, qr_code: qr.payload, qr_code_url: qr.imagem ? `data:image/png;base64,${qr.imagem}` : null });
 
 async function gerarAsaas(res, { tid, pedidoId, pedido, pedidoRef, cpf, email, cfg, carteira }) {
-  const pg0 = pedido.pagamento || {}, totalC = paraCentavos(pedido.total || 0);
+  const pg0 = pedido.pagamento || {}, totalC = aCobrarDe(pedido);          // pedido pago em parte: só o que falta
   // QR ainda aberto deste pedido no Asaas: reaproveita (cliente reabriu a tela ou tocou 2 vezes).
   // Só se o valor dele for o TOTAL DE AGORA (a pesagem ou um ajuste pode ter mudado o pedido) e ainda vencer hoje ou depois.
   if (pg0.provedor === 'asaas' && pg0.status === 'WAITING' && Asaas.ID_COBRANCA.test(String(pg0.orderId || '')) && PagBank.qrAindaServe({ qrC: pg0.valorC, totalC })) {
@@ -141,9 +161,8 @@ async function gerarAsaas(res, { tid, pedidoId, pedido, pedidoRef, cpf, email, c
   }
   const d = String(cpf || '').replace(/\D/g, '');
   if (d.length !== 11) return res.status(400).json({ error: 'Informe o CPF de quem vai pagar (11 números). O banco exige para gerar o PIX.' });
-  const valor = Number(pedido.total || 0);
-  if (!Number.isFinite(valor) || valor <= 0 || valor > 100000) return res.status(400).json({ error: 'Pedido sem valor cobrável via PIX.' });
-  const valorC = paraCentavos(valor);
+  const valorC = totalC;
+  if (!Number.isFinite(valorC) || valorC <= 0 || valorC > 10000000) return res.status(400).json({ error: 'Pedido sem valor cobrável via PIX.' });
 
   const criada = await Asaas.criarCobrancaPix(cfg, {
     nome: Cofre.abrir(pedido.nome, tid, 'nome') || 'Cliente', cpf: d,
@@ -163,12 +182,17 @@ async function gerarAsaas(res, { tid, pedidoId, pedido, pedidoRef, cpf, email, c
     const atualSnap = await t.get(pedidoRef); if (!atualSnap.exists) return;
     const atual = atualSnap.data(), pg = atual.pagamento || {};
     if (pg.status === 'PAID') return;
-    const ordens = [...new Set([...(Array.isArray(pg.ordens) ? pg.ordens : []), pg.orderId, criada.id].filter((x) => typeof x === 'string' && x))].slice(-6);
     t.update(pedidoRef, {
       ...(atual.status === 'pendente' ? { status: 'aguardando_pagamento' } : {}),
-      pagamento: { provedor: 'asaas', orderId: criada.id, ordens, valorC, status: 'WAITING', criadoEm: new Date().toISOString(), ...(carteira ? { split: true } : {}) },
+      pagamento: pagamentoComQrNovo(pg, { provedor: 'asaas', id: criada.id, valorC, extra: carteira ? { split: true } : {} }),
     });
   });
+  // A cobrança ANTERIOR (de outro valor) ainda não foi paga: apaga no Asaas, para o QR antigo não ser pago também.
+  // Se não der para apagar, ela continua na lista do pedido: paga, entra na soma e a equipe é avisada.
+  if (pg0.provedor === 'asaas' && pg0.orderId && pg0.orderId !== criada.id && !PagBank.ordensPagasDe(pg0).includes(pg0.orderId)) {
+    try { if (!(await Asaas.cancelarCobranca(cfg, pg0.orderId))) console.warn('[pix] Asaas não apagou a cobrança antiga', pg0.orderId); }
+    catch (e) { console.warn('[pix] Asaas: falha ao apagar a cobrança antiga:', e && e.message); }
+  }
   return res.status(200).json(respostaQr(criada.id, qr));
 }
 
@@ -235,8 +259,8 @@ module.exports = async function handler(req, res) {
     if (!(await P.limitar(db, 'pix', `${tid}|${dec.uid}`, 6, 600)) || !(await P.limitar(db, 'pix-loja', tid, 300, 86400))) return res.status(429).json({ error: 'Muitos códigos PIX gerados em pouco tempo. Aguarde alguns minutos ou combine pelo WhatsApp.' });
     if (pedido.temItensAPesar) return res.status(409).json({ error: 'Este pedido ainda tem itens a pesar. O PIX sai depois da pesagem.' });
 
-    // Já pago? Não gera novo QR.
-    if (pedido.pagamento && pedido.pagamento.status === 'PAID') {
+    // Já pago? Não gera novo QR. (Pago em parte: o QR novo cobra só o que falta; se não falta nada, também não gera.)
+    if ((pedido.pagamento && pedido.pagamento.status === 'PAID') || (PagBank.jaPagoC(pedido.pagamento || {}) > 0 && aCobrarDe(pedido) <= 0)) {
       return res.status(409).json({ error: 'Este pedido já foi pago.' });
     }
     if (cfgAsaas) return gerarAsaas(res, { tid, pedidoId, pedido, pedidoRef, cpf, email, cfg: cfgAsaas, carteira });
@@ -245,7 +269,7 @@ module.exports = async function handler(req, res) {
     // gerar QR duplicado se o cliente reabrir o modal / clicar 2x).
     // Só se o QR for do TOTAL DE AGORA e ainda não venceu: depois da pesagem ou de um ajuste
     // (item tirado/acrescentado) o QR velho cobraria o valor antigo. Aí sai um QR novo.
-    const totalAgoraC = paraCentavos(pedido.total || 0);
+    const totalAgoraC = aCobrarDe(pedido);                                   // pedido pago em parte: só o que falta
     if (pedido.pagamento && pedido.pagamento.orderId && pedido.pagamento.status === 'WAITING' && PagBank.qrAindaServe({ qrC: pedido.pagamento.valorC, totalC: totalAgoraC })) {
       const check = await comPrazo(`${PAGBANK_BASE_URL}/orders/${encodeURIComponent(pedido.pagamento.orderId)}`, {
         headers: { Authorization: `Bearer ${TOKEN_PAGBANK}` },
@@ -263,11 +287,12 @@ module.exports = async function handler(req, res) {
       // Se falhar a consulta, o QR venceu ou o valor não bate, segue e cria um novo abaixo.
     }
 
-    const valor = Number(pedido.total || 0);
-    if (!Number.isFinite(valor) || valor <= 0 || valor > 100000) return res.status(400).json({ error: 'Pedido sem valor cobrável via PIX.' });
-
-    const valorCentavos = paraCentavos(valor);
-    const expiracao = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min
+    const valorCentavos = totalAgoraC;
+    if (!Number.isFinite(valorCentavos) || valorCentavos <= 0 || valorCentavos > 10000000) return res.status(400).json({ error: 'Pedido sem valor cobrável via PIX.' });
+    // O PagBank não tem como cancelar um QR que ainda não foi pago: quando sai um QR novo (o valor mudou), o antigo vale
+    // até vencer. Por isso a validade é curta (15 min; era 30) e todas as ordens ficam na lista do pedido: se o QR antigo
+    // for pago, o valor entra na soma e a equipe é avisada (lib/pagbank.js, aplicarOrdem: "a mais" ou "em dobro").
+    const expiracao = new Date(Date.now() + QR_PAGBANK_MIN * 60 * 1000).toISOString();
 
     const customer = {
       name: Cofre.abrir(pedido.nome, tid, 'nome') || 'Cliente Banca',
@@ -340,10 +365,9 @@ module.exports = async function handler(req, res) {
       const atualSnap = await t.get(pedidoRef); if (!atualSnap.exists) return;
       const atual = atualSnap.data(), pg = atual.pagamento || {};
       if (pg.status === 'PAID') return;
-      const ordens = [...new Set([...(Array.isArray(pg.ordens) ? pg.ordens : []), pg.orderId, data.id].filter((x) => typeof x === 'string' && x))].slice(-6);
       t.update(pedidoRef, {
         ...(atual.status === 'pendente' ? { status: 'aguardando_pagamento' } : {}),
-        pagamento: { provedor: 'pagbank', orderId: data.id, ordens, valorC: valorCentavos, status: 'WAITING', criadoEm: new Date().toISOString() },
+        pagamento: pagamentoComQrNovo(pg, { provedor: 'pagbank', id: data.id, valorC: valorCentavos }),
       });
     });
 
