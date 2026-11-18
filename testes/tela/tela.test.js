@@ -149,7 +149,7 @@ teste('PIX no pedido: cartão grande "Falta pagar" acima do WhatsApp, copia o c�
   await pagina.click('#pag-chips .pag-chip[data-pag="PIX"]');
   await pagina.click('#btn-enviar-pedido');
   await pagina.waitForSelector('#sucesso-pix .pix-destaque', { timeout: 6000 });
-  if (process.env.PRINT_PIX) { await pagina.waitForTimeout(700); await pagina.screenshot({ path: process.env.PRINT_PIX }); }
+  if (process.env.PRINT_PIX) { await pagina.setViewportSize({ width: 390, height: 1700 }); await pagina.waitForTimeout(700); await pagina.screenshot({ path: process.env.PRINT_PIX }); await pagina.setViewportSize({ width: 390, height: 844 }); }
   // o cartão fica ANTES do botão do WhatsApp, e o botão vira o passo final
   assert.ok(await pagina.evaluate(() => { const p = document.getElementById('sucesso-pix'), w = document.getElementById('sucesso-whatsapps'); return !!(p.compareDocumentPosition(w) & Node.DOCUMENT_POSITION_FOLLOWING); }), 'PIX acima do WhatsApp');
   assert.match(await pagina.locator('.pix-d-total').innerText(), /R\$\s*14,00/);
@@ -270,21 +270,22 @@ teste('plano B: servidor fora do ar (503) tenta de novo com a MESMA chave e, sem
   await ctx.route('**/api/checkout', (r) => { const c = JSON.parse(r.request().postData() || '{}'); if (c.acao) return r.continue(); tentativas.push(c.idempotencyKey); return r.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"fora do ar"}' }); });
   await abrirCheckoutComOvos(pagina); await preencherPedido(pagina, 'Cliente Plano B');
   await pagina.click('#btn-enviar-pedido');
-  await pagina.locator('#modal-reserva.aberto').waitFor({ timeout: 8000 });
-  assert.strictEqual(tentativas.length, 2, 'uma tentativa a mais, só uma');
-  assert.ok(tentativas[0] && tentativas[0] === tentativas[1], 'a mesma chave nas duas (o servidor nunca cria dois)');
+  await pagina.locator('#modal-reserva.aberto').waitFor({ timeout: 15000 });
+  assert.strictEqual(tentativas.length, 3, 'um envio, um reenvio e mais um silencioso antes de mostrar o WhatsApp');
+  assert.ok(tentativas[0] && tentativas.every((k) => k === tentativas[0]), 'a mesma chave em todas (o servidor nunca cria dois)');
   const href = await pagina.getAttribute('#reserva-zap', 'href');
   assert.ok(href.startsWith('https://wa.me/5562999990000?text='), href);
   const texto = decodeURIComponent(href.split('?text=')[1]);
   assert.match(texto, /Ovos/); assert.match(texto, /Cliente Plano B/); assert.match(texto, /Jardins Florença/); assert.match(texto, /não conseguiu registrar/);
   assert.match(texto, new RegExp('Código: ' + tentativas[0].slice(-6).toUpperCase()));
   assert.ok(await pagina.locator('#reserva-depois').isHidden(), '"Pronto, mandei" só depois de abrir o WhatsApp');
+  assert.match(await pagina.locator('#reserva-corpo').innerText(), /O site tentou 3 vezes, com o mesmo código/, 'diz o que aconteceu, sem prometer o que não vale');
   // "Tentar de novo pelo site" fecha e mantém a sacola
   await pagina.click('#modal-reserva .reserva-site');
   assert.ok(await pagina.locator('#modal-reserva').evaluate((el) => !el.classList.contains('aberto')));
   assert.ok(Number(await pagina.locator('#qtd-flutuante').textContent()) >= 1, 'a sacola continua');
   // de novo: abre o WhatsApp (sem sair da página no teste) e confirma
-  await pagina.click('#btn-enviar-pedido'); await pagina.locator('#modal-reserva.aberto').waitFor({ timeout: 8000 });
+  await pagina.click('#btn-enviar-pedido'); await pagina.locator('#modal-reserva.aberto').waitFor({ timeout: 15000 });
   await pagina.evaluate(() => { const a = document.getElementById('reserva-zap'); a.addEventListener('click', (e) => e.preventDefault()); a.click(); });
   await pagina.locator('#reserva-depois').waitFor({ state: 'visible', timeout: 2000 });
   await pagina.click('[data-action="reserva-pronto"]');
@@ -2456,13 +2457,229 @@ teste('painel: marcou "Entregue" sem querer → acha o pedido em "Ver os entregu
   assert.match(await feito.innerText(), /Rafael[\s\S]*ENTREGUE/);
   assert.strictEqual(await feito.locator('[data-action="itens-pedido"], [data-action="cancelar-pedido-painel"]').count(), 0, 'pedido entregue: sem mexer em item nem cancelar por aqui');
   await feito.locator('[data-action="voltar-pedido"]').click();
-  assert.match(await pagina.locator('#confirm-title').innerText(), /Voltar o pedido de Rafael para "A caminho"\?/);
+  assert.match(await pagina.locator('#confirm-title').innerText(), /Voltar o pedido de Rafael para "Enviados"\?/);
   await pagina.locator('#btn-confirm-ok').click();
   await pagina.waitForFunction(() => [...document.querySelectorAll('.kb-col:not([hidden]) .card-pedido')].some((c) => /Rafael/.test(c.innerText) && /A CAMINHO/.test(c.innerText)), null, { timeout: 6000 });
   const volta = servidor.chamadas.filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ajuste').pop().corpo;
   assert.deepStrictEqual([volta.op, volta.pedidoId, volta.de], ['voltar', 'ped-rafael', 'arquivado']);
   assert.strictEqual(await pagina.locator('.pc-feitos-lista .card-pedido').count(), 0, 'saiu da lista de entregues');
   assert.ok(await pagina.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'nada vaza para o lado no celular');
+  semErros(erros); await fechar();
+});
+
+// ---- dinheiro e painel: PIX não conferido, "Já paguei" do cliente, Arquivar todos, senha de outro dia
+const painelCelular = async (cen) => {
+  const aberto = await abrir('/admin.html', cen, { contexto: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, antes: () => { window.__abertos = []; window.open = (u) => { window.__abertos.push(String(u)); return null; }; } });
+  await aberto.pagina.waitForSelector('.tab[data-aba="produtos"]', { state: 'attached', timeout: 15000 });
+  await aberto.pagina.evaluate(() => document.querySelector('.tab[data-aba="relatorios"]').click());
+  await aberto.pagina.locator('.card-pedido').first().waitFor({ timeout: 8000 });
+  return aberto;
+};
+const contaDona = () => cenarioPadrao({ conta: { uid: 'dona', email: 'dona@teste.com', isAnonymous: false, claims: { tenants: { banca: 'proprietario' } } } });
+const ajustesFeitos = (id) => servidor.chamadas.filter((c) => c.caminho === '/api/pdv' && c.corpo.acao === 'ajuste' && c.corpo.pedidoId === id).map((c) => c.corpo.op);
+const gravouArquivado = (pagina, id) => pagina.evaluate((id) => (window.__gravados || []).some((g) => g.path === `pedidos/${id}` && g.dados && g.dados.status === 'arquivado'), id);
+
+teste('painel: "Entregue" de PIX que ninguém conferiu pergunta "O PIX caiu?" (Voltar / Ainda não / Caiu); o selo "CLIENTE DIZ QUE PAGOU" fica ao lado do botão; avisos com o nome da aba', async () => {
+  const agora = Date.now(), hoje = new Date(agora - 3 * 3600000).toISOString().slice(0, 10), h = (min) => new Date(agora - min * 60000).toISOString();
+  const cen = contaDona();
+  const item = { id: 'ovos', nome: 'Ovos caipiras', qtd: 3, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 42 };
+  const base = { telefone: '62999990002', quadra: '1', lote: '2', total: 42, entregaDia: hoje, itens: [item] };
+  cen.lojas.banca.pedidos = {
+    'ped-pix-a': { ...base, nome: 'Paula Pix', pag: 'PIX', status: 'enviado', data: h(30), pixInformado: { em: h(10), total: 42 } },
+    'ped-pix-b': { ...base, nome: 'Bruno Pix', pag: 'PIX', status: 'enviado', data: h(31) },
+    'ped-din': { ...base, nome: 'Dina Dinheiro', pag: 'Dinheiro', status: 'enviado', data: h(32) },
+    'ped-novo': { ...base, nome: 'Nina Nova', pag: 'Dinheiro', status: 'pendente', data: h(5) },
+    'ped-auto': { ...base, nome: 'Alan Auto', pag: 'PIX', status: 'enviado', data: h(33), pagamento: { status: 'PAID', valorC: 4000 }, conferirPagamento: { motivo: 'valor', recebidoC: 4000, totalC: 4200, em: h(20) } },
+    'ped-conf': { ...base, nome: 'Clara Conferida', pag: 'PIX', status: 'enviado', data: h(34), pixConferido: { em: h(15), valor: 42 } },
+  };
+  const { pagina, erros, fechar } = await painelCelular(cen);
+  await pagina.locator('.kb-aba[data-kb="env"]').click();
+  assert.match(await pagina.locator('.card-pedido', { hasText: 'Alan Auto' }).innerText(), /PIX entrou com valor diferente: confira\.[\s\S]*40,00[\s\S]*42,00/, 'marca do PIX automático com valor diferente');
+  // quem já conferiu o PIX no cartão não vê a pergunta
+  await pagina.locator('.kb-col:not([hidden]) .card-pedido', { hasText: 'Clara Conferida' }).locator('.pc-botao[data-action="excluir-pedido"]').click();
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'pedidos/ped-conf' && g.dados.status === 'arquivado'), null, { timeout: 4000 });
+  assert.ok(!(await pagina.locator('#overlay-confirm.aberto').count()), 'PIX já conferido: conclui sem perguntar');
+  const paula = pagina.locator('.kb-col:not([hidden]) .card-pedido', { hasText: 'Paula Pix' });
+  const txtPaula = await paula.innerText();
+  assert.match(txtPaula, /CLIENTE DIZ QUE PAGOU às \d{2}:\d{2} \(não conferido\)/, 'o "Já paguei" do cliente aparece no cartão, como não conferido\n' + txtPaula);
+  assert.ok(await paula.locator('.pc-pix-conf .pc-informado + [data-action="pix-recebido"]').count() === 1, 'o selo fica ao lado do botão "PIX recebido"');
+  assert.strictEqual(await pagina.locator('.card-pedido', { hasText: 'Bruno Pix' }).locator('.pc-informado').count(), 0, 'sem "Já paguei", sem selo');
+
+  // Voltar: nada muda
+  await paula.locator('.pc-botao[data-action="excluir-pedido"]').click();
+  await pagina.locator('#overlay-confirm.aberto').waitFor({ timeout: 3000 });
+  assert.match(await pagina.locator('#confirm-title').innerText(), /O PIX de R\$\s*42,00 caiu\?/);
+  assert.match(await pagina.locator('#confirm-msg').innerText(), /O cliente disse que pagou às/);
+  assert.deepStrictEqual(await pagina.locator('#confirm-botoes button:visible').allInnerTexts(), ['Voltar', 'Ainda não, concluir assim mesmo', 'Caiu, marcar recebido'], 'as três saídas');
+  await pagina.waitForFunction(() => document.activeElement && document.activeElement.id === 'btn-confirm-meio', null, { timeout: 2000 });
+  const pos = await pagina.evaluate(() => ['btn-confirm-meio', 'btn-confirm-ok', 'btn-confirm-cancel'].map((i) => document.getElementById(i).getBoundingClientRect().top));
+  assert.ok(pos[0] < pos[1] && pos[1] < pos[2], '"Ainda não" em cima (padrão), "Caiu" no meio, "Voltar" embaixo');
+  const corOk = await pagina.evaluate(() => getComputedStyle(document.getElementById('btn-confirm-ok')).backgroundColor);
+  assert.ok(/rgba\(0, 0, 0, 0\)|transparent/.test(corOk), '"Caiu" é neutro (não vermelho): ' + corOk);
+  await pagina.locator('#btn-confirm-cancel').click();
+  await pagina.waitForTimeout(300);
+  assert.deepStrictEqual(ajustesFeitos('ped-pix-a'), []); assert.strictEqual(await gravouArquivado(pagina, 'ped-pix-a'), false, 'Voltar: o pedido continua na fila');
+
+  // Ainda não: conclui pelo servidor, com a marca de PIX pendente
+  await paula.locator('.pc-botao[data-action="excluir-pedido"]').click();
+  await pagina.locator('#btn-confirm-meio').click();
+  await pagina.waitForFunction(() => /não conferido/.test(document.getElementById('toast').innerText), null, { timeout: 4000 });
+  assert.deepStrictEqual(ajustesFeitos('ped-pix-a'), ['concluir']);
+
+  // Caiu: ainda pede o valor ("Não conferi" volta sem mexer); confirmado, marca recebido e depois conclui
+  const bruno = pagina.locator('.kb-col:not([hidden]) .card-pedido', { hasText: 'Bruno Pix' });
+  await bruno.locator('.pc-botao[data-action="excluir-pedido"]').click();
+  await pagina.locator('#btn-confirm-ok').click();
+  await pagina.waitForFunction(() => /Confirme: R\$\s*42,00 caiu na conta\?/.test(document.getElementById('confirm-title').textContent) && document.querySelector('#overlay-confirm.aberto'), null, { timeout: 3000 });
+  await pagina.locator('#btn-confirm-cancel').click();
+  await pagina.waitForTimeout(300);
+  assert.deepStrictEqual(ajustesFeitos('ped-pix-b'), [], '"Não conferi": nada muda');
+  await bruno.locator('.pc-botao[data-action="excluir-pedido"]').click();
+  await pagina.locator('#btn-confirm-ok').click();
+  await pagina.waitForFunction(() => /Confirme:/.test(document.getElementById('confirm-title').textContent) && document.querySelector('#overlay-confirm.aberto'), null, { timeout: 3000 });
+  await pagina.locator('#btn-confirm-ok').click();
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'pedidos/ped-pix-b' && g.dados.status === 'arquivado'), null, { timeout: 4000 });
+  assert.deepStrictEqual(ajustesFeitos('ped-pix-b'), ['pix-recebido'], 'conferiu e só depois concluiu');
+
+  // dinheiro: sem pergunta (como antes), com Desfazer
+  await pagina.locator('.kb-col:not([hidden]) .card-pedido', { hasText: 'Dina Dinheiro' }).locator('.pc-botao[data-action="excluir-pedido"]').click();
+  await pagina.waitForFunction(() => (window.__gravados || []).some((g) => g.path === 'pedidos/ped-din' && g.dados.status === 'arquivado'), null, { timeout: 4000 });
+  assert.ok(!(await pagina.locator('#overlay-confirm.aberto').count()), 'pedido em dinheiro não pergunta nada');
+
+  // aviso com o nome da aba (antes: "Pedido movido para: PREPARANDO")
+  await pagina.locator('.kb-aba[data-kb="novos"]').click();
+  await pagina.locator('.kb-col:not([hidden]) .card-pedido', { hasText: 'Nina Nova' }).locator('.pc-botao[data-action="avancar-pedido"]').click();
+  await pagina.waitForFunction(() => /Pedido de Nina Nova foi para "Separando"\./.test(document.getElementById('toast').innerText), null, { timeout: 4000 });
+  semErros(erros); await fechar();
+});
+
+teste('painel: "Arquivar todos" leva só o que já saiu, de hoje; diz quantos ficaram; PIX sem conferência pergunta em resumo; Balanço mostra "PIX não conferido" com a lista', async () => {
+  const agora = Date.now(), hoje = new Date(agora - 3 * 3600000).toISOString().slice(0, 10), amanha = new Date(agora - 3 * 3600000 + 86400000).toISOString().slice(0, 10), h = (min) => new Date(agora - min * 60000).toISOString();
+  const cen = contaDona();
+  const item = { id: 'ovos', nome: 'Ovos caipiras', qtd: 1, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 14 };
+  const base = { quadra: '1', lote: '2', total: 14, itens: [item] };
+  cen.lojas.banca.pedidos = {
+    'ped-saiu': { ...base, nome: 'Saiu Hoje', pag: 'Dinheiro', status: 'enviado', entregaDia: hoje, data: h(60) },
+    'ped-saiu-pix': { ...base, nome: 'Saiu Pix', pag: 'PIX', status: 'enviado', entregaDia: hoje, data: h(61) },
+    'ped-amanha': { ...base, nome: 'Para Amanha', pag: 'Dinheiro', status: 'enviado', entregaDia: amanha, data: h(62) },
+    'ped-separando': { ...base, nome: 'Ainda Separando', pag: 'Dinheiro', status: 'preparando', entregaDia: hoje, data: h(63) },
+    'ped-velho-pix': { ...base, nome: 'Velho Pix', pag: 'PIX', status: 'arquivado', total: 30, entregaDia: hoje, data: h(600) },
+    'ped-ret-pronta': { ...base, nome: 'Rita Retira', modo: 'retirada', pag: 'Dinheiro', status: 'enviado', senha: '004', senhaDia: hoje, entregaDia: hoje, data: h(64) },
+  };
+  const { pagina, erros, fechar } = await painelCelular(cen);
+  await pagina.evaluate(() => document.getElementById('btn-limpar-hist').click());
+  await pagina.locator('#overlay-confirm.aberto').waitFor({ timeout: 3000 });
+  assert.match(await pagina.locator('#confirm-title').innerText(), /1 pedido PIX sem conferência: concluir mesmo assim\?/);
+  const msg = await pagina.locator('#confirm-msg').innerText();
+  assert.match(msg, /Saiu Pix/); assert.match(msg, /Ficam 2 na fila: 1 ainda não saiu \(Novos ou Separando\) e 1 é para outro dia\./);
+  assert.match(msg, /1 retirada pronta ainda não foi buscada e ficou na fila\./, 'retirada pronta não vai no lote');
+  assert.strictEqual(await pagina.locator('#btn-confirm-ok').innerText(), 'Concluir os 2 mesmo assim');
+  assert.strictEqual(await pagina.locator('#btn-confirm-meio').innerText(), 'Arquivar só os outros 1');
+  await pagina.locator('#btn-confirm-meio').click();
+  await pagina.waitForFunction(() => /1 pedido arquivado\. 1 PIX sem conferência ficou na fila\./.test(document.getElementById('toast').innerText), null, { timeout: 4000 });
+  const lote = await pagina.evaluate(() => (window.__gravados || []).filter((g) => g.lote && g.update).map((g) => g.path));
+  assert.deepStrictEqual(lote, ['pedidos/ped-saiu'], 'só o que já saiu, de hoje, e não é PIX pendente');
+  assert.deepStrictEqual(ajustesFeitos('ped-saiu-pix'), []);
+
+  // Balanço: o PIX concluído sem conferir não entra como recebido
+  await pagina.evaluate(() => document.querySelector('.tab[data-aba="balanco"]').click());
+  await pagina.locator('#balanco-conteudo .cx-linhas').first().waitFor({ timeout: 6000 });
+  const linhas = await pagina.locator('#balanco-conteudo .cx-livro > .cx-linhas > li').allInnerTexts();
+  const linha = (rot) => linhas.find((l) => l.startsWith(rot)) || '';
+  assert.match(linha('PIX não conferido'), /R\$\s*30,00/, linhas.join(' | '));
+  assert.match(await pagina.locator('.cx-pix-pendente summary').innerText(), /1 PIX não conferido/);
+  assert.match(await pagina.locator('.cx-pix-pendente').evaluate((d) => d.textContent), /Velho Pix[\s\S]*30,00/);
+  assert.doesNotMatch(linha('Recebido na entrega'), /R\$\s*30,00/);
+  // conferir direto daqui (o pedido é de outro dia: não está em "Ver os entregues")
+  await pagina.locator('.cx-pix-pendente summary').click();
+  await pagina.locator('.cx-pix-pendente [data-action="pix-recebido"][data-id="ped-velho-pix"]').click();
+  await pagina.waitForFunction(() => /Confirme: R\$\s*30,00 caiu na conta\?/.test(document.getElementById('confirm-title').textContent) && document.querySelector('#overlay-confirm.aberto'), null, { timeout: 3000 });
+  await pagina.locator('#btn-confirm-ok').click();
+  await pagina.waitForFunction(() => /PIX marcado como recebido/.test(document.getElementById('toast').innerText), null, { timeout: 4000 });
+  assert.deepStrictEqual(ajustesFeitos('ped-velho-pix'), ['pix-recebido']);
+  await pagina.waitForFunction(() => !document.querySelector('.cx-pix-pendente'), null, { timeout: 4000 });
+  assert.ok(await pagina.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'nada vaza para o lado no celular');
+  semErros(erros); await fechar();
+});
+
+teste('painel: pedido pronto ONTEM e não retirado mostra a senha com a data (não vale hoje) e "Chamar com senha nova" troca pela senha do dia', async () => {
+  const agora = Date.now(), hoje = new Date(agora - 3 * 3600000).toISOString().slice(0, 10);
+  const cen = contaDona();
+  const item = { id: 'ovos', nome: 'Ovos caipiras', qtd: 1, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 14 };
+  cen.lojas.banca.pedidos = {
+    'ped-ontem': { nome: 'Olga Ontem', modo: 'retirada', pag: 'Dinheiro', status: 'enviado', senha: '005', senhaDia: '2020-01-01', chamada: { vezes: 2 }, total: 14, data: new Date(agora - 20 * 3600000).toISOString(), itens: [item] },
+    'ped-hoje': { nome: 'Hugo Hoje', modo: 'retirada', pag: 'Dinheiro', status: 'enviado', senha: '001', senhaDia: hoje, chamada: { vezes: 1 }, total: 14, data: new Date(agora - 600000).toISOString(), itens: [item] },
+  };
+  const { pagina, erros, fechar } = await painelCelular(cen);
+  await pagina.locator('.kb-aba[data-kb="env"]').click();
+  const olga = pagina.locator('.kb-col:not([hidden]) .card-pedido', { hasText: 'Olga Ontem' });
+  assert.match(await olga.innerText(), /Senha de 01\/01 \(não vale hoje\)/);
+  assert.match(await olga.locator('[data-action="chamar-senha"]').innerText(), /Chamar com senha nova/);
+  assert.match(await pagina.locator('.card-pedido', { hasText: 'Hugo Hoje' }).innerText(), /Senha de chamada[\s\S]*Chamar de novo/, 'senha de hoje: igual a antes');
+  await olga.locator('[data-action="chamar-senha"]').click();
+  await pagina.waitForFunction(() => /Senha nova de hoje: 002/.test(document.getElementById('toast').innerText), null, { timeout: 4000 });
+  await pagina.waitForFunction(() => [...document.querySelectorAll('.card-pedido')].some((c) => /Olga Ontem/.test(c.innerText) && /002/.test(c.innerText) && /Chamar de novo/.test(c.innerText)), null, { timeout: 4000 });
+  semErros(erros); await fechar();
+});
+
+teste('loja: PIX pela chave diz de qual loja é a conta; "Já paguei" vai também para a banca (e com o servidor antigo, sem a rota, nada quebra)', async () => {
+  for (const velho of [false, true]) {
+    const c = cenarioPadrao();
+    c.lojas.banca.config = { ...c.lojas.banca.config, pix: { tipo: 'celular', chave: '62991266509', nome: 'Rosiva Martins da Silva' } };
+    const { pagina, erros, ctx, fechar } = await abrir('/', c, { antes: () => { window.open = () => null; } });
+    if (velho) await ctx.route('**/api/pix-informado', (r) => r.fulfill({ status: 404, contentType: 'text/plain', body: 'não achei' }));
+    const antes = servidor.chamadas.length;
+    await abrirCheckoutComOvos(pagina);
+    const lista = pagina.locator('#checkout-endereco select:visible'); if (await lista.count()) await lista.first().selectOption({ index: 1 });
+    const campos = pagina.locator('#checkout-endereco input:visible');
+    for (let i = 0; i < await campos.count(); i++) await campos.nth(i).fill(['Jardins Florença', '12', '7'][i] || '1');
+    await pagina.fill('#cli-nome', 'Cliente PIX');
+    await pagina.click('#pag-chips .pag-chip[data-pag="PIX"]');
+    await pagina.click('#btn-enviar-pedido');
+    await pagina.waitForSelector('#sucesso-pix .pix-destaque', { timeout: 6000 });
+    const para = await pagina.locator('.pix-d-para').innerText();
+    assert.match(para, /Rosiva Martins da Silva[\s\S]*\(conta da loja .+\)/, para);
+    await pagina.click('.pix-destaque [data-action="pix-ja-paguei"]');
+    await pagina.locator('#btn-confirm-ok').click();
+    await pagina.waitForSelector('.pix-informado', { timeout: 4000 });
+    if (!velho) {
+      await pagina.waitForFunction(() => true);
+      const ch = () => servidor.chamadas.slice(antes).filter((x) => x.caminho === '/api/pix-informado');
+      for (let i = 0; i < 20 && !ch().length; i++) await pagina.waitForTimeout(100);
+      assert.strictEqual(ch().length, 1, 'mandou à banca');
+      assert.deepStrictEqual(ch()[0].corpo, { pedidoId: 'PED123' }, 'só o id: o total sai do banco, não do navegador');
+      assert.ok(/^Bearer /.test(ch()[0].cabecalhos.authorization || ''), 'com o login do cliente');
+      // "Ainda não paguei" apaga lá também
+      await pagina.click('.pix-informado [data-action="pix-nao-paguei"]');
+      for (let i = 0; i < 20 && ch().length < 2; i++) await pagina.waitForTimeout(100);
+      assert.deepStrictEqual(ch()[1].corpo, { pedidoId: 'PED123', desfazer: true });
+      await pagina.click('.pix-destaque [data-action="pix-ja-paguei"]');
+      await pagina.locator('#btn-confirm-ok').click();
+      await pagina.waitForFunction(() => /Pagamento avisado/i.test((document.querySelector(".pix-informado") || {}).innerText || ""), null, { timeout: 4000 });
+      assert.strictEqual(await pagina.locator('.pix-aviso-nao-chegou').count(), 0, 'chegou à banca: sem o aviso');
+    } else {
+      await pagina.waitForFunction(() => /Seu aviso ainda não chegou à banca\. Mande o comprovante no WhatsApp\./.test((document.querySelector('.pix-informado') || {}).innerText || ''), null, { timeout: 4000 });
+      assert.doesNotMatch(await pagina.locator('.pix-informado').innerText(), /Pagamento avisado/i, 'não diz "avisado" sem ter chegado');
+      const guardado = await pagina.evaluate(() => Object.entries(localStorage).filter(([k]) => /banca_pix_informado/.test(k)).map(([, v]) => JSON.parse(v)));
+      assert.ok(guardado.some((g) => g.PED123 && g.PED123.avisado === false), 'o aparelho guarda "falta avisar a banca"');
+      // a internet volta / a rota passa a existir: manda de novo e a tela muda
+      await ctx.unroute('**/api/pix-informado');
+      await pagina.evaluate(() => window.dispatchEvent(new Event('online')));
+      await pagina.waitForFunction(() => /Pagamento avisado/i.test((document.querySelector('.pix-informado') || {}).innerText || ''), null, { timeout: 5000 });
+    }
+    semErros(erros); await fechar();
+  }
+});
+
+teste('plano B com internet fraca: a conexão cai no 1º envio, o reenvio com a MESMA chave registra o pedido e o WhatsApp nem aparece', async () => {
+  const { pagina, erros, ctx, fechar } = await abrir('/');
+  const chaves = [];
+  await ctx.route('**/api/checkout', (r) => { const c = JSON.parse(r.request().postData() || '{}'); if (c.acao) return r.continue(); chaves.push(c.idempotencyKey); return chaves.length === 1 ? r.abort('connectionreset') : r.continue(); });
+  await abrirCheckoutComOvos(pagina); await preencherPedido(pagina, 'Cliente Sinal Fraco');
+  await pagina.click('#btn-enviar-pedido');
+  await pagina.waitForSelector('#sucesso-whatsapps .btn-wpp', { timeout: 8000 });
+  assert.strictEqual(chaves.length, 2); assert.strictEqual(chaves[0], chaves[1], 'mesma chave: o servidor devolve o mesmo pedido se o 1º chegou');
+  assert.ok(await pagina.locator('#modal-reserva').evaluate((el) => !el.classList.contains('aberto')), 'sem plano B');
   semErros(erros); await fechar();
 });
 
@@ -2907,6 +3124,9 @@ const ajusteFalso = (c) => {
     itens: [{ id: 'ovos', nome: 'Ovos caipiras', qtd: 2, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 28 }] };
   if (c.op === 'acrescentar') return { sucesso: true, total: 42, status: 'preparando', diferencaDoPago: 0, acrescentado: { op: 'acrescentou', nome: 'Ovos caipira (dúzia)', qtd: '1 un', valor: 14 },
     itens: [{ id: 'ovos', nome: 'Ovos caipiras', qtd: 2, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 28 }, { id: 'ovos', nome: 'Ovos caipira (dúzia)', qtd: 1, unidade: 'un', tipo: 'un', precoOriginal: 14, subtotal: 14, acrescentado: true }] };
+  if (c.op === 'pix-recebido') return { sucesso: true, pixConferido: { em: new Date().toISOString(), valor: 42 } };
+  if (c.op === 'concluir') return { sucesso: true, status: 'arquivado', pixPendenteAoConcluir: true };
+  if (c.op === 'chamar') return c.pedidoId === 'ped-ontem' ? { sucesso: true, senha: '002', vezes: 1, nova: true, antiga: '005' } : { sucesso: true, senha: '001', vezes: 2 };
   return { __status: 400, error: 'Ação desconhecida.' };
 };
 

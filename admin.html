@@ -749,8 +749,9 @@
             <div class="modal-body" style="padding: 30px 24px;">
                 <h2 id="confirm-title" style="color: var(--forest); margin-bottom: 12px; font-size: 1.6rem;">Atenção</h2>
                 <p id="confirm-msg" style="color: var(--text-mid); font-size: 1.05rem;">Confirma a operação?</p>
-                <div style="display: flex; gap: 12px; margin-top: 24px;">
+                <div id="confirm-botoes" style="display: flex; gap: 12px; margin-top: 24px;">
                     <button class="btn-outline" id="btn-confirm-cancel" style="flex: 1; padding: 12px; border-color: #e0dcd4; color: var(--text-dark);">Cancelar</button>
+                    <button class="btn-outline" id="btn-confirm-meio" style="display: none; flex: 1; padding: 12px; border-color: #e0dcd4; color: var(--text-dark);" hidden>Outra opção</button>
                     <button class="btn-outline" id="btn-confirm-ok" style="flex: 1; padding: 12px; background: var(--danger); color: white; border-color: var(--danger);">Confirmar</button>
                 </div>
             </div>

@@ -36,7 +36,21 @@ export function estadoDoInformado(informado, p) {
     if (!informado || !informado.em) return '';
     return centavos(p && p.total) > centavos(informado.total) ? 'mudou' : 'informado';
 }
+/**
+ * O "Já paguei" chegou à banca (api/pix-informado.js respondeu)? Enquanto não chega (internet fraca, servidor antigo
+ * sem a rota), a tela NÃO pode dizer "pagamento avisado": a banca não sabe de nada. avisado = true só com a resposta.
+ */
+export const avisoChegou = (informado) => !!informado && informado.avisado === true;
+/** Ids dos "Já paguei" que ainda falta mandar à banca (tentar de novo ao abrir a loja ou quando a internet volta). */
+export const avisosPendentes = (informados) => Object.entries(informados && typeof informados === 'object' ? informados : {})
+    .filter(([, v]) => v && v.em && !avisoChegou(v)).map(([id]) => id);
 const senhaValida = (s) => /^\d{3}$/.test(String(s || ''));
+const hojeBR = (agora) => new Date(agora - 3 * 3600000).toISOString().slice(0, 10);
+/**
+ * A senha do pedido é de OUTRO dia (lib/senha.js recomeça a contagem todo dia)? Pedido pronto ontem e não retirado:
+ * a 005 de ontem pode ser a 005 de outra pessoa hoje. Aí a tela não mostra a senha velha como se valesse.
+ */
+export const senhaDeOutroDia = (p, agora = Date.now()) => !!p && senhaValida(p.senha) && !!p.senhaDia && p.senhaDia !== hojeBR(agora);
 
 /** As etapas da linha do tempo: retirada termina em "Pronto"; entrega, em "A caminho". */
 export function etapasDoPedido(p) {
@@ -64,12 +78,13 @@ export function rotuloDoStatus(p) {
  * O que a faixa mostra para este pedido.
  * tom: 'espera' | 'pagar' | 'separando' | 'pronto' | 'caminho' | 'fim' | 'cancelado'
  */
-export function acompanhamento(p) {
-    const s = p && p.status, ret = ehRetirada(p), senha = senhaValida(p && p.senha) && s === 'enviado' && ret ? String(p.senha) : '';
+export function acompanhamento(p, agora = Date.now()) {
+    const s = p && p.status, ret = ehRetirada(p), velha = senhaDeOutroDia(p, agora);
+    const senha = senhaValida(p && p.senha) && s === 'enviado' && ret && !velha ? String(p.senha) : '';
     const base = { status: s, retirada: ret, senha, passo: passoDoStatus(s), etapas: etapasDoPedido(p), titulo: rotuloDoStatus(p), pago: pagoPeloSite(p) };
     if (s === 'cancelado') return { ...base, tom: 'cancelado', ativo: false, texto: 'A banca cancelou este pedido.' };
     if (s === 'arquivado') return { ...base, tom: 'fim', ativo: false, texto: ret ? 'Pedido retirado. Obrigado!' : 'Pedido entregue. Obrigado!' };
-    if (s === 'enviado' && ret) return { ...base, tom: 'pronto', ativo: true, titulo: 'Seu pedido está pronto!', texto: senha ? `Pode retirar. Sua senha é ${senha}.` : 'Pode ir buscar.' };
+    if (s === 'enviado' && ret) return { ...base, tom: 'pronto', ativo: true, titulo: 'Seu pedido está pronto!', texto: senha ? `Pode retirar. Sua senha é ${senha}.` : velha ? 'Pode ir buscar. A senha daquele dia não vale mais: diga seu nome na banca.' : 'Pode ir buscar.' };
     if (s === 'enviado') return { ...base, tom: 'caminho', ativo: true, texto: 'Seu pedido saiu para entrega.' };
     if (s === 'preparando') return { ...base, tom: 'separando', ativo: true, texto: ret ? 'A banca está separando. Avisamos aqui quando ficar pronto.' : 'A banca está separando seu pedido.' };
     if (s === 'aguardando_pesagem') return { ...base, tom: 'separando', ativo: true, texto: 'Seus itens estão sendo pesados para fechar o valor.' };
@@ -91,6 +106,7 @@ export function chamouAgora(antes, depois) {
     if (!depois || !ehRetirada(depois) || depois.status !== 'enviado') return false;
     if (!antes) return false;                                       // primeira leitura (abriu a página com ele já pronto): só mostra, sem tocar
     if (antes.status !== 'enviado') return true;
+    if (senhaValida(depois.senha) && String(antes.senha || '') !== String(depois.senha)) return true;   // senha nova do dia (pronto ontem, chamado hoje)
     const va = Number(antes.chamada && antes.chamada.vezes) || 0, vd = Number(depois.chamada && depois.chamada.vezes) || 0;
     return vd > va;
 }

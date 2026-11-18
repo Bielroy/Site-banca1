@@ -20,13 +20,13 @@ import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, con
 import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
-import { podePagarPix } from './pix-lib.js';
-import { iniciarAcompanhamento, atualizarAcompanhamento, lerInformados, informarPago, desfazerInformado, veioDaPlaca, redesenharAcompanhamento } from './acompanhar-loja.js';   // a faixa do pedido na tela (muda sozinha)
-import { rotuloDoStatus, etapasDoPedido, estadoDoInformado, pixConferidoCobre, pixConferidoMudou } from './acompanhar-lib.js';
+import { podePagarPix, paraQuemPix } from './pix-lib.js';
+import { iniciarAcompanhamento, atualizarAcompanhamento, lerInformados, informarPago, desfazerInformado, marcarAvisado, veioDaPlaca, redesenharAcompanhamento } from './acompanhar-loja.js';   // a faixa do pedido na tela (muda sozinha)
+import { rotuloDoStatus, etapasDoPedido, estadoDoInformado, pixConferidoCobre, pixConferidoMudou, avisoChegou, avisosPendentes } from './acompanhar-lib.js';
 import { lerEntrega, previaDaEntrega, horariosDoModo, opcoesDoDia } from './entrega-lib.js';
 import { lerVagas, chaveHorario, estadoDoHorario, agoraMinBR } from './vagas-lib.js';   // vagas por horário e antecedência (como o Cal.com)
 import { ehIOS, navegadorIOS, deveConvidar } from './instalar-lib.js';
-import { falhaDoServidor, tentarDeNovo, textoPedidoReserva } from './pedido-reserva-lib.js';
+import { falhaDoServidor, reenviarAntesDoPlanoB, textoPedidoReserva } from './pedido-reserva-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
 import { miniatura } from './foto-lib.js';
 // Foto pequena SEMPRE pelo redutor do próprio site (mesmo endereço da loja). Antes, a foto com miniatura do ImgBB
@@ -1301,7 +1301,7 @@ const mostrarLinksWhatsApp = (pedido, { pixPendente = false } = {}) => {
         ? `Seu pedido tem itens de ${links.length} atendimentos da banca. Toque nos ${links.length} botões, um de cada vez, para enviar tudo:`
         // iPhone: o navegador costuma barrar a abertura automática (ela acontece depois de o servidor responder,
         // e o iPhone só deixa abrir outro app no instante do toque). O texto pede o toque em vez de prometer.
-        : pixPendente ? 'Falta só o pagamento. Pague o PIX abaixo e depois mande o comprovante no WhatsApp.'
+        : pixPendente ? 'Falta só pagar. São dois passos rápidos:'
         : (ehIphone() ? 'Pedido recebido! Agora toque no botão verde para mandar a mensagem no WhatsApp.'
             : 'Vamos abrir o WhatsApp da banca com o seu pedido pronto. Se não abrir sozinho, toque no botão abaixo.');
     if (area) area.classList.toggle('precisa-toque', ehIphone() && links.length === 1 && !pixPendente);
@@ -1324,15 +1324,21 @@ const pagarComPix = async (pedidoId, total) => {
 const ICO_PIX = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.6c.6 0 1.2.2 1.7.7l3.1 3.1h-.4c-.8 0-1.5.3-2 .8L12.6 9a.9.9 0 0 1-1.2 0L9.6 7.2a2.8 2.8 0 0 0-2-.8h-.4l3.1-3.1c.5-.5 1.1-.7 1.7-.7zm6.2 5.2 2.5 2.5a2.4 2.4 0 0 1 0 3.4l-2.5 2.5h-1.8a1.4 1.4 0 0 1-1-.4L13.6 14a2.3 2.3 0 0 0-3.2 0l-1.8 1.8c-.3.3-.6.4-1 .4H5.8l-2.5-2.5a2.4 2.4 0 0 1 0-3.4l2.5-2.5h1.8c.4 0 .7.1 1 .4L10.4 10a2.3 2.3 0 0 0 3.2 0l1.8-1.8c.3-.3.6-.4 1-.4zM12 15.4c.2 0 .4.1.6.2l1.8 1.8c.5.5 1.2.8 2 .8h.4l-3.1 3.1a2.4 2.4 0 0 1-3.4 0l-3.1-3.1h.4c.8 0 1.5-.3 2-.8l1.8-1.8c.2-.1.4-.2.6-.2z"/></svg>';
 const ICO_COPIAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>';
 // Cartão grande da tela de sucesso: deixa claro que FALTA PAGAR, quanto, para quem e como.
-const pixCartao = (pedido, miolo) => `<section class="pix-destaque" aria-label="Pagamento PIX pendente">
-        <div class="pix-d-topo"><span class="pix-d-selo">${ICO_PIX}PIX</span><span class="pix-d-status">Falta pagar</span></div>
-        <p class="pix-d-rot">Valor a pagar</p>
-        <p class="pix-d-total">${fmt(pedido.total)}</p>
+// Três partes bem separadas: o VALOR (cabeça colorida), o passo 1 (pagar) e o passo 2 (avisar). A plaquinha fica no rodapé.
+const ICO_PLACA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2.5"/><path d="M10 18h4"/><path d="M2.5 9.5a4.5 4.5 0 0 1 0 5M21.5 9.5a4.5 4.5 0 0 0 0 5"/></svg>';
+const pixCartao = (pedido, miolo, { para = '' } = {}) => `<section class="pix-destaque" aria-label="Pagamento PIX pendente">
+        <header class="pix-d-cabeca">
+            <div class="pix-d-topo"><span class="pix-d-selo">${ICO_PIX}PIX</span><span class="pix-d-status">Falta pagar</span></div>
+            <p class="pix-d-rot">Valor a pagar</p>
+            <p class="pix-d-total">${fmt(pedido.total)}</p>
+            ${para}
+        </header>
         ${miolo}
     </section>`;
+const pixPasso = (n, titulo, corpo) => `<div class="pix-d-passo"><p class="pix-d-etapa"><span>${n}</span>${titulo}</p>${corpo}</div>`;
 const pixAutomaticoHtml = (pedido, destaque) => destaque
-    ? pixCartao(pedido, `<button type="button" class="btn-pix btn-pix--grande" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">${ICO_PIX}<span>Pagar com PIX agora</span></button>
-        <p class="pix-d-nota">Abre o QR Code e o código copia e cola. A banca fica sabendo do pagamento na hora.</p>`)
+    ? pixCartao(pedido, `<div class="pix-d-passo"><button type="button" class="btn-pix btn-pix--grande" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">${ICO_PIX}<span>Pagar com PIX agora</span></button>
+        <p class="pix-d-dica">Abre o QR Code e o código copia e cola. A banca fica sabendo do pagamento na hora.</p></div>`)
     : `<button type="button" class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Pagar ${fmt(pedido.total)} com PIX agora</button>`;
 const pixCopiaColaHtml = (pedido, destaque) => {
     if (!(Number(pedido.total) > 0)) return '';          // pedido de cortesia (cupom de 100%): nada a pagar
@@ -1344,25 +1350,31 @@ const pixCopiaColaHtml = (pedido, destaque) => {
     if (estado === 'informado') {
         const hora = new Date(inf.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         return `<section class="pix-destaque pix-informado" aria-label="Pagamento informado">
-            <p class="pix-d-rot">Pagamento informado às ${hora}</p>
-            <p class="pix-d-total">${fmt(pedido.total)}</p>
-            <p class="pix-d-nota"><b>Não pague de novo.</b> A banca confere no extrato e confirma aqui. Se ainda não mandou, mande o comprovante no WhatsApp.</p>
-            <button type="button" class="btn-pix-paguei" data-action="pix-nao-paguei" data-id="${escapeHTML(pedido.id)}">Ainda não paguei: mostrar o PIX</button>
+            <header class="pix-d-cabeca">
+                <div class="pix-d-topo"><span class="pix-d-selo">${ICO_PIX}PIX</span>${avisoChegou(inf) ? '<span class="pix-d-status pix-d-status--ok">Pagamento avisado</span>' : '<span class="pix-d-status">Aviso não chegou</span>'}</div>
+                <p class="pix-d-rot">Você avisou às ${hora} que pagou</p>
+                <p class="pix-d-total">${fmt(pedido.total)}</p>
+            </header>
+            <div class="pix-d-passo">
+                ${avisoChegou(inf) ? '' : '<p class="pix-d-dica pix-aviso-nao-chegou"><b>Seu aviso ainda não chegou à banca. Mande o comprovante no WhatsApp.</b></p>'}
+                <p class="pix-d-dica"><b>Não pague de novo.</b> A banca confere no extrato e confirma aqui. Se ainda não mandou, mande o comprovante no WhatsApp.</p>
+                <button type="button" class="btn-pix-paguei btn-pix-paguei--leve" data-action="pix-nao-paguei" data-id="${escapeHTML(pedido.id)}">Ainda não paguei: mostrar o PIX</button>
+            </div>
         </section>`;
     }
-    if (destaque) return pixCartao(pedido, `<p class="pix-d-para">Para <b>${escapeHTML(pix.nome)}</b><span>Chave ${escapeHTML(chaveBonita(pix))}</span></p>
-        <button type="button" class="btn-pix btn-pix--grande" data-action="copiar-pix" data-codigo="${escapeHTML(codigo)}">${ICO_COPIAR}<span>Copiar código PIX</span></button>
-        <ol class="pix-d-passos">
-            <li><span>1</span><p>Toque em <b>Copiar código PIX</b>.</p></li>
-            <li><span>2</span><p>No app do banco, escolha <b>PIX copia e cola</b> e cole. O valor já vem preenchido.</p></li>
-            <li><span>3</span><p>Depois de pagar, mande o <b>comprovante no WhatsApp</b> no botão verde abaixo.</p></li>
-        </ol>
-        <details class="pix-d-qr"><summary>Vai pagar por outro celular? Mostrar QR Code</summary><div class="pix-d-qr-caixa" data-codigo="${escapeHTML(codigo)}"></div></details>
-        ${veioDaPlaca() ? '<p class="pix-d-placa"><b>Vai pagar depois?</b> É só ler o QR Code ou encostar o celular na plaquinha de novo: este PIX abre de novo, com o mesmo valor.</p>' : ''}
-        <button type="button" class="btn-pix-paguei" data-action="pix-ja-paguei" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Já paguei</button>`);
+    // de quem é a conta: o nome da chave sozinho (nome de pessoa) parece golpe; junto vai o nome da loja
+    const para = paraQuemPix(pix.nome, nomeDaLojaNaTela());
+    if (destaque) return pixCartao(pedido,
+        pixPasso(1, 'Pague no app do seu banco', `<button type="button" class="btn-pix btn-pix--grande" data-action="copiar-pix" data-codigo="${escapeHTML(codigo)}">${ICO_COPIAR}<span>Copiar código PIX</span></button>
+            <p class="pix-d-dica">No app do banco, entre em <b>PIX copia e cola</b> e cole. O valor já vem preenchido.</p>
+            <details class="pix-d-qr"><summary><span>Vai pagar com outro celular? <b>Mostrar QR Code</b></span></summary><div class="pix-d-qr-caixa" data-codigo="${escapeHTML(codigo)}"></div></details>`)
+        + pixPasso(2, 'Avise que pagou', `<button type="button" class="btn-pix-paguei" data-action="pix-ja-paguei" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Já paguei</button>
+            <p class="pix-d-dica">E mande o <b>comprovante</b> para a banca no WhatsApp.</p>`)
+        + (veioDaPlaca() ? `<p class="pix-d-placa">${ICO_PLACA}<span><b>Vai pagar depois?</b> Leia o QR Code ou encoste o celular na plaquinha de novo. Este PIX volta com o mesmo valor.</span></p>` : ''),
+        { para: `<p class="pix-d-para">para <b>${escapeHTML(para.nome)}</b>${para.loja ? ` <span class="pix-d-loja">(${escapeHTML(para.loja)})</span>` : ''} · <span class="pix-d-chave">chave ${escapeHTML(chaveBonita(pix))}</span></p>` });
     return `<div class="pix-cola">
         <b>Pague ${fmt(pedido.total)} com PIX</b>
-        <span>Para ${escapeHTML(pix.nome)} · chave ${escapeHTML(chaveBonita(pix))}</span>
+        <span>Para ${escapeHTML(para.nome)}${para.loja ? ` (${escapeHTML(para.loja)})` : ''} · chave ${escapeHTML(chaveBonita(pix))}</span>
         <button type="button" class="btn-pix" data-action="copiar-pix" data-codigo="${escapeHTML(codigo)}">Copiar código PIX</button>
         <small>Cole no aplicativo do seu banco, em "PIX copia e cola". O valor já vem preenchido. Depois, mande o comprovante no WhatsApp.</small>
     </div>`;
@@ -1411,6 +1423,8 @@ const oferecerPixNoSucesso = (pedido) => {
 };
 // A FAIXA DO PEDIDO (js/acompanhar-loja.js): o cliente vê o status sem abrir "Meus pedidos"; a plaquinha (?placa) abre o PIX ou a senha.
 iniciarAcompanhamento({ lerPedidos: () => lerLista('banca_meus_pedidos'), pixHtml: (pedido) => pixDoPedidoHtml(pedido, true), aoMudar: atualizarPixDoSucesso });
+// "Já paguei" que não chegou à banca da outra vez: tenta de novo quando a loja abre (com o login do aparelho pronto)
+onAuthStateChanged(auth, (u) => { if (u) setTimeout(() => { reenviarAvisosPendentes(); }, 1500); });
 // QR do código PIX (para pagar com outro celular): só é desenhado quando a pessoa abre.
 document.addEventListener('toggle', async (e) => {
     const det = e.target; if (!(det instanceof HTMLDetailsElement) || !det.classList.contains('pix-d-qr') || !det.open) return;
@@ -1913,6 +1927,33 @@ const mensagemDeErroAmigavel = (erro) => {
     if (texto) return texto;
     return 'Não consegui concluir agora. Tente de novo, por favor.';
 };
+
+// "Já paguei" / "Ainda não paguei" também vão para a banca (api/pix-informado.js): o cartão do pedido no painel mostra
+// "CLIENTE DIZ QUE PAGOU". O servidor grava o total do PEDIDO (nunca o do navegador).
+// Sem resposta (internet fraca, servidor antigo sem a rota): o aparelho guarda "falta avisar a banca" (avisado: false),
+// a tela diz "Seu aviso ainda não chegou à banca. Mande o comprovante no WhatsApp." e tenta de novo ao abrir a loja e
+// quando a internet volta. Nunca mostra erro de sistema para o cliente.
+const redesenharPix = (id) => {
+    if (PIX_NO_SUCESSO && PIX_NO_SUCESSO.id === id && document.getElementById('modal-sucesso')?.classList.contains('aberto')) {
+        if (document.getElementById('sucesso-pix')) oferecerPixNoSucesso({ id, total: PIX_NO_SUCESSO.total, pag: 'PIX', status: 'pendente' });
+    }
+    try { redesenharAcompanhamento(); } catch (_) { /* a faixa é conveniência */ }
+};
+const avisarBancaDoPix = async (pedidoId, desfazer = false) => {
+    try {
+        await chamarApi('/api/pix-informado', { pedidoId, ...(desfazer ? { desfazer: true } : {}) }, { comToken: true, limiteMs: 10000 });
+        if (!desfazer) { marcarAvisado(pedidoId); redesenharPix(pedidoId); }
+        return true;
+    } catch (_) { return false; }   // fica "falta avisar a banca" no aparelho
+};
+let reenviandoAvisos = false;
+const reenviarAvisosPendentes = async () => {
+    if (reenviandoAvisos || EM_PREVIA || !navigator.onLine) return;
+    reenviandoAvisos = true;
+    try { for (const id of avisosPendentes(lerInformados()).slice(0, 3)) await avisarBancaDoPix(id); }
+    finally { reenviandoAvisos = false; }
+};
+window.addEventListener('online', () => { reenviarAvisosPendentes(); });
 
 // fetch com aviso antecipado de offline e tempo limite
 const chamarApi = async (url, corpo, { comToken = false, limiteMs = 20000 } = {}) => {
@@ -2637,9 +2678,10 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'indicar') { indicarLoja(); }
         else if (action === 'esquecer-dados') { esquecerDados(); }
         else if (action === 'copiar-pix') { copiarPix(actionTarget); }
-        else if (action === 'pix-ja-paguei' || action === 'pix-nao-paguei') {   // guardado só neste aparelho: a banca confirma de verdade no painel
+        else if (action === 'pix-ja-paguei' || action === 'pix-nao-paguei') {   // guardado neste aparelho E mandado à banca (o painel mostra); quem confirma é a banca
             if (action === 'pix-ja-paguei' && !(await customConfirm('Já pagou o PIX?', 'Confirme só depois que o app do banco mostrar o PIX como feito. Assim a plaquinha não pede de novo.', { ok: 'Sim, já paguei', nao: 'Ainda não' }))) return;
             if (action === 'pix-ja-paguei') informarPago(id, Number(actionTarget.dataset.total) || 0); else desfazerInformado(id);
+            avisarBancaDoPix(id, action === 'pix-nao-paguei');   // sem await: a tela muda já; quando chegar, redesenha
             if (PIX_NO_SUCESSO && PIX_NO_SUCESSO.id === id && document.getElementById('modal-sucesso')?.classList.contains('aberto')) {
                 const area = document.getElementById('sucesso-pix'), atual = { id, total: PIX_NO_SUCESSO.total, pag: 'PIX', status: 'pendente' };
                 if (area) oferecerPixNoSucesso(atual);
@@ -2889,13 +2931,23 @@ document.addEventListener('change', (e) => {
 
 // Envia o pedido. Falha rápida do servidor (5xx, rede caindo) ganha UMA tentativa a mais, com a MESMA chave:
 // se a primeira chegou a gravar, o servidor reconhece a chave e devolve o mesmo pedido (nunca cria dois).
+// INTERNET FRACA: antes de oferecer o WhatsApp (plano B), reenvia UMA vez com a MESMA chave do pedido (idempotencyKey).
+// Se o primeiro envio chegou e só a resposta se perdeu, o servidor devolve o MESMO pedido (api/checkout.js): nada de
+// pedido duplo site + WhatsApp. Vale também para o tempo esgotado (antes, 20 s sem resposta já ia direto para o WhatsApp).
+// Antes de MOSTRAR o botão do WhatsApp, ainda faz um reenvio silencioso (o 3º, mesma chave), com o botão dizendo
+// "Conferindo se o pedido chegou...". Só sem resposta nas três vezes o plano B aparece.
 const enviarPedidoAoServidor = async (payload) => {
-    try { return await chamarApi('/api/checkout', payload, { comToken: true }); }
-    catch (e) {
-        if (!tentarDeNovo(e)) throw e;
-        await new Promise((r) => setTimeout(r, 1500));
-        return chamarApi('/api/checkout', payload, { comToken: true });
+    let ultimo;
+    for (let tentativa = 1; tentativa <= 3; tentativa++) {
+        try { return await chamarApi('/api/checkout', payload, { comToken: true }); }
+        catch (e) {
+            ultimo = e;
+            if (!reenviarAntesDoPlanoB(e) || tentativa === 3) throw e;
+            if (tentativa === 2) { const b = document.getElementById('btn-enviar-pedido'); if (b) b.textContent = 'Conferindo se o pedido chegou...'; }
+            await new Promise((r) => setTimeout(r, tentativa === 1 ? 1500 : 3000));
+        }
     }
+    throw ultimo;
 };
 
 // PLANO B: o servidor não respondeu (ou está fora do ar). A mensagem do pedido é montada aqui, no celular, e vai
@@ -2920,6 +2972,7 @@ function oferecerPedidoPeloWhatsApp(d) {
         <div class="reserva-ico" aria-hidden="true">${ICO_ZAP_RESERVA}</div>
         <h2 class="reserva-tit" id="reserva-titulo">O sistema da banca não respondeu</h2>
         <p class="reserva-txt">Seu pedido não se perdeu. Mande pelo WhatsApp da banca: a mensagem já vai pronta, com os itens, o endereço e o pagamento.</p>
+        <p class="reserva-txt reserva-aviso"><b>O site tentou 3 vezes, com o mesmo código, e não teve resposta.</b> Pode ser que o pedido tenha chegado mesmo assim: a mensagem leva o código abaixo para a banca conferir e não separar duas vezes.</p>
         <a class="reserva-zap" id="reserva-zap" href="${escapeHTML(link)}" target="_blank" rel="noopener noreferrer">${ICO_ZAP_RESERVA}<span>Mandar o pedido no WhatsApp</span></a>
         <div class="reserva-depois" id="reserva-depois" hidden>
             <p>Mandou a mensagem? Então a banca já recebeu.</p>

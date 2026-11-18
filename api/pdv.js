@@ -29,6 +29,10 @@
 //              engano). Fica em pedido.pixConferido (NÃO em pagamento.status, que é do PIX automático e do estorno):
 //              a tela do cliente passa a dizer "pago" e a plaquinha não abre mais o PIX dele.
 //
+//      concluir  "Entregue" / "Cliente retirou" (status 'enviado' → 'arquivado'). Pedido PIX sem pagamento confirmado
+//              ganha pixPendenteAoConcluir: true (o painel perguntou "O PIX caiu?" e a pessoa disse "ainda não").
+//      chamar  de pedido pronto em OUTRO dia (senha de ontem): ganha senha nova do dia antes de chamar.
+//
 //  POST { acao: 'impressao', op, pedidoId, versao, aparelho }
 //      Fila de impressão (lib/impressao.js): reservar → imprimir no aparelho → confirmar
 //      (ou liberar, se não saiu). Um pedido não sai duas vezes, nem com dois aparelhos ligados.
@@ -287,7 +291,7 @@ async function pesagem(req, res, { tid, dec }) {
 async function ajuste(req, res, { tid, dec }) {
   const b = req.body || {}, pedidoId = String(b.pedidoId || ''), op = String(b.op || ''), por = dec.email || dec.uid;
   if (!/^[\w-]{6,80}$/.test(pedidoId)) return res.status(400).json({ error: 'Pedido inválido.' });
-  if (!['tirar', 'acrescentar', 'voltar', 'precos', 'pronto', 'chamar', 'pix-recebido', 'pix-desfazer'].includes(op)) return res.status(400).json({ error: 'Ação desconhecida.' });
+  if (!['tirar', 'acrescentar', 'voltar', 'precos', 'pronto', 'chamar', 'pix-recebido', 'pix-desfazer', 'concluir'].includes(op)) return res.status(400).json({ error: 'Ação desconhecida.' });
   const item = b.item && typeof b.item === 'object' ? b.item : {};
   if (op === 'acrescentar' && (!/^[\w-]{1,80}$/.test(String(item.id || '')) || !['kg', 'un'].includes(item.tipo))) return res.status(400).json({ error: 'Escolha o produto e a quantidade.' });
   try {
@@ -317,7 +321,7 @@ async function ajuste(req, res, { tid, dec }) {
       if (op === 'pix-recebido') {
         const trava = Senha.travaDoPixRecebido(ped); if (trava) throw new Error(trava);
         const em = agora.toISOString(), valor = Number(ped.total) || 0;
-        t.update(pedidoRef, { pixConferido: { em, por, valor }, ajustes: Ajuste.comRegistro(ped, { op: 'pix-recebido', por, em, valor }) });
+        t.update(pedidoRef, { pixConferido: { em, por, valor }, ...(ped.pixPendenteAoConcluir ? { pixPendenteAoConcluir: false } : {}), ajustes: Ajuste.comRegistro(ped, { op: 'pix-recebido', por, em, valor }) });
         return { pixConferido: { em, valor } };
       }
 
@@ -328,10 +332,30 @@ async function ajuste(req, res, { tid, dec }) {
         return { pixConferido: null };
       }
 
+      if (op === 'concluir') {
+        const trava = Senha.travaDoConcluir(ped); if (trava) throw new Error(trava);
+        if (b.de && String(b.de) !== String(ped.status)) throw new Error('Este pedido já mudou de etapa. Atualize a tela.');
+        const em = agora.toISOString(), pendente = Senha.pixPendenteAoConcluir(ped);
+        t.update(pedidoRef, { status: 'arquivado', concluidoEm: em, ...(pendente ? { pixPendenteAoConcluir: true } : {}), ajustes: Ajuste.comRegistro(ped, { op: 'concluiu', de: ped.status, por, em, ...(pendente ? { pixPendente: true } : {}) }) });
+        return { status: 'arquivado', pixPendenteAoConcluir: pendente };
+      }
+
       if (op === 'chamar') {
         const trava = Senha.travaDaChamada(ped); if (trava) throw new Error(trava);
-        const ch = ped.chamada && typeof ped.chamada === 'object' ? ped.chamada : {}, vezes = Math.min(99, (Number(ch.vezes) || 0) + 1);
-        t.update(pedidoRef, { chamada: { ...ch, vezes, em: agora.toISOString() } });
+        const ch = ped.chamada && typeof ped.chamada === 'object' ? ped.chamada : {}, em = agora.toISOString(), dia = Senha.diaDaSenha(agora);
+        // SENHA DE OUTRO DIA: a contagem recomeçou à meia-noite e a 005 de ontem pode ser de outra pessoa hoje.
+        // O pedido ganha a próxima senha DE HOJE (mesmo contador do "pronto") e a chamada recomeça.
+        if (Senha.senhaVencida(ped, dia)) {
+          const cfg = await t.get(T.tdoc(db, tid, 'loja', 'config'));
+          const modo = Senha.modoDaSenha(cfg.exists ? cfg.data() : {});
+          const contRef = T.tdoc(db, tid, 'contadores', 'senha'), cont = await t.get(contRef);
+          const prox = Senha.proximaSenha(cont.exists ? cont.data() : null, dia);
+          t.set(contRef, { dia, ultimo: prox.numero, em });
+          t.update(pedidoRef, { senha: prox.texto, senhaDia: dia, chamada: { vezes: 1, em, caixinha: modo === 'caixinha' }, ajustes: Ajuste.comRegistro(ped, { op: 'senha-nova', de: ped.senha, senha: prox.texto, por, em }) });
+          return { senha: prox.texto, vezes: 1, nova: true, antiga: String(ped.senha) };
+        }
+        const vezes = Math.min(99, (Number(ch.vezes) || 0) + 1);
+        t.update(pedidoRef, { chamada: { ...ch, vezes, em } });
         return { senha: ped.senha, vezes };
       }
 
@@ -340,7 +364,7 @@ async function ajuste(req, res, { tid, dec }) {
         if (!para) throw new Error('Este pedido não tem etapa anterior para voltar.');
         // quem mandou voltar viu o pedido numa etapa: se outra pessoa já mexeu, não volta duas vezes
         if (b.de && String(b.de) !== String(ped.status)) throw new Error('Este pedido já mudou de etapa. Atualize a tela.');
-        t.update(pedidoRef, { status: para, ajustes: Ajuste.comRegistro(ped, { op: 'voltou', de: ped.status, para, por, em: agora.toISOString() }) });
+        t.update(pedidoRef, { status: para, ...(ped.pixPendenteAoConcluir ? { pixPendenteAoConcluir: false } : {}), ajustes: Ajuste.comRegistro(ped, { op: 'voltou', de: ped.status, para, por, em: agora.toISOString() }) });
         return { status: para, de: ped.status };
       }
 
