@@ -1712,18 +1712,20 @@ document.body.addEventListener('click', async (e) => {
             catch (e) { target.disabled = false; throw e; }
             anotar('status-pedido', `${pedidoA.nome || id}: ${nextStatus}`);
             // o nome da aba, como a equipe vê na tela (antes ia o status do banco em maiúsculas)
-            showToast(`${pedidoA.nome ? `Pedido de ${pedidoA.nome}` : 'Pedido'} foi para "${nomeDaAba(nextStatus, pedidoA.modo)}".`);
+            showToast(`${pedidoA.nome ? `Pedido de ${pedidoA.nome}` : 'Pedido'} foi para "${nomeDaAba(nextStatus)}".`);
         }
 
         else if (action === 'pix-recebido' || action === 'pix-desfazer') {   // PIX pela chave: a equipe conferiu no banco (ou desfaz o engano)
             const id = target.dataset.id, pedido = acharPedido(id);
             if (!pedido) return showToast('Pedido não encontrado', true);
-            if (action === 'pix-recebido' && !(await customConfirm('O PIX caiu na conta?', `Confira no app do banco: ${fmt(faltaConferir(pedido) || Number(pedido.total) || 0)} de ${pedido.nome || 'cliente'}. A tela do cliente vai dizer "pago" e a plaquinha não cobra mais.`, { ok: 'Sim, recebi' }))) return;
+            if (action === 'pix-recebido' && !(await confirmarValorDoPix(pedido))) return;
             target.disabled = true;
             try {
                 const d = await chamarAjuste({ op: action, pedidoId: id });
                 const comPix = (p) => (p.id === id ? { ...p, pixConferido: d.pixConferido, ...(d.pixConferido ? { pixPendenteAoConcluir: false } : {}) } : p);
                 pedidosGerais = pedidosGerais.map(comPix); if (ENTREGUES.lista) ENTREGUES.lista = ENTREGUES.lista.map(comPix);
+                balancoCache = balancoCache.map(comPix);
+                if (document.getElementById('aba-balanco')?.classList.contains('active')) renderBalanco(Number(document.getElementById('balanco-periodo')?.value || 30));
                 showToast(action === 'pix-recebido' ? 'PIX marcado como recebido.' : 'Desfeito: o PIX volta a constar como não pago.');
                 redesenharFila();
             } catch (e) { showToast(e.message, true); target.disabled = false; }
@@ -1905,7 +1907,9 @@ document.body.addEventListener('click', async (e) => {
     } catch (err) {
         console.error("Ação Falhou:", err);
         // em português simples: o que aconteceu e o que fazer (antes ia um aviso genérico de sistema)
-        showToast(avisoDeFalha(err, { online: navigator.onLine !== false, noPedido: ACOES_DE_ETAPA.includes(action) }), true);
+        // "mudou": o cartão em que a pessoa tocou foi redesenhado (o banco trouxe outra etapa) enquanto a ação corria
+        const noPedido = ACOES_DE_ETAPA.includes(action), mudou = noPedido && !document.body.contains(target);
+        showToast(avisoDeFalha(err, { online: navigator.onLine !== false, noPedido, mudou }), true);
     }
 });
 
@@ -2228,7 +2232,10 @@ const cartaoDoPedido = (p) => {
     const podeConferirPix = daLoja && !pago && !pixConf && String(p.pag || '').toUpperCase() === 'PIX' && !p.temItensAPesar && !['cancelado', 'aguardando_pesagem'].includes(p.status) && Number(p.total) > 0;   // concluído também: dá para conferir depois, na lista de entregues
     // "Já paguei" que o cliente tocou na loja (api/pix-informado.js): não é pagamento confirmado, é o aviso para conferir no banco
     const infInf = p.pixInformado && p.pixInformado.em ? p.pixInformado : null;
-    const seloInformado = infInf ? `<span class="pc-informado" style="display:inline-block;background:#1d4ed8;color:#fff;border-radius:999px;padding:2px 10px;font-size:.78rem;font-weight:700;letter-spacing:.02em"><i class="ic" data-i="conversa"></i> CLIENTE DIZ QUE PAGOU${horaCurta(infInf.em) ? ` às ${horaCurta(infInf.em)}` : ''}${Math.round((Number(infInf.total) || 0) * 100) < Math.round((Number(p.total) || 0) * 100) ? ` (${fmt(Number(infInf.total) || 0)})` : ''}</span>` : '';
+    const seloInformado = infInf ? `<span class="pc-informado" style="display:inline-block;background:#1d4ed8;color:#fff;border-radius:999px;padding:2px 10px;font-size:.78rem;font-weight:700;letter-spacing:.02em"><i class="ic" data-i="conversa"></i> CLIENTE DIZ QUE PAGOU${horaCurta(infInf.em) ? ` às ${horaCurta(infInf.em)}` : ''}${Math.round((Number(infInf.total) || 0) * 100) !== Math.round((Number(p.total) || 0) * 100) ? ` ${fmt(Number(infInf.total) || 0)}` : ''} (não conferido)</span>` : '';
+    // PIX automático que entrou com valor diferente do pedido (lib/pagbank.js grava conferirPagamento): a equipe confere
+    const cp = p.conferirPagamento && typeof p.conferirPagamento === 'object' ? p.conferirPagamento : null;
+    const infoConferir = cp ? `<p class="pc-nota pc-conferir" style="background:#fef3c7;color:#78350f;border-radius:8px;padding:6px 10px"><i class="ic" data-i="alerta"></i> <b>PIX entrou com valor diferente: confira.</b>${Number.isFinite(Number(cp.recebidoC)) && Number.isFinite(Number(cp.totalC)) ? ` Entrou ${fmt(Number(cp.recebidoC) / 100)}, o pedido é ${fmt(Number(cp.totalC) / 100)}.` : ''}</p>` : '';
     const infoPix = podeConferirPix
         ? `<div class="pc-pix-conf">${seloInformado}<button type="button" class="bt bt-sec" data-action="pix-recebido" data-id="${id}"><i class="ic" data-i="certo"></i> PIX de ${fmt(Number(p.total) || 0)} recebido</button><small>Confira no app do banco antes. Identificador do PIX: ${escapeHTML(String(id).replace(/[^A-Za-z0-9]/g, '').slice(0, 25))}</small></div>`
         : pixMudou ? `<p class="pc-nota"><i class="ic" data-i="alerta"></i> O cliente pagou ${fmt(Number(p.pixConferido.valor) || 0)} e o pedido foi para ${fmt(Number(p.total) || 0)}: combine a diferença com ele.</p>`
@@ -2268,9 +2275,10 @@ const cartaoDoPedido = (p) => {
                 <span class="pc-etapa">${p.modo === 'retirada' && stKey === 'enviado' ? '<i class="ic" data-i="certo"></i> PRONTO P/ RETIRAR' : st.tag}</span>
                 ${infoPag}
                 ${infoImp}
-                ${dataFmt ? `<span class="pc-hora">${dataFmt}</span>` : ''}
+                ${dataFmt ? `<span class="pc-hora">${dataFmt}</span>` : ''}<span class="pc-hora pc-codigo" title="Código do pedido (vai na mensagem do WhatsApp do plano B)">#${escapeHTML(String(p.id || '').slice(-6).toUpperCase())}</span>
             </div>
             ${infoSenha}
+            ${infoConferir}
             ${infoPix}
             ${infoDia}
             ${infoPreco}
@@ -2298,7 +2306,7 @@ const renderHtmlPedidos = (pedidos) => {
 
     const termo = pedidoBuscaTermo;
     const filtrados = termo
-        ? pedidos.filter(p => normalizar(p.nome).includes(termo) || normalizar(p.quadra).includes(termo) || String(p.lote || '').includes(termo) || normalizar(p.condominio).includes(termo))
+        ? pedidos.filter(p => normalizar(p.nome).includes(termo) || normalizar(p.quadra).includes(termo) || String(p.lote || '').includes(termo) || normalizar(p.condominio).includes(termo) || String(p.id || "").toLowerCase().endsWith(termo))
         : pedidos;
 
     filtrados.forEach(p => {
@@ -2334,7 +2342,7 @@ const blocoEntregues = () => {
         if (ENTREGUES.carregando && !ENTREGUES.lista) corpo = esqueleto('Buscando os pedidos entregues...', 2);
         else if (ENTREGUES.erro) corpo = estadoVazio({ erro: true, compacto: true, titulo: 'Não consegui buscar os entregues', texto: 'Confira a internet e toque de novo.' });
         else if (!(ENTREGUES.lista || []).length) corpo = estadoVazio({ icone: 'certo', compacto: true, titulo: 'Nenhum pedido entregue hoje nem ontem', texto: 'Os mais antigos ficam em <b>Balanço</b>.' });
-        else corpo = `<p class="pc-feitos-dica">Marcou "Entregue" sem querer? Toque em <b>Voltar etapa</b> e o pedido volta para A caminho.</p><div class="pc-feitos-lista">${ENTREGUES.lista.map(cartaoDoPedido).join('')}</div>`;
+        else corpo = `<p class="pc-feitos-dica">Marcou "Entregue" sem querer? Toque em <b>Voltar etapa</b> e o pedido volta para Enviados.</p><div class="pc-feitos-lista">${ENTREGUES.lista.map(cartaoDoPedido).join('')}</div>`;
     }
     return `<section class="pc-feitos" aria-label="Pedidos entregues">
         <button type="button" class="bt bt-sec" data-action="ver-entregues" aria-expanded="${ENTREGUES.aberto}"><i class="ic" data-i="certo"></i> ${ENTREGUES.aberto ? 'Esconder os entregues' : 'Ver os entregues de hoje e de ontem'}</button>
@@ -2356,8 +2364,8 @@ const carregarEntregues = async () => {
     ENTREGUES.carregando = false; redesenharFila();
 };
 // pedido da fila ou da lista de entregues
-const acharPedido = (id) => pedidosGerais.find((p) => p.id === id) || (ENTREGUES.lista || []).find((p) => p.id === id);
-const NOME_DA_ETAPA = { pendente: 'Novos', aguardando_pesagem: 'Novos (a pesar)', preparando: 'Separando', enviado: 'A caminho' };
+const acharPedido = (id) => pedidosGerais.find((p) => p.id === id) || (ENTREGUES.lista || []).find((p) => p.id === id) || balancoCache.find((p) => p.id === id);   // o Balanço também confere PIX (de qualquer dia)
+const NOME_DA_ETAPA = { pendente: 'Novos', aguardando_pesagem: 'Novos (a pesar)', preparando: 'Separando', enviado: 'Enviados' };   // o nome das abas na tela
 const etapaDeVolta = (p) => (p.status === 'arquivado' ? 'enviado' : p.status === 'enviado' ? 'preparando' : p.status === 'preparando' ? ((p.itens || []).some((i) => i.aPesar) ? 'aguardando_pesagem' : 'pendente') : '');
 const chamarAjuste = async (corpo) => {
     const token = await auth.currentUser?.getIdToken();
@@ -2369,7 +2377,8 @@ const chamarAjuste = async (corpo) => {
 // ações que mudam a etapa de um pedido: o aviso de erro fala da etapa
 const ACOES_DE_ETAPA = ['avancar-pedido', 'excluir-pedido', 'pronto-pedido', 'chamar-senha', 'voltar-pedido', 'pix-recebido', 'pix-desfazer', 'cancelar-pedido-painel'];
 // erro de uma chamada ao servidor: sem internet vira o aviso simples; o servidor já responde em português (repassa)
-const textoDoErro = (e, noPedido = true) => (!navigator.onLine || e instanceof TypeError || !(e && e.message)) ? avisoDeFalha(e, { online: navigator.onLine !== false, noPedido }) : e.message;
+// erro do banco (FirebaseError tem "code", e a mensagem vem em inglês) também vira o aviso simples
+const textoDoErro = (e, noPedido = true) => (!navigator.onLine || e instanceof TypeError || !(e && e.message) || (e && e.code)) ? avisoDeFalha(e, { online: navigator.onLine !== false, noPedido }) : e.message;
 const horaCurta = (iso) => { const d = new Date(iso); return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
 /**
  * Concluir pedido PIX que ninguém conferiu: "O PIX de R$ X caiu?"
@@ -2377,11 +2386,23 @@ const horaCurta = (iso) => { const d = new Date(iso); return isNaN(d.getTime()) 
  *   'meio'  "Ainda não, concluir assim mesmo" (conclui com pixPendenteAoConcluir: fica "PIX não conferido" no Balanço)
  *   false   "Voltar"                          (nada muda)
  */
-const perguntarPixAoConcluir = (p) => {
-    const falta = faltaConferir(p), inf = p.pixInformado && p.pixInformado.em ? ` O cliente disse que pagou às ${horaCurta(p.pixInformado.em)}.` : '';
-    return customConfirm(`O PIX de ${fmt(falta)} caiu?`,
-        `Confira no app do banco: ${fmt(falta)} de ${p.nome || 'cliente'}.${inf} Se ainda não caiu, o pedido sai da fila marcado como "PIX não conferido" e não entra como recebido no Balanço.`,
-        { ok: 'Caiu, marcar recebido', meio: 'Ainda não, concluir assim mesmo', nao: 'Voltar' });
+// O caminho PADRÃO (em cima, colorido, com o foco) é "Ainda não": confirmar sem olhar o banco é o perigo, então "Caiu"
+// fica neutro e ainda pede a confirmação do valor (confirmarValorDoPix).
+const perguntarPixAoConcluir = async (p) => {
+    const falta = faltaConferir(p), inf = p.pixInformado && p.pixInformado.em ? ` O cliente disse que pagou às ${horaCurta(p.pixInformado.em)} (não conferido).` : '';
+    const r = await customConfirm(`O PIX de ${fmt(falta)} caiu?`,
+        `Só responda "Caiu" olhando o app do banco agora: ${fmt(falta)} de ${p.nome || 'cliente'}.${inf} Se não conferiu, conclua assim mesmo: o pedido sai da fila marcado como "PIX não conferido" e não entra como recebido no Balanço.`,
+        { ok: 'Caiu, marcar recebido', meio: 'Ainda não, concluir assim mesmo', nao: 'Voltar', principal: 'meio' });
+    if (r !== true) return r;
+    return (await confirmarValorDoPix(p)) ? true : false;
+};
+/** "Confirme: R$ X caiu na conta?" — a segunda pergunta, com o valor, antes de marcar o PIX como recebido. */
+const confirmarValorDoPix = (p) => {
+    const falta = faltaConferir(p) || Number(p.total) || 0, inf = p.pixInformado && p.pixInformado.em ? p.pixInformado : null;
+    const difAviso = inf && Math.round((Number(inf.total) || 0) * 100) !== Math.round(falta * 100) ? ` Atenção: o cliente avisou ${fmt(Number(inf.total) || 0)}, diferente do valor do pedido.` : '';
+    return customConfirm(`Confirme: ${fmt(falta)} caiu na conta?`,
+        `Abra o app do banco e procure ${fmt(falta)} de ${p.nome || 'cliente'}.${inf ? ' O aviso do cliente NÃO é o banco: confira o extrato.' : ''}${difAviso} A tela do cliente vai dizer "pago" e a plaquinha não cobra mais.`,
+        { ok: `Sim, ${fmt(falta)} caiu`, nao: 'Não conferi' });
 };
 /**
  * Marca o pedido como entregue/retirado. Com PIX pendente, pelo servidor (op 'concluir'), que grava a marca
@@ -2568,13 +2589,14 @@ document.getElementById('btn-limpar-hist').addEventListener('click', async () =>
     if (pedidosGerais.length === 0) return;
     // só o que está NA TELA: com uma busca digitada, os pedidos escondidos por ela não são arquivados
     const termo = pedidoBuscaTermo;
-    const alvo = termo ? pedidosGerais.filter(p => normalizar(p.nome).includes(termo) || normalizar(p.quadra).includes(termo) || String(p.lote || '').includes(termo) || normalizar(p.condominio).includes(termo)) : pedidosGerais;
+    const alvo = termo ? pedidosGerais.filter(p => normalizar(p.nome).includes(termo) || normalizar(p.quadra).includes(termo) || String(p.lote || '').includes(termo) || normalizar(p.condominio).includes(termo) || String(p.id || "").toLowerCase().endsWith(termo)) : pedidosGerais;
     if (!alvo.length) return showToast('Nenhum pedido na tela para arquivar.', true);
     // Só sai da fila o que JÁ SAIU (A caminho / Pronto p/ retirar) com entrega de hoje ou de antes. Pedido de amanhã
     // e pedido que ainda nem foi separado ficam (antes iam junto e sumiam da fila sem ninguém entregar).
-    const { arquivar, naoSairam, outroDia } = separarParaArquivar(alvo, diaBR(new Date().toISOString()));
-    const fica = textoDoQueFica({ naoSairam, outroDia });
-    if (!arquivar.length) return showToast(`Nada para arquivar: só sai da fila o que já está em "A caminho" ou "Pronto p/ retirar", de hoje ou de antes.${fica ? ` ${fica}` : ''}`, true);
+    // Retirada pronta NÃO vai no lote: "pronto" não quer dizer que o cliente buscou (sai pelo "Cliente retirou" do cartão).
+    const { arquivar, naoSairam, outroDia, retiradasProntas } = separarParaArquivar(alvo, diaBR(new Date().toISOString()));
+    const fica = textoDoQueFica({ naoSairam, outroDia, retiradasProntas });
+    if (!arquivar.length) return showToast(`Nada para arquivar: só sai da fila a entrega que já está em "Enviados", de hoje ou de antes.${fica ? ` ${fica}` : ''}`, true);
     // PIX pela chave que ninguém conferiu: a mesma pergunta do "Entregue", em resumo
     const pix = arquivar.filter(pixSemConferencia), outros = arquivar.filter((p) => !pix.includes(p));
     let levarPix = [];
@@ -2586,7 +2608,7 @@ document.getElementById('btn-limpar-hist').addEventListener('click', async () =>
             { ok: `Concluir os ${arquivar.length} mesmo assim`, ...(outros.length ? { meio: `Arquivar só os outros ${outros.length}` } : {}), nao: 'Voltar' });
         if (r === false) return;
         levarPix = r === true ? pix : [];
-    } else if (!(await customConfirm('Fim do expediente', `Arquivar ${arquivar.length} pedido(s) já ${arquivar.length === 1 ? 'entregue ou retirado' : 'entregues ou retirados'}${termo ? ' (da busca)' : ''}?${fica ? ` ${fica}` : ''}`, { ok: 'Arquivar', nao: 'Voltar' }))) return;
+    } else if (!(await customConfirm('Fim do expediente', `Arquivar ${arquivar.length} pedido(s) já ${arquivar.length === 1 ? 'entregue' : 'entregues'}${termo ? ' (da busca)' : ''}?${fica ? ` ${fica}` : ''}`, { ok: 'Arquivar', nao: 'Voltar' }))) return;
     try {
         for (let i = 0; i < outros.length; i += 400) {                 // o banco aceita até 500 gravações por lote
             const batch = writeBatch(db);
@@ -2597,7 +2619,7 @@ document.getElementById('btn-limpar-hist').addEventListener('click', async () =>
         const n = outros.length + levarPix.length, ficouPix = pix.length - levarPix.length;
         showToast(`${n === 1 ? '1 pedido arquivado' : `${n} pedidos arquivados`}.${ficouPix ? ` ${ficouPix} PIX sem conferência ${ficouPix === 1 ? 'ficou' : 'ficaram'} na fila.` : ''}${fica ? ` ${fica}` : ''}`);
     } catch (error) {
-        console.error(error); showToast(textoDoErro(error, false), true);
+        console.error(error); showToast(textoDoErro(error, true), true);
     }
 });
 
@@ -3025,8 +3047,8 @@ const renderBalanco = async (dias) => {
         ['A receber', 'pedidos ainda em andamento', aReceber, 'var(--earth)'],
     ];
     const diaCurto = (d) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '');
-    const listaPix = listaPixNaoConferido.length ? `<details class="cx-pix-pendente" style="margin-top:10px"><summary><b>${listaPixNaoConferido.length === 1 ? '1 PIX não conferido' : `${listaPixNaoConferido.length} PIX não conferidos`}</b>: confira no app do banco e marque "PIX recebido" no cartão (Pedidos → Ver os entregues)</summary>
-        <ul class="cx-linhas">${listaPixNaoConferido.slice(0, 60).map((x) => `<li><span>${escapeHTML(x.nome)}<small>${escapeHTML(diaCurto(x.dia))}</small></span><u></u><b>${fmt(x.falta)}</b></li>`).join('')}</ul>
+    const listaPix = listaPixNaoConferido.length ? `<details class="cx-pix-pendente" style="margin-top:10px"><summary><b>${listaPixNaoConferido.length === 1 ? '1 PIX não conferido' : `${listaPixNaoConferido.length} PIX não conferidos`}</b>: confira no app do banco e toque em "PIX recebido" aqui mesmo</summary>
+        <ul class="cx-linhas">${listaPixNaoConferido.slice(0, 60).map((x) => `<li><span>${escapeHTML(x.nome)}<small>${escapeHTML(diaCurto(x.dia))}</small></span><u></u><b>${fmt(x.falta)}</b><button type="button" class="bt bt-sec cx-pix-ok" data-action="pix-recebido" data-id="${escapeHTML(x.id)}" style="margin-left:8px;min-height:36px;padding:4px 10px">PIX recebido</button></li>`).join('')}</ul>
         ${listaPixNaoConferido.length > 60 ? `<p><small>e mais ${listaPixNaoConferido.length - 60}.</small></p>` : ''}</details>` : '';
     const etiqueta = (rotulo, valor, sub) => `<li class="cx-etq"><span>${rotulo}</span><b>${valor}</b><small>${sub}</small></li>`;
 

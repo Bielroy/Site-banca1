@@ -36,6 +36,14 @@ export function estadoDoInformado(informado, p) {
     if (!informado || !informado.em) return '';
     return centavos(p && p.total) > centavos(informado.total) ? 'mudou' : 'informado';
 }
+/**
+ * O "Já paguei" chegou à banca (api/pix-informado.js respondeu)? Enquanto não chega (internet fraca, servidor antigo
+ * sem a rota), a tela NÃO pode dizer "pagamento avisado": a banca não sabe de nada. avisado = true só com a resposta.
+ */
+export const avisoChegou = (informado) => !!informado && informado.avisado === true;
+/** Ids dos "Já paguei" que ainda falta mandar à banca (tentar de novo ao abrir a loja ou quando a internet volta). */
+export const avisosPendentes = (informados) => Object.entries(informados && typeof informados === 'object' ? informados : {})
+    .filter(([, v]) => v && v.em && !avisoChegou(v)).map(([id]) => id);
 const senhaValida = (s) => /^\d{3}$/.test(String(s || ''));
 const hojeBR = (agora) => new Date(agora - 3 * 3600000).toISOString().slice(0, 10);
 /**

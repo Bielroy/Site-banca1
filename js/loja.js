@@ -21,8 +21,8 @@ import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
 import { podePagarPix, paraQuemPix } from './pix-lib.js';
-import { iniciarAcompanhamento, atualizarAcompanhamento, lerInformados, informarPago, desfazerInformado, veioDaPlaca, redesenharAcompanhamento } from './acompanhar-loja.js';   // a faixa do pedido na tela (muda sozinha)
-import { rotuloDoStatus, etapasDoPedido, estadoDoInformado, pixConferidoCobre, pixConferidoMudou } from './acompanhar-lib.js';
+import { iniciarAcompanhamento, atualizarAcompanhamento, lerInformados, informarPago, desfazerInformado, marcarAvisado, veioDaPlaca, redesenharAcompanhamento } from './acompanhar-loja.js';   // a faixa do pedido na tela (muda sozinha)
+import { rotuloDoStatus, etapasDoPedido, estadoDoInformado, pixConferidoCobre, pixConferidoMudou, avisoChegou, avisosPendentes } from './acompanhar-lib.js';
 import { lerEntrega, previaDaEntrega, horariosDoModo, opcoesDoDia } from './entrega-lib.js';
 import { lerVagas, chaveHorario, estadoDoHorario, agoraMinBR } from './vagas-lib.js';   // vagas por horário e antecedência (como o Cal.com)
 import { ehIOS, navegadorIOS, deveConvidar } from './instalar-lib.js';
@@ -1351,11 +1351,12 @@ const pixCopiaColaHtml = (pedido, destaque) => {
         const hora = new Date(inf.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         return `<section class="pix-destaque pix-informado" aria-label="Pagamento informado">
             <header class="pix-d-cabeca">
-                <div class="pix-d-topo"><span class="pix-d-selo">${ICO_PIX}PIX</span><span class="pix-d-status pix-d-status--ok">Pagamento avisado</span></div>
+                <div class="pix-d-topo"><span class="pix-d-selo">${ICO_PIX}PIX</span>${avisoChegou(inf) ? '<span class="pix-d-status pix-d-status--ok">Pagamento avisado</span>' : '<span class="pix-d-status">Aviso não chegou</span>'}</div>
                 <p class="pix-d-rot">Você avisou às ${hora} que pagou</p>
                 <p class="pix-d-total">${fmt(pedido.total)}</p>
             </header>
             <div class="pix-d-passo">
+                ${avisoChegou(inf) ? '' : '<p class="pix-d-dica pix-aviso-nao-chegou"><b>Seu aviso ainda não chegou à banca. Mande o comprovante no WhatsApp.</b></p>'}
                 <p class="pix-d-dica"><b>Não pague de novo.</b> A banca confere no extrato e confirma aqui. Se ainda não mandou, mande o comprovante no WhatsApp.</p>
                 <button type="button" class="btn-pix-paguei btn-pix-paguei--leve" data-action="pix-nao-paguei" data-id="${escapeHTML(pedido.id)}">Ainda não paguei: mostrar o PIX</button>
             </div>
@@ -1422,6 +1423,8 @@ const oferecerPixNoSucesso = (pedido) => {
 };
 // A FAIXA DO PEDIDO (js/acompanhar-loja.js): o cliente vê o status sem abrir "Meus pedidos"; a plaquinha (?placa) abre o PIX ou a senha.
 iniciarAcompanhamento({ lerPedidos: () => lerLista('banca_meus_pedidos'), pixHtml: (pedido) => pixDoPedidoHtml(pedido, true), aoMudar: atualizarPixDoSucesso });
+// "Já paguei" que não chegou à banca da outra vez: tenta de novo quando a loja abre (com o login do aparelho pronto)
+onAuthStateChanged(auth, (u) => { if (u) setTimeout(() => { reenviarAvisosPendentes(); }, 1500); });
 // QR do código PIX (para pagar com outro celular): só é desenhado quando a pessoa abre.
 document.addEventListener('toggle', async (e) => {
     const det = e.target; if (!(det instanceof HTMLDetailsElement) || !det.classList.contains('pix-d-qr') || !det.open) return;
@@ -1926,12 +1929,31 @@ const mensagemDeErroAmigavel = (erro) => {
 };
 
 // "Já paguei" / "Ainda não paguei" também vão para a banca (api/pix-informado.js): o cartão do pedido no painel mostra
-// "CLIENTE DIZ QUE PAGOU às HH:MM". O servidor grava o total do PEDIDO (nunca o do navegador). Sem internet, ou com o
-// servidor antigo (a rota não existe: 404), fica como antes: só neste aparelho. Nunca mostra erro para o cliente.
-const avisarBancaDoPix = (pedidoId, desfazer = false) => {
-    try { chamarApi('/api/pix-informado', { pedidoId, ...(desfazer ? { desfazer: true } : {}) }, { comToken: true, limiteMs: 10000 }).catch(() => { /* só no aparelho */ }); }
-    catch (_) { /* só no aparelho */ }
+// "CLIENTE DIZ QUE PAGOU". O servidor grava o total do PEDIDO (nunca o do navegador).
+// Sem resposta (internet fraca, servidor antigo sem a rota): o aparelho guarda "falta avisar a banca" (avisado: false),
+// a tela diz "Seu aviso ainda não chegou à banca. Mande o comprovante no WhatsApp." e tenta de novo ao abrir a loja e
+// quando a internet volta. Nunca mostra erro de sistema para o cliente.
+const redesenharPix = (id) => {
+    if (PIX_NO_SUCESSO && PIX_NO_SUCESSO.id === id && document.getElementById('modal-sucesso')?.classList.contains('aberto')) {
+        if (document.getElementById('sucesso-pix')) oferecerPixNoSucesso({ id, total: PIX_NO_SUCESSO.total, pag: 'PIX', status: 'pendente' });
+    }
+    try { redesenharAcompanhamento(); } catch (_) { /* a faixa é conveniência */ }
 };
+const avisarBancaDoPix = async (pedidoId, desfazer = false) => {
+    try {
+        await chamarApi('/api/pix-informado', { pedidoId, ...(desfazer ? { desfazer: true } : {}) }, { comToken: true, limiteMs: 10000 });
+        if (!desfazer) { marcarAvisado(pedidoId); redesenharPix(pedidoId); }
+        return true;
+    } catch (_) { return false; }   // fica "falta avisar a banca" no aparelho
+};
+let reenviandoAvisos = false;
+const reenviarAvisosPendentes = async () => {
+    if (reenviandoAvisos || EM_PREVIA || !navigator.onLine) return;
+    reenviandoAvisos = true;
+    try { for (const id of avisosPendentes(lerInformados()).slice(0, 3)) await avisarBancaDoPix(id); }
+    finally { reenviandoAvisos = false; }
+};
+window.addEventListener('online', () => { reenviarAvisosPendentes(); });
 
 // fetch com aviso antecipado de offline e tempo limite
 const chamarApi = async (url, corpo, { comToken = false, limiteMs = 20000 } = {}) => {
@@ -2659,7 +2681,7 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'pix-ja-paguei' || action === 'pix-nao-paguei') {   // guardado neste aparelho E mandado à banca (o painel mostra); quem confirma é a banca
             if (action === 'pix-ja-paguei' && !(await customConfirm('Já pagou o PIX?', 'Confirme só depois que o app do banco mostrar o PIX como feito. Assim a plaquinha não pede de novo.', { ok: 'Sim, já paguei', nao: 'Ainda não' }))) return;
             if (action === 'pix-ja-paguei') informarPago(id, Number(actionTarget.dataset.total) || 0); else desfazerInformado(id);
-            avisarBancaDoPix(id, action === 'pix-nao-paguei');
+            avisarBancaDoPix(id, action === 'pix-nao-paguei');   // sem await: a tela muda já; quando chegar, redesenha
             if (PIX_NO_SUCESSO && PIX_NO_SUCESSO.id === id && document.getElementById('modal-sucesso')?.classList.contains('aberto')) {
                 const area = document.getElementById('sucesso-pix'), atual = { id, total: PIX_NO_SUCESSO.total, pag: 'PIX', status: 'pendente' };
                 if (area) oferecerPixNoSucesso(atual);
@@ -2912,13 +2934,20 @@ document.addEventListener('change', (e) => {
 // INTERNET FRACA: antes de oferecer o WhatsApp (plano B), reenvia UMA vez com a MESMA chave do pedido (idempotencyKey).
 // Se o primeiro envio chegou e só a resposta se perdeu, o servidor devolve o MESMO pedido (api/checkout.js): nada de
 // pedido duplo site + WhatsApp. Vale também para o tempo esgotado (antes, 20 s sem resposta já ia direto para o WhatsApp).
+// Antes de MOSTRAR o botão do WhatsApp, ainda faz um reenvio silencioso (o 3º, mesma chave), com o botão dizendo
+// "Conferindo se o pedido chegou...". Só sem resposta nas três vezes o plano B aparece.
 const enviarPedidoAoServidor = async (payload) => {
-    try { return await chamarApi('/api/checkout', payload, { comToken: true }); }
-    catch (e) {
-        if (!reenviarAntesDoPlanoB(e)) throw e;
-        await new Promise((r) => setTimeout(r, 1500));
-        return chamarApi('/api/checkout', payload, { comToken: true });
+    let ultimo;
+    for (let tentativa = 1; tentativa <= 3; tentativa++) {
+        try { return await chamarApi('/api/checkout', payload, { comToken: true }); }
+        catch (e) {
+            ultimo = e;
+            if (!reenviarAntesDoPlanoB(e) || tentativa === 3) throw e;
+            if (tentativa === 2) { const b = document.getElementById('btn-enviar-pedido'); if (b) b.textContent = 'Conferindo se o pedido chegou...'; }
+            await new Promise((r) => setTimeout(r, tentativa === 1 ? 1500 : 3000));
+        }
     }
+    throw ultimo;
 };
 
 // PLANO B: o servidor não respondeu (ou está fora do ar). A mensagem do pedido é montada aqui, no celular, e vai
@@ -2943,7 +2972,7 @@ function oferecerPedidoPeloWhatsApp(d) {
         <div class="reserva-ico" aria-hidden="true">${ICO_ZAP_RESERVA}</div>
         <h2 class="reserva-tit" id="reserva-titulo">O sistema da banca não respondeu</h2>
         <p class="reserva-txt">Seu pedido não se perdeu. Mande pelo WhatsApp da banca: a mensagem já vai pronta, com os itens, o endereço e o pagamento.</p>
-        <p class="reserva-txt reserva-aviso"><b>Se o pedido aparecer em Meus pedidos, não mande de novo.</b></p>
+        <p class="reserva-txt reserva-aviso"><b>O site tentou 3 vezes, com o mesmo código, e não teve resposta.</b> Pode ser que o pedido tenha chegado mesmo assim: a mensagem leva o código abaixo para a banca conferir e não separar duas vezes.</p>
         <a class="reserva-zap" id="reserva-zap" href="${escapeHTML(link)}" target="_blank" rel="noopener noreferrer">${ICO_ZAP_RESERVA}<span>Mandar o pedido no WhatsApp</span></a>
         <div class="reserva-depois" id="reserva-depois" hidden>
             <p>Mandou a mensagem? Então a banca já recebeu.</p>

@@ -304,7 +304,19 @@ export const customConfirm = (title, msg, rotulos = {}) => {
   // Com três botões eles ficam um embaixo do outro (no celular não cabem lado a lado), o principal em cima.
   const meioBtn = document.getElementById('btn-confirm-meio'), botoes = document.getElementById('confirm-botoes');
   if (meioBtn) { meioBtn.hidden = !rotulos.meio; meioBtn.style.display = rotulos.meio ? '' : 'none'; meioBtn.textContent = rotulos.meio || ''; }
-  if (botoes) botoes.style.flexDirection = rotulos.meio ? 'column-reverse' : '';
+  if (botoes) botoes.style.flexDirection = rotulos.meio ? 'column' : '';
+  // rotulos.principal = 'meio': o botão do meio vira o PADRÃO (em cima, colorido, com o foco) e o "ok" fica neutro.
+  // Serve para a pergunta em que o caminho seguro NÃO é o ok (ex.: "O PIX caiu?" — confirmar sem olhar o banco é o perigo).
+  const meioPrincipal = !!rotulos.meio && rotulos.principal === 'meio';
+  const okEl = document.getElementById('btn-confirm-ok'), cancelEl = document.getElementById('btn-confirm-cancel');
+  const estiloOk = okEl.style.cssText, estiloMeio = meioBtn ? meioBtn.style.cssText : '';
+  if (rotulos.meio) {
+    okEl.style.order = meioPrincipal ? '1' : '0'; if (meioBtn) meioBtn.style.order = meioPrincipal ? '0' : '1'; cancelEl.style.order = '2';
+  }
+  if (meioPrincipal) {
+    okEl.style.background = 'transparent'; okEl.style.color = 'var(--text-dark)'; okEl.style.borderColor = '#e0dcd4';
+    if (meioBtn) { meioBtn.style.background = 'var(--forest)'; meioBtn.style.color = '#fff'; meioBtn.style.borderColor = 'var(--forest)'; }
+  }
 
   // abre sem mexer no history (não interfere no back-button dos outros modais)
   const focoAnterior = document.activeElement;
@@ -325,7 +337,7 @@ export const customConfirm = (title, msg, rotulos = {}) => {
     document.getElementById('confirm-digitar-rot').textContent = pede ? `Para confirmar, digite: ${rotulos.digitar}` : '';
   }
   okBtn.disabled = !!pede;
-  setTimeout(() => (pede ? campoDig : okBtn).focus({ preventScroll: true }), 60);
+  setTimeout(() => (pede ? campoDig : meioPrincipal && meioBtn ? meioBtn : okBtn).focus({ preventScroll: true }), 60);
 
   return new Promise((resolve) => {
     const finalizar = (valor) => { cleanup(); resolve(valor); };
@@ -345,6 +357,8 @@ export const customConfirm = (title, msg, rotulos = {}) => {
       cancelBtn.removeEventListener('click', onCancel);
       if (meioBtn) { meioBtn.removeEventListener('click', onMeio); meioBtn.hidden = true; meioBtn.style.display = 'none'; }
       if (botoes) botoes.style.flexDirection = '';
+      okEl.style.cssText = estiloOk; cancelEl.style.order = '';
+      if (meioBtn) { meioBtn.style.cssText = estiloMeio; meioBtn.style.display = 'none'; }
       overlay.removeEventListener('click', onOverlay);
       document.removeEventListener('keydown', onKey);
       if (focoAnterior && typeof focoAnterior.focus === 'function' && !focarCampo(focoAnterior) && overlay.contains(document.activeElement)) document.activeElement.blur();

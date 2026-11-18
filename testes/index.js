@@ -5761,7 +5761,10 @@ teste('PIX não conferido não vira "recebido": Balanço separa PIX confirmado, 
 
 teste('concluir pedido PIX sem conferência: o painel pergunta "O PIX caiu?" com três saídas; o servidor conclui e grava a pendência; "PIX recebido" e "Voltar etapa" tiram a marca', async () => {
   const fs = require('fs'), admin = fs.readFileSync(raiz('js/admin.js'), 'utf8'), utils = fs.readFileSync(raiz('js/utils.js'), 'utf8');
-  assert.ok(/Caiu, marcar recebido/.test(admin) && /Ainda não, concluir assim mesmo/.test(admin) && /nao: 'Voltar'/.test(admin), 'as três saídas');
+  assert.ok(/Caiu, marcar recebido/.test(admin) && /Ainda não, concluir assim mesmo/.test(admin) && /nao: 'Voltar', principal: 'meio'/.test(admin), 'as três saídas; o padrão é "Ainda não"');
+  assert.ok(/Confirme: \$\{fmt\(falta\)\} caiu na conta\?/.test(admin) && /return \(await confirmarValorDoPix\(p\)\)/.test(admin), '"Caiu" ainda pede a confirmação do valor');
+  assert.ok(/action === 'pix-recebido' && !\(await confirmarValorDoPix\(pedido\)\)/.test(admin), 'o botão "PIX recebido" também confirma o valor');
+  assert.ok(/rotulos\.principal === 'meio'/.test(utils) && /meioPrincipal && meioBtn \? meioBtn : okBtn/.test(utils), 'a caixa põe o foco e a cor no botão do meio');
   assert.ok(/O PIX de \$\{fmt\(falta\)\} caiu\?/.test(admin), 'a pergunta diz o valor');
   assert.ok(/finalizar\('meio'\)/.test(utils) && /btn-confirm-meio/.test(fs.readFileSync(raiz('admin.html'), 'utf8')), 'a caixa de confirmação tem o terceiro botão (painel e loja)');
   const Senha = require(raiz('lib/senha'));
@@ -5834,9 +5837,19 @@ teste('"Já paguei" do cliente chega ao painel: só o dono, só PIX não pago, t
   assert.strictEqual(ultimo.status, 429, 'rajada da mesma conexão para no freio');
   // painel mostra o selo ao lado do botão; a loja manda e, se a rota não existir (servidor velho), segue sem erro
   const fs = require('fs'), admin = fs.readFileSync(raiz('js/admin.js'), 'utf8'), loja = fs.readFileSync(raiz('js/loja.js'), 'utf8');
+  assert.ok(/\(não conferido\)<\/span>/.test(admin) && /!== Math\.round\(\(Number\(p\.total\)/.test(admin), 'selo diz "não conferido" e mostra o valor avisado se for diferente (para mais ou para menos)');
+  assert.ok(/PIX entrou com valor diferente: confira\./.test(admin) && /p\.conferirPagamento/.test(admin), 'marca do PIX automático com valor diferente (lib/pagbank.js)');
+  assert.ok(/data-action="pix-recebido" data-id="\$\{escapeHTML\(x\.id\)\}"/.test(admin) && /balancoCache\.find\(\(p\) => p\.id === id\)/.test(admin), 'Balanço: "PIX recebido" direto na lista de PIX não conferido');
   assert.ok(/CLIENTE DIZ QUE PAGOU\$\{horaCurta\(infInf\.em\) \? ` às/.test(admin) && /\$\{seloInformado\}<button type="button" class="bt bt-sec" data-action="pix-recebido"/.test(admin), 'selo junto do botão "PIX recebido"');
-  assert.ok(/chamarApi\('\/api\/pix-informado'[^\n]*\.catch\(\(\) => \{/.test(loja), 'a loja manda ao servidor e engole a falha (servidor velho, sem internet)');
+  assert.ok(/await chamarApi\('\/api\/pix-informado'/.test(loja) && /catch \(_\) \{ return false; \}/.test(loja), 'a loja manda ao servidor e, se falhar (servidor velho, sem internet), não mostra erro');
   assert.ok(/avisarBancaDoPix\(id, action === 'pix-nao-paguei'\)/.test(loja));
+  // R6: enquanto o aviso não chega à banca, a tela diz a verdade e tenta de novo depois
+  const A = await import(raiz('js/acompanhar-lib.js'));
+  assert.strictEqual(A.avisoChegou({ em: 'x', total: 20, avisado: false }), false);
+  assert.strictEqual(A.avisoChegou({ em: 'x', total: 20 }), false, 'aviso antigo, nunca mandado: não chegou');
+  assert.strictEqual(A.avisoChegou({ em: 'x', total: 20, avisado: true }), true);
+  assert.deepStrictEqual(A.avisosPendentes({ p1: { em: 'x', avisado: false }, p2: { em: 'x', avisado: true }, p3: null }), ['p1']);
+  assert.ok(/Seu aviso ainda não chegou à banca\. Mande o comprovante no WhatsApp\./.test(loja) && /reenviarAvisosPendentes\(\)/.test(loja) && /marcarAvisado\(pedidoId\)/.test(loja));
 });
 
 teste('"Arquivar todos" leva só o que já saiu, de hoje ou de antes; diz quantos ficaram e por quê; PIX sem conferência pergunta em resumo', async () => {
@@ -5849,10 +5862,13 @@ teste('"Arquivar todos" leva só o que já saiu, de hoje ou de antes; diz quanto
     { id: 'd', status: 'preparando', entregaDia: '2026-11-18' },
     { id: 'e', status: 'pendente' },
     { id: 'f', status: 'aguardando_pesagem' },
+    { id: 'g', status: 'enviado', modo: 'retirada', entregaDia: '2026-11-18' },   // RETIRADA pronta que ninguém buscou
+    { id: 'h', status: 'enviado', modo: 'retirada', entregaDia: '2026-11-17' },
   ];
   const r = D.separarParaArquivar(lista, hoje);
-  assert.deepStrictEqual([r.arquivar.map((p) => p.id), r.naoSairam, r.outroDia], [['a', 'b'], 3, 1]);
-  assert.strictEqual(D.textoDoQueFica(r), 'Ficam 4 na fila: 3 ainda não saíram (Novos ou Separando) e 1 é para outro dia.');
+  assert.deepStrictEqual([r.arquivar.map((p) => p.id), r.naoSairam, r.outroDia, r.retiradasProntas], [['a', 'b'], 3, 1, 2], 'retirada pronta não é "retirada": nunca vai no lote');
+  assert.strictEqual(D.textoDoQueFica(r), 'Ficam 4 na fila: 3 ainda não saíram (Novos ou Separando) e 1 é para outro dia. 2 retiradas prontas ainda não foram buscadas e ficaram na fila.');
+  assert.strictEqual(D.textoDoQueFica({ retiradasProntas: 1 }), '1 retirada pronta ainda não foi buscada e ficou na fila.');
   assert.strictEqual(D.textoDoQueFica({ naoSairam: 0, outroDia: 1 }), 'Fica 1 na fila: 1 é para outro dia.');
   assert.strictEqual(D.textoDoQueFica({}), '');
   assert.strictEqual(D.diaDoPedido({ data: '2026-11-18T01:30:00Z' }), '2026-11-17', '22h30 em Brasília ainda é o dia 17');
@@ -5867,13 +5883,19 @@ teste('avisos do painel em português simples: sem internet a etapa não mudou; 
   assert.strictEqual(D.avisoDeFalha(new Error('x'), { online: false, noPedido: true }), 'Sem internet: a etapa não mudou. Toque de novo.');
   assert.strictEqual(D.avisoDeFalha({ code: 'unavailable', message: 'Failed to get document because the client is offline.' }, { noPedido: true }), 'Sem internet: a etapa não mudou. Toque de novo.');
   assert.strictEqual(D.avisoDeFalha(new TypeError('Failed to fetch'), { noPedido: false }), 'Sem internet: nada foi salvo. Toque de novo.');
-  assert.ok(/outro aparelho/.test(D.avisoDeFalha({ code: 'permission-denied', message: 'Missing or insufficient permissions.' }, { noPedido: true })));
+  const negado = { code: 'permission-denied', message: 'Missing or insufficient permissions.' };
+  assert.strictEqual(D.avisoDeFalha(negado, { noPedido: true }), 'Sua conta não tem permissão para isso. Fale com o dono da loja.', 'sem permissão não vira "mudou em outro aparelho"');
+  assert.ok(/outro aparelho/.test(D.avisoDeFalha(negado, { noPedido: true, mudou: true })), 'só quando o cartão mudou na tela');
   assert.ok(!/erro ao processar|undefined/i.test(D.avisoDeFalha(null)));
-  assert.deepStrictEqual(['preparando', 'enviado', 'arquivado'].map((s) => D.nomeDaAba(s)), ['Separando', 'A caminho', 'Entregues']);
-  assert.strictEqual(D.nomeDaAba('enviado', 'retirada'), 'Pronto p/ retirar');
+  assert.deepStrictEqual(['pendente', 'preparando', 'enviado', 'arquivado'].map((s) => D.nomeDaAba(s)), ['Novos', 'Separando', 'Enviados', 'Entregues']);
+  assert.strictEqual(D.nomeDaAba('enviado', 'retirada'), 'Enviados', 'retirada pronta também fica na aba Enviados');
+  // as abas citadas existem mesmo na tela
+  const abasNaTela = (require('fs').readFileSync(raiz('js/admin.js'), 'utf8').match(/const etapas = \[\['novos', '([^']+)'[^\n]*\['prep', '([^']+)'[^\n]*\['env', '([^']+)'/) || []).slice(1);
+  assert.deepStrictEqual(abasNaTela, [D.ABAS.novos, D.ABAS.prep, D.ABAS.env]);
   const admin = require('fs').readFileSync(raiz('js/admin.js'), 'utf8');
   assert.ok(!/Houve um erro ao processar sua ação/.test(admin) && !/Pedido movido para: \$\{nextStatus\.toUpperCase\(\)\}/.test(admin), 'os textos de sistema saíram');
-  assert.ok(/nomeDaAba\(nextStatus, pedidoA\.modo\)/.test(admin));
+  assert.ok(/nomeDaAba\(nextStatus\)/.test(admin));
+  assert.ok(!/"A caminho"|Pronto p\/ retirar/.test(admin.replace(/\/\/.*$/gm, '')), 'nenhum aviso cita aba que não existe');
 });
 
 teste('PIX pela chave diz de qual loja é a conta (nome de pessoa sozinho parece golpe)', async () => {
@@ -5931,9 +5953,11 @@ teste('internet fraca: reenvia UMA vez com a mesma chave antes do WhatsApp (tamb
   assert.strictEqual(R.reenviarAntesDoPlanoB(err('Cupom vencido', 400)), false, 'erro que o cliente resolve');
   assert.strictEqual(R.reenviarAntesDoPlanoB(Object.assign(new Error('prévia'), { previa: true })), false);
   const loja = require('fs').readFileSync(raiz('js/loja.js'), 'utf8');
-  const envio = loja.slice(loja.indexOf('const enviarPedidoAoServidor'), loja.indexOf('const enviarPedidoAoServidor') + 500);
-  assert.ok(/reenviarAntesDoPlanoB\(e\)/.test(envio) && (envio.match(/chamarApi\('\/api\/checkout', payload/g) || []).length === 2, 'um envio e UM reenvio, com o mesmo payload (mesma idempotencyKey)');
-  assert.ok(/Se o pedido aparecer em Meus pedidos, não mande de novo\./.test(loja));
+  const envio = loja.slice(loja.indexOf('const enviarPedidoAoServidor'), loja.indexOf('const enviarPedidoAoServidor') + 900);
+  assert.ok(/reenviarAntesDoPlanoB\(e\)/.test(envio) && (envio.match(/chamarApi\('\/api\/checkout', payload/g) || []).length === 1, 'sempre o mesmo payload (mesma idempotencyKey) em todas as tentativas');
+  assert.ok(!/Se o pedido aparecer em Meus pedidos/.test(loja), 'o texto que não era verdade saiu');
+  assert.ok(/O site tentou 3 vezes, com o mesmo código/.test(loja));
+  assert.ok(/tentativa <= 3/.test(envio), 'um envio, um reenvio e mais um silencioso antes do WhatsApp');
   // o servidor devolve o MESMO pedido para a mesma chave (a base do reenvio seguro)
   const db = criarBancoP(semente()), adm = criarAdmin(db, TOKENS), checkout = carregarApi(raiz('api/checkout.js'), adm);
   const corpo = pedido({ idempotencyKey: 'ped-reenvio01' });

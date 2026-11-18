@@ -70,39 +70,44 @@ export function dinheiroDoPeriodo(pedidos) {
 }
 
 /**
- * "Arquivar todos" (fim do expediente): só leva o que já saiu (status 'enviado') com o dia de entrega HOJE ou antes.
- * O resto fica, e a pessoa fica sabendo quantos e por quê.
- *   { arquivar: [pedidos], naoSairam: n, outroDia: n }
+ * "Arquivar todos" (fim do expediente): só leva o que SAIU PARA ENTREGA (status 'enviado', modo entrega) com o dia de
+ * entrega HOJE ou antes. RETIRADA pronta ('enviado' + modo 'retirada') NUNCA vai no lote: "pronto" não quer dizer que
+ * o cliente buscou; ela só sai da fila pelo "Cliente retirou" do cartão. O resto fica, e a pessoa fica sabendo por quê.
+ *   { arquivar: [pedidos], naoSairam: n, outroDia: n, retiradasProntas: n }
  */
 export function separarParaArquivar(pedidos, hoje) {
-    const arquivar = []; let naoSairam = 0, outroDia = 0;
+    const arquivar = []; let naoSairam = 0, outroDia = 0, retiradasProntas = 0;
     for (const p of Array.isArray(pedidos) ? pedidos : []) {
         if (!p || ['arquivado', 'cancelado'].includes(p.status)) continue;
         if (p.status !== 'enviado') { naoSairam++; continue; }
+        if (p.modo === 'retirada') { retiradasProntas++; continue; }
         const dia = diaDoPedido(p);
         if (dia && hoje && dia > hoje) { outroDia++; continue; }
         arquivar.push(p);
     }
-    return { arquivar, naoSairam, outroDia };
+    return { arquivar, naoSairam, outroDia, retiradasProntas };
 }
 
-/** "Ficam 3: 2 ainda não saíram (Novos ou Separando) e 1 é para outro dia." ('' = nada fica) */
-export function textoDoQueFica({ naoSairam = 0, outroDia = 0 } = {}) {
-    const n = naoSairam + outroDia;
-    if (!n) return '';
-    const partes = [];
-    if (naoSairam) partes.push(`${naoSairam} ainda não ${naoSairam === 1 ? 'saiu' : 'saíram'} (Novos ou Separando)`);
-    if (outroDia) partes.push(`${outroDia} ${outroDia === 1 ? 'é' : 'são'} para outro dia`);
-    return `${n === 1 ? 'Fica 1' : `Ficam ${n}`} na fila: ${partes.join(' e ')}.`;
+/** "Ficam 3 na fila: 2 ainda não saíram (Novos ou Separando) e 1 é para outro dia. 1 retirada pronta ainda não foi buscada e ficou na fila." */
+export function textoDoQueFica({ naoSairam = 0, outroDia = 0, retiradasProntas = 0 } = {}) {
+    const n = naoSairam + outroDia, frases = [];
+    if (n) {
+        const partes = [];
+        if (naoSairam) partes.push(`${naoSairam} ainda não ${naoSairam === 1 ? 'saiu' : 'saíram'} (Novos ou Separando)`);
+        if (outroDia) partes.push(`${outroDia} ${outroDia === 1 ? 'é' : 'são'} para outro dia`);
+        frases.push(`${n === 1 ? 'Fica 1' : `Ficam ${n}`} na fila: ${partes.join(' e ')}.`);
+    }
+    if (retiradasProntas) frases.push(retiradasProntas === 1 ? '1 retirada pronta ainda não foi buscada e ficou na fila.' : `${retiradasProntas} retiradas prontas ainda não foram buscadas e ficaram na fila.`);
+    return frases.join(' ');
 }
 
-/** O nome da aba do painel em que o pedido está (o mesmo que a equipe vê na tela). */
-export function nomeDaAba(status, modo) {
-    const ret = modo === 'retirada';
-    return ({
-        pendente: 'Novos', aguardando_pagamento: 'Novos', aguardando_pesagem: 'Novos (a pesar)', preparando: 'Separando',
-        enviado: ret ? 'Pronto p/ retirar' : 'A caminho', arquivado: ret ? 'Retirados' : 'Entregues', cancelado: 'Cancelados',
-    })[status] || 'Novos';
+/**
+ * O nome da aba do painel em que o pedido está, EXATAMENTE como está escrito na tela (js/admin.js → renderHtmlPedidos:
+ * Novos, Separando, Enviados; os concluídos ficam em "Ver os entregues"). Retirada pronta também fica em Enviados.
+ */
+export const ABAS = { novos: 'Novos', prep: 'Separando', env: 'Enviados', feitos: 'Entregues' };
+export function nomeDaAba(status) {
+    return ({ preparando: ABAS.prep, enviado: ABAS.env, arquivado: ABAS.feitos, cancelado: 'Cancelados' })[status] || ABAS.novos;
 }
 
 const SEM_REDE = /failed to fetch|load failed|networkerror|network request failed|offline|unavailable|sem conex|timeout|deadline/i;
@@ -110,9 +115,13 @@ const SEM_REDE = /failed to fetch|load failed|networkerror|network request faile
  * O aviso quando uma ação do painel não deu certo, sem linguagem de sistema.
  *   noPedido = a ação mexia na etapa de um pedido
  */
-export function avisoDeFalha(erro, { online = true, noPedido = false } = {}) {
+export function avisoDeFalha(erro, { online = true, noPedido = false, mudou = false } = {}) {
     const cod = String((erro && erro.code) || ''), msg = String((erro && erro.message) || '');
     if (!online || SEM_REDE.test(cod) || SEM_REDE.test(msg)) return noPedido ? 'Sem internet: a etapa não mudou. Toque de novo.' : 'Sem internet: nada foi salvo. Toque de novo.';
-    if (/permission/i.test(cod) || /permission|insufficient/i.test(msg)) return noPedido ? 'Este pedido já mudou em outro aparelho. A tela se atualiza sozinha; confira e toque de novo.' : 'Sua conta não pode fazer isso.';
+    // o banco diz só "sem permissão" nos dois casos; quem chama sabe se o pedido mudou na tela enquanto isso (mudou)
+    if (/permission/i.test(cod) || /permission|insufficient/i.test(msg)) {
+        if (noPedido && mudou) return 'Este pedido já mudou em outro aparelho. Confira na tela e toque de novo se precisar.';
+        return 'Sua conta não tem permissão para isso. Fale com o dono da loja.';
+    }
     return noPedido ? 'Não consegui mudar a etapa. Toque de novo.' : 'Não deu certo. Toque de novo.';
 }

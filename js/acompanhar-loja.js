@@ -20,7 +20,7 @@
 import { auth, onAuthStateChanged, onSnapshot } from './firebase.js';
 import { tdoc, chave } from './tenant.js';
 import { escapeHTML, fmt, hapticFeedback } from './utils.js';
-import { acompanhamento, pedidosParaAcompanhar, chamouAgora, oQueAPlacaAbre, temPixParaPagar, pixLiberouAgora, estadoDoInformado } from './acompanhar-lib.js';
+import { acompanhamento, pedidosParaAcompanhar, chamouAgora, oQueAPlacaAbre, temPixParaPagar, pixLiberouAgora, estadoDoInformado, avisoChegou } from './acompanhar-lib.js';
 
 // ---------- guardado no aparelho ----------
 // "Já paguei" (PIX pela chave): o site não sabe sozinho quando o PIX cai. Guardar evita que a plaquinha cobre de novo.
@@ -34,9 +34,16 @@ export const lerInformados = () => {
     Object.entries(tudo).forEach(([id, v]) => { if (v && Date.parse(v.em) > limite) fica[id] = v; });
     return fica;
 };
+// avisado: false até o servidor responder (marcarAvisado). A tela diz "ainda não chegou à banca" enquanto isso.
 export const informarPago = (id, total) => {
-    const tudo = lerInformados(); tudo[String(id)] = { em: new Date().toISOString(), total: Number(total) || 0 };
+    const tudo = lerInformados(); tudo[String(id)] = { em: new Date().toISOString(), total: Number(total) || 0, avisado: false };
     try { localStorage.setItem(K_INFORMADO(), JSON.stringify(tudo)); } catch (_) { /* aparelho sem espaço: segue */ }
+};
+/** O servidor confirmou que a banca recebeu o "Já paguei". */
+export const marcarAvisado = (id) => {
+    const tudo = lerInformados(), v = tudo[String(id)]; if (!v) return;
+    tudo[String(id)] = { ...v, avisado: true };
+    try { localStorage.setItem(K_INFORMADO(), JSON.stringify(tudo)); } catch (_) { /* ok */ }
 };
 export const desfazerInformado = (id) => {
     const tudo = lerInformados(); delete tudo[String(id)];
@@ -126,9 +133,9 @@ const desenhar = () => {
     el.hidden = false; document.body.classList.add('com-acomp');
     const faixas = lista.map(({ id, a, p }) => {
         // PIX liberado: só depois da balança (temItensAPesar = false) e se a loja mostra o código (js/loja.js decide)
-        const informado = estadoDoInformado(lerInformados()[id], p);
+        const infAqui = lerInformados()[id], informado = estadoDoInformado(infAqui, p), chegou = avisoChegou(infAqui);
         const pagar = a.tom !== 'pronto' && !informado && temPixParaPagar(p) && /data-action="copiar-pix"|data-action="pagar-pix"/.test(OPCOES.pixHtml({ ...p, id }) || '');
-        const sub = a.senha ? `Senha ${a.senha} · toque para ver` : a.pago ? 'Pago ✓ · toque para ver' : informado === 'mudou' ? 'O valor mudou: fale com a banca' : informado ? 'Você avisou que pagou · a banca confere' : pagar ? `Valor fechado${Number.isFinite(Number(p.total)) ? `: ${fmt(Number(p.total))}` : ''} · toque para pagar com PIX` : p.temItensAPesar ? 'O PIX aparece depois da pesagem' : 'Toque para ver o pedido';
+        const sub = a.senha ? `Senha ${a.senha} · toque para ver` : a.pago ? 'Pago ✓ · toque para ver' : informado === 'mudou' ? 'O valor mudou: fale com a banca' : informado && !chegou ? 'Seu aviso ainda não chegou à banca · mande o comprovante' : informado ? 'Você avisou que pagou · a banca confere' : pagar ? `Valor fechado${Number.isFinite(Number(p.total)) ? `: ${fmt(Number(p.total))}` : ''} · toque para pagar com PIX` : p.temItensAPesar ? 'O PIX aparece depois da pesagem' : 'Toque para ver o pedido';
         return `
         <button type="button" class="acomp-faixa tom-${pagar ? 'pagar' : a.tom}" data-acomp="abrir" data-id="${escapeHTML(id)}">
             <span class="acomp-ico" aria-hidden="true">${pagar ? '💠' : (ICONE[a.tom] || '🧾')}</span>
