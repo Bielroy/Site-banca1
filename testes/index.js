@@ -1553,19 +1553,22 @@ teste('motor: mesma quadra e lote em condomínios diferentes são clientes difer
   const r2 = N.normalizarPedidos([{ id: '1', data: d(1), nome: 'Ana', quadra: '5', lote: '3', itens: it }, { id: '2', data: d(8), nome: 'Ana', quadra: '5', lote: '3', condominio: 'Jardins Munique', itens: it }], []);
   assert.strictEqual(r2.clientes.length, 1, 'com 1 condomínio só, o pedido antigo é da mesma casa');
 });
-teste('aba Clientes: quem RETIRA na banca entra na lista (pelo telefone ou pelo aparelho); balcão sem dados não', () => {
+teste('aba Clientes: quem RETIRA na banca entra na lista (pelo aparelho; balcão pelo telefone); telefone digitado não junta pessoas', () => {
   const N = require(raiz('analytics/normalize'));
   const it = [{ id: 'b', nome: 'B', qtd: 1, unidade: 'un', preco: 1 }], d = (n) => new Date(Date.UTC(2026, 10, n, 15)).toISOString();
   const r = N.normalizarPedidos([
     { id: '1', data: d(1), nome: 'Carla', modo: 'retirada', telefone: '(61) 99999-1111', userId: 'u1', total: 50, itens: it },
-    { id: '2', data: d(9), nome: 'Carla', modo: 'retirada', telefone: '5561999991111', userId: 'u2', total: 30, itens: it },   // outro aparelho, mesmo telefone
-    { id: '3', data: d(9), nome: 'Patrícia', modo: 'retirada', userId: 'u3', total: 20, itens: it },                          // sem telefone: o aparelho
-    { id: '4', data: d(9), nome: 'Balcão', origem: 'balcao', userId: 'equipe:x', total: 9, itens: it },                       // venda de balcão sem dados
+    { id: '2', data: d(9), nome: 'Carla', modo: 'retirada', telefone: '61999991111', userId: 'u1', total: 30, itens: it },       // mesmo aparelho
+    { id: '3', data: d(9), nome: 'Patrícia', modo: 'retirada', userId: 'u3', total: 20, itens: it },                             // sem telefone: o aparelho
+    { id: '4', data: d(9), nome: 'Intruso', modo: 'retirada', telefone: '61999991111', userId: 'u9', total: 5, itens: it },      // digitou o telefone da Carla
+    { id: '5', data: d(9), nome: 'Balcão', origem: 'balcao', userId: 'equipe:x', total: 9, itens: it },                          // balcão sem dados
+    { id: '6', data: d(9), nome: 'Seu Zé', origem: 'balcao', userId: 'equipe:x', telefone: '61988887777', total: 12, itens: it }, // balcão com telefone anotado
   ], []);
   const seguidos = r.clientes.filter((c) => !c.anonimo);
-  assert.strictEqual(seguidos.length, 2, 'Carla (2 pedidos, mesmo telefone) e Patrícia');
   const carla = seguidos.find((c) => c.nome === 'Carla');
   assert.strictEqual(carla.nPedidos, 2); assert.strictEqual(carla.gasto, 80); assert.strictEqual(carla.retirada, true);
+  assert.ok(seguidos.find((c) => c.nome === 'Intruso'), 'quem digitou o telefone da Carla vira outro cliente, não entra no dela');
+  assert.ok(seguidos.find((c) => c.nome === 'Patrícia')); assert.ok(seguidos.find((c) => c.nome === 'Seu Zé'));
   assert.ok(r.clientes.find((c) => c.nome === 'Balcão').anonimo, 'balcão sem telefone continua fora da lista');
   assert.ok(N.chaveCliente({ quadra: '5', lote: '3', telefone: '61999991111' }).startsWith('end:'), 'com endereço, continua sendo pela casa');
   const { linhaEndereco } = require(raiz('lib/endereco'));

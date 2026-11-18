@@ -48,12 +48,14 @@ const normCond = (s) => semAcento(s).replace(/[^a-z0-9]+/g, ' ').trim();
 const chaveCliente = (p, cond = normCond(p.condominio)) => {
   const q = normEnd(p.quadra), l = normEnd(p.lote);
   if (q || l) return cond ? `end:${cond}|${q}|${l}` : `end:${q}|${l}`;
-  // sem endereço (retirada na banca ou na feira): o TELEFONE identifica a pessoa; sem telefone, o
-  // aparelho de onde ela pediu pelo site. Sem nenhum dos dois (balcão sem dados), não dá para acompanhar.
+  // sem endereço (retirada na banca ou na feira): pedido feito PELO SITE é da pessoa daquele aparelho (o login
+  // anônimo, que ela não consegue forjar). O telefone digitado NÃO junta pedidos do site: qualquer um digita o
+  // número de outra pessoa, e aí as sugestões dela mostrariam os hábitos da outra. Só a venda de BALCÃO, em que
+  // a equipe anotou o telefone na frente do cliente, é reconhecida pelo telefone.
+  const uid = String(p.userId || ''), uidReal = uid && uid !== 'anonimo' && !uid.startsWith('equipe:');
+  if (p.origem !== 'balcao' && uidReal) return `uid:${uid}`;
   const tel = String(p.telefone || '').replace(/\D/g, '');
-  if (tel.length >= 10) return `tel:${tel.slice(-11)}`;
-  const uid = String(p.userId || '');
-  if (p.modo === 'retirada' && uid && uid !== 'anonimo' && !uid.startsWith('equipe:')) return `uid:${uid}`;
+  if (p.origem === 'balcao' && tel.length >= 10) return `tel:${tel.slice(-11)}`;
   return `ped:${p.id || Math.random()}`;
 };
 
