@@ -149,7 +149,7 @@ teste('PIX no pedido: cartão grande "Falta pagar" acima do WhatsApp, copia o c�
   await pagina.click('#pag-chips .pag-chip[data-pag="PIX"]');
   await pagina.click('#btn-enviar-pedido');
   await pagina.waitForSelector('#sucesso-pix .pix-destaque', { timeout: 6000 });
-  if (process.env.PRINT_PIX) { await pagina.waitForTimeout(700); await pagina.screenshot({ path: process.env.PRINT_PIX }); }
+  if (process.env.PRINT_PIX) { await pagina.setViewportSize({ width: 390, height: 1700 }); await pagina.waitForTimeout(700); await pagina.screenshot({ path: process.env.PRINT_PIX }); await pagina.setViewportSize({ width: 390, height: 844 }); }
   // o cartão fica ANTES do botão do WhatsApp, e o botão vira o passo final
   assert.ok(await pagina.evaluate(() => { const p = document.getElementById('sucesso-pix'), w = document.getElementById('sucesso-whatsapps'); return !!(p.compareDocumentPosition(w) & Node.DOCUMENT_POSITION_FOLLOWING); }), 'PIX acima do WhatsApp');
   assert.match(await pagina.locator('.pix-d-total').innerText(), /R\$\s*14,00/);

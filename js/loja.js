@@ -1301,7 +1301,7 @@ const mostrarLinksWhatsApp = (pedido, { pixPendente = false } = {}) => {
         ? `Seu pedido tem itens de ${links.length} atendimentos da banca. Toque nos ${links.length} botões, um de cada vez, para enviar tudo:`
         // iPhone: o navegador costuma barrar a abertura automática (ela acontece depois de o servidor responder,
         // e o iPhone só deixa abrir outro app no instante do toque). O texto pede o toque em vez de prometer.
-        : pixPendente ? 'Falta só o pagamento. Pague o PIX abaixo e depois mande o comprovante no WhatsApp.'
+        : pixPendente ? 'Falta só pagar. São dois passos rápidos:'
         : (ehIphone() ? 'Pedido recebido! Agora toque no botão verde para mandar a mensagem no WhatsApp.'
             : 'Vamos abrir o WhatsApp da banca com o seu pedido pronto. Se não abrir sozinho, toque no botão abaixo.');
     if (area) area.classList.toggle('precisa-toque', ehIphone() && links.length === 1 && !pixPendente);
@@ -1324,15 +1324,21 @@ const pagarComPix = async (pedidoId, total) => {
 const ICO_PIX = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.6c.6 0 1.2.2 1.7.7l3.1 3.1h-.4c-.8 0-1.5.3-2 .8L12.6 9a.9.9 0 0 1-1.2 0L9.6 7.2a2.8 2.8 0 0 0-2-.8h-.4l3.1-3.1c.5-.5 1.1-.7 1.7-.7zm6.2 5.2 2.5 2.5a2.4 2.4 0 0 1 0 3.4l-2.5 2.5h-1.8a1.4 1.4 0 0 1-1-.4L13.6 14a2.3 2.3 0 0 0-3.2 0l-1.8 1.8c-.3.3-.6.4-1 .4H5.8l-2.5-2.5a2.4 2.4 0 0 1 0-3.4l2.5-2.5h1.8c.4 0 .7.1 1 .4L10.4 10a2.3 2.3 0 0 0 3.2 0l1.8-1.8c.3-.3.6-.4 1-.4zM12 15.4c.2 0 .4.1.6.2l1.8 1.8c.5.5 1.2.8 2 .8h.4l-3.1 3.1a2.4 2.4 0 0 1-3.4 0l-3.1-3.1h.4c.8 0 1.5-.3 2-.8l1.8-1.8c.2-.1.4-.2.6-.2z"/></svg>';
 const ICO_COPIAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>';
 // Cartão grande da tela de sucesso: deixa claro que FALTA PAGAR, quanto, para quem e como.
-const pixCartao = (pedido, miolo) => `<section class="pix-destaque" aria-label="Pagamento PIX pendente">
-        <div class="pix-d-topo"><span class="pix-d-selo">${ICO_PIX}PIX</span><span class="pix-d-status">Falta pagar</span></div>
-        <p class="pix-d-rot">Valor a pagar</p>
-        <p class="pix-d-total">${fmt(pedido.total)}</p>
+// Três partes bem separadas: o VALOR (cabeça colorida), o passo 1 (pagar) e o passo 2 (avisar). A plaquinha fica no rodapé.
+const ICO_PLACA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2.5"/><path d="M10 18h4"/><path d="M2.5 9.5a4.5 4.5 0 0 1 0 5M21.5 9.5a4.5 4.5 0 0 0 0 5"/></svg>';
+const pixCartao = (pedido, miolo, { para = '' } = {}) => `<section class="pix-destaque" aria-label="Pagamento PIX pendente">
+        <header class="pix-d-cabeca">
+            <div class="pix-d-topo"><span class="pix-d-selo">${ICO_PIX}PIX</span><span class="pix-d-status">Falta pagar</span></div>
+            <p class="pix-d-rot">Valor a pagar</p>
+            <p class="pix-d-total">${fmt(pedido.total)}</p>
+            ${para}
+        </header>
         ${miolo}
     </section>`;
+const pixPasso = (n, titulo, corpo) => `<div class="pix-d-passo"><p class="pix-d-etapa"><span>${n}</span>${titulo}</p>${corpo}</div>`;
 const pixAutomaticoHtml = (pedido, destaque) => destaque
-    ? pixCartao(pedido, `<button type="button" class="btn-pix btn-pix--grande" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">${ICO_PIX}<span>Pagar com PIX agora</span></button>
-        <p class="pix-d-nota">Abre o QR Code e o código copia e cola. A banca fica sabendo do pagamento na hora.</p>`)
+    ? pixCartao(pedido, `<div class="pix-d-passo"><button type="button" class="btn-pix btn-pix--grande" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">${ICO_PIX}<span>Pagar com PIX agora</span></button>
+        <p class="pix-d-dica">Abre o QR Code e o código copia e cola. A banca fica sabendo do pagamento na hora.</p></div>`)
     : `<button type="button" class="btn-pix" data-action="pagar-pix" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Pagar ${fmt(pedido.total)} com PIX agora</button>`;
 const pixCopiaColaHtml = (pedido, destaque) => {
     if (!(Number(pedido.total) > 0)) return '';          // pedido de cortesia (cupom de 100%): nada a pagar
@@ -1344,22 +1350,25 @@ const pixCopiaColaHtml = (pedido, destaque) => {
     if (estado === 'informado') {
         const hora = new Date(inf.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         return `<section class="pix-destaque pix-informado" aria-label="Pagamento informado">
-            <p class="pix-d-rot">Pagamento informado às ${hora}</p>
-            <p class="pix-d-total">${fmt(pedido.total)}</p>
-            <p class="pix-d-nota"><b>Não pague de novo.</b> A banca confere no extrato e confirma aqui. Se ainda não mandou, mande o comprovante no WhatsApp.</p>
-            <button type="button" class="btn-pix-paguei" data-action="pix-nao-paguei" data-id="${escapeHTML(pedido.id)}">Ainda não paguei: mostrar o PIX</button>
+            <header class="pix-d-cabeca">
+                <div class="pix-d-topo"><span class="pix-d-selo">${ICO_PIX}PIX</span><span class="pix-d-status pix-d-status--ok">Pagamento avisado</span></div>
+                <p class="pix-d-rot">Você avisou às ${hora} que pagou</p>
+                <p class="pix-d-total">${fmt(pedido.total)}</p>
+            </header>
+            <div class="pix-d-passo">
+                <p class="pix-d-dica"><b>Não pague de novo.</b> A banca confere no extrato e confirma aqui. Se ainda não mandou, mande o comprovante no WhatsApp.</p>
+                <button type="button" class="btn-pix-paguei btn-pix-paguei--leve" data-action="pix-nao-paguei" data-id="${escapeHTML(pedido.id)}">Ainda não paguei: mostrar o PIX</button>
+            </div>
         </section>`;
     }
-    if (destaque) return pixCartao(pedido, `<p class="pix-d-para">Para <b>${escapeHTML(pix.nome)}</b><span>Chave ${escapeHTML(chaveBonita(pix))}</span></p>
-        <button type="button" class="btn-pix btn-pix--grande" data-action="copiar-pix" data-codigo="${escapeHTML(codigo)}">${ICO_COPIAR}<span>Copiar código PIX</span></button>
-        <ol class="pix-d-passos">
-            <li><span>1</span><p>Toque em <b>Copiar código PIX</b>.</p></li>
-            <li><span>2</span><p>No app do banco, escolha <b>PIX copia e cola</b> e cole. O valor já vem preenchido.</p></li>
-            <li><span>3</span><p>Depois de pagar, mande o <b>comprovante no WhatsApp</b> no botão verde abaixo.</p></li>
-        </ol>
-        <details class="pix-d-qr"><summary>Vai pagar por outro celular? Mostrar QR Code</summary><div class="pix-d-qr-caixa" data-codigo="${escapeHTML(codigo)}"></div></details>
-        ${veioDaPlaca() ? '<p class="pix-d-placa"><b>Vai pagar depois?</b> É só ler o QR Code ou encostar o celular na plaquinha de novo: este PIX abre de novo, com o mesmo valor.</p>' : ''}
-        <button type="button" class="btn-pix-paguei" data-action="pix-ja-paguei" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Já paguei</button>`);
+    if (destaque) return pixCartao(pedido,
+        pixPasso(1, 'Pague no app do seu banco', `<button type="button" class="btn-pix btn-pix--grande" data-action="copiar-pix" data-codigo="${escapeHTML(codigo)}">${ICO_COPIAR}<span>Copiar código PIX</span></button>
+            <p class="pix-d-dica">No app do banco, entre em <b>PIX copia e cola</b> e cole. O valor já vem preenchido.</p>
+            <details class="pix-d-qr"><summary><span>Vai pagar com outro celular? <b>Mostrar QR Code</b></span></summary><div class="pix-d-qr-caixa" data-codigo="${escapeHTML(codigo)}"></div></details>`)
+        + pixPasso(2, 'Avise que pagou', `<button type="button" class="btn-pix-paguei" data-action="pix-ja-paguei" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Já paguei</button>
+            <p class="pix-d-dica">E mande o <b>comprovante</b> para a banca no WhatsApp.</p>`)
+        + (veioDaPlaca() ? `<p class="pix-d-placa">${ICO_PLACA}<span><b>Vai pagar depois?</b> Leia o QR Code ou encoste o celular na plaquinha de novo. Este PIX volta com o mesmo valor.</span></p>` : ''),
+        { para: `<p class="pix-d-para">para <b>${escapeHTML(pix.nome)}</b> · <span class="pix-d-chave">chave ${escapeHTML(chaveBonita(pix))}</span></p>` });
     return `<div class="pix-cola">
         <b>Pague ${fmt(pedido.total)} com PIX</b>
         <span>Para ${escapeHTML(pix.nome)} · chave ${escapeHTML(chaveBonita(pix))}</span>
