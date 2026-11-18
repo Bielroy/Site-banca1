@@ -116,6 +116,7 @@ const Feira = require('../lib/feira');
 const Avise = require('../lib/avise');
 const Pac = require('../lib/pacote');   // pacote fechado e promoção "4 por R$ 10" (mesma conta de js/pacote-lib.js)
 const Montar = require('../lib/montar');   // montar pedido: complementos e adicionais (mesma conta de js/montar-lib.js)
+const V = require('../lib/venda');   // formas de pagamento aceitas (lista fechada)
 const Dias = require('../lib/dias');   // produto por dia da semana e pedido para amanhã (mesma conta de js/dias-lib.js)
 
 function montarTextoWhatsApp(pedido, numero) {
@@ -357,7 +358,9 @@ module.exports = async function handler(req, res) {
   // Telefone é opcional; guardamos só dígitos para montar o link do WhatsApp depois.
   telefone = String(telefone || '').replace(/\D/g, '').slice(0, 13);
   lote   = sanitizeString(lote, 30);
-  pag    = sanitizeString(pag, 30);
+  // forma de pagamento: só PIX, Cartão ou Dinheiro (maiúsculas e acentos não importam). Qualquer outra coisa é recusada.
+  pag    = V.formaDePagamento(pag);
+  if (!pag) return res.status(400).json({ error: 'Escolha a forma de pagamento: PIX, cartão ou dinheiro.' });
   troco  = sanitizeString(troco, 40);
   obs    = sanitizeString(obs, 300);
   if (querRetirada) { quadra = ''; lote = ''; condominio = ''; condominioId = ''; formatoEndereco = 'ql'; }   // nada de endereço de um pedido que será buscado
@@ -403,8 +406,8 @@ module.exports = async function handler(req, res) {
       let entrega = null;
       if (configSnap.exists && configSnap.data().lojaAberta === false) throw new Error('A loja está fechada no momento.');
       // Forma de pagamento que a loja desligou (ex.: maquininha quebrada): recusa com aviso claro (a tela já esconde)
-      { const formas = configCfg.formasPagamento || {}, k = { PIX: 'pix', 'Cartão': 'cartao', Dinheiro: 'dinheiro' }[pag];
-        if (k && formas[k] === false) throw new Error(`A loja não está aceitando ${pag === 'Cartão' ? 'cartão' : pag === 'PIX' ? 'PIX' : 'dinheiro'} agora. Escolha outra forma de pagamento e envie de novo.`); }
+      { const formas = configCfg.formasPagamento || {}, k = V.CHAVE_DA_FORMA[pag];
+        if (formas[k] === false) throw new Error(`A loja não está aceitando ${pag === 'Cartão' ? 'cartão' : pag === 'PIX' ? 'PIX' : 'dinheiro'} agora. Escolha outra forma de pagamento e envie de novo.`); }
       if (feiraDoPedido) {
         entrega = Feira.proximaEntrega(feiraDoPedido, Date.now());
         if (!entrega) throw new Error('Esta feira está sem data marcada. Fale com a banca pelo WhatsApp.');

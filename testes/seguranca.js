@@ -1216,9 +1216,11 @@ module.exports = function registrar({ teste, raiz, criarBanco, criarAdmin, chama
     assert.strictEqual(db._dados.get(`pedidos/${id1}`).status, 'pendente'); assert.ok(!db._dados.get(`pedidos/${id1}`).avaliacao);
     // sem login nenhum, o crachá sozinho não basta (a porta continua exigindo a sessão do aparelho)
     assert.strictEqual((await pedir({ pedidoId: id1 }, { Cookie: ck })).status, 401);
-    // celular novo da Ana (login novo + crachá que veio pelo link): avalia e cancela
+    // celular novo da Ana (login novo + crachá que veio pelo link): avalia (pedido entregue) e cancela
+    db._dados.set(`pedidos/${id1}`, { ...db._dados.get(`pedidos/${id1}`), status: 'arquivado' });
     assert.strictEqual((await pedir({ acao: 'avaliar', pedidoId: id1, nota: 5, texto: 'Tudo certo' }, { Authorization: 'Bearer cliente-2', Cookie: ck })).status, 200);
     assert.strictEqual(db._dados.get(`pedidos/${id1}`).avaliacao.nota, 5);
+    db._dados.set(`pedidos/${id1}`, { ...db._dados.get(`pedidos/${id1}`), status: 'pendente' });     // (só para testar o cancelamento pelo crachá)
     const c = await pedir({ pedidoId: id1 }, { Authorization: 'Bearer cliente-2', Cookie: ck });
     assert.strictEqual(c.status, 200); assert.strictEqual(db._dados.get(`pedidos/${id1}`).status, 'cancelado'); assert.strictEqual(db._dados.get('produtos/ovos').estoqueFisico, 9, 'o estoque voltou uma vez só (10 - 1 do vizinho)');
     // o crachá da Ana não dá poder sobre o pedido do vizinho

@@ -15,6 +15,9 @@ foram conferidas com dados simulados.
    emulador do Firebase a cada mudança (GitHub → Actions → "Testes de segurança").
 2. **Storage → Regras:** publique `storage.rules`.
 3. **Índice:** se o painel mostrar "modo simplificado", clique no link do erro no console do navegador.
+   **Índices do servidor:** publique `firestore.indexes.json` (`firebase deploy --only firestore:indexes`, ou no
+   console: Firestore → Índices → Composto → coleção `pedidos`, campos `status` e `data`, crescente). Sem ele os
+   lembretes de pedido parado (lib/lembretes.js) continuam funcionando, mas leem mais pedidos do que precisam.
 4. **Authentication → Authorized domains:** inclua todo endereço em que o painel for aberto.
 
 ## 3. Vercel

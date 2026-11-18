@@ -118,6 +118,55 @@ async function lerCatalogo(tid = T.TENANT_PADRAO) {
 // Primeira barreira, de memória (por cópia do servidor). A conta que vale para todas as cópias fica no banco (P.limitar).
 const passouDoLimite = (quem, max = 20, janelaMs = 60000) => H.passouNaMemoria(`ia:${quem}`, max, janelaMs);
 
+// TETOS DE GASTO DO CHAT (cada mensagem leva o catálogo inteiro para a IA, então cada uma custa).
+//   por loja, por dia: 300 (era 1.500). A plataforma muda pela variável CHAT_LIMITE_DIA (todas as lojas) ou pelo campo
+//                      limiteChatDia na ficha da loja (tenants/{loja}; só a plataforma grava nesse documento).
+//   por pessoa (login anônimo da loja), por dia: 30.
+//   por conexão, por dia: 90, SEMPRE (com ou sem login: criar logins novos não passa daqui).
+//   RESERVA: o último 1/3 do teto da loja só atende cliente conhecido (tem pedido PAGO ou ENTREGUE nesta loja).
+//   A conexão de IPv6 conta pelo bloco /64 (uma casa ou um celular recebe um bloco inteiro e troca de endereço à vontade).
+//            Quem gasta o chat com logins novos esgota só os 2/3 livres; a clientela de sempre continua sendo atendida.
+const CHAT_LIMITE_DIA_PADRAO = 300, CHAT_POR_LOGIN_DIA = 30, CHAT_POR_CONEXAO_DIA = 90;
+/** Até quanto do teto do dia qualquer um usa; o resto (1/3) fica para cliente conhecido. */
+const livreDoChat = (teto) => teto - Math.ceil(teto / 3);
+function tetoDoChat(ficha) {
+  const daFicha = Number(ficha && ficha.limiteChatDia);
+  if (Number.isInteger(daFicha) && daFicha >= 1 && daFicha <= 10000) return daFicha;
+  const doAmbiente = Number(process.env.CHAT_LIMITE_DIA);
+  return Number.isFinite(doAmbiente) && doAmbiente >= 1 ? Math.floor(doAmbiente) : CHAT_LIMITE_DIA_PADRAO;
+}
+/**
+ * A "conexão" para os limites do chat. IPv4: o endereço. IPv6: só o bloco /64 (as 4 primeiras partes): quem tem IPv6
+ * recebe um bloco inteiro e pode trocar o final do endereço a cada mensagem; contar pelo endereço completo não freava ninguém.
+ */
+function conexaoDoChat(ip) {
+  let x = String(ip || '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/%.*$/, '');
+  const v4 = /^(?:::ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/.exec(x);
+  if (v4) return v4[1];
+  if (!x.includes(':') || !/^[0-9a-f:]+$/.test(x)) return x.slice(0, 64) || 'desconhecido';
+  const [esq, dir = ''] = x.split('::');
+  const a = esq ? esq.split(':') : [], b = x.includes('::') ? (dir ? dir.split(':') : []) : [];
+  const partes = x.includes('::') ? [...a, ...Array(Math.max(0, 8 - a.length - b.length)).fill('0'), ...b] : a;
+  return `${partes.slice(0, 4).map((h) => (h || '0').replace(/^0+(?=.)/, '')).join(':')}::/64`;
+}
+// login anônimo da cliente (o ia.js manda o token): { uid }. Token inválido ou ausente: null (conta só pela conexão).
+async function loginDoChat(req) {
+  const tk = H.tokenDe(req);
+  if (!tk) return null;
+  try {
+    const dec = await admin.auth().verifyIdToken(tk);
+    return typeof dec.uid === 'string' && dec.uid ? { uid: dec.uid } : null;
+  } catch (e) { return null; }
+}
+// Cliente CONHECIDO: tem pedido PAGO ou ENTREGUE nesta loja. Login antigo não basta (login anônimo é de graça e
+// basta esperar um dia). Uma leitura, só quando a reserva está em uso.
+const pedidoQueConta = (p) => !!p && p.status !== 'cancelado' && (p.status === 'arquivado' || (p.pagamento && p.pagamento.status === 'PAID') || !!(p.pixConferido && p.pixConferido.em));
+async function clienteConhecido(db, tid, login) {
+  if (!login) return false;
+  try { return (await T.tcol(db, tid, 'pedidos').where('userId', '==', login.uid).limit(20).get()).docs.some((d) => pedidoQueConta(d.data())); }
+  catch (e) { return false; }
+}
+
 // ---------------------------------------------------------------------
 // Prompts
 // ---------------------------------------------------------------------
@@ -492,7 +541,7 @@ module.exports = async function handler(req, res) {
   // CHAT DA LOJA — resposta em streaming (SSE), como o ia.js espera
   // =================================================================
   if (action === 'chat_stream') {
-    const ip = H.ipDe(req);
+    const ip = conexaoDoChat(H.ipDe(req));            // IPv6: o bloco /64
     if (passouDoLimite(ip)) {
       return res.status(429).json({ sucesso: false, error: 'Muitas mensagens seguidas. Aguarde um instante.' });
     }
@@ -506,12 +555,20 @@ module.exports = async function handler(req, res) {
         if (tidChat !== T.TENANT_PADRAO && !(loja.ficha.modulos && loja.ficha.modulos.ia === true)) return semChat(403, 'O ajudante não está ligado nesta loja.');
         // Por conexão, contado no banco (vale para todas as cópias do servidor): 40 mensagens em 10 minutos.
         if (!(await P.limitar(admin.firestore(), 'ia-chat', `${tidChat}|${ip}`, 40, 600))) return semChat(429, 'Muitas mensagens seguidas. Aguarde alguns minutos.');
+        // Teto diário por CONEXÃO (sempre, com ou sem login) e por PESSOA (login anônimo da loja).
+        const dbc = admin.firestore(), login = await loginDoChat(req), cansou = 'Você já conversou bastante com o ajudante hoje. Para continuar, chame a loja pelo WhatsApp.';
+        if (!(await P.limitar(dbc, 'ia-chat-dia', `${tidChat}|ip:${ip}`, CHAT_POR_CONEXAO_DIA, 86400))) return semChat(429, cansou);
+        if (login && !(await P.limitar(dbc, 'ia-chat-dia', `${tidChat}|${login.uid}`, CHAT_POR_LOGIN_DIA, 86400))) return semChat(429, cansou);
         // Teto diário por loja: o chat é aberto ao público, então alguém mal-intencionado poderia gastar a cota da IA.
-        const teto = Number(process.env.CHAT_LIMITE_DIA) || 1500, dia = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
-        const usoRef = T.docDe(admin.firestore(), tidChat, `uso_ia/${dia}`);
-        const ok = await admin.firestore().runTransaction(async (t) => {
+        // O último 1/3 fica reservado para cliente conhecido (ver livreDoChat).
+        const teto = tetoDoChat(fichaChat), livre = livreDoChat(teto), dia = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+        const usoRef = T.docDe(dbc, tidChat, `uso_ia/${dia}`);
+        const usados = (((await usoRef.get()).data()) || {}).chat || 0;
+        const conhecido = Number(usados) >= livre ? await clienteConhecido(dbc, tidChat, login) : false;
+        const meuTeto = conhecido ? teto : livre;
+        const ok = await dbc.runTransaction(async (t) => {
           const s = await t.get(usoRef), n = (s.exists && Number(s.data().chat)) || 0;
-          if (n >= teto) return false;
+          if (n >= meuTeto) return false;
           t.set(usoRef, { chat: n + 1, dia }, { merge: true }); return true;
         });
         if (!ok) return semChat(429, 'O ajudante atingiu o limite de hoje. Chame a loja pelo WhatsApp.');
@@ -521,7 +578,7 @@ module.exports = async function handler(req, res) {
       // o contador do banco falhou: o chat continua, mas o teto do dia passa a ser contado na memória
       // (antes ficava sem teto nenhum, e o chat é aberto ao público)
       console.warn('[assistente] contador do banco falhou, teto contado na memória:', e && e.message);
-      const teto = Number(process.env.CHAT_LIMITE_DIA) || 1500;
+      const teto = tetoDoChat(fichaChat);
       if (!P.dentroDoLimite(`ia-dia-chat|${tidChat}`, teto, 24 * 3600)) return semChat(429, 'O ajudante atingiu o limite de hoje. Chame a loja pelo WhatsApp.');
     }
     // Entradas com tamanho limitado: texto de até 600 letras e foto de até ~1,5 MB em formato comum.
@@ -712,5 +769,9 @@ module.exports = async function handler(req, res) {
   }
 };
 module.exports.htmlSimples = htmlSimples;
+module.exports.tetoDoChat = tetoDoChat;
+module.exports.livreDoChat = livreDoChat;
+module.exports.conexaoDoChat = conexaoDoChat;
+module.exports.pedidoQueConta = pedidoQueConta;
 module.exports.promptDoChat = promptDoChat;
 module.exports.vendasLimpas = vendasLimpas;

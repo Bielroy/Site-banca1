@@ -1,4 +1,5 @@
 import { escapeHTML, showToast, isFracionavel } from './utils.js';
+import { auth } from './firebase.js';
 import { ICO } from './icones.js';
 import { temMontar, montarDoProduto } from './montar-lib.js';
 
@@ -221,9 +222,16 @@ export const initIA = (STATE) => {
                 imagem: imagemDoEnvio
             };
 
+            // o login anônimo da loja vai junto: o servidor conta o teto de mensagens por pessoa (api/assistente.js)
+            const cabecalhos = { 'Content-Type': 'application/json' };
+            try {
+                const u = auth.currentUser;
+                const tk = u ? await Promise.race([u.getIdToken(), new Promise((r) => setTimeout(() => r(''), 4000))]) : '';
+                if (tk) cabecalhos.Authorization = `Bearer ${tk}`;
+            } catch (_) { /* sem login: o servidor conta pela conexão */ }
             const response = await fetch('/api/assistente', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: cabecalhos,
                 body: JSON.stringify(payload)
             });
 

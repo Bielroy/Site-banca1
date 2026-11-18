@@ -32,6 +32,8 @@ const aplicarCors = H.cors;
 
 // rate limit leve por uid (em memória; suficiente p/ evitar martelar o Firestore)
 const ETAPAS_FUNIL = ['visita', 'adicionou', 'sacola', 'pedido'];
+// a aba Clientes (atualizar: true) recalcula no máximo esta quantidade de vezes por hora em cada loja
+const RECALCULOS_DA_ABA_POR_HORA = 1;
 const isoDeDiaBr = (ts) => new Date(ts - 3 * 3600000).toISOString().slice(0, 10);   // dia no Brasil (UTC−3)
 const ultimo = new Map();
 const limitar = (chave, ms) => {
@@ -148,16 +150,19 @@ module.exports = async function handler(req, res) {
     if (acao === 'painel') {
       let p = await Store.lerPainel(db), atualizou = false;
       // aba Clientes: se chegou pedido depois do último cálculo, recalcula antes de responder.
-      // Vale o mesmo limite do botão "recalcular"; passou do limite, devolve o cálculo que já existe.
+      // CUSTO: cada recálculo relê meses de pedidos. Pela aba, no máximo UM por hora por loja (antes era a cada abertura
+      // com pedido novo, até 20 por hora). Fora disso a aba mostra o cálculo que já existe, com a hora dele (meta.geradoEm).
+      // O botão "recalcular" e a rotina da noite continuam como estão.
       // Também recalcula quando o cálculo guardado veio de um servidor SEM o cofre (a reserva antiga da Vercel):
       // ele conta cada pedido como um cliente diferente. Aqui o servidor certo refaz com os pedidos abertos.
       const semCofre = !!(p && p.calculoSemCofre);
       if (corpo.atualizar === true && (semCofre || await Store.temPedidoNovo(db, p && p.meta && p.meta.geradoEm))
-          && limitar('recalc:' + tid, 8000) && await P.limitar(banco, 'recalcular', tid, 20, 3600)) {
+          && limitar('recalc:' + tid, 8000) && await P.limitar(banco, 'recalcular-aba', tid, RECALCULOS_DA_ABA_POR_HORA, 3600)
+          && await P.limitar(banco, 'recalcular', tid, 20, 3600)) {
         const r = await Store.recalcular(db, semCofre ? { forcar: true } : {});
         if (!r.pulado) { p = await Store.lerPainel(db); atualizou = true; }
       }
-      return res.status(200).json({ sucesso: true, vazio: !p, atualizou, ...(p || {}) });
+      return res.status(200).json({ sucesso: true, vazio: !p, atualizou, calculadoEm: (p && p.meta && p.meta.geradoEm) || null, ...(p || {}) });
     }
 
     if (acao === 'recalcular') {

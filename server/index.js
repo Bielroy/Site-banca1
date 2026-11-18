@@ -220,6 +220,7 @@ if (require.main === module) {
         require('../lib/lembretes').rodar(adm.firestore()).catch((e) => console.error('[lembretes]', e && e.message));
       } catch (e) { console.error('[lembretes]', e && e.message); }
     };
+    // (duas voltas nunca rodam ao mesmo tempo: a trava fica em lib/lembretes.js, rodar)
     setTimeout(volta, 60000).unref(); setInterval(volta, 3 * 60000).unref();
   }
   // Ao desligar (atualização, reinício), termina as respostas em andamento antes de sair (no máximo 8 s).
