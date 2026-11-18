@@ -123,9 +123,10 @@ const passouDoLimite = (quem, max = 20, janelaMs = 60000) => H.passouNaMemoria(`
 //                      limiteChatDia na ficha da loja (tenants/{loja}; só a plataforma grava nesse documento).
 //   por pessoa (login anônimo da loja), por dia: 30.
 //   por conexão, por dia: 90, SEMPRE (com ou sem login: criar logins novos não passa daqui).
-//   RESERVA: o último 1/3 do teto da loja só atende cliente conhecido (login com mais de 1 dia, ou que já fez pedido).
+//   RESERVA: o último 1/3 do teto da loja só atende cliente conhecido (tem pedido PAGO ou ENTREGUE nesta loja).
+//   A conexão de IPv6 conta pelo bloco /64 (uma casa ou um celular recebe um bloco inteiro e troca de endereço à vontade).
 //            Quem gasta o chat com logins novos esgota só os 2/3 livres; a clientela de sempre continua sendo atendida.
-const CHAT_LIMITE_DIA_PADRAO = 300, CHAT_POR_LOGIN_DIA = 30, CHAT_POR_CONEXAO_DIA = 90, LOGIN_ANTIGO_MS = 24 * 3600 * 1000;
+const CHAT_LIMITE_DIA_PADRAO = 300, CHAT_POR_LOGIN_DIA = 30, CHAT_POR_CONEXAO_DIA = 90;
 /** Até quanto do teto do dia qualquer um usa; o resto (1/3) fica para cliente conhecido. */
 const livreDoChat = (teto) => teto - Math.ceil(teto / 3);
 function tetoDoChat(ficha) {
@@ -134,20 +135,35 @@ function tetoDoChat(ficha) {
   const doAmbiente = Number(process.env.CHAT_LIMITE_DIA);
   return Number.isFinite(doAmbiente) && doAmbiente >= 1 ? Math.floor(doAmbiente) : CHAT_LIMITE_DIA_PADRAO;
 }
-// login anônimo da cliente (o ia.js manda o token): { uid, desde (ms) }. Token inválido ou ausente: null (conta só pela conexão).
+/**
+ * A "conexão" para os limites do chat. IPv4: o endereço. IPv6: só o bloco /64 (as 4 primeiras partes): quem tem IPv6
+ * recebe um bloco inteiro e pode trocar o final do endereço a cada mensagem; contar pelo endereço completo não freava ninguém.
+ */
+function conexaoDoChat(ip) {
+  let x = String(ip || '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/%.*$/, '');
+  const v4 = /^(?:::ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/.exec(x);
+  if (v4) return v4[1];
+  if (!x.includes(':') || !/^[0-9a-f:]+$/.test(x)) return x.slice(0, 64) || 'desconhecido';
+  const [esq, dir = ''] = x.split('::');
+  const a = esq ? esq.split(':') : [], b = x.includes('::') ? (dir ? dir.split(':') : []) : [];
+  const partes = x.includes('::') ? [...a, ...Array(Math.max(0, 8 - a.length - b.length)).fill('0'), ...b] : a;
+  return `${partes.slice(0, 4).map((h) => (h || '0').replace(/^0+(?=.)/, '')).join(':')}::/64`;
+}
+// login anônimo da cliente (o ia.js manda o token): { uid }. Token inválido ou ausente: null (conta só pela conexão).
 async function loginDoChat(req) {
   const tk = H.tokenDe(req);
   if (!tk) return null;
   try {
     const dec = await admin.auth().verifyIdToken(tk);
-    return typeof dec.uid === 'string' && dec.uid ? { uid: dec.uid, desde: Number(dec.auth_time) > 0 ? Number(dec.auth_time) * 1000 : 0 } : null;
+    return typeof dec.uid === 'string' && dec.uid ? { uid: dec.uid } : null;
   } catch (e) { return null; }
 }
-// Cliente CONHECIDO: o login existe há mais de 1 dia, ou já fez pedido nesta loja (uma leitura, só quando a reserva é usada).
+// Cliente CONHECIDO: tem pedido PAGO ou ENTREGUE nesta loja. Login antigo não basta (login anônimo é de graça e
+// basta esperar um dia). Uma leitura, só quando a reserva está em uso.
+const pedidoQueConta = (p) => !!p && p.status !== 'cancelado' && (p.status === 'arquivado' || (p.pagamento && p.pagamento.status === 'PAID') || !!(p.pixConferido && p.pixConferido.em));
 async function clienteConhecido(db, tid, login) {
   if (!login) return false;
-  if (login.desde > 0 && Date.now() - login.desde > LOGIN_ANTIGO_MS) return true;
-  try { return !(await T.tcol(db, tid, 'pedidos').where('userId', '==', login.uid).limit(1).get()).empty; }
+  try { return (await T.tcol(db, tid, 'pedidos').where('userId', '==', login.uid).limit(20).get()).docs.some((d) => pedidoQueConta(d.data())); }
   catch (e) { return false; }
 }
 
@@ -525,7 +541,7 @@ module.exports = async function handler(req, res) {
   // CHAT DA LOJA — resposta em streaming (SSE), como o ia.js espera
   // =================================================================
   if (action === 'chat_stream') {
-    const ip = H.ipDe(req);
+    const ip = conexaoDoChat(H.ipDe(req));            // IPv6: o bloco /64
     if (passouDoLimite(ip)) {
       return res.status(429).json({ sucesso: false, error: 'Muitas mensagens seguidas. Aguarde um instante.' });
     }
@@ -755,5 +771,7 @@ module.exports = async function handler(req, res) {
 module.exports.htmlSimples = htmlSimples;
 module.exports.tetoDoChat = tetoDoChat;
 module.exports.livreDoChat = livreDoChat;
+module.exports.conexaoDoChat = conexaoDoChat;
+module.exports.pedidoQueConta = pedidoQueConta;
 module.exports.promptDoChat = promptDoChat;
 module.exports.vendasLimpas = vendasLimpas;

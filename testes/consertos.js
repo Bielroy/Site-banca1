@@ -402,10 +402,110 @@ module.exports = function ({ teste, raiz, criarBanco, criarAdmin, chamar, carreg
       const k = [...db._dados.keys()].find((x) => x.startsWith('uso_ia/')); db._dados.set(k, { ...db._dados.get(k), chat: 200 });
       zerarFreios(); let r = await chat({ ...ip(), authorization: 'Bearer cliente' }); assert.strictEqual(r.status, 429, 'login de hoje, sem pedido: a reserva não é dele');
       zerarFreios(); r = await chat({ ...ip() }); assert.strictEqual(r.status, 429, 'sem login: também não');
-      zerarFreios(); r = await chat({ ...ip(), authorization: 'Bearer antigo' }); assert.strictEqual(r.status, 200, 'login com mais de 1 dia');
-      zerarFreios(); r = await chat({ ...ip(), authorization: 'Bearer freguesa' }); assert.strictEqual(r.status, 200, 'cliente com pedido na loja');
+      zerarFreios(); r = await chat({ ...ip(), authorization: 'Bearer antigo' }); assert.strictEqual(r.status, 429, 'login com mais de 1 dia, sem pedido, não é "conhecido" (rodada 3)');
+      db._dados.set('pedidos/ped-antigo', { userId: 'c-antigo', total: 10, status: 'pendente' });
+      zerarFreios(); r = await chat({ ...ip(), authorization: 'Bearer antigo' }); assert.strictEqual(r.status, 429, 'pedido só feito (não pago nem entregue) também não');
+      zerarFreios(); r = await chat({ ...ip(), authorization: 'Bearer freguesa' }); assert.strictEqual(r.status, 200, 'cliente com pedido entregue na loja');
       db._dados.set(k, { ...db._dados.get(k), chat: 300 });
-      zerarFreios(); r = await chat({ ...ip(), authorization: 'Bearer antigo' }); assert.strictEqual(r.status, 429, 'no teto, para para todos');
+      zerarFreios(); r = await chat({ ...ip(), authorization: 'Bearer freguesa' }); assert.strictEqual(r.status, 429, 'no teto, para para todos');
+    });
+  });
+
+  // ================================================================== RODADA 3
+  teste('CONSERTO 3 · PIX: QR antigo pago enquanto o QR novo era criado → 409 sem QR, ordem nova registrada (PagBank) ou apagada (Asaas)', async () => {
+    // PagBank: o aviso do QR antigo chega no meio da criação do QR novo
+    process.env.PAGBANK_API_TOKEN = 'token-teste'; process.env.PUBLIC_BASE_URL = 'https://www.exemplo.com.br';
+    const db = criarBanco({ 'loja/config': { wpp: '5562999990000', pixAutomatico: true }, 'pedidos/pix-rod3-001': { userId: 'c1', nome: 'Ana', total: 50, status: 'aguardando_pagamento',
+      pagamento: { provedor: 'pagbank', orderId: 'ORDE_A-00001', ordens: ['ORDE_A-00001'], valores: { 'ORDE_A-00001': 6000 }, valorC: 6000, status: 'WAITING' } } });
+    const ped = () => db._dados.get('pedidos/pix-rod3-001');
+    const PB = carregarApi(raiz('lib/pagbank.js'), criarAdmin(db, {}));
+    const falso = async (url, o) => {
+      if ((o && o.method) !== 'POST') return { ok: false, status: 404, json: async () => ({}) };
+      await PB.aplicarOrdem(db, { id: 'ORDE_A-00001', reference_id: 'pix-rod3-001', charges: [{ status: 'PAID', amount: { value: 6000, summary: { paid: 6000 } } }] });   // a corrida
+      return { ok: true, status: 200, json: async () => ({ id: 'ORDE_B-00001', qr_codes: [{ text: 'qr-B', amount: { value: 5000 }, links: [] }] }) };
+    };
+    const api = carregarApi(raiz('api/pagamento-pix.js'), criarAdmin(db, TOK)); zerarFreios();
+    const r = await comFetch(falso, () => chamar(api, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: { pedidoId: 'pix-rod3-001' } }));
+    assert.strictEqual(r.status, 409); assert.match(r.corpo.error, /já foi pago/); assert.ok(!r.corpo.qr_code && !r.corpo.orderId, 'o QR novo não vai para a cliente');
+    assert.strictEqual(ped().pagamento.status, 'PAID'); assert.strictEqual(ped().pagamento.orderId, 'ORDE_A-00001', 'o pagamento continua o do QR pago');
+    assert.ok(ped().pagamento.ordens.includes('ORDE_B-00001'), 'a ordem nova fica registrada');
+    // se mesmo assim o QR novo for pago, a equipe fica sabendo
+    const aviso = await PB.aplicarOrdem(db, { id: 'ORDE_B-00001', reference_id: 'pix-rod3-001', charges: [{ status: 'PAID', amount: { value: 5000, summary: { paid: 5000 } } }] });
+    assert.strictEqual(aviso.titulo, 'PIX pago duas vezes'); assert.strictEqual(ped().conferirPagamento.motivo, 'em-dobro');
+
+    // ordem paga que o pedido nem tem na lista (registro perdido): não é ignorada nem quita o pedido; vira conferência com aviso
+    db._dados.set('pedidos/pix-rod3-002', { userId: 'c1', nome: 'Bia', total: 30, status: 'pendente', pagamento: { provedor: 'pagbank', orderId: 'ORDE_C-00001', ordens: ['ORDE_C-00001'], valorC: 3000, status: 'PAID', ordensPagas: ['ORDE_C-00001'], valorPagoC: 3000 } });
+    let a = await PB.aplicarOrdem(db, { id: 'ORDE_SUMIDA-01', reference_id: 'pix-rod3-002', charges: [{ status: 'PAID', amount: { value: 3000 } }] });
+    let p2 = db._dados.get('pedidos/pix-rod3-002');
+    assert.strictEqual(a.titulo, 'PIX pago duas vezes'); assert.deepStrictEqual([p2.conferirPagamento.motivo, p2.conferirPagamento.recebidoC], ['em-dobro', 6000]);
+    assert.deepStrictEqual(p2.pagamento.ordensEstranhas, ['ORDE_SUMIDA-01']); assert.strictEqual(p2.pagamento.valorPagoC, 3000, 'não entra na soma "oficial"');
+    assert.strictEqual(await PB.aplicarOrdem(db, { id: 'ORDE_SUMIDA-01', reference_id: 'pix-rod3-002', charges: [{ status: 'PAID', amount: { value: 3000 } }] }), null, 'aviso repetido: nada');
+    // num pedido ainda não pago: não quita (a equipe confere no banco), mas avisa
+    db._dados.set('pedidos/pix-rod3-003', { userId: 'c1', nome: 'Caio', total: 30, status: 'aguardando_pagamento', pagamento: { provedor: 'pagbank', orderId: 'ORDE_D-00001', ordens: ['ORDE_D-00001'], valorC: 3000, status: 'WAITING' } });
+    a = await PB.aplicarOrdem(db, { id: 'ORDE_SUMIDA-02', reference_id: 'pix-rod3-003', charges: [{ status: 'PAID', amount: { value: 3000 } }] });
+    p2 = db._dados.get('pedidos/pix-rod3-003');
+    assert.strictEqual(a.titulo, 'PIX para conferir'); assert.strictEqual(p2.conferirPagamento.motivo, 'ordem-desconhecida'); assert.strictEqual(p2.pagamento.status, 'WAITING');
+
+    // Asaas: a mesma corrida apaga a cobrança recém-criada
+    const antes = { k: process.env.ASAAS_API_KEY, p: process.env.PAGBANK_API_TOKEN, e: process.env.ASAAS_ESPERA_QR_MS };
+    process.env.ASAAS_API_KEY = '$aact_hmlg_000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjAwMDA'; process.env.ASAAS_ESPERA_QR_MS = '1'; delete process.env.PAGBANK_API_TOKEN;
+    try {
+      require(raiz('lib/segredos'))._zerar();
+      const dbA = criarBanco({ 'loja/config': { pixAutomatico: true }, 'pedidos/pix-rod3-001': { userId: 'c1', nome: 'Ana', total: 50, status: 'aguardando_pagamento', pagamento: { provedor: 'asaas', orderId: 'pay_velho1', ordens: ['pay_velho1'], valorC: 6000, status: 'WAITING' } } });
+      const PBA = carregarApi(raiz('lib/pagbank.js'), criarAdmin(dbA, {}));
+      const chamadas = [];
+      const fa = async (url, o = {}) => {
+        const u = String(url), metodo = o.method || 'GET'; chamadas.push({ u, metodo });
+        const resp = (status, dados) => ({ ok: status < 300, status, json: async () => dados });
+        if (u.endsWith('/customers')) return resp(200, { id: 'cus_000001' });
+        if (u.endsWith('/payments') && metodo === 'POST') { await PBA.aplicarOrdem(dbA, { id: 'pay_velho1', reference_id: 'banca~pix-rod3-001', charges: [{ status: 'PAID', amount: { value: 6000 } }] }); return resp(200, { id: 'pay_novo01' }); }
+        if (/pixQrCode$/.test(u)) return resp(200, { payload: '00020126580014br.gov.bcb.pix0136abc-copia-e-cola', encodedImage: 'iVBORw0KGgo=' });
+        if (metodo === 'DELETE') return resp(200, { deleted: true });
+        return resp(404, {});
+      };
+      const apiA = carregarApi(raiz('api/pagamento-pix.js'), criarAdmin(dbA, TOK)); zerarFreios();
+      const rA = await comFetch(fa, () => chamar(apiA, { headers: { ...ip(), Authorization: 'Bearer cliente' }, body: { pedidoId: 'pix-rod3-001', cpf: '52998224725' } }));
+      assert.strictEqual(rA.status, 409, JSON.stringify(rA.corpo)); assert.ok(!rA.corpo.qr_code);
+      assert.ok(chamadas.some((c) => c.metodo === 'DELETE' && c.u.endsWith('/payments/pay_novo01')), 'a cobrança que sobrou foi apagada no Asaas');
+      assert.ok(!chamadas.some((c) => c.metodo === 'DELETE' && c.u.endsWith('/payments/pay_velho1')), 'a paga não é apagada');
+    } finally {
+      for (const [k, v] of [['ASAAS_API_KEY', antes.k], ['PAGBANK_API_TOKEN', antes.p], ['ASAAS_ESPERA_QR_MS', antes.e]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+      require(raiz('lib/segredos'))._zerar();
+    }
+  });
+
+  teste('CONSERTO 3 · chat: IPv6 conta pelo bloco /64 (trocar o final do endereço não escapa) e "conhecido" é só quem tem pedido pago ou entregue', async () => {
+    const api0 = carregarApi(raiz('api/assistente.js'), criarAdmin(criarBanco(), {}));
+    const C = api0.conexaoDoChat;
+    assert.strictEqual(C('2804:14c:5b80:8a1f:1111:2222:3333:4444'), '2804:14c:5b80:8a1f::/64');
+    assert.strictEqual(C('2804:14c:5b80:8a1f:aaaa::1'), '2804:14c:5b80:8a1f::/64', 'mesmo bloco, outro final');
+    assert.strictEqual(C('2804:014c:5b80:8a1f::9'), '2804:14c:5b80:8a1f::/64', 'zeros à esquerda não mudam o bloco');
+    assert.strictEqual(C('2804:14c::5'), '2804:14c:0:0::/64'); assert.strictEqual(C('[2804:14c:5b80:8a1f::1]'), '2804:14c:5b80:8a1f::/64');
+    assert.strictEqual(C('201.17.33.4'), '201.17.33.4'); assert.strictEqual(C('::ffff:201.17.33.4'), '201.17.33.4');
+    assert.notStrictEqual(C('2804:14c:5b80:8a1f::1'), C('2804:14c:5b80:8a20::1'), 'blocos diferentes contam separado');
+    assert.strictEqual(api0.pedidoQueConta({ status: 'arquivado' }), true); assert.strictEqual(api0.pedidoQueConta({ status: 'preparando', pagamento: { status: 'PAID' } }), true);
+    assert.strictEqual(api0.pedidoQueConta({ status: 'pendente' }), false); assert.strictEqual(api0.pedidoQueConta({ status: 'cancelado', pagamento: { status: 'PAID' } }), false);
+
+    // pelo chat: a mesma casa trocando o final do IPv6 (e o login) a cada mensagem para na 91ª
+    process.env.GEMINI_API_KEY = 'chave-de-teste';
+    const db = criarBanco({ 'produtos/tomate': { nome: 'Tomate', preco: 8.9, unidade: 'kg', ativo: true } });
+    const tokens = { ...TOK }, api = carregarApi(raiz('api/assistente.js'), criarAdmin(db, tokens));
+    const chat = (cab) => new Promise((resolve, reject) => {
+      const res = { _status: 200, setHeader() {}, status(c) { this._status = c; return this; }, json(j) { resolve({ status: this._status, corpo: j }); return this; }, writeHead(c) { this._status = c; }, write() {}, end() { resolve({ status: this._status }); }, flushHeaders() {} };
+      Promise.resolve(api({ method: 'POST', headers: cab, body: { action: 'chat_stream', mensagemCliente: 'oi' }, query: {}, socket: {} }, res)).catch(reject);
+    });
+    const real = Date.now;
+    await comFetch(async () => new Response('data: {"candidates":[{"content":{"parts":[{"text":"oi"}]}}]}\n\n', { status: 200 }), async () => {
+      try {
+        let ultimo;
+        for (let i = 0; i < 91; i++) {
+          if (i % 35 === 0) { const d = i / 35; Date.now = () => real() + d * 11 * 60000; }
+          tokens[`v6-${i}`] = { uid: `v6-${i}` }; zerarFreios();
+          ultimo = await chat({ 'x-forwarded-for': `2804:14c:5b80:8a1f:${(i + 1).toString(16)}::1`, authorization: `Bearer v6-${i}` });
+          if (i < 90) assert.strictEqual(ultimo.status, 200, `mensagem ${i + 1}`);
+        }
+        assert.strictEqual(ultimo.status, 429);
+      } finally { Date.now = real; }
     });
   });
 

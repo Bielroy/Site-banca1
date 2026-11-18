@@ -142,6 +142,36 @@ function pagamentoComQrNovo(pg, { provedor, id, valorC, extra = {} }) {
   return { provedor, orderId: id, ordens, valores, valorC, status: 'WAITING', criadoEm: new Date().toISOString(),
     ...(pagas.length ? { ordensPagas: pagas, valorPagoC: PagBank.jaPagoC(pg) } : {}), ...extra };
 }
+/**
+ * Grava o QR NOVO no pedido, numa transação que relê o pedido (o banco levou um tempo para responder).
+ * CORRIDA: enquanto o QR novo era criado, o QR antigo pode ter sido pago (ou pago em parte). Aí o QR novo NÃO pode ir
+ * para a cliente: ela pagaria de novo. Mesmo assim a ordem nova fica registrada no pedido (ordens/valores), para que,
+ * se for paga de algum jeito, o aviso do banco a reconheça e a equipe seja avisada ("em dobro"), em vez de ignorar.
+ * Devolve 'ok' | 'pago' (já estava pago) | 'mudou' (entrou dinheiro no meio) | 'sumiu'.
+ */
+async function gravarQrNovo(pedidoRef, jaC0, { provedor, id, valorC, extra }) {
+  return db.runTransaction(async (t) => {
+    const atualSnap = await t.get(pedidoRef); if (!atualSnap.exists) return 'sumiu';
+    const atual = atualSnap.data(), pg = atual.pagamento || {};
+    const pago = pg.status === 'PAID', mudou = PagBank.jaPagoC(pg) !== jaC0;
+    if (pago || mudou) {
+      const ordens = [...new Set([...(Array.isArray(pg.ordens) ? pg.ordens : []), pg.orderId, id].filter((x) => typeof x === 'string' && x))].slice(-12);
+      t.update(pedidoRef, { pagamento: { ...pg, ordens, valores: { ...(pg.valores && typeof pg.valores === 'object' ? pg.valores : {}), [id]: valorC } } });
+      return pago ? 'pago' : 'mudou';
+    }
+    t.update(pedidoRef, {
+      ...(atual.status === 'pendente' ? { status: 'aguardando_pagamento' } : {}),
+      pagamento: pagamentoComQrNovo(pg, { provedor, id, valorC, extra }),
+    });
+    return 'ok';
+  });
+}
+const RESPOSTA_CORRIDA = {
+  pago: 'Este pedido já foi pago.',
+  mudou: 'Acabou de entrar um pagamento neste pedido. Abra o PIX de novo para ver quanto falta.',
+  sumiu: 'Pedido não encontrado.',
+};
+
 /** Quanto o próximo QR cobra, em centavos: o total menos o que já entrou (pedido pago em parte). */
 const aCobrarDe = (pedido) => paraCentavos(pedido.total || 0) - PagBank.jaPagoC(pedido.pagamento || {});
 
@@ -178,15 +208,12 @@ async function gerarAsaas(res, { tid, pedidoId, pedido, pedidoRef, cpf, email, c
   if (!qr) return res.status(502).json({ error: 'O banco não devolveu o código PIX. Tente de novo ou combine pelo WhatsApp.' });
 
   // mesmas regras da gravação do PagBank (transação relendo o pedido)
-  await db.runTransaction(async (t) => {
-    const atualSnap = await t.get(pedidoRef); if (!atualSnap.exists) return;
-    const atual = atualSnap.data(), pg = atual.pagamento || {};
-    if (pg.status === 'PAID') return;
-    t.update(pedidoRef, {
-      ...(atual.status === 'pendente' ? { status: 'aguardando_pagamento' } : {}),
-      pagamento: pagamentoComQrNovo(pg, { provedor: 'asaas', id: criada.id, valorC, extra: carteira ? { split: true } : {} }),
-    });
-  });
+  const gravou = await gravarQrNovo(pedidoRef, PagBank.jaPagoC(pg0), { provedor: 'asaas', id: criada.id, valorC, extra: carteira ? { split: true } : {} });
+  if (gravou !== 'ok') {
+    // o pedido foi pago enquanto a cobrança nova era criada: ela não vai para a cliente e é apagada no Asaas
+    try { await Asaas.cancelarCobranca(cfg, criada.id); } catch (e) { console.warn('[pix] Asaas: falha ao apagar a cobrança que sobrou:', e && e.message); }
+    return res.status(gravou === 'sumiu' ? 404 : 409).json({ error: RESPOSTA_CORRIDA[gravou] });
+  }
   // A cobrança ANTERIOR (de outro valor) ainda não foi paga: apaga no Asaas, para o QR antigo não ser pago também.
   // Se não der para apagar, ela continua na lista do pedido: paga, entra na soma e a equipe é avisada.
   if (pg0.provedor === 'asaas' && pg0.orderId && pg0.orderId !== criada.id && !PagBank.ordensPagasDe(pg0).includes(pg0.orderId)) {
@@ -361,15 +388,10 @@ module.exports = async function handler(req, res) {
     //  - pedido já pago não é mexido;
     //  - o valor do QR fica guardado (valorC) para o aviso de pagamento conferir quanto foi cobrado;
     //  - as ordens anteriores ficam na lista: se a cliente pagar um QR antigo ainda válido, o aviso é reconhecido.
-    await db.runTransaction(async (t) => {
-      const atualSnap = await t.get(pedidoRef); if (!atualSnap.exists) return;
-      const atual = atualSnap.data(), pg = atual.pagamento || {};
-      if (pg.status === 'PAID') return;
-      t.update(pedidoRef, {
-        ...(atual.status === 'pendente' ? { status: 'aguardando_pagamento' } : {}),
-        pagamento: pagamentoComQrNovo(pg, { provedor: 'pagbank', id: data.id, valorC: valorCentavos }),
-      });
-    });
+    //  - CORRIDA: se o pedido foi pago enquanto o banco criava o QR novo, o QR novo NÃO vai para a cliente (409).
+    //    O PagBank não cancela QR: a ordem fica registrada no pedido e, se paga, vira aviso "em dobro".
+    const gravou = await gravarQrNovo(pedidoRef, PagBank.jaPagoC(pedido.pagamento || {}), { provedor: 'pagbank', id: data.id, valorC: valorCentavos });
+    if (gravou !== 'ok') return res.status(gravou === 'sumiu' ? 404 : 409).json({ error: RESPOSTA_CORRIDA[gravou] });
 
     return res.status(200).json({
       sucesso: true,
