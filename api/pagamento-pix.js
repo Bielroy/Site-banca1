@@ -72,6 +72,7 @@ const PagBank = require('../lib/pagbank');
 const Asaas = require('../lib/asaas');
 const Avisos = require('../lib/avisos');
 const Cofre = require('../lib/cofre');
+const Dias = require('../lib/dias');
 // Quem da equipe gera PIX de um pedido: quem atende pedidos (não o estoque nem a produção).
 const EQUIPE_DO_PIX = ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa'];
 const emailValido = (e) => typeof e === 'string' && e.length <= 120 && /^[^\s@<>"']{1,64}@[^\s@<>"']{1,100}\.[a-z]{2,}$/i.test(e);
@@ -127,11 +128,13 @@ async function conferirAsaas(res, tid, pedidoId, dec, cfg) {
 const respostaQr = (id, qr) => ({ sucesso: true, orderId: id, qr_code: qr.payload, qr_code_url: qr.imagem ? `data:image/png;base64,${qr.imagem}` : null });
 
 async function gerarAsaas(res, { tid, pedidoId, pedido, pedidoRef, cpf, email, cfg, carteira }) {
-  const pg0 = pedido.pagamento || {};
-  // QR ainda aberto deste pedido no Asaas: reaproveita (cliente reabriu a tela ou tocou 2 vezes)
-  if (pg0.provedor === 'asaas' && pg0.status === 'WAITING' && Asaas.ID_COBRANCA.test(String(pg0.orderId || ''))) {
+  const pg0 = pedido.pagamento || {}, totalC = paraCentavos(pedido.total || 0);
+  // QR ainda aberto deste pedido no Asaas: reaproveita (cliente reabriu a tela ou tocou 2 vezes).
+  // Só se o valor dele for o TOTAL DE AGORA (a pesagem ou um ajuste pode ter mudado o pedido) e ainda vencer hoje ou depois.
+  if (pg0.provedor === 'asaas' && pg0.status === 'WAITING' && Asaas.ID_COBRANCA.test(String(pg0.orderId || '')) && PagBank.qrAindaServe({ qrC: pg0.valorC, totalC })) {
     const { cobranca } = await Asaas.consultarCobranca(cfg, pg0.orderId);
-    if (cobranca && cobranca.status === 'PENDING' && cobranca.deleted !== true && Math.round(Number(cobranca.value) * 100) === Math.round(Number(pg0.valorC))) {
+    if (cobranca && cobranca.status === 'PENDING' && cobranca.deleted !== true && PagBank.qrAindaServe({ qrC: Math.round(Number(cobranca.value) * 100), totalC })
+      && !(typeof cobranca.dueDate === 'string' && cobranca.dueDate < Dias.diaBR().dia)) {
       const qr = await Asaas.qrDaCobranca(cfg, pg0.orderId);
       if (qr) return res.status(200).json(respostaQr(pg0.orderId, qr));
     }
@@ -240,20 +243,24 @@ module.exports = async function handler(req, res) {
 
     // Já existe um QR ainda válido pra esse pedido? Reaproveita (evita
     // gerar QR duplicado se o cliente reabrir o modal / clicar 2x).
-    if (pedido.pagamento && pedido.pagamento.orderId && pedido.pagamento.status === 'WAITING') {
+    // Só se o QR for do TOTAL DE AGORA e ainda não venceu: depois da pesagem ou de um ajuste
+    // (item tirado/acrescentado) o QR velho cobraria o valor antigo. Aí sai um QR novo.
+    const totalAgoraC = paraCentavos(pedido.total || 0);
+    if (pedido.pagamento && pedido.pagamento.orderId && pedido.pagamento.status === 'WAITING' && PagBank.qrAindaServe({ qrC: pedido.pagamento.valorC, totalC: totalAgoraC })) {
       const check = await comPrazo(`${PAGBANK_BASE_URL}/orders/${encodeURIComponent(pedido.pagamento.orderId)}`, {
         headers: { Authorization: `Bearer ${TOKEN_PAGBANK}` },
       });
       const existente = await check.json();
-      if (check.ok && existente.qr_codes && existente.qr_codes[0]) {
-        const qr = existente.qr_codes[0];
+      const qr0 = check.ok && existente && existente.qr_codes && existente.qr_codes[0];
+      if (qr0 && PagBank.qrAindaServe({ qrC: qr0.amount && qr0.amount.value, totalC: totalAgoraC, expira: qr0.expiration_date })) {
+        const qr = qr0;
         const qrPng = qr.links?.find((l) => l.rel === 'QRCODE.PNG')?.href || null;
         return res.status(200).json({
           sucesso: true, orderId: existente.id,
           qr_code: qr.text, qr_code_url: qrPng,
         });
       }
-      // Se falhar a consulta (expirado etc.), segue e cria um novo abaixo.
+      // Se falhar a consulta, o QR venceu ou o valor não bate, segue e cria um novo abaixo.
     }
 
     const valor = Number(pedido.total || 0);

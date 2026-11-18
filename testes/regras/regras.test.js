@@ -319,6 +319,30 @@ teste('gerente: liga e desliga as formas de pagamento, mas não troca a chave PI
   // em outra loja ele não é ninguém
   await nega(setDoc(d(de('loja-a', 'gerente'), cam('loja-b', 'loja/config')), { minimo: 1 }, { merge: true }));
 });
+teste('gerente não desvia os pedidos para outro WhatsApp: nem os números extras, nem o número de cada categoria', async () => {
+  for (const loja of ['loja-a', 'banca']) {
+    const ger = de(loja, 'gerente'), adm = de(loja, 'administrador'), cfg = cam(loja, 'loja/config');
+    // números extras (loja/config.numeros): só o gestor completo
+    await nega(setDoc(d(ger, cfg), { numeros: [{ id: 'n1', nome: 'Gerente', numero: '5562911112222' }] }, { merge: true }));
+    await pode(setDoc(d(adm, cfg), { numeros: [{ id: 'n1', nome: 'Hortifruti', numero: '5562933334444' }] }, { merge: true }));
+    await nega(setDoc(d(ger, cfg), { numeros: [{ id: 'n1', nome: 'Hortifruti', numero: '5562911112222' }] }, { merge: true }));
+    await nega(setDoc(d(ger, cfg), { numeros: [] }, { merge: true }));
+    // o resto da configuração continua com o gerente (o número extra que já está lá fica como está)
+    await pode(setDoc(d(ger, cfg), { minimo: 15 }, { merge: true }));
+    // categorias: o gerente não aponta categoria para um número
+    const cat = cam(loja, 'categorias/paes');
+    await nega(updateDoc(d(ger, cat), { wppId: 'n1' }));
+    await nega(setDoc(d(ger, cam(loja, 'categorias/doces-g')), { chave: 'doces', nome: 'Doces', ordem: 3, visivel: true, wppId: 'n1' }));
+    // mas cria (sem número), renomeia e apaga
+    await pode(setDoc(d(ger, cam(loja, 'categorias/doces-g')), { chave: 'doces', nome: 'Doces', ordem: 3, visivel: true, wppId: '' }));
+    await pode(updateDoc(d(ger, cat), { nome: 'Pães e bolos', ordem: 2 }));
+    // o administrador escolhe o número; o gerente renomeia sem mexer nele, e não tira
+    await pode(updateDoc(d(adm, cat), { wppId: 'n1' }));
+    await pode(updateDoc(d(ger, cat), { nome: 'Padaria' }));
+    await nega(updateDoc(d(ger, cat), { wppId: '' }));
+    await pode(deleteDoc(d(ger, cam(loja, 'categorias/doces-g'))));
+  }
+});
 teste('funcionário e caixa atendem pedidos, mas não mexem em cadastro, cupom, clientes nem números da loja', async () => {
   for (const loja of ['loja-a', 'banca']) for (const papel of ['funcionario', 'caixa']) {
     const eu = de(loja, papel);

@@ -2900,10 +2900,12 @@ teste('app por loja: nome, cor e ícone próprios; a loja original e loja bloque
   assert.ok(cfgVite.includes("'admin.webmanifest'")); assert.ok(require('fs').readFileSync(raiz('admin.html'), 'utf8').includes('href="/admin.webmanifest"'));
 });
 
-teste('avaliação: só a dona do pedido, uma vez, de 1 a 5; entra na média da loja', async () => {
+teste('avaliação: só a dona do pedido, uma vez, de 1 a 5, depois de entregue; entra na média da loja', async () => {
   const db = criarBanco(semente()); const adm = criarAdmin(db, { ...TOKENS, outra: { uid: 'c2' } });
   const checkout = carregarApi(raiz('api/checkout.js'), adm), api = carregarApi(raiz('api/cancelar-pedido.js'), adm);
-  const fazer = async (loja) => { const p = pedido(); await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente', ...(loja ? { 'X-Loja': loja } : {}) }, body: p }); return p.idempotencyKey; };
+  // a banca marca o pedido como entregue (status 'arquivado'): só então ele recebe nota
+  const entregar = (id, loja) => { const k = `${loja ? `tenants/${loja}/` : ''}pedidos/${id}`; db._dados.set(k, { ...db._dados.get(k), status: 'arquivado' }); };
+  const fazer = async (loja, entregue = true) => { const p = pedido(); await chamar(checkout, { headers: { ...ip(), Authorization: 'Bearer cliente', ...(loja ? { 'X-Loja': loja } : {}) }, body: p }); if (entregue) entregar(p.idempotencyKey, loja); return p.idempotencyKey; };
   const av = (tk, body, loja) => chamar(api, { headers: { ...(tk ? { Authorization: `Bearer ${tk}` } : {}), ...(loja ? { 'X-Loja': loja } : {}) }, body: { acao: 'avaliar', ...body } });
   const id = await fazer();
   assert.strictEqual((await av('', { pedidoId: id, nota: 5 })).status, 401);
@@ -2912,13 +2914,13 @@ teste('avaliação: só a dona do pedido, uma vez, de 1 a 5; entra na média da 
   assert.strictEqual(db._dados.get(`pedidos/${id}`).avaliacao, undefined);
   const ok = await av('cliente', { pedidoId: id, nota: 4, texto: '  Veio <b>ótimo</b>,\n só faltou a salsa ' }); assert.strictEqual(ok.status, 200, JSON.stringify(ok.corpo));
   const g = db._dados.get(`pedidos/${id}`).avaliacao; assert.strictEqual(g.nota, 4); assert.ok(!/[<>\n]/.test(g.texto) && g.texto.includes('salsa'), g.texto);
-  assert.strictEqual(db._dados.get(`pedidos/${id}`).status, 'pendente', 'avaliar não mexe no pedido');
+  assert.strictEqual(db._dados.get(`pedidos/${id}`).status, 'arquivado', 'avaliar não mexe no pedido');
   assert.notStrictEqual((await av('cliente', { pedidoId: id, nota: 1 })).status, 200, 'não avalia duas vezes');
   // média pública: só soma e quantidade
   const id2 = await fazer(); await av('cliente', { pedidoId: id2, nota: 5 });
   const media = db._dados.get('loja/avaliacoes'); assert.strictEqual(media.n, 2); assert.strictEqual(media.soma, 9); assert.strictEqual(media.media, 4.5); assert.ok(!JSON.stringify(media).includes('salsa'));
   // pedido cancelado não recebe nota; e a nota de uma loja não entra na média de outra
-  const id3 = await fazer(); await chamar(api, { headers: { Authorization: 'Bearer cliente' }, body: { pedidoId: id3 } });
+  const id3 = await fazer(null, false); await chamar(api, { headers: { Authorization: 'Bearer cliente' }, body: { pedidoId: id3 } });
   assert.notStrictEqual((await av('cliente', { pedidoId: id3, nota: 5 })).status, 200);
   const idE = await fazer('espetinhos'); assert.strictEqual((await av('cliente', { pedidoId: idE, nota: 2 }, 'espetinhos')).status, 200);
   assert.strictEqual(db._dados.get('tenants/espetinhos/loja/avaliacoes').n, 1); assert.strictEqual(db._dados.get('loja/avaliacoes').n, 2);
@@ -4287,6 +4289,8 @@ teste('fotos do ImgBB: a figura "service unavailable" é reconhecida, nunca guar
 
 // ------------------------------------------------------------------ testes de segurança (arquivo próprio)
 require('./seguranca')({ teste, raiz, criarBanco, criarAdmin, chamar, carregarApi });
+// falhas do teste de estresse (servidor e segurança): testes/consertos.js
+require('./consertos')({ teste, raiz, criarBanco, criarAdmin, chamar, carregarApi, prepararAvisos });
 
 
 teste('motor: salário a partir do 5º dia útil (pula fim de semana e feriado) e vale no dia 20 ou no dia útil seguinte', () => {

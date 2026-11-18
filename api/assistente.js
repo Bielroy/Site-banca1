@@ -118,6 +118,25 @@ async function lerCatalogo(tid = T.TENANT_PADRAO) {
 // Primeira barreira, de memória (por cópia do servidor). A conta que vale para todas as cópias fica no banco (P.limitar).
 const passouDoLimite = (quem, max = 20, janelaMs = 60000) => H.passouNaMemoria(`ia:${quem}`, max, janelaMs);
 
+// TETOS DE GASTO DO CHAT (cada mensagem leva o catálogo inteiro para a IA, então cada uma custa).
+//   por loja, por dia: 300 (era 1.500). A plataforma muda pela variável CHAT_LIMITE_DIA (todas as lojas) ou pelo campo
+//                      limiteChatDia na ficha da loja (tenants/{loja}; só a plataforma grava nesse documento).
+//   por pessoa (login anônimo da loja), por dia: 30. Sem login, por conexão: 90.
+const CHAT_LIMITE_DIA_PADRAO = 300, CHAT_POR_LOGIN_DIA = 30, CHAT_SEM_LOGIN_DIA = 90;
+function tetoDoChat(ficha) {
+  const daFicha = Number(ficha && ficha.limiteChatDia);
+  if (Number.isInteger(daFicha) && daFicha >= 1 && daFicha <= 10000) return daFicha;
+  const doAmbiente = Number(process.env.CHAT_LIMITE_DIA);
+  return Number.isFinite(doAmbiente) && doAmbiente >= 1 ? Math.floor(doAmbiente) : CHAT_LIMITE_DIA_PADRAO;
+}
+// uid do login anônimo da cliente (o ia.js manda o token). Token inválido ou ausente: '' (conta pela conexão).
+async function uidDoChat(req) {
+  const tk = H.tokenDe(req);
+  if (!tk) return '';
+  try { const dec = await admin.auth().verifyIdToken(tk); return typeof dec.uid === 'string' ? dec.uid : ''; }
+  catch (e) { return ''; }
+}
+
 // ---------------------------------------------------------------------
 // Prompts
 // ---------------------------------------------------------------------
@@ -506,8 +525,13 @@ module.exports = async function handler(req, res) {
         if (tidChat !== T.TENANT_PADRAO && !(loja.ficha.modulos && loja.ficha.modulos.ia === true)) return semChat(403, 'O ajudante não está ligado nesta loja.');
         // Por conexão, contado no banco (vale para todas as cópias do servidor): 40 mensagens em 10 minutos.
         if (!(await P.limitar(admin.firestore(), 'ia-chat', `${tidChat}|${ip}`, 40, 600))) return semChat(429, 'Muitas mensagens seguidas. Aguarde alguns minutos.');
+        // Teto por PESSOA (login anônimo da loja): 30 mensagens por dia. Sem login (versão antiga da página guardada no
+        // celular, ou o login falhou), conta pela conexão, com um teto um pouco maior (Wi-Fi da feira junta muita gente).
+        const uidChat = await uidDoChat(req);
+        const [chavePessoa, tetoPessoa] = uidChat ? [`${tidChat}|${uidChat}`, CHAT_POR_LOGIN_DIA] : [`${tidChat}|ip:${ip}`, CHAT_SEM_LOGIN_DIA];
+        if (!(await P.limitar(admin.firestore(), 'ia-chat-dia', chavePessoa, tetoPessoa, 86400))) return semChat(429, 'Você já conversou bastante com o ajudante hoje. Para continuar, chame a loja pelo WhatsApp.');
         // Teto diário por loja: o chat é aberto ao público, então alguém mal-intencionado poderia gastar a cota da IA.
-        const teto = Number(process.env.CHAT_LIMITE_DIA) || 1500, dia = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+        const teto = tetoDoChat(fichaChat), dia = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
         const usoRef = T.docDe(admin.firestore(), tidChat, `uso_ia/${dia}`);
         const ok = await admin.firestore().runTransaction(async (t) => {
           const s = await t.get(usoRef), n = (s.exists && Number(s.data().chat)) || 0;
@@ -521,7 +545,7 @@ module.exports = async function handler(req, res) {
       // o contador do banco falhou: o chat continua, mas o teto do dia passa a ser contado na memória
       // (antes ficava sem teto nenhum, e o chat é aberto ao público)
       console.warn('[assistente] contador do banco falhou, teto contado na memória:', e && e.message);
-      const teto = Number(process.env.CHAT_LIMITE_DIA) || 1500;
+      const teto = tetoDoChat(fichaChat);
       if (!P.dentroDoLimite(`ia-dia-chat|${tidChat}`, teto, 24 * 3600)) return semChat(429, 'O ajudante atingiu o limite de hoje. Chame a loja pelo WhatsApp.');
     }
     // Entradas com tamanho limitado: texto de até 600 letras e foto de até ~1,5 MB em formato comum.
@@ -712,5 +736,6 @@ module.exports = async function handler(req, res) {
   }
 };
 module.exports.htmlSimples = htmlSimples;
+module.exports.tetoDoChat = tetoDoChat;
 module.exports.promptDoChat = promptDoChat;
 module.exports.vendasLimpas = vendasLimpas;
