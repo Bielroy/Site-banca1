@@ -5727,6 +5727,223 @@ teste('SEGURANÇA · código do navegador: sem segredo, sem mapa do código-font
   assert.ok(!/unsafe-eval/.test(geral.find((x) => x.key === 'Content-Security-Policy').value), 'CSP: sem eval');
 });
 
+// ------------------------------------------------------------------ dinheiro e painel (teste de estresse)
+teste('PIX não conferido não vira "recebido": Balanço separa PIX confirmado, PIX não conferido (com a lista), na entrega e a receber', async () => {
+  const D = await import(raiz('js/painel-dinheiro-lib.js'));
+  const pix = (extra = {}) => ({ id: 'p' + Math.random().toString(36).slice(2, 7), nome: 'Ana', pag: 'PIX', status: 'arquivado', total: 30, data: '2026-11-17T15:00:00Z', ...extra });
+  assert.strictEqual(D.pixSemConferencia(pix()), true, 'PIX pela chave concluído sem ninguém conferir');
+  assert.strictEqual(D.pixSemConferencia(pix({ pagamento: { status: 'PAID' } })), false, 'PIX automático pago pelo banco');
+  assert.strictEqual(D.pixSemConferencia(pix({ pixConferido: { em: 'x', valor: 30 } })), false, 'a equipe conferiu o valor todo');
+  assert.strictEqual(D.pixSemConferencia(pix({ pixConferido: { em: 'x', valor: 20 } })), true, 'conferido a menos (o pedido subiu depois)');
+  assert.strictEqual(D.faltaConferir(pix({ pixConferido: { em: 'x', valor: 20 } })), 10);
+  assert.strictEqual(D.pixSemConferencia(pix({ origem: 'balcao' })), false, 'balcão: a banca viu o PIX na hora');
+  assert.strictEqual(D.pixSemConferencia(pix({ pag: 'Dinheiro' })), false);
+  assert.strictEqual(D.pixSemConferencia(pix({ status: 'cancelado' })), false);
+  assert.strictEqual(D.pixSemConferencia(pix({ total: 0 })), false, 'cupom de 100%: nada a conferir');
+  const r = D.dinheiroDoPeriodo([
+    pix({ nome: 'Bia', total: 30 }),                                                  // concluído sem conferir
+    pix({ nome: 'Caio', total: 26, pixConferido: { em: 'x', valor: 20 }, entregaDia: '2026-11-18' }),   // conferido 20 de 26
+    pix({ total: 40, pixConferido: { em: 'x', valor: 40 } }),                          // conferido
+    pix({ total: 15, pagamento: { status: 'PAID' } }),                                 // PIX automático
+    pix({ total: 12, status: 'enviado' }),                                             // ainda a caminho
+    { pag: 'Dinheiro', status: 'arquivado', total: 50 },                               // recebido na entrega
+    { pag: 'PIX', origem: 'balcao', status: 'arquivado', total: 8 },                   // balcão
+    { pag: 'Dinheiro', status: 'pendente', total: 9 },                                 // a receber
+    { pag: 'PIX', status: 'cancelado', total: 999 },                                   // fora
+  ]);
+  assert.deepStrictEqual([r.jaPago, r.naEntrega, r.pixNaoConferido, r.aReceber], [75, 58, 36, 21], 'PIX 20+40+15 confirmado; 30 + 6 não conferidos; 12 + 9 a receber');
+  assert.deepStrictEqual(r.listaPixNaoConferido.map((x) => [x.nome, x.falta, x.dia]), [['Caio', 6, '2026-11-18'], ['Bia', 30, '2026-11-17']], 'a lista traz quem, quanto falta e o dia (mais novo primeiro)');
+  // a tela usa a regra (e não conta mais arquivado como recebido)
+  const fs = require('fs'), admin = fs.readFileSync(raiz('js/admin.js'), 'utf8');
+  assert.ok(/dinheiroDoPeriodo\(validos\)/.test(admin) && /'PIX não conferido'/.test(admin), 'o Balanço usa a regra nova e tem a linha "PIX não conferido"');
+  assert.ok(!/p\.status === 'arquivado'\) naEntrega \+= v/.test(admin), 'arquivado não é mais "recebido" sozinho');
+});
+
+teste('concluir pedido PIX sem conferência: o painel pergunta "O PIX caiu?" com três saídas; o servidor conclui e grava a pendência; "PIX recebido" e "Voltar etapa" tiram a marca', async () => {
+  const fs = require('fs'), admin = fs.readFileSync(raiz('js/admin.js'), 'utf8'), utils = fs.readFileSync(raiz('js/utils.js'), 'utf8');
+  assert.ok(/Caiu, marcar recebido/.test(admin) && /Ainda não, concluir assim mesmo/.test(admin) && /nao: 'Voltar'/.test(admin), 'as três saídas');
+  assert.ok(/O PIX de \$\{fmt\(falta\)\} caiu\?/.test(admin), 'a pergunta diz o valor');
+  assert.ok(/finalizar\('meio'\)/.test(utils) && /btn-confirm-meio/.test(fs.readFileSync(raiz('admin.html'), 'utf8')), 'a caixa de confirmação tem o terceiro botão (painel e loja)');
+  const Senha = require(raiz('lib/senha'));
+  assert.strictEqual(Senha.travaDoConcluir({ status: 'preparando' }) !== '', true, 'só conclui o que já saiu');
+  assert.strictEqual(Senha.pixPendenteAoConcluir({ pag: 'PIX', total: 20 }), true);
+  assert.strictEqual(Senha.pixPendenteAoConcluir({ pag: 'PIX', total: 20, pixConferido: { em: 'x', valor: 20 } }), false);
+  assert.strictEqual(Senha.pixPendenteAoConcluir({ pag: 'Dinheiro', total: 20 }), false);
+
+  const sem = sementeEstoque();
+  const base = { nome: 'Rita', modo: 'entrega', status: 'enviado', pag: 'PIX', total: 20, itens: [{ id: 'ovos', nome: 'Ovos', qtd: 1, tipo: 'un', precoOriginal: 20 }], data: new Date().toISOString() };
+  sem['pedidos/pix-bbbbbb1'] = { ...base };
+  sem['pedidos/din-bbbbbb2'] = { ...base, pag: 'Dinheiro' };
+  sem['pedidos/pix-bbbbbb3'] = { ...base, status: 'preparando' };
+  sem['pedidos/pix-bbbbbb4'] = { ...base, total: 26, pixConferido: { em: 'x', por: 'a', valor: 20 } };
+  const db = criarBancoP(sem); const api = carregarApi(raiz('api/pdv.js'), criarAdmin(db, TOKENS_P));
+  const aj = (pedidoId, body, quem = 'func-banca') => chamar(api, { headers: { Authorization: `Bearer ${quem}` }, body: { acao: 'ajuste', pedidoId, ...body } });
+  const ped = (id) => db._dados.get(`pedidos/${id}`);
+  let r = await aj('pix-bbbbbb1', { op: 'concluir', de: 'enviado' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.deepStrictEqual([ped('pix-bbbbbb1').status, ped('pix-bbbbbb1').pixPendenteAoConcluir, r.corpo.pixPendenteAoConcluir], ['arquivado', true, true]);
+  assert.ok(ped('pix-bbbbbb1').ajustes.some((a) => a.op === 'concluiu' && a.pixPendente && a.por), 'fica registrado quem concluiu com o PIX pendente');
+  r = await aj('din-bbbbbb2', { op: 'concluir' }); assert.strictEqual(r.status, 200);
+  assert.strictEqual(ped('din-bbbbbb2').pixPendenteAoConcluir, undefined, 'dinheiro: sem marca de PIX');
+  assert.strictEqual((await aj('pix-bbbbbb3', { op: 'concluir' })).status, 400, 'ainda separando: não conclui');
+  assert.strictEqual((await aj('pix-bbbbbb1', { op: 'concluir' })).status, 400, 'já concluído');
+  assert.strictEqual((await aj('pix-bbbbbb1', { op: 'concluir' }, 'cliente')).status, 403, 'cliente não conclui');
+  // conferiu depois (na lista de entregues): vira recebido e a marca sai
+  r = await aj('pix-bbbbbb1', { op: 'pix-recebido' }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.deepStrictEqual([ped('pix-bbbbbb1').pixConferido.valor, ped('pix-bbbbbb1').pixPendenteAoConcluir], [20, false]);
+  // conferido a menos (o pedido subiu de 20 para 26): dá para marcar de novo com o total de agora
+  r = await aj('pix-bbbbbb4', { op: 'pix-recebido' }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(ped('pix-bbbbbb4').pixConferido.valor, 26);
+  assert.strictEqual((await aj('pix-bbbbbb4', { op: 'pix-recebido' })).status, 400, 'com o total coberto, duas vezes não');
+  // voltou etapa: a marca sai (vai perguntar de novo ao concluir)
+  db._dados.set('pedidos/pix-bbbbbb5', { ...base, status: 'arquivado', pixPendenteAoConcluir: true });
+  r = await aj('pix-bbbbbb5', { op: 'voltar', de: 'arquivado' }); assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.deepStrictEqual([ped('pix-bbbbbb5').status, ped('pix-bbbbbb5').pixPendenteAoConcluir], ['enviado', false]);
+});
+
+teste('"Já paguei" do cliente chega ao painel: só o dono, só PIX não pago, total do banco (nunca do navegador), "Ainda não paguei" apaga, com freio', async () => {
+  const sem = sementeEstoque();
+  const base = { nome: 'Rita', userId: 'c1', modo: 'entrega', status: 'pendente', pag: 'PIX', total: 20, itens: [{ id: 'ovos', nome: 'Ovos', qtd: 1, tipo: 'un', precoOriginal: 20 }], data: new Date().toISOString() };
+  sem['pedidos/inf-cccccc1'] = { ...base };
+  sem['pedidos/inf-cccccc2'] = { ...base, pag: 'Dinheiro' };
+  sem['pedidos/inf-cccccc3'] = { ...base, status: 'cancelado' };
+  sem['pedidos/inf-cccccc4'] = { ...base, pagamento: { status: 'PAID' } };
+  sem['pedidos/inf-cccccc5'] = { ...base, pixConferido: { em: 'x', valor: 20 } };
+  sem['pedidos/inf-cccccc6'] = { ...base, temItensAPesar: true, status: 'aguardando_pesagem' };
+  sem['pedidos/inf-cccccc7'] = { ...base, userId: 'outra-pessoa' };
+  const db = criarBancoP(sem); const api = carregarApi(raiz('api/pix-informado.js'), criarAdmin(db, { ...TOKENS_P, 'cliente-2': { uid: 'c2' } }));
+  const inf = (pedidoId, body = {}, quem = 'cliente', ipX = ip()) => chamar(api, { headers: { Authorization: `Bearer ${quem}`, ...ipX }, body: { pedidoId, ...body } });
+  const ped = (id) => db._dados.get(`pedidos/${id}`);
+  let r = await inf('inf-cccccc1', { total: 0.01 });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.strictEqual(ped('inf-cccccc1').pixInformado.total, 20, 'o total é o do pedido no banco, não o que o navegador mandou');
+  assert.ok(Date.parse(ped('inf-cccccc1').pixInformado.em) > 0);
+  assert.deepStrictEqual(Object.keys(ped('inf-cccccc1')).filter((k) => !Object.keys(base).includes(k)), ['pixInformado'], 'grava só o pixInformado');
+  assert.strictEqual(ped('inf-cccccc1').status, 'pendente', 'não mexe no status nem no pagamento');
+  assert.strictEqual((await inf('inf-cccccc1', {}, 'cliente-2')).status, 403, 'outra pessoa não marca o pedido dos outros');
+  assert.strictEqual((await inf('inf-cccccc7')).status, 403);
+  assert.strictEqual((await inf('inf-cccccc1', {}, 'sem-token')).status, 401, 'sem login, nada');
+  for (const id of ['inf-cccccc2', 'inf-cccccc3', 'inf-cccccc4', 'inf-cccccc5', 'inf-cccccc6']) assert.strictEqual((await inf(id)).status, 400, `${id}: não é PIX por pagar`);
+  assert.strictEqual((await inf('inf-zzzzzz9')).status, 404);
+  assert.strictEqual((await inf('../x')).status, 400, 'id estranho não vira caminho no banco');
+  r = await inf('inf-cccccc1', { desfazer: true }); assert.strictEqual(r.status, 200);
+  assert.strictEqual(ped('inf-cccccc1').pixInformado, null, '"Ainda não paguei" apaga a marca');
+  // freio: 20 por minuto da mesma conexão
+  const mesmaConexao = { 'x-forwarded-for': '10.9.9.9' };
+  let ultimo; for (let i = 0; i < 21; i++) ultimo = await inf('inf-cccccc1', {}, 'cliente', mesmaConexao);
+  assert.strictEqual(ultimo.status, 429, 'rajada da mesma conexão para no freio');
+  // painel mostra o selo ao lado do botão; a loja manda e, se a rota não existir (servidor velho), segue sem erro
+  const fs = require('fs'), admin = fs.readFileSync(raiz('js/admin.js'), 'utf8'), loja = fs.readFileSync(raiz('js/loja.js'), 'utf8');
+  assert.ok(/CLIENTE DIZ QUE PAGOU\$\{horaCurta\(infInf\.em\) \? ` às/.test(admin) && /\$\{seloInformado\}<button type="button" class="bt bt-sec" data-action="pix-recebido"/.test(admin), 'selo junto do botão "PIX recebido"');
+  assert.ok(/chamarApi\('\/api\/pix-informado'[^\n]*\.catch\(\(\) => \{/.test(loja), 'a loja manda ao servidor e engole a falha (servidor velho, sem internet)');
+  assert.ok(/avisarBancaDoPix\(id, action === 'pix-nao-paguei'\)/.test(loja));
+});
+
+teste('"Arquivar todos" leva só o que já saiu, de hoje ou de antes; diz quantos ficaram e por quê; PIX sem conferência pergunta em resumo', async () => {
+  const D = await import(raiz('js/painel-dinheiro-lib.js'));
+  const hoje = '2026-11-18';
+  const lista = [
+    { id: 'a', status: 'enviado', entregaDia: '2026-11-18' },
+    { id: 'b', status: 'enviado', data: '2026-11-17T15:00:00Z' },         // ontem, sem entregaDia
+    { id: 'c', status: 'enviado', entregaDia: '2026-11-19' },              // amanhã
+    { id: 'd', status: 'preparando', entregaDia: '2026-11-18' },
+    { id: 'e', status: 'pendente' },
+    { id: 'f', status: 'aguardando_pesagem' },
+  ];
+  const r = D.separarParaArquivar(lista, hoje);
+  assert.deepStrictEqual([r.arquivar.map((p) => p.id), r.naoSairam, r.outroDia], [['a', 'b'], 3, 1]);
+  assert.strictEqual(D.textoDoQueFica(r), 'Ficam 4 na fila: 3 ainda não saíram (Novos ou Separando) e 1 é para outro dia.');
+  assert.strictEqual(D.textoDoQueFica({ naoSairam: 0, outroDia: 1 }), 'Fica 1 na fila: 1 é para outro dia.');
+  assert.strictEqual(D.textoDoQueFica({}), '');
+  assert.strictEqual(D.diaDoPedido({ data: '2026-11-18T01:30:00Z' }), '2026-11-17', '22h30 em Brasília ainda é o dia 17');
+  const fs = require('fs'), admin = fs.readFileSync(raiz('js/admin.js'), 'utf8');
+  const bloco = admin.slice(admin.indexOf("getElementById('btn-limpar-hist')"), admin.indexOf("getElementById('btn-limpar-hist')") + 3500);
+  assert.ok(/separarParaArquivar\(alvo/.test(bloco) && /pixSemConferencia/.test(bloco) && /sem conferência: concluir mesmo assim\?/.test(bloco), 'o botão usa a regra e pergunta dos PIX');
+  assert.ok(!/alvo\.slice\(i, i \+ 400\)/.test(bloco), 'não arquiva mais tudo o que está na tela');
+});
+
+teste('avisos do painel em português simples: sem internet a etapa não mudou; o nome da aba no lugar do status do banco', async () => {
+  const D = await import(raiz('js/painel-dinheiro-lib.js'));
+  assert.strictEqual(D.avisoDeFalha(new Error('x'), { online: false, noPedido: true }), 'Sem internet: a etapa não mudou. Toque de novo.');
+  assert.strictEqual(D.avisoDeFalha({ code: 'unavailable', message: 'Failed to get document because the client is offline.' }, { noPedido: true }), 'Sem internet: a etapa não mudou. Toque de novo.');
+  assert.strictEqual(D.avisoDeFalha(new TypeError('Failed to fetch'), { noPedido: false }), 'Sem internet: nada foi salvo. Toque de novo.');
+  assert.ok(/outro aparelho/.test(D.avisoDeFalha({ code: 'permission-denied', message: 'Missing or insufficient permissions.' }, { noPedido: true })));
+  assert.ok(!/erro ao processar|undefined/i.test(D.avisoDeFalha(null)));
+  assert.deepStrictEqual(['preparando', 'enviado', 'arquivado'].map((s) => D.nomeDaAba(s)), ['Separando', 'A caminho', 'Entregues']);
+  assert.strictEqual(D.nomeDaAba('enviado', 'retirada'), 'Pronto p/ retirar');
+  const admin = require('fs').readFileSync(raiz('js/admin.js'), 'utf8');
+  assert.ok(!/Houve um erro ao processar sua ação/.test(admin) && !/Pedido movido para: \$\{nextStatus\.toUpperCase\(\)\}/.test(admin), 'os textos de sistema saíram');
+  assert.ok(/nomeDaAba\(nextStatus, pedidoA\.modo\)/.test(admin));
+});
+
+teste('PIX pela chave diz de qual loja é a conta (nome de pessoa sozinho parece golpe)', async () => {
+  const P = await import(raiz('js/pix-lib.js'));
+  assert.deepStrictEqual(P.paraQuemPix('Rosiva Martins da Silva', 'Banca da Feira'), { nome: 'Rosiva Martins da Silva', loja: 'conta da loja Banca da Feira' });
+  assert.deepStrictEqual(P.paraQuemPix('Banca Adair e Pedrina', 'Banca Adair e Pedrina'), { nome: 'Banca Adair e Pedrina', loja: '' }, 'mesmo nome: não repete');
+  assert.deepStrictEqual(P.paraQuemPix('BANCA ADAIR E PEDRINA LTDA', 'Banca Adair e Pedrina'), { nome: 'BANCA ADAIR E PEDRINA LTDA', loja: '' }, 'o nome da chave já tem o da loja');
+  assert.deepStrictEqual(P.paraQuemPix('Rosiva', ''), { nome: 'Rosiva', loja: '' }, 'sem nome de loja na tela: só o nome');
+  const loja = require('fs').readFileSync(raiz('js/loja.js'), 'utf8');
+  assert.ok(/paraQuemPix\(pix\.nome, nomeDaLojaNaTela\(\)\)/.test(loja) && !/Para \$\{escapeHTML\(pix\.nome\)\}/.test(loja), 'os dois jeitos de mostrar o PIX usam o nome da loja');
+});
+
+teste('senha de retirada de OUTRO dia: a tela do cliente não mostra a senha velha e "Chamar" no painel dá a senha nova do dia', async () => {
+  const A = await import(raiz('js/acompanhar-lib.js'));
+  const agora = Date.parse('2026-11-18T15:00:00Z');            // 12h em Brasília, dia 18
+  const ret = { modo: 'retirada', status: 'enviado', senha: '005' };
+  assert.strictEqual(A.senhaDeOutroDia({ ...ret, senhaDia: '2026-11-17' }, agora), true);
+  assert.strictEqual(A.senhaDeOutroDia({ ...ret, senhaDia: '2026-11-18' }, agora), false);
+  assert.strictEqual(A.senhaDeOutroDia(ret, agora), false, 'pedido antigo sem o dia: segue como era');
+  const velho = A.acompanhamento({ ...ret, senhaDia: '2026-11-17' }, agora);
+  assert.deepStrictEqual([velho.tom, velho.senha], ['pronto', ''], 'continua "pronto", sem a senha de ontem');
+  assert.ok(/não vale mais/.test(velho.texto) && !/005/.test(velho.texto));
+  assert.strictEqual(A.acompanhamento({ ...ret, senhaDia: '2026-11-18' }, agora).senha, '005');
+  assert.strictEqual(A.chamouAgora({ ...ret, senhaDia: '2026-11-17', chamada: { vezes: 3 } }, { ...ret, senha: '002', senhaDia: '2026-11-18', chamada: { vezes: 1 } }), true, 'senha nova toca o aviso, mesmo com a contagem de chamadas recomeçando');
+
+  const Senha = require(raiz('lib/senha'));
+  assert.strictEqual(Senha.senhaVencida({ senha: '005', senhaDia: '2026-11-17' }, '2026-11-18'), true);
+  assert.strictEqual(Senha.senhaVencida({ senha: '005', senhaDia: '2026-11-18' }, '2026-11-18'), false);
+  const sem = sementeEstoque();
+  sem['loja/config'] = { ...sem['loja/config'], senhaChamada: 'tela' };
+  const hojeS = Senha.diaDaSenha(new Date());
+  sem['contadores/senha'] = { dia: hojeS, ultimo: 7 };
+  sem['pedidos/ret-dddddd1'] = { nome: 'Rita', modo: 'retirada', status: 'enviado', senha: '005', senhaDia: '2020-01-01', chamada: { vezes: 2 }, total: 20, itens: [], data: new Date().toISOString() };
+  sem['pedidos/ret-dddddd2'] = { nome: 'Caio', modo: 'retirada', status: 'enviado', senha: '006', senhaDia: hojeS, chamada: { vezes: 1 }, total: 20, itens: [], data: new Date().toISOString() };
+  const db = criarBancoP(sem); const api = carregarApi(raiz('api/pdv.js'), criarAdmin(db, TOKENS_P));
+  const aj = (pedidoId, body) => chamar(api, { headers: { Authorization: 'Bearer func-banca' }, body: { acao: 'ajuste', pedidoId, ...body } });
+  const ped = (id) => db._dados.get(`pedidos/${id}`);
+  let r = await aj('ret-dddddd1', { op: 'chamar' });
+  assert.strictEqual(r.status, 200, JSON.stringify(r.corpo));
+  assert.deepStrictEqual([r.corpo.senha, r.corpo.nova, r.corpo.antiga, ped('ret-dddddd1').senha, ped('ret-dddddd1').senhaDia, ped('ret-dddddd1').chamada.vezes], ['008', true, '005', '008', hojeS, 1], 'próxima senha DE HOJE, do mesmo contador');
+  assert.strictEqual(db._dados.get('contadores/senha').ultimo, 8);
+  r = await aj('ret-dddddd1', { op: 'chamar' }); assert.deepStrictEqual([r.corpo.senha, r.corpo.vezes, r.corpo.nova], ['008', 2, undefined], 'agora é a de hoje: chama de novo a mesma');
+  r = await aj('ret-dddddd2', { op: 'chamar' }); assert.deepStrictEqual([r.corpo.senha, r.corpo.vezes], ['006', 2], 'senha de hoje: igual a antes');
+  const admin = require('fs').readFileSync(raiz('js/admin.js'), 'utf8');
+  assert.ok(/senhaDeOutroDia\(p\)/.test(admin) && /Chamar com senha nova/.test(admin), 'o painel mostra a senha com a data e o botão dá a nova');
+});
+
+teste('internet fraca: reenvia UMA vez com a mesma chave antes do WhatsApp (também no tempo esgotado) e o plano B avisa para não mandar de novo', async () => {
+  const R = await import(raiz('js/pedido-reserva-lib.js'));
+  const err = (m, status) => Object.assign(new Error(m), status ? { status } : {});
+  assert.strictEqual(R.reenviarAntesDoPlanoB(Object.assign(new Error('signal is aborted without reason'), { name: 'AbortError' })), true, 'tempo esgotado: reenvia (o pedido pode ter chegado)');
+  assert.strictEqual(R.reenviarAntesDoPlanoB(err('Failed to fetch')), true);
+  assert.strictEqual(R.reenviarAntesDoPlanoB(err('x', 503)), true);
+  assert.strictEqual(R.reenviarAntesDoPlanoB(err('x', 429)), false, 'fila cheia: não insiste');
+  assert.strictEqual(R.reenviarAntesDoPlanoB(err('Cupom vencido', 400)), false, 'erro que o cliente resolve');
+  assert.strictEqual(R.reenviarAntesDoPlanoB(Object.assign(new Error('prévia'), { previa: true })), false);
+  const loja = require('fs').readFileSync(raiz('js/loja.js'), 'utf8');
+  const envio = loja.slice(loja.indexOf('const enviarPedidoAoServidor'), loja.indexOf('const enviarPedidoAoServidor') + 500);
+  assert.ok(/reenviarAntesDoPlanoB\(e\)/.test(envio) && (envio.match(/chamarApi\('\/api\/checkout', payload/g) || []).length === 2, 'um envio e UM reenvio, com o mesmo payload (mesma idempotencyKey)');
+  assert.ok(/Se o pedido aparecer em Meus pedidos, não mande de novo\./.test(loja));
+  // o servidor devolve o MESMO pedido para a mesma chave (a base do reenvio seguro)
+  const db = criarBancoP(semente()), adm = criarAdmin(db, TOKENS), checkout = carregarApi(raiz('api/checkout.js'), adm);
+  const corpo = pedido({ idempotencyKey: 'ped-reenvio01' });
+  const a = await chamar(checkout, { headers: { Authorization: 'Bearer cliente', ...ip() }, body: corpo });
+  const b = await chamar(checkout, { headers: { Authorization: 'Bearer cliente', ...ip() }, body: corpo });
+  assert.strictEqual(a.status, 200, JSON.stringify(a.corpo)); assert.strictEqual(b.status, 200, JSON.stringify(b.corpo));
+  assert.strictEqual(a.corpo.pedido.id, b.corpo.pedido.id);
+  assert.strictEqual([...db._dados.keys()].filter((k) => /^pedidos\//.test(k)).length, 1, 'um pedido só');
+});
+
 (async () => {
   let falhas = 0;
   for (const [nome, fn] of testes) {

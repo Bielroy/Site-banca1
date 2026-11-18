@@ -33,6 +33,14 @@ export const tentarDeNovo = (erro) => {
     return !/timeout|timed out|aborted|abort/i.test(String(erro.message || erro.name || ''));
 };
 
+/**
+ * Antes do plano B (WhatsApp), reenviar UMA vez com a mesma chave do pedido? Sim para toda falha do servidor ou da
+ * rede, INCLUSIVE o tempo esgotado: com internet fraca o pedido costuma chegar e só a resposta se perder, e o
+ * servidor devolve o MESMO pedido para a mesma chave (api/checkout.js). Sem isso o cliente mandava pelo WhatsApp
+ * um pedido que já estava no site (pedido duplo). Não reenvia na fila cheia (429) nem no erro que o cliente resolve.
+ */
+export const reenviarAntesDoPlanoB = (erro) => !!falhaDoServidor(erro) && Number(erro && erro.status) !== 429;
+
 const reais = (n) => `R$ ${(Math.round((Number(n) || 0) * 100) / 100).toFixed(2).replace('.', ',')}`;
 const limpo = (s, max = 200) => String(s == null ? '' : s).replace(/[\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 

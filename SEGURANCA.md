@@ -119,6 +119,7 @@ loja "x"                 ──► tenants/x/:     produtos/ pedidos/ loja/ ...
 |---|---|---|---|
 | `POST /api/checkout` | não (cliente) | qualquer pessoa | rajada por conexão (15 em 10 s); 60 pedidos/10 min por conexão (`CHECKOUT_POR_CONEXAO`); teto da loja (150/10 min); formato de tudo o que vira nome de documento |
 | `POST /api/cancelar-pedido` (cancelar, avaliar) | sim | dono do pedido (5 min) ou quem atende | 10/10 min por pessoa; devolução única |
+| `POST /api/pix-informado` ("Já paguei" do cliente) | sim | dono do pedido (login anônimo) | 20/min por conexão; 12/10 min por pessoa; grava só `pixInformado` com o total do banco |
 | `POST /api/pagamento-pix` | sim | dono do pedido ou quem atende | 6/10 min por pessoa; 300/dia na loja; não volta status |
 | `POST /api/pagamento-webhook` | não (PagBank) | quem tem a assinatura do banco | corpo com teto; reconsulta a ordem; confere ordem, valor e status |
 | `POST /api/assistente` chat | não | cliente da loja com o módulo ligado | por conexão (memória e banco); teto do dia por loja; tamanho das entradas |

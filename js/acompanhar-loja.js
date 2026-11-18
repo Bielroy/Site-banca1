@@ -24,6 +24,8 @@ import { acompanhamento, pedidosParaAcompanhar, chamouAgora, oQueAPlacaAbre, tem
 
 // ---------- guardado no aparelho ----------
 // "Já paguei" (PIX pela chave): o site não sabe sozinho quando o PIX cai. Guardar evita que a plaquinha cobre de novo.
+// Além de guardar aqui, a loja manda para a banca (js/loja.js → avisarBancaDoPix → api/pix-informado.js): o painel mostra
+// "CLIENTE DIZ QUE PAGOU". Se o servidor não tiver a rota (versão antiga), fica só aqui, como antes.
 const K_INFORMADO = () => chave('banca_pix_informado'), K_PLACA = () => chave('banca_veio_placa');
 const lerJSON = (k, padrao) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v && typeof v === 'object' ? v : padrao; } catch (_) { return padrao; } };
 /** { idDoPedido: { em, total } } dos últimos 3 dias. */

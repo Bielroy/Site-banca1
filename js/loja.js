@@ -20,13 +20,13 @@ import { iniciarTema, feiraPeloCondominio, feiraDaConta, feiraDoClienteAqui, con
 import { proximaEntrega, textoDoDia } from './plataforma-lib.js';
 import { lerFeiraCliente, esquecerFeiraCliente } from './feira-cliente.js';
 import { criarCamposEndereco, linhaEndereco, lerEnderecoSalvo, salvarEndereco } from './endereco.js';
-import { podePagarPix } from './pix-lib.js';
+import { podePagarPix, paraQuemPix } from './pix-lib.js';
 import { iniciarAcompanhamento, atualizarAcompanhamento, lerInformados, informarPago, desfazerInformado, veioDaPlaca, redesenharAcompanhamento } from './acompanhar-loja.js';   // a faixa do pedido na tela (muda sozinha)
 import { rotuloDoStatus, etapasDoPedido, estadoDoInformado, pixConferidoCobre, pixConferidoMudou } from './acompanhar-lib.js';
 import { lerEntrega, previaDaEntrega, horariosDoModo, opcoesDoDia } from './entrega-lib.js';
 import { lerVagas, chaveHorario, estadoDoHorario, agoraMinBR } from './vagas-lib.js';   // vagas por horário e antecedência (como o Cal.com)
 import { ehIOS, navegadorIOS, deveConvidar } from './instalar-lib.js';
-import { falhaDoServidor, tentarDeNovo, textoPedidoReserva } from './pedido-reserva-lib.js';
+import { falhaDoServidor, reenviarAntesDoPlanoB, textoPedidoReserva } from './pedido-reserva-lib.js';
 import { limparQuantidade } from './quantidade-lib.js';
 import { miniatura } from './foto-lib.js';
 // Foto pequena SEMPRE pelo redutor do próprio site (mesmo endereço da loja). Antes, a foto com miniatura do ImgBB
@@ -1350,7 +1350,9 @@ const pixCopiaColaHtml = (pedido, destaque) => {
             <button type="button" class="btn-pix-paguei" data-action="pix-nao-paguei" data-id="${escapeHTML(pedido.id)}">Ainda não paguei: mostrar o PIX</button>
         </section>`;
     }
-    if (destaque) return pixCartao(pedido, `<p class="pix-d-para">Para <b>${escapeHTML(pix.nome)}</b><span>Chave ${escapeHTML(chaveBonita(pix))}</span></p>
+    // de quem é a conta: o nome da chave sozinho (nome de pessoa) parece golpe; junto vai o nome da loja
+    const para = paraQuemPix(pix.nome, nomeDaLojaNaTela());
+    if (destaque) return pixCartao(pedido, `<p class="pix-d-para">Para <b>${escapeHTML(para.nome)}</b>${para.loja ? ` <small class="pix-d-loja">(${escapeHTML(para.loja)})</small>` : ''}<span>Chave ${escapeHTML(chaveBonita(pix))}</span></p>
         <button type="button" class="btn-pix btn-pix--grande" data-action="copiar-pix" data-codigo="${escapeHTML(codigo)}">${ICO_COPIAR}<span>Copiar código PIX</span></button>
         <ol class="pix-d-passos">
             <li><span>1</span><p>Toque em <b>Copiar código PIX</b>.</p></li>
@@ -1362,7 +1364,7 @@ const pixCopiaColaHtml = (pedido, destaque) => {
         <button type="button" class="btn-pix-paguei" data-action="pix-ja-paguei" data-id="${escapeHTML(pedido.id)}" data-total="${Number(pedido.total) || 0}">Já paguei</button>`);
     return `<div class="pix-cola">
         <b>Pague ${fmt(pedido.total)} com PIX</b>
-        <span>Para ${escapeHTML(pix.nome)} · chave ${escapeHTML(chaveBonita(pix))}</span>
+        <span>Para ${escapeHTML(para.nome)}${para.loja ? ` (${escapeHTML(para.loja)})` : ''} · chave ${escapeHTML(chaveBonita(pix))}</span>
         <button type="button" class="btn-pix" data-action="copiar-pix" data-codigo="${escapeHTML(codigo)}">Copiar código PIX</button>
         <small>Cole no aplicativo do seu banco, em "PIX copia e cola". O valor já vem preenchido. Depois, mande o comprovante no WhatsApp.</small>
     </div>`;
@@ -1912,6 +1914,14 @@ const mensagemDeErroAmigavel = (erro) => {
     // úteis ("Este cupom já venceu", "Batata está esgotada"): repassa direto.
     if (texto) return texto;
     return 'Não consegui concluir agora. Tente de novo, por favor.';
+};
+
+// "Já paguei" / "Ainda não paguei" também vão para a banca (api/pix-informado.js): o cartão do pedido no painel mostra
+// "CLIENTE DIZ QUE PAGOU às HH:MM". O servidor grava o total do PEDIDO (nunca o do navegador). Sem internet, ou com o
+// servidor antigo (a rota não existe: 404), fica como antes: só neste aparelho. Nunca mostra erro para o cliente.
+const avisarBancaDoPix = (pedidoId, desfazer = false) => {
+    try { chamarApi('/api/pix-informado', { pedidoId, ...(desfazer ? { desfazer: true } : {}) }, { comToken: true, limiteMs: 10000 }).catch(() => { /* só no aparelho */ }); }
+    catch (_) { /* só no aparelho */ }
 };
 
 // fetch com aviso antecipado de offline e tempo limite
@@ -2637,9 +2647,10 @@ document.body.addEventListener('click', async (e) => {
         else if (action === 'indicar') { indicarLoja(); }
         else if (action === 'esquecer-dados') { esquecerDados(); }
         else if (action === 'copiar-pix') { copiarPix(actionTarget); }
-        else if (action === 'pix-ja-paguei' || action === 'pix-nao-paguei') {   // guardado só neste aparelho: a banca confirma de verdade no painel
+        else if (action === 'pix-ja-paguei' || action === 'pix-nao-paguei') {   // guardado neste aparelho E mandado à banca (o painel mostra); quem confirma é a banca
             if (action === 'pix-ja-paguei' && !(await customConfirm('Já pagou o PIX?', 'Confirme só depois que o app do banco mostrar o PIX como feito. Assim a plaquinha não pede de novo.', { ok: 'Sim, já paguei', nao: 'Ainda não' }))) return;
             if (action === 'pix-ja-paguei') informarPago(id, Number(actionTarget.dataset.total) || 0); else desfazerInformado(id);
+            avisarBancaDoPix(id, action === 'pix-nao-paguei');
             if (PIX_NO_SUCESSO && PIX_NO_SUCESSO.id === id && document.getElementById('modal-sucesso')?.classList.contains('aberto')) {
                 const area = document.getElementById('sucesso-pix'), atual = { id, total: PIX_NO_SUCESSO.total, pag: 'PIX', status: 'pendente' };
                 if (area) oferecerPixNoSucesso(atual);
@@ -2889,10 +2900,13 @@ document.addEventListener('change', (e) => {
 
 // Envia o pedido. Falha rápida do servidor (5xx, rede caindo) ganha UMA tentativa a mais, com a MESMA chave:
 // se a primeira chegou a gravar, o servidor reconhece a chave e devolve o mesmo pedido (nunca cria dois).
+// INTERNET FRACA: antes de oferecer o WhatsApp (plano B), reenvia UMA vez com a MESMA chave do pedido (idempotencyKey).
+// Se o primeiro envio chegou e só a resposta se perdeu, o servidor devolve o MESMO pedido (api/checkout.js): nada de
+// pedido duplo site + WhatsApp. Vale também para o tempo esgotado (antes, 20 s sem resposta já ia direto para o WhatsApp).
 const enviarPedidoAoServidor = async (payload) => {
     try { return await chamarApi('/api/checkout', payload, { comToken: true }); }
     catch (e) {
-        if (!tentarDeNovo(e)) throw e;
+        if (!reenviarAntesDoPlanoB(e)) throw e;
         await new Promise((r) => setTimeout(r, 1500));
         return chamarApi('/api/checkout', payload, { comToken: true });
     }
@@ -2920,6 +2934,7 @@ function oferecerPedidoPeloWhatsApp(d) {
         <div class="reserva-ico" aria-hidden="true">${ICO_ZAP_RESERVA}</div>
         <h2 class="reserva-tit" id="reserva-titulo">O sistema da banca não respondeu</h2>
         <p class="reserva-txt">Seu pedido não se perdeu. Mande pelo WhatsApp da banca: a mensagem já vai pronta, com os itens, o endereço e o pagamento.</p>
+        <p class="reserva-txt reserva-aviso"><b>Se o pedido aparecer em Meus pedidos, não mande de novo.</b></p>
         <a class="reserva-zap" id="reserva-zap" href="${escapeHTML(link)}" target="_blank" rel="noopener noreferrer">${ICO_ZAP_RESERVA}<span>Mandar o pedido no WhatsApp</span></a>
         <div class="reserva-depois" id="reserva-depois" hidden>
             <p>Mandou a mensagem? Então a banca já recebeu.</p>
