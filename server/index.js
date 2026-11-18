@@ -167,7 +167,8 @@ function criarServidor({
       if (url.pathname === '/api/saude') {
         const versao = Versao.curto(Versao.commit());
         const [rotina, copia] = obterDb ? await Promise.all([Versao.ultimaRotina(obterDb), Versao.ultimaCopia(obterDb)]) : [null, null];
-        return dar(200, { ok: true, ponte: confiarNoCabecalho(req, segredo), fotos: R2_LIGADO() ? 'r2' : 'desligado', ...(versao ? { versao } : {}), ...(rotina ? { rotina } : {}), ...(copia ? { copia } : {}) });
+        const chave = require('../lib/cofre').estadoChave();        // "diferente" = DADOS_CHAVE errada: cofre travado (lib/cofre.js)
+        return dar(200, { ok: true, ponte: confiarNoCabecalho(req, segredo), fotos: R2_LIGADO() ? 'r2' : 'desligado', ...(versao ? { versao } : {}), ...(rotina ? { rotina } : {}), ...(copia ? { copia } : {}), ...(chave ? { chave } : {}) });
       }
       const m = /^\/api\/([a-z0-9-]+)\/?$/.exec(url.pathname);
       if (!m || !Object.prototype.hasOwnProperty.call(funcoes, m[1])) return dar(404, { error: 'Não encontrado.' });
@@ -223,6 +224,13 @@ if (require.main === module) {
     return adm.firestore();
   };
   const servidor = criarServidor({ obterDb });
+  // A DADOS_CHAVE é a mesma que cifrou os dados? (lib/cofre.js, impressão da chave). Diferente: cofre travado + alerta no celular.
+  (async () => {
+    const db0 = obterDb(); if (!db0) return;
+    const r = await require('../lib/cofre').conferirImpressao(db0);
+    console.log(`[cofre] chave dos dados: ${r}`);
+    if (r === 'diferente') await require('../lib/prudencia').alertar(db0, require('../lib/tenant').TENANT_PADRAO, 'chave-diferente', { titulo: 'Chave dos dados ERRADA no servidor', corpo: 'O servidor subiu com uma DADOS_CHAVE diferente da que cifrou os dados. Pedidos pelo site estão parados (vão pelo WhatsApp). Ponha a chave do cofre no ~/segredos.env e atualize o servidor.' });
+  })().catch((e) => console.error('[cofre] não consegui conferir a chave:', e && e.message));
   console.log(`[servidor] versão: ${Versao.commit() || 'desconhecida (rode scripts/atualizar-servidor.sh)'}`);
   // Na frente deste servidor fica o Caddy (HTTPS), que REAPROVEITA conexões. O Node fecha conexão parada
   // depois de 5 s; se o Caddy usar uma que acabou de ser fechada, o cliente vê erro 502 de vez em quando.

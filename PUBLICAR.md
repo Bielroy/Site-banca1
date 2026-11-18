@@ -273,13 +273,17 @@ propósito, para ninguém esquecer que o servidor ficou para trás. Até lá, at
 
 ### Cópia fora da máquina (≈ 20 min)
 As cópias diárias ficam no disco do servidor; se a máquina se perder, vão junto. O `backup-diario.sh` (09:10 UTC, depois da rotina da noite)
-grava **um arquivo por loja** em `~/backups/AAAA-MM-DD/` e manda cada um para o R2 em `banco/AAAA-MM-DD/<loja>.json.gz`.
-A cópia agora é COMPLETA: cadastro, equipe, contas, caixa (resumos e fechamentos), produção, maquininha, pedidos e histórico de estoque
-de **400 dias**. Custo: cada documento lido é 1 leitura do Firebase (uma banca com 30 pedidos/dia ≈ 12 mil leituras/dia nesta cópia; o plano
-grátis dá 50 mil/dia). Se apertar, ponha `BACKUP_DIAS=180` no `~/segredos.env`.
+grava **um arquivo por loja** em `~/backups/AAAA-MM-DD/` (o disco guarda 7 dias; o R2, 60) e manda cada um para o R2 em `banco/AAAA-MM-DD/<loja>.json.gz`.
+A cópia leva cadastro, equipe, contas, caixa (resumos e fechamentos), produção, maquininha, pedidos e histórico de estoque. Cada loja tem
+**uma cópia COMPLETA por semana** (pedidos e estoque de 400 dias; cada loja num dia da semana) e, nos outros dias, uma **INCREMENTAL** (só o
+que nasceu ou mudou desde a última). Restaurar = a última completa + as incrementais depois dela (o script monta sozinho).
+Custo (1 leitura do Firebase por documento; o plano grátis dá **50 mil por dia, para o projeto inteiro**): a completa de uma loja média
+(~30 pedidos e ~65 movimentos de estoque por dia) ≈ **39 mil leituras**; a incremental ≈ **1 a 2 mil**. Com 2 lojas: um dia por semana
+≈ 41 mil, nos outros ≈ 4 mil. Com mais lojas, as completas se encostam: passe para o plano Blaze (com alerta de orçamento) ou ponha
+`BACKUP_DIAS=180` no `~/segredos.env` (completa ≈ 18 mil).
 1. Cloudflare → R2 → **Create bucket** `copias-banca` (NÃO ligue domínio público nem "Public access": as fotos são públicas, as cópias não).
-2. No bucket → Settings → **Object lifecycle rules** → apagar objetos com prefixo `banco/` depois de **61 dias**.
-3. No bucket → Settings → **Bucket lock rules** → prefixo `banco/`, reter **60 dias**. Os tokens do R2 que gravam também podem apagar
+2. No bucket → Settings → **Object lifecycle rules** → apagar objetos com prefixo `banco/` depois de **60 dias**.
+3. No bucket → Settings → **Bucket lock rules** → prefixo `banco/`, reter **59 dias** (menos que a regra de apagar, senão ela não consegue apagar). Os tokens do R2 que gravam também podem apagar
    (não existe "gravar sem apagar"); a trava impede que alguém com o token (ou um erro) apague ou troque uma cópia antes do prazo.
    Quem apaga é só a regra do passo 2.
 4. R2 → **Manage API tokens** → token "Object Read & Write" **só no bucket `copias-banca`** (nunca "Admin").

@@ -29,7 +29,7 @@ fi
 echo "Fazendo a primeira cópia agora..."
 if bash "$SCRIPT"; then
   echo; ls -lh "$HOME/backups" | tail -n 5
-  echo; echo "Pronto. As cópias ficam em ~/backups/AAAA-MM-DD (uma por loja, últimos 60 dias)."
+  echo; echo "Pronto. As cópias ficam em ~/backups/AAAA-MM-DD (uma por loja, últimos 7 dias; no R2, 60)."
 else
   echo; echo "A primeira cópia não deu certo. Veja o motivo:  tail -n 20 ~/backups/backup.log"
   exit 1

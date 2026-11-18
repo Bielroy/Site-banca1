@@ -18,12 +18,47 @@
 // =====================================================================
 const fs = require('fs');
 const zlib = require('zlib');
+const path = require('path');
 const T = require('../lib/tenant');
 
 const PRODUCAO_CONHECIDA = ['banca-adair-e-pedrina'];
 const NOME_COLECAO = /^[a-z_]{2,40}$/;
 
 const lerJson = (caminho) => { let b = fs.readFileSync(caminho); if (b[0] === 0x1f && b[1] === 0x8b) b = zlib.gunzipSync(b); return JSON.parse(b.toString('utf8')); };
+
+const DIA = /^\d{4}-\d{2}-\d{2}$/;
+const CADASTRO_INTEIRO = [...require('../lib/prudencia').COLECOES, 'estoque_resumo', 'estoque_meta', 'espera'];
+/**
+ * Cópia INCREMENTAL de uma loja: volta pelas pastas dos dias anteriores (ao lado da pasta pedida) até a última COMPLETA
+ * dessa loja e aplica, na ordem, as incrementais por cima. Cadastro (produtos, configurações...) vem inteiro em toda cópia:
+ * vale o da mais nova. Movimento (pedidos, estoque, caixa...): documento por documento, o mais novo vence.
+ */
+function montarCorrente(pastaDia, arquivo, alvo) {
+  const pai = path.dirname(path.resolve(pastaDia)), dia = path.basename(path.resolve(pastaDia));
+  const anteriores = fs.readdirSync(pai).filter((n) => DIA.test(n) && n < dia).sort().reverse();
+  const corrente = [alvo.copia];
+  let base = null;
+  for (const n of anteriores) {
+    const f = path.join(pai, n, arquivo);
+    if (!fs.existsSync(f)) continue;
+    const d = lerJson(f);
+    if (!(d && d.copia && d.copia.colecoes)) continue;
+    if (d.copia.tipo === 'incremental') corrente.unshift(d.copia); else { base = d.copia; break; }
+  }
+  if (!base) throw new Error(`Falta a cópia COMPLETA anterior de ${arquivo.replace(/\.json(\.gz)?$/, '')}: ponha ao lado de ${dia} as pastas dos dias anteriores (no R2: banco/<dia>/), até a da última completa.`);
+  const junta = JSON.parse(JSON.stringify(base));
+  for (const inc of corrente) {
+    for (const [nome, docs] of Object.entries(inc.colecoes || {})) {
+      if (CADASTRO_INTEIRO.includes(nome)) junta.colecoes[nome] = docs;
+      else junta.colecoes[nome] = { ...(junta.colecoes[nome] || {}), ...docs };
+    }
+    if ('ficha' in inc) junta.ficha = inc.ficha;
+    junta.feitaEm = inc.feitaEm;
+  }
+  junta.tipo = 'montada'; junta.corrente = { completa: base.feitaEm, incrementais: corrente.length };
+  junta.contagem = Object.fromEntries(Object.entries(junta.colecoes).map(([k, v]) => [k, Object.keys(v).length]));
+  return junta;
+}
 
 /**
  * Lê a cópia e devolve sempre { versao: 1, feitaEm, lojas: { id: copia }, feiras, lgpd }.
@@ -34,14 +69,21 @@ function lerArquivo(caminho) {
   const junta = { versao: 1, feitaEm: '', lojas: {}, feiras: {}, lgpd: {} };
   const somar = (d, nome) => {
     if (d && d.versao === 1 && d.lojas && typeof d.lojas === 'object') { Object.assign(junta.lojas, d.lojas); Object.assign(junta.feiras, d.feiras || {}); Object.assign(junta.lgpd, d.lgpd || {}); junta.feitaEm = junta.feitaEm || d.feitaEm; return; }
-    if (d && d.versao === 2 && d.tipo === 'loja' && d.loja && d.copia && d.copia.colecoes) { junta.lojas[d.loja] = d.copia; junta.feitaEm = junta.feitaEm || d.feitaEm; return; }
-    if (d && d.versao === 2 && d.tipo === 'plataforma') { Object.assign(junta.feiras, d.feiras || {}); Object.assign(junta.lgpd, d.lgpd || {}); return; }
+    if (d && d.versao === 2 && d.tipo === 'loja' && d.loja && d.copia && d.copia.colecoes) {
+      if (d.copia.tipo === 'incremental') throw new Error(`${nome} é uma cópia INCREMENTAL: restaure a PASTA do dia (com as pastas dos dias anteriores ao lado, até a última completa).`);
+      junta.lojas[d.loja] = d.copia; junta.feitaEm = junta.feitaEm || d.feitaEm; return;
+    }
+    if (d && d.versao === 2 && d.tipo === 'plataforma') { Object.assign(junta.feiras, d.feiras || {}); Object.assign(junta.lgpd, d.lgpd || {}); if (d.chaveImpressao) junta.chaveImpressao = d.chaveImpressao; return; }
     throw new Error(`${nome} não é uma cópia do backup diário.`);
   };
   if (fs.statSync(caminho).isDirectory()) {
     const arqs = fs.readdirSync(caminho).filter((f) => /^[a-z0-9_][a-z0-9_-]*\.json(\.gz)?$/.test(f)).sort();
     if (!arqs.length) throw new Error(`A pasta ${caminho} não tem arquivos de cópia (<loja>.json.gz).`);
-    for (const f of arqs) somar(lerJson(require('path').join(caminho, f)), f);
+    for (const f of arqs) {
+      const d = lerJson(path.join(caminho, f));
+      if (d && d.versao === 2 && d.tipo === 'loja' && d.copia && d.copia.tipo === 'incremental') somar({ ...d, copia: montarCorrente(caminho, f, d) }, f);
+      else somar(d, f);
+    }
   } else somar(lerJson(caminho), caminho);
   return junta;
 }
@@ -52,6 +94,8 @@ function lerArquivo(caminho) {
  */
 function conferirChave(dados) {
   const Cofre = require('../lib/cofre');
+  // 1º a impressão da chave (vem no _plataforma.json.gz): prova mesmo sem nenhum campo cifrado na cópia
+  if (dados.chaveImpressao && /^[0-9a-f]{32}$/.test(dados.chaveImpressao)) { const ok = Cofre.impressao() === dados.chaveImpressao; return { ok, loja: '(plataforma)', onde: 'impressão da chave' }; }
   for (const [tid, copia] of Object.entries(dados.lojas || {})) {
     for (const nome of ['pedidos', 'contas']) {
       for (const [id, doc] of Object.entries((copia.colecoes || {})[nome] || {})) {

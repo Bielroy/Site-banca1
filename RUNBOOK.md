@@ -43,7 +43,7 @@ O cliente que não consegue pedir é mandado sozinho para o WhatsApp da loja (pl
 1. Anote a data do pedido, a loja e o telefone usado nos pedidos.
 2. Ver o que será apagado: `docker exec -it loja node scripts/apagar-cliente.js --loja <id-da-loja> --telefone <DDD+número>` (a loja original é `banca`).
 3. Apagar: o mesmo comando com `--gravar`, e digite `APAGAR`. Os pedidos ficam com os valores (caixa) e sem nome, telefone e endereço.
-4. Responda ao cliente: feito; as cópias já feitas expiram sozinhas (7 dias dentro do Firebase, 60 dias no servidor e no R2) e, se uma cópia
+4. Responda ao cliente: feito; as cópias já feitas expiram sozinhas (7 dias dentro do Firebase e no servidor, 60 dias no R2) e, se uma cópia
    for restaurada, a pessoa é apagada de novo sozinha (marca em `plataforma/lgpd_apagados`); as mensagens no WhatsApp da loja precisam ser apagadas no aparelho.
 
 ## (v) Máquina nova do zero (a AWS perdeu o servidor) — ≈ 1 h, qualquer uma das duas pessoas
@@ -56,10 +56,18 @@ Precisa só do **cofre de senhas compartilhado** (o `~/segredos.env` INTEIRO est
 4. Chave de leitura do GitHub e o código (ROTA-CLOUDFLARE.md, "Preparação feita uma vez", passo 1: nova deploy key), depois
    `git clone git@github.com:Bielroy/Site-banca1.git ~/loja && git -C ~/loja checkout rota-cloudflare`
 5. Chaves: `nano ~/segredos.env`, cole o conteúdo do cofre, salve (Ctrl+O, Enter, Ctrl+X) e `chmod 600 ~/segredos.env`.
+   **Antes de subir o servidor, prove que a chave é a certa:** baixe do R2 a pasta do último dia (`copias-banca` → `banco/<dia>/`, todos os
+   arquivos) para `~/backups/<dia>/` e rode `bash ~/loja/scripts/restaurar-backup.sh ~/backups/<dia> --conferir-chave` colando a
+   `DADOS_CHAVE` do cofre. Tem de dizer "Chave OK". (Se subir com a chave errada, o servidor TRAVA o cofre: os pedidos pelo site param e
+   vão pelo WhatsApp, `/api/saude` mostra `"chave":"diferente"` e o celular do dono recebe alerta.)
 6. HTTPS: `printf 'api.usebanca.com {\n  reverse_proxy 127.0.0.1:8080\n}\n' | sudo tee /etc/caddy/Caddyfile && sudo systemctl reload caddy`
 7. `bash ~/loja/scripts/atualizar-servidor.sh` (sobe o servidor) e `bash ~/loja/scripts/ligar-backup.sh` (cópia diária).
 8. Conferir: `https://api.usebanca.com/saude` → `{"ok":true}`; `https://usebanca.com/api/saude` → `"ponte":true` e `"versao"`.
 9. Se o Firebase também se perdeu: restaurar a última cópia do R2 (PUBLICAR.md, "Ensaio de restauração", com `--producao --chave`).
+   Baixe de `banco/` as pastas desde a última cópia COMPLETA até o último dia (o script monta a completa + as incrementais).
+   O `--credenciais` é a chave da conta de serviço do projeto: Firebase → ⚙ Configurações do projeto → **Contas de serviço** →
+   **Gerar nova chave privada** (baixa um JSON). Envie pelo menu do terminal da Lightsail, use, e APAGUE o JSON do servidor e do
+   computador logo depois (`rm ~/<arquivo>.json`); no Firebase, apague também a chave em Contas de serviço → Gerenciar chaves.
 10. Se usava a atualização automática: refaça a chave do GitHub (PUBLICAR.md 4m, "Servidor atualizado sozinho") e troque o `SSH_KNOWN_HOSTS`.
 
 ## Atualizar o servidor

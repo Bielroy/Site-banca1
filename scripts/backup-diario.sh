@@ -9,7 +9,8 @@
 #  - manda cada arquivo para o R2: banco/AAAA-MM-DD/<loja>.json.gz no bucket R2_BACKUP_BUCKET (PUBLICAR.md,
 #    "Cópia fora da máquina"). Sem as variáveis, a cópia local continua, o registro diz o que falta e o dono é avisado;
 #  - anota no banco quando terminou (plataforma/copia_fora): /api/saude mostra e o painel do dono avisa se parar;
-#  - guarda 60 dias no disco (no R2, quem apaga é a regra de 60 dias do bucket);
+#  - COMPLETA 1 vez por semana por loja (cada loja num dia), INCREMENTAL nos outros (só o que mudou): custo em lib/prudencia.js;
+#  - guarda 7 dias no disco (uma completa + as incrementais) e 60 no R2 (regra do bucket);
 #  - disco quase cheio (menos de 500 MB): não grava e avisa;
 #  - deu errado: escreve no registro E avisa o celular do dono (aviso de sempre do painel), se o servidor estiver de pé.
 #  Registros: ~/backups/backup.log e ~/backups/agendador.log (no máximo 2000 linhas cada).
@@ -20,7 +21,7 @@
 set -uo pipefail
 PASTA_BK="${PASTA_BK:-$HOME/backups}"
 NOME="${NOME:-loja}"
-DIAS="${DIAS:-60}"
+DIAS="${DIAS:-7}"                 # no disco: 7 dias (a corrente completa + incrementais cabe aí); no R2: 60 dias
 mkdir -p "$PASTA_BK"
 LOG="$PASTA_BK/backup.log"
 dia=$(date -u +%F)
@@ -61,6 +62,15 @@ copiar() {
     return
   fi
   mv -f "$tmp" "$final"; feitas=$((feitas + 1))
+  # cópia de loja gravada inteira: marca a corrente (a próxima incremental parte daqui)
+  if [ "$1" = "--loja" ]; then
+    local cab tipo feita
+    cab=$(gzip -dc "$final" | head -c 400)
+    tipo=$(printf '%s' "$cab" | grep -o '"tipo":"\(completa\|incremental\)"' | head -1 | cut -d'"' -f4)
+    feita=$(printf '%s' "$cab" | grep -o '"feitaEm":"[^"]*"' | head -1 | cut -d'"' -f4)
+    docker exec "$NOME" node server/backup.js --confirmar "$nome" "$tipo" "$feita" 2>>"$LOG" || diz "AVISO: não marquei a cópia de $nome (a próxima será maior)."
+    diz "$nome: cópia $tipo"
+  fi
   [ "$desligada" = 1 ] && return
   docker exec -i "$NOME" node server/backup-ferramentas.js enviar "banco/$dia/$nome.json.gz" < "$final" >> "$LOG" 2>&1
   fora=$?

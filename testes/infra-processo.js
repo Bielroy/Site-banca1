@@ -159,5 +159,7 @@ teste('processo: rotina da noite falha à vista sem segredos, atualização do s
 
 // rodada 2: LGPD (achar a pessoa inteira, não tocar no vizinho, não desfazer pagamento), restauração por pasta e marca de LGPD
 require('./infra-processo-lgpd')({ teste, criarBanco, raiz, semente, comChaveDoCofre, path, assert });
+// rodada 3: "equipe:" não é aparelho de cliente, DADOS_CHAVE errada trava o cofre, cópia incremental + completa semanal
+require('./infra-processo-r3')({ teste, criarBanco, raiz, semente, comChaveDoCofre, path, assert });
 
 };

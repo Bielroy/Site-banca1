@@ -61,8 +61,8 @@
     <section>
         <h2>Quem mais participa (fornecedores)</h2>
         <ul>
-            <li><strong>Cloudflare</strong>: entrega o site (hospedagem) e passa os pedidos para o servidor. Guarda as fotos dos produtos e uma cópia de segurança diária do banco (Cloudflare R2, em local fechado).</li>
-            <li><strong>Amazon Web Services (AWS)</strong>, em São Paulo: o servidor que recebe os pedidos, calcula preços e frete, gera o PIX e guarda cópias de segurança por até 60 dias.</li>
+            <li><strong>Cloudflare</strong>: entrega o site (hospedagem) e passa os pedidos para o servidor. Guarda as fotos dos produtos e uma cópia de segurança diária do banco (Cloudflare R2, em local fechado, por até 60 dias).</li>
+            <li><strong>Amazon Web Services (AWS)</strong>, em São Paulo: o servidor que recebe os pedidos, calcula preços e frete, gera o PIX e guarda cópias de segurança por até 7 dias.</li>
             <li><strong>Google Firebase</strong> (Google Cloud): o banco de dados onde ficam pedidos, contas e cadastros; também cria uma identificação anônima para o seu aparelho, sem cadastro.</li>
             <li><strong>Asaas</strong> e <strong>PagBank</strong>: processam o PIX automático (e, no PagBank, a maquininha da loja). Recebem nome, CPF, e-mail e o valor do pedido.</li>
             <li><strong>WhatsApp</strong> (Meta): ao finalizar, o pedido vai por mensagem para a loja, com nome, endereço e itens. A conversa fica no WhatsApp da loja e no seu.</li>
@@ -80,7 +80,7 @@
         <h2>Por quanto tempo</h2>
         <ul>
             <li>Pedidos: enquanto a loja precisar para o caixa e as obrigações dela (fiscais e de defesa do consumidor).</li>
-            <li>Cópias de segurança: apagam sozinhas em até 60 dias.</li>
+            <li>Cópias de segurança: apagam sozinhas em até 7 dias no servidor e em até 60 dias no Cloudflare R2.</li>
             <li>Registro de segurança do painel (quem entrou e o que mudou): até 400 dias.</li>
         </ul>
     </section>
@@ -92,7 +92,7 @@
             <li><strong>Como pedir:</strong> mande uma mensagem para o WhatsApp da loja em que você comprou, ou um e-mail para [E-MAIL DO ENCARREGADO], dizendo o nome da loja e o telefone usado nos pedidos.</li>
             <li><strong>Prazo:</strong> respondemos em até <strong>15 dias</strong>.</li>
             <li><strong>O que é apagado:</strong> nome, telefone, endereço e observações dos seus pedidos, a sua conta e o seu perfil de compras naquela loja. Ficam só os valores e os itens dos pedidos, sem nada que identifique você, porque a loja precisa deles no caixa.</li>
-            <li><strong>O que demora ou não alcançamos:</strong> as cópias de segurança já feitas apagam sozinhas em até 60 dias; as mensagens no WhatsApp ficam no aparelho da loja e no seu; o registro do pagamento no Asaas ou no PagBank precisa ser guardado por lei.</li>
+            <li><strong>O que demora ou não alcançamos:</strong> as cópias de segurança já feitas apagam sozinhas (em até 7 dias no Firebase e no servidor, em até 60 dias no Cloudflare R2); as mensagens no WhatsApp ficam no aparelho da loja e no seu; o registro do pagamento no Asaas ou no PagBank precisa ser guardado por lei.</li>
         </ul>
         <p>Se não ficar satisfeito com a resposta, você pode procurar a Autoridade Nacional de Proteção de Dados (ANPD).</p>
     </section>

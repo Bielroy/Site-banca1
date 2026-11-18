@@ -14,6 +14,7 @@ const dataBr = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ?
 export function avisosDeVersao(site, saude, agora = Date.now()) {
   const out = [];
   if (!saude || typeof saude !== 'object') return out;              // servidor fora do ar: o próprio painel já mostra erro
+  if (saude.chave === 'diferente') out.push('URGENTE: a DADOS_CHAVE do servidor é diferente da que cifrou os dados. Pedidos pelo site estão parados (vão pelo WhatsApp). Ponha a chave do cofre no ~/segredos.env e atualize o servidor (RUNBOOK.md).');
   const doSite = hex(site && site.commit), doServidor = hex(saude.versao);
   const publicadoHa = agora - Date.parse((site && site.em) || '');
   if (doSite && !(publicadoHa < FOLGA_MS)) {
