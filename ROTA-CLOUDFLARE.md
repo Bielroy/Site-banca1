@@ -46,6 +46,8 @@ O Docker roda `server/index.js`; o **Caddy** cuida do HTTPS de `api.usebanca.com
 - **Atualizar o servidor** (o site se atualiza sozinho, o servidor NÃO): no terminal da AWS,
   `bash ~/loja/scripts/atualizar-servidor.sh`. Ele baixa o código, troca o contêiner e, se o novo não responder, volta sozinho
   para o anterior. Depois de mudar o `~/segredos.env`, rode o mesmo comando (só reiniciar não relê o arquivo).
+  A versão no ar fica em `~/.loja-versao` e aparece em `/api/saude` (`"versao"`). Para o GitHub atualizar sozinho a cada mudança:
+  PUBLICAR.md, seção 4m ("Servidor atualizado sozinho"). Emergências: RUNBOOK.md.
 - **Preparação feita uma vez** (deixa o comando acima funcionar e protege a máquina):
   1. chave de leitura do GitHub (o repositório é privado): `ssh-keygen -t ed25519 -N "" -f ~/.ssh/loja_deploy -C servidor-loja`,
      depois `cat ~/.ssh/loja_deploy.pub` e cole em GitHub → repositório → *Settings → Deploy keys → Add* (**sem** marcar escrita);

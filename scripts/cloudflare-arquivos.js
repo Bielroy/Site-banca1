@@ -13,4 +13,12 @@ for (const { de, para } of copiasDePagina(vercel)) {
   fs.copyFileSync(path.join(saida, de), path.join(saida, para));
   console.log(`Cloudflare: ${para} (cópia de ${de})`);
 }
+// VERSÃO DO SITE: o commit que o Cloudflare Pages montou (CF_PAGES_COMMIT_SHA). O painel compara com a do servidor
+// (/api/saude → "versao") e avisa quando estão diferentes (js/aviso-versao.js). Sem commit conhecido, não escreve.
+let commit = String(process.env.CF_PAGES_COMMIT_SHA || process.env.GITHUB_SHA || '').trim().toLowerCase();
+if (!/^[0-9a-f]{7,40}$/.test(commit)) { try { commit = require('child_process').execSync('git rev-parse HEAD', { cwd: raiz, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch (_) { commit = ''; } }
+if (/^[0-9a-f]{7,40}$/.test(commit)) {
+  fs.writeFileSync(path.join(saida, 'versao.json'), JSON.stringify({ commit, ramo: String(process.env.CF_PAGES_BRANCH || '').slice(0, 100), em: new Date().toISOString() }) + '\n');
+  console.log(`Cloudflare: versao.json (${commit.slice(0, 7)})`);
+}
 console.log('Cloudflare: _headers, _redirects e _routes.json escritos em', saida);

@@ -250,3 +250,96 @@ da publicação; os outros, quando puder. O desenho completo está em `SEGURANCA
 No GitHub, aba **Actions** → "Testes de segurança": o trabalho "Regras do banco no emulador do Firebase" roda
 `firestore.rules` e `storage.rules` de verdade e tenta ler e gravar o que não pode, com cada tipo de conta.
 Verde = as regras do arquivo fazem o que prometem. (Ele testa o ARQUIVO; publicar no console continua sendo com você.)
+
+## 4m. Infra e processo — o que só o dono liga (novembro/2026)
+O código já está pronto; cada item abaixo fica DESLIGADO (e avisando) até você fazer o passo. Quando algo der errado: `RUNBOOK.md`.
+**Antes de tudo, atualize o servidor à mão DUAS vezes seguidas** (`bash ~/loja/scripts/atualizar-servidor.sh`): a primeira ainda roda o
+script velho (ele se troca junto com o código); a segunda já grava a versão. Confira `"versao"` em `https://usebanca.com/api/saude`.
+
+### Servidor atualizado sozinho (≈ 20 min)
+O site se atualiza a cada mudança; o servidor só quando alguém roda o script. Agora `/api/saude` mostra `"versao"` (commit) e o painel do dono
+mostra uma faixa amarela quando site e servidor ficam diferentes por mais de 20 min. Para o GitHub atualizar o servidor sozinho
+(`.github/workflows/deploy-servidor.yml`, a cada mudança no `rota-cloudflare`; se nada do servidor mudou, só anota a versão, sem reiniciar):
+1. No terminal da AWS, crie uma chave **só para isto**: `ssh-keygen -t ed25519 -N "" -f ~/gh_deploy -C github-deploy`
+2. Prenda a chave ao comando de atualização (ela não abre terminal nem faz outra coisa):
+   `printf 'command="SO_SE_MUDOU=1 bash %s/loja/scripts/atualizar-servidor.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty %s\n' "$HOME" "$(cat ~/gh_deploy.pub)" >> ~/.ssh/authorized_keys`
+3. GitHub → repositório → **Settings → Secrets and variables → Actions → New repository secret**, quatro segredos:
+   - `SSH_HOST` = `54.207.72.209` · `SSH_USER` = `ubuntu` (o usuário do terminal: `whoami`)
+   - `SSH_KEY` = todo o conteúdo de `cat ~/gh_deploy` (de `-----BEGIN` até `-----END ...-----`)
+   - `SSH_KNOWN_HOSTS` = a saída de `ssh-keyscan -t ed25519 localhost 2>/dev/null | sed 's/^localhost/54.207.72.209/'` (rodado no servidor)
+4. Apague a cópia da chave privada do servidor: `rm ~/gh_deploy` (a pública fica no `authorized_keys`).
+5. Firewall da Lightsail: a porta 22 precisa aceitar o GitHub (endereços variáveis). A chave presa ao comando é a proteção; o login por senha
+   continua desligado.
+6. Teste: GitHub → Actions → "Atualizar o servidor (AWS)" → **Run workflow**. Verde com "Pronto: servidor no ar com a versão ...".
+**Enquanto os segredos não existirem, esse trabalho fica VERMELHO a cada mudança** ("Servidor NÃO foi atualizado", com o que falta): é de
+propósito, para ninguém esquecer que o servidor ficou para trás. Até lá, atualize à mão (RUNBOOK.md, "Atualizar o servidor").
+
+### Cópia fora da máquina (≈ 20 min)
+As cópias diárias ficam no disco do servidor; se a máquina se perder, vão junto. O `backup-diario.sh` (09:10 UTC, depois da rotina da noite)
+grava **um arquivo por loja** em `~/backups/AAAA-MM-DD/` (o disco guarda 7 dias; o R2, 60) e manda cada um para o R2 em `banco/AAAA-MM-DD/<loja>.json.gz`.
+A cópia leva cadastro, equipe, contas, caixa (resumos e fechamentos), produção, maquininha, pedidos e histórico de estoque. Cada loja tem
+**uma cópia COMPLETA por semana** (pedidos e estoque de 400 dias; cada loja num dia da semana) e, nos outros dias, uma **INCREMENTAL** (só o
+que nasceu ou mudou desde a última). Restaurar = a última completa + as incrementais depois dela (o script monta sozinho).
+Custo (1 leitura do Firebase por documento; o plano grátis dá **50 mil por dia, para o projeto inteiro**): a completa de uma loja média
+(~30 pedidos e ~65 movimentos de estoque por dia) ≈ **39 mil leituras**; a incremental ≈ **1 a 2 mil**. Com 2 lojas: um dia por semana
+≈ 41 mil, nos outros ≈ 4 mil. Com mais lojas, as completas se encostam: passe para o plano Blaze (com alerta de orçamento) ou ponha
+`BACKUP_DIAS=180` no `~/segredos.env` (completa ≈ 18 mil).
+1. Cloudflare → R2 → **Create bucket** `copias-banca` (NÃO ligue domínio público nem "Public access": as fotos são públicas, as cópias não).
+2. No bucket → Settings → **Object lifecycle rules** → apagar objetos com prefixo `banco/` depois de **60 dias**.
+3. No bucket → Settings → **Bucket lock rules** → prefixo `banco/`, reter **59 dias** (menos que a regra de apagar, senão ela não consegue apagar). Os tokens do R2 que gravam também podem apagar
+   (não existe "gravar sem apagar"); a trava impede que alguém com o token (ou um erro) apague ou troque uma cópia antes do prazo.
+   Quem apaga é só a regra do passo 2.
+4. R2 → **Manage API tokens** → token "Object Read & Write" **só no bucket `copias-banca`** (nunca "Admin").
+5. No `~/segredos.env`: `R2_BACKUP_BUCKET=copias-banca`, `R2_BACKUP_ACCESS_KEY_ID=...`, `R2_BACKUP_SECRET_ACCESS_KEY=...` (a conta é o mesmo `R2_ACCOUNT_ID`).
+6. `bash ~/loja/scripts/atualizar-servidor.sh` e depois `bash ~/loja/scripts/ligar-backup.sh` (troca a linha antiga do agendador pela nova, às
+   09:10 UTC, com registro em `~/backups/agendador.log`, e já faz uma cópia). No fim do `tail ~/backups/backup.log`: "ok: N arquivo(s) ... e no R2".
+Sem as variáveis, a cópia local continua, o registro diz "DESLIGADA" e o celular do dono recebe aviso. Qualquer falha (disco cheio, cópia
+quebrada, R2 recusou) avisa o celular do dono. Além disso, `/api/saude` mostra `"copia"` (quando a última terminou) e o painel do dono avisa
+se ela passar de 30 h sem rodar, mesmo que o agendador tenha parado sem dar erro.
+
+### O ~/segredos.env INTEIRO num cofre compartilhado (≈ 10 min, OBRIGATÓRIO)
+Nome, telefone e endereço dos clientes estão cifrados com a `DADOS_CHAVE`, e o servidor só sobe com as outras chaves (Firebase, PIX, R2,
+`PROXY_SEGREDO`, `CRON_SECRET`...). Tudo isso está só no `~/segredos.env`. Se a máquina se perder e o arquivo não estiver guardado fora, só
+quem lembra de cada chave reergue a loja, e os dados cifrados das cópias ficam ilegíveis para sempre.
+1. No servidor: `cat ~/segredos.env` (aparece na tela; não cole em chat, e-mail ou WhatsApp).
+2. Guarde o arquivo INTEIRO num **gerenciador de senhas** (Bitwarden, 1Password, o do Google), como nota segura "usebanca segredos.env",
+   numa pasta/cofre **compartilhado com a segunda pessoa** de confiança. Sempre que mudar o arquivo, atualize a nota.
+3. Feche o terminal e confira o histórico: `grep -c DADOS_CHAVE ~/.bash_history` (se passar de 0: `sed -i '/DADOS_CHAVE/d' ~/.bash_history`).
+4. Prova de que a chave do cofre abre os dados (não grava nada): `bash ~/loja/scripts/restaurar-backup.sh ~/backups/<ontem> --conferir-chave`
+   e cole a `DADOS_CHAVE` do cofre. Tem de dizer "Chave OK".
+Com isso, a segunda pessoa consegue montar uma máquina nova sozinha: RUNBOOK.md, "(v) Máquina nova do zero".
+
+### Ensaio de restauração — uma vez por trimestre (≈ 30 min)
+Cópia que nunca foi restaurada não é cópia. O GitHub ensaia o ciclo no emulador a cada mudança (testes de segurança → "Backup → restaurar no
+emulador"), mas o ensaio com o arquivo de verdade é com você:
+1. Crie (uma vez) um projeto Firebase de TESTE (ex.: `banca-teste`), com Firestore, e baixe a chave de uma conta de serviço dele (JSON).
+   Nunca use o arquivo da produção.
+2. No servidor (envie o JSON pelo menu do terminal da Lightsail): `bash ~/loja/scripts/restaurar-backup.sh ~/backups/<ontem> --simular`
+   (só conta), `... --conferir-chave` (a chave do cofre abre?) e depois
+   `bash ~/loja/scripts/restaurar-backup.sh ~/backups/<ontem> --projeto banca-teste --credenciais ~/banca-teste.json --chave`
+   (pede a `DADOS_CHAVE` e pergunta antes; digite RESTAURAR). `<ontem>` é a pasta do dia, ex. `2026-11-17`.
+3. Confira no console do Firebase do projeto de teste: produtos, pedidos de ontem, caixa, lojas. Repita com os arquivos baixados do R2
+   (`copias-banca` → `banco/<dia>/`, todos numa pasta).
+4. Apague o JSON da conta de teste do servidor e anote a data do ensaio aqui: [DATA DO ÚLTIMO ENSAIO].
+O script recusa o projeto da produção sem `--producao` e, mesmo com ele, exige digitar o nome do projeto. Depois de restaurar, quem já tinha
+pedido para apagar os dados (LGPD) é apagado de novo sozinho (marcas em `plataforma/lgpd_apagados`; por isso o `--chave`).
+
+### Rotina da noite com o código novo (≈ 15 min, no mesmo dia)
+Hoje quem roda a rotina (cópia do dia no Firebase, previsão, faxinas) é a **Vercel**, pelo `crons` do `vercel.json` da `main` — código de
+206 mudanças atrás. O GitHub só agenda fluxos do **ramo padrão** (`main`), e a `main` nem tem o `rotina-noite.yml`. Para virar:
+1. GitHub → Settings → Secrets → Actions: `API_ORIGEM` = `https://api.usebanca.com` e `CRON_SECRET` = o mesmo do `~/segredos.env`.
+2. **No mesmo dia**, um dos dois:
+   - **(recomendado) mesclar o PR #3** (`rota-cloudflare` → `main`): leva o `rotina-noite.yml` para a `main` e tira o `crons` do `vercel.json`
+     (este ramo já está sem ele), então a Vercel para e o GitHub começa; ou
+   - trocar o ramo padrão: Settings → General → **Default branch** → `rota-cloudflare`, e na Vercel → projeto → Settings → **Cron Jobs → Disable**.
+3. GitHub → Actions → "Rotina da noite" → **Run workflow**: verde, e `https://usebanca.com/api/saude` passa a mostrar `"rotina"` com a hora.
+Sem os segredos, o trabalho fica **vermelho** (antes terminava verde sem fazer nada). O painel do dono avisa quando a rotina não roda há
+mais de 30 h, ou nunca rodou por este servidor.
+
+### Página de privacidade (≈ 10 min)
+`privacidade.html` lista os fornecedores de verdade (Cloudflare, AWS, Firebase, Asaas, PagBank, WhatsApp, Gemini). Preencha as lacunas
+`[NOME/CNPJ DO CONTROLADOR]` e `[E-MAIL DO ENCARREGADO]` (aparecem 1 e 2 vezes) e leia o texto com quem cuida da parte jurídica.
+Pedido de apagar dados: `RUNBOOK.md`, item (iv), prazo de 15 dias.
+
+### Alerta de queda
+UptimeRobot olhando o servidor e o site: `RUNBOOK.md`, última seção (≈ 10 min). Preencha também "Quem chamar" no topo do RUNBOOK.

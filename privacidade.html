@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Privacidade | Banca Adair e Pedrina</title>
-    <meta name="description" content="Quais dados a Banca Adair e Pedrina usa para receber e entregar o seu pedido.">
+    <title>Privacidade | usebanca</title>
+    <meta name="description" content="Quais dados as lojas da plataforma usebanca usam para receber e entregar o seu pedido, com quem são compartilhados e como pedir para apagar.">
     <meta name="theme-color" content="#1a3a2a">
     <link rel="canonical" href="https://usebanca.com/privacidade.html">
     <link rel="icon" href="./icon-192.png">
@@ -19,58 +19,85 @@
 <header class="pv-topo">
     <a class="pv-voltar" href="/">← Voltar para a loja</a>
     <h1>Privacidade</h1>
-    <p>O que a banca guarda sobre você, para que serve e como pedir para apagar.</p>
+    <p>O que a loja e a plataforma guardam sobre você, para que serve, com quem é compartilhado e como pedir para apagar.</p>
 </header>
 
 <main class="pv-texto">
 
-    <!-- AVISO PARA O DONO DA BANCA: este texto descreve o que o site faz hoje.
-         Leia e ajuste o que for diferente na prática antes de divulgar. -->
+    <section>
+        <h2>Quem cuida dos seus dados</h2>
+        <p>Este site é a <strong>plataforma usebanca</strong>, usada por várias lojas (bancas, feirantes, lanchonetes). Cada loja tem a sua vitrine, os seus pedidos e os seus clientes, separados das outras.</p>
+        <ul>
+            <li><strong>A loja em que você comprou</strong> decide para que usa os dados do seu pedido (separar, entregar, cobrar, falar com você) e responde por eles junto com a plataforma. O nome e o contato da loja aparecem na página dela e no WhatsApp do pedido.</li>
+            <li><strong>A plataforma</strong>, que mantém o site, o banco de dados e os fornecedores abaixo: [NOME/CNPJ DO CONTROLADOR].</li>
+            <li><strong>Encarregado pelo tratamento de dados (LGPD)</strong>: [E-MAIL DO ENCARREGADO].</li>
+        </ul>
+    </section>
 
     <section>
         <h2>O que pedimos</h2>
-        <p>Para montar e entregar o seu pedido, o site pede:</p>
         <ul>
-            <li><strong>Nome</strong>, <strong>condomínio</strong> e <strong>quadra e lote</strong> (ou rua e número): para saber de quem é o pedido e onde entregar.</li>
-            <li><strong>Ofertas no WhatsApp</strong>: só enviamos novidades e promoções para quem marca essa opção ao fazer o pedido. Para parar de receber, faça um pedido sem marcar ou peça pelo WhatsApp.</li>
-            <li><strong>WhatsApp</strong> (opcional): para avisar quando o pedido estiver pronto.</li>
+            <li><strong>Nome</strong> e <strong>endereço de entrega</strong> (condomínio, quadra e lote, ou rua e número): para saber de quem é o pedido e onde entregar. Na retirada na loja, o endereço não é pedido.</li>
+            <li><strong>WhatsApp</strong>: para a loja falar com você sobre o pedido.</li>
             <li><strong>Itens, forma de pagamento, troco e observações</strong> do pedido.</li>
+            <li><strong>CPF e e-mail</strong>: só se você escolher o <strong>PIX automático</strong> (o QR Code que confirma o pagamento sozinho). O banco que gera a cobrança exige o CPF. Eles vão direto para o processador do pagamento (abaixo); o site não guarda o seu CPF.</li>
+            <li><strong>Ofertas no WhatsApp</strong>: só enviamos novidades e promoções para quem marca essa opção no pedido. Para parar, faça um pedido sem marcar ou peça pelo WhatsApp da loja.</li>
+            <li><strong>Me avise quando chegar</strong>: nome e telefone, só se você pedir aviso de um produto em falta. Sai da lista depois do aviso ou em até 60 dias.</li>
         </ul>
-        <p>O site não pede CPF, e-mail nem senha, e não guarda dados de cartão.</p>
+        <p>O site não pede senha e não guarda dados de cartão. Nome, telefone, endereço e observação ficam <strong>cifrados</strong> no banco de dados: só o servidor da plataforma e a equipe da loja (depois de entrar no painel) conseguem abrir.</p>
     </section>
 
     <section>
         <h2>Para que usamos</h2>
         <ul>
-            <li>Separar, pesar e entregar o pedido.</li>
-            <li>Mostrar a você o andamento em “Meus Pedidos”.</li>
-            <li>Saber o que mais sai em cada dia para comprar a quantidade certa na Ceasa.</li>
-            <li>Colocar no começo da vitrine os produtos que a sua casa costuma pedir. Isso é calculado pelo endereço de entrega (condomínio, quadra e lote) dos pedidos anteriores.</li>
+            <li>Separar, pesar, cobrar e entregar o pedido, e mostrar a você o andamento em “Meus pedidos”.</li>
+            <li>Lembrar de você em outro aparelho: no primeiro pedido criamos uma conta sem senha, ligada a um código que vai num cookie do site e no link da mensagem do WhatsApp.</li>
+            <li>Ajudar a loja a comprar a quantidade certa: o sistema calcula o que mais sai em cada dia e coloca no começo da vitrine os produtos que a sua casa costuma pedir (pelo endereço dos pedidos anteriores).</li>
+            <li>Segurança: o endereço de internet (IP) de quem faz pedido é usado para barrar abuso (contagem de minutos). Nas entradas no painel da equipe, ele fica no registro de segurança.</li>
         </ul>
         <p>Não vendemos nem repassamos seus dados para propaganda.</p>
     </section>
 
     <section>
-        <h2>O que fica no seu celular</h2>
-        <p>Para você não digitar tudo de novo, o navegador guarda no próprio aparelho o carrinho, o último endereço usado, seus favoritos e os últimos pedidos. Limpar os dados do site no navegador apaga tudo isso.</p>
+        <h2>Quem mais participa (fornecedores)</h2>
+        <ul>
+            <li><strong>Cloudflare</strong>: entrega o site (hospedagem) e passa os pedidos para o servidor. Guarda as fotos dos produtos e uma cópia de segurança diária do banco (Cloudflare R2, em local fechado, por até 60 dias).</li>
+            <li><strong>Amazon Web Services (AWS)</strong>, em São Paulo: o servidor que recebe os pedidos, calcula preços e frete, gera o PIX e guarda cópias de segurança por até 7 dias.</li>
+            <li><strong>Google Firebase</strong> (Google Cloud): o banco de dados onde ficam pedidos, contas e cadastros; também cria uma identificação anônima para o seu aparelho, sem cadastro.</li>
+            <li><strong>Asaas</strong> e <strong>PagBank</strong>: processam o PIX automático (e, no PagBank, a maquininha da loja). Recebem nome, CPF, e-mail e o valor do pedido.</li>
+            <li><strong>WhatsApp</strong> (Meta): ao finalizar, o pedido vai por mensagem para a loja, com nome, endereço e itens. A conversa fica no WhatsApp da loja e no seu.</li>
+            <li><strong>Google Gemini</strong> (inteligência artificial): só se você usar o assistente da loja. A mensagem que você escreve, a foto que enviar e os itens do carrinho vão para a IA responder. Não escreva dados pessoais na conversa. A equipe da loja também usa a IA no painel, com resumos de vendas.</li>
+        </ul>
+        <p>Alguns desses fornecedores guardam dados fora do Brasil, com as garantias previstas na LGPD.</p>
     </section>
 
     <section>
-        <h2>Quem mais participa</h2>
+        <h2>O que fica no seu celular</h2>
+        <p>Para você não digitar tudo de novo, o navegador guarda no próprio aparelho o carrinho, o último endereço usado, seus favoritos e os últimos pedidos, além do cookie da sua conta. Limpar os dados do site no navegador apaga tudo isso do aparelho.</p>
+    </section>
+
+    <section>
+        <h2>Por quanto tempo</h2>
         <ul>
-            <li><strong>WhatsApp</strong>: ao finalizar, o pedido é enviado por mensagem para a banca. Se o pedido tiver itens de mais de um atendimento, cada parte vai para o WhatsApp responsável.</li>
-            <li><strong>Google Firebase</strong>: é o banco de dados onde os pedidos ficam guardados. O site cria uma identificação anônima para o seu aparelho, sem cadastro.</li>
-            <li><strong>Vercel</strong>: é onde o site fica hospedado.</li>
-            <li><strong>Google Gemini</strong>: só se você usar o Ajudante da Banca. A mensagem que você escreve, a foto que enviar e os itens do carrinho são mandados para a inteligência artificial responder. Não escreva dados pessoais na conversa.</li>
+            <li>Pedidos: enquanto a loja precisar para o caixa e as obrigações dela (fiscais e de defesa do consumidor).</li>
+            <li>Cópias de segurança: apagam sozinhas em até 7 dias no servidor e em até 60 dias no Cloudflare R2.</li>
+            <li>Registro de segurança do painel (quem entrou e o que mudou): até 400 dias.</li>
         </ul>
     </section>
 
     <section>
-        <h2>Seus direitos</h2>
-        <p>Você pode pedir para ver, corrigir ou apagar os dados dos seus pedidos, como prevê a Lei Geral de Proteção de Dados (LGPD). É só chamar a banca pelo WhatsApp usado para os pedidos.</p>
+        <h2>Seus direitos e como pedir para apagar</h2>
+        <p>Pela Lei Geral de Proteção de Dados (LGPD) você pode pedir para <strong>ver</strong>, <strong>corrigir</strong> ou <strong>apagar</strong> os seus dados, saber com quem foram compartilhados e retirar o consentimento das ofertas.</p>
+        <ul>
+            <li><strong>Como pedir:</strong> mande uma mensagem para o WhatsApp da loja em que você comprou, ou um e-mail para [E-MAIL DO ENCARREGADO], dizendo o nome da loja e o telefone usado nos pedidos.</li>
+            <li><strong>Prazo:</strong> respondemos em até <strong>15 dias</strong>.</li>
+            <li><strong>O que é apagado:</strong> nome, telefone, endereço e observações dos seus pedidos, a sua conta e o seu perfil de compras naquela loja. Ficam só os valores e os itens dos pedidos, sem nada que identifique você, porque a loja precisa deles no caixa.</li>
+            <li><strong>O que demora ou não alcançamos:</strong> as cópias de segurança já feitas apagam sozinhas (em até 7 dias no Firebase e no servidor, em até 60 dias no Cloudflare R2); as mensagens no WhatsApp ficam no aparelho da loja e no seu; o registro do pagamento no Asaas ou no PagBank precisa ser guardado por lei.</li>
+        </ul>
+        <p>Se não ficar satisfeito com a resposta, você pode procurar a Autoridade Nacional de Proteção de Dados (ANPD).</p>
     </section>
 
-    <p class="pv-rodape">Banca Adair e Pedrina</p>
+    <p class="pv-rodape">Plataforma usebanca · versão de novembro de 2026</p>
 </main>
 
 </body>
