@@ -31,7 +31,7 @@ function mostrar(r) {
   console.log(`Loja ${r.loja}, telefone ${r.telefone}:`);
   console.log(`  pedidos a anonimizar:      ${r.pedidos.length}${r.pedidos.length ? ` (${r.pedidos.slice(0, 10).join(', ')}${r.pedidos.length > 10 ? ', ...' : ''})` : ''}`);
   console.log(`  contas a apagar:           ${r.contas.length}`);
-  console.log(`  perfis da previsão:        ${r.perfis.length} (+ ${r.uids} ligação(ões) de aparelho)`);
+  console.log(`  perfis da previsão:        ${r.perfis.length} (+ ${r.uids} aparelho(s); ${r.painel} na lista de clientes do painel)`);
   console.log(`  pontos de frete no mapa:   ${r.fretes}`);
   console.log(`  "me avise quando chegar":  ${r.espera}`);
 }
@@ -55,9 +55,9 @@ async function principal(argv, { db, perguntar } = {}) {
   if (await ask('\nIsto NÃO tem volta. Digite APAGAR para continuar: ') !== 'APAGAR') { console.log('Nada foi mudado.'); return 1; }
   const r = await apagarCliente(banco, o.loja, o.telefone, { gravar: true });
   await require('../lib/prudencia').registrar(banco, o.loja, { acao: 'lgpd-apagar', quem: 'servidor (scripts/apagar-cliente.js)', detalhe: `${r.pedidos.length} pedido(s) anonimizados, ${r.contas.length} conta(s), ${r.perfis.length} perfil(is)` });
-  console.log(`\nPronto: dados apagados na loja ${r.loja}.`);
-  console.log('Diga ao cliente: as cópias de segurança já feitas (no Firebase até 7 dias, no servidor e no R2 até 60 dias) expiram sozinhas;');
-  console.log('as mensagens no WhatsApp da loja precisam ser apagadas no aparelho; registros de pagamento (Asaas/PagBank) a lei manda guardar.');
+  console.log(`\nPronto: dados apagados na loja ${r.loja}.${r.marcas ? ` Marca guardada (${r.marcas}): uma restauração de cópia apaga de novo.` : ''}`);
+  console.log(`Diga ao cliente: ${r.aviso}`);
+  console.log('As mensagens no WhatsApp da loja precisam ser apagadas no aparelho; registros de pagamento (Asaas/PagBank) a lei manda guardar.');
   return 0;
 }
 

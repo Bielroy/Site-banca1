@@ -23,13 +23,47 @@ const T = require('../lib/tenant');
 const PRODUCAO_CONHECIDA = ['banca-adair-e-pedrina'];
 const NOME_COLECAO = /^[a-z_]{2,40}$/;
 
-/** Lê o arquivo (gzip ou JSON puro) e confere que é uma cópia do server/backup.js. */
+const lerJson = (caminho) => { let b = fs.readFileSync(caminho); if (b[0] === 0x1f && b[1] === 0x8b) b = zlib.gunzipSync(b); return JSON.parse(b.toString('utf8')); };
+
+/**
+ * Lê a cópia e devolve sempre { versao: 1, feitaEm, lojas: { id: copia }, feiras, lgpd }.
+ * Aceita: o arquivo antigo (tudo num JSON, versao 1), um arquivo de UMA loja (versao 2), ou a PASTA do dia
+ * (~/backups/AAAA-MM-DD/, um <loja>.json.gz por loja + _plataforma.json.gz), como o backup-diario.sh grava hoje.
+ */
 function lerArquivo(caminho) {
-  let bruto = fs.readFileSync(caminho);
-  if (bruto[0] === 0x1f && bruto[1] === 0x8b) bruto = zlib.gunzipSync(bruto);
-  const dados = JSON.parse(bruto.toString('utf8'));
-  if (!dados || dados.versao !== 1 || !dados.lojas || typeof dados.lojas !== 'object') throw new Error('Este arquivo não é uma cópia do backup diário (falta "versao": 1 e "lojas").');
-  return dados;
+  const junta = { versao: 1, feitaEm: '', lojas: {}, feiras: {}, lgpd: {} };
+  const somar = (d, nome) => {
+    if (d && d.versao === 1 && d.lojas && typeof d.lojas === 'object') { Object.assign(junta.lojas, d.lojas); Object.assign(junta.feiras, d.feiras || {}); Object.assign(junta.lgpd, d.lgpd || {}); junta.feitaEm = junta.feitaEm || d.feitaEm; return; }
+    if (d && d.versao === 2 && d.tipo === 'loja' && d.loja && d.copia && d.copia.colecoes) { junta.lojas[d.loja] = d.copia; junta.feitaEm = junta.feitaEm || d.feitaEm; return; }
+    if (d && d.versao === 2 && d.tipo === 'plataforma') { Object.assign(junta.feiras, d.feiras || {}); Object.assign(junta.lgpd, d.lgpd || {}); return; }
+    throw new Error(`${nome} não é uma cópia do backup diário.`);
+  };
+  if (fs.statSync(caminho).isDirectory()) {
+    const arqs = fs.readdirSync(caminho).filter((f) => /^[a-z0-9_][a-z0-9_-]*\.json(\.gz)?$/.test(f)).sort();
+    if (!arqs.length) throw new Error(`A pasta ${caminho} não tem arquivos de cópia (<loja>.json.gz).`);
+    for (const f of arqs) somar(lerJson(require('path').join(caminho, f)), f);
+  } else somar(lerJson(caminho), caminho);
+  return junta;
+}
+
+/**
+ * A chave do cofre abre os dados desta cópia? Procura um campo cifrado ("c1:...") e tenta abrir com a DADOS_CHAVE
+ * do ambiente. Devolve { ok: true|false, loja, onde } ou { semCifrado: true } (cópia sem nada cifrado: não dá para provar).
+ */
+function conferirChave(dados) {
+  const Cofre = require('../lib/cofre');
+  for (const [tid, copia] of Object.entries(dados.lojas || {})) {
+    for (const nome of ['pedidos', 'contas']) {
+      for (const [id, doc] of Object.entries((copia.colecoes || {})[nome] || {})) {
+        for (const campo of Cofre.CAMPOS) {
+          if (!Cofre.cifrado(doc && doc[campo])) continue;
+          const aberto = Cofre.abrir(doc[campo], tid, campo);
+          return { ok: aberto !== Cofre.PROTEGIDO, loja: tid, onde: `${nome}/${id}.${campo}` };
+        }
+      }
+    }
+  }
+  return { semCifrado: true };
 }
 
 /** Datas do Firestore viram {_seconds, _nanoseconds} no JSON: aqui voltam a ser datas do Firestore. */
@@ -67,19 +101,26 @@ async function restaurarDados(db, dados, { lojas = null, simular = false, Timest
     if (copia.ficha && tid !== T.TENANT_PADRAO) { escritas.push([ref(() => db.collection('tenants').doc(tid)), copia.ficha]); resumo.lojas[tid].ficha = 1; }
   }
   if (!lojas) for (const [id, doc] of Object.entries(dados.feiras || {})) if (id && !id.includes('/') && doc && typeof doc === 'object') { escritas.push([ref(() => db.collection('feiras').doc(id)), doc]); resumo.feiras++; }
+  // marcas de quem pediu para apagar (LGPD): voltam junto, para reaplicar() achar essas pessoas depois
+  const marcas = Object.entries(dados.lgpd || {}).filter(([k, v]) => /^[0-9a-f]{40}$/.test(k) && v && typeof v === 'object');
+  if (marcas.length) { escritas.push([ref(() => db.doc('plataforma/lgpd_apagados')), Object.fromEntries(marcas), true]); resumo.marcasLgpd = marcas.length; }
   resumo.documentos = escritas.length;
   if (simular) return resumo;
   for (let i = 0; i < escritas.length; i += 400) {
     const lote = db.batch();
-    escritas.slice(i, i + 400).forEach(([r, doc]) => lote.set(r, reviver(doc, Timestamp)));
+    escritas.slice(i, i + 400).forEach(([r, doc, juntar]) => (juntar ? lote.set(r, doc, { merge: true }) : lote.set(r, reviver(doc, Timestamp))));
     await lote.commit();
   }
+  // quem já pediu para apagar some de novo (lib/apagar-cliente.js → reaplicar; precisa da DADOS_CHAVE)
+  const L = require('../lib/apagar-cliente');
+  const re = await L.reaplicar(db, Object.keys(resumo.lojas));
+  resumo.lgpd = { marcas: re.marcas, semChave: !!re.semChave, reaplicado: Object.fromEntries(Object.entries(re.lojas).map(([tid, r]) => [tid, r.pedidos.length])) };
   return resumo;
 }
 
 /** Lê os argumentos. Erro com mensagem clara quando falta ou sobra algo. */
 function lerOpcoes(argv, env = process.env) {
-  const o = { arquivo: '', emulador: false, projeto: '', credenciais: '', lojas: null, simular: false, sim: false, producao: false };
+  const o = { arquivo: '', emulador: false, projeto: '', credenciais: '', lojas: null, simular: false, sim: false, producao: false, conferirChave: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], prox = () => { const v = argv[++i]; if (!v || v.startsWith('--')) throw new Error(`${a} precisa de um valor.`); return v; };
     if (a === '--emulador') o.emulador = true;
@@ -89,11 +130,13 @@ function lerOpcoes(argv, env = process.env) {
     else if (a === '--simular') o.simular = true;
     else if (a === '--sim') o.sim = true;
     else if (a === '--producao') o.producao = true;
+    else if (a === '--conferir-chave') o.conferirChave = true;
     else if (a.startsWith('--')) throw new Error(`Opção desconhecida: ${a}`);
     else if (!o.arquivo) o.arquivo = a;
     else throw new Error(`Sobrou: ${a}`);
   }
-  if (!o.arquivo) throw new Error('Diga qual arquivo restaurar (ex.: ~/backups/banco-2026-11-17.json.gz).');
+  if (!o.arquivo) throw new Error('Diga qual cópia restaurar (a pasta ~/backups/AAAA-MM-DD ou um arquivo .json.gz).');
+  if (o.conferirChave) return o;                                     // só abre um campo com a chave: não grava em lugar nenhum
   if (o.emulador) {
     if (!env.FIRESTORE_EMULATOR_HOST) throw new Error('--emulador precisa do emulador ligado (FIRESTORE_EMULATOR_HOST). Ex.: firebase emulators:exec --only firestore "bash scripts/restaurar-backup.sh ..."');
     o.projeto = o.projeto || 'demo-restauro';
@@ -112,6 +155,13 @@ const perguntar = (texto) => new Promise((ok) => { const rl = require('readline'
 async function principal(argv) {
   const o = lerOpcoes(argv);
   const dados = lerArquivo(o.arquivo);
+  if (o.conferirChave) {
+    if (!require('../lib/cofre').ligado()) { console.log('Informe a chave: bash scripts/restaurar-backup.sh <cópia> --conferir-chave (o script pede para colar a DADOS_CHAVE).'); return 2; }
+    const c = conferirChave(dados);
+    if (c.semCifrado) { console.log('Esta cópia não tem nenhum campo cifrado: não dá para provar a chave com ela.'); return 1; }
+    console.log(c.ok ? `Chave OK: abriu ${c.onde} da loja ${c.loja}.` : `Chave ERRADA: não abriu ${c.onde} da loja ${c.loja}. Os nomes, telefones e endereços desta cópia NÃO podem ser lidos com ela.`);
+    return c.ok ? 0 : 1;
+  }
   console.log(`Cópia de ${dados.feitaEm || '?'} com ${Object.keys(dados.lojas).length} loja(s)${(dados.falhas || []).length ? ` (e ${dados.falhas.length} falha(s) anotadas nela)` : ''}.`);
   const contar = await restaurarDados(null, dados, { lojas: o.lojas, simular: true }).catch(() => null);
   if (contar) for (const [tid, c] of Object.entries(contar.lojas)) console.log(`  ${tid}: ${Object.entries(c).map(([k, n]) => `${k} ${n}`).join(', ')}`);
@@ -129,10 +179,13 @@ async function principal(argv) {
   const r = await restaurarDados(app.firestore(), dados, { lojas: o.lojas, Timestamp: admin.firestore.Timestamp });
   console.log(`Pronto: ${r.documentos} documento(s) gravados no ${destino}.`);
   await app.delete().catch(() => {});
+  if (r.lgpd.semChave) { console.log(`\n*** LGPD: há ${r.lgpd.marcas} marca(s) de clientes que pediram para apagar, e a DADOS_CHAVE não foi informada. Rode de novo com --chave para apagá-los outra vez. ***`); return 3; }
+  const n = Object.values(r.lgpd.reaplicado).reduce((a, b) => a + b, 0);
+  if (n) console.log(`LGPD: ${n} pedido(s) de quem já tinha pedido para apagar foram anonimizados de novo.`);
   return 0;
 }
 
-module.exports = { lerArquivo, reviver, ehProducao, restaurarDados, lerOpcoes, PRODUCAO_CONHECIDA };
+module.exports = { lerArquivo, conferirChave, reviver, ehProducao, restaurarDados, lerOpcoes, PRODUCAO_CONHECIDA };
 
 if (require.main === module) {
   principal(process.argv.slice(2)).then((c) => { process.exitCode = c; }).catch((e) => { console.error(`Não restaurei: ${e && e.message}`); process.exitCode = 2; });

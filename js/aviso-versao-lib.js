@@ -25,6 +25,11 @@ export function avisosDeVersao(site, saude, agora = Date.now()) {
     if (!r || !r.em) out.push('A rotina da noite (cópia do dia, previsão) ainda não rodou por este servidor. Veja PUBLICAR.md, "Rotina da noite".');
     else if (r.ok === false) out.push(`A rotina da noite falhou na última vez (${dataBr(r.em)}, código ${Number(r.status) || '?'}).`);
     else if (agora - Date.parse(r.em) > ROTINA_VELHA_MS) out.push(`A rotina da noite não roda desde ${dataBr(r.em)}.`);
+    const c = saude.copia;                                          // cópia fora da máquina (R2), feita de madrugada pelo servidor
+    if (!c || !c.em) out.push('A cópia de segurança fora da máquina (R2) ainda não rodou. Veja PUBLICAR.md, "Cópia fora da máquina".');
+    else if (agora - Date.parse(c.em) > ROTINA_VELHA_MS) out.push(`A cópia de segurança fora da máquina não roda desde ${dataBr(c.em)}.`);
+    else if (c.desligada) out.push('A cópia de segurança está ficando SÓ no servidor: falta ligar a cópia fora da máquina (R2_BACKUP_BUCKET).');
+    else if (c.ok === false) out.push(`A última cópia fora da máquina teve falha (${dataBr(c.em)}): ${Number(c.enviadas) || 0} de ${Number(c.lojas) || 0} loja(s) enviadas.`);
   }
   return out;
 }

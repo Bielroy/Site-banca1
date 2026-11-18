@@ -213,27 +213,26 @@ teste('painel num documento só (tela): mudados por cima, marca local até o ser
   parar();
 });
 
-teste('backup fora do Firebase: usa a cópia do dia que já existe (quase sem leitura), faz uma se estiver velha, separa as lojas e não leva segredo', async () => {
-  const P = require(raiz('lib/prudencia')), { fazerBackup } = require(raiz('server/backup.js'));
+teste('backup fora do Firebase: uma cópia COMPLETA por loja (cadastro + movimento de 400 dias), lojas separadas, sem segredo', async () => {
+  const { fazerBackup, copiaDaLoja, copiaDaPlataforma } = require(raiz('server/backup.js'));
+  const agora = Date.UTC(2026, 9, 22, 9);
+  const dias = (n) => new Date(agora - n * 86400000).toISOString();
   const db = criarBanco({ ...semente(), 'tenants/espetinhos': { nome: 'Espetinhos', ativo: true }, 'tenants/espetinhos/produtos/carne': { nome: 'Espeto', preco: 9, ativo: true },
-    'plataforma/segredos': { pagbank: 'token-secreto' }, 'feiras/f1': { nome: 'Feira Munique', lojas: [] } });
-  const agora = Date.UTC(2026, 9, 22, 7);
-  await P.copiar(db, 'banca', new Date(agora - 3 * 3600e3));                   // a rotina da noite já fez a da banca
-  const antes = [...db._dados.keys()].filter((k) => k.startsWith('backups/')).length;
+    'plataforma/segredos': { pagbank: 'token-secreto' }, 'feiras/f1': { nome: 'Feira Munique', lojas: [] }, 'plataforma/lgpd_apagados': { ['a'.repeat(40)]: { loja: 'banca', tipo: 'tel' } },
+    'pedidos/novo': { total: 1, data: dias(2) }, 'pedidos/de-300-dias': { total: 2, data: dias(300) }, 'pedidos/de-500-dias': { total: 3, data: dias(500) },
+    'resumos/2026-10-01': { receita: 10 }, 'fechamentos/2026-10-01': { dia: '2026-10-01' }, 'contas/abc': { id: 'abc' }, 'estoque_mov/m1': { em: dias(10) }, 'estoque_mov/velho': { em: dias(900) },
+    'maquininha/2026-10-01': { total: 5 }, 'producoes/p1': { em: dias(3) } });
+  const c = (await copiaDaLoja(db, 'banca', agora)).copia;
+  assert.deepStrictEqual(Object.keys(c.colecoes.pedidos).sort(), ['de-300-dias', 'novo'], 'pedidos de 400 dias (era 31)');
+  for (const col of ['resumos', 'fechamentos', 'contas', 'maquininha', 'producoes']) assert.strictEqual(Object.keys(c.colecoes[col]).length, 1, `${col} vai junto`);
+  assert.deepStrictEqual(Object.keys(c.colecoes.estoque_mov), ['m1'], 'histórico de estoque dentro da janela');
+  assert.ok(!JSON.stringify(c).includes('Espeto'), 'cada loja com os seus dados');
+  const p = await copiaDaPlataforma(db, agora);
+  assert.strictEqual(p.feiras.f1.nome, 'Feira Munique'); assert.ok(p.lgpd['a'.repeat(40)], 'marcas de LGPD vão junto (só HMAC)');
   const r = await fazerBackup(db, { agora, log: () => {} });
-  assert.deepStrictEqual(r.falhas, []);
-  assert.deepStrictEqual(Object.keys(r.lojas).sort(), ['banca', 'espetinhos']);
-  assert.ok(r.lojas.banca.colecoes.produtos.tomate, 'produto da banca');
-  assert.strictEqual(r.lojas.espetinhos.colecoes.produtos.carne.nome, 'Espeto', 'a dos espetinhos foi feita na hora (não tinha)');
-  assert.ok(!JSON.stringify(r.lojas.banca).includes('Espeto'), 'cada loja com os seus dados');
+  assert.deepStrictEqual(r.falhas, []); assert.deepStrictEqual(Object.keys(r.lojas).sort(), ['banca', 'espetinhos']);
   assert.ok(!JSON.stringify(r).includes('token-secreto'), 'segredo da plataforma não vai para o arquivo');
-  assert.strictEqual(r.feiras.f1.nome, 'Feira Munique');
-  const depois = [...db._dados.keys()].filter((k) => k.startsWith('backups/')).length;
-  assert.ok(depois > antes, 'fez a cópia que faltava'); 
-  // de novo, logo em seguida: não refaz nada (só lê as cópias prontas)
-  const r2 = await fazerBackup(db, { agora: agora + 60e3, log: () => {} });
-  assert.strictEqual([...db._dados.keys()].filter((k) => k.startsWith('backups/')).length, depois, 'não gastou leitura refazendo cópia');
-  assert.deepStrictEqual(Object.keys(r2.lojas).sort(), ['banca', 'espetinhos']);
+  await assert.rejects(copiaDaLoja(db, '../x', agora), /inválida/);
 });
 
 teste('plano B do pedido: só falha do servidor (sem resposta, 5xx, 429) vai para o WhatsApp; o texto leva itens, endereço, pagamento e código', async () => {

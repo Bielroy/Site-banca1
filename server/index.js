@@ -163,9 +163,11 @@ function criarServidor({
       // "ponte": true = o PROXY_SEGREDO do Cloudflare é IGUAL ao daqui. Se vier false, os freios por IP
       // enxergam todos os clientes como um só (o Cloudflare) e bloqueiam a loja inteira de uma vez.
       // "versao": commit do servidor (7 letras), para o painel comparar com o do site. "rotina": a última rotina da noite.
+      // "copia": quando terminou a última cópia fora da máquina (R2).
       if (url.pathname === '/api/saude') {
-        const versao = Versao.curto(Versao.commit()), rotina = obterDb ? await Versao.ultimaRotina(obterDb) : null;
-        return dar(200, { ok: true, ponte: confiarNoCabecalho(req, segredo), fotos: R2_LIGADO() ? 'r2' : 'desligado', ...(versao ? { versao } : {}), ...(rotina ? { rotina } : {}) });
+        const versao = Versao.curto(Versao.commit());
+        const [rotina, copia] = obterDb ? await Promise.all([Versao.ultimaRotina(obterDb), Versao.ultimaCopia(obterDb)]) : [null, null];
+        return dar(200, { ok: true, ponte: confiarNoCabecalho(req, segredo), fotos: R2_LIGADO() ? 'r2' : 'desligado', ...(versao ? { versao } : {}), ...(rotina ? { rotina } : {}), ...(copia ? { copia } : {}) });
       }
       const m = /^\/api\/([a-z0-9-]+)\/?$/.exec(url.pathname);
       if (!m || !Object.prototype.hasOwnProperty.call(funcoes, m[1])) return dar(404, { error: 'Não encontrado.' });

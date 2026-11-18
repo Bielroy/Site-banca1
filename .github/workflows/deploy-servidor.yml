@@ -8,8 +8,8 @@
 #    SSH_USER         usuário do terminal da AWS (ubuntu)
 #    SSH_KEY          chave PRIVADA criada só para isto (passo a passo em PUBLICAR.md, "Servidor atualizado sozinho")
 #    SSH_KNOWN_HOSTS  (recomendado) a "impressão digital" do servidor: sem ela, o GitHub confia no que achar na hora
-# Enquanto faltar algum dos três primeiros, o trabalho termina com um AVISO amarelo dizendo o que falta
-# (não finge que atualizou): o servidor continua sendo atualizado à mão.
+# Enquanto faltar algum dos três primeiros, o trabalho fica VERMELHO dizendo o que falta (não passa batido nem
+# finge que atualizou): o servidor continua sendo atualizado à mão até os segredos existirem.
 #
 # OBS.: o GitHub só roda isto a partir do arquivo que está no próprio ramo rota-cloudflare (evento "push"):
 # funciona mesmo com a "main" como ramo padrão.
@@ -35,7 +35,6 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Conferir os segredos
-        id: s
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
@@ -46,19 +45,16 @@ jobs:
           [ -n "$SSH_USER" ] || faltam="$faltam SSH_USER"
           [ -n "$SSH_KEY" ]  || faltam="$faltam SSH_KEY"
           if [ -n "$faltam" ]; then
-            echo "::warning title=Servidor NÃO foi atualizado::Faltam os segredos:$faltam. O site já mudou, o servidor não. Rode à mão no terminal da AWS: bash ~/loja/scripts/atualizar-servidor.sh (ou ligue a atualização sozinha: PUBLICAR.md, 'Servidor atualizado sozinho')."
+            echo "::error title=Servidor NÃO foi atualizado::Faltam os segredos:$faltam. O site já mudou, o servidor não. Rode à mão no terminal da AWS: bash ~/loja/scripts/atualizar-servidor.sh (ou ligue a atualização sozinha: PUBLICAR.md, 'Servidor atualizado sozinho')."
             {
               echo "### Servidor NÃO foi atualizado"
               echo "Faltam os segredos:$faltam (GitHub → Settings → Secrets and variables → Actions)."
               echo "Enquanto isso, rode à mão no terminal da AWS: \`bash ~/loja/scripts/atualizar-servidor.sh\`."
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "ligado=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ligado=true" >> "$GITHUB_OUTPUT"
+            exit 1
           fi
 
       - name: Atualizar (SSH)
-        if: steps.s.outputs.ligado == 'true'
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}

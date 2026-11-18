@@ -28,7 +28,8 @@ Regra de sempre: nada vai para a `main` (reserva da Vercel); só a `rota-cloudfl
    7. **AWS:** Lightsail → instância → ver o plano (memória). Antes de acabar o período grátis, decidir o plano pago; ligar o alerta de orçamento.
    8. Espaço em disco (`df -h`), "7 updates" e "System restart required" no servidor (reiniciar num horário calmo).
 6b. **Infra e processo (teste de estresse, nov/2026)** — passo a passo em PUBLICAR.md, seção 4m; emergências em RUNBOOK.md:
-   - DADOS_CHAVE num cofre de senhas fora do servidor (obrigatório, 5 min);
+   - o ~/segredos.env INTEIRO num cofre de senhas compartilhado com a 2ª pessoa (obrigatório, 10 min) e "--conferir-chave";
+   - primeira atualização do servidor à mão: rodar DUAS vezes;
    - cópia fora da máquina: bucket fechado `copias-banca` no R2 + 3 variáveis `R2_BACKUP_*` + `ligar-backup.sh` de novo;
    - segredos `SSH_HOST`, `SSH_USER`, `SSH_KEY`, `SSH_KNOWN_HOSTS` para o servidor se atualizar sozinho;
    - segredos `API_ORIGEM` e `CRON_SECRET` e, no mesmo dia, mesclar o PR #3 (ou trocar o ramo padrão e desligar o cron da Vercel);

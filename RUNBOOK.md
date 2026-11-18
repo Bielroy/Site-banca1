@@ -3,6 +3,8 @@
 Uma página. Comandos do servidor: no terminal da AWS (Lightsail → `servidor-loja` → **Conectar**). Nunca cole chave ou senha no chat.
 
 **Quem chamar:** 1º [NOME E TELEFONE DE QUEM CUIDA DO SISTEMA] · 2º [NOME E TELEFONE DA SEGUNDA PESSOA] · AWS/Cloudflare/GitHub: a conta é do dono.
+**Para a 2ª pessoa conseguir agir sozinha:** acesso às contas AWS, Cloudflare e GitHub, e o **cofre de senhas compartilhado** com o
+`~/segredos.env` INTEIRO (todas as chaves do servidor, inclusive a `DADOS_CHAVE`). Sem isso, se a máquina se perder, só uma pessoa reergue.
 
 ## Primeiro, 30 segundos de diagnóstico
 | Abra | Certo | Se não |
@@ -41,7 +43,30 @@ O cliente que não consegue pedir é mandado sozinho para o WhatsApp da loja (pl
 1. Anote a data do pedido, a loja e o telefone usado nos pedidos.
 2. Ver o que será apagado: `docker exec -it loja node scripts/apagar-cliente.js --loja <id-da-loja> --telefone <DDD+número>` (a loja original é `banca`).
 3. Apagar: o mesmo comando com `--gravar`, e digite `APAGAR`. Os pedidos ficam com os valores (caixa) e sem nome, telefone e endereço.
-4. Responda ao cliente: feito; cópias de segurança antigas somem sozinhas em até 60 dias; as mensagens no WhatsApp da loja precisam ser apagadas no aparelho.
+4. Responda ao cliente: feito; as cópias já feitas expiram sozinhas (7 dias dentro do Firebase, 60 dias no servidor e no R2) e, se uma cópia
+   for restaurada, a pessoa é apagada de novo sozinha (marca em `plataforma/lgpd_apagados`); as mensagens no WhatsApp da loja precisam ser apagadas no aparelho.
+
+## (v) Máquina nova do zero (a AWS perdeu o servidor) — ≈ 1 h, qualquer uma das duas pessoas
+Precisa só do **cofre de senhas compartilhado** (o `~/segredos.env` INTEIRO está lá, PUBLICAR.md 4m) e do acesso à AWS e ao GitHub.
+1. Lightsail → **Create instance** → São Paulo, Linux, **Ubuntu 24.04**, plano igual ao anterior, nome `servidor-loja`.
+   Rede: **anexe o IP fixo** `54.207.72.209` (Networking → Static IP → Attach) e libere 22, 80 e 443 no firewall.
+2. No terminal da máquina nova:
+   `sudo apt-get update && sudo apt-get install -y docker.io git caddy && sudo usermod -aG docker $USER` — saia e entre de novo no terminal.
+3. Memória extra: `sudo fallocate -l 1G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab`
+4. Chave de leitura do GitHub e o código (ROTA-CLOUDFLARE.md, "Preparação feita uma vez", passo 1: nova deploy key), depois
+   `git clone git@github.com:Bielroy/Site-banca1.git ~/loja && git -C ~/loja checkout rota-cloudflare`
+5. Chaves: `nano ~/segredos.env`, cole o conteúdo do cofre, salve (Ctrl+O, Enter, Ctrl+X) e `chmod 600 ~/segredos.env`.
+6. HTTPS: `printf 'api.usebanca.com {\n  reverse_proxy 127.0.0.1:8080\n}\n' | sudo tee /etc/caddy/Caddyfile && sudo systemctl reload caddy`
+7. `bash ~/loja/scripts/atualizar-servidor.sh` (sobe o servidor) e `bash ~/loja/scripts/ligar-backup.sh` (cópia diária).
+8. Conferir: `https://api.usebanca.com/saude` → `{"ok":true}`; `https://usebanca.com/api/saude` → `"ponte":true` e `"versao"`.
+9. Se o Firebase também se perdeu: restaurar a última cópia do R2 (PUBLICAR.md, "Ensaio de restauração", com `--producao --chave`).
+10. Se usava a atualização automática: refaça a chave do GitHub (PUBLICAR.md 4m, "Servidor atualizado sozinho") e troque o `SSH_KNOWN_HOSTS`.
+
+## Atualizar o servidor
+O site muda sozinho a cada mudança no GitHub; o servidor muda quando o GitHub entra por SSH (ligado em PUBLICAR.md 4m) ou à mão:
+`bash ~/loja/scripts/atualizar-servidor.sh` (terminal da AWS). Ele baixa o código, troca o contêiner e volta sozinho se o novo não responder.
+**Na primeira vez depois desta mudança, rode DUAS vezes:** a primeira ainda executa o script velho (ele se atualiza junto com o código);
+a segunda já grava a versão. Confira em `https://usebanca.com/api/saude` que aparece `"versao"`.
 
 ## Voltar uma versão
 - **Servidor:** o `atualizar-servidor.sh` já volta sozinho se o novo não responder. Para voltar à mão para a versão anterior:

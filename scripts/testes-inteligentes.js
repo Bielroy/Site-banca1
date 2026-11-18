@@ -90,7 +90,7 @@ function escolher(arquivos) {
         if (/^(firestore|storage)\.rules$/.test(f) || f === 'firebase.json' || /^testes\/regras\//.test(f)) { liga(['regras', 'servidor'], f); conhecido = true; }
         // ensaio de restauração no emulador (testes/regras/backup-restaurar.test.js): a cópia e a volta dela
         if (['server/backup.js', 'server/restaurar-backup.js', 'scripts/restaurar-backup.sh', 'lib/prudencia.js', 'lib/tenant.js'].includes(f)) liga(['regras'], f);
-        if (/^testes\/(index|seguranca|mundo-simulado|infra-processo)\.js$/.test(f) || /^testes\/(carga|velocidade)\//.test(f)) { liga(['servidor'], f); conhecido = true; }
+        if (/^testes\/(index|seguranca|mundo-simulado|infra-processo|infra-processo-lgpd)\.js$/.test(f) || /^testes\/(carga|velocidade)\//.test(f)) { liga(['servidor'], f); conhecido = true; }
         if (f === 'testes/tela/tela.test.js' || /^testes\/tela\/(painel-.*\.html|fotos\/)/.test(f)) { liga(['tela'], f); conhecido = true; }
         if (f === 'testes/tela/matriz.test.js') { liga(['matriz', 'iphone'], f); conhecido = true; }   // o iPhone roda a matriz curta
         if (f === 'testes/tela/iphone.test.js') { liga(['iphone'], f); conhecido = true; }

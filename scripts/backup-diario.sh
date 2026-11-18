@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # =====================================================================
-#  scripts/backup-diario.sh — guarda a cópia do banco NO DISCO DO SERVIDOR (fora do Firebase) e uma
-#  segunda cópia FORA DA MÁQUINA (bucket fechado do Cloudflare R2).
-#  Quem chama é o agendador do servidor (instalado por scripts/ligar-backup.sh), todo dia de madrugada.
-#  Também dá para rodar na mão:  bash ~/loja/scripts/backup-diario.sh
+#  scripts/backup-diario.sh — CÓPIA DO BANCO, UM ARQUIVO POR LOJA, NO DISCO DO SERVIDOR E FORA DA MÁQUINA (R2).
+#  Quem chama é o agendador do servidor (scripts/ligar-backup.sh), todo dia às 09:10 UTC (06:10 em Brasília),
+#  DEPOIS da rotina da noite (08:00 UTC). Também dá para rodar na mão:  bash ~/loja/scripts/backup-diario.sh
 #
-#  - salva em ~/backups/banco-AAAA-MM-DD.json.gz (só troca o arquivo se a cópia nova estiver inteira);
-#  - manda a mesma cópia para o R2: banco/AAAA-MM-DD.json.gz no bucket R2_BACKUP_BUCKET (PUBLICAR.md,
-#    "Cópia fora da máquina"). Sem as variáveis, a cópia local continua e o registro diz o que falta;
-#  - guarda os últimos 60 dias no disco e apaga os mais velhos (no R2, quem apaga é a regra de 60 dias do bucket);
-#  - se o disco estiver quase cheio (menos de 500 MB livres), não grava e avisa;
+#  - grava ~/backups/AAAA-MM-DD/<loja>.json.gz (uma loja de cada vez) e _plataforma.json.gz (feiras e marcas de LGPD);
+#    cada arquivo só entra se estiver inteiro;
+#  - manda cada arquivo para o R2: banco/AAAA-MM-DD/<loja>.json.gz no bucket R2_BACKUP_BUCKET (PUBLICAR.md,
+#    "Cópia fora da máquina"). Sem as variáveis, a cópia local continua, o registro diz o que falta e o dono é avisado;
+#  - anota no banco quando terminou (plataforma/copia_fora): /api/saude mostra e o painel do dono avisa se parar;
+#  - guarda 60 dias no disco (no R2, quem apaga é a regra de 60 dias do bucket);
+#  - disco quase cheio (menos de 500 MB): não grava e avisa;
 #  - deu errado: escreve no registro E avisa o celular do dono (aviso de sempre do painel), se o servidor estiver de pé.
-#  Registros: ~/backups/backup.log (deste script) e ~/backups/agendador.log (saída do agendador). Os dois
-#  ficam com no máximo 2000 linhas (cortados para as 1000 últimas).
+#  Registros: ~/backups/backup.log e ~/backups/agendador.log (no máximo 2000 linhas cada).
 #
 #  A CHAVE DOS DADOS (DADOS_CHAVE) NÃO vai junto: nome, telefone e endereço dos clientes estão cifrados na cópia.
-#  Sem a chave, a cópia não serve para esses campos: guarde a chave num cofre de senhas FORA do servidor (PUBLICAR.md).
+#  Guarde o ~/segredos.env INTEIRO num cofre de senhas FORA do servidor (PUBLICAR.md, seção 4m).
 # =====================================================================
 set -uo pipefail
 PASTA_BK="${PASTA_BK:-$HOME/backups}"
@@ -23,53 +23,76 @@ NOME="${NOME:-loja}"
 DIAS="${DIAS:-60}"
 mkdir -p "$PASTA_BK"
 LOG="$PASTA_BK/backup.log"
-dia=$(date +%F)
-final="$PASTA_BK/banco-$dia.json.gz"
-tmp="$PASTA_BK/.banco-$dia.json.gz.parcial"
+dia=$(date -u +%F)
+pasta="$PASTA_BK/$dia"
 diz() { echo "$(date '+%F %T') $*" | tee -a "$LOG"; }
 cortar() { for f in "$@"; do [ -f "$f" ] && [ "$(wc -l < "$f")" -gt 2000 ] && tail -n 1000 "$f" > "$f.tmp" && mv -f "$f.tmp" "$f"; done; return 0; }
-# avisa o celular do dono (só funciona com o contêiner de pé; se ele caiu, o UptimeRobot avisa)
 alertar() { docker exec "$NOME" node server/backup-ferramentas.js alertar "$1" >> "$LOG" 2>&1 || diz "(não consegui mandar o aviso para o celular)"; }
+marcar() { docker exec "$NOME" node server/backup-ferramentas.js marcar "$@" >> "$LOG" 2>&1 || diz "(não consegui anotar no banco que a cópia terminou)"; }
 sair() { cortar "$LOG" "$PASTA_BK/agendador.log"; exit "$1"; }
 
 livre_kb=$(df -Pk "$PASTA_BK" | awk 'NR==2 {print $4}')
 if [ "${livre_kb:-0}" -lt 512000 ]; then
-  diz "ERRO: disco quase cheio ($((livre_kb / 1024)) MB livres). Cópia NÃO feita. Apague arquivos velhos ou aumente o disco."
+  diz "ERRO: disco quase cheio ($((livre_kb / 1024)) MB livres). Cópia NÃO feita. Apague cópias velhas ou aumente o disco."
   alertar "Disco do servidor quase cheio: a cópia de hoje NÃO foi feita."
   sair 3
 fi
-
 if ! docker ps --format '{{.Names}}' | grep -qx "$NOME"; then
   diz "ERRO: o contêiner '$NOME' não está rodando. Rode: bash ~/loja/scripts/atualizar-servidor.sh"
   sair 4
 fi
-
-docker exec "$NOME" node server/backup.js 2>>"$LOG" | gzip -9 > "$tmp"
-codigo=${PIPESTATUS[0]}
-if gzip -t "$tmp" 2>/dev/null && [ "$(gzip -dc "$tmp" | head -c 1)" = "{" ]; then
-  mv -f "$tmp" "$final"
-  tam=$(du -h "$final" | cut -f1)
-  if [ "$codigo" -eq 0 ]; then diz "ok: $final ($tam)"; else diz "AVISO: $final ($tam) salvo, mas alguma loja falhou (veja as linhas [backup] acima)"; alertar "A cópia de hoje saiu, mas alguma loja falhou."; fi
-else
-  rm -f "$tmp"
-  diz "ERRO: a cópia de hoje saiu vazia ou quebrada (código $codigo). A de ontem continua guardada."
-  alertar "A cópia de hoje saiu vazia ou quebrada (código $codigo)."
+if ! lojas=$(docker exec "$NOME" node server/backup.js --listar 2>>"$LOG"); then
+  diz "ERRO: não consegui listar as lojas (veja as linhas acima)."
+  alertar "A cópia de hoje NÃO foi feita: não consegui listar as lojas."
   sair 5
 fi
+mkdir -p "$pasta"
 
-# segunda cópia, FORA DA MÁQUINA (se a máquina se perder, as cópias do disco vão junto)
-docker exec -i "$NOME" node server/backup-ferramentas.js enviar "banco/$dia.json.gz" < "$final" >> "$LOG" 2>&1
-fora=$?
-if [ "$fora" -eq 0 ]; then
-  diz "ok: cópia fora da máquina (R2) banco/$dia.json.gz"
-elif [ "$fora" -eq 3 ]; then
-  diz "AVISO: cópia fora da máquina DESLIGADA (faltam variáveis R2_BACKUP_* no ~/segredos.env; veja a linha acima e PUBLICAR.md)."
+total=0 feitas=0 enviadas=0 falhas=0 desligada=0
+# grava e manda UM arquivo: $1 = nome (loja ou _plataforma), o resto = argumentos do server/backup.js
+copiar() {
+  local nome="$1"; shift
+  local final="$pasta/$nome.json.gz" tmp="$pasta/.$nome.json.gz.parcial" codigo fora
+  docker exec "$NOME" node server/backup.js "$@" 2>>"$LOG" | gzip -9 > "$tmp"
+  codigo=${PIPESTATUS[0]}
+  if [ "$codigo" -ne 0 ] || ! gzip -t "$tmp" 2>/dev/null || [ "$(gzip -dc "$tmp" | head -c 1)" != "{" ]; then
+    rm -f "$tmp"; falhas=$((falhas + 1))
+    diz "ERRO: cópia de $nome saiu vazia ou quebrada (código $codigo)."
+    return
+  fi
+  mv -f "$tmp" "$final"; feitas=$((feitas + 1))
+  [ "$desligada" = 1 ] && return
+  docker exec -i "$NOME" node server/backup-ferramentas.js enviar "banco/$dia/$nome.json.gz" < "$final" >> "$LOG" 2>&1
+  fora=$?
+  if [ "$fora" -eq 0 ]; then enviadas=$((enviadas + 1))
+  elif [ "$fora" -eq 3 ]; then desligada=1
+  else falhas=$((falhas + 1)); diz "ERRO: $nome NÃO chegou ao R2 (código $fora). A cópia no disco está guardada."
+  fi
+}
+
+for loja in $lojas; do
+  [[ "$loja" =~ ^[a-z0-9][a-z0-9-]{1,39}$ ]] || { diz "AVISO: id de loja estranho ignorado"; continue; }
+  total=$((total + 1))
+  copiar "$loja" --loja "$loja"
+done
+copiar "_plataforma" --plataforma
+
+tam=$(du -sh "$pasta" | cut -f1)
+if [ "$desligada" = 1 ]; then
+  diz "AVISO: $feitas arquivo(s) em $pasta ($tam), mas a cópia fora da máquina está DESLIGADA (faltam variáveis R2_BACKUP_*; PUBLICAR.md)."
   alertar "A cópia de hoje ficou SÓ no servidor: falta ligar a cópia fora da máquina (R2_BACKUP_BUCKET)."
+  marcar desligada "$total" "$enviadas" "$falhas"
+elif [ "$falhas" -gt 0 ]; then
+  diz "ERRO: $falhas falha(s); $feitas arquivo(s) no disco ($tam), $enviadas no R2."
+  alertar "A cópia de hoje teve $falhas falha(s): $enviadas de $((total + 1)) arquivo(s) chegaram ao R2."
+  marcar falha "$total" "$enviadas" "$falhas"
 else
-  diz "ERRO: a cópia de hoje NÃO chegou ao R2 (código $fora). A cópia no disco está guardada."
-  alertar "A cópia de hoje NÃO chegou ao R2 (fora da máquina). A do disco está guardada."
+  diz "ok: $feitas arquivo(s) em $pasta ($tam) e no R2 (banco/$dia/)"
+  marcar ok "$total" "$enviadas" 0
 fi
 
-# guarda só os últimos $DIAS dias
+# guarda só os últimos $DIAS dias (pastas do dia e arquivos do formato antigo)
+find "$PASTA_BK" -maxdepth 1 -type d -name '20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]' -mtime +"$DIAS" -print -exec rm -rf {} + | sed 's/^/apagado (velho): /' >> "$LOG"
 find "$PASTA_BK" -maxdepth 1 -name 'banco-*.json.gz' -mtime +"$DIAS" -print -delete | sed 's/^/apagado (velho): /' >> "$LOG"
+[ "$falhas" -gt 0 ] && sair 5
 sair 0
