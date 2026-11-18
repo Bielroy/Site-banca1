@@ -138,12 +138,6 @@
       "maxDuration": 60
     }
   },
-  "crons": [
-    {
-      "path": "/api/analytics",
-      "schedule": "0 8 * * *"
-    }
-  ],
   "images": {
     "sizes": [
       128,

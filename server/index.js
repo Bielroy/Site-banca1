@@ -30,6 +30,7 @@ const LIMITE_CORPO = 6 * 1024 * 1024;        // a Vercel aceita 4,5 MB; a foto d
 const LIMITE_ABSOLUTO = 40 * 1024 * 1024;     // passou disso, fecha a conexão (o Cloud Run já corta em 32 MB)
 const PASTA_API = path.join(__dirname, '..', 'api');
 const R2_LIGADO = () => !!require('../lib/r2').config();   // /api/saude diz se as fotos vão para o R2 (só sim/não, nunca as chaves)
+const Versao = require('../lib/versao');                      // /api/saude diz a versão (commit) e quando a rotina da noite rodou
 
 const igualSeguro = (a, b) => {
   const x = Buffer.from(String(a || '')), y = Buffer.from(String(b || ''));
@@ -128,6 +129,8 @@ function criarServidor({
   exigirProxy = process.env.EXIGIR_PROXY === '1',
   segredoCron = process.env.CRON_SECRET,
   limitePorMinuto = Number(process.env.LIMITE_POR_MINUTO) || 600,
+  // banco para anotar e mostrar a rotina da noite (lib/versao.js). Sem ele (testes), /api/saude não mostra a rotina.
+  obterDb = null,
 } = {}) {
   const contagem = new Map();
   const passouDoLimite = (ip, agora = Date.now()) => {
@@ -159,7 +162,11 @@ function criarServidor({
       // /api/saude: aberto pelo site (https://seu-site/api/saude), passa pela ponte do Cloudflare.
       // "ponte": true = o PROXY_SEGREDO do Cloudflare é IGUAL ao daqui. Se vier false, os freios por IP
       // enxergam todos os clientes como um só (o Cloudflare) e bloqueiam a loja inteira de uma vez.
-      if (url.pathname === '/api/saude') return dar(200, { ok: true, ponte: confiarNoCabecalho(req, segredo), fotos: R2_LIGADO() ? 'r2' : 'desligado' });
+      // "versao": commit do servidor (7 letras), para o painel comparar com o do site. "rotina": a última rotina da noite.
+      if (url.pathname === '/api/saude') {
+        const versao = Versao.curto(Versao.commit()), rotina = obterDb ? await Versao.ultimaRotina(obterDb) : null;
+        return dar(200, { ok: true, ponte: confiarNoCabecalho(req, segredo), fotos: R2_LIGADO() ? 'r2' : 'desligado', ...(versao ? { versao } : {}), ...(rotina ? { rotina } : {}) });
+      }
       const m = /^\/api\/([a-z0-9-]+)\/?$/.exec(url.pathname);
       if (!m || !Object.prototype.hasOwnProperty.call(funcoes, m[1])) return dar(404, { error: 'Não encontrado.' });
 
@@ -173,7 +180,13 @@ function criarServidor({
       req.query = lerParametros(url);
       const cruo = config && config.api && config.api.bodyParser === false;      // o aviso de pagamento lê o corpo bruto sozinho (assinatura)
       if (!cruo) req.body = interpretarCorpo(await lerCorpo(req), String(req.headers['content-type'] || ''));
-      await handler(req, res);
+      // a rotina da noite (GET /api/analytics com o CRON_SECRET) fica anotada: o painel mostra quando rodou e de qual commit
+      const ehRotina = m[1] === 'analytics' && req.method === 'GET' && ehDaRotina(req) && typeof obterDb === 'function';
+      const inicio = Date.now();
+      try { await handler(req, res); }
+      finally {
+        if (ehRotina) { let db = null; try { db = obterDb(); } catch (_) { /* sem banco: só não anota */ } if (db) await Versao.registrarRotina(db, { status: res.headersSent ? res.statusCode : 500, disparo: req.headers['x-rotina-commit'], inicio }); }
+      }
       if (!res.writableEnded && !res.headersSent) res.end();
     } catch (e) {
       if (e && e.status && e.status < 500) return dar(e.status, { error: e.status === 413 ? 'Pedido grande demais.' : 'Pedido inválido.' });
@@ -200,7 +213,15 @@ if (require.main === module) {
   else console.log('[servidor] fotos: Cloudflare R2 ligado.');
   if (faltam.length) console.warn(`[servidor] variáveis vazias: ${faltam.join(', ')}`);
 
-  const servidor = criarServidor();
+  // o mesmo banco que as funções usam (só para anotar e mostrar a rotina da noite em /api/saude)
+  const obterDb = () => {
+    if (!(process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY)) return null;
+    const adm = require('firebase-admin');
+    if (!adm.apps.length) adm.initializeApp({ credential: adm.credential.cert({ projectId: process.env.FIREBASE_PROJECT_ID, clientEmail: process.env.FIREBASE_CLIENT_EMAIL, privateKey: String(process.env.FIREBASE_PRIVATE_KEY).replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() }) });
+    return adm.firestore();
+  };
+  const servidor = criarServidor({ obterDb });
+  console.log(`[servidor] versão: ${Versao.commit() || 'desconhecida (rode scripts/atualizar-servidor.sh)'}`);
   // Na frente deste servidor fica o Caddy (HTTPS), que REAPROVEITA conexões. O Node fecha conexão parada
   // depois de 5 s; se o Caddy usar uma que acabou de ser fechada, o cliente vê erro 502 de vez em quando.
   // Deixando o Node esperar mais que o Caddy (2 min), quem fecha é sempre o Caddy.

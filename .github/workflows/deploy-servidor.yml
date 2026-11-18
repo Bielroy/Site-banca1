@@ -1,0 +1,88 @@
+# ATUALIZA O SERVIDOR DA AWS a cada mudança no ramo rota-cloudflare (o site, no Cloudflare Pages, já se atualiza sozinho).
+# Entra por SSH e roda:  SO_SE_MUDOU=1 bash ~/loja/scripts/atualizar-servidor.sh
+#   - se nada do servidor mudou, só anota a versão nova (sem reiniciar);
+#   - se o servidor novo não responder, o script VOLTA SOZINHO para o anterior e este trabalho fica vermelho.
+#
+# DESLIGADO até você criar os segredos (GitHub → Settings → Secrets and variables → Actions → New repository secret):
+#    SSH_HOST         IP fixo do servidor (54.207.72.209)
+#    SSH_USER         usuário do terminal da AWS (ubuntu)
+#    SSH_KEY          chave PRIVADA criada só para isto (passo a passo em PUBLICAR.md, "Servidor atualizado sozinho")
+#    SSH_KNOWN_HOSTS  (recomendado) a "impressão digital" do servidor: sem ela, o GitHub confia no que achar na hora
+# Enquanto faltar algum dos três primeiros, o trabalho termina com um AVISO amarelo dizendo o que falta
+# (não finge que atualizou): o servidor continua sendo atualizado à mão.
+#
+# OBS.: o GitHub só roda isto a partir do arquivo que está no próprio ramo rota-cloudflare (evento "push"):
+# funciona mesmo com a "main" como ramo padrão.
+name: Atualizar o servidor (AWS)
+
+on:
+  push:
+    branches: [rota-cloudflare]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# uma atualização por vez, na ordem; nunca cancela uma que já começou (o script troca o contêiner no meio)
+concurrency:
+  group: deploy-servidor
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    name: Atualizar o servidor por SSH
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Conferir os segredos
+        id: s
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          faltam=""
+          [ -n "$SSH_HOST" ] || faltam="$faltam SSH_HOST"
+          [ -n "$SSH_USER" ] || faltam="$faltam SSH_USER"
+          [ -n "$SSH_KEY" ]  || faltam="$faltam SSH_KEY"
+          if [ -n "$faltam" ]; then
+            echo "::warning title=Servidor NÃO foi atualizado::Faltam os segredos:$faltam. O site já mudou, o servidor não. Rode à mão no terminal da AWS: bash ~/loja/scripts/atualizar-servidor.sh (ou ligue a atualização sozinha: PUBLICAR.md, 'Servidor atualizado sozinho')."
+            {
+              echo "### Servidor NÃO foi atualizado"
+              echo "Faltam os segredos:$faltam (GitHub → Settings → Secrets and variables → Actions)."
+              echo "Enquanto isso, rode à mão no terminal da AWS: \`bash ~/loja/scripts/atualizar-servidor.sh\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "ligado=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ligado=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Atualizar (SSH)
+        if: steps.s.outputs.ligado == 'true'
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -o pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/servidor && chmod 600 ~/.ssh/servidor
+          if [ -n "$SSH_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            echo "::warning title=SSH sem impressão digital::crie o segredo SSH_KNOWN_HOSTS (PUBLICAR.md) para o GitHub só conversar com o SEU servidor."
+            ssh-keyscan -T 15 "$SSH_HOST" > ~/.ssh/known_hosts 2>/dev/null
+          fi
+          # Se a chave no servidor estiver presa ao comando (recomendado, PUBLICAR.md), ele roda o comando de lá, não este.
+          ssh -i ~/.ssh/servidor -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 \
+            "$SSH_USER@$SSH_HOST" "SO_SE_MUDOU=1 bash ~/loja/scripts/atualizar-servidor.sh" 2>&1 | tee saida.txt
+          linha=$(grep -E "^Pronto: servidor no ar com a versão" saida.txt | tail -1 || true)
+          echo "### Servidor atualizado" >> "$GITHUB_STEP_SUMMARY"
+          echo "$linha (este envio: ${GITHUB_SHA:0:7})" >> "$GITHUB_STEP_SUMMARY"
+          # outro envio pode ter chegado antes deste terminar: aí a versão no ar é a mais nova (só avisa)
+          echo "$linha" | grep -q "${GITHUB_SHA:0:7}" || echo "::notice::O servidor ficou com uma versão mais nova que este envio (${GITHUB_SHA:0:7}): normal quando há duas mudanças seguidas."
+
+      - name: Apagar a chave
+        if: always()
+        run: rm -f ~/.ssh/servidor

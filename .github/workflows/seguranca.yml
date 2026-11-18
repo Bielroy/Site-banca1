@@ -120,6 +120,8 @@ jobs:
         run: |
           node scripts/cloudflare-arquivos.js
           test -s dist/_headers && test -s dist/_redirects
+          # versão do site (o painel compara com a do servidor: js/aviso-versao.js)
+          grep -q "\"commit\":\"$GITHUB_SHA\"" dist/versao.json
           grep -q "frame-ancestors 'none'" dist/_headers && grep -q "frame-ancestors 'self'" dist/_headers
           grep -q '^/feira/:id ' dist/_redirects && test -s dist/previa.html
           test "$(grep -c '^/' dist/_headers)" -lt 100
@@ -168,6 +170,11 @@ jobs:
             echo "::notice title=Regras no emulador::$(grep 'testes das regras passaram' saida.txt | tail -1)"
           fi
           exit "$codigo"
+      # ENSAIO DE RESTAURAÇÃO: cópia da madrugada (server/backup.js) → apaga o banco → scripts/restaurar-backup.sh → confere.
+      - name: Instalar o firebase-admin (para o ensaio de restauração)
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+      - name: Backup → restaurar no emulador
+        run: testes/regras/node_modules/.bin/firebase emulators:exec --only firestore --project demo-banca "node testes/regras/backup-restaurar.test.js"
 
   tela:
     name: Testes de tela (navegador de verdade)

@@ -27,6 +27,14 @@ Regra de sempre: nada vai para a `main` (reserva da Vercel); só a `rota-cloudfl
    6. **Firebase Blaze com orçamento:** Google Cloud → Faturamento → Orçamentos e alertas (ex.: R$ 20/mês, aviso em 50% e 90%).
    7. **AWS:** Lightsail → instância → ver o plano (memória). Antes de acabar o período grátis, decidir o plano pago; ligar o alerta de orçamento.
    8. Espaço em disco (`df -h`), "7 updates" e "System restart required" no servidor (reiniciar num horário calmo).
+6b. **Infra e processo (teste de estresse, nov/2026)** — passo a passo em PUBLICAR.md, seção 4m; emergências em RUNBOOK.md:
+   - DADOS_CHAVE num cofre de senhas fora do servidor (obrigatório, 5 min);
+   - cópia fora da máquina: bucket fechado `copias-banca` no R2 + 3 variáveis `R2_BACKUP_*` + `ligar-backup.sh` de novo;
+   - segredos `SSH_HOST`, `SSH_USER`, `SSH_KEY`, `SSH_KNOWN_HOSTS` para o servidor se atualizar sozinho;
+   - segredos `API_ORIGEM` e `CRON_SECRET` e, no mesmo dia, mesclar o PR #3 (ou trocar o ramo padrão e desligar o cron da Vercel);
+   - UptimeRobot (3 monitores) e "Quem chamar" no RUNBOOK;
+   - lacunas `[NOME/CNPJ DO CONTROLADOR]` e `[E-MAIL DO ENCARREGADO]` na privacidade.html;
+   - ensaio de restauração a cada trimestre.
 7. **`npm audit`** (só leitura) para ver dependências com problema.
 8. **PIX/PagBank.** Token vazio: PIX online está desligado de propósito. Quando o token chegar, testar primeiro no `PAGBANK_ENV=sandbox`, incluindo o webhook, antes de ligar de verdade.
 

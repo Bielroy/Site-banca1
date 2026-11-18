@@ -6067,3 +6067,6 @@ teste('frete por dia: nos dias marcados como "não entrego com frete" a opção 
   assert.strictEqual(F.cotar(cfg, destino).ok, true, 'sem o dia, a configuração original segue igual');
   assert.strictEqual(F.paraDia(F.lerConfig({ ligado: false }), 2).ligado, false, 'frete desligado continua desligado');
 });
+
+// infra e processo (versão do servidor, rotina da noite, cópia fora da máquina, restauração, LGPD): arquivo à parte
+require('./infra-processo')({ teste, criarBanco, raiz, semente, comR2, R2_TESTE, comChaveDoCofre, path, assert });

@@ -1,11 +1,17 @@
-name: Rotina da noite (servidor no Cloud Run)
+name: Rotina da noite (servidor da AWS)
 
 # Faz o que o "crons" do vercel.json fazia: chama /api/analytics todo dia às 8h UTC (5h em Brasília).
-# Só funciona depois de você criar os dois segredos em GitHub → Settings → Secrets and variables → Actions:
-#    API_ORIGEM    endereço do Cloud Run (https://banca-api-xxxx.a.run.app)
-#    CRON_SECRET   o mesmo CRON_SECRET que está no Cloud Run
-# Enquanto os segredos não existirem, a rotina não faz nada (e não dá erro).
-# ATENÇÃO: com a Vercel e o Cloud Run ligados ao MESMO Firebase, apague o "crons" do vercel.json para a rotina não rodar duas vezes.
+# Precisa de dois segredos em GitHub → Settings → Secrets and variables → Actions:
+#    API_ORIGEM    endereço do servidor (https://api.usebanca.com)
+#    CRON_SECRET   o mesmo CRON_SECRET que está no ~/segredos.env do servidor
+# Faltou algum: o trabalho fica VERMELHO (antes terminava "sucesso" sem fazer nada, e ninguém via).
+#
+# ATENÇÃO — O GITHUB SÓ AGENDA O ARQUIVO DO RAMO PADRÃO. Enquanto o ramo padrão for a "main", quem roda às 8h é a
+# cópia deste arquivo que está na main (velha), e a Vercel chama a /api/analytics VELHA pelo "crons" do vercel.json.
+# Para valer o código do rota-cloudflare: PUBLICAR.md, "Rotina da noite" (trocar o ramo padrão e tirar o "crons" no mesmo dia).
+#
+# O servidor anota cada volta (plataforma/rotina_noite: quando, se deu certo, versão do servidor e o commit deste disparo).
+# Aparece em https://usebanca.com/api/saude ("rotina") e o painel do dono avisa quando parar (js/aviso-versao.js).
 
 on:
   schedule:
@@ -24,12 +30,21 @@ jobs:
           API_ORIGEM: ${{ secrets.API_ORIGEM }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          if [ -z "$API_ORIGEM" ] || [ -z "$CRON_SECRET" ]; then
-            echo "::notice::API_ORIGEM e CRON_SECRET ainda não foram criados: rotina ignorada."
-            exit 0
+          faltam=""
+          [ -n "$API_ORIGEM" ] || faltam="$faltam API_ORIGEM"
+          [ -n "$CRON_SECRET" ] || faltam="$faltam CRON_SECRET"
+          if [ -n "$faltam" ]; then
+            echo "::error title=Rotina da noite NÃO rodou::Faltam os segredos:$faltam (GitHub → Settings → Secrets and variables → Actions). Sem eles a cópia do dia e a previsão não são feitas por este caminho."
+            echo "### Rotina da noite NÃO rodou: faltam os segredos$faltam" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
-          code=$(curl -sS -o resposta.txt -w '%{http_code}' --max-time 300 -H "Authorization: Bearer $CRON_SECRET" "$API_ORIGEM/api/analytics")
-          echo "Resposta: $code"
-          head -c 600 resposta.txt || true
+          code=$(curl -sS -o resposta.txt -w '%{http_code}' --max-time 300 \
+            -H "Authorization: Bearer $CRON_SECRET" -H "X-Rotina-Commit: $GITHUB_SHA" \
+            "$API_ORIGEM/api/analytics" || echo "000")
+          echo "Resposta: $code (disparo do commit ${GITHUB_SHA:0:7}, ramo $GITHUB_REF_NAME)"
+          head -c 600 resposta.txt 2>/dev/null || true
           echo
-          [ "$code" = "200" ]
+          if [ "$code" != "200" ]; then
+            echo "::error title=Rotina da noite falhou::o servidor respondeu $code."
+            exit 1
+          fi
