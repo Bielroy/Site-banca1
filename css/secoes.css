@@ -59,7 +59,7 @@
 #lista-produtos .produto-card--imersivo .promo-falta { color: var(--sec-tinta); }
 #lista-produtos .produto-card--imersivo .btn-fav { background: color-mix(in srgb, #fff 88%, transparent); }
 
-#lista-produtos .produto-card--imersivo.na-sacola .produto-img-wrap { box-shadow: 0 0 0 3px var(--sec-tinta), 0 6px 16px color-mix(in srgb, #000 18%, transparent); }
+/* na sacola a foto fica igual às outras (moldura branca, sem anel escuro vazando para fora); quem marca é o "1 un" */
 
 /* categoria imersiva escolhida: a página inteira fica da cor dela */
 body.cat-imersiva { background: var(--cat-cor); transition: background-color .35s ease; }
