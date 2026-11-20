@@ -6335,3 +6335,6 @@ teste('frete por dia: nos dias marcados como "não entrego com frete" a opção 
 
 // infra e processo (versão do servidor, rotina da noite, cópia fora da máquina, restauração, LGPD): arquivo à parte
 require('./infra-processo')({ teste, criarBanco, raiz, semente, comR2, R2_TESTE, comChaveDoCofre, path, assert });
+
+// bot do servidor (cardápio de tarefas por SSH, chave normal e chave sensível com aprovação): arquivo à parte
+require('./bot-servidor')({ teste, raiz, path, assert });
