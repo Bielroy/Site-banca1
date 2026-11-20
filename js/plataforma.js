@@ -23,7 +23,7 @@ import './icones-admin.js';
 
 const ABAS = ['feiras', 'lojas', 'condominios', 'mensalidades', 'chaves', 'erros'];
 const lerAba = () => { try { const a = localStorage.getItem('pf_aba'); return ABAS.includes(a) ? a : 'feiras'; } catch (_) { return 'feiras'; } };
-const S = { dados: null, aba: lerAba(), busca: { lojas: '', condominios: '' }, folha: null, rascunho: null, ocupado: false, editandoCond: '', mensal: {}, confirmando: 0, cartaz: null };
+const S = { dados: null, aba: lerAba(), busca: { lojas: '', condominios: '' }, folha: null, rascunho: null, ocupado: false, editandoCond: '', mensal: {}, confirmando: 0, cartaz: null, bot: null };
 const el = () => document.getElementById('pf-conteudo');
 const $ = (id) => document.getElementById(id);
 const NOMES_MODELO = { hortifruti: 'Hortifruti', espetinhos: 'Espetinhos', jantinha: 'Jantinha', padaria: 'Padaria', acai: 'Açaí', pastelacai: 'Pastel e açaí', mercadinho: 'Mercadinho', doceria: 'Doceria' };
@@ -172,9 +172,27 @@ function secaoAsaas(d) {
     </section>`;
 }
 
+// Área do dono no app da ponte (lib/bot.js): código para ligar um celular e a lista dos celulares ligados.
+function secaoBot() {
+    const b = S.bot;
+    const lista = !b ? '<small>Carregando os celulares...</small>' : b.falha ? `<small>${escapeHTML(b.falha)}</small>`
+        : !(b.celulares || []).length ? '<small>Nenhum celular com a área do dono.</small>'
+        : `<ul class="pf-lista">${b.celulares.map((c) => `<li class="pf-linha-wrap"><span class="pf-linha"><span class="pf-linha-txt"><b>${escapeHTML(c.modelo || 'Celular')}</b><small>Ligado em ${escapeHTML(quando(c.criadoEm))} · usado em ${escapeHTML(quando(c.visto))}</small></span></span><button type="button" class="pf-bt mini" data-pf="bot-desligar" data-id="${escapeHTML(c.id)}">Desligar</button></li>`).join('')}</ul>`;
+    return `<section class="pf-chave"><div class="pf-chave-topo"><h3>Área do dono no app da ponte</h3><span class="pf-selo${b && (b.celulares || []).length ? ' ok' : ''}">${b && (b.celulares || []).length ? `${b.celulares.length} celular(es)` : 'Nenhum celular'}</span></div>
+        <p>Pelo app da ponte, com a sua digital, você pede ao servidor: ver o estado, atualizar, reiniciar, fazer a cópia, limpar o histórico e o disco. Só esta conta (a dona da plataforma) liga um celular.</p>
+        ${b && b.codigo ? `<p class="pf-codigo-bot">Código: <b>${escapeHTML(b.codigo)}</b> <small>(vale ${b.minutos} min, uma vez). No app da ponte: Área do dono → digite o código.</small></p>` : ''}
+        <div class="pf-form-linha"><button type="button" class="pf-bt pri" data-pf="bot-codigo">Gerar código para o celular</button></div>
+        ${lista}</section>`;
+}
+async function carregarBot() {
+    try { S.bot = { ...(S.bot || {}), celulares: (await api({ acao: 'bot-celulares' })).celulares || [], falha: '' }; } catch (e) { S.bot = { falha: e.message }; }
+    if (S.aba === 'chaves') render();
+}
+
 function abaChaves() {
     const d = S.dados;
-    return `${secaoAsaas(d)}<section class="pf-chave"><div class="pf-chave-topo"><h3>PIX automático (PagBank)</h3><span class="pf-selo${d.pix ? ' ok' : ''}">${d.pix ? 'Chave guardada' : 'Sem chave'}</span></div>
+    if (!S.bot) { S.bot = { celulares: null }; carregarBot(); }
+    return `${secaoBot()}${secaoAsaas(d)}<section class="pf-chave"><div class="pf-chave-topo"><h3>PIX automático (PagBank)</h3><span class="pf-selo${d.pix ? ' ok' : ''}">${d.pix ? 'Chave guardada' : 'Sem chave'}</span></div>
         <p>${d.pix ? 'Para trocar, cole o novo token. Para o PIX aparecer ao cliente, ligue também "PIX automático" nas Configurações do painel da loja.' : 'Cole o token da conta PagBank (no site do PagBank: Integrações, Token). Depois ligue "PIX automático" nas Configurações do painel da loja. Vale para a loja original.'}</p>
         <div class="pf-form-linha"><input type="password" id="pf-pagbank" autocomplete="off" spellcheck="false" maxlength="300" placeholder="Token do PagBank" aria-label="Token do PagBank"><button type="button" class="pf-bt pri" data-pf="salvar-pagbank">Salvar</button></div></section>
     <section class="pf-chave"><div class="pf-chave-topo"><h3>Fotos dos produtos (Cloudflare R2)</h3><span class="pf-selo${d.fotosR2 ? ' ok' : ''}">${d.fotosR2 ? 'Ligado' : 'Desligado'}</span></div>
@@ -620,6 +638,17 @@ async function agir(b) {
             return fazer({ acao: 'pagbank', chave }, 'Chave do PagBank guardada. Agora ligue "PIX automático" nas Configurações da loja.');
         }
         case 'apagar-imgbb': return fazer({ acao: 'imgbb' }, 'Chave do ImgBB apagada.');
+        case 'bot-codigo': {
+            try { const r = await api({ acao: 'bot-codigo' }); S.bot = { ...(S.bot || {}), codigo: r.codigo, minutos: r.minutos }; render(); }
+            catch (e) { showToast(e.message, true); }
+            return undefined;
+        }
+        case 'bot-desligar': {
+            if (!await confirmar('Desligar este celular?', 'Ele perde a área do dono na hora. Para voltar, gere outro código.', { ok: 'Desligar' })) return undefined;
+            try { await api({ acao: 'bot-desligar', id: b.dataset.id }); showToast('Celular desligado da área do dono.'); S.bot = null; render(); }
+            catch (e) { showToast(e.message, true); }
+            return undefined;
+        }
         default: return undefined;
     }
 }

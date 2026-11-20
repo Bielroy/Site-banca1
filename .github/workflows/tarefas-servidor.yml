@@ -1,0 +1,99 @@
+# O BOT DO SERVIDOR: escolha uma tarefa do cardápio e o GitHub entra no servidor da AWS para fazê-la.
+# GitHub → Actions → "Tarefas do servidor" → Run workflow → escolha a tarefa → Run workflow.
+# (O app da ponte, na área do dono, também pode pedir: ele chama este mesmo fluxo.)
+#
+# DUAS CHAVES, DOIS NÍVEIS (o servidor confere, em scripts/tarefas-servidor.sh):
+#   NORMAIS   estado · atualizar · reiniciar · copia-agora · ligar-copia
+#             chave SSH_KEY (segredo do repositório, a mesma do deploy-servidor.yml). Roda na hora.
+#   SENSÍVEIS trocar-segredo · limpar-historico · limpar-disco
+#             chave SSH_KEY_SENSIVEL, que só existe no AMBIENTE "producao". O GitHub segura o trabalho e avisa o
+#             dono; só depois do "Approve" (app GitHub Mobile, com a digital) ele libera a chave e o trabalho roda.
+#             Modo automático: Settings → Environments → producao → desmarque "Required reviewers" (e marque de volta depois).
+#
+# TROCAR UMA CHAVE (trocar-segredo): o VALOR NUNCA vai no campo "nome" nem em campo nenhum (o que se digita aqui fica
+# no registro, e o repositório é público). Ponha o valor no segredo VALOR_NOVO do ambiente "producao" e escolha
+# trocar-segredo com o NOME da chave (ex.: CRON_SECRET). Depois, apague ou troque o VALOR_NOVO.
+# A DADOS_CHAVE nunca é trocada por aqui.
+#
+# Ligar: PUBLICAR.md, "Bot do servidor". Sem as chaves, o trabalho fica vermelho dizendo o que falta.
+name: Tarefas do servidor
+run-name: ${{ inputs.tarefa }} ${{ inputs.nome }} ${{ inputs.pedido }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      tarefa:
+        description: 'O que fazer no servidor'
+        type: choice
+        required: true
+        default: estado
+        options: [estado, atualizar, reiniciar, copia-agora, ligar-copia, trocar-segredo, limpar-historico, limpar-disco]
+      nome:
+        description: 'Só para trocar-segredo: o NOME da chave (ex.: CRON_SECRET). NUNCA o valor (vai no segredo VALOR_NOVO do ambiente producao).'
+        required: false
+        default: ''
+      pedido:
+        description: 'Deixe vazio (marca do app da ponte para achar este pedido).'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  normal:
+    name: Tarefa normal
+    if: contains(fromJSON('["estado","atualizar","reiniciar","copia-agora","ligar-copia"]'), inputs.tarefa)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # uma coisa por vez no servidor, junto com as atualizações automáticas; nunca corta uma no meio
+    concurrency:
+      group: deploy-servidor
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/tarefa-ssh.sh
+          sparse-checkout-cone-mode: false
+      - name: Fazer no servidor
+        env:
+          TAREFA: ${{ inputs.tarefa }}
+          NOME: ''
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          CHAVE: ${{ secrets.SSH_KEY }}
+          CHAVE_NOME: SSH_KEY
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          VALOR_NOVO: ''
+        run: bash .github/tarefa-ssh.sh
+        shell: bash
+
+  sensivel:
+    name: Tarefa sensível (precisa da aprovação do dono)
+    if: contains(fromJSON('["trocar-segredo","limpar-historico","limpar-disco"]'), inputs.tarefa)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: producao
+    # grupo próprio: uma sensível esperando aprovação nunca segura as atualizações automáticas
+    concurrency:
+      group: tarefa-sensivel
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/tarefa-ssh.sh
+          sparse-checkout-cone-mode: false
+      - name: Fazer no servidor
+        env:
+          TAREFA: ${{ inputs.tarefa }}
+          NOME: ${{ inputs.nome }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          CHAVE: ${{ secrets.SSH_KEY_SENSIVEL }}
+          CHAVE_NOME: SSH_KEY_SENSIVEL
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          VALOR_NOVO: ${{ secrets.VALOR_NOVO }}
+        run: bash .github/tarefa-ssh.sh
+        shell: bash
