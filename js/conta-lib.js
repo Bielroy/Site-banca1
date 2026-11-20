@@ -4,6 +4,7 @@
 //  A conta mora no servidor (lib/conta.js). Aqui fica só a parte de juntar
 //  o que voltou do servidor com o que já está guardado no aparelho.
 // =====================================================================
+import { limparOpcoes } from './montar-lib.js';
 
 /** Formato do código de acesso: id da conta (16) + ponto + segredo (43). */
 export const RE_CODIGO = /^[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{43}$/;
@@ -43,9 +44,10 @@ export function unirModo(local, daConta) {
     return { ...limpo(daConta), ...limpo(local) };
 }
 
-/** A sacola que vai para o servidor: só id, quantidade e tipo (o preço é sempre o de hoje, do cadastro). */
+/** A sacola que vai para o servidor: só id, quantidade, tipo e as escolhas do produto montado (o preço é sempre o de hoje, do cadastro). */
 export const sacolaParaGuardar = (carrinho) => (Array.isArray(carrinho) ? carrinho : [])
-    .filter((i) => i && i.id != null && Number(i.qtd) > 0).slice(0, 60).map((i) => ({ id: String(i.id), qtd: Number(i.qtd), tipo: i.tipo === 'kg' ? 'kg' : 'un' }));
+    .filter((i) => i && i.id != null && Number(i.qtd) > 0).slice(0, 60)
+    .map((i) => { const op = limparOpcoes(i.opcoes); return { id: String(i.id), qtd: Number(i.qtd), tipo: i.tipo === 'kg' ? 'kg' : 'un', ...(Object.keys(op).length ? { opcoes: op } : {}) }; });
 
 /** A sacola guardada ainda serve? Depois de 30 dias a pessoa nem lembra do que tinha posto. */
 export function sacolaVale(sacola, sacolaEm, agora = Date.now(), dias = 30) {

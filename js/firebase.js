@@ -1,14 +1,15 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously } from "firebase/auth";
+import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously, signInWithCustomToken } from "firebase/auth";
 import { 
     initializeFirestore, 
     persistentLocalCache, 
     persistentMultipleTabManager,
     memoryLocalCache,
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
-    query, orderBy, limit, writeBatch, where, updateDoc, deleteField,
+    query, orderBy, limit, writeBatch, where, updateDoc, deleteField, serverTimestamp,
     terminate, clearIndexedDbPersistence
 } from "firebase/firestore";
+import { usarSoMemoria } from './banco-travado-lib.js';
 
 // A API Key continua protegida pelas variáveis de ambiente do Vite
 const firebaseConfig = {
@@ -26,18 +27,24 @@ const app = initializeApp(firebaseConfig);
 // (preço, produto esgotado, horários de entrega) até recarregar; (2) a tela abria com a configuração
 // antiga da loja. Foi assim que um cliente ficou sem a lista de horários. Nos outros aparelhos nada muda.
 const ehApple = typeof navigator !== 'undefined' && (/iphone|ipad|ipod/i.test(navigator.userAgent || '') || (/macintosh/i.test(navigator.userAgent || '') && navigator.maxTouchPoints > 1));
+// Aparelho em que a cópia travou (js/banco-travado-lib.js): abre sem ela, como no iPhone, por 7 dias.
+let lsSeguro = null; try { lsSeguro = typeof localStorage !== 'undefined' ? localStorage : null; } catch (_) { lsSeguro = null; }
+const semCopia = ehApple || usarSoMemoria(lsSeguro);
 const db = initializeFirestore(app, {
-    localCache: ehApple ? memoryLocalCache() : persistentLocalCache({tabManager: persistentMultipleTabManager()})
+    localCache: semCopia ? memoryLocalCache() : persistentLocalCache({tabManager: persistentMultipleTabManager()})
 });
 
-const auth = getAuth(app);
+// Mesmas persistências do getAuth, SEM o "popupRedirectResolver": o site só entra por link de e-mail e anônimo,
+// nunca por janela do Google. Com o resolver, o navegador baixava apis.google.com/js/api.js à toa (a política de
+// segurança do site bloqueia e o console enchia de erro).
+const auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence] });
 
 // O armazenamento de arquivos (Firebase Storage) fica em js/firebase-arquivos.js: só o painel usa,
 // e aqui ele ia junto para todo cliente que abre a loja.
 export { 
-    app, db, auth,
+    app, db, auth, semCopia,
     collection, getDocs, doc, setDoc, deleteDoc, getDoc, onSnapshot, addDoc,
-    query, orderBy, limit, writeBatch, where, updateDoc, deleteField,
-    sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously,
+    query, orderBy, limit, writeBatch, where, updateDoc, deleteField, serverTimestamp,
+    sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged, signOut, signInAnonymously, signInWithCustomToken,
     terminate, clearIndexedDbPersistence
 };

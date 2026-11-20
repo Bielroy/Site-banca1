@@ -261,7 +261,7 @@ function bottomUpDia(modelos, G, D, asOf, abertos, produtos) {
       por.set(pid, (por.get(pid) || 0) + e);
       itens.push({ id: pid, p: pc, qtd: mp.q.med, e });
     }
-    clientes.push({ id: m.id, nome: m.nome, condominio: m.condominio || '', formatoEndereco: m.formatoEndereco || 'ql', quadra: m.quadra, lote: m.lote, p: S.arred(v.p, 3), ultimoDia: m.ultimoDia, nuMed: m.nuMed, itens });
+    clientes.push({ id: m.id, nome: m.nome, condominio: m.condominio || '', formatoEndereco: m.formatoEndereco || 'ql', quadra: m.quadra, lote: m.lote, ...(m.modo === 'retirada' ? { modo: 'retirada' } : {}), p: S.arred(v.p, 3), ultimoDia: m.ultimoDia, nuMed: m.nuMed, itens });
   }
   return { por, clientes, pedidos };
 }

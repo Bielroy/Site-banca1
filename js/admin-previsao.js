@@ -133,7 +133,8 @@ const aprendido = (m) => {
     const temClima = !!(c && c.dias);
     return `<details class="pv-aprendido"><summary><i class="ic" data-i="alvo"></i> O que o motor já aprendeu <small>${clima}${m.diasFechados ? ` · ${m.diasFechados} dia(s) sem funcionar ignorado(s)` : ''}</small></summary><ul>
         ${temClima ? estado('Dia de chuva', f.chuva) + estado('Dia de calor fora do normal', f.calor) + estado('Dia mais frio que o normal', f.frio) : '<li>Sem a cidade da loja (em Configurações), a previsão não usa chuva nem calor.</li>'}
-        ${estado('Dias de pagamento (5 a 10)', f.pag, 8)}
+        ${estado('Dias de salário (a partir do 5º dia útil)', f.pag, 8)}
+        ${f.vale ? estado('Dias do vale (por volta do dia 20)', f.vale, 6) : ''}
         <li><b>Preço e oferta:</b> ${f.preco && f.preco.n ? `10% mais barato rende cerca de ${Math.round((Math.pow(0.9, -f.preco.elasticidade) - 1) * 100)}% a mais de venda <small>(medido em ${f.preco.n} dia(s) de preço diferente)</small>` : 'ainda sem oferta medida; por enquanto assume que 10% mais barato rende uns 10% a mais'}</li>
     </ul></details>`;
 };
@@ -209,7 +210,7 @@ const render = () => {
     const rs = (x) => (x ? `${fmt(x.faturamentoPrevisto)}` : '–');
     alvo.innerHTML = `
     <div class="pv-head">
-        <div><h3><i class="ic" data-i="previsao"></i> Quanto deve vender</h3><small>Atualizado ${quando(m.geradoEm)} · ${m.diasHistorico} dia(s) de histórico · ${m.nPedidos} pedido(s) · ${m.nClientes} cliente(s)</small></div>
+        <div><h3><i class="ic" data-i="previsao"></i> Quanto deve vender</h3><small>${[m.geradoEm ? `Atualizado ${quando(m.geradoEm)}` : 'Ainda não calculado', Number.isFinite(m.diasHistorico) && `${m.diasHistorico} dia(s) de histórico`, Number.isFinite(m.nPedidos) && `${m.nPedidos} pedido(s)`, Number.isFinite(m.nClientes) && `${m.nClientes} cliente(s)`].filter(Boolean).join(' · ')}</small></div>
         <button class="bt bt-sec" id="pv-recalc"><i class="ic" data-i="repetir"></i> Recalcular</button>
     </div>
     ${avisos}

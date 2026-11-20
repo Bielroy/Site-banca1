@@ -1,0 +1,14 @@
+<!doctype html>
+<!-- Só para os testes de tela: a tela "Rótulos adesivos" do painel sozinha (o painel inteiro pede login de verdade). -->
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/css/variables.css"><link rel="stylesheet" href="/css/shared.css"><link rel="stylesheet" href="/css/admin.css"><link rel="stylesheet" href="/css/admin-modulo3.css"><link rel="stylesheet" href="/css/admin-casca.css"><link rel="stylesheet" href="/css/admin-rotulos.css"></head>
+<body class="com-barra"><main id="dashboard" style="padding:16px"></main>
+<script type="module">
+import { abrirRotulos } from "/js/admin-rotulos.js";
+const produtos = [
+  { id: "milho", nome: "Milho verde", preco: 2.5, unidade: "un", cat: "legumes", ativo: true },
+  { id: "tomatinho", nome: "Tomate seco", preco: 18, unidade: "un", cat: "conservas", ativo: true, rotulo: { titulo: "Tomatinhos", sub: "Tomate seco artesanal · 200 g", preco: true, validadeDias: 30, borda: "feira", loja: true } },
+];
+window.__abrir = (id) => abrirRotulos(produtos, id);
+abrirRotulos(produtos, new URLSearchParams(location.search).get("p") || "");
+</script></body></html>

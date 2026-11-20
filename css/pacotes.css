@@ -1,0 +1,185 @@
+/* =====================================================================
+   css/pacotes.css — PACOTES FECHADOS, promoção por quantidade, sacola
+   em grupos e a COMANDA da tela de envio (js/pacote-lib.js, js/loja.js).
+
+   O pacote tem cara própria (papel pardo) para ninguém confundir o
+   pacotinho com a mesma coisa vendida solta, por peso.
+   ===================================================================== */
+:root {
+    --pardo: #f1e3c6;          /* faixa do bloco */
+    --pardo-claro: #fffaf0;    /* fundo do cartão */
+    --pardo-foto: #f6ead2;     /* fundo da foto */
+    --pardo-borda: #d9b98a;
+    --pardo-etq: #ead2a3;      /* etiqueta de preço do pacote */
+    --pardo-escuro: #6b4a1f;   /* texto e botão */
+    --pardo-tinta: #4a3214;
+}
+
+/* ---------- bloco "Pacotes prontos" no fim da vitrine ---------- */
+.bloco-pacotes {
+    grid-column: 1 / -1; margin: 14px -16px 2px; padding: 16px 16px 12px;
+    background: var(--pardo); border-top: 2px dashed #c9a46b; color: var(--pardo-tinta);
+}
+.bloco-pacotes h2 { margin: 0; display: flex; align-items: center; gap: 10px; font-family: var(--fonte-titulo); font-size: 1.35rem; font-weight: 750; line-height: 1.15; color: var(--pardo-tinta); }
+.bloco-pacotes h2 .arte-cat { width: 34px; height: 34px; }
+.bloco-pacotes p { margin: 6px 0 0; font-size: .9rem; line-height: 1.4; color: #5c4523; max-width: 60ch; }
+@media (min-width: 601px) { .bloco-pacotes { margin: 18px 0 4px; border-radius: 16px; border: 2px dashed #c9a46b; } }
+
+/* ---------- cartão do pacote ---------- */
+.produto-card--pacote { background: var(--pardo-claro); border-color: var(--pardo-borda); }
+.produto-card--pacote.na-sacola, .produto-card--pacote.na-sacola:hover { border-color: #a87b3f; }
+@media (hover: hover) { .produto-card--pacote:hover { border-color: #a87b3f; } }
+.produto-card--pacote .produto-img-wrap { background: var(--pardo-foto); position: relative; }
+.produto-card--pacote .produto-img-placeholder { background: var(--pardo-foto); }
+.lacre-pacote {
+    position: absolute; left: 8px; top: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 4px;
+    background: var(--pardo-escuro); color: #fff8ea; font-size: .7rem; font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
+    border-radius: 6px; padding: 3px 7px 3px 4px; pointer-events: none;
+}
+.lacre-pacote .arte-cat { width: 16px; height: 16px; }
+.peso-pacote {
+    position: absolute; right: 8px; bottom: 8px; z-index: 2; background: #fff; border: 1.5px solid var(--pardo-borda); color: var(--pardo-tinta);
+    font-size: .82rem; font-weight: 800; border-radius: 999px; padding: 2px 9px; pointer-events: none;
+}
+.produto-card--pacote .etiqueta { background: var(--pardo-etq); color: var(--pardo-tinta); }
+.card-add--pacote, .produto-card--pacote .card-add {
+    background: linear-gradient(180deg, #8a5f2a, var(--pardo-escuro)); color: #fff8ea; box-shadow: 0 3px 0 var(--pardo-tinta);
+}
+@media (hover: hover) { .card-add--pacote:hover { background: linear-gradient(180deg, #8a5f2a, var(--pardo-escuro)); filter: brightness(1.08); } }
+.produto-card--pacote .card-qtd { background: var(--pardo-foto); box-shadow: inset 0 0 0 1.5px #a87b3f; }
+.produto-card--pacote .card-qtd button { color: var(--pardo-escuro); }
+
+/* contador com valor (pacote / promoção) e "quanto falta para a promoção" */
+.card-qtd output b { display: block; line-height: 1.1; font-size: .92rem; }
+.card-qtd output small { display: block; font-size: .72rem; font-weight: 700; opacity: .85; line-height: 1.1; }
+.card-qtd output:has(b) { text-align: center; }
+.card-acao .promo-falta {
+    position: absolute; top: calc(100% + 5px); left: 0; right: 0; margin: 0; text-align: center;
+    font-size: .74rem; font-weight: 700; color: var(--pardo-escuro); line-height: 1.2;
+}
+.produto-info:has(.promo-falta) { padding-bottom: 32px; }
+
+/* etiqueta: "4 por R$ 10" */
+.etq-promo {
+    display: inline-block; margin-top: 4px; background: var(--manga); color: #1a3a2a;
+    font-family: var(--fonte-texto); font-size: .72rem; font-weight: 800; border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: top;
+}
+/* "pode misturar pacotes": linha própria embaixo do selo (junto dele não cabia na etiqueta do celular) */
+.etq-mistura { display: block; margin-top: 3px; font-family: var(--fonte-texto); font-size: .72rem; font-weight: 700; line-height: 1.2; color: var(--pardo-escuro); }
+
+/* "Também tem em pacote": o pacote aparece destacado na vitrine por um instante */
+.produto-card.pacote-mostrar { animation: pacoteMostrar 1.6s ease; }
+@keyframes pacoteMostrar { 0%, 100% { box-shadow: none; } 25%, 70% { box-shadow: 0 0 0 4px var(--manga); } }
+@media (prefers-reduced-motion: reduce) { .produto-card.pacote-mostrar { animation: none; box-shadow: 0 0 0 4px var(--manga); } }
+
+/* ---------- sacola em grupos ---------- */
+.sacola-grupo {
+    display: flex; align-items: center; gap: 7px; margin: 14px 20px 2px; font-size: .74rem; font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
+}
+.sacola-grupo small { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--text-light, #6b665b); }
+.sacola-grupo--peso { color: var(--leaf, #2f6b4a); }
+.sacola-grupo--pacote { color: var(--pardo-escuro); }
+.sacola-grupo--un { color: var(--text-mid, #4a4a44); }
+.sacola-grupo .arte-cat, .sacola-grupo .grupo-ico { width: 18px; height: 18px; flex: none; }
+.grupo-ico { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.carrinho-item--pacote { background: var(--pardo-claro); }
+.carrinho-item--pacote .item-emoji { background: var(--pardo-foto); display: grid; place-items: center; }
+.carrinho-item--pacote .item-emoji .arte-cat { width: 30px; height: 30px; }
+.item-palavras { margin: 2px 0 6px; font-size: .86rem; line-height: 1.3; color: var(--text-dark); }
+.item-palavras b { font-weight: 800; color: var(--forest-texto, var(--forest)); }
+.carrinho-item--pacote .item-palavras b { color: var(--pardo-escuro); }
+.item-palavras small { display: block; font-size: .74rem; font-weight: 600; color: var(--text-light, #6b665b); }
+.item-tambem {
+    display: block; margin-top: 6px; padding: 4px 0; border: 0; background: none; text-align: left; cursor: pointer;
+    font: inherit; font-size: .78rem; font-weight: 600; color: var(--pardo-escuro); min-height: 32px;
+}
+.item-tambem u { text-underline-offset: 2px; font-weight: 800; }
+.item-preco--promo { text-align: right; white-space: nowrap; }
+.item-preco--promo small { display: block; font-family: var(--fonte-texto); font-size: .72rem; font-weight: 600; color: var(--text-light, #6b665b); }
+
+/* ---------- COMANDA (tela de envio) ---------- */
+.comanda {
+    position: relative; margin: 4px 0 20px; padding: 16px 16px 12px; border-radius: 4px 4px 14px 14px;
+    background-color: #fffdf6; background-image: repeating-linear-gradient(#fffdf6 0 31px, #ece5d2 31px 32px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .12); color: #1a1a18;
+}
+.comanda::before {             /* borda de cima picotada, como folha de bloquinho */
+    content: ""; position: absolute; left: 0; right: 0; top: -8px; height: 8px;
+    background: linear-gradient(135deg, transparent 5px, #fffdf6 0) 0 0 / 10px 8px repeat-x, linear-gradient(-135deg, transparent 5px, #fffdf6 0) 0 0 / 10px 8px repeat-x;
+}
+.cm-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding-bottom: 8px; border-bottom: 2px solid #1a3a2a; }
+.cm-cab b { font-family: var(--fonte-titulo); font-size: 1.2rem; color: #1a3a2a; }
+.cm-cab span { font-size: .82rem; font-weight: 600; color: #6b665b; }
+.cm-itens { list-style: none; margin: 0; padding: 0; }
+.cm-grupo { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: .7rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; }
+.cm-grupo--peso { color: #2f6b4a; } .cm-grupo--pacote { color: var(--pardo-escuro); } .cm-grupo--un { color: #4a4a44; }
+.cm-grupo .arte-cat, .cm-grupo .grupo-ico { width: 16px; height: 16px; }
+.cm-linha { display: grid; grid-template-columns: minmax(84px, auto) 1fr auto; gap: 10px; align-items: baseline; padding: 7px 0 3px; }
+.cm-q { font-weight: 900; font-size: 1.02rem; color: #1a3a2a; white-space: nowrap; }
+.cm-linha--pacote .cm-q { color: var(--pardo-escuro); }
+.cm-n { font-size: .95rem; font-weight: 700; line-height: 1.25; min-width: 0; }
+.cm-n small { display: block; font-size: .76rem; font-weight: 600; color: #6b665b; }
+.cm-v { font-family: var(--fonte-titulo); font-weight: 700; font-size: .98rem; white-space: nowrap; }
+.cm-total { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 2px dashed #1a3a2a; }
+.cm-total b { font-size: .78rem; letter-spacing: .6px; text-transform: uppercase; }
+.cm-total span { font-family: var(--fonte-titulo); font-size: 1.45rem; font-weight: 750; color: #1a3a2a; text-align: right; }
+.cm-nota { margin: 4px 0 0; font-size: .78rem; color: #5a5a52; line-height: 1.35; }
+.cm-voltar {
+    display: block; margin: 10px auto 0; padding: 8px 12px; min-height: 44px; border: 0; background: none; cursor: pointer;
+    font: inherit; font-size: .88rem; font-weight: 700; color: #2f6b4a;
+}
+.checkout-sub { margin: 0 0 12px; font-size: .78rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--text-mid, #4a4a44); }
+
+/* nas faixas que rolam para o lado ("Seus de sempre", Ofertas, faixas da loja) vale a ordem da faixa:
+   o "order" que manda o pacote para o fim é só da vitrine principal */
+.faixa-rolo > .produto-card { order: 0 !important; }
+
+/* =====================================================================
+   CANTINHO DOS TEMPEROS (potinhos): mesmo jeito do bloco dos pacotes, na cor
+   de colorau, depois dos pacotes (cabeçalho order 4999, cartões 5000+; ver ORDEM_TEMPEROS).
+   ===================================================================== */
+:root {
+    --colorau: #f6e3d6;          /* faixa do bloco */
+    --colorau-claro: #fff8f2;    /* fundo do cartão */
+    --colorau-foto: #fbe9dc;
+    --colorau-borda: #e3b79a;
+    --colorau-etq: #f1c9ae;
+    --colorau-escuro: #9b3f1a;   /* botão e lacre */
+    --colorau-tinta: #5a2410;
+}
+.bloco-temperos {
+    grid-column: 1 / -1; margin: 14px -16px 2px; padding: 16px 16px 12px;
+    background: var(--colorau); border-top: 2px dashed #c96b3c; color: var(--colorau-tinta);
+}
+.bloco-temperos h2 { margin: 0; display: flex; align-items: center; gap: 10px; font-family: var(--fonte-titulo); font-size: 1.35rem; font-weight: 750; line-height: 1.15; color: var(--colorau-tinta); }
+.bloco-temperos h2 .arte-cat { width: 34px; height: 34px; }
+.bloco-temperos p { margin: 6px 0 0; font-size: .9rem; line-height: 1.4; color: #7a3c22; max-width: 60ch; }
+@media (min-width: 601px) { .bloco-temperos { margin: 18px 0 4px; border-radius: 16px; border: 2px dashed #c96b3c; } }
+
+.produto-card--tempero { background: var(--colorau-claro); border-color: var(--colorau-borda); }
+.produto-card--tempero.na-sacola, .produto-card--tempero.na-sacola:hover { border-color: #c96b3c; }
+@media (hover: hover) { .produto-card--tempero:hover { border-color: #c96b3c; } }
+.produto-card--tempero .produto-img-wrap { background: var(--colorau-foto); position: relative; }
+.produto-card--tempero .produto-img-placeholder { background: var(--colorau-foto); }
+.lacre-tempero {
+    position: absolute; left: 8px; top: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 4px;
+    background: var(--colorau-escuro); color: #fff4ea; font-size: .7rem; font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
+    border-radius: 6px; padding: 3px 7px 3px 4px; pointer-events: none;
+}
+.lacre-tempero .arte-cat { width: 16px; height: 16px; }
+.produto-card--tempero .etiqueta { background: var(--colorau-etq); color: var(--colorau-tinta); }
+.card-add--tempero, .produto-card--tempero .card-add {
+    background: linear-gradient(180deg, #c35a2c, var(--colorau-escuro)); color: #fff; box-shadow: 0 3px 0 #6e2a10;
+}
+@media (hover: hover) { .card-add--tempero:hover { background: linear-gradient(180deg, #c35a2c, var(--colorau-escuro)); filter: brightness(1.08); } }
+.produto-card--tempero .card-qtd { background: var(--colorau-foto); box-shadow: inset 0 0 0 1.5px #c96b3c; }
+.produto-card--tempero .card-qtd button { color: var(--colorau-escuro); }
+.produto-card--tempero .etq-mistura { color: var(--colorau-escuro); }
+
+/* sacola e comanda */
+.sacola-grupo--tempero, .cm-grupo--tempero { color: var(--colorau-escuro); }
+.carrinho-item--tempero { background: var(--colorau-claro); }
+.carrinho-item--tempero .item-emoji { background: var(--colorau-foto); display: grid; place-items: center; }
+.carrinho-item--tempero .item-emoji .arte-cat { width: 30px; height: 30px; }
+.carrinho-item--tempero .item-palavras b, .cm-linha--tempero .cm-q { color: var(--colorau-escuro); }

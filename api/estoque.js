@@ -12,6 +12,7 @@
 const admin = require('firebase-admin');
 const T = require('../lib/tenant');
 const E = require('../lib/estoque');
+const Avise = require('../lib/avise');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -26,7 +27,7 @@ const H = require('../lib/http');
 const cors = H.cors;            // origem (CORS): lista única em lib/http.js
 
 const texto = (v, max) => String(v == null ? '' : v).normalize('NFC').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
-const PODEM = ['proprietario', 'administrador', 'estoque', 'producao'];
+const PODEM = ['proprietario', 'administrador', 'gerente', 'estoque', 'producao'];
 
 // freio por pessoa: no máximo 40 movimentações por minuto
 const passou = (uid) => H.passouNaMemoria(`estoque:${uid}`, 40, 60000);
@@ -109,6 +110,16 @@ module.exports = async function handler(req, res) {
   if (passou(dec.uid)) return res.status(429).json({ error: 'Muitas movimentações seguidas. Aguarde um minuto.' });
 
   const b = req.body || {};
+  // LISTA DE ESPERA ("Avise-me quando voltar", lib/avise.js): quem pediu para ser avisado de cada produto em falta
+  if (b.acao === 'espera' || b.acao === 'espera-tirar') {
+    try {
+      if (b.acao === 'espera') return res.status(200).json({ sucesso: true, lista: await Avise.listar(db, tid) });
+      return res.status(200).json({ sucesso: true, ...(await Avise.tirar(db, tid, { produtoId: b.produtoId, telefone: b.telefone })) });
+    } catch (e) {
+      if (e && e.status === 400) return res.status(400).json({ error: e.message });
+      console.error('[estoque] espera', e && e.message); return res.status(500).json({ error: 'Não consegui abrir a lista de espera agora. Tente de novo em instantes.' });
+    }
+  }
   if (b.acao !== 'movimentar' && b.acao !== 'produzir') return res.status(400).json({ error: 'Ação desconhecida.' });
   const produtoId = String(b.produtoId || '');
   if (!/^[\w-]{1,80}$/.test(produtoId)) return res.status(400).json({ error: 'Produto inválido.' });

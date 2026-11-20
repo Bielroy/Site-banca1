@@ -1,0 +1,50 @@
+name: Rotina da noite (servidor da AWS)
+
+# Faz o que o "crons" do vercel.json fazia: chama /api/analytics todo dia às 8h UTC (5h em Brasília).
+# Precisa de dois segredos em GitHub → Settings → Secrets and variables → Actions:
+#    API_ORIGEM    endereço do servidor (https://api.usebanca.com)
+#    CRON_SECRET   o mesmo CRON_SECRET que está no ~/segredos.env do servidor
+# Faltou algum: o trabalho fica VERMELHO (antes terminava "sucesso" sem fazer nada, e ninguém via).
+#
+# ATENÇÃO — O GITHUB SÓ AGENDA O ARQUIVO DO RAMO PADRÃO. Enquanto o ramo padrão for a "main", quem roda às 8h é a
+# cópia deste arquivo que está na main (velha), e a Vercel chama a /api/analytics VELHA pelo "crons" do vercel.json.
+# Para valer o código do rota-cloudflare: PUBLICAR.md, "Rotina da noite" (trocar o ramo padrão e tirar o "crons" no mesmo dia).
+#
+# O servidor anota cada volta (plataforma/rotina_noite: quando, se deu certo, versão do servidor e o commit deste disparo).
+# Aparece em https://usebanca.com/api/saude ("rotina") e o painel do dono avisa quando parar (js/aviso-versao.js).
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  rotina:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Chamar /api/analytics
+        env:
+          API_ORIGEM: ${{ secrets.API_ORIGEM }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          faltam=""
+          [ -n "$API_ORIGEM" ] || faltam="$faltam API_ORIGEM"
+          [ -n "$CRON_SECRET" ] || faltam="$faltam CRON_SECRET"
+          if [ -n "$faltam" ]; then
+            echo "::error title=Rotina da noite NÃO rodou::Faltam os segredos:$faltam (GitHub → Settings → Secrets and variables → Actions). Sem eles a cópia do dia e a previsão não são feitas por este caminho."
+            echo "### Rotina da noite NÃO rodou: faltam os segredos$faltam" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          code=$(curl -sS -o resposta.txt -w '%{http_code}' --max-time 300 \
+            -H "Authorization: Bearer $CRON_SECRET" -H "X-Rotina-Commit: $GITHUB_SHA" \
+            "$API_ORIGEM/api/analytics" || echo "000")
+          echo "Resposta: $code (disparo do commit ${GITHUB_SHA:0:7}, ramo $GITHUB_REF_NAME)"
+          head -c 600 resposta.txt 2>/dev/null || true
+          echo
+          if [ "$code" != "200" ]; then
+            echo "::error title=Rotina da noite falhou::o servidor respondeu $code."
+            exit 1
+          fi

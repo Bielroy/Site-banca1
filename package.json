@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:cloudflare": "vite build && node scripts/cloudflare-arquivos.js",
     "preview": "vite preview",
     "test": "node testes/index.js"
   },

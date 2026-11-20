@@ -25,7 +25,20 @@ const admin = require('firebase-admin');
 
 const MINUTOS_PARA_CANCELAR = 5;
 const STATUS_CANCELAVEIS = ['pendente', 'aguardando_pesagem', 'aguardando_pagamento'];
-const PODEM_CANCELAR_NO_PAINEL = ['proprietario', 'administrador', 'funcionario', 'caixa'];
+const PODEM_CANCELAR_NO_PAINEL = ['proprietario', 'administrador', 'gerente', 'funcionario', 'caixa'];
+// Só pedido ENTREGUE (concluído no painel) recebe avaliação. É o critério mais seguro que existe: quem marca é a equipe.
+const STATUS_AVALIAVEIS = ['arquivado'];
+
+/**
+ * Pedido avaliado que foi cancelado: a nota sai da média pública (conta pura, sem banco).
+ * Devolve o resumo novo { soma, n, media } ou null se não há o que tirar (sem nota, ou já tirada antes).
+ */
+function retirarDaMedia(resumo, avaliacao) {
+  const nota = Number(avaliacao && avaliacao.nota);
+  if (!avaliacao || avaliacao.foraDaMedia === true || !Number.isInteger(nota) || nota < 1 || nota > 5) return null;
+  const r = resumo || {}, n = Math.max(0, Number(r.n || 0) - 1), soma = n > 0 ? Math.max(0, Number(r.soma || 0) - nota) : 0;
+  return { soma, n, media: n > 0 ? Math.round((soma / n) * 10) / 10 : 0 };
+}
 
 // ---------------------------------------------------------------------
 // CORS — lista de origens confiáveis
@@ -68,11 +81,14 @@ const E = require('../lib/estoque');
 const Avisos = require('../lib/avisos');
 const P = require('../lib/prudencia');
 const Conta = require('../lib/conta');
+const Cofre = require('../lib/cofre');
 
 // ---------------------------------------------------------------------
 // AVALIAÇÃO: "chegou tudo fresquinho?"  POST { acao: 'avaliar', pedidoId, nota: 1..5, texto? }
 //
-//  - só a dona do pedido avalia (uid do token), uma vez só, e nunca pedido cancelado;
+//  - só a dona do pedido avalia (uid do token), uma vez só, e só pedido ENTREGUE (status 'arquivado', que a equipe
+//    marca no painel). Antes valia avaliar pedido recém-feito: era só fazer pedidos e cancelar para mexer na nota;
+//  - pedido avaliado que depois é cancelado tem a nota RETIRADA da média (ver retirarDaMedia, abaixo);
 //  - a nota fica no pedido (a equipe vê no painel) e entra na média pública da loja
 //    (loja/avaliacoes: só soma e quantidade, sem nome nem texto de ninguém);
 //  - nota 3 ou menos avisa a equipe no celular, para dar tempo de resolver com a cliente.
@@ -90,12 +106,14 @@ async function avaliar(req, res, { tid, uid, pedidoId, peloCracha }) {
       if (!peloCracha && (!pedido.userId || pedido.userId === 'anonimo' || pedido.userId !== uid)) throw new Error('Só quem fez o pedido pode avaliar.');
       if (pedido.status === 'cancelado') throw new Error('Pedido cancelado não recebe avaliação.');
       if (pedido.avaliacao) throw new Error('Este pedido já foi avaliado. Obrigado!');
+      if (!STATUS_AVALIAVEIS.includes(pedido.status)) throw new Error('A avaliação abre quando a banca marcar o pedido como entregue. Volte depois!');
       const r = rs.exists ? rs.data() : {}, soma = Number(r.soma || 0) + nota, n = Number(r.n || 0) + 1;
       t.set(pedidoRef, { avaliacao: { nota, texto, em: new Date().toISOString() } }, { merge: true });
       t.set(resumoRef, { soma, n, media: Math.round((soma / n) * 10) / 10, em: new Date().toISOString() }, { merge: true });
-      return { nome: pedido.nome || 'Cliente' };
+      return { nome: Cofre.abrir(pedido.nome, tid, 'nome') || 'Cliente' };
     });
-    if (nota <= 3) await Avisos.avisarLoja(db, tid, { titulo: `Avaliação ${nota} de 5`, corpo: `${saida.nome}${texto ? ': ' + texto.slice(0, 90) : ' não ficou satisfeita com o pedido.'}`, url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `avaliacao-${pedidoId}` });
+    try { require('../lib/catalogo').extrasMudaram(db, tid, 5000); } catch (_) { /* a nota nova entra na próxima atualização da vitrine */ }
+    if (nota <= 3) await Avisos.avisarLoja(db, tid, { titulo: `Avaliação ${nota} de 5`, corpo: `${saida.nome}${texto ? ': ' + texto.slice(0, 90) : ' não ficou satisfeita com o pedido.'}`, url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `avaliacao-${pedidoId}`, tipo: 'avaliacao' });
     return res.status(200).json({ sucesso: true });
   } catch (e) { return res.status(400).json({ error: e.message || 'Não foi possível guardar a avaliação.' }); }
 }
@@ -140,7 +158,9 @@ module.exports = async function handler(req, res) {
 
   let uidVerificado, daEquipe = false, quem = '';
   try {
-    const decodificado = await admin.auth().verifyIdToken(token);
+    let decodificado = await admin.auth().verifyIdToken(token);
+    // quem é da equipe: confere também se o login foi encerrado (pessoa tirada da equipe perde o acesso na hora)
+    if (H.temPapelDeEquipe(decodificado)) decodificado = await admin.auth().verifyIdToken(token, true);
     uidVerificado = decodificado.uid;
     // Quem trabalha na loja cancela pelo painel, a qualquer momento (o cliente, só nos primeiros minutos).
     daEquipe = T.temPapel(decodificado, tid, PODEM_CANCELAR_NO_PAINEL);
@@ -238,10 +258,18 @@ module.exports = async function handler(req, res) {
         if (!cupomSnap.exists) cupomRef = null;
       }
 
+      // Pedido que já tinha nota: ela sai da média da loja (uma vez só: a nota fica marcada "foraDaMedia")
+      const resumoRef = T.docDe(db, tid, 'loja/avaliacoes');
+      const semNota = pedido.avaliacao ? retirarDaMedia((await t.get(resumoRef)).data(), pedido.avaliacao) : null;
+
       // ---- escritas ----
+      if (semNota) t.set(resumoRef, { ...semNota, em: new Date().toISOString() }, { merge: true });
       devolucoes.forEach(([ref, patch]) => t.update(ref, patch));
       E.registrarMovs(t, db, tid, devolucoes.map(([, , m]) => ({ ...m, tipo: 'cancelamento', pedidoId: String(pedidoId) })), admin.firestore.FieldValue);
       if (cupomRef) t.update(cupomRef, { usos: admin.firestore.FieldValue.increment(-1) });
+      // devolve a vaga do horário (lib/vagas.js), uma vez só (a mesma trava do estoque)
+      const vaga = !jaEstornado && pedido.entrega && typeof pedido.entrega.vaga === 'string' && /^[a-z0-9-]{1,60}$/.test(pedido.entrega.vaga) && /^\d{4}-\d{2}-\d{2}$/.test(String(pedido.entregaDia || '')) ? pedido.entrega.vaga : '';
+      if (vaga) t.set(T.docDe(db, tid, `vagas/${pedido.entregaDia}`), { [vaga]: { n: admin.firestore.FieldValue.increment(-1) } }, { merge: true });
 
       t.update(pedidoRef, {
         status: 'cancelado',
@@ -249,8 +277,9 @@ module.exports = async function handler(req, res) {
         canceladoPor: daEquipe ? 'loja' : 'cliente',
         ...(daEquipe ? { canceladoPorQuem: quem, canceladoMotivo: motivo } : {}),
         ...(jaEstornado ? {} : { estornadoEm: new Date().toISOString() }),
+        ...(semNota ? { avaliacao: { ...pedido.avaliacao, foraDaMedia: true } } : {}),
       });
-      if (jaEstornado) return { itensDevolvidos: 0, jaEstornado: true, estavaPago: !!(pedido.pagamento && pedido.pagamento.status === 'PAID') };
+      if (jaEstornado) return { itensDevolvidos: 0, jaEstornado: true, estavaPago: !!(pedido.pagamento && pedido.pagamento.status === 'PAID'), ...(semNota ? { notaRetirada: true } : {}) };
 
       // Reverte os números agregados (valor que não é número não entra na conta: estragaria o caixa do dia)
       const total = Number.isFinite(Number(pedido.total)) ? Number(pedido.total) : 0;
@@ -272,11 +301,19 @@ module.exports = async function handler(req, res) {
         }, { merge: true });
       }
 
-      return { itensDevolvidos: devolucoes.length, estavaPago: !!(pedido.pagamento && pedido.pagamento.status === 'PAID') };
+      return { itensDevolvidos: devolucoes.length, estavaPago: !!(pedido.pagamento && pedido.pagamento.status === 'PAID'), ...(semNota ? { notaRetirada: true } : {}) };
     });
+    // a nota saiu da média: a vitrine (que mostra a média) se atualiza
+    if (resultado.notaRetirada) { try { require('../lib/catalogo').extrasMudaram(db, tid, 5000); } catch (_) { /* entra na próxima atualização da vitrine */ } }
 
+    // A cliente cancelou: a equipe fica sabendo (antes o pedido sumia da fila sem ninguém ver). Quando é a própria equipe
+    // que cancela no painel, não avisa. O aviso nunca derruba o cancelamento, que já está gravado.
+    if (!daEquipe && !resultado.jaEstornado) await Avisos.avisarLoja(db, tid, { titulo: 'Pedido cancelado pela cliente', corpo: resultado.itensDevolvidos ? 'O estoque dos itens já voltou.' : 'Tira da fila: não precisa separar.',
+      url: tid === T.TENANT_PADRAO ? '/admin.html' : `/admin.html?loja=${tid}`, tag: `cancelado-${pedidoId}`, tipo: 'cancelamento' });
     return res.status(200).json({ sucesso: true, ...resultado });
   } catch (error) {
     return res.status(400).json({ error: error.message || 'Não foi possível cancelar o pedido.' });
   }
 };
+module.exports.retirarDaMedia = retirarDaMedia;
+module.exports.STATUS_AVALIAVEIS = STATUS_AVALIAVEIS;

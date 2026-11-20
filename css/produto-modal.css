@@ -485,3 +485,8 @@
 @keyframes vfEntra { from { opacity: 0; } to { opacity: 1; } }
 @keyframes vfDica { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .vf { animation: none; } .vf-dica { animation: none; } }
+
+/* vídeo curto do produto: por cima da foto, mesmo tamanho (js/loja.js → pintarVideoDoProduto) */
+.md-hero .md-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; background: transparent; }
+.md-hero.com-video .md-ampliar { display: none; }
+.md-hero.com-video #md-tag, .md-hero.com-video #md-selos { z-index: 2; }

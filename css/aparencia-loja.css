@@ -20,9 +20,16 @@
 /* foto de capa: a foto cobre o cabeçalho e uma película da cor principal deixa o texto legível */
 .header-capa { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; pointer-events: none; }
 .ap-cabecalho-capa #header-principal::before { z-index: 1; background-image: none;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--forest) 45%, transparent) 0%, color-mix(in srgb, var(--forest) 82%, transparent) 100%); }
+    background: linear-gradient(180deg, color-mix(in srgb, var(--forest) 45%, transparent) 0%, color-mix(in srgb, var(--forest) 82%, transparent) 100%); opacity: var(--pelicula-forca, 1); }
+.ap-cabecalho-capa.ap-pelicula-nao #header-principal::before { background: none; }   /* capa desenhada: sem véu, as cores aparecem como são */
 .ap-cabecalho-capa .header-capa ~ .header-arte { z-index: 1; }
 .ap-cabecalho-capa #header-principal h1, .ap-cabecalho-capa .header-subtitle { text-shadow: 0 1px 12px rgba(0, 0, 0, .35); }
+
+/* botões do cabeçalho (Onde entregar? / Meus pedidos): "vidro" = fundo escuro translúcido; "sólido" = fundo claro. A força (--botao-cab-pct) regula a opacidade */
+.ap-botaoCab-vidro .chip-header.chip-header { background: color-mix(in srgb, #000 var(--botao-cab-pct, 45%), transparent); border-color: rgba(255,255,255,.4);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.ap-botaoCab-solido .chip-header.chip-header { background: color-mix(in srgb, var(--sobre-primaria) var(--botao-cab-pct, 90%), transparent); color: var(--forest);
+    border-color: color-mix(in srgb, var(--sobre-primaria) 70%, transparent); }
 
 /* logo: ao lado do nome (ou em cima, com o nome no centro) */
 .header-logo { display: block; width: clamp(56px, 15vw, 76px); height: clamp(56px, 15vw, 76px); object-fit: cover; border-radius: 50%; margin-bottom: 12px;
@@ -32,6 +39,11 @@
 /* desenho escondido: os botões do cabeçalho usam a largura toda */
 .ap-arte-esconder .header-arte { display: none; }
 .ap-arte-esconder .header-acoes, .ap-arte-esconder .header-arte.plana ~ .header-inner .header-acoes { padding-right: 0; }
+
+/* texto e botões só no lado esquerdo: a direita da capa fica livre para o desenho ou emblema da imagem */
+.ap-textoLado-esquerda #header-principal .header-inner { padding-right: max(34%, var(--gutter-x, 16px)); }
+.ap-textoLado-esquerda .header-acoes, .ap-textoLado-esquerda .header-arte.plana ~ .header-inner .header-acoes { padding-right: 0; }
+.ap-textoLado-esquerda.ap-alinhamento-centro #header-principal .header-inner { padding-right: max(var(--gutter-x, 16px), env(safe-area-inset-right)); }
 
 /* nome no centro (o desenho sai, para não brigar com o texto) */
 .ap-alinhamento-centro .header-inner { text-align: center; }

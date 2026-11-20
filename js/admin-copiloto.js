@@ -7,7 +7,7 @@
 //  recarregar a página, começa do zero.
 // =====================================================================
 import { auth } from './firebase.js';
-import { escapeHTML, showToast } from './utils.js';
+import { escapeHTML, showToast, focarCampo } from './utils.js';
 
 const SUGESTOES = ['O que preciso comprar amanhã?', 'Qual produto está dando mais lucro?', 'Quais produtos estão parados?', 'Por que vendemos menos essa semana?', 'Qual foi nosso melhor dia de vendas?', 'Tenho R$ 800 para comprar mercadoria. Como você distribuiria?', 'Quais produtos devo produzir amanhã?'];
 const S = { conversa: [], enviando: false, ligado: false };
@@ -49,7 +49,7 @@ async function perguntar(texto) {
         S.conversa.push({ role: 'ia', content: j.resposta });
     } catch (e) {
         S.conversa.push({ role: 'ia', erro: true, content: /Failed to fetch|NetworkError|Load failed/i.test(e.message) ? 'Sem internet. Tente de novo quando a conexão voltar.' : e.message });
-    } finally { S.enviando = false; pintar(); $('cop-pergunta').focus(); }
+    } finally { S.enviando = false; pintar(); focarCampo($('cop-pergunta')); }   // no celular o teclado não volta por cima da resposta
 }
 
 export function abrirCopiloto() {

@@ -13,6 +13,7 @@
 // =====================================================================
 import { db, collection, onSnapshot } from './firebase.js';
 import { tcol, tdoc, chave, TENANT, ehLojaOriginal, fichaRef, pastaFotos, urlDaLoja } from './tenant.js';
+import { unificarCategorias } from './categorias-unificar.js';
 
 const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
@@ -30,11 +31,18 @@ export const iniciarCategorias = (aoMudar) => onSnapshot(
     () => { categorias = []; aoMudar(); }   // sem permissão/offline: a loja segue com as categorias dos produtos
 );
 
+/** Categorias que vieram prontas no documento da vitrine (loja/catalogo): mesma ordem que a leitura do banco. */
+export const definirCategorias = (lista) => {
+    categorias = (Array.isArray(lista) ? lista : []).filter((c) => c && c.chave)
+        .slice().sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+};
+
 const achar = (cat) => categorias.find((c) => norm(c.chave) === norm(cat));
 
-/** Padroniza p.cat com a chave cadastrada e tira os produtos de categorias ocultas. */
-export const aplicarCategorias = (produtos) => produtos
-    .map((p) => { const c = achar(p.cat); return c ? { ...p, cat: c.chave } : p; })
+/** Padroniza p.cat com a chave cadastrada e tira os produtos de categorias ocultas.
+ *  Grafias parecidas ("Pasteis Doces" / "Pastéis Doces") viram uma aba só, cadastrada ou não. */
+export const aplicarCategorias = (produtos) => unificarCategorias(produtos
+    .map((p) => { const c = achar(p.cat); return c ? { ...p, cat: c.chave } : p; }))
     .filter((p) => { const c = achar(p.cat); return !c || c.visivel !== false; });
 
 /** Abas na ordem do painel; categorias sem produto não aparecem. */
@@ -45,6 +53,9 @@ export const abasDeCategoria = (produtos) => {
     const soltas = [...usadas].filter((c) => !conhecidas.has(c) && !achar(c)).sort().map((c) => ({ chave: c, nome: c }));
     return [...cadastradas, ...soltas];
 };
+
+/** Nome da categoria como aparece na loja (para a busca achar "Verduras" pelo nome da aba). */
+export const nomeDaCategoria = (cat) => { const c = achar(cat); return c ? String(c.nome || c.chave) : String(cat || ''); };
 
 /** Assinatura curta: muda quando algo visível das categorias muda (para re-renderizar). */
 export const assinaturaCategorias = () => categorias.map((c) => `${c.chave}:${c.nome}:${c.ordem}:${c.visivel !== false}`).join('|');

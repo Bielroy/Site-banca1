@@ -2,11 +2,13 @@
 // =====================================================================
 //  analytics/externalFactors.js — O QUE MEXE NA PROCURA ALÉM DO CALENDÁRIO
 //
-//  Quatro "estados" do dia e um efeito contínuo:
+//  Cinco "estados" do dia e um efeito contínuo:
 //    chuva     choveu de verdade (≥ CHUVA_MM)
 //    calor     máxima bem acima do normal dos últimos 30 dias
 //    frio      máxima bem abaixo do normal dos últimos 30 dias
-//    pag       dias de pagamento (do dia 5 ao 10 do mês)
+//    pag       salário: do 5º DIA ÚTIL do mês (o prazo da lei) até PAGAMENTO_DIAS dias depois
+//    vale      adiantamento: do dia VALE_DIA (ou o dia útil seguinte) até VALE_DIAS dias depois
+//              Dia útil = segunda a sexta, fora dos feriados nacionais (seasonality.js).
 //    preço     quanto o preço do dia está abaixo/acima do preço de referência
 //              (preço "de" da oferta, ou a mediana das 4 semanas anteriores)
 //
@@ -31,9 +33,11 @@
 const C = require('./config');
 const S = require('./stats');
 const { dowDeDia } = require('./normalize');
+const { eventosDoAno } = require('./seasonality');
 
-const ESTADOS = ['chuva', 'calor', 'frio', 'pag'];
-const ROTULO = { chuva: 'dia de chuva', calor: 'dia de calor acima do normal', frio: 'dia mais frio que o normal', pag: 'dias de pagamento (5 a 10)' };
+const ESTADOS = ['chuva', 'calor', 'frio', 'pag', 'vale'];
+const DE_PAGAMENTO = new Set(['pag', 'vale']);       // ligados por USAR_PAGAMENTO e exigem MIN_MESES_PAGAMENTO
+const ROTULO = { chuva: 'dia de chuva', calor: 'dia de calor acima do normal', frio: 'dia mais frio que o normal', pag: 'dias de salário (a partir do 5º dia útil)', vale: 'dias do vale (por volta do dia 20)' };
 
 // ---------- estados do dia -----------------------------------------
 const diaDoMes = (d) => new Date(d * 86400000).getUTCDate();
@@ -57,12 +61,35 @@ function estadosDoClima(clima) {
   }
   return out;
 }
-const ehPagamento = (d) => { const m = diaDoMes(d); return m >= C.PAGAMENTO_DE && m <= C.PAGAMENTO_ATE; };
+// ---------- dias de pagamento --------------------------------------
+const anoDe = (d) => new Date(d * 86400000).getUTCFullYear();
+const feriados = new Map();          // ano → Set(dia) dos feriados nacionais
+const ehFeriado = (d) => { const a = anoDe(d); if (!feriados.has(a)) feriados.set(a, new Set(eventosDoAno(a).filter((e) => e.tipo === 'feriado').map((e) => e.dia))); return feriados.get(a).has(d); };
+const ehDiaUtil = (d) => { const w = dowDeDia(d); return w >= 1 && w <= 5 && !ehFeriado(d); };
+const inicioDoMes = (d) => d - diaDoMes(d) + 1;
+const janelas = new Map();           // 1º dia do mês → { pag: [de, ate], vale: [de, ate] }
+function janelasDoMes(d) {
+  const ini = inicioDoMes(d);
+  if (!janelas.has(ini)) {
+    let p = ini - 1, uteis = 0; while (uteis < C.PAGAMENTO_DIA_UTIL) { p++; if (ehDiaUtil(p)) uteis++; }
+    let v = ini + C.VALE_DIA - 1; while (!ehDiaUtil(v)) v++;
+    janelas.set(ini, { pag: [p, p + C.PAGAMENTO_DIAS - 1], vale: [v, v + C.VALE_DIAS - 1] });
+  }
+  return janelas.get(ini);
+}
+const dentroDe = (d, tipo) => {
+  // a janela do mês anterior pode passar da virada (5º dia útil no dia 7 + 6 dias = dia 12; nunca chega ao mês seguinte,
+  // mas o vale do dia 30 chegaria): olha as duas
+  for (const ref of [d, inicioDoMes(d) - 1]) { const [de, ate] = janelasDoMes(ref)[tipo]; if (d >= de && d <= ate) return true; }
+  return false;
+};
+const ehPagamento = (d) => dentroDe(d, 'pag');
+const ehVale = (d) => C.VALE_DIAS > 0 && dentroDe(d, 'vale');
 
 /** Estado completo de um dia. ctx.estadosClima = saída de estadosDoClima. */
 function estadoDoDia(d, ctx) {
   const c = (ctx && ctx.estadosClima && ctx.estadosClima.get(d)) || {};
-  return { chuva: c.chuva ?? null, calor: c.calor ?? null, frio: c.frio ?? null, pag: C.USAR_PAGAMENTO ? ehPagamento(d) : null };
+  return { chuva: c.chuva ?? null, calor: c.calor ?? null, frio: c.frio ?? null, pag: C.USAR_PAGAMENTO ? ehPagamento(d) : null, vale: C.USAR_PAGAMENTO ? ehVale(d) : null };
 }
 
 // ---------- preço relativo -----------------------------------------
@@ -190,7 +217,7 @@ function aprender({ series, produtos, ctx, fim }) {
     }
     // ----- estados (clima e pagamento) -----
     for (const s of ESTADOS) {
-      if ((s === 'pag' && !C.USAR_PAGAMENTO) || (s !== 'pag' && !C.USAR_CLIMA)) continue;
+      if ((DE_PAGAMENTO.has(s) && !C.USAR_PAGAMENTO) || (!DE_PAGAMENTO.has(s) && !C.USAR_CLIMA)) continue;
       const med = [];
       for (const [pid, ptsB] of base) {
         const pts = ptsB.map((o) => ({ dia: o.dia, y: o.y / fatorSem(pid, o.dia, s) }));
@@ -203,7 +230,7 @@ function aprender({ series, produtos, ctx, fim }) {
       const meses = L.ok ? new Set(L.diasIn.map(mesDe)).size : 0;
       // só usa o efeito quando ele se destaca do sobe-e-desce normal de um dia para o outro
       const destaca = L.ok && Math.abs(L.bruto) >= C.Z_ESTADO_MIN * Math.sqrt(L.variancia);
-      const dados = L.ok && L.nIn >= C.MIN_DIAS_ESTADO && L.nOut >= C.MIN_DIAS_SEM && (s !== 'pag' || meses >= C.MIN_MESES_PAGAMENTO);
+      const dados = L.ok && L.nIn >= C.MIN_DIAS_ESTADO && L.nOut >= C.MIN_DIAS_SEM && (!DE_PAGAMENTO.has(s) || meses >= C.MIN_MESES_PAGAMENTO);
       if (dados) {
         const cats = {}; med.forEach((x) => { (cats[x.cat] = cats[x.cat] || []).push(x); });
         const usadas = new Set();
@@ -283,7 +310,7 @@ function explicar(partes) {
       return p.rho < 1 ? `Preço ${pct}% abaixo do normal: procura ${x}${p.n ? ` (medido em ${p.n} dia(s) de oferta na loja)` : ' (estimativa de partida: a loja ainda não teve oferta medida)'}`
         : `Preço ${pct}% acima do normal: procura ${x}`;
     }
-    if (p.tipo === 'pag') return `Dias de pagamento (5 a 10): procura ${x} (visto em ${p.n} dia(s))`;
+    if (DE_PAGAMENTO.has(p.tipo)) return `${p.tipo === 'pag' ? 'Dias de salário (a partir do 5º dia útil)' : 'Dias do vale (por volta do dia 20)'}: procura ${x} (visto em ${p.n} dia(s))`;
     return `Previsão do tempo: ${ROTULO[p.tipo]}. Nesses dias a procura é ${x} (visto em ${p.n} dia(s))`;
   });
 }
@@ -296,4 +323,4 @@ function resumo(modelo) {
   return out;
 }
 
-module.exports = { ESTADOS, ROTULO, estadosDoClima, ehPagamento, estadoDoDia, precoRelativo, comSem, agregar, aprender, fator, fatorLoja, explicar, resumo };
+module.exports = { ESTADOS, ROTULO, estadosDoClima, ehPagamento, ehVale, ehDiaUtil, estadoDoDia, precoRelativo, comSem, agregar, aprender, fator, fatorLoja, explicar, resumo };

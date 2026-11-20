@@ -69,6 +69,17 @@ body { overscroll-behavior-y: none; }
 /* Toast */
 .toast { position: fixed; bottom: calc(var(--safe-bottom) + 80px); left: 50%; transform: translateX(-50%) translateY(100px); opacity: 0; background: var(--forest); color: var(--sobre-primaria); padding: 14px 28px; border-radius: 40px; font-weight: 700; font-size: 0.95rem; z-index: var(--z-toast); transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2); box-shadow: var(--shadow-lg); pointer-events: none; text-align: center; white-space: nowrap; }
 .toast.visivel { transform: translateX(-50%) translateY(0); opacity: 1; }
+/* confirmação digitada (customConfirm com { digitar }) */
+.confirm-digitar[hidden] { display: none; }
+.confirm-digitar { display: grid; gap: 6px; margin-top: 16px; text-align: left; font-size: .92rem; color: var(--text-mid); }
+.confirm-digitar input { min-height: 46px; padding: 0 12px; border: 2px solid var(--border, #d9d4c8); border-radius: 10px; font: inherit; font-size: 1rem; color: var(--text-dark); background: var(--white, #fff); }
+.confirm-digitar input:focus-visible { outline: 3px solid var(--forest); outline-offset: 1px; }
+#btn-confirm-ok:disabled { opacity: .45; cursor: not-allowed; }
+/* aviso com Desfazer (js/utils.js avisoComDesfazer): o aviso recebe toque só enquanto tem o botão */
+.toast.com-acao { pointer-events: auto; display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 22px; white-space: normal; max-width: calc(100vw - 32px); text-align: left; }
+.toast-desfazer { flex: none; min-height: 40px; padding: 0 16px; border-radius: 999px; border: 2px solid currentColor; background: transparent; color: inherit; font: inherit; font-weight: 800; cursor: pointer; }
+.toast-desfazer:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+.toast-desfazer:disabled { opacity: .6; }
 
 @media (max-width: 600px) {
     .modal-overlay { padding: 0; align-items: flex-end; }

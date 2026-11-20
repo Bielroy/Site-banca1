@@ -161,7 +161,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     for (const nome of ['hoje', 'amanha', 'proximoDia']) {
       const h = r.horizontes[nome]; if (!h || !h._exp) continue;
       const d = hz[nome][0];
-      const top = buDias[d] ? buDias[d].clientes.map((c) => ({ c, e: (c.itens.find((i) => i.id === p.id) || {}).e || 0 })).filter((x) => x.e > 0.01).sort((a, b) => b.e - a.e).slice(0, 3).map((x) => `${(x.c.nome || 'Cliente').split(' ')[0]} (${x.c.formatoEndereco === 'rua' || x.c.formatoEndereco === 'livre' ? `${x.c.quadra}, ${x.c.lote}` : `Q${x.c.quadra}·L${x.c.lote}`})`) : [];
+      const top = buDias[d] ? buDias[d].clientes.map((c) => ({ c, e: (c.itens.find((i) => i.id === p.id) || {}).e || 0 })).filter((x) => x.e > 0.01).sort((a, b) => b.e - a.e).slice(0, 3).map((x) => `${(x.c.nome || 'Cliente').split(' ')[0]} (${x.c.modo === 'retirada' ? 'retira na banca' : x.c.formatoEndereco === 'rua' || x.c.formatoEndereco === 'livre' ? `${x.c.quadra}, ${x.c.lote}` : `Q${x.c.quadra}·L${x.c.lote}`})`) : [];
       h.explicacao = D.explicarDemanda(p.nome, h, r.tendencia, wBU, p.unidade, dowNome(d), top);
       delete h._exp;
     }
@@ -194,7 +194,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     esperados[nome] = {
       dia: isoDeDia(d), pedidosEsperados: r2(b.pedidos),
       clientes: b.clientes.sort((x, y) => y.p - x.p).slice(0, 25).map((c) => ({
-        id: c.id, nome: c.nome, condominio: c.condominio || '', formatoEndereco: c.formatoEndereco || 'ql', quadra: c.quadra, lote: c.lote, p: c.p, diasDesdeUltima: hoje - c.ultimoDia, intervaloMedio: c.nuMed, jaComprouHoje: nome === 'hoje' && jaHoje.has(c.id),
+        id: c.id, nome: c.nome, condominio: c.condominio || '', formatoEndereco: c.formatoEndereco || 'ql', quadra: c.quadra, lote: c.lote, ...(c.modo === 'retirada' ? { modo: 'retirada' } : {}), p: c.p, diasDesdeUltima: hoje - c.ultimoDia, intervaloMedio: c.nuMed, jaComprouHoje: nome === 'hoje' && jaHoje.has(c.id),
         itens: c.itens.sort((x, y) => y.e - x.e).slice(0, 5).map((i) => ({ id: i.id, nome: (produtos.get(i.id) || {}).nome || i.id, p: S.arred(i.p, 2), qtd: i.qtd })),
       })),
     };
@@ -244,12 +244,54 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
   // dados compactos para a API pública / painel (sem nada sensível)
   const catalogoCompacto = {}; produtos.forEach((p) => { catalogoCompacto[p.id] = { nome: p.nome, un: p.unidade, cat: p.cat, ativo: p.ativo }; });
   const feiraDoCli = new Map(clientes.map((c) => [c.id, c.feira || '']));
-  const indiceClientes = modelos.map((m) => ({ id: m.id, nome: m.nome, fe: feiraDoCli.get(m.id) || '', condominio: m.condominio || '', formatoEndereco: m.formatoEndereco || 'ql', quadra: m.quadra, lote: m.lote, n: m.nVisitas, nivel: m.nivel, ult: isoDeDia(m.ultimoDia),
+  const indiceClientes = modelos.map((m) => ({ id: m.id, nome: m.nome, fe: feiraDoCli.get(m.id) || '', condominio: m.condominio || '', formatoEndereco: m.formatoEndereco || 'ql', quadra: m.quadra, lote: m.lote, ...(m.modo === 'retirada' ? { modo: 'retirada' } : {}), n: m.nVisitas, nivel: m.nivel, ult: isoDeDia(m.ultimoDia),
     // CRM (aba Clientes): primeira compra, intervalo típico, gasto, ticket, produtos mais comprados e contato
     pri: isoDeDia(m.primeiroDia), cada: m.nuMed, gasto: m.gasto, ticket: m.ticket, ped: m.nPedidos,
     tp: Object.entries(m.prod || {}).sort((a, b) => (b[1].n || 0) - (a[1].n || 0)).slice(0, 6).map(([id]) => id),
     tel: m.aceitaOfertas ? m.telefone : '', oferta: m.aceitaOfertas === true }))
-    .sort((a, b) => b.n - a.n).slice(0, 600);
+    .sort((a, b) => (b.n - a.n) || (Number(b.gasto) || 0) - (Number(a.gasto) || 0));
+  // o índice vai num documento só (teto de 1 MB no Firestore): corta pelo TAMANHO, não por um número fixo de clientes.
+  // Os que mais compram ficam primeiro; só os de 1 visita só ficam de fora se a loja for muito grande.
+  { let tam = 0, fim = 0; while (fim < indiceClientes.length && (tam += JSON.stringify(indiceClientes[fim]).length * 1.4) < 560000) fim++; indiceClientes.length = fim; }
+
+  // CUSTO DA FALTA: nos dias em que o produto acabou (últimos 30), quanto deixou de vender.
+  // Esperado = média do MESMO dia da semana nas 8 semanas anteriores, sem dias de falta nem loja fechada.
+  // É estimativa: quem não achou o produto pode ter levado outro (aí não se perdeu tudo).
+  const faltaItens = [];
+  for (const [pid, dias] of rupturas) {
+    const p = produtos.get(pid); if (!p || !(p.preco > 0)) continue;
+    let qtd = 0, nDias = 0;
+    for (const d of dias) {
+      if (d < hoje - 30 || d > asOfD || fechados.has(d) || !abertos.has(dowDeDia(d))) continue;
+      const obs = [];
+      for (let k = 1; k <= 8; k++) { const x = d - 7 * k; if (!dias.has(x) && !fechados.has(x) && x >= Math.max(iniPed, norm.primeiroDia)) obs.push((vendasDia.get(pid) && vendasDia.get(pid).get(x)) || 0); }
+      if (obs.length < 3) continue;
+      const esperado = obs.reduce((a, b) => a + b, 0) / obs.length, vendeu = (vendasDia.get(pid) && vendasDia.get(pid).get(d)) || 0;
+      if (esperado > vendeu) { qtd += esperado - vendeu; nDias++; }
+    }
+    if (nDias && qtd > 0) faltaItens.push({ id: pid, nome: p.nome, unidade: p.unidade, dias: nDias, qtd: S.arred(qtd, 2), valor: r2(qtd * p.preco) });
+  }
+  faltaItens.sort((a, b) => b.valor - a.valor);
+  const custoFalta = { dias: 30, valor: r2(faltaItens.reduce((s, x) => s + x.valor, 0)), itens: faltaItens.slice(0, 8) };
+
+  // VENDA CRUZADA (Balcão): para cada produto, até 3 que costumam ir na MESMA compra além do acaso (lift encolhido ≥ 1,2)
+  const juntos = {};
+  for (const [pid, lista] of Object.entries(G.assoc || {})) {
+    const ids = lista.filter((x) => x.ls >= 1.2 && produtos.has(x.j) && produtos.get(x.j).ativo).slice(0, 3).map((x) => x.j);
+    if (ids.length && produtos.has(pid)) juntos[pid] = ids;
+  }
+
+  // próximos 7 dias de loja aberta com chuva, calor ou frio previstos e o que isso faz com as vendas da loja (aba Compras)
+  const climaProximo = [];
+  if (C.USAR_CLIMA) for (let d = hoje; d < hoje + 7; d++) {
+    const c = mapaClima.get(d), st = contexto.estadosClima.get(d);
+    if (!c || !st || !abertos.has(dowDeDia(d))) continue;
+    const efeitos = ['chuva', 'calor', 'frio'].filter((s) => st[s]).map((s) => {
+      const e = fatores && fatores.estados && fatores.estados[s];
+      return { tipo: s, fator: e && e.confiavel ? r2(Math.exp(e.loja)) : null, n: e ? e.n : 0 };
+    });
+    if (efeitos.length) climaProximo.push({ dia: isoDeDia(d), chuva: c.chuva, tmax: c.tmax, efeitos });
+  }
 
   const meta = {
     versao: C.VERSAO, nivelServico: C.NIVEL_SERVICO, geradoEm: new Date(agora).toISOString(), hoje: isoDeDia(hoje), duracaoMs: Date.now() - t0,
@@ -259,6 +301,7 @@ function executarMotor({ pedidos, catalogo, agregados = [], parametros, eventos 
     diasComFalta: [...rupturas.values()].reduce((n, s) => n + s.size, 0),
     diasFechados: fechados.size, fatores: EF.resumo(fatores),
     clima: clima ? { cidade: clima.cidade || '', lugar: clima.lugar || '', dias: mapaClima.size, motivo: clima.motivo || null } : null,
+    climaProximo, custoFalta, juntos,
     pesos, hz: Object.fromEntries(Object.entries(hz).map(([k, v]) => [k, v.map(isoDeDia)])),
     avisos: [
       ...(norm.nPedidos < 30 ? ['Poucos pedidos no histórico: todas as previsões têm confiança baixa.'] : []),

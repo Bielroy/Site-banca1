@@ -1,0 +1,31 @@
+/* =====================================================================
+   css/vigia.css — "Algo estranho na tela?" (rodapé da loja, js/vigia-tela.js)
+   Um link discreto no rodapé abre uma folha com opções fixas; o aviso vai para a aba Erros da Plataforma.
+   ===================================================================== */
+.link-relato {
+    display: inline-block; padding: 10px 6px; border: 0; background: none; cursor: pointer;
+    font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 3px;
+}
+.relato-tela {
+    position: fixed; inset: 0; z-index: var(--z-toast, 3000); display: flex; align-items: flex-end; justify-content: center;
+    background: rgba(0, 0, 0, .45); padding: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+.relato-caixa {
+    width: 100%; max-width: 30rem; max-height: calc(100dvh - 24px); overflow: auto; box-sizing: border-box;
+    background: var(--superficie, #fff); color: var(--text-dark, #1d1d1b); border-radius: 20px; padding: 20px 18px 14px;
+    box-shadow: var(--shadow-lg, 0 10px 30px rgba(0, 0, 0, .25));
+}
+.relato-caixa h2 { margin: 0 0 6px; font-family: var(--fonte-titulo, serif); font-size: 1.3rem; color: var(--forest-texto, var(--forest, #1a3a2a)); }
+.relato-caixa p { margin: 0 0 14px; font-size: .9rem; color: var(--text-mid, #555); line-height: 1.4; }
+.relato-opcoes { display: grid; gap: 8px; }
+.relato-opcoes button {
+    min-height: 48px; padding: 10px 14px; border-radius: 14px; border: 1.5px solid var(--linha, #ddd); background: var(--parchment, #f7f3ea);
+    font: inherit; font-weight: 600; font-size: 1rem; text-align: left; color: inherit; cursor: pointer;
+}
+.relato-opcoes button:active { transform: scale(.98); }
+.relato-fechar { display: block; width: 100%; min-height: 46px; margin-top: 10px; border: 0; background: none; font: inherit; font-weight: 700; color: var(--text-mid, #555); cursor: pointer; }
+.relato-obrigado {
+    position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); transform: translateX(-50%); z-index: var(--z-toast, 3000);
+    max-width: calc(100vw - 32px); padding: 12px 22px; border-radius: 999px; background: var(--forest, #1a3a2a); color: var(--sobre-primaria, #fff);
+    font-weight: 700; text-align: center; box-shadow: var(--shadow-lg, 0 10px 30px rgba(0, 0, 0, .25));
+}

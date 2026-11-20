@@ -1,8 +1,8 @@
 // =====================================================================
 //  js/pix-loja.js — tela do PIX automático na loja do cliente.
-//  Pede o CPF (o PagBank exige), mostra o QR Code e o "copia e cola", e
+//  Pede o CPF (o banco exige: PagBank ou Asaas), mostra o QR Code e o "copia e cola", e
 //  fica olhando o pedido até o pagamento ser confirmado pelo servidor.
-//  O CPF vai só para o PagBank: não é gravado no pedido nem no aparelho.
+//  O CPF vai só para o banco: não é gravado no pedido nem no aparelho.
 // =====================================================================
 import { getDoc } from './firebase.js';
 import { tdoc } from './tenant.js';
@@ -44,7 +44,7 @@ function telaQr(d, total) {
         <textarea id="pix-codigo" class="pix-codigo" rows="3" readonly>${escapeHTML(d.qr_code || '')}</textarea>
         <button class="btn-finalizar" id="pix-copiar">Copiar o código</button>
         <p class="pix-estado" id="pix-estado" aria-live="polite">Esperando o pagamento. Esta tela avisa sozinha quando ele cair.</p>
-        <small class="dica-campo">O código vale por 30 minutos.</small>`;
+        <small class="dica-campo">Pague logo para a banca já começar o seu pedido.</small>`;
     $('pix-copiar').addEventListener('click', async () => {
         const campo = $('pix-codigo');
         try { await navigator.clipboard.writeText(campo.value); } catch (_) { campo.select(); document.execCommand && document.execCommand('copy'); }

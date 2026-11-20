@@ -28,3 +28,17 @@ export function podePagarPix(ligado, pedido) {
     if (pedido.pagamento && pedido.pagamento.status === 'PAID') return false;
     return ['pendente', 'aguardando_pagamento', 'preparando', 'enviado'].includes(pedido.status);
 }
+
+const igualSemAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+/**
+ * Para quem vai o PIX pela chave, do jeito que o cliente entende. A chave de banca pequena costuma estar no nome
+ * da dona ("Rosiva Martins da Silva"): sem dizer de qual loja é, o cliente acha que é golpe.
+ *   paraQuemPix('Rosiva Martins da Silva', 'Banca da Rosiva') → { nome: 'Rosiva Martins da Silva', loja: 'conta da loja Banca da Rosiva' }
+ * Se o nome da chave já é o da loja (ou o contém), não repete.
+ */
+export function paraQuemPix(nomeDaChave, nomeDaLoja) {
+    const nome = String(nomeDaChave || '').trim(), loja = String(nomeDaLoja || '').trim();
+    const a = igualSemAcento(nome), b = igualSemAcento(loja);
+    if (!loja || !a || a === b || a.includes(b) || b.includes(a)) return { nome: nome || loja, loja: '' };
+    return { nome, loja: `conta da loja ${loja}` };
+}

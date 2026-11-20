@@ -1,0 +1,40 @@
+/* =====================================================================
+   css/vitrine-formato.css — LOJA "SÓ VITRINE" (js/formato-lib.js).
+   <html data-formato="vitrine"> (posto pelo js/tema.js ao ler a ficha): some tudo o que é sacola e pedido,
+   e cada produto ganha "Pedir no WhatsApp". Loja sem o atributo não é tocada por nenhuma regra daqui.
+   ===================================================================== */
+html[data-formato="vitrine"] #btn-carrinho-mobile,
+html[data-formato="vitrine"] #carrinho,
+html[data-formato="vitrine"] #carrinho-overlay,
+html[data-formato="vitrine"] #btn-endereco,
+html[data-formato="vitrine"] .btn-historico,
+html[data-formato="vitrine"] #btn-ia-flutuante,
+html[data-formato="vitrine"] .btn-fav { display: none !important; }
+
+/* botão do card: mesmo lugar e tamanho do "Adicionar", na cor do WhatsApp */
+.card-zap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 7px; border-radius: 999px;
+    background: #1f8f4e; color: #fff; font-family: inherit; font-weight: 700; font-size: .86rem; white-space: nowrap; text-decoration: none;
+    box-shadow: 0 3px 0 #156b39; transition: transform .12s ease, background .2s ease; padding: 0 10px; text-align: center; line-height: 1.1; }
+.card-zap .ico { width: 18px; height: 18px; flex: none; }
+.card-zap:active { transform: scale(.96); }
+@media (hover: hover) { .card-zap:hover { background: #1a7c43; } }
+.card-zap:focus-visible { outline: 3px solid var(--manga, #f2b33d); outline-offset: 2px; }
+.texto-grande .card-zap { position: static; width: 100%; min-height: 46px; padding: 8px 10px; white-space: normal; }
+/* card estreito (2 colunas no celular pequeno): o texto fica e o ícone sai */
+.card-acao.zap { container-type: inline-size; }
+@container (max-width: 160px) { .card-zap .ico { display: none; } }
+
+/* janela do produto: sem quantidade nem resumo, só o botão do WhatsApp */
+.md-vitrine #md-tipo-compra-container, .md-vitrine .md-presets, .md-vitrine .md-stepper, .md-vitrine .md-resumo { display: none !important; }
+.md-vitrine #md-btn-add { background: #1f8f4e; border-color: #1f8f4e; color: #fff; }
+
+/* botão fixo, no lugar da sacola */
+.zap-vitrine { position: fixed; z-index: 60; left: 50%; transform: translateX(-50%);
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: inline-flex; align-items: center; gap: 10px;
+    min-height: 54px; padding: 0 24px; border-radius: 999px; background: #1f8f4e; color: #fff; font-weight: 800; font-size: 1rem;
+    text-decoration: none; box-shadow: 0 10px 26px rgba(0,0,0,.28); white-space: nowrap; max-width: calc(100vw - 32px); }
+.zap-vitrine .ico { width: 22px; height: 22px; flex: none; }
+.zap-vitrine:focus-visible { outline: 3px solid var(--manga, #f2b33d); outline-offset: 3px; }
+/* com uma janela aberta (produto, busca), o botão fixo sai da frente */
+html[data-formato="vitrine"] body:has(.modal-overlay.aberto) .zap-vitrine { display: none; }
+html[data-formato="vitrine"] body { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
