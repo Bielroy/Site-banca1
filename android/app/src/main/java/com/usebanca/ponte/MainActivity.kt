@@ -203,6 +203,11 @@ class MainActivity : Activity() {
         sempre.addView(listaChecks)
         coluna.addView(sempre)
 
+        // área do dono (pedidos ao servidor, com a digital): DonoActivity.kt. A impressora continua aqui, sem trava.
+        coluna.addView(texto("Área do dono", 15f, true, VERDE).apply {
+            gravity = Gravity.CENTER; setPadding(0, dp(24), 0, dp(4))
+            setOnClickListener { startActivity(Intent(this@MainActivity, DonoActivity::class.java)) }
+        })
         coluna.addView(texto("Versão ${BuildConfig.VERSION_NAME}", 13f, false, TEXTO_SUAVE).apply { gravity = Gravity.CENTER; setPadding(0, dp(20), 0, 0) })
 
         return ScrollView(this).apply {

@@ -6338,3 +6338,6 @@ require('./infra-processo')({ teste, criarBanco, raiz, semente, comR2, R2_TESTE,
 
 // bot do servidor (cardápio de tarefas por SSH, chave normal e chave sensível com aprovação): arquivo à parte
 require('./bot-servidor')({ teste, raiz, path, assert });
+
+// área do dono no app da ponte (pede tarefas ao bot; sensível aprovada com a digital): arquivo à parte
+require('./bot-area-dono')({ teste, criarBanco, raiz, assert, carregarApi, criarAdmin });

@@ -17,6 +17,7 @@
 #
 # Ligar: PUBLICAR.md, "Bot do servidor". Sem as chaves, o trabalho fica vermelho dizendo o que falta.
 name: Tarefas do servidor
+run-name: ${{ inputs.tarefa }} ${{ inputs.nome }} ${{ inputs.pedido }}
 
 on:
   workflow_dispatch:
@@ -31,14 +32,13 @@ on:
         description: 'Só para trocar-segredo: o NOME da chave (ex.: CRON_SECRET). NUNCA o valor (vai no segredo VALOR_NOVO do ambiente producao).'
         required: false
         default: ''
+      pedido:
+        description: 'Deixe vazio (marca do app da ponte para achar este pedido).'
+        required: false
+        default: ''
 
 permissions:
   contents: read
-
-# uma coisa por vez no servidor, junto com as atualizações automáticas; nunca corta uma no meio
-concurrency:
-  group: deploy-servidor
-  cancel-in-progress: false
 
 jobs:
   normal:
@@ -46,6 +46,10 @@ jobs:
     if: contains(fromJSON('["estado","atualizar","reiniciar","copia-agora","ligar-copia"]'), inputs.tarefa)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # uma coisa por vez no servidor, junto com as atualizações automáticas; nunca corta uma no meio
+    concurrency:
+      group: deploy-servidor
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
         with:
@@ -71,6 +75,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: producao
+    # grupo próprio: uma sensível esperando aprovação nunca segura as atualizações automáticas
+    concurrency:
+      group: tarefa-sensivel
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
         with:

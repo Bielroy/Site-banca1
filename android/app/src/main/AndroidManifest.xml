@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- área do dono: digital ou rosto -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- impressora Bluetooth -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
@@ -47,6 +49,13 @@
                 <data android:scheme="bancaponte" android:host="parear" />
             </intent-filter>
         </activity>
+
+        <!-- área do dono: só com a trava do celular (digital, rosto ou senha) -->
+        <activity
+            android:name=".DonoActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:windowSoftInputMode="adjustResize" />
 
         <service
             android:name=".PonteService"

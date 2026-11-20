@@ -23,6 +23,9 @@
 //  POST { acao: 'feira', fid, nome, dias: [0..6], lojas: [ids], condominiosIds: [ids do cadastro], horaLimite: 'HH:MM', semFeira: ['AAAA-MM-DD'],
 //         datasExtras: ['AAAA-MM-DD'], lojasDias: { lojaId: [0..6] }, hud: { texto, local, horario, capa, fotos } }   dias = dias da semana (vazio = todos); lojas vazio = desfaz a feira
 //
+//  POST { acao: 'bot-codigo' }                               código de 8 letras (10 min) para ligar a área do dono no app da ponte (lib/bot.js)
+//  POST { acao: 'bot-celulares' } / { acao: 'bot-desligar', id }   celulares com a área do dono / desligar um
+//
 //  O primeiro acesso de plataforma ainda é dado pelo terminal
 //  (scripts/plataforma.js): não existe tela que promova alguém a dono de tudo.
 // =====================================================================
@@ -41,6 +44,7 @@ const Feira = require('../lib/feira');
 const Assinatura = require('../lib/assinatura');
 const Cond = require('../lib/condominios');
 const Erros = require('../lib/erros');
+const Bot = require('../lib/bot');
 
 const formatPrivateKey = (k) => (k ? k.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim() : '');
 let db;
@@ -490,12 +494,12 @@ module.exports = async function handler(req, res) {
     try { await db.runTransaction(async (t) => { const r = db.collection('plataforma').doc('dono'), s = await t.get(r); if (!s.exists) t.set(r, { uid: dec.uid, email: dec.email || '', em: new Date().toISOString() }); }); donoRegistrado.add(dec.uid); }
     catch (e) { console.error('[plataforma] dono', e && e.message); }
   }
-  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), 'erro-estado': async () => res.status(200).json({ sucesso: true, ...(await Erros.marcarEstado(db, req.body, dec.email || dec.uid)) }), lojas: () => lojas(res), 'lojas-leve': () => lojasLeve(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), excluir: () => excluir(req, res), restaurar: () => restaurar(req, res), modulos: () => modulos(req, res), campos: () => campos(req, res), tipo: () => tipo(req, res), formato: () => formato(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), asaas: () => asaas(req, res), 'asaas-carteira': () => asaasCarteira(req, res), proprietario: () => proprietario(req, res), 'link-entrada': () => linkEntrada(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res) };
+  const acoes = { auditoria: async () => res.status(200).json({ sucesso: true, registros: await P.lerAuditoria(db, null, 80) }), erros: async () => res.status(200).json({ sucesso: true, erros: await Erros.listar(db, 7) }), 'erro-estado': async () => res.status(200).json({ sucesso: true, ...(await Erros.marcarEstado(db, req.body, dec.email || dec.uid)) }), lojas: () => lojas(res), 'lojas-leve': () => lojasLeve(res), 'criar-loja': () => criarLoja(req, res), ativo: () => ativo(req, res), excluir: () => excluir(req, res), restaurar: () => restaurar(req, res), modulos: () => modulos(req, res), campos: () => campos(req, res), tipo: () => tipo(req, res), formato: () => formato(req, res), imgbb: () => imgbb(req, res), pagbank: () => pagbank(req, res), asaas: () => asaas(req, res), 'asaas-carteira': () => asaasCarteira(req, res), proprietario: () => proprietario(req, res), 'link-entrada': () => linkEntrada(req, res), feira: () => feira(req, res), assinatura: () => assinatura(req, res), condominio: () => condominio(req, res), 'bot-codigo': async () => res.status(200).json({ sucesso: true, ...(await Bot.criarCodigo(db, dec)) }), 'bot-celulares': async () => res.status(200).json({ sucesso: true, celulares: await Bot.listarAparelhos(db) }), 'bot-desligar': async () => res.status(200).json({ sucesso: true, ...(await Bot.removerAparelho(db, (req.body || {}).id)) }) };
   const nomeAcao = typeof (req.body || {}).acao === 'string' ? (req.body || {}).acao : '';
   const fn = Object.prototype.hasOwnProperty.call(acoes, nomeAcao) ? acoes[nomeAcao] : null;
   if (!fn) return res.status(400).json({ error: 'Ação desconhecida.' });
   // Tudo o que MUDA alguma coisa fica na trilha (auditoria_plataforma). Chave e token nunca entram no registro: só "gravou" ou "apagou".
-  if (!['lojas', 'lojas-leve', 'auditoria', 'erros'].includes(nomeAcao)) {
+  if (!['lojas', 'lojas-leve', 'auditoria', 'erros', 'bot-celulares'].includes(nomeAcao)) {
     guardados.leve = null; guardados.mov.clear();          // mexeu em alguma coisa: as listas guardadas são lidas de novo
     const b = req.body || {}, alvo = String(b.id || b.fid || '').slice(0, 40);
     const detalhe = nomeAcao === 'imgbb' ? 'chave apagada'
@@ -507,10 +511,11 @@ module.exports = async function handler(req, res) {
       : nomeAcao === 'excluir' ? `${alvo}: mandou para a lixeira` : nomeAcao === 'restaurar' ? `${alvo}: tirou da lixeira`
       : nomeAcao === 'criar-loja' ? `${alvo} (${String(b.emailDono || 'sem dono').slice(0, 80)})`
       : nomeAcao === 'condominio' ? `${b.remover === true ? 'tirou' : b.id ? 'mudou' : 'cadastrou'} ${String(b.nome || b.id || '').slice(0, 60)}`
+      : nomeAcao === 'bot-codigo' ? 'código da área do dono (app da ponte)' : nomeAcao === 'bot-desligar' ? `desligou o celular ${String(b.id || '').slice(0, 20)} da área do dono`
       : nomeAcao === 'erro-estado' ? `${String(b.assinatura || '').slice(0, 20)} ${b.estado === 'aberto' ? 'reaberto' : 'corrigido'}`
       : nomeAcao === 'assinatura' ? `${alvo}: ${String(b.valor == null ? '' : b.valor).trim() === '' ? 'sem mensalidade' : `R$ ${String(b.valor).slice(0, 12)}`}` : alvo;
     await anotar(`plataforma-${nomeAcao}`, detalhe);
-    if (['proprietario', 'link-entrada', 'pagbank', 'asaas', 'asaas-carteira', 'ativo', 'excluir', 'restaurar'].includes(nomeAcao)) await P.alertar(db, T.TENANT_PADRAO, `plataforma-${nomeAcao}`, { titulo: 'Plataforma alterada', corpo: `${dec.email || 'O dono da plataforma'} mudou: ${nomeAcao} (${detalhe}).`, url: '/admin-plataforma' });
+    if (['bot-codigo', 'bot-desligar', 'proprietario', 'link-entrada', 'pagbank', 'asaas', 'asaas-carteira', 'ativo', 'excluir', 'restaurar'].includes(nomeAcao)) await P.alertar(db, T.TENANT_PADRAO, `plataforma-${nomeAcao}`, { titulo: 'Plataforma alterada', corpo: `${dec.email || 'O dono da plataforma'} mudou: ${nomeAcao} (${detalhe}).`, url: '/admin-plataforma' });
   }
   try { return await fn(); }
   catch (e) { if (e && e.status) return res.status(e.status).json({ error: e.message }); console.error('[plataforma]', e && e.message); return res.status(500).json({ error: 'Não foi possível concluir. Tente de novo.' }); }

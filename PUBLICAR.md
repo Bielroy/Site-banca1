@@ -288,7 +288,7 @@ Fora do cardápio, o servidor recusa. A `DADOS_CHAVE` nunca é trocada por ali. 
 3. GitHub → Settings → Secrets and variables → Actions → **New repository secret**: `SSH_HOST`, `SSH_USER`, `SSH_KEY` (conteúdo de
    `cat ~/gh_deploy`) e `SSH_KNOWN_HOSTS`, como no "Servidor atualizado sozinho". A atualização automática passa a funcionar junto.
 4. GitHub → Settings → **Environments → New environment** `producao`: marque **Required reviewers** com você; deixe **Prevent self-review**
-   DESMARCADO (senão você não aprova o que pediu). Em "Deployment branches", **Selected branches** → `rota-cloudflare`.
+   DESMARCADO (senão você não aprova o que pediu). Em "Deployment branches", **Selected branches** → `main` (o ramo padrão, de onde o "Run workflow" roda).
    Dentro do ambiente → **Add environment secret** `SSH_KEY_SENSIVEL` = conteúdo de `cat ~/gh_sensivel`.
 5. Apague as privadas do servidor: `rm ~/gh_deploy ~/gh_sensivel` (as públicas ficam no `authorized_keys`).
 6. Instale o **GitHub Mobile** e ligue as notificações (e o bloqueio por digital no app). Teste: Run workflow → `estado` (verde na hora) e
@@ -296,6 +296,21 @@ Fora do cardápio, o servidor recusa. A `DADOS_CHAVE` nunca é trocada por ali. 
 **Trocar uma chave:** ambiente `producao` → segredo `VALOR_NOVO` com o valor → Run workflow → `trocar-segredo`, nome = o NOME (ex.:
 `CRON_SECRET`). Depois apague o `VALOR_NOVO`. Trocou o `CRON_SECRET`? Troque o do GitHub também. E atualize a nota do cofre.
 **Modo automático:** ambiente `producao` → desmarque Required reviewers enquanto trabalha; marque de volta ao terminar.
+
+### Área do dono no app da ponte: as tarefas do bot no celular, com a digital (≈ 15 min, depois do "Bot do servidor")
+No app da ponte, embaixo: **Área do dono**. Abre só com a trava do celular (digital, rosto ou senha) e só funciona no celular que você
+ligar com um código da Plataforma (só a conta dona da plataforma gera). Tarefa sensível pede a digital de novo e sai **já aprovada**: a
+digital no app vale como o "Approve" do GitHub. "Modo automático" no app: 1 hora sem pedir a digital, desliga sozinho. A parte da
+impressora continua igual, sem trava. Regras: `lib/bot.js`, `api/bot.js`, `android/.../DonoActivity.kt`.
+1. GitHub (no celular ou computador) → sua foto → **Settings → Developer settings → Personal access tokens → Fine-grained tokens →
+   Generate new token**. Nome `usebanca-bot`; validade 1 ano; **Only select repositories** → `Site-banca1`; permissões do repositório:
+   **Actions: Read and write** e **Deployments: Read and write** (o resto fica "No access"). Gere e copie (começa com `github_pat_`).
+2. No servidor: `nano ~/segredos.env` e acrescente `BOT_GITHUB_TOKEN=github_pat_...`; salve e rode `bash ~/loja/scripts/atualizar-servidor.sh`.
+   (Ou pelo bot: segredo `VALOR_NOVO` = o token, e `trocar-segredo` com nome `BOT_GITHUB_TOKEN`.) Atualize a nota do cofre.
+3. Plataforma → aba **Chaves** → "Área do dono no app da ponte" → **Gerar código**. No app: **Área do dono** → digital → digite o código.
+4. Teste: "Ver o estado do servidor" e, em Últimas tarefas, ele aparece (toque para abrir no GitHub).
+Perdeu o celular? Plataforma → Chaves → **Desligar** nele. Trocar o dono da plataforma desliga todos os celulares do dono antigo.
+O token do GitHub fica só no servidor; se vazar, apague-o no GitHub (Fine-grained tokens → Revoke) e gere outro.
 
 ### Cópia fora da máquina (≈ 20 min)
 As cópias diárias ficam no disco do servidor; se a máquina se perder, vão junto. O `backup-diario.sh` (09:10 UTC, depois da rotina da noite)
